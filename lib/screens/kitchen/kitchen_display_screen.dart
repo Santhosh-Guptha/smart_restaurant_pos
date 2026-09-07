@@ -34,6 +34,7 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
     {'id': 'PREPARING', 'label': 'In Preparation 👨‍🍳', 'color': Color(0xFF2563EB)},
     {'id': 'READY', 'label': 'Food Ready 🍳', 'color': Color(0xFF059669)},
     {'id': 'ALL', 'label': 'All Active 📋', 'color': Color(0xFF4F46E5)},
+    {'id': 'SERVED', 'label': 'Served / History 🍽️', 'color': Color(0xFF64748B)},
   ];
 
   // Live active kitchen orders (100% dynamic)
@@ -95,6 +96,34 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
             parsedActive.add(o);
           }
         }
+        final newlyArrived = parsedActive.where(
+          (n) => n.effectiveKitchenStatus == 'PENDING' && !_allOrders.any((o) => canonicalId(o) == canonicalId(n)),
+        ).toList();
+
+        if (newlyArrived.isNotEmpty && _allOrders.isNotEmpty) {
+          SystemSound.play(SystemSoundType.alert);
+          HapticFeedback.heavyImpact();
+          if (mounted) {
+            final kotTokens = newlyArrived.map((o) => o.kotNumber).join(', ');
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Row(
+                  children: [
+                    const Icon(Icons.notifications_active_rounded, color: Colors.white, size: 20),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text('🔔 New Kitchen Order: $kotTokens (${newlyArrived.first.tableName})'),
+                    ),
+                  ],
+                ),
+                backgroundColor: const Color(0xFFD97706),
+                duration: const Duration(seconds: 4),
+                behavior: SnackBarBehavior.floating,
+              ),
+            );
+          }
+        }
+
         for (final s in parsedServed) {
           if (!_servedOrdersHistory.any((x) => x.canonicalKey == s.canonicalKey)) {
             _servedOrdersHistory.add(s);
@@ -177,10 +206,10 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
     }
     
     final now = DateTime.now();
-    final todayStart = DateTime(now.year, now.month, now.day);
+    final serviceWindowCutoff = now.subtract(const Duration(hours: 24));
     
     for (final o in incomingOrders) {
-      if (o.createdAt.isBefore(todayStart)) continue;
+      if (o.createdAt.isBefore(serviceWindowCutoff)) continue;
       if (o.id.startsWith('TEST-') || o.kotNumber.startsWith('TEST-')) continue;
       
       // If incoming order has been marked served, purge from active board and archive to history
@@ -232,8 +261,64 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
       return _allOrders.where((o) => o.effectiveKitchenStatus == 'PREPARING').toList();
     } else if (stage == 'READY') {
       return _allOrders.where((o) => o.effectiveKitchenStatus == 'READY').toList();
+    } else if (stage == 'SERVED') {
+      return _servedOrdersHistory;
     }
     return _allOrders.where((o) => o.effectiveKitchenStatus != 'SERVED').toList();
+  }
+
+  Future<void> _recallOrder(KotOrder order) async {
+    try {
+      final orgId = _getEffectiveOrgId();
+      final recalledOrder = order.copyWith(
+        status: KotStatus.ready,
+        kitchenStatus: 'READY',
+      );
+      setState(() {
+        _servedOrdersHistory.removeWhere((o) => canonicalId(o) == canonicalId(order));
+        _allOrders.removeWhere((o) => canonicalId(o) == canonicalId(order));
+        _allOrders.insert(0, recalledOrder);
+      });
+
+      if (Hive.isBoxOpen('configBox')) {
+        final box = Hive.box('configBox');
+        final raw = box.get('kot_orders_$orgId');
+        if (raw is List) {
+          final updatedList = raw.map((item) {
+            if (item is Map && canonicalId(item) == canonicalId(order)) {
+              final m = Map<String, dynamic>.from(item);
+              m['kitchenStatus'] = 'READY';
+              if (m['status'] == 'SERVED' || m['status'] == 'COMPLETED') {
+                m['status'] = 'READY';
+              }
+              return m;
+            }
+            return item;
+          }).toList();
+          await box.put('kot_orders_$orgId', updatedList);
+        }
+      }
+
+      await AppsScriptBackendService.updateOrderStatus(
+        orgId: orgId,
+        orderId: order.id,
+        kotNumber: order.kotNumber,
+        newStatus: 'READY',
+        clientRequestId: const Uuid().v4(),
+      );
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${order.kotNumber} recalled back to READY ↩️'),
+            backgroundColor: const Color(0xFF2563EB),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('Error recalling order: $e');
+    }
   }
 
   Future<void> _updateOrderStatus(KotOrder order, KotStatus newStatus) async {
@@ -360,6 +445,8 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
         stationName: 'Main Kitchen',
         generalNotes: order.generalNotes,
         orderTime: order.createdAt,
+        reprintCount: order.reprintCount,
+        courseNo: order.courseNo,
       );
 
       final isConnected = await PrintBluetoothThermal.connectionStatus;
@@ -608,6 +695,7 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
       {'id': 'PENDING', 'title': 'New Received ⏳', 'color': const Color(0xFFD97706), 'bg': const Color(0xFFFFFBEB)},
       {'id': 'PREPARING', 'title': 'In Preparation 👨‍🍳', 'color': const Color(0xFF2563EB), 'bg': const Color(0xFFEFF6FF)},
       {'id': 'READY', 'title': 'Food Ready 🍳', 'color': const Color(0xFF059669), 'bg': const Color(0xFFECFDF5)},
+      {'id': 'SERVED', 'title': 'Served / History 🍽️', 'color': const Color(0xFF64748B), 'bg': const Color(0xFFF1F5F9)},
     ];
 
     return LayoutBuilder(
@@ -944,6 +1032,25 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
                               ),
                             ),
                           ),
+                          if (order.courseNo != null) ...[
+                            const SizedBox(width: 4),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF3E8FF),
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(color: const Color(0xFFE9D5FF)),
+                              ),
+                              child: Text(
+                                'Round ${order.courseNo}',
+                                style: const TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFF7E22CE),
+                                ),
+                              ),
+                            ),
+                          ],
                         ],
                       ),
                       const SizedBox(height: 2),
@@ -1150,23 +1257,21 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
                                     ),
                                   ),
                                 )
-                              : Container(
-                                  padding: const EdgeInsets.symmetric(vertical: 8),
-                                  alignment: Alignment.center,
-                                  child: const Row(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      Icon(Icons.check_circle_rounded, size: 16, color: Color(0xFF059669)),
-                                      SizedBox(width: 6),
-                                      Text(
-                                        'SERVED & COMPLETED',
-                                        style: TextStyle(
-                                          color: Color(0xFF059669),
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 12,
-                                        ),
-                                      ),
-                                    ],
+                              : ElevatedButton.icon(
+                                  onPressed: () => _recallOrder(order),
+                                  icon: const Icon(Icons.undo_rounded, size: 16),
+                                  label: const Text(
+                                    'RECALL TO KITCHEN ↩️',
+                                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                                  ),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: const Color(0xFF2563EB),
+                                    foregroundColor: Colors.white,
+                                    padding: const EdgeInsets.symmetric(vertical: 10),
+                                    elevation: 0,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
                                   ),
                                 ),
                 ),

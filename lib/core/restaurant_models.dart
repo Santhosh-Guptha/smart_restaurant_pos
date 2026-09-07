@@ -262,6 +262,7 @@ class RestaurantTable {
 }
 
 class KotItem {
+  final String? lineId;
   final String productId;
   final String name;
   final double qty;
@@ -271,8 +272,15 @@ class KotItem {
   final bool isVeg;
   final String? orderedBy;
   final String? deviceId;
+  final String? kitchenStatus;
+  final String? station;
+  final int? courseNo;
+  final double voidedQty;
+  final String? voidReason;
+  final String? voidedBy;
 
   KotItem({
+    this.lineId,
     required this.productId,
     required this.name,
     required this.qty,
@@ -282,10 +290,17 @@ class KotItem {
     this.isVeg = true,
     this.orderedBy,
     this.deviceId,
+    this.kitchenStatus,
+    this.station,
+    this.courseNo,
+    this.voidedQty = 0.0,
+    this.voidReason,
+    this.voidedBy,
   });
 
   Map<String, dynamic> toMap() {
     return {
+      'lineId': lineId,
       'productId': productId,
       'name': name,
       'qty': qty,
@@ -295,12 +310,19 @@ class KotItem {
       'isVeg': isVeg,
       'orderedBy': orderedBy,
       'deviceId': deviceId,
+      'kitchenStatus': kitchenStatus,
+      'station': station,
+      'courseNo': courseNo,
+      'voidedQty': voidedQty,
+      'voidReason': voidReason,
+      'voidedBy': voidedBy,
       'subtotal': price * qty,
     };
   }
 
   factory KotItem.fromMap(Map<String, dynamic> map) {
     return KotItem(
+      lineId: map['lineId']?.toString(),
       productId: (map['productId'] ?? map['id'] ?? '').toString(),
       name: (map['name'] ?? 'Unknown Item').toString(),
       qty: (map['qty'] as num?)?.toDouble() ?? (map['quantity'] as num?)?.toDouble() ?? 1.0,
@@ -310,10 +332,17 @@ class KotItem {
       isVeg: map['isVeg'] ?? true,
       orderedBy: map['orderedBy']?.toString(),
       deviceId: map['deviceId']?.toString(),
+      kitchenStatus: map['kitchenStatus']?.toString(),
+      station: map['station']?.toString(),
+      courseNo: (map['courseNo'] as num?)?.toInt(),
+      voidedQty: (map['voidedQty'] as num?)?.toDouble() ?? 0.0,
+      voidReason: map['voidReason']?.toString(),
+      voidedBy: map['voidedBy']?.toString(),
     );
   }
 
   KotItem copyWith({
+    String? lineId,
     String? productId,
     String? name,
     double? qty,
@@ -323,8 +352,15 @@ class KotItem {
     bool? isVeg,
     String? orderedBy,
     String? deviceId,
+    String? kitchenStatus,
+    String? station,
+    int? courseNo,
+    double? voidedQty,
+    String? voidReason,
+    String? voidedBy,
   }) {
     return KotItem(
+      lineId: lineId ?? this.lineId,
       productId: productId ?? this.productId,
       name: name ?? this.name,
       qty: qty ?? this.qty,
@@ -334,6 +370,12 @@ class KotItem {
       isVeg: isVeg ?? this.isVeg,
       orderedBy: orderedBy ?? this.orderedBy,
       deviceId: deviceId ?? this.deviceId,
+      kitchenStatus: kitchenStatus ?? this.kitchenStatus,
+      station: station ?? this.station,
+      courseNo: courseNo ?? this.courseNo,
+      voidedQty: voidedQty ?? this.voidedQty,
+      voidReason: voidReason ?? this.voidReason,
+      voidedBy: voidedBy ?? this.voidedBy,
     );
   }
 }
@@ -409,6 +451,11 @@ class KotOrder {
   final DateTime? paidAt;
   final DateTime? readyAt;
   final DateTime? completedAt;
+  final int? courseNo;
+  final DateTime? firedAt;
+  final int reprintCount;
+  final String? waiterName;
+  final String? staffId;
 
   /// Universal dedup key using canonical ID
   String get canonicalKey => canonicalId(this);
@@ -487,6 +534,11 @@ class KotOrder {
     this.paidBy,
     this.paidAt,
     this.completedAt,
+    this.courseNo,
+    this.firedAt,
+    this.reprintCount = 0,
+    this.waiterName,
+    this.staffId,
   });
 
   KotOrder copyWith({
@@ -515,6 +567,11 @@ class KotOrder {
     String? paidBy,
     DateTime? paidAt,
     DateTime? completedAt,
+    int? courseNo,
+    DateTime? firedAt,
+    int? reprintCount,
+    String? waiterName,
+    String? staffId,
   }) {
     return KotOrder(
       id: id ?? this.id,
@@ -542,6 +599,11 @@ class KotOrder {
       paidBy: paidBy ?? this.paidBy,
       paidAt: paidAt ?? this.paidAt,
       completedAt: completedAt ?? this.completedAt,
+      courseNo: courseNo ?? this.courseNo,
+      firedAt: firedAt ?? this.firedAt,
+      reprintCount: reprintCount ?? this.reprintCount,
+      waiterName: waiterName ?? this.waiterName,
+      staffId: staffId ?? this.staffId,
     );
   }
 
@@ -566,6 +628,11 @@ class KotOrder {
       'createdAt': createdAt.toIso8601String(),
       'acceptedAt': acceptedAt?.toIso8601String(),
       'readyAt': readyAt?.toIso8601String(),
+      'courseNo': courseNo,
+      'firedAt': firedAt?.toIso8601String(),
+      'reprintCount': reprintCount,
+      'waiterName': waiterName,
+      'staffId': staffId,
       'paymentMode': paymentMode,
       'paymentApp': paymentApp,
       'transactionId': transactionId,
@@ -664,6 +731,11 @@ class KotOrder {
       paidBy: map['paidBy']?.toString(),
       paidAt: map['paidAt'] != null ? _parseDateTime(map['paidAt']) : null,
       completedAt: map['completedAt'] != null ? _parseDateTime(map['completedAt']) : null,
+      courseNo: (map['courseNo'] as num?)?.toInt() ?? (map['course_no'] as num?)?.toInt(),
+      firedAt: map['firedAt'] != null ? _parseDateTime(map['firedAt']) : null,
+      reprintCount: (map['reprintCount'] as num?)?.toInt() ?? (map['reprint_count'] as num?)?.toInt() ?? 0,
+      waiterName: (map['waiterName'] ?? map['waiter_name'])?.toString(),
+      staffId: (map['staffId'] ?? map['staff_id'])?.toString(),
     );
   }
 }

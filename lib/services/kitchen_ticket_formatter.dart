@@ -14,6 +14,8 @@ class KitchenTicketFormatter {
     String? generalNotes,
     String stationName = 'Main Kitchen',
     DateTime? orderTime,
+    int reprintCount = 0,
+    int? courseNo,
   }) async {
     final generator = Generator(paperSize, profile);
     List<int> bytes = [];
@@ -34,6 +36,26 @@ class KitchenTicketFormatter {
         width: PosTextSize.size1,
       ),
     );
+    if (reprintCount > 0) {
+      bytes += generator.text(
+        '*** DUPLICATE REPRINT #$reprintCount ***',
+        styles: const PosStyles(
+          align: PosAlign.center,
+          bold: true,
+          height: PosTextSize.size1,
+          width: PosTextSize.size1,
+        ),
+      );
+    }
+    if (courseNo != null) {
+      bytes += generator.text(
+        '*** ROUND / COURSE: $courseNo ***',
+        styles: const PosStyles(
+          align: PosAlign.center,
+          bold: true,
+        ),
+      );
+    }
     bytes += generator.text(
       'STATION: ${stationName.toUpperCase()}',
       styles: const PosStyles(

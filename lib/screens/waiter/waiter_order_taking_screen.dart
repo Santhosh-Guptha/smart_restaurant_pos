@@ -14,6 +14,9 @@ import '../../providers/daily_token_provider.dart';
 import '../../providers/restaurant_auth_provider.dart';
 import '../../providers/saas_session_provider.dart';
 import '../../services/apps_script_backend_service.dart';
+import '../../services/kitchen_ticket_formatter.dart';
+import 'package:esc_pos_utils_plus/esc_pos_utils_plus.dart';
+import 'package:print_bluetooth_thermal/print_bluetooth_thermal.dart';
 
 class WaiterOrderTakingScreen extends ConsumerStatefulWidget {
   final RestaurantTable table;
@@ -348,12 +351,14 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
     final guestName = _customerNameCtrl.text.trim().isNotEmpty ? _customerNameCtrl.text.trim() : 'Dine-In Guest';
     final guestPhone = _customerPhoneCtrl.text.trim();
 
+    final currentCourse = _tableOrders.length + 1;
     final List<Map<String, dynamic>> itemsList = [];
     for (final entry in _tray.values) {
       final it = entry['item'] as Map<String, dynamic>;
       final qty = (entry['qty'] as num).toInt();
       final price = (it['price'] as num?)?.toDouble() ?? 0.0;
       itemsList.add({
+        'lineId': const Uuid().v4(),
         'id': it['id']?.toString() ?? it['name'].toString(),
         'productId': it['id']?.toString() ?? it['name'].toString(),
         'name': it['name']?.toString() ?? 'Dish',
@@ -362,6 +367,11 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
         'price': price,
         'rate': price,
         'isVeg': it['isVeg'] != false,
+        'courseNo': currentCourse,
+        'course_no': currentCourse,
+        'station': (it['station'] ?? 'Main Kitchen').toString(),
+        'kitchenStatus': 'PENDING',
+        'notes': it['notes']?.toString(),
       });
     }
 
@@ -391,6 +401,10 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
       'customerPhone': guestPhone,
       'waiterName': activeStaff?.name ?? 'Floor Waiter',
       'createdAt': DateTime.now().toIso8601String(),
+      'firedAt': DateTime.now().toIso8601String(),
+      'courseNo': currentCourse,
+      'course_no': currentCourse,
+      'reprintCount': 0,
       'subtotal': subtotal,
       'serviceCharge': serviceCharge,
       'gst': gst,
@@ -460,6 +474,10 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
             'total_amount': totalAmount,
             'payment_status': 'PENDING',
             'status': 'PENDING',
+            'courseNo': currentCourse,
+            'course_no': currentCourse,
+            'firedAt': DateTime.now().toIso8601String(),
+            'reprintCount': 0,
             'timestamp': DateTime.now().toIso8601String(),
           },
         );
@@ -501,6 +519,207 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
       debugPrint('Error sending KOT: $e');
     } finally {
       if (mounted) setState(() => _isSending = false);
+    }
+  }
+
+  // ── Active KOTs / Rounds View & Reprint Dialog ───────────────────────
+  void _showActiveKotsDialog() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            return Container(
+              height: MediaQuery.of(context).size.height * 0.75,
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+              ),
+              child: Column(
+                children: [
+                  Container(
+                    margin: const EdgeInsets.only(top: 8, bottom: 8),
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFCBD5E1),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Active KOTs — ${widget.table.name}',
+                          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close_rounded),
+                          onPressed: () => Navigator.pop(ctx),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  Expanded(
+                    child: _tableOrders.isEmpty
+                        ? const Center(child: Text('No active KOTs on this table.'))
+                        : ListView.separated(
+                            padding: const EdgeInsets.all(16),
+                            itemCount: _tableOrders.length,
+                            separatorBuilder: (_, __) => const SizedBox(height: 12),
+                            itemBuilder: (context, idx) {
+                              final ord = _tableOrders[idx];
+                              final courseNum = ord.courseNo ?? (_tableOrders.length - idx);
+                              return Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFF8FAFC),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Text(
+                                          'Round $courseNum • ${ord.kotNumber}',
+                                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFF0F172A)),
+                                        ),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                          decoration: BoxDecoration(
+                                            color: ord.effectiveKitchenStatus == 'READY'
+                                                ? const Color(0xFFD1FAE5)
+                                                : const Color(0xFFEFF6FF),
+                                            borderRadius: BorderRadius.circular(6),
+                                          ),
+                                          child: Text(
+                                            ord.effectiveKitchenStatus,
+                                            style: TextStyle(
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.bold,
+                                              color: ord.effectiveKitchenStatus == 'READY'
+                                                  ? const Color(0xFF059669)
+                                                  : const Color(0xFF2563EB),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 8),
+                                    ...ord.items.map((it) => Padding(
+                                      padding: const EdgeInsets.symmetric(vertical: 2),
+                                      child: Row(
+                                        children: [
+                                          Text('${it.qty == it.qty.toInt() ? it.qty.toInt() : it.qty}x ', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                                          Expanded(child: Text(it.name, style: const TextStyle(fontSize: 12))),
+                                        ],
+                                      ),
+                                    )),
+                                    const SizedBox(height: 8),
+                                    Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        if (ord.reprintCount > 0)
+                                          Text(
+                                            'Reprinted ${ord.reprintCount} time(s)',
+                                            style: const TextStyle(fontSize: 11, color: Color(0xFF64748B), fontStyle: FontStyle.italic),
+                                          )
+                                        else
+                                          const SizedBox.shrink(),
+                                        OutlinedButton.icon(
+                                          icon: const Icon(Icons.print_outlined, size: 14),
+                                          label: Text(ord.reprintCount > 0 ? 'Reprint KOT #${ord.reprintCount + 1}' : 'Reprint KOT'),
+                                          style: OutlinedButton.styleFrom(
+                                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                            visualDensity: VisualDensity.compact,
+                                          ),
+                                          onPressed: () async {
+                                            await _reprintKot(ord);
+                                            setSheetState(() {});
+                                          },
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _reprintKot(KotOrder ord) async {
+    try {
+      final newReprintCount = ord.reprintCount + 1;
+      final bytes = await KitchenTicketFormatter.formatKotTicket(
+        paperSize: PaperSize.mm80,
+        profile: await CapabilityProfile.load(),
+        tokenNumber: '#${ord.kotNumber.replaceAll(RegExp(r'[^0-9]'), '').padLeft(3, '0')}',
+        tableName: ord.tableName,
+        items: ord.items,
+        waiterName: ord.waiterName,
+        generalNotes: ord.generalNotes,
+        orderTime: ord.createdAt,
+        reprintCount: newReprintCount,
+        courseNo: ord.courseNo,
+      );
+
+      final isConnected = await PrintBluetoothThermal.connectionStatus;
+      if (isConnected) {
+        await PrintBluetoothThermal.writeBytes(bytes);
+        final orgId = _getEffectiveOrgId();
+        if (Hive.isBoxOpen('configBox')) {
+          final box = Hive.box('configBox');
+          final raw = box.get('kot_orders_$orgId') as List? ?? [];
+          final updated = raw.map((item) {
+            if (item is Map && canonicalId(item) == canonicalId(ord)) {
+              final m = Map<String, dynamic>.from(item);
+              m['reprintCount'] = newReprintCount;
+              m['reprint_count'] = newReprintCount;
+              return m;
+            }
+            return item;
+          }).toList();
+          await box.put('kot_orders_$orgId', updated);
+        }
+        setState(() {
+          _loadTableActiveOrders();
+        });
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Reprint #$newReprintCount sent to printer ✅'),
+              backgroundColor: const Color(0xFF059669),
+            ),
+          );
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Bluetooth printer not connected. Configure in Settings.'),
+              backgroundColor: Color(0xFFD97706),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint('Error reprinting KOT: $e');
     }
   }
 
@@ -991,22 +1210,26 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                 ),
                 if (_tableOrders.isNotEmpty) ...[
                   const SizedBox(width: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFFEF3C7),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: const Color(0xFFFDE68A)),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.outdoor_grill_rounded, size: 14, color: Color(0xFFD97706)),
-                        const SizedBox(width: 4),
-                        Text(
-                          '${_tableOrders.length} active KOTs',
-                          style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: Color(0xFFB45309)),
-                        ),
-                      ],
+                  InkWell(
+                    onTap: _showActiveKotsDialog,
+                    borderRadius: BorderRadius.circular(10),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFEF3C7),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: const Color(0xFFFDE68A)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.outdoor_grill_rounded, size: 14, color: Color(0xFFD97706)),
+                          const SizedBox(width: 4),
+                          Text(
+                            '${_tableOrders.length} active KOTs 📋',
+                            style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: Color(0xFFB45309)),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ],
