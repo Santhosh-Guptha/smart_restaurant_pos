@@ -1,43 +1,53 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // 1. Sanitized public store profile: strictly public fields (no bank/aadhaar/pan)
+    // 1. Sanitized public store profile: strictly public read-only
     match /public_stores/{orgId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // 2. App versions for client update checks: read-only
+    match /app_versions/{versionId} {
+      allow read: if true;
+      allow write: if false;
     }
     
-    // 2. Menu items / products catalog: readable by public diners, writable by staff
-    match /products/{productId} {
-      allow read, write: if true;
-    }
-    
-    // 3. Dine-in customer orders: diners can place orders, view order status for their table
-    match /orders/{orderId} {
-      allow read, write: if true;
-    }
-    
-    // 4. Restaurant table statuses (for table occupancy & active session)
-    match /restaurant_tables/{docId} {
-      allow read, write: if true;
-    }
-    
-    // 5. Kitchen display KOTs
-    match /kitchen_kots/{docId} {
-      allow read, write: if true;
-    }
-    
-    // 6. Organization data & all subcollections (dishes, tables, staff, outlets, config)
+    // 3. SaaS Tenant Metadata (Organizations, Licenses, Features, Users): Read-only for client
     match /organizations/{orgId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow write: if false;
       
       match /{allChildren=**} {
-        allow read, write: if true;
+        allow read: if true;
+        allow write: if false;
       }
     }
+
+    match /licenses/{licenseId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    match /features/{orgId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    match /users/{userId} {
+      allow read: if true;
+      allow write: if false;
+    }
     
-    // Default fallback
+    // 4. System config (SMTP, Razorpay secrets): Deny all direct client access
+    match /system_config/{configId} {
+      allow read, write: if false;
+    }
+
+    // 5. Deny all other operational and arbitrary collections (orders, tables, etc.)
     match /{document=**} {
-      allow read, write: if true;
+      allow read, write: if false;
     }
   }
 }
+

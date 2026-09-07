@@ -44,22 +44,13 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
   Timer? _webhookPollTimer;
   String _getEffectiveOrgId() {
     final saasSession = ref.read(saasSessionProvider);
-    final userOrg = saasSession.currentUser?.organizationId;
-    if (userOrg != null && userOrg.isNotEmpty && userOrg != 'ORG_DEFAULT' && userOrg != 'default') {
-      return userOrg;
-    }
-    final currentOrg = saasSession.currentOrganization?.id;
-    if (currentOrg != null && currentOrg.isNotEmpty && currentOrg != 'ORG_DEFAULT' && currentOrg != 'default') {
-      return currentOrg;
-    }
-    try {
-      if (Hive.isBoxOpen('configBox')) {
-        final saved = Hive.box('configBox').get('current_org_id') ?? Hive.box('configBox').get('default_org_id');
-        if (saved != null && saved.toString().isNotEmpty) return saved.toString();
-      }
-    } catch (_) {}
-    return 'ORG264646';
+    return resolveOutletId(
+      userOrgId: saasSession.currentUser?.organizationId,
+      sessionOrgId: saasSession.currentOrganization?.id,
+      hiveBox: Hive.isBoxOpen('configBox') ? Hive.box('configBox') : null,
+    );
   }
+
 
   @override
   void initState() {
@@ -94,14 +85,16 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
           debugPrint('Error parsing webhook order: $e');
         }
       }
-      _mergeOrders(incoming, orgId);
-      if (mounted) {
-        setState(() {
-          _updateTableStateFromOrders();
-        });
+      if (incoming.isNotEmpty) {
+        _mergeOrders(incoming, orgId);
+        if (mounted) {
+          setState(() {
+            _updateTableStateFromOrders();
+          });
+        }
+        final box = Hive.box('configBox');
+        await box.put('kot_orders_$orgId', parsedOrders);
       }
-      final box = Hive.box('configBox');
-      await box.put('kot_orders_$orgId', parsedOrders);
     } catch (e) {
       debugPrint('Error polling webhook orders: $e');
     }
@@ -370,7 +363,9 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
       final activeOrdersForTable = _kotOrders.where((o) {
         if (o.id.toUpperCase().contains('TEST') || o.kotNumber.toUpperCase().contains('TEST')) return false;
         final matches = _matchesTable(o, table);
-        final isActive = o.status != KotStatus.cancelled && o.effectiveKitchenStatus != 'SERVED';
+        final isActive = o.status != KotStatus.cancelled &&
+            o.status != KotStatus.paid &&
+            (o.paymentStatus ?? '').toUpperCase() != 'PAID';
         return matches && isActive;
       }).toList();
 
@@ -913,26 +908,6 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
     );
   }
 
-  int _statusRank(KotStatus status) {
-    switch (status) {
-      case KotStatus.pending:
-        return 0;
-      case KotStatus.accepted:
-      case KotStatus.preparing:
-        return 1;
-      case KotStatus.ready:
-        return 2;
-      case KotStatus.served:
-        return 3;
-      case KotStatus.paymentPending:
-      case KotStatus.completed:
-        return 4;
-      case KotStatus.paid:
-        return 5;
-      case KotStatus.cancelled:
-        return -1;
-    }
-  }
 
   KotStatus _parseKotStatus(String raw) {
     final clean = raw.trim();
@@ -987,13 +962,17 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
 
     final Map<String, KotOrder> map = {};
     for (final o in _kotOrders) {
-      if (o.status != KotStatus.cancelled && o.effectiveKitchenStatus != 'SERVED') {
+      if (o.status != KotStatus.cancelled &&
+          o.status != KotStatus.paid &&
+          (o.paymentStatus ?? '').toUpperCase() != 'PAID') {
         map[canonicalKey(o)] = o;
       }
     }
     for (final r in remoteOrders) {
       if (r.id.toUpperCase().contains('TEST') || r.kotNumber.toUpperCase().contains('TEST')) continue;
-      if (r.status != KotStatus.cancelled && r.effectiveKitchenStatus != 'SERVED') {
+      if (r.status != KotStatus.cancelled &&
+          r.status != KotStatus.paid &&
+          (r.paymentStatus ?? '').toUpperCase() != 'PAID') {
         final key = canonicalKey(r);
         final existing = map[key];
         if (existing != null) {
@@ -1338,7 +1317,8 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
     final saasSession = ref.watch(saasSessionProvider);
     final user = saasSession.currentUser;
     final org = saasSession.currentOrganization;
-    final orgId = user?.organizationId ?? org?.id ?? 'ORG_DEFAULT';
+    final orgId = _getEffectiveOrgId();
+
     final shopName = org?.name ?? org?.appName ?? 'My Restaurant';
     final shopPhone = user?.phone ?? '';
     final shopAddress = org?.address ?? '';
@@ -2196,11 +2176,7 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
                     if (idx != -1) {
                       _tables[idx] = _tables[idx].copyWith(
                         status: TableStatus.vacant,
-                        reservedGuestName: null,
-                        reservedGuestPhone: null,
-                        reservedTime: null,
-                        reservedPartySize: null,
-                        reservationNotes: null,
+                        clearReservation: true,
                       );
                     }
                   });

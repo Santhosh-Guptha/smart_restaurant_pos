@@ -26,8 +26,8 @@ class SmtpConfig {
       host: map['host'] ?? 'smtp.gmail.com',
       port: (map['port'] as num?)?.toInt() ?? 587,
       isSsl: map['isSsl'] == true,
-      username: map['username'] ?? 'santhoshbukka5@gmail.com',
-      password: map['password'] ?? 'nqkqhuovlhivtdan',
+      username: map['username'] ?? '',
+      password: map['password'] ?? '',
       fromName: map['fromName'] ?? 'Smart POS Retail',
     );
   }
@@ -74,13 +74,13 @@ class SmtpEmailService {
       if (config.isConfigured) return config;
     }
 
-    // 3. Default configured credentials
+    // 3. Default empty credentials (must be configured by admin)
     return SmtpConfig(
       host: 'smtp.gmail.com',
       port: 587,
       isSsl: false,
-      username: 'santhoshbukka5@gmail.com',
-      password: 'nqkqhuovlhivtdan',
+      username: '',
+      password: '',
       fromName: 'Smart POS Retail',
     );
   }

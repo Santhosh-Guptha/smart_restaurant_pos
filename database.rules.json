@@ -1,12 +1,13 @@
 {
   "rules": {
-    ".read": true,
-    ".write": true,
-    "device_trials": {
-      "$deviceId": {
+    ".read": false,
+    ".write": false,
+    "live": {
+      "$outletId": {
         ".read": true,
-        ".write": true
+        ".write": false
       }
     }
   }
 }
+

@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:http/http.dart' as http;
+import '../../core/constants.dart';
 import '../../core/license_guard.dart';
 import '../../core/restaurant_models.dart';
 import '../../providers/daily_token_provider.dart';
@@ -52,25 +53,17 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
   final TextEditingController _customTipCtrl = TextEditingController();
 
   Timer? _pollTimer;
+  bool _isSending = false;
 
   String _getEffectiveOrgId() {
     final saasSession = ref.read(saasSessionProvider);
-    final userOrg = saasSession.currentUser?.organizationId;
-    if (userOrg != null && userOrg.isNotEmpty && userOrg != 'ORG_DEFAULT' && userOrg != 'default') {
-      return userOrg;
-    }
-    final currentOrg = saasSession.currentOrganization?.id;
-    if (currentOrg != null && currentOrg.isNotEmpty && currentOrg != 'ORG_DEFAULT' && currentOrg != 'default') {
-      return currentOrg;
-    }
-    try {
-      if (Hive.isBoxOpen('configBox')) {
-        final saved = Hive.box('configBox').get('current_org_id') ?? Hive.box('configBox').get('default_org_id');
-        if (saved != null && saved.toString().isNotEmpty) return saved.toString();
-      }
-    } catch (_) {}
-    return 'ORG264646';
+    return resolveOutletId(
+      userOrgId: saasSession.currentUser?.organizationId,
+      sessionOrgId: saasSession.currentOrganization?.id,
+      hiveBox: Hive.isBoxOpen('configBox') ? Hive.box('configBox') : null,
+    );
   }
+
 
   double get _storeGstRate {
     try {
@@ -247,7 +240,10 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                 o.tableName.toLowerCase() == widget.table.name.toLowerCase() ||
                 o.tableName.toLowerCase() == 'table ${widget.table.tableNumber.toLowerCase()}'.trim();
 
-            if (matches && o.status != KotStatus.cancelled && o.effectiveKitchenStatus != 'SERVED') {
+            if (matches &&
+                o.status != KotStatus.cancelled &&
+                o.status != KotStatus.paid &&
+                (o.paymentStatus ?? '').toUpperCase() != 'PAID') {
               matched.add(o);
             }
           }
@@ -263,7 +259,9 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
         if (id.isEmpty || id.toUpperCase().contains('TEST')) continue;
         if (!matched.any((ex) => ex.id == id || ex.kotNumber == id)) {
           final o = KotOrder.fromMap(m, id);
-          if (o.status != KotStatus.cancelled && o.effectiveKitchenStatus != 'SERVED') {
+          if (o.status != KotStatus.cancelled &&
+              o.status != KotStatus.paid &&
+              (o.paymentStatus ?? '').toUpperCase() != 'PAID') {
             matched.add(o);
           }
         }
@@ -330,8 +328,10 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
 
   // ── Dispatch Order directly to Kitchen (KOT) ──────────────────────────
   Future<void> _sendKotToKitchen() async {
-    if (_tray.isEmpty) return;
+    if (_isSending || _tray.isEmpty) return;
     if (!LicenseGuard.checkAndShowLockout(context, ref, actionName: 'send KOT to kitchen')) return;
+
+    setState(() => _isSending = true);
 
     final orgId = _getEffectiveOrgId();
     final activeStaff = ref.read(restaurantAuthProvider).activeStaff;
@@ -394,7 +394,9 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
       if (Hive.isBoxOpen('configBox')) {
         final box = Hive.box('configBox');
         final rawOrders = box.get('kot_orders_$orgId') as List? ?? [];
-        final List<Map<String, dynamic>> updatedList = List.from(rawOrders);
+        final List<Map<String, dynamic>> updatedList = rawOrders
+            .map((e) => Map<String, dynamic>.from(e as Map))
+            .toList();
         updatedList.insert(0, orderMap);
         await box.put('kot_orders_$orgId', updatedList);
 
@@ -420,26 +422,34 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
       }
 
       // 3. Dispatch to Apps Script Webhook
-      AppsScriptBackendService.saveBill(
-        outletId: orgId,
-        billData: {
-          'id': billNumber,
-          'bill_id': billNumber,
-          'kotNumber': token,
-          'table_name': tableName,
-          'table': tableName,
-          'customer_name': guestName,
-          'customer_phone': guestPhone,
-          'order_source': 'WAITER_APP',
-          'items': itemsList,
-          'subtotal': subtotal,
-          'service_charge': serviceCharge,
-          'gst': gst,
-          'total_amount': totalAmount,
-          'payment_status': 'PENDING',
-          'timestamp': DateTime.now().toIso8601String(),
-        },
-      );
+      bool remoteSuccess = false;
+      try {
+        remoteSuccess = await AppsScriptBackendService.saveBill(
+          outletId: orgId,
+          billData: {
+            'id': billNumber,
+            'bill_id': billNumber,
+            'kotNumber': token,
+            'table_name': tableName,
+            'table': tableName,
+            'tableNumber': tNum,
+            'table_number': tNum,
+            'customer_name': guestName,
+            'customer_phone': guestPhone,
+            'order_source': 'WAITER_APP',
+            'items': itemsList,
+            'subtotal': subtotal,
+            'service_charge': serviceCharge,
+            'gst': gst,
+            'total_amount': totalAmount,
+            'payment_status': 'PENDING',
+            'status': 'PENDING',
+            'timestamp': DateTime.now().toIso8601String(),
+          },
+        );
+      } catch (asErr) {
+        debugPrint('AppsScript saveBill error: $asErr');
+      }
 
       setState(() {
         _tray.clear();
@@ -451,18 +461,30 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
           SnackBar(
             content: Row(
               children: [
-                const Icon(Icons.check_circle_rounded, color: Colors.white, size: 20),
+                Icon(
+                  remoteSuccess ? Icons.check_circle_rounded : Icons.offline_pin_rounded,
+                  color: Colors.white,
+                  size: 20,
+                ),
                 const SizedBox(width: 10),
-                Text('KOT $token sent to kitchen! 👨‍🍳 ($tableName)'),
+                Expanded(
+                  child: Text(
+                    remoteSuccess
+                        ? 'KOT $token sent to kitchen! 👨‍🍳 ($tableName)'
+                        : 'KOT $token saved locally (offline). Kitchen will sync shortly.',
+                  ),
+                ),
               ],
             ),
-            backgroundColor: const Color(0xFF059669),
+            backgroundColor: remoteSuccess ? const Color(0xFF059669) : const Color(0xFFD97706),
             duration: const Duration(seconds: 3),
           ),
         );
       }
     } catch (e) {
       debugPrint('Error sending KOT: $e');
+    } finally {
+      if (mounted) setState(() => _isSending = false);
     }
   }
 
@@ -472,8 +494,10 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
     double tableSubtotal = 0.0;
     final List<KotItem> allItems = [];
     for (final ord in _tableOrders) {
-      tableSubtotal += ord.totalAmount > 0 ? (ord.totalAmount / (1 + (_storeGstRate / 100))) : 0.0;
       allItems.addAll(ord.items);
+      for (final item in ord.items) {
+        tableSubtotal += item.price * item.qty;
+      }
     }
     if (tableSubtotal <= 0 && _tableOrders.isNotEmpty) {
       tableSubtotal = _tableOrders.fold<double>(0.0, (prev, o) => prev + o.totalAmount);
@@ -780,19 +804,49 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
       }
 
       // 3. Sync Settlement to Webhook
-      AppsScriptBackendService.saveBill(
-        outletId: orgId,
-        billData: {
-          'table_name': tableName,
-          'table': tableName,
-          'payment_mode': paymentMode,
-          'payment_status': 'PAID',
-          'status': 'PAID',
-          'total_amount': totalPaid,
-          'tip_amount': tip,
-          'timestamp': DateTime.now().toIso8601String(),
-        },
-      );
+      final primaryBillId = _tableOrders.isNotEmpty
+          ? _tableOrders.first.id
+          : 'BILL-$tNum-${DateTime.now().millisecondsSinceEpoch}';
+
+      for (final ord in _tableOrders) {
+        AppsScriptBackendService.saveBill(
+          outletId: orgId,
+          billData: {
+            'id': ord.id,
+            'bill_id': ord.id,
+            'kotNumber': ord.kotNumber,
+            'table_name': tableName,
+            'table': tableName,
+            'tableNumber': tNum,
+            'table_number': tNum,
+            'payment_mode': paymentMode,
+            'payment_status': 'PAID',
+            'status': 'PAID',
+            'total_amount': ord.totalAmount,
+            'tip_amount': tip,
+            'timestamp': DateTime.now().toIso8601String(),
+          },
+        );
+      }
+      if (_tableOrders.isEmpty) {
+        AppsScriptBackendService.saveBill(
+          outletId: orgId,
+          billData: {
+            'id': primaryBillId,
+            'bill_id': primaryBillId,
+            'table_name': tableName,
+            'table': tableName,
+            'tableNumber': tNum,
+            'table_number': tNum,
+            'payment_mode': paymentMode,
+            'payment_status': 'PAID',
+            'status': 'PAID',
+            'total_amount': totalPaid,
+            'tip_amount': tip,
+            'timestamp': DateTime.now().toIso8601String(),
+          },
+        );
+      }
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1238,15 +1292,21 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                     ),
                     const Spacer(),
                     ElevatedButton.icon(
-                      icon: const Icon(Icons.outdoor_grill_rounded, size: 18),
-                      label: const Text('Send KOT to Kitchen 🍳'),
+                      icon: _isSending
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                            )
+                          : const Icon(Icons.outdoor_grill_rounded, size: 18),
+                      label: Text(_isSending ? 'Sending to Kitchen...' : 'Send KOT to Kitchen 🍳'),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF2563EB),
                         foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                       ),
-                      onPressed: _sendKotToKitchen,
+                      onPressed: _isSending ? null : _sendKotToKitchen,
                     ),
                   ],
                 ),

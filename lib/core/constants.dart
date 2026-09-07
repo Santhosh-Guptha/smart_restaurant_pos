@@ -9,8 +9,7 @@ final GlobalKey<ScaffoldMessengerState> scaffoldMessengerKey =
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
-const String kDefaultMerchantVpa =
-    "santhoshbukka52@ybl"; // Preconfigured for the store owner account!
+const String kDefaultMerchantVpa = ""; // Configured per-outlet by merchant in Store Settings
 
 const String kGoogleClientId =
     '486476143616-1e1pmj004p87b0h2pk09b00ejeepsfi8.apps.googleusercontent.com';
@@ -68,3 +67,23 @@ String formatQty(dynamic qty) {
   // Up to 3 decimal places, remove trailing zeros
   return val.toStringAsFixed(3).replaceAll(RegExp(r'\.?0+$'), '');
 }
+
+/// Resolves current effective outlet/org ID safely without guessing or hardcoding foreign tenants.
+String resolveOutletId({String? userOrgId, String? sessionOrgId, dynamic hiveBox}) {
+  if (userOrgId != null && userOrgId.isNotEmpty && userOrgId != 'ORG_DEFAULT' && userOrgId != 'default' && userOrgId != 'ORG264646') {
+    return userOrgId;
+  }
+  if (sessionOrgId != null && sessionOrgId.isNotEmpty && sessionOrgId != 'ORG_DEFAULT' && sessionOrgId != 'default' && sessionOrgId != 'ORG264646') {
+    return sessionOrgId;
+  }
+  if (hiveBox != null) {
+    try {
+      final saved = hiveBox.get('current_org_id') ?? hiveBox.get('default_org_id');
+      if (saved != null && saved.toString().isNotEmpty && saved.toString() != 'ORG_DEFAULT' && saved.toString() != 'ORG264646') {
+        return saved.toString();
+      }
+    } catch (_) {}
+  }
+  return '';
+}
+

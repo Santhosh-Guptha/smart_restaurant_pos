@@ -6,6 +6,7 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../core/classic_theme.dart';
+import '../../core/constants.dart';
 import '../../providers/saas_session_provider.dart';
 import '../../services/apps_script_backend_service.dart';
 import '../../services/thermal_printer_service.dart';
@@ -44,22 +45,13 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
 
   String _getEffectiveOrgId() {
     final saasSession = ref.read(saasSessionProvider);
-    final userOrg = saasSession.currentUser?.organizationId;
-    if (userOrg != null && userOrg.isNotEmpty && userOrg != 'ORG_DEFAULT' && userOrg != 'default') {
-      return userOrg;
-    }
-    final currentOrg = saasSession.currentOrganization?.id;
-    if (currentOrg != null && currentOrg.isNotEmpty && currentOrg != 'ORG_DEFAULT' && currentOrg != 'default') {
-      return currentOrg;
-    }
-    try {
-      if (Hive.isBoxOpen('configBox')) {
-        final saved = Hive.box('configBox').get('current_org_id') ?? Hive.box('configBox').get('default_org_id');
-        if (saved != null && saved.toString().isNotEmpty) return saved.toString();
-      }
-    } catch (_) {}
-    return 'ORG264646';
+    return resolveOutletId(
+      userOrgId: saasSession.currentUser?.organizationId,
+      sessionOrgId: saasSession.currentOrganization?.id,
+      hiveBox: Hive.isBoxOpen('configBox') ? Hive.box('configBox') : null,
+    );
   }
+
 
   Future<void> _fetchLatestWebhookOrders() async {
     try {
@@ -380,9 +372,8 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
 
   @override
   Widget build(BuildContext context) {
-    final saasSession = ref.read(saasSessionProvider);
-    final org = saasSession.currentOrganization;
-    final orgId = saasSession.currentUser?.organizationId ?? org?.id ?? 'ORG_DEFAULT';
+    final orgId = _getEffectiveOrgId();
+
 
     return Scaffold(
       backgroundColor: context.canvasColor,

@@ -12,7 +12,6 @@ import '../../providers/restaurant_auth_provider.dart';
 import '../../providers/saas_session_provider.dart';
 import '../../services/kitchen_ticket_formatter.dart';
 import '../../services/apps_script_backend_service.dart';
-import '../auth/staff_pin_login_screen.dart';
 
 class KitchenDisplayScreen extends ConsumerStatefulWidget {
   const KitchenDisplayScreen({super.key});
@@ -43,22 +42,13 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
 
   String _getEffectiveOrgId() {
     final saasSession = ref.read(saasSessionProvider);
-    final userOrg = saasSession.currentUser?.organizationId;
-    if (userOrg != null && userOrg.isNotEmpty && userOrg != 'ORG_DEFAULT' && userOrg != 'default') {
-      return userOrg;
-    }
-    final currentOrg = saasSession.currentOrganization?.id;
-    if (currentOrg != null && currentOrg.isNotEmpty && currentOrg != 'ORG_DEFAULT' && currentOrg != 'default') {
-      return currentOrg;
-    }
-    try {
-      if (Hive.isBoxOpen('configBox')) {
-        final saved = Hive.box('configBox').get('current_org_id') ?? Hive.box('configBox').get('default_org_id');
-        if (saved != null && saved.toString().isNotEmpty) return saved.toString();
-      }
-    } catch (_) {}
-    return 'ORG264646';
+    return resolveOutletId(
+      userOrgId: saasSession.currentUser?.organizationId,
+      sessionOrgId: saasSession.currentOrganization?.id,
+      hiveBox: Hive.isBoxOpen('configBox') ? Hive.box('configBox') : null,
+    );
   }
+
 
   @override
   void initState() {

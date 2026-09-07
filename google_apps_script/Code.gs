@@ -50,23 +50,18 @@ function doPost(e) {
   try {
     const json = JSON.parse(e.postData.contents);
     
-    // Security verification: allow customer SAVE_BILL, SERVICE_REQUEST, CALL_WAITER without exposing master secret
+    // Security verification: allow customer non-settled SAVE_BILL, SERVICE_REQUEST, CALL_WAITER without exposing master secret
     var isPublicAction = (
-      json.action === "SAVE_BILL" || 
-      json.action === "UPDATE_ORDER_STATUS" || 
-      json.action === "UPDATE_STATUS" || 
+      (json.action === "SAVE_BILL" && !(json.bill && isStatusSettled(json.bill.payment_status || json.bill.status))) || 
       json.action === "SERVICE_REQUEST" || 
       json.action === "CALL_WAITER" || 
       json.action === "DISMISS_SERVICE_REQUEST" || 
-      json.action === "RESOLVE_WAITER_CALL" || 
-      json.action === "SEND_OTP_EMAIL" || 
-      json.action === "CLEAR_TABLE" || 
-      json.action === "RESET_TABLE" ||
-      json.action === "PURGE_TEST_ORDERS"
+      json.action === "RESOLVE_WAITER_CALL"
     );
     if (!isPublicAction && json.secret !== SECRET_TOKEN) {
       return responseJson({ success: false, error: "Unauthorized access: Invalid secret token." });
     }
+
 
     const action = json.action;
 
@@ -155,11 +150,12 @@ function cleanOrderId(id) {
 }
 
 function cleanTableId(t) {
-  if (!t) return "1";
+  if (!t) return "";
   var s = String(t).toLowerCase().trim();
   s = s.replace(/^table[\s_-]*/, "").replace(/[^a-z0-9]/g, "");
-  return s || "1";
+  return s;
 }
+
 
 function isStatusSettled(status) {
   var s = String(status || "").toUpperCase().trim();
@@ -293,16 +289,12 @@ function doGet(e) {
       var nowTime = new Date().getTime();
 
       var props = PropertiesService.getScriptProperties();
-      var tableSettledTime = 0;
       var settledIds = [];
       try {
-        if (cReqTable) {
-          var tableSettledKey = "table_settled_" + orgId.trim() + "_" + cReqTable;
-          tableSettledTime = parseInt(props.getProperty(tableSettledKey) || "0", 10);
-        }
         var rawSettled = props.getProperty("settled_orders_" + orgId.trim());
         if (rawSettled) settledIds = JSON.parse(rawSettled);
       } catch (e) {}
+
 
       // 1. First retrieve recent memory-cached orders from ScriptProperties
       try {
@@ -326,10 +318,8 @@ function doGet(e) {
                 continue;
               }
               var coTime = co.timestamp ? new Date(co.timestamp).getTime() : 0;
-              if (tableSettledTime > 0 && coTime > 0 && coTime <= tableSettledTime) {
-                continue; // Placed before table settlement -> past session!
-              }
               if (coTime > 0 && (nowTime - coTime) > 4 * 60 * 60 * 1000) {
+
                 continue; // Older than 4 hours -> stale!
               }
               ordersMap[cNormId] = co;
@@ -396,10 +386,8 @@ function doGet(e) {
 
                 var rawDate = dateIdx !== -1 ? String(row[dateIdx] || "").trim() : "";
                 var rowTime = rawDate ? new Date(rawDate).getTime() : 0;
-                if (tableSettledTime > 0 && rowTime > 0 && rowTime <= tableSettledTime) {
-                  continue; // Pre-settlement order -> ignore!
-                }
                 if (rowTime > 0 && (nowTime - rowTime) > 4 * 60 * 60 * 1000) {
+
                   continue; // Stale abandoned order -> ignore!
                 }
 
@@ -593,66 +581,319 @@ function handleOnboardOrganization(data) {
 // 3. SAVE / UPDATE BILL IN OUTLET SPREADSHEET (Zero-Cost Order Signaling)
 // ─────────────────────────────────────────────────────────────────────────────
 function handleSaveBill(data) {
-  let spreadsheetId = data.spreadsheet_id;
-  const orgId = data.org_id || data.org || data.outlet_id;
-
-  // Resolve spreadsheetId from tenant registry if omitted by client
-  if ((!spreadsheetId || spreadsheetId.indexOf("sheet_") === 0) && orgId) {
-    spreadsheetId = getSheetIdForOrg(orgId);
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(20000);
+  } catch (eLock) {
+    return responseJson({ success: false, error: "Server busy, lock acquisition timed out. Please retry." });
   }
 
-  const b = data.data || {};
-  const cust = b.customer || {};
-  const billId = String(b.bill_id || b.id || "");
-  const cleanId = cleanOrderId(billId);
-  const tableName = b.table_name || (b.table_number ? ("Table " + b.table_number) : "Table 1");
-  const cTable = cleanTableId(tableName);
-  const status = String(b.payment_status || b.status || "ORDER_RECEIVED").toUpperCase().trim();
-  const isSettled = isStatusSettled(status);
-  const txnId = b.transaction_id || b.upi_reference || "";
-  const totalAmount = parseFloat(String(b.total_amount || b.subtotal || b.subtotal_amount || 0).replace(/[^0-9.]/g, "")) || 0;
-  const timeStr = b.timestamp || new Date().toISOString();
-  const rawItems = b.items || [];
+  try {
+    let spreadsheetId = data.spreadsheet_id || data.spreadsheetId;
+    const orgId = String(data.org_id || data.orgId || data.org || data.outlet_id || data.outletId || "").trim();
 
-  if (orgId) {
+    // Resolve spreadsheetId from tenant registry if omitted by client
+    if ((!spreadsheetId || spreadsheetId.indexOf("sheet_") === 0) && orgId) {
+      spreadsheetId = getSheetIdForOrg(orgId);
+    }
+
+    const b = data.data || data.bill || {};
+    const cust = b.customer || {};
+    const billId = String(b.bill_id || b.billId || b.id || "");
+    const cleanId = cleanOrderId(billId);
+
+    // Reject missing table name instead of defaulting to "Table 1"
+    const tableNameRaw = b.table_name || b.tableName || (b.table_number ? ("Table " + b.table_number) : (b.tableNumber ? ("Table " + b.tableNumber) : (b.table || "")));
+    if (!tableNameRaw || String(tableNameRaw).trim() === "") {
+      return responseJson({ success: false, error: "Invalid order: missing table name or table number." });
+    }
+    const tableName = String(tableNameRaw).trim();
+    const cTable = cleanTableId(tableName);
+
+    const status = String(b.payment_status || b.paymentStatus || b.status || "ORDER_RECEIVED").toUpperCase().trim();
+    const isSettled = isStatusSettled(status);
+    const txnId = b.transaction_id || b.transactionId || b.upi_reference || b.upiReference || "";
+
+    // Require total_amount (or totalAmount); DO NOT fall back to subtotal!
+    const rawTotal = b.total_amount !== undefined ? b.total_amount : (b.totalAmount !== undefined ? b.totalAmount : null);
+    if (rawTotal === null) {
+      return responseJson({ success: false, error: "Invalid order: missing total_amount." });
+    }
+    const totalAmount = parseFloat(String(rawTotal).replace(/[^0-9.]/g, "")) || 0;
+    const timeStr = b.timestamp || b.created_at || b.createdAt || new Date().toISOString();
+    const rawItems = b.items || [];
+    const paymentMode = String(b.payment_mode || b.paymentMode || (isSettled ? "PAID" : "PENDING")).trim();
+    const customerName = String(b.customer_name || b.customerName || cust.name || (tableName.indexOf("Table ") === 0 ? "Dine-In Guest" : tableName)).trim();
+    const customerPhone = String(b.customer_phone || b.customerPhone || cust.phone || "").trim();
+    const subtotal = parseFloat(String(b.subtotal || b.subtotal_amount || b.subtotalAmount || totalAmount).replace(/[^0-9.]/g, "")) || totalAmount;
+    const specialInstructions = String(b.special_instructions || b.specialInstructions || b.notes || "").trim();
+
+    if (orgId) {
+      try {
+        var props = PropertiesService.getScriptProperties();
+
+        if (isSettled) {
+          // === PAYMENT SETTLED / CONFIRMED ===
+          // 1. Record individual settled order ID (NO table-wide cutoff)
+          if (cleanId) {
+            var settledKey = "settled_orders_" + orgId.trim();
+            var rawSettled = props.getProperty(settledKey);
+            var settledList = [];
+            if (rawSettled) {
+              try { settledList = JSON.parse(rawSettled); } catch(e) {}
+            }
+            if (settledList.indexOf(cleanId) === -1) {
+              settledList.push(cleanId);
+              if (settledList.length > 300) settledList = settledList.slice(-300);
+              props.setProperty(settledKey, JSON.stringify(settledList));
+            }
+          }
+
+          // 2. Purge ONLY this specific settled order from recent_orders_ memory cache
+          var cacheKey = "recent_orders_" + orgId.trim();
+          var rawCached = props.getProperty(cacheKey);
+          if (rawCached) {
+            var cachedOrders = [];
+            try { cachedOrders = JSON.parse(rawCached); } catch(e) {}
+            cachedOrders = cachedOrders.filter(function(co) {
+              var coCleanId = cleanOrderId(co.id || co.orderId);
+              if (coCleanId === cleanId) return false;
+              return true;
+            });
+            props.setProperty(cacheKey, JSON.stringify(cachedOrders));
+          }
+
+          // 3. Clear pending waiter alerts for this table if applicable
+          var waiterKey = "waiter_alerts_" + orgId.trim();
+          var rawWaiters = props.getProperty(waiterKey);
+          if (rawWaiters) {
+            try {
+              var wList = JSON.parse(rawWaiters);
+              wList = wList.filter(function(w) { return cleanTableId(w.table || w.tableName) !== cTable; });
+              props.setProperty(waiterKey, JSON.stringify(wList));
+            } catch(e) {}
+          }
+        } else {
+          // === ORDER IN PROGRESS ===
+          if (cleanId.indexOf("TEST") !== -1 || (customerName && customerName.toUpperCase().indexOf("TEST") !== -1)) {
+            return responseJson({ success: true, message: "Test order ignored." });
+          }
+
+          var cacheKey = "recent_orders_" + orgId.trim();
+          var rawCached = props.getProperty(cacheKey);
+          var cachedOrders = [];
+          if (rawCached) {
+            try { cachedOrders = JSON.parse(rawCached); } catch (e) { cachedOrders = []; }
+          }
+
+          var foundIdx = -1;
+          for (var ci = 0; ci < cachedOrders.length; ci++) {
+            var cNorm = cleanOrderId(cachedOrders[ci].id || cachedOrders[ci].orderId);
+            if (cNorm === cleanId) {
+              foundIdx = ci;
+              break;
+            }
+          }
+
+          if (foundIdx !== -1) {
+            var prev = cachedOrders[foundIdx];
+            var prevRank = getStatusRank(prev.kitchenStatus || prev.status);
+            var newRank = getStatusRank(b.kitchenStatus || b.status || status);
+            var effectiveKitchenStatus = newRank >= prevRank ? (b.kitchenStatus || b.status || status) : (prev.kitchenStatus || prev.status);
+
+            var mergedItems = (rawItems && rawItems.length > 0) ? rawItems : (prev.items || []);
+            var mergedItemsSummary = (typeof rawItems === "string" && rawItems) ? rawItems : 
+              ((rawItems && rawItems.length > 0) ? JSON.stringify(rawItems) : (prev.itemsSummary || ""));
+            var mergedCustName = customerName || prev.customerName || "Dine-In Guest";
+            if (mergedCustName && (mergedCustName.indexOf("Table ") === 0 || mergedCustName.indexOf(" x") !== -1 || mergedCustName.indexOf("{") !== -1 || mergedCustName.indexOf("[") !== -1 || mergedCustName.indexOf(",") !== -1)) {
+              mergedCustName = "Dine-In Guest";
+            }
+            var mergedCustPhone = customerPhone || prev.customerPhone || "";
+            var mergedTotal = totalAmount > 0 ? totalAmount : (prev.totalAmount || prev.total || 0);
+            var mergedTime = prev.timestamp || timeStr;
+
+            var orderObj = {
+              id: prev.id || billId,
+              orderId: prev.orderId || billId,
+              kotNumber: prev.kotNumber || (cleanId ? ("KOT-" + cleanId) : billId),
+              customerName: mergedCustName,
+              customerPhone: mergedCustPhone,
+              totalAmount: mergedTotal,
+              total: mergedTotal,
+              items: mergedItems,
+              itemsSummary: mergedItemsSummary,
+              status: status,
+              kitchenStatus: effectiveKitchenStatus,
+              paymentMode: paymentMode || prev.paymentMode || "DINE_IN",
+              table: tableName || prev.table,
+              tableName: tableName || prev.tableName,
+              transactionId: txnId || prev.transactionId,
+              specialInstructions: specialInstructions || prev.specialInstructions || "",
+              timestamp: mergedTime
+            };
+
+            cachedOrders[foundIdx] = orderObj;
+          } else {
+            var safeCustName = customerName || "Dine-In Guest";
+            if (safeCustName && (safeCustName.indexOf("Table ") === 0 || safeCustName.indexOf(" x") !== -1 || safeCustName.indexOf("{") !== -1 || safeCustName.indexOf("[") !== -1 || safeCustName.indexOf(",") !== -1)) {
+              safeCustName = "Dine-In Guest";
+            }
+            var orderObj = {
+              id: billId,
+              orderId: billId,
+              kotNumber: cleanId ? ("KOT-" + cleanId) : billId,
+              customerName: safeCustName,
+              customerPhone: customerPhone,
+              totalAmount: totalAmount,
+              total: totalAmount,
+              items: rawItems,
+              itemsSummary: typeof rawItems === "string" ? rawItems : JSON.stringify(rawItems),
+              status: status,
+              kitchenStatus: b.kitchenStatus || b.status || status,
+              paymentMode: paymentMode || "DINE_IN",
+              table: tableName,
+              tableName: tableName,
+              transactionId: txnId,
+              specialInstructions: specialInstructions,
+              timestamp: timeStr
+            };
+            cachedOrders.push(orderObj);
+          }
+          if (cachedOrders.length > 50) cachedOrders = cachedOrders.slice(-50);
+          props.setProperty(cacheKey, JSON.stringify(cachedOrders));
+        }
+      } catch (eCache) {}
+    }
+
+    if (!spreadsheetId || spreadsheetId.indexOf("sheet_") === 0) {
+      return responseJson({
+        success: true,
+        bill_id: billId,
+        status: status,
+        cached: true,
+        message: isSettled ? "Order settled and removed from active cache." : "Order cached in cloud memory."
+      });
+    }
+
+    // Google Sheets persistence
     try {
-      var props = PropertiesService.getScriptProperties();
+      const ss = SpreadsheetApp.openById(spreadsheetId);
+      const sheet = getOrCreateBillsSheet(ss);
+      const lastRow = sheet.getLastRow();
+      let existingRow = -1;
 
-      if (isSettled) {
-        // === PAYMENT SETTLED / CONFIRMED: PURGE CACHE & RECORD SETTLEMENT ===
-        // 1. Record Table Settlement Timestamp (Any orders placed at/before this time belong to past session)
-        props.setProperty("table_settled_" + orgId.trim() + "_" + cTable, String(new Date().getTime()));
+      let idIdx = 0, statusIdx = 9, modeIdx = 4, tableIdx = 10, txnIdx = 11;
+      if (lastRow > 1) {
+        const data = sheet.getDataRange().getValues();
+        var headers = data[0].map(function(h) { return String(h || "").trim().toLowerCase(); });
+        headers.forEach(function(h, idx) {
+          if (h.indexOf("bill") !== -1 || h.indexOf("kot") !== -1 || (h.indexOf("id") !== -1 && h.indexOf("product") === -1 && h.indexOf("cust") === -1)) idIdx = idx;
+          if (h.indexOf("status") !== -1) statusIdx = idx;
+          if (h.indexOf("mode") !== -1 || h.indexOf("payment") !== -1) modeIdx = idx;
+          if (h.indexOf("table") !== -1) tableIdx = idx;
+          if (h.indexOf("txn") !== -1 || h.indexOf("utr") !== -1 || h.indexOf("ref") !== -1) txnIdx = idx;
+        });
 
-        // 2. Add order ID to persistent settled list
-        var settledKey = "settled_orders_" + orgId.trim();
-        var settledList = [];
-        try {
-          var rawSettled = props.getProperty(settledKey);
-          if (rawSettled) settledList = JSON.parse(rawSettled);
-        } catch(e) {}
-        if (cleanId && settledList.indexOf(cleanId) === -1) {
-          settledList.push(cleanId);
-          if (settledList.length > 300) settledList = settledList.slice(-300);
-          props.setProperty(settledKey, JSON.stringify(settledList));
+        // Find matching row by clean ID
+        for (let i = 1; i < data.length; i++) {
+          const rowNormId = cleanOrderId(data[i][idIdx]);
+          if (rowNormId && rowNormId === cleanId) {
+            existingRow = i + 1;
+            break;
+          }
         }
 
-        // 3. Purge settled orders from recent_orders_ memory cache
+        // Only update status for THIS specific bill row if settled
+        if (isSettled && existingRow !== -1) {
+          sheet.getRange(existingRow, statusIdx + 1).setValue("PAID");
+          if (paymentMode) sheet.getRange(existingRow, modeIdx + 1).setValue(paymentMode);
+          if (txnId) sheet.getRange(existingRow, txnIdx + 1).setValue(txnId);
+        }
+
+        // If updating an existing row for status update with no items provided, only update status & txn
+        if (existingRow !== -1 && (b.update_type === "STATUS_UPDATE" || (!rawItems || rawItems.length === 0))) {
+          sheet.getRange(existingRow, statusIdx + 1).setValue(isSettled ? "PAID" : status);
+          if (txnId) sheet.getRange(existingRow, txnIdx + 1).setValue(txnId);
+          return responseJson({
+            success: true,
+            bill_id: billId,
+            status: isSettled ? "PAID" : status,
+            row: existingRow,
+            cleared: isSettled
+          });
+        }
+      }
+
+      const rowData = [
+        billId,
+        timeStr,
+        customerName,
+        customerPhone,
+        paymentMode,
+        subtotal,
+        b.discount || b.discount_amount || 0,
+        totalAmount,
+        typeof rawItems === "string" ? rawItems : JSON.stringify(rawItems),
+        isSettled ? "PAID" : status,
+        tableName,
+        txnId
+      ];
+
+      if (existingRow !== -1) {
+        sheet.getRange(existingRow, 1, 1, rowData.length).setValues([rowData]);
+      } else {
+        sheet.appendRow(rowData);
+      }
+
+      return responseJson({
+        success: true,
+        bill_id: billId,
+        status: isSettled ? "PAID" : status,
+        row: existingRow !== -1 ? existingRow : lastRow + 1,
+        cleared: isSettled
+      });
+    } catch (errSheet) {
+      return responseJson({
+        success: true,
+        bill_id: billId,
+        status: status,
+        warning: errSheet.toString(),
+        message: "Order cached in cloud memory, sheet write failed."
+      });
+    }
+  } finally {
+    try { lock.releaseLock(); } catch(e) {}
+  }
+}
+
+function handleClearTable(data) {
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(20000);
+  } catch (eLock) {
+    return responseJson({ success: false, error: "Server busy, lock acquisition timed out. Please retry." });
+  }
+
+  try {
+    var orgId = String(data.org_id || data.org || data.outlet_id || "").trim();
+    var table = data.table_name || data.table || data.table_number || "";
+    var cTable = cleanTableId(table);
+
+    if (orgId && cTable) {
+      try {
+        var props = PropertiesService.getScriptProperties();
+
         var cacheKey = "recent_orders_" + orgId.trim();
         var rawCached = props.getProperty(cacheKey);
         if (rawCached) {
           var cachedOrders = [];
-          try { cachedOrders = JSON.parse(rawCached); } catch(e) {}
+          try { cachedOrders = JSON.parse(rawCached); } catch (e) { cachedOrders = []; }
           cachedOrders = cachedOrders.filter(function(co) {
-            var coCleanId = cleanOrderId(co.id || co.orderId);
-            var coTable = cleanTableId(co.table || co.tableName);
-            if (coCleanId === cleanId) return false;
-            if (coTable === cTable) return false; // Entire table session settled!
-            return true;
+            return cleanTableId(co.table || co.tableName) !== cTable;
           });
           props.setProperty(cacheKey, JSON.stringify(cachedOrders));
         }
 
-        // 4. Clear pending waiter alerts for this table
         var waiterKey = "waiter_alerts_" + orgId.trim();
         var rawWaiters = props.getProperty(waiterKey);
         if (rawWaiters) {
@@ -662,251 +903,15 @@ function handleSaveBill(data) {
             props.setProperty(waiterKey, JSON.stringify(wList));
           } catch(e) {}
         }
-      } else {
-        // === ORDER IN PROGRESS (ORDER_RECEIVED, PREPARING, READY, SERVED, PAYMENT_PENDING) ===
-        // Filter out test orders!
-        if (cleanId.indexOf("TEST") !== -1 || (cust.name && String(cust.name).toUpperCase().indexOf("TEST") !== -1)) {
-          return responseJson({ success: true, message: "Test order ignored." });
-        }
-
-        var cacheKey = "recent_orders_" + orgId.trim();
-        var rawCached = props.getProperty(cacheKey);
-        var cachedOrders = [];
-        if (rawCached) {
-          try { cachedOrders = JSON.parse(rawCached); } catch (e) { cachedOrders = []; }
-        }
-
-        var foundIdx = -1;
-        for (var ci = 0; ci < cachedOrders.length; ci++) {
-          var cNorm = cleanOrderId(cachedOrders[ci].id || cachedOrders[ci].orderId);
-          if (cNorm === cleanId) {
-            foundIdx = ci;
-            break;
-          }
-        }
-
-        if (foundIdx !== -1) {
-          var prev = cachedOrders[foundIdx];
-          var mergedItems = (rawItems && rawItems.length > 0) ? rawItems : (prev.items || []);
-          var mergedItemsSummary = (typeof rawItems === "string" && rawItems) ? rawItems : 
-            ((rawItems && rawItems.length > 0) ? JSON.stringify(rawItems) : (prev.itemsSummary || ""));
-          var mergedCustName = cust.name || b.customer_name || prev.customerName || "Dine-In Guest";
-          if (mergedCustName && (mergedCustName.indexOf("Table ") === 0 || mergedCustName.indexOf(" x") !== -1 || mergedCustName.indexOf("{") !== -1 || mergedCustName.indexOf("[") !== -1 || mergedCustName.indexOf(",") !== -1)) {
-            mergedCustName = "Dine-In Guest";
-          }
-          var mergedCustPhone = cust.phone || b.customer_phone || prev.customerPhone || "";
-          var mergedTotal = totalAmount > 0 ? totalAmount : (prev.totalAmount || prev.total || 0);
-          var mergedTime = prev.timestamp || timeStr; // PRESERVE ORIGINAL CREATION TIME!
-
-          var orderObj = {
-            id: prev.id || billId,
-            orderId: prev.orderId || billId,
-            kotNumber: prev.kotNumber || (cleanId ? ("KOT-" + cleanId) : billId),
-            customerName: mergedCustName,
-            customerPhone: mergedCustPhone,
-            totalAmount: mergedTotal,
-            total: mergedTotal,
-            items: mergedItems,
-            itemsSummary: mergedItemsSummary,
-            status: status,
-            kitchenStatus: b.kitchenStatus || status,
-            paymentMode: b.payment_mode || prev.paymentMode || "DINE_IN",
-            table: tableName || prev.table,
-            tableName: tableName || prev.tableName,
-            transactionId: txnId || prev.transactionId,
-            timestamp: mergedTime
-          };
-
-          cachedOrders[foundIdx] = orderObj;
-        } else {
-          var safeCustName = cust.name || b.customer_name || "Dine-In Guest";
-          if (safeCustName && (safeCustName.indexOf("Table ") === 0 || safeCustName.indexOf(" x") !== -1 || safeCustName.indexOf("{") !== -1 || safeCustName.indexOf("[") !== -1 || safeCustName.indexOf(",") !== -1)) {
-            safeCustName = "Dine-In Guest";
-          }
-          var orderObj = {
-            id: billId,
-            orderId: billId,
-            kotNumber: cleanId ? ("KOT-" + cleanId) : billId,
-            customerName: safeCustName,
-            customerPhone: cust.phone || b.customer_phone || "",
-            totalAmount: totalAmount,
-            total: totalAmount,
-            items: rawItems,
-            itemsSummary: typeof rawItems === "string" ? rawItems : JSON.stringify(rawItems),
-            status: status,
-            kitchenStatus: b.kitchenStatus || status,
-            paymentMode: b.payment_mode || "DINE_IN",
-            table: tableName,
-            tableName: tableName,
-            transactionId: txnId,
-            timestamp: timeStr
-          };
-          cachedOrders.push(orderObj);
-        }
-        if (cachedOrders.length > 50) cachedOrders = cachedOrders.slice(-50);
-        props.setProperty(cacheKey, JSON.stringify(cachedOrders));
-      }
-    } catch (eCache) {}
-  }
-
-  // If spreadsheetId is missing or placeholder, return cached success
-  if (!spreadsheetId || spreadsheetId.indexOf("sheet_") === 0) {
-    return responseJson({
-      success: true,
-      bill_id: billId,
-      status: status,
-      cached: true,
-      message: isSettled ? "Table session settled and cache purged." : "Order cached in cloud memory."
-    });
-  }
-
-  // Write to Google Sheet
-  try {
-    const ss = SpreadsheetApp.openById(spreadsheetId);
-    const sheet = getOrCreateBillsSheet(ss);
-    const lastRow = sheet.getLastRow();
-    let existingRow = -1;
-
-    if (lastRow > 1) {
-      const data = sheet.getDataRange().getValues();
-      var headers = data[0].map(function(h) { return String(h || "").trim().toLowerCase(); });
-      var idIdx = 0, statusIdx = 9, modeIdx = 4, tableIdx = 10, txnIdx = 11;
-      headers.forEach(function(h, idx) {
-        if (h.indexOf("bill") !== -1 || h.indexOf("kot") !== -1 || (h.indexOf("id") !== -1 && h.indexOf("product") === -1 && h.indexOf("cust") === -1)) idIdx = idx;
-        if (h.indexOf("status") !== -1) statusIdx = idx;
-        if (h.indexOf("mode") !== -1 || h.indexOf("payment") !== -1) modeIdx = idx;
-        if (h.indexOf("table") !== -1) tableIdx = idx;
-        if (h.indexOf("txn") !== -1 || h.indexOf("utr") !== -1 || h.indexOf("ref") !== -1) txnIdx = idx;
-      });
-
-      // Find matching row by clean ID
-      for (let i = 1; i < data.length; i++) {
-        const rowNormId = cleanOrderId(data[i][idIdx]);
-        if (rowNormId && rowNormId === cleanId) {
-          existingRow = i + 1;
-          break;
-        }
-      }
-
-      // If settling this table, update ALL unpaid rows for this table to PAID!
-      if (isSettled) {
-        for (let i = 1; i < data.length; i++) {
-          const rowTableClean = cleanTableId(data[i][tableIdx]);
-          const rowStatus = String(data[i][statusIdx] || "").toUpperCase().trim();
-          if (rowTableClean === cTable && !isStatusSettled(rowStatus)) {
-            sheet.getRange(i + 1, statusIdx + 1).setValue("PAID");
-            if (b.payment_mode) sheet.getRange(i + 1, modeIdx + 1).setValue(b.payment_mode);
-            if (txnId) sheet.getRange(i + 1, txnIdx + 1).setValue(txnId);
-          }
-        }
-      }
-
-      // If updating an existing row for status update with no items provided, only update status & txn
-      if (existingRow !== -1 && (b.update_type === "STATUS_UPDATE" || (!rawItems || rawItems.length === 0))) {
-        sheet.getRange(existingRow, statusIdx + 1).setValue(isSettled ? "PAID" : status);
-        if (txnId) sheet.getRange(existingRow, txnIdx + 1).setValue(txnId);
-        return responseJson({
-          success: true,
-          bill_id: billId,
-          status: isSettled ? "PAID" : status,
-          row: existingRow,
-          cleared: isSettled
-        });
-      }
+      } catch(e) {}
     }
 
-    const rowData = [
-      billId,
-      timeStr,
-      cust.name || b.customer_name || (tableName.indexOf("Table ") === 0 ? "Dine-In Guest" : tableName),
-      cust.phone || b.customer_phone || "",
-      b.payment_mode || (isSettled ? "PAID" : "CASH"),
-      b.subtotal || b.subtotal_amount || totalAmount,
-      b.discount || 0,
-      totalAmount,
-      typeof rawItems === "string" ? rawItems : JSON.stringify(rawItems),
-      isSettled ? "PAID" : status,
-      tableName,
-      txnId
-    ];
+    // Task 0.5: Clearing table resets in-memory cache ONLY. It NEVER marks unpaid Sheet rows as PAID!
 
-    if (existingRow !== -1) {
-      sheet.getRange(existingRow, 1, 1, rowData.length).setValues([rowData]);
-    } else {
-      sheet.appendRow(rowData);
-    }
-
-    return responseJson({
-      success: true,
-      bill_id: billId,
-      status: isSettled ? "PAID" : status,
-      row: existingRow !== -1 ? existingRow : lastRow + 1,
-      cleared: isSettled
-    });
-  } catch (errSheet) {
-    return responseJson({
-      success: true,
-      bill_id: billId,
-      status: status,
-      warning: errSheet.toString(),
-      message: "Order cached in cloud memory, sheet write failed."
-    });
+    return responseJson({ success: true, message: "Table " + table + " cache cleared successfully." });
+  } finally {
+    try { lock.releaseLock(); } catch(e) {}
   }
-}
-
-function handleClearTable(data) {
-  var orgId = data.org_id || data.org || data.outlet_id || "";
-  var spreadsheetId = data.spreadsheet_id || getSheetIdForOrg(orgId);
-  var table = data.table_name || data.table || data.table_number || "1";
-  var cTable = cleanTableId(table);
-
-  if (orgId) {
-    try {
-      var props = PropertiesService.getScriptProperties();
-      props.setProperty("table_settled_" + orgId.trim() + "_" + cTable, String(new Date().getTime()));
-
-      var cacheKey = "recent_orders_" + orgId.trim();
-      var rawCached = props.getProperty(cacheKey);
-      if (rawCached) {
-        var cachedOrders = JSON.parse(rawCached);
-        cachedOrders = cachedOrders.filter(function(co) {
-          return cleanTableId(co.table || co.tableName) !== cTable;
-        });
-        props.setProperty(cacheKey, JSON.stringify(cachedOrders));
-      }
-
-      var waiterKey = "waiter_alerts_" + orgId.trim();
-      var rawWaiters = props.getProperty(waiterKey);
-      if (rawWaiters) {
-        var wList = JSON.parse(rawWaiters);
-        wList = wList.filter(function(w) { return cleanTableId(w.table || w.tableName) !== cTable; });
-        props.setProperty(waiterKey, JSON.stringify(wList));
-      }
-    } catch(e) {}
-  }
-
-  if (spreadsheetId && spreadsheetId.indexOf("sheet_") !== 0) {
-    try {
-      var ss = SpreadsheetApp.openById(spreadsheetId);
-      var sheet = getOrCreateBillsSheet(ss);
-      if (sheet && sheet.getLastRow() > 1) {
-        var dataVals = sheet.getDataRange().getValues();
-        var headers = dataVals[0].map(function(h) { return String(h || "").trim().toLowerCase(); });
-        var statusIdx = 9, tableIdx = 10;
-        headers.forEach(function(h, idx) {
-          if (h.indexOf("status") !== -1) statusIdx = idx;
-          if (h.indexOf("table") !== -1) tableIdx = idx;
-        });
-        for (var r = 1; r < dataVals.length; r++) {
-          if (cleanTableId(dataVals[r][tableIdx]) === cTable && !isStatusSettled(dataVals[r][statusIdx])) {
-            sheet.getRange(r + 1, statusIdx + 1).setValue("PAID");
-          }
-        }
-      }
-    } catch(e) {}
-  }
-
-  return responseJson({ success: true, message: "Table " + table + " session and cache cleared successfully." });
 }
 
 function handlePurgeTestOrders(data) {

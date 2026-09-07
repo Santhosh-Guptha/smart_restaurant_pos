@@ -8,6 +8,7 @@ import 'package:esc_pos_utils_plus/esc_pos_utils_plus.dart';
 import 'package:print_bluetooth_thermal/print_bluetooth_thermal.dart';
 
 import '../../core/classic_theme.dart';
+import '../../core/constants.dart';
 import '../../core/license_guard.dart';
 import '../../core/restaurant_models.dart';
 import '../../providers/daily_token_provider.dart';
@@ -149,22 +150,13 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
 
   String _getEffectiveOrgId() {
     final saasSession = ref.read(saasSessionProvider);
-    final userOrg = saasSession.currentUser?.organizationId;
-    if (userOrg != null && userOrg.isNotEmpty && userOrg != 'ORG_DEFAULT' && userOrg != 'default') {
-      return userOrg;
-    }
-    final currentOrg = saasSession.currentOrganization?.id;
-    if (currentOrg != null && currentOrg.isNotEmpty && currentOrg != 'ORG_DEFAULT' && currentOrg != 'default') {
-      return currentOrg;
-    }
-    try {
-      if (Hive.isBoxOpen('configBox')) {
-        final saved = Hive.box('configBox').get('current_org_id') ?? Hive.box('configBox').get('default_org_id');
-        if (saved != null && saved.toString().isNotEmpty) return saved.toString();
-      }
-    } catch (_) {}
-    return 'ORG264646';
+    return resolveOutletId(
+      userOrgId: saasSession.currentUser?.organizationId,
+      sessionOrgId: saasSession.currentOrganization?.id,
+      hiveBox: Hive.isBoxOpen('configBox') ? Hive.box('configBox') : null,
+    );
   }
+
 
   @override
   void dispose() {
@@ -1006,7 +998,9 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
       final box = Hive.isBoxOpen('configBox') ? Hive.box('configBox') : null;
       if (box != null) {
         final rawOrders = box.get('kot_orders_$orgId') as List? ?? [];
-        final List<Map<String, dynamic>> updatedList = List.from(rawOrders);
+        final List<Map<String, dynamic>> updatedList = rawOrders
+            .map((e) => Map<String, dynamic>.from(e as Map))
+            .toList();
 
         if (existingOrderToAppend != null) {
           // Append newly selected items to existing table bill
@@ -1016,7 +1010,9 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
           if (existingIndex >= 0) {
             final oldOrder = Map<String, dynamic>.from(updatedList[existingIndex]);
             final oldItems = (oldOrder['items'] as List?) ?? [];
-            final newItemsList = List.from(oldItems);
+            final newItemsList = oldItems
+                .map((e) => Map<String, dynamic>.from(e as Map))
+                .toList();
 
             for (final cartItem in _cart) {
               newItemsList.add({
@@ -1173,20 +1169,32 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
             spreadsheetId: sheetId ?? '',
             billData: {
               'id': targetBillId,
+              'bill_id': targetBillId,
               'kotNumber': token,
               'tableName': tableName,
+              'table_name': tableName,
               'tableId': tNum,
               'tableNumber': tNum,
+              'table_number': tNum,
               'status': isPaid ? 'PAID' : 'PENDING',
               'kitchenStatus': 'PENDING',
+              'kitchen_status': 'PENDING',
               'paymentStatus': isPaid ? 'PAID' : 'PENDING',
+              'payment_status': isPaid ? 'PAID' : 'PENDING',
               'isPaid': isPaid,
               'orderSource': 'POS_COUNTER',
+              'order_source': 'POS_COUNTER',
               'orderType': _orderType,
+              'order_type': _orderType,
               'paymentMode': paymentMode,
+              'payment_mode': paymentMode,
               'createdAt': DateTime.now().toIso8601String(),
+              'created_at': DateTime.now().toIso8601String(),
               'subtotal': _subtotal,
+              'service_charge': _serviceCharge,
+              'gst': _gst,
               'totalAmount': _grandTotal,
+              'total_amount': _grandTotal,
               'items': _cart.map((i) => {
                 'id': i.productId,
                 'productId': i.productId,
@@ -1551,13 +1559,22 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
         try {
           // Add necessary fields if missing to match AppsScript expects
           updatedOrderData['id'] = orderId;
+          updatedOrderData['bill_id'] = orderId;
+          updatedOrderData['tableName'] = tableName;
+          updatedOrderData['table_name'] = tableName;
+          updatedOrderData['tableNumber'] = tNum;
+          updatedOrderData['table_number'] = tNum;
           updatedOrderData['status'] = 'PAID';
           updatedOrderData['paymentStatus'] = 'PAID';
+          updatedOrderData['payment_status'] = 'PAID';
           updatedOrderData['paymentMode'] = paymentMode;
+          updatedOrderData['payment_mode'] = paymentMode;
           updatedOrderData['isPaid'] = true;
           updatedOrderData['totalAmount'] = grandTotal;
+          updatedOrderData['total_amount'] = grandTotal;
           updatedOrderData['subtotal'] = subtotal;
           updatedOrderData['orderSource'] = 'POS_COUNTER';
+          updatedOrderData['order_source'] = 'POS_COUNTER';
           
           await AppsScriptBackendService.saveBill(
             outletId: orgId,
