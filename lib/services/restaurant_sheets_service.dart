@@ -430,17 +430,7 @@ class RestaurantSheetsService {
         }
       }
 
-      // 5. Make spreadsheet editable by link to eliminate cross-device permission failures
-      try {
-        await makeSpreadsheetEditableByLink(
-          authenticatedClient: authenticatedClient,
-          spreadsheetId: sheetId,
-        );
-      } catch (linkErr) {
-        debugPrint('Link sharing notice: $linkErr');
-      }
-
-      // 6. Save sheetId to local Hive config
+      // 5. Save sheetId to local Hive config
       final box = await Hive.openBox(boxName);
       await box.put(keySheetId, sheetId);
       await box.put(keySheetUrl, sheetUrl);
@@ -456,7 +446,8 @@ class RestaurantSheetsService {
     }
   }
 
-  /// Appends a settled Dining Bill to the client's Google Sheet
+  /// [DEPRECATED - Phase 2 Single Writer]: Use AppsScriptBackendService.saveBill instead
+  @deprecated
   static Future<bool> recordDiningBill({
     required http.Client authenticatedClient,
     required String sheetId,
@@ -550,7 +541,8 @@ class RestaurantSheetsService {
     }
   }
 
-  /// Appends a KOT Ticket to 'KOT History' tab in Google Sheet
+  /// [DEPRECATED - Phase 2 Single Writer]: Use AppsScriptBackendService.saveBill instead
+  @deprecated
   static Future<bool> recordKot({
     required http.Client authenticatedClient,
     required String sheetId,

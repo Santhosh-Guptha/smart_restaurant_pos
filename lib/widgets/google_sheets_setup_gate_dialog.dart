@@ -310,10 +310,6 @@ class _GoogleSheetsSetupGateDialogState extends ConsumerState<GoogleSheetsSetupG
               authenticatedClient: authClient,
               sheetId: sheetId,
             );
-            await RestaurantSheetsService.makeSpreadsheetEditableByLink(
-              authenticatedClient: authClient,
-              spreadsheetId: sheetId,
-            );
             for (final admin in kAdminEmails) {
               await RestaurantSheetsService.shareSpreadsheetWithStaff(
                 authenticatedClient: authClient,

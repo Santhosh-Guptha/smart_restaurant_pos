@@ -104,6 +104,15 @@ function doPost(e) {
       case "SEND_OTP_EMAIL":
         return handleSendOtpEmail(json);
 
+      case "MIGRATE_V2_DATA":
+        var ssMig = null;
+        var sId = json.spreadsheet_id || json.spreadsheetId;
+        if (!sId && json.org_id) sId = getSheetIdForOrg(json.org_id);
+        if (sId) {
+          try { ssMig = SpreadsheetApp.openById(sId); } catch(eMig) {}
+        }
+        return responseJson(migrateDiningBillsToV2(ssMig, json.dry_run !== false));
+
       default:
         return responseJson({ success: false, error: "Unknown action: " + action });
     }
@@ -300,6 +309,414 @@ function recordIdempotency(ss, clientRequestId, action, resultObj) {
       }
     }
   } catch (e) {}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 2: Schema v2 Definitions (§6.1) & Monotonic Rev
+// ─────────────────────────────────────────────────────────────────────────────
+var V2_SCHEMAS = {
+  "Sessions": [
+    "sessionId", "outletId", "tableIds", "sessionStatus", "covers", "source", 
+    "guestName", "guestPhone", "reservationId", "openedBy", "openedAt", "closedAt", 
+    "invoiceNos", "rev"
+  ],
+  "Orders": [
+    "orderId", "sessionId", "outletId", "tableId", "tokenNo", "courseNo", 
+    "orderSource", "orderType", "station", "kitchenStatus", "firedAt", "readyAt", 
+    "servedAt", "staffId", "staffName", "deviceId", "clientRequestId", "generalNotes", 
+    "subtotalP", "discountP", "serviceChargeP", "taxableP", "cgstP", "sgstP", 
+    "roundOffP", "grandTotalP", "rev"
+  ],
+  "OrderItems": [
+    "lineId", "orderId", "sessionId", "productId", "name", "qty", "unitPriceP", 
+    "lineTotalP", "taxRateBps", "station", "notes", "kitchenStatus", "voidedQty", 
+    "voidReason", "voidedBy", "rev"
+  ],
+  "Payments": [
+    "paymentId", "sessionId", "invoiceNo", "mode", "amountP", "tipP", "ref_UTR", 
+    "gatewayId", "verified", "byStaffId", "at", "voidedBy", "voidReason", "rev"
+  ],
+  "Invoices": [
+    "invoiceNo", "sessionId", "outletId", "fy", "issuedAt", "subtotalP", "discountP", 
+    "serviceChargeP", "taxableP", "cgstP", "sgstP", "roundOffP", "grandTotalP", 
+    "gstin", "printCount", "lastPrintedAt", "status", "voidReason", "rev"
+  ],
+  "Tables": [
+    "tableId", "outletId", "displayName", "section", "capacity", "tableStatus", 
+    "activeSessionId", "occupiedAt", "cleaningUntil", "qrToken", "rev"
+  ],
+  "Reservations": [
+    "reservationId", "outletId", "tableIds", "guestName", "guestPhone", "partySize", 
+    "startAt", "durationMin", "status", "notes", "createdBy", "createdAt", 
+    "seatedSessionId", "rev"
+  ],
+  "Alerts": [
+    "alertId", "outletId", "tableId", "sessionId", "type", "guestName", 
+    "status", "raisedAt", "ackBy", "resolvedAt", "rev"
+  ],
+  "Counters": [
+    "outletId", "kind", "businessDate", "lastValue", "updatedAt"
+  ],
+  "Idempotency": [
+    "clientRequestId", "action", "resultJson", "createdAt"
+  ],
+  "Audit": [
+    "at", "outletId", "staffId", "action", "entity", "entityId", 
+    "before", "after", "reason"
+  ],
+  "Day End Reports": [
+    "businessDate", "outletId", "grossP", "discountP", "taxP", "serviceChargeP", 
+    "netP", "byMode", "covers", "orders", "voids", "refunds", "cashDeclaredP", 
+    "varianceP", "closedBy", "closedAt"
+  ]
+};
+
+function ensureV2Sheets(ss) {
+  if (!ss) return;
+  for (var tabName in V2_SCHEMAS) {
+    var sheet = ss.getSheetByName(tabName);
+    if (!sheet) {
+      sheet = ss.insertSheet(tabName);
+      sheet.appendRow(V2_SCHEMAS[tabName]);
+      sheet.getRange(1, 1, 1, V2_SCHEMAS[tabName].length).setFontWeight("bold");
+      sheet.setFrozenRows(1);
+    }
+  }
+}
+
+function getAndBumpRev(outletId) {
+  if (!outletId) return 1;
+  var props = PropertiesService.getScriptProperties();
+  var revKey = "rev_" + outletId.trim();
+  var currentRev = parseInt(props.getProperty(revKey), 10) || 0;
+  var nextRev = currentRev + 1;
+  props.setProperty(revKey, String(nextRev));
+  return nextRev;
+}
+
+function findOrCreateActiveSession(ss, outletId, tableId, openedBy, guestName, guestPhone, rev) {
+  if (!ss) return "";
+  var sessionSheet = ss.getSheetByName("Sessions");
+  if (!sessionSheet) return "";
+  var cTable = cleanTableId(tableId);
+  var data = sessionSheet.getDataRange().getValues();
+  for (var i = data.length - 1; i >= 1; i--) {
+    var rowOut = String(data[i][1] || "").trim();
+    var rowTables = String(data[i][2] || "").trim().split(",").map(function(t) { return cleanTableId(t); });
+    var rowStatus = String(data[i][3] || "").trim().toUpperCase();
+    if (rowOut === outletId && rowStatus === "OPEN" && rowTables.indexOf(cTable) !== -1) {
+      return String(data[i][0] || "").trim();
+    }
+  }
+  
+  var now = new Date();
+  var ymd = Utilities.formatDate(now, Session.getScriptTimeZone() || "GMT+05:30", "yyyyMMdd");
+  var seq = allocateCounter(ss, outletId, "SESSION");
+  var sessionId = "SES-" + ymd + "-" + ("0000" + seq).slice(-4);
+  sessionSheet.appendRow([
+    sessionId,
+    outletId,
+    cTable,
+    "OPEN",
+    1,
+    "POS",
+    guestName || "",
+    guestPhone || "",
+    "",
+    openedBy || "Staff",
+    now.toISOString(),
+    "",
+    "",
+    rev
+  ]);
+  return sessionId;
+}
+
+function persistV2Order(ss, orgId, billId, cleanId, tokenNo, tableName, cTable, status, isSettled, totalAmount, subtotal, timeStr, rawItems, paymentMode, customerName, customerPhone, specialInstructions, txnId, clientRequestId, b, rev) {
+  if (!ss) return;
+  try {
+    ensureV2Sheets(ss);
+    var staffName = String(b.waiter_name || b.waiterName || b.cashier_name || b.cashierName || b.staff_name || b.staffName || "Staff").trim();
+    var staffId = String(b.staff_id || b.staffId || "").trim();
+    var sessionId = String(b.session_id || b.sessionId || "").trim();
+    if (!sessionId) {
+      sessionId = findOrCreateActiveSession(ss, orgId, tableName, staffName, customerName, customerPhone, rev);
+    }
+    
+    var subtotalP = Math.round((subtotal || 0) * 100);
+    var discountP = Math.round((parseFloat(b.discount || b.discount_amount || b.discountP) || 0) * 100);
+    var serviceChargeP = Math.round((parseFloat(b.service_charge || b.service_charge_amount || b.serviceChargeP) || 0) * 100);
+    var gstRate = parseFloat(b.gst_rate || b.gstRate) || 5;
+    var grandTotalP = Math.round((totalAmount || 0) * 100);
+    var taxableP = Math.max(0, subtotalP - discountP + serviceChargeP);
+    var gstP = Math.round(taxableP * (gstRate / 100));
+    var cgstP = Math.round(gstP / 2);
+    var sgstP = gstP - cgstP;
+    var roundOffP = grandTotalP - (taxableP + gstP);
+    
+    // 1. Orders tab
+    var ordersSheet = ss.getSheetByName("Orders");
+    if (ordersSheet) {
+      var oData = ordersSheet.getDataRange().getValues();
+      var existingOrderRow = -1;
+      for (var oi = oData.length - 1; oi >= 1; oi--) {
+        if (cleanOrderId(oData[oi][0]) === cleanId) {
+          existingOrderRow = oi + 1;
+          break;
+        }
+      }
+      
+      var orderRow = [
+        billId,
+        sessionId,
+        orgId,
+        cTable,
+        tokenNo || "",
+        parseInt(b.course_no || b.courseNo || 1, 10) || 1,
+        String(b.order_source || b.orderSource || "POS_COUNTER").trim(),
+        String(b.order_type || b.orderType || "Dine-In").trim(),
+        String(b.station || "Main Kitchen").trim(),
+        isSettled ? "SERVED" : String(b.kitchenStatus || b.kitchen_status || "PENDING").toUpperCase(),
+        timeStr,
+        "",
+        isSettled ? timeStr : "",
+        staffId,
+        staffName,
+        String(b.device_id || b.deviceId || "").trim(),
+        clientRequestId,
+        specialInstructions,
+        subtotalP,
+        discountP,
+        serviceChargeP,
+        taxableP,
+        cgstP,
+        sgstP,
+        roundOffP,
+        grandTotalP,
+        rev
+      ];
+      
+      if (existingOrderRow > 0) {
+        ordersSheet.getRange(existingOrderRow, 1, 1, orderRow.length).setValues([orderRow]);
+      } else {
+        ordersSheet.appendRow(orderRow);
+      }
+    }
+    
+    // 2. OrderItems tab
+    var itemsSheet = ss.getSheetByName("OrderItems");
+    if (itemsSheet && Array.isArray(rawItems) && rawItems.length > 0) {
+      for (var idx = 0; idx < rawItems.length; idx++) {
+        var it = rawItems[idx];
+        if (!it) continue;
+        var lineId = billId + "_L" + (idx + 1);
+        var itemQty = parseFloat(it.qty || it.quantity) || 1;
+        var itemPriceP = Math.round((parseFloat(it.price || it.unitPrice || 0) || 0) * 100);
+        var lineTotalP = Math.round(itemQty * itemPriceP);
+        var lineRow = [
+          lineId,
+          billId,
+          sessionId,
+          String(it.productId || it.id || "item").trim(),
+          String(it.name || "Dish").trim(),
+          itemQty,
+          itemPriceP,
+          lineTotalP,
+          Math.round(gstRate * 100),
+          String(it.station || b.station || "Main Kitchen").trim(),
+          String(it.notes || it.instructions || "").trim(),
+          isSettled ? "SERVED" : String(it.kitchenStatus || b.kitchenStatus || "PENDING").toUpperCase(),
+          0,
+          "",
+          "",
+          rev
+        ];
+        itemsSheet.appendRow(lineRow);
+      }
+    }
+    
+    // 3. Payments tab
+    if (isSettled) {
+      var paySheet = ss.getSheetByName("Payments");
+      if (paySheet) {
+        var paySeq = allocateCounter(ss, orgId, "PAYMENT");
+        var nowD = new Date();
+        var ymdP = Utilities.formatDate(nowD, Session.getScriptTimeZone() || "GMT+05:30", "yyyyMMdd");
+        var paymentId = "PAY-" + ymdP + "-" + ("0000" + paySeq).slice(-4);
+        var payRow = [
+          paymentId,
+          sessionId,
+          billId,
+          paymentMode || "CASH",
+          grandTotalP,
+          Math.round((parseFloat(b.tip || 0) || 0) * 100),
+          txnId || "",
+          "",
+          true,
+          staffId || staffName,
+          timeStr,
+          "",
+          "",
+          rev
+        ];
+        paySheet.appendRow(payRow);
+      }
+      
+      var sSheet = ss.getSheetByName("Sessions");
+      if (sSheet && sessionId) {
+        var sData = sSheet.getDataRange().getValues();
+        for (var si = sData.length - 1; si >= 1; si--) {
+          if (String(sData[si][0] || "").trim() === sessionId) {
+            sSheet.getRange(si + 1, 4).setValue("CLOSED");
+            sSheet.getRange(si + 1, 12).setValue(timeStr);
+            sSheet.getRange(si + 1, 14).setValue(rev);
+            break;
+          }
+        }
+      }
+    }
+  } catch (eV2) {
+    console.warn("Error in persistV2Order: " + eV2);
+  }
+}
+
+function migrateDiningBillsToV2(ss, isDryRun) {
+  if (!ss) return { success: false, error: "No spreadsheet provided." };
+  ensureV2Sheets(ss);
+  
+  var legacySheet = ss.getSheetByName("Dining Bills") || ss.getSheetByName("Bills");
+  if (!legacySheet || legacySheet.getLastRow() < 2) {
+    return { success: true, dryRun: isDryRun, message: "No legacy bills found to migrate.", totalScanned: 0, migratedOrders: 0, unmappedRows: 0 };
+  }
+  
+  var data = legacySheet.getDataRange().getValues();
+  var headers = data[0].map(function(h) { return String(h || "").trim().toLowerCase(); });
+  var colCount = data[0].length;
+  
+  var totalScanned = 0;
+  var migratedOrders = 0;
+  var unmappedRows = 0;
+  var unmappedDetails = [];
+  
+  var orgId = "DEFAULT_ORG";
+  try {
+    var p = PropertiesService.getScriptProperties().getProperties();
+    for (var k in p) {
+      if (k.indexOf("org_") === 0) {
+        orgId = k.replace("org_", "");
+        break;
+      }
+    }
+  } catch(e) {}
+  
+  var rev = getAndBumpRev(orgId);
+  var ordersSheet = ss.getSheetByName("Orders");
+  var paymentsSheet = ss.getSheetByName("Payments");
+  var sessionsSheet = ss.getSheetByName("Sessions");
+  
+  for (var i = 1; i < data.length; i++) {
+    totalScanned++;
+    var row = data[i];
+    if (!row || row.length === 0 || !row[0]) continue;
+    
+    try {
+      var rawId = "", rawDate = "", rawTable = "", rawCustomer = "", rawPhone = "";
+      var rawTotal = 0, rawSubtotal = 0, rawDiscount = 0, rawMode = "CASH", rawStatus = "PAID", rawItems = "";
+      
+      if (headers.indexOf("bill id") !== -1 || headers.indexOf("bill_id") !== -1 || headers.indexOf("order id") !== -1) {
+        var idIdx = Math.max(headers.indexOf("bill id"), headers.indexOf("bill_id"), headers.indexOf("order id"), headers.indexOf("id"));
+        var dateIdx = Math.max(headers.indexOf("date"), headers.indexOf("datetime"), headers.indexOf("time"));
+        var tableIdx = Math.max(headers.indexOf("table"), headers.indexOf("tablename"), headers.indexOf("table_name"));
+        var custIdx = Math.max(headers.indexOf("customer"), headers.indexOf("customername"), headers.indexOf("customer_name"));
+        var phoneIdx = Math.max(headers.indexOf("phone"), headers.indexOf("customerphone"), headers.indexOf("customer_phone"));
+        var totalIdx = Math.max(headers.indexOf("total"), headers.indexOf("total amount"), headers.indexOf("total_amount"));
+        var subtotalIdx = Math.max(headers.indexOf("subtotal"), headers.indexOf("sub total"));
+        var discountIdx = Math.max(headers.indexOf("discount"), headers.indexOf("discount_amount"));
+        var modeIdx = Math.max(headers.indexOf("payment mode"), headers.indexOf("payment_mode"), headers.indexOf("mode"));
+        var statusIdx = Math.max(headers.indexOf("status"), headers.indexOf("payment status"), headers.indexOf("payment_status"));
+        var itemsIdx = Math.max(headers.indexOf("items"), headers.indexOf("itemssummary"), headers.indexOf("items summary"));
+        
+        rawId = idIdx >= 0 ? String(row[idIdx] || "").trim() : "";
+        rawDate = dateIdx >= 0 ? String(row[dateIdx] || "").trim() : new Date().toISOString();
+        rawTable = tableIdx >= 0 ? String(row[tableIdx] || "").trim() : "Table 1";
+        rawCustomer = custIdx >= 0 ? String(row[custIdx] || "").trim() : "Guest";
+        rawPhone = phoneIdx >= 0 ? String(row[phoneIdx] || "").trim() : "";
+        rawTotal = totalIdx >= 0 ? parseFloat(String(row[totalIdx]).replace(/[^0-9.]/g, "")) || 0 : 0;
+        rawSubtotal = subtotalIdx >= 0 ? parseFloat(String(row[subtotalIdx]).replace(/[^0-9.]/g, "")) || rawTotal : rawTotal;
+        rawDiscount = discountIdx >= 0 ? parseFloat(String(row[discountIdx]).replace(/[^0-9.]/g, "")) || 0 : 0;
+        rawMode = modeIdx >= 0 ? String(row[modeIdx] || "CASH").trim() : "CASH";
+        rawStatus = statusIdx >= 0 ? String(row[statusIdx] || "PAID").trim().toUpperCase() : "PAID";
+        rawItems = itemsIdx >= 0 ? row[itemsIdx] : "";
+      } else if (colCount <= 12) {
+        rawId = String(row[0] || "").trim();
+        rawDate = String(row[1] || "").trim();
+        rawCustomer = String(row[2] || "").trim();
+        rawPhone = String(row[3] || "").trim();
+        rawMode = String(row[4] || "").trim();
+        rawSubtotal = parseFloat(String(row[5]).replace(/[^0-9.]/g, "")) || 0;
+        rawDiscount = parseFloat(String(row[6]).replace(/[^0-9.]/g, "")) || 0;
+        rawTotal = parseFloat(String(row[7]).replace(/[^0-9.]/g, "")) || 0;
+        rawItems = row[8];
+        rawStatus = String(row[9] || "PAID").trim().toUpperCase();
+        rawTable = String(row[10] || "Table 1").trim();
+      } else {
+        unmappedRows++;
+        unmappedDetails.push({ row: i + 1, reason: "Unrecognized column structure (" + colCount + " columns)" });
+        continue;
+      }
+      
+      if (!rawId || rawId.toLowerCase() === "id" || rawId.toLowerCase() === "bill id") {
+        continue;
+      }
+      
+      var cleanId = cleanOrderId(rawId);
+      var cTable = cleanTableId(rawTable);
+      var subtotalP = Math.round(rawSubtotal * 100);
+      var discountP = Math.round(rawDiscount * 100);
+      var grandTotalP = Math.round(rawTotal * 100);
+      var taxableP = Math.max(0, subtotalP - discountP);
+      var gstP = grandTotalP - taxableP;
+      var cgstP = Math.round(gstP / 2);
+      var sgstP = gstP - cgstP;
+      
+      var sessionId = "SES-MIG-" + cleanId;
+      var isPaid = isStatusSettled(rawStatus);
+      
+      if (!isDryRun) {
+        sessionsSheet.appendRow([
+          sessionId, orgId, cTable, isPaid ? "CLOSED" : "OPEN", 1, "MIGRATION",
+          rawCustomer, rawPhone, "", "Migration Script", rawDate, isPaid ? rawDate : "", "", rev
+        ]);
+        
+        ordersSheet.appendRow([
+          rawId, sessionId, orgId, cTable, "", 1, "MIGRATION", "Dine-In", "Main Kitchen",
+          isPaid ? "SERVED" : "PENDING", rawDate, "", isPaid ? rawDate : "", "", "Staff",
+          "migration", "", "", subtotalP, discountP, 0, taxableP, cgstP, sgstP, 0, grandTotalP, rev
+        ]);
+        
+        if (isPaid) {
+          paymentsSheet.appendRow([
+            "PAY-MIG-" + cleanId, sessionId, rawId, rawMode || "CASH", grandTotalP, 0,
+            "", "", true, "Migration Script", rawDate, "", "", rev
+          ]);
+        }
+      }
+      
+      migratedOrders++;
+    } catch (eRow) {
+      unmappedRows++;
+      unmappedDetails.push({ row: i + 1, reason: eRow.toString() });
+    }
+  }
+  
+  return {
+    success: true,
+    dryRun: isDryRun,
+    totalScanned: totalScanned,
+    migratedOrders: migratedOrders,
+    unmappedRows: unmappedRows,
+    unmappedDetails: unmappedDetails.slice(0, 50)
+  };
 }
 
 function doGet(e) {
@@ -726,6 +1143,7 @@ function handleSaveBill(data) {
       billId = "ORD-" + ymd + "-" + ("0000" + orderSeq).slice(-4);
     }
     const cleanId = cleanOrderId(billId);
+    var rev = getAndBumpRev(orgId);
 
     var tokenNo = b.token_no || b.tokenNo;
     if (!tokenNo && ss) {
@@ -907,7 +1325,8 @@ function handleSaveBill(data) {
         kotNumber: kotNumber,
         kot_number: kotNumber,
         token_no: tokenNo,
-        status: isSettled ? "PAID" : status
+        status: isSettled ? "PAID" : status,
+        rev: rev
       };
       if (extra) {
         for (var k in extra) { res[k] = extra[k]; }
@@ -991,6 +1410,14 @@ function handleSaveBill(data) {
       } else {
         sheet.appendRow(rowData);
       }
+
+      // Phase 2: Persist full data components into Schema v2 tabs
+      persistV2Order(
+        ss, orgId, billId, cleanId, tokenNo, tableName, cTable, 
+        status, isSettled, totalAmount, subtotal, timeStr, 
+        rawItems, paymentMode, customerName, customerPhone, 
+        specialInstructions, txnId, clientRequestId, b, rev
+      );
 
       return buildResult({
         row: existingRow !== -1 ? existingRow : lastRow + 1,

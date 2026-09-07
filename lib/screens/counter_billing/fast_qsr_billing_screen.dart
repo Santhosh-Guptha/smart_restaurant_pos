@@ -1133,53 +1133,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
           sheetId = saasSession.currentOrganization?.googleSheetId;
         }
 
-        if (sheetId != null && sheetId.isNotEmpty && !sheetId.startsWith('sheet_')) {
-          final authClient = await ClientLedgerCloudRouterService.getAuthenticatedClientIfAvailable() ??
-              ref.read(restaurantAuthProvider.notifier).authenticatedHttpClient;
-          final itemsDesc = _cart.map((c) => '${c.name} x${c.qty}').join(', ');
-          
-          if (authClient != null) {
-            try {
-              await RestaurantSheetsService.recordKot(
-                authenticatedClient: authClient,
-                sheetId: sheetId,
-                kotData: {
-                  'kotId': targetBillId,
-                  'tokenNumber': token,
-                  'tableName': tableName,
-                  'station': 'Main Kitchen',
-                  'punchedBy': ref.read(restaurantAuthProvider).activeStaff?.name ?? 'Counter Staff',
-                  'itemsSummary': itemsDesc,
-                  'status': isPaid ? 'Paid' : 'Pending',
-                },
-              );
-
-              if (isPaid) {
-                await RestaurantSheetsService.recordDiningBill(
-                  authenticatedClient: authClient,
-                  sheetId: sheetId,
-                  billData: {
-                    'billId': targetBillId,
-                    'dateTime': DateTime.now().toIso8601String(),
-                    'tokenNumber': token,
-                    'tableName': tableName,
-                    'cashierName': ref.read(restaurantAuthProvider).activeStaff?.name ?? 'Counter Staff',
-                    'subtotal': _subtotal,
-                    'discount': 0.0,
-                    'gst': (_grandTotal - _subtotal),
-                    'totalAmount': _grandTotal,
-                    'paymentMode': paymentMode,
-                    'itemsSummary': itemsDesc,
-                  },
-                );
-              }
-            } catch (e) {
-              debugPrint('Direct SheetsApi sync error: $e');
-            }
-          }
-        }
-        
-        // Sync full order data to webhook for Zero-Firebase architecture
+        // Sync full order data to webhook for Zero-Firebase architecture (Single Writer)
         try {
           await AppsScriptBackendService.saveBill(
             outletId: orgId,
@@ -1546,36 +1500,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
         final subtotal = (order['subtotal'] as num?)?.toDouble() ?? (paidAmount / 1.05);
         final grandTotal = paidAmount;
 
-        if (sheetId != null && sheetId.isNotEmpty && !sheetId.startsWith('sheet_')) {
-          final authClient = await ClientLedgerCloudRouterService.getAuthenticatedClientIfAvailable() ??
-              ref.read(restaurantAuthProvider.notifier).authenticatedHttpClient;
-
-          if (authClient != null) {
-            try {
-              await RestaurantSheetsService.recordDiningBill(
-                authenticatedClient: authClient,
-                sheetId: sheetId,
-                billData: {
-                  'billId': orderId,
-                  'dateTime': DateTime.now().toIso8601String(),
-                  'tokenNumber': tokenNumber,
-                  'tableName': tableName,
-                  'cashierName': activeStaff,
-                  'subtotal': subtotal,
-                  'discount': (order['discount'] as num?)?.toDouble() ?? 0.0,
-                  'gst': (grandTotal - subtotal),
-                  'totalAmount': grandTotal,
-                  'paymentMode': paymentMode,
-                  'itemsSummary': itemsDesc,
-                },
-              );
-            } catch (e) {
-              debugPrint('Sheets direct recordDiningBill error: $e');
-            }
-          }
-        }
-        
-        // Always sync via Webhook to zero-firebase architecture
+        // Always sync via Webhook to zero-firebase architecture (Single Writer)
         try {
           // Add necessary fields if missing to match AppsScript expects
           updatedOrderData['id'] = orderId;

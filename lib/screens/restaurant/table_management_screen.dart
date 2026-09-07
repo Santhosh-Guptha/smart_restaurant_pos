@@ -91,7 +91,6 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
 
     // 4. Periodic background polling from Google Sheet every 5 seconds
     _pollingTimer?.cancel();
-    _webhookPollTimer?.cancel();
     _pollingTimer = Timer.periodic(const Duration(seconds: 5), (_) {
       if (mounted) {
         _syncOrdersFromGoogleSheet(orgId);
