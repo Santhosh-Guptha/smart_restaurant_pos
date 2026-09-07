@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:uuid/uuid.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:esc_pos_utils_plus/esc_pos_utils_plus.dart';
 import 'package:print_bluetooth_thermal/print_bluetooth_thermal.dart';
@@ -65,6 +66,21 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
       if (mounted) setState(() {});
     });
 
+    final activeStaff = ref.read(restaurantAuthProvider).activeStaff;
+    if (activeStaff != null && !activeStaff.canPerformBilling) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Access Denied: You do not have permission to access Billing Counter.'),
+              backgroundColor: Colors.red,
+            ),
+          );
+          Navigator.of(context).pop();
+        }
+      });
+    }
+
     if (widget.initialOrderType != null) {
       _orderType = widget.initialOrderType!;
     }
@@ -114,7 +130,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
         for (final m in raw) {
           if (m is Map) {
             final map = Map<String, dynamic>.from(m);
-            final id = (map['id'] ?? map['bill_id'] ?? '').toString();
+            final id = canonicalId(map);
             if (id.isNotEmpty && _isPendingOrder(map)) {
               orderMap[id] = map;
             }
@@ -129,7 +145,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
       for (final doc in webhookOrders) {
         try {
           final d = Map<String, dynamic>.from(doc);
-          final id = (d['id'] ?? d['bill_id'] ?? '').toString();
+          final id = canonicalId(d);
           if (id.isNotEmpty) {
             if (_isPendingOrder(d)) {
               orderMap[id] = d;
@@ -988,8 +1004,9 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
 
     final orgId = _getEffectiveOrgId();
     final token = await ref.read(dailyTokenProvider.notifier).getNextToken();
+    final clientRequestId = const Uuid().v4();
     final billNumber = 'SB-${DateTime.now().millisecondsSinceEpoch}-${Random().nextInt(9999).toString().padLeft(4, '0')}';
-    final targetBillId = existingOrderToAppend != null ? existingOrderToAppend['id'] : billNumber;
+    final targetBillId = existingOrderToAppend != null ? (existingOrderToAppend['id'] ?? existingOrderToAppend['bill_id']) : billNumber;
 
     final tableName = _orderType == 'Dine-In' ? (_selectedTable ?? 'Table 1') : 'Takeaway';
     final tNum = tableName.replaceAll(RegExp(r'[^0-9]'), '');
@@ -1004,8 +1021,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
 
         if (existingOrderToAppend != null) {
           // Append newly selected items to existing table bill
-          final existingId = existingOrderToAppend['id'];
-          final existingIndex = updatedList.indexWhere((o) => o['id'] == existingId);
+          final existingIndex = updatedList.indexWhere((o) => canonicalId(o) == canonicalId(existingOrderToAppend));
 
           if (existingIndex >= 0) {
             final oldOrder = Map<String, dynamic>.from(updatedList[existingIndex]);
@@ -1051,6 +1067,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
           final newOrderMap = {
             'id': billNumber,
             'kotNumber': token,
+            'clientRequestId': clientRequestId,
             'tableName': tableName,
             'tableId': tNum,
             'tableNumber': tNum,
@@ -1167,9 +1184,12 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
           await AppsScriptBackendService.saveBill(
             outletId: orgId,
             spreadsheetId: sheetId ?? '',
+            clientRequestId: clientRequestId,
             billData: {
               'id': targetBillId,
               'bill_id': targetBillId,
+              'clientRequestId': clientRequestId,
+              'client_request_id': clientRequestId,
               'kotNumber': token,
               'tableName': tableName,
               'table_name': tableName,
@@ -1495,7 +1515,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
       if (box != null) {
         final rawOrders = box.get('kot_orders_$orgId') as List? ?? [];
         final updatedList = rawOrders.map((o) {
-          if (o is Map && (o['id'] == orderId || o['kotNumber'] == tokenNumber)) {
+          if (o is Map && (canonicalId(o) == canonicalId(orderId) || canonicalId(o) == canonicalId(order))) {
             final m = Map<String, dynamic>.from(o);
             m['status'] = 'PAID';
             m['paymentStatus'] = 'PAID';
@@ -1575,10 +1595,14 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
           updatedOrderData['subtotal'] = subtotal;
           updatedOrderData['orderSource'] = 'POS_COUNTER';
           updatedOrderData['order_source'] = 'POS_COUNTER';
+          final settleRequestId = const Uuid().v4();
+          updatedOrderData['clientRequestId'] = settleRequestId;
+          updatedOrderData['client_request_id'] = settleRequestId;
           
           await AppsScriptBackendService.saveBill(
             outletId: orgId,
             spreadsheetId: sheetId ?? '',
+            clientRequestId: settleRequestId,
             billData: updatedOrderData,
           );
         } catch (asErr) {

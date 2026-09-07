@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:uuid/uuid.dart';
 
 /// Service that interacts with the Zero-Cost Google Apps Script Webhook
 /// for automated Multi-Tenant Organization, Outlet, and Spreadsheet management.
@@ -147,15 +148,22 @@ class AppsScriptBackendService {
     }
   }
 
-  /// 3. Save a bill to the specific outlet's Google Sheet
-  static Future<bool> saveBill({
+  /// 3. Save a bill to the specific outlet's Google Sheet (returns detailed response payload)
+  static Future<Map<String, dynamic>> saveBillDetailed({
     required String outletId,
     String? spreadsheetId,
     required Map<String, dynamic> billData,
+    String? clientRequestId,
   }) async {
     try {
       final url = getWebhookUrl();
-      if (!_isValidUrl(url)) return true; // Saved locally
+      final effectiveRequestId = (clientRequestId != null && clientRequestId.isNotEmpty)
+          ? clientRequestId
+          : (billData['clientRequestId'] ?? billData['client_request_id'] ?? const Uuid().v4()).toString();
+
+      if (!_isValidUrl(url)) {
+        return {'success': true, 'ok': true, 'id': billData['id'] ?? billData['bill_id'], 'is_mock': true};
+      }
 
       final res = await http.post(
         Uri.parse(url),
@@ -165,15 +173,44 @@ class AppsScriptBackendService {
           'action': 'SAVE_BILL',
           'outlet_id': outletId,
           'spreadsheet_id': spreadsheetId,
-          'data': billData,
+          'clientRequestId': effectiveRequestId,
+          'client_request_id': effectiveRequestId,
+          'data': {
+            ...billData,
+            'clientRequestId': effectiveRequestId,
+            'client_request_id': effectiveRequestId,
+          },
         }),
-      ).timeout(const Duration(seconds: 8));
+      ).timeout(const Duration(seconds: 10));
 
-      return res.statusCode >= 200 && res.statusCode < 300;
+      if (res.statusCode >= 200 && res.statusCode < 300) {
+        try {
+          final decoded = jsonDecode(res.body);
+          if (decoded is Map<String, dynamic>) return decoded;
+        } catch (_) {}
+        return {'success': true, 'ok': true};
+      }
+      return {'success': false, 'ok': false, 'status': res.statusCode, 'error': res.body};
     } catch (e) {
-      debugPrint("AppsScriptBackendService saveBill error: $e");
-      return false;
+      debugPrint("AppsScriptBackendService saveBillDetailed error: $e");
+      return {'success': false, 'ok': false, 'error': e.toString()};
     }
+  }
+
+  /// 3B. Save bill convenience boolean wrapper
+  static Future<bool> saveBill({
+    required String outletId,
+    String? spreadsheetId,
+    required Map<String, dynamic> billData,
+    String? clientRequestId,
+  }) async {
+    final res = await saveBillDetailed(
+      outletId: outletId,
+      spreadsheetId: spreadsheetId,
+      billData: billData,
+      clientRequestId: clientRequestId,
+    );
+    return res['success'] == true || res['ok'] == true;
   }
 
   /// 4. Sync Inventory items
@@ -389,10 +426,12 @@ class AppsScriptBackendService {
     required String kotNumber,
     required String newStatus,
     String? spreadsheetId,
+    String? clientRequestId,
   }) async {
     try {
       final url = getWebhookUrl();
       if (!_isValidUrl(url)) return true;
+      final effectiveRequestId = clientRequestId ?? const Uuid().v4();
 
       final res = await http.post(
         Uri.parse(url),
@@ -402,6 +441,8 @@ class AppsScriptBackendService {
           'action': 'SAVE_BILL',
           'org_id': orgId.trim(),
           'spreadsheet_id': spreadsheetId ?? '',
+          'clientRequestId': effectiveRequestId,
+          'client_request_id': effectiveRequestId,
           'data': {
             'bill_id': orderId,
             'kotNumber': kotNumber,
@@ -409,6 +450,7 @@ class AppsScriptBackendService {
             'kitchenStatus': newStatus.toUpperCase(),
             'timestamp': DateTime.now().toIso8601String(),
             'update_type': 'STATUS_UPDATE',
+            'clientRequestId': effectiveRequestId,
           },
         }),
       ).timeout(const Duration(seconds: 6));

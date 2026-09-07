@@ -338,9 +338,55 @@ class KotItem {
   }
 }
 
+/// Extracts a normalized canonical order ID across KotOrder, Map, or String.
+String canonicalId(dynamic order) {
+  if (order == null) return '';
+  if (order is KotOrder) {
+    if (order.id.isNotEmpty) return cleanOrderId(order.id);
+    if (order.kotNumber.isNotEmpty) return cleanOrderId(order.kotNumber);
+    return '';
+  }
+  if (order is Map) {
+    final rawId = order['id'] ??
+        order['orderId'] ??
+        order['order_id'] ??
+        order['bill_id'] ??
+        order['billId'];
+    if (rawId != null && rawId.toString().trim().isNotEmpty) {
+      return cleanOrderId(rawId.toString());
+    }
+    final rawKot = order['kotNumber'] ?? order['kot_number'];
+    if (rawKot != null && rawKot.toString().trim().isNotEmpty) {
+      return cleanOrderId(rawKot.toString());
+    }
+    return '';
+  }
+  return cleanOrderId(order.toString());
+}
+
+String cleanOrderId(String id) {
+  if (id.isEmpty) return '';
+  return id
+      .toUpperCase()
+      .trim()
+      .replaceFirst(RegExp(r'^BILL_'), '')
+      .replaceFirst(RegExp(r'^KOT-?'), '')
+      .trim();
+}
+
+String cleanTableId(String t) {
+  if (t.isEmpty) return '';
+  return t
+      .toLowerCase()
+      .trim()
+      .replaceAll(RegExp(r'^table[\s_-]*'), '')
+      .replaceAll(RegExp(r'[^a-z0-9]'), '');
+}
+
 class KotOrder {
   final String id;
   final String kotNumber;
+  final String? clientRequestId;
   final String organizationId;
   final String tableId;
   final String tableName;
@@ -364,8 +410,8 @@ class KotOrder {
   final DateTime? readyAt;
   final DateTime? completedAt;
 
-  /// Universal dedup key: kotNumber is unique per order and present everywhere
-  String get canonicalKey => kotNumber.isNotEmpty ? kotNumber : id;
+  /// Universal dedup key using canonical ID
+  String get canonicalKey => canonicalId(this);
 
   /// Effective kitchen progression stage: PENDING, PREPARING, READY, SERVED
   String get effectiveKitchenStatus {
@@ -418,6 +464,7 @@ class KotOrder {
   KotOrder({
     required this.id,
     required this.kotNumber,
+    this.clientRequestId,
     required this.organizationId,
     required this.tableId,
     required this.tableName,
@@ -445,6 +492,7 @@ class KotOrder {
   KotOrder copyWith({
     String? id,
     String? kotNumber,
+    String? clientRequestId,
     String? organizationId,
     String? tableId,
     String? tableName,
@@ -471,6 +519,7 @@ class KotOrder {
     return KotOrder(
       id: id ?? this.id,
       kotNumber: kotNumber ?? this.kotNumber,
+      clientRequestId: clientRequestId ?? this.clientRequestId,
       organizationId: organizationId ?? this.organizationId,
       tableId: tableId ?? this.tableId,
       tableName: tableName ?? this.tableName,
@@ -500,11 +549,12 @@ class KotOrder {
     return {
       'id': id,
       'kotNumber': kotNumber,
+      'clientRequestId': clientRequestId,
       'organizationId': organizationId,
       'tableId': tableId,
       'tableName': tableName,
       'items': items.map((e) => e.toMap()).toList(),
-      'status': status.name.toUpperCase(),
+      'status': status == KotStatus.paymentPending ? 'PAYMENT_PENDING' : status.name.toUpperCase(),
       'kitchenStatus': kitchenStatus,
       'paymentStatus': paymentStatus,
       'orderSource': orderSource,
@@ -552,6 +602,7 @@ class KotOrder {
         case 'COMPLETED':
         case 'SETTLED':
           return KotStatus.completed;
+        case 'PAYMENTPENDING':
         case 'PAYMENT_PENDING':
         case 'BILLED':
           return KotStatus.paymentPending;
@@ -590,6 +641,7 @@ class KotOrder {
     return KotOrder(
       id: docId,
       kotNumber: (map['kotNumber'] ?? map['bill_id'] ?? (docId.length >= 4 ? docId.substring(0, 4).toUpperCase() : docId.toUpperCase())).toString(),
+      clientRequestId: map['clientRequestId']?.toString() ?? map['client_request_id']?.toString(),
       organizationId: (map['organizationId'] ?? map['org_id'] ?? '').toString(),
       tableId: rawTableId,
       tableName: rawTable,

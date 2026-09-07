@@ -596,6 +596,7 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
           ),
         );
       case 'orders_history':
+        if (!isOwner && !canBilling && !canAnalytics) return null;
         return _buildFeatureCard(
           title: 'Order History',
           subtitle: 'All bills, modes & online orders',

@@ -41,7 +41,6 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
   List<Map<String, dynamic>> _activeWaiterCalls = [];
   final List<Map<String, dynamic>> _settledBills = [];
   Timer? _pollingTimer;
-  Timer? _webhookPollTimer;
   String _getEffectiveOrgId() {
     final saasSession = ref.read(saasSessionProvider);
     return resolveOutletId(
@@ -50,7 +49,6 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
       hiveBox: Hive.isBoxOpen('configBox') ? Hive.box('configBox') : null,
     );
   }
-
 
   @override
   void initState() {
@@ -63,41 +61,7 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
   @override
   void dispose() {
     _pollingTimer?.cancel();
-    _webhookPollTimer?.cancel();
     super.dispose();
-  }
-
-
-  Future<void> _pollWebhookOrders() async {
-    final orgId = _getEffectiveOrgId();
-    try {
-      final parsedOrders = await AppsScriptBackendService.fetchOrders(orgId: orgId);
-      final List<KotOrder> incoming = [];
-      for (final data in parsedOrders) {
-        try {
-          final docId = data['id']?.toString() ?? data['bill_id']?.toString() ?? '';
-          if (docId.toUpperCase().contains('TEST')) continue;
-          final order = KotOrder.fromMap(data, docId);
-          if (order.status != KotStatus.cancelled && !order.kotNumber.toUpperCase().contains('TEST')) {
-            incoming.add(order);
-          }
-        } catch (e) {
-          debugPrint('Error parsing webhook order: $e');
-        }
-      }
-      if (incoming.isNotEmpty) {
-        _mergeOrders(incoming, orgId);
-        if (mounted) {
-          setState(() {
-            _updateTableStateFromOrders();
-          });
-        }
-        final box = Hive.box('configBox');
-        await box.put('kot_orders_$orgId', parsedOrders);
-      }
-    } catch (e) {
-      debugPrint('Error polling webhook orders: $e');
-    }
   }
 
   void _initData() {
@@ -128,10 +92,6 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
     // 4. Periodic background polling from Google Sheet every 5 seconds
     _pollingTimer?.cancel();
     _webhookPollTimer?.cancel();
-    _webhookPollTimer?.cancel();
-    _webhookPollTimer = Timer.periodic(const Duration(seconds: 5), (_) {
-      if (mounted) _pollWebhookOrders();
-    });
     _pollingTimer = Timer.periodic(const Duration(seconds: 5), (_) {
       if (mounted) {
         _syncOrdersFromGoogleSheet(orgId);
@@ -345,15 +305,18 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
   }
 
   bool _matchesTable(KotOrder o, RestaurantTable table) {
-    final tDigits = table.tableNumber.replaceAll(RegExp(r'[^0-9]'), '');
+    final cleanTNum = cleanTableId(table.tableNumber);
+    final cleanTName = cleanTableId(table.name);
     final oTableStr = (o.tableName.isNotEmpty ? o.tableName : (o.tableId)).trim();
-    final oDigits = oTableStr.replaceAll(RegExp(r'[^0-9]'), '');
+    final cleanOName = cleanTableId(oTableStr);
+    final cleanOId = cleanTableId(o.tableId);
 
-    if (tDigits.isNotEmpty && oDigits.isNotEmpty && tDigits == oDigits) return true;
+    if (cleanTNum.isNotEmpty && (cleanTNum == cleanOName || cleanTNum == cleanOId)) return true;
+    if (cleanTName.isNotEmpty && (cleanTName == cleanOName || cleanTName == cleanOId)) return true;
     if (oTableStr.toLowerCase() == table.name.toLowerCase()) return true;
     if (oTableStr.toLowerCase() == 'table ${table.tableNumber.toLowerCase()}'.trim()) return true;
     if (table.tableNumber.toLowerCase() == o.tableId.toLowerCase()) return true;
-    if (o.tableId.isNotEmpty && (o.tableId == table.id || o.tableId == table.tableNumber || o.tableId == tDigits)) return true;
+    if (o.tableId.isNotEmpty && (o.tableId == table.id || o.tableId == table.tableNumber)) return true;
     return false;
   }
 
@@ -425,11 +388,12 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
     if (_isSyncingOrders) return;
     _isSyncingOrders = true;
 
-    final sheetId = _getGoogleSheetId(orgId);
-    final List<KotOrder> fetchedFromRemote = [];
-
-    // 1. Primary: Query Cloud Backend Webhook (Works with 100% Private Google Sheets, Zero Google Login)
     try {
+      final sheetId = _getGoogleSheetId(orgId);
+      final List<KotOrder> fetchedFromRemote = [];
+
+      // 1. Primary: Query Cloud Backend Webhook (Works with 100% Private Google Sheets, Zero Google Login)
+      try {
       final syncResult = await AppsScriptBackendService.fetchOrdersAndAlerts(
         orgId: orgId,
         spreadsheetId: sheetId.isNotEmpty && !sheetId.startsWith('sheet_ORG') ? sheetId : null,
@@ -768,10 +732,8 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
 
       // If any of these paid orders were in _kotOrders, remove them
       if (mounted) {
-        final paidIds = paidOrders.map((o) => o.id).toSet();
-        final paidKots = paidOrders.map((o) => o.kotNumber).toSet();
         setState(() {
-          _kotOrders.removeWhere((o) => paidIds.contains(o.id) || paidKots.contains(o.kotNumber));
+          _kotOrders.removeWhere((o) => paidOrders.any((p) => canonicalId(p) == canonicalId(o)));
           _updateTableStateFromOrders();
         });
       }
@@ -781,8 +743,10 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
     if (activeRemoteOrders.isNotEmpty && mounted) {
       _mergeOrders(activeRemoteOrders, orgId);
     }
+  } finally {
     _isSyncingOrders = false;
   }
+}
 
   Future<void> _autoPrintPaidBill({
     required Map<String, dynamic> billMap,
@@ -954,18 +918,12 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
   }
 
   void _mergeOrders(List<KotOrder> remoteOrders, String orgId) {
-    String canonicalKey(KotOrder o) {
-      if (o.kotNumber.isNotEmpty) return o.kotNumber;
-      if (o.id.startsWith('BILL_')) return o.id.replaceFirst('BILL_', '');
-      return o.id;
-    }
-
     final Map<String, KotOrder> map = {};
     for (final o in _kotOrders) {
       if (o.status != KotStatus.cancelled &&
           o.status != KotStatus.paid &&
           (o.paymentStatus ?? '').toUpperCase() != 'PAID') {
-        map[canonicalKey(o)] = o;
+        map[canonicalId(o)] = o;
       }
     }
     for (final r in remoteOrders) {
@@ -973,7 +931,7 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
       if (r.status != KotStatus.cancelled &&
           r.status != KotStatus.paid &&
           (r.paymentStatus ?? '').toUpperCase() != 'PAID') {
-        final key = canonicalKey(r);
+        final key = canonicalId(r);
         final existing = map[key];
         if (existing != null) {
           // Preserve local progression if existing rank is higher

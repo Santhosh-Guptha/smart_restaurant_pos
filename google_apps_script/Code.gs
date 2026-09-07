@@ -191,6 +191,117 @@ function getOrCreateBillsSheet(ss) {
   return sheet;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 1: Server-Issued Counter Allocation (TOKEN, ORDER, INVOICE, SESSION)
+// ─────────────────────────────────────────────────────────────────────────────
+function allocateCounter(ss, outletId, kind, businessDate) {
+  if (!outletId) outletId = "DEFAULT";
+  if (!businessDate) {
+    var now = new Date();
+    businessDate = Utilities.formatDate(now, Session.getScriptTimeZone() || "GMT+05:30", "yyyy-MM-dd");
+  }
+  var sheet = ss.getSheetByName("Counters");
+  if (!sheet) {
+    sheet = ss.insertSheet("Counters");
+    sheet.appendRow(["outletId", "kind", "businessDate", "lastValue", "updatedAt"]);
+    sheet.setFrozenRows(1);
+  }
+  
+  var data = sheet.getDataRange().getValues();
+  var rowIndex = -1;
+  var lastVal = 0;
+  
+  for (var i = 1; i < data.length; i++) {
+    var rowOutlet = String(data[i][0] || "").trim();
+    var rowKind = String(data[i][1] || "").trim().toUpperCase();
+    var rowDate = String(data[i][2] || "").trim();
+    
+    if (rowOutlet === outletId && rowKind === kind.toUpperCase()) {
+      if (kind.toUpperCase() === "TOKEN") {
+        if (rowDate === businessDate) {
+          rowIndex = i + 1;
+          lastVal = parseInt(data[i][3], 10) || 0;
+          break;
+        }
+      } else {
+        rowIndex = i + 1;
+        lastVal = parseInt(data[i][3], 10) || 0;
+        break;
+      }
+    }
+  }
+  
+  var nextVal = lastVal + 1;
+  var nowIso = new Date().toISOString();
+  
+  if (rowIndex > 0) {
+    sheet.getRange(rowIndex, 4, 1, 2).setValues([[nextVal, nowIso]]);
+  } else {
+    sheet.appendRow([outletId, kind.toUpperCase(), businessDate, nextVal, nowIso]);
+  }
+  
+  return nextVal;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 1: 48-Hour Idempotency Cache & Sheet Ledger
+// ─────────────────────────────────────────────────────────────────────────────
+function checkIdempotency(ss, clientRequestId) {
+  if (!clientRequestId) return null;
+  var key = "idemp_" + clientRequestId.trim();
+  // 1. Fast path: CacheService
+  try {
+    var cached = CacheService.getScriptCache().get(key);
+    if (cached) {
+      return JSON.parse(cached);
+    }
+  } catch (e) {}
+  
+  // 2. Sheet ledger path: Idempotency tab (48 hours)
+  try {
+    var sheet = ss ? ss.getSheetByName("Idempotency") : null;
+    if (sheet) {
+      var data = sheet.getDataRange().getValues();
+      var cutoff = Date.now() - (48 * 60 * 60 * 1000);
+      for (var i = data.length - 1; i >= 1; i--) {
+        if (String(data[i][0] || "").trim() === clientRequestId.trim()) {
+          var timeStr = data[i][3];
+          var t = timeStr ? new Date(timeStr).getTime() : 0;
+          if (t > cutoff) {
+            return JSON.parse(data[i][2]);
+          }
+        }
+      }
+    }
+  } catch (e) {}
+  return null;
+}
+
+function recordIdempotency(ss, clientRequestId, action, resultObj) {
+  if (!clientRequestId || !resultObj) return;
+  var key = "idemp_" + clientRequestId.trim();
+  var resJson = JSON.stringify(resultObj);
+  try {
+    CacheService.getScriptCache().put(key, resJson, 21600); // 6 hours
+  } catch (e) {}
+  
+  try {
+    if (ss) {
+      var sheet = ss.getSheetByName("Idempotency");
+      if (!sheet) {
+        sheet = ss.insertSheet("Idempotency");
+        sheet.appendRow(["clientRequestId", "action", "resultJson", "createdAt"]);
+        sheet.setFrozenRows(1);
+      }
+      sheet.appendRow([clientRequestId.trim(), action || "", resJson, new Date().toISOString()]);
+      if (sheet.getLastRow() > 1000) {
+        var rowsToDelete = sheet.getLastRow() - 800;
+        if (rowsToDelete > 0) sheet.deleteRows(2, rowsToDelete);
+      }
+    }
+  } catch (e) {}
+}
+
 function doGet(e) {
   var params = (e && e.parameter) ? e.parameter : {};
   var orgId = params.org || params.org_id || "";
@@ -317,11 +428,7 @@ function doGet(e) {
               if (cReqTable && coTableClean !== cReqTable) {
                 continue;
               }
-              var coTime = co.timestamp ? new Date(co.timestamp).getTime() : 0;
-              if (coTime > 0 && (nowTime - coTime) > 4 * 60 * 60 * 1000) {
-
-                continue; // Older than 4 hours -> stale!
-              }
+              // Orders are kept active until settled or closed
               ordersMap[cNormId] = co;
             }
           }
@@ -362,8 +469,9 @@ function doGet(e) {
                 if (rawId.indexOf("TEST") !== -1 || (row[nameIdx] && String(row[nameIdx]).toUpperCase().indexOf("TEST") !== -1)) continue;
 
                 var rawStatus = statusIdx !== -1 ? String(row[statusIdx] || "").trim() : "";
+                var rowItemsStr = "";
                 if (rawStatus.indexOf("[") === 0 || rawStatus.indexOf("{") === 0) {
-                  rawItems = rawStatus;
+                  rowItemsStr = rawStatus;
                   if (row[statusIdx + 1] !== undefined && String(row[statusIdx + 1]).indexOf("[") === -1 && String(row[statusIdx + 1]).indexOf("{") === -1 && String(row[statusIdx + 1]).trim() !== "") {
                     rawStatus = String(row[statusIdx + 1]).trim();
                   } else if (row[9] !== undefined && String(row[9]).indexOf("[") === -1 && String(row[9]).indexOf("{") === -1 && String(row[9]).trim() !== "") {
@@ -385,11 +493,7 @@ function doGet(e) {
                 }
 
                 var rawDate = dateIdx !== -1 ? String(row[dateIdx] || "").trim() : "";
-                var rowTime = rawDate ? new Date(rawDate).getTime() : 0;
-                if (rowTime > 0 && (nowTime - rowTime) > 4 * 60 * 60 * 1000) {
-
-                  continue; // Stale abandoned order -> ignore!
-                }
+                // Orders are kept active until settled or closed (no 4-hour cutoff)
 
                 var rawMode = modeIdx !== -1 ? String(row[modeIdx] || "").trim() : "";
                 var rawName = nameIdx !== -1 ? String(row[nameIdx] || "").trim() : "";
@@ -419,8 +523,8 @@ function doGet(e) {
 
                 var canonicalTable = row[tableIdx] || ("Table " + rawTableClean);
                 var orderObj = {
-                  id: "BILL_" + rawId,
-                  orderId: "BILL_" + rawId,
+                  id: rawId,
+                  orderId: rawId,
                   kotNumber: "KOT-" + rawId,
                   customerName: rawName || "Dine-In Guest",
                   customerPhone: rawPhone,
@@ -597,10 +701,37 @@ function handleSaveBill(data) {
       spreadsheetId = getSheetIdForOrg(orgId);
     }
 
+    var ss = null;
+    if (spreadsheetId && spreadsheetId.indexOf("sheet_") !== 0) {
+      try {
+        ss = SpreadsheetApp.openById(spreadsheetId);
+      } catch (e) {}
+    }
+
     const b = data.data || data.bill || {};
+    var clientRequestId = String(data.clientRequestId || data.client_request_id || b.clientRequestId || b.client_request_id || "").trim();
+    if (clientRequestId) {
+      var cachedIdemp = checkIdempotency(ss, clientRequestId);
+      if (cachedIdemp) {
+        return responseJson(cachedIdemp);
+      }
+    }
+
     const cust = b.customer || {};
-    const billId = String(b.bill_id || b.billId || b.id || "");
+    var billId = String(b.bill_id || b.billId || b.id || "");
+    if (!billId || billId === "null" || billId === "undefined") {
+      var orderSeq = allocateCounter(ss, orgId, "ORDER");
+      var now = new Date();
+      var ymd = Utilities.formatDate(now, Session.getScriptTimeZone() || "GMT+05:30", "yyyyMMdd");
+      billId = "ORD-" + ymd + "-" + ("0000" + orderSeq).slice(-4);
+    }
     const cleanId = cleanOrderId(billId);
+
+    var tokenNo = b.token_no || b.tokenNo;
+    if (!tokenNo && ss) {
+      tokenNo = allocateCounter(ss, orgId, "TOKEN");
+    }
+    var kotNumber = b.kot_number || b.kotNumber || (tokenNo ? ("#" + tokenNo) : (cleanId ? ("KOT-" + cleanId) : billId));
 
     // Reject missing table name instead of defaulting to "Table 1"
     const tableNameRaw = b.table_name || b.tableName || (b.table_number ? ("Table " + b.table_number) : (b.tableNumber ? ("Table " + b.tableNumber) : (b.table || "")));
@@ -741,7 +872,8 @@ function handleSaveBill(data) {
             var orderObj = {
               id: billId,
               orderId: billId,
-              kotNumber: cleanId ? ("KOT-" + cleanId) : billId,
+              kotNumber: kotNumber,
+              tokenNo: tokenNo,
               customerName: safeCustName,
               customerPhone: customerPhone,
               totalAmount: totalAmount,
@@ -759,17 +891,35 @@ function handleSaveBill(data) {
             };
             cachedOrders.push(orderObj);
           }
-          if (cachedOrders.length > 50) cachedOrders = cachedOrders.slice(-50);
+          // Sheet-backed tracking without arbitrary 50-order cap
           props.setProperty(cacheKey, JSON.stringify(cachedOrders));
         }
       } catch (eCache) {}
     }
 
-    if (!spreadsheetId || spreadsheetId.indexOf("sheet_") === 0) {
-      return responseJson({
+    function buildResult(extra) {
+      var res = {
         success: true,
+        ok: true,
+        id: billId,
+        order_id: billId,
         bill_id: billId,
-        status: status,
+        kotNumber: kotNumber,
+        kot_number: kotNumber,
+        token_no: tokenNo,
+        status: isSettled ? "PAID" : status
+      };
+      if (extra) {
+        for (var k in extra) { res[k] = extra[k]; }
+      }
+      if (clientRequestId) {
+        recordIdempotency(ss, clientRequestId, "SAVE_BILL", res);
+      }
+      return responseJson(res);
+    }
+
+    if (!spreadsheetId || spreadsheetId.indexOf("sheet_") === 0) {
+      return buildResult({
         cached: true,
         message: isSettled ? "Order settled and removed from active cache." : "Order cached in cloud memory."
       });
@@ -777,7 +927,7 @@ function handleSaveBill(data) {
 
     // Google Sheets persistence
     try {
-      const ss = SpreadsheetApp.openById(spreadsheetId);
+      if (!ss) ss = SpreadsheetApp.openById(spreadsheetId);
       const sheet = getOrCreateBillsSheet(ss);
       const lastRow = sheet.getLastRow();
       let existingRow = -1;
@@ -814,10 +964,7 @@ function handleSaveBill(data) {
         if (existingRow !== -1 && (b.update_type === "STATUS_UPDATE" || (!rawItems || rawItems.length === 0))) {
           sheet.getRange(existingRow, statusIdx + 1).setValue(isSettled ? "PAID" : status);
           if (txnId) sheet.getRange(existingRow, txnIdx + 1).setValue(txnId);
-          return responseJson({
-            success: true,
-            bill_id: billId,
-            status: isSettled ? "PAID" : status,
+          return buildResult({
             row: existingRow,
             cleared: isSettled
           });
@@ -845,18 +992,12 @@ function handleSaveBill(data) {
         sheet.appendRow(rowData);
       }
 
-      return responseJson({
-        success: true,
-        bill_id: billId,
-        status: isSettled ? "PAID" : status,
+      return buildResult({
         row: existingRow !== -1 ? existingRow : lastRow + 1,
         cleared: isSettled
       });
     } catch (errSheet) {
-      return responseJson({
-        success: true,
-        bill_id: billId,
-        status: status,
+      return buildResult({
         warning: errSheet.toString(),
         message: "Order cached in cloud memory, sheet write failed."
       });

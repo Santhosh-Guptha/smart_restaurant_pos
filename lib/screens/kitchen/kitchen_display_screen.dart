@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:uuid/uuid.dart';
 import 'package:esc_pos_utils_plus/esc_pos_utils_plus.dart';
 import 'package:print_bluetooth_thermal/print_bluetooth_thermal.dart';
 import 'package:hive_flutter/hive_flutter.dart';
@@ -247,17 +248,17 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
       // Update local state immediately
       setState(() {
         if (isServedAction) {
-          _allOrders.removeWhere((o) => o.id == order.id || o.kotNumber == order.kotNumber || o.canonicalKey == order.canonicalKey);
+          _allOrders.removeWhere((o) => canonicalId(o) == canonicalId(order));
           final servedOrder = order.copyWith(
             status: KotStatus.served,
             kitchenStatus: 'SERVED',
             completedAt: DateTime.now(),
           );
-          if (!_servedOrdersHistory.any((x) => x.canonicalKey == servedOrder.canonicalKey)) {
+          if (!_servedOrdersHistory.any((x) => canonicalId(x) == canonicalId(servedOrder))) {
             _servedOrdersHistory.insert(0, servedOrder);
           }
         } else {
-          final idx = _allOrders.indexWhere((o) => o.id == order.id || o.kotNumber == order.kotNumber || o.canonicalKey == order.canonicalKey);
+          final idx = _allOrders.indexWhere((o) => canonicalId(o) == canonicalId(order));
           if (idx >= 0) {
             final existing = _allOrders[idx];
             final shouldPreservePaid = existing.status == KotStatus.paid;
@@ -275,7 +276,7 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
         final raw = box.get('kot_orders_$orgId');
         if (raw is List) {
           final updatedList = raw.map((item) {
-            if (item is Map && (item['id'] == order.id || item['kotNumber'] == order.kotNumber)) {
+            if (item is Map && canonicalId(item) == canonicalId(order)) {
               final m = Map<String, dynamic>.from(item);
               final kStatus = isServedAction ? 'SERVED' : newStatus.name.toUpperCase();
               m['kitchenStatus'] = kStatus;
@@ -314,6 +315,7 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
           orderId: order.id,
           kotNumber: order.kotNumber,
           newStatus: fsStatus,
+          clientRequestId: const Uuid().v4(),
         );
       } catch (e) {
         debugPrint('Error updating KOT status via webhook: $e');

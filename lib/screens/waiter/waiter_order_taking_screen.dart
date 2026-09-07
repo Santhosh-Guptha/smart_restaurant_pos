@@ -4,6 +4,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:uuid/uuid.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:http/http.dart' as http;
 import '../../core/constants.dart';
@@ -221,7 +222,8 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
 
   Future<void> _loadTableActiveOrders() async {
     final orgId = _getEffectiveOrgId();
-    final tDigits = widget.table.tableNumber.replaceAll(RegExp(r'[^0-9]'), '');
+    final cleanWTable = cleanTableId(widget.table.tableNumber);
+    final cleanWName = cleanTableId(widget.table.name);
     final List<KotOrder> matched = [];
 
     // 1. Check local Hive
@@ -235,8 +237,11 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
             final id = (m['id'] ?? m['kotNumber'] ?? '').toString();
             if (id.toUpperCase().contains('TEST')) continue;
             final o = KotOrder.fromMap(m, id);
-            final oTableDigits = (o.tableName.isNotEmpty ? o.tableName : o.tableId).replaceAll(RegExp(r'[^0-9]'), '');
-            final matches = (tDigits.isNotEmpty && oTableDigits.isNotEmpty && tDigits == oTableDigits) ||
+            final cleanOTable = cleanTableId(o.tableName);
+            final cleanOId = cleanTableId(o.tableId);
+            final matches = (cleanWTable.isNotEmpty && (cleanWTable == cleanOTable || cleanWTable == cleanOId)) ||
+                (cleanWName.isNotEmpty && (cleanWName == cleanOTable || cleanWName == cleanOId)) ||
+                o.tableId == widget.table.id ||
                 o.tableName.toLowerCase() == widget.table.name.toLowerCase() ||
                 o.tableName.toLowerCase() == 'table ${widget.table.tableNumber.toLowerCase()}'.trim();
 
@@ -253,11 +258,11 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
 
     // 2. Fetch remote orders via Webhook (keeps waiter synced with QR & Counter orders)
     try {
-      final remoteList = await AppsScriptBackendService.fetchOrders(orgId: orgId, table: 'Table $tDigits');
+      final remoteList = await AppsScriptBackendService.fetchOrders(orgId: orgId, table: widget.table.tableNumber);
       for (final m in remoteList) {
         final id = (m['id'] ?? m['orderId'] ?? m['kotNumber'] ?? '').toString();
         if (id.isEmpty || id.toUpperCase().contains('TEST')) continue;
-        if (!matched.any((ex) => ex.id == id || ex.kotNumber == id)) {
+        if (!matched.any((ex) => canonicalId(ex) == canonicalId(m))) {
           final o = KotOrder.fromMap(m, id);
           if (o.status != KotStatus.cancelled &&
               o.status != KotStatus.paid &&
@@ -365,9 +370,12 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
     final gst = (subtotal + serviceCharge) * (_storeGstRate / 100);
     final totalAmount = subtotal + serviceCharge + gst;
 
+    final clientRequestId = const Uuid().v4();
+
     final orderMap = {
       'id': billNumber,
       'kotNumber': token,
+      'clientRequestId': clientRequestId,
       'organizationId': orgId,
       'tableId': tNum,
       'tableNumber': tNum,
@@ -402,11 +410,16 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
 
         // 2. Mark Table Occupied in Hive
         final rawTables = box.get('restaurant_tables_$orgId') as List? ?? [];
+        final cleanWTable = cleanTableId(widget.table.tableNumber);
+        final cleanWName = cleanTableId(widget.table.name);
         final updatedTables = rawTables.map((t) {
           if (t is Map) {
             final tm = Map<String, dynamic>.from(t);
-            final matchId = (tm['tableNumber'] ?? tm['name'] ?? '').toString().replaceAll(RegExp(r'[^0-9]'), '');
-            if (matchId == tNum) {
+            final cleanTNum = cleanTableId(tm['tableNumber']?.toString() ?? '');
+            final cleanTName = cleanTableId(tm['name']?.toString() ?? '');
+            if ((cleanWTable.isNotEmpty && cleanWTable == cleanTNum) ||
+                (cleanWName.isNotEmpty && cleanWName == cleanTName) ||
+                tm['id'] == widget.table.id) {
               tm['status'] = 'occupied';
               tm['currentCustomerName'] = guestName;
               tm['currentCustomerPhone'] = guestPhone;
@@ -426,10 +439,13 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
       try {
         remoteSuccess = await AppsScriptBackendService.saveBill(
           outletId: orgId,
+          clientRequestId: clientRequestId,
           billData: {
             'id': billNumber,
             'bill_id': billNumber,
             'kotNumber': token,
+            'clientRequestId': clientRequestId,
+            'client_request_id': clientRequestId,
             'table_name': tableName,
             'table': tableName,
             'tableNumber': tNum,

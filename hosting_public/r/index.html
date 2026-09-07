@@ -2401,21 +2401,33 @@
     async function sendToGoogleSheetWebhook(action, payloadData) {
       if (!state.googleSheetId && !state.organizationId) return false;
       const orgId = state.organizationId || 'DEFAULT_ORG';
+      const clientRequestId = (typeof crypto !== 'undefined' && crypto.randomUUID)
+        ? crypto.randomUUID()
+        : 'req_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9);
+
       const body = {
         action: action,
         org_id: orgId,
         spreadsheet_id: state.googleSheetId,
-        data: payloadData
+        client_request_id: clientRequestId,
+        data: Object.assign({ client_request_id: clientRequestId }, payloadData || {})
       };
 
       try {
-        await fetch(DEFAULT_APPS_SCRIPT_WEBHOOK, {
+        const resp = await fetch(DEFAULT_APPS_SCRIPT_WEBHOOK, {
           method: 'POST',
-          mode: 'no-cors',
           headers: { 'Content-Type': 'text/plain;charset=utf-8' },
           body: JSON.stringify(body)
         });
-        return true;
+        if (resp.ok) {
+          try {
+            const resJson = await resp.json();
+            return resJson;
+          } catch (_) {
+            return { success: true, ok: true };
+          }
+        }
+        return false;
       } catch (e) {
         console.warn('Webhook post warning:', e);
         return false;
@@ -3158,7 +3170,8 @@
         const guestName = sanitizeFormulaPrefix(state.customerName.trim());
         const guestPhone = sanitizeFormulaPrefix(state.customerPhone.trim());
         const specialInstr = sanitizeFormulaPrefix((state.specialInstructions || '').trim());
-        const kotNumber = getNextDailyToken();
+        let kotNumber = getNextDailyToken();
+        let orderId = kotNumber;
 
         // Deduplicate cart items by product ID & price
         const mergedCartMap = {};
@@ -3213,8 +3226,16 @@
               status: 'PENDING',
               timestamp: new Date().toISOString()
             });
-            // Only proceed to success if webhook responded OK
+            if (!webhookResult || (webhookResult.success === false && webhookResult.ok === false)) {
+              throw new Error('Order submission failed on server');
+            }
+            if (webhookResult && (webhookResult.id || webhookResult.order_id || webhookResult.kotNumber)) {
+              orderId = webhookResult.id || webhookResult.order_id || kotNumber;
+              kotNumber = webhookResult.kotNumber || webhookResult.kot_number || kotNumber;
+              state.lastKotNumber = kotNumber;
+            }
           } catch (err) {
+            console.error('Order dispatch error:', err);
             showToast('Order failed to reach kitchen. Please try again.', 'error');
             state.placing = false;
             renderMenu();
@@ -3231,7 +3252,7 @@
         }));
 
         state.orderPlaced = {
-          orderId: kotNumber,
+          orderId: orderId,
           kotNumber: kotNumber,
           items: summaryItems,
           subtotal: subtotal,
