@@ -1,0 +1,55 @@
+{
+  "project_info": {
+    "project_number": "486476143616",
+    "project_id": "smartdine-restaurant-pos",
+    "storage_bucket": "smartdine-restaurant-pos.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:486476143616:android:ce2cd4881dc37bdf928ce5",
+        "android_client_info": {
+          "package_name": "com.devmonks.smartdine"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "486476143616-8tk14bio0e2lme2d92tkm23bnlb3hq66.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.devmonks.smartdine",
+            "certificate_hash": "6246f80532929dd542d0d9af1e815ce4a055f11f"
+          }
+        },
+        {
+          "client_id": "486476143616-p5f68a9qhb7brdba2svmancnheek6l5i.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.devmonks.smartdine",
+            "certificate_hash": "327e1cd34680a23c5811245d200ff74170bd9196"
+          }
+        },
+        {
+          "client_id": "486476143616-1e1pmj004p87b0h2pk09b00ejeepsfi8.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBv9G7J15k47VKFwc0pUcC3oJHs4xNybyc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "486476143616-1e1pmj004p87b0h2pk09b00ejeepsfi8.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

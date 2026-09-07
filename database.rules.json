@@ -1,0 +1,12 @@
+{
+  "rules": {
+    ".read": true,
+    ".write": true,
+    "device_trials": {
+      "$deviceId": {
+        ".read": true,
+        ".write": true
+      }
+    }
+  }
+}

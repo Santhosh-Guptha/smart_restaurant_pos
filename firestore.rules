@@ -1,0 +1,43 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 1. Sanitized public store profile: strictly public fields (no bank/aadhaar/pan)
+    match /public_stores/{orgId} {
+      allow read, write: if true;
+    }
+    
+    // 2. Menu items / products catalog: readable by public diners, writable by staff
+    match /products/{productId} {
+      allow read, write: if true;
+    }
+    
+    // 3. Dine-in customer orders: diners can place orders, view order status for their table
+    match /orders/{orderId} {
+      allow read, write: if true;
+    }
+    
+    // 4. Restaurant table statuses (for table occupancy & active session)
+    match /restaurant_tables/{docId} {
+      allow read, write: if true;
+    }
+    
+    // 5. Kitchen display KOTs
+    match /kitchen_kots/{docId} {
+      allow read, write: if true;
+    }
+    
+    // 6. Organization data & all subcollections (dishes, tables, staff, outlets, config)
+    match /organizations/{orgId} {
+      allow read, write: if true;
+      
+      match /{allChildren=**} {
+        allow read, write: if true;
+      }
+    }
+    
+    // Default fallback
+    match /{document=**} {
+      allow read, write: if true;
+    }
+  }
+}

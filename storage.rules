@@ -1,0 +1,14 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /organizations/{organizationId}/{allPaths=**} {
+      allow read: if request.auth != null &&
+        (request.auth.token.role == 'MASTER_ADMIN' ||
+         request.auth.token.organizationId == organizationId);
+      allow write: if request.auth != null &&
+        (request.auth.token.role == 'MASTER_ADMIN' ||
+         (request.auth.token.organizationId == organizationId &&
+          request.auth.token.role in ['OWNER', 'MANAGER']));
+    }
+  }
+}

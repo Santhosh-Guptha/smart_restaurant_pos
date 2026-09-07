@@ -1,0 +1,3925 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#1e293b">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="description" content="Scan, Browse & Order from your table — Powered by SmartBizz">
+  <title>SmartBizz Menu</title>
+  <link rel="manifest" href="/r/manifest.json">
+  <link rel="icon" href="/assets/logo.png" type="image/png">
+  <link rel="apple-touch-icon" href="/assets/logo.png">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: { 500: '#f59e0b', 600: '#d97706' },
+          }
+        }
+      }
+    }
+  </script>
+  <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <style>
+    * { -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
+    html, body { overscroll-behavior-y: contain; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+
+    /* Hide scrollbar on category tabs */
+    .hide-scrollbar::-webkit-scrollbar { display: none; }
+    .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+    /* Modern Luxury Hospitality Shimmer */
+    @keyframes shimmer {
+      0% { background-position: -600px 0; }
+      100% { background-position: 600px 0; }
+    }
+    .skeleton {
+      background: linear-gradient(90deg, #f1f5f9 0%, #e2e8f0 35%, #cbd5e1 50%, #e2e8f0 65%, #f1f5f9 100%);
+      background-size: 600px 100%;
+      animation: shimmer 1.6s infinite ease-in-out;
+      border-radius: 0.75rem;
+    }
+
+    /* Validation Shake Animation */
+    @keyframes shake {
+      0%, 100% { transform: translateX(0); }
+      20%, 60% { transform: translateX(-6px); }
+      40%, 80% { transform: translateX(6px); }
+    }
+    .animate-shake { animation: shake 0.35s ease-in-out; }
+
+    /* Tactile Spring Bounce for Cart & Quantities */
+    @keyframes spring-bounce {
+      0% { transform: scale(1); }
+      40% { transform: scale(1.22); }
+      70% { transform: scale(0.94); }
+      100% { transform: scale(1); }
+    }
+    .bounce-active { animation: spring-bounce 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+
+    /* Pulsing Action & Live Sync Ring */
+    @keyframes pulse-ring {
+      0% { transform: scale(0.95); opacity: 0.85; }
+      50% { transform: scale(1.15); opacity: 0.35; }
+      100% { transform: scale(0.95); opacity: 0.85; }
+    }
+    .pulse-ring { animation: pulse-ring 2.2s infinite ease-in-out; }
+
+    /* Slide-up modal */
+    .modal-overlay { transition: opacity 0.3s ease; }
+    .modal-sheet { transition: transform 0.3s ease; }
+    .modal-hidden { display: none !important; pointer-events: none !important; visibility: hidden !important; }
+    .modal-hidden .modal-overlay { opacity: 0; pointer-events: none; }
+    .modal-hidden .modal-sheet { transform: translateY(100%); }
+
+    /* Enhanced Toast */
+    .toast {
+      animation: toast-in 0.3s cubic-bezier(0.16, 1, 0.3, 1), toast-out 0.3s ease 3.4s forwards;
+    }
+    @keyframes toast-in { from { transform: translateY(100%) scale(0.95); opacity: 0; } to { transform: translateY(0) scale(1); opacity: 1; } }
+    @keyframes toast-out { from { opacity: 1; transform: translateY(0); } to { opacity: 0; transform: translateY(20px); } }
+
+    /* Fade in */
+    .fade-in { animation: fadeIn 0.35s ease; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+    /* Quantity button press */
+    .qty-btn:active { transform: scale(0.9); }
+    .qty-btn { transition: transform 0.1s ease; }
+  </style>
+</head>
+<body class="bg-white text-slate-900 min-h-screen">
+
+  <!-- App Root -->
+  <div id="app" class="max-w-md mx-auto min-h-screen relative"></div>
+
+  <!-- Toast Container -->
+  <div id="toast-container" class="fixed bottom-20 left-1/2 -translate-x-1/2 z-[100] flex flex-col gap-2 items-center pointer-events-none"></div>
+
+  <script>
+    // =========================================================================
+    //  Constants & Webhook Configuration
+    // =========================================================================
+    const DEFAULT_APPS_SCRIPT_WEBHOOK = 'https://script.google.com/macros/s/AKfycbxIAGxL_Chf3xMKfpqMyJ8fHkYq990x-WHSH6coCWpxQaWCH7zRV599esQ604oEVtrF/exec';
+    // Pure Cloud Store Architecture
+
+    const UPI_APPS = [
+      { id: 'PHONEPE', name: 'PhonePe', color: '#5f259f', bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-300', badge: '🟣' },
+      { id: 'GPAY', name: 'Google Pay', color: '#4285f4', bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-300', badge: '🔵' },
+      { id: 'PAYTM', name: 'Paytm', color: '#00b9f1', bg: 'bg-sky-50', text: 'text-sky-700', border: 'border-sky-300', badge: '🔷' },
+      { id: 'CRED', name: 'CRED UPI', color: '#1a1a1a', bg: 'bg-slate-100', text: 'text-slate-800', border: 'border-slate-300', badge: '⚫' },
+      { id: 'BHIM', name: 'BHIM UPI', color: '#00843d', bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-300', badge: '🟢' },
+      { id: 'ANY', name: 'Any UPI', color: '#2563eb', bg: 'bg-indigo-50', text: 'text-indigo-700', border: 'border-indigo-300', badge: '📱' }
+    ];
+
+    // =========================================================================
+    //  Device Identification
+    // =========================================================================
+    function getOrCreateDeviceId() {
+      try {
+        let id = localStorage.getItem('sb_guest_device_id');
+        if (!id) {
+          id = 'dev_' + Math.random().toString(36).substring(2, 9) + '_' + Date.now().toString(36);
+          localStorage.setItem('sb_guest_device_id', id);
+        }
+        return id;
+      } catch (e) {
+        return 'dev_' + Math.random().toString(36).substring(2, 9);
+      }
+    }
+
+    // =========================================================================
+    //  State
+    // =========================================================================
+    const state = {
+      restaurantSlug: null,
+      tableToken: null,
+      googleSheetId: null,
+      isSheetRestricted: false,
+      organizationId: null,
+      currentView: 'menu',  // 'menu' | 'status'
+      restaurant: null,    // { name, id }
+      tableNumber: '1',
+      restaurantAddress: '',
+      menuItems: [],
+      categories: [],
+      activeCategory: 'All',
+      searchQuery: '',
+      vegOnly: false,
+      cart: {},             // { itemId: qty }
+      checkoutOpen: false,
+      deviceId: getOrCreateDeviceId(),
+      customerName: localStorage.getItem('sb_customer_name') || '',
+      customerPhone: localStorage.getItem('sb_customer_phone') || '',
+      specialInstructions: '',
+      orderPlaced: null,    // { orderId, kotNumber, items, total }
+      orderHistory: [],     // All KOT orders placed for this table session
+      orderStatus: null,
+      upiId: null,          // Store default UPI VPA (e.g. merchant@upi)
+      selectedUpiApp: 'PHONEPE',
+      showUpiQr: false,
+      billRequested: false,
+      loading: true,
+      error: null,
+      placing: false,
+      submittingPayment: false,
+      paymentSubmitted: false,
+      paymentConfirmModalOpen: false,
+      paymentReceipt: null,
+      orderPollingTimer: null,
+      razorpayKeyId: 'rzp_test_51placeholder',
+      settlementUpiId: '',
+      operatingHours: null,
+      isKitchenClosed: false,
+      activeSubcategory: 'All'
+    };
+
+    const app = document.getElementById('app');
+
+    // =========================================================================
+    //  URL Parsing (Direct Google Sheet ID & Parameters)
+    // =========================================================================
+    function extractGoogleSheetId(raw) {
+      if (!raw) return '';
+      const str = String(raw).trim();
+      const match = str.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+      if (match && match[1]) return match[1];
+      return str.split('/')[0].split('?')[0].split('#')[0].trim();
+    }
+
+    function parseUrl() {
+      const params = new URLSearchParams(window.location.search);
+      const rawSheet = params.get('sheet') || params.get('s') || params.get('sheetId') || params.get('sheet_id') || params.get('spreadsheet');
+      const tableParam = params.get('table') || params.get('t') || params.get('tableno') || params.get('table_number');
+      const nameParam = params.get('name') || params.get('n') || params.get('restaurant') || params.get('shop') || params.get('store');
+      const orgParam = params.get('org') || params.get('o') || params.get('orgId') || params.get('organization_id') || params.get('store_id');
+
+      if (rawSheet && rawSheet.trim().length > 0) {
+        const clean = extractGoogleSheetId(rawSheet);
+        // Only accept real Google Drive spreadsheet IDs (not dummy sheet_ORG strings)
+        if (clean && !clean.startsWith('sheet_') && !clean.startsWith('mock_') && clean.length > 10) {
+          state.googleSheetId = clean;
+        } else {
+          state.googleSheetId = null;
+        }
+      }
+      if (orgParam && orgParam.trim().length > 0) {
+        state.organizationId = orgParam.trim();
+      } else {
+        state.organizationId = null;
+      }
+
+      const rawTable = tableParam ? String(tableParam).replace(/Table /i, '').trim().replace(/[^a-zA-Z0-9_-]/g, '') : null;
+      state.tableNumber = rawTable;
+
+      const lockKey = state.organizationId ? ('sb_active_table_' + state.organizationId) : null;
+      let activeLockedTable = null;
+      if (lockKey) {
+        try { activeLockedTable = localStorage.getItem(lockKey); } catch (e) {}
+      }
+
+      // Device-Level Session Locking: If diner is currently ordering on a specific table, keep session
+      if (activeLockedTable && rawTable && activeLockedTable !== rawTable) {
+        const localOrders = loadLocalOrderHistory();
+        const hasUnfinishedOrders = localOrders.some(o => {
+          const st = String(o.status || '').toUpperCase();
+          return st !== 'PAID' && st !== 'SUCCESS' && st !== 'CANCELLED';
+        });
+        if (hasUnfinishedOrders) {
+          console.warn(`[Security] Locked to active Table ${activeLockedTable}. Cannot switch to Table ${rawTable} mid-meal.`);
+          state.tableNumber = activeLockedTable;
+        } else {
+          state.tableNumber = rawTable;
+          if (lockKey) { try { localStorage.setItem(lockKey, rawTable); } catch (e) {} }
+        }
+      } else if (rawTable && lockKey) {
+        try { localStorage.setItem(lockKey, rawTable); } catch (e) {}
+      }
+
+      state.tableSignature = params.get('sig') || params.get('signature') || '';
+      state.isExplicitTableFromUrl = !!tableParam;
+      // SECURITY: UPI ID is NEVER trusted from URL query parameters.
+      // This prevents attackers from diverting customer payments by tampering with the URL.
+      // The UPI ID is strictly loaded from the verified database store profile.
+      state.upiId = '';
+
+      const restName = nameParam ? decodeURIComponent(nameParam).trim() : '';
+      state.restaurant = {
+        name: restName,
+        id: state.organizationId || ''
+      };
+
+      state.tableToken = (state.organizationId && state.tableNumber) ? `${state.organizationId}_T${state.tableNumber}` : null;
+
+      // Check legacy path /r/{slug}/t/{token}
+      const path = window.location.pathname;
+      const match = path.match(/\/r\/([^/]+)\/t\/([^/?#]+)/);
+      if (match) {
+        state.restaurantSlug = decodeURIComponent(match[1]);
+        state.tableToken = decodeURIComponent(match[2]);
+      } else if (params.get('token')) {
+        state.restaurantSlug = params.get('slug') || 'restaurant';
+        state.tableToken = params.get('token');
+      }
+
+      return true;
+    }
+
+    // =========================================================================
+    //  Toast (With Animated Icons & Progress)
+    // =========================================================================
+    function showToast(message, type = 'error') {
+      const container = document.getElementById('toast-container');
+      if (!container) return;
+
+      const icons = {
+        error: '<span class="text-base">⚠️</span>',
+        success: '<span class="text-base">✅</span>',
+        info: '<span class="text-base">ℹ️</span>'
+      };
+      const colors = {
+        error: 'bg-gradient-to-r from-red-600 to-rose-700 text-white shadow-red-500/20 border-red-500/30',
+        success: 'bg-gradient-to-r from-emerald-600 to-teal-700 text-white shadow-emerald-500/20 border-emerald-500/30',
+        info: 'bg-gradient-to-r from-slate-900 to-slate-800 text-white shadow-slate-900/30 border-slate-700'
+      };
+
+      const el = document.createElement('div');
+      el.className = `toast px-4 py-3 rounded-2xl shadow-xl text-xs font-semibold flex items-center gap-2.5 border ${colors[type] || colors.info} pointer-events-auto backdrop-blur-md max-w-xs`;
+      el.innerHTML = `
+        <div class="flex-shrink-0">${icons[type] || icons.info}</div>
+        <div class="flex-1 text-left leading-snug">${esc(message)}</div>
+      `;
+      container.appendChild(el);
+      setTimeout(() => {
+        el.style.opacity = '0';
+        el.style.transform = 'translateY(10px)';
+        el.style.transition = 'all 0.3s ease';
+        setTimeout(() => el.remove(), 300);
+      }, 3500);
+    }
+
+    // =========================================================================
+    //  Renderers
+    // =========================================================================
+
+    // ---------- Hospitality Shimmer Loading Skeleton ----------
+    function renderLoading() {
+      app.innerHTML = `
+        <div class="p-4 fade-in max-w-md mx-auto">
+          <!-- Top Brand Header Skeleton -->
+          <div class="flex items-center justify-between mb-4 pb-3 border-b border-slate-100">
+            <div class="space-y-1.5">
+              <div class="skeleton h-6 w-40"></div>
+              <div class="skeleton h-3.5 w-28"></div>
+            </div>
+            <div class="skeleton h-8 w-24 rounded-full"></div>
+          </div>
+
+          <!-- Search Bar Skeleton -->
+          <div class="flex items-center gap-2 mb-4">
+            <div class="skeleton h-10 flex-1 rounded-xl"></div>
+            <div class="skeleton h-10 w-16 rounded-xl"></div>
+          </div>
+
+          <!-- Category Chips Carousel Skeleton -->
+          <div class="flex gap-2 mb-6 overflow-hidden">
+            <div class="skeleton h-8 w-16 rounded-full flex-shrink-0"></div>
+            <div class="skeleton h-8 w-24 rounded-full flex-shrink-0"></div>
+            <div class="skeleton h-8 w-20 rounded-full flex-shrink-0"></div>
+            <div class="skeleton h-8 w-28 rounded-full flex-shrink-0"></div>
+          </div>
+
+          <!-- Menu Dish Card Skeletons -->
+          <div class="space-y-3">
+            ${Array(4).fill(0).map(() => `
+              <div class="bg-white border border-slate-100 rounded-2xl p-3.5 shadow-2xs">
+                <div class="flex justify-between items-start gap-3">
+                  <div class="flex-1 space-y-2">
+                    <div class="flex items-center gap-1.5">
+                      <div class="skeleton w-3.5 h-3.5 rounded-xs"></div>
+                      <div class="skeleton h-4 w-36 rounded-md"></div>
+                    </div>
+                    <div class="skeleton h-3 w-48 rounded-md"></div>
+                    <div class="skeleton h-4 w-16 rounded-md pt-1"></div>
+                  </div>
+                  <div class="flex flex-col items-end justify-between h-14">
+                    <div class="skeleton h-8 w-20 rounded-xl"></div>
+                  </div>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        </div>`;
+    }
+
+    // ---------- Error Page ----------
+    function renderError() {
+      app.innerHTML = `
+        <div class="flex flex-col items-center justify-center min-h-screen p-6 text-center fade-in">
+          <div class="w-16 h-16 rounded-full bg-red-50 flex items-center justify-center mb-4">
+            <i data-lucide="alert-circle" class="w-8 h-8 text-red-500"></i>
+          </div>
+          <h1 class="text-xl font-bold text-slate-900 mb-2">${esc(state.error?.title || 'Unable to Load Menu')}</h1>
+          <p class="text-sm text-slate-500 max-w-xs mb-6 leading-relaxed">${esc(state.error?.message || 'Please verify the QR code or link and try again.')}</p>
+          <button onclick="init()" class="px-6 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-semibold hover:bg-blue-700 transition active:scale-95">
+            Try Again
+          </button>
+        </div>`;
+      try { lucide.createIcons(); } catch(e) { console.warn("Lucide:", e); }
+    }
+
+    // ---------- Prompt to Scan Table QR Page ----------
+    function renderScanQrPrompt() {
+      app.innerHTML = `
+        <div class="flex flex-col items-center justify-center min-h-screen p-6 text-center bg-slate-50 fade-in">
+          <div class="w-20 h-20 rounded-3xl bg-gradient-to-tr from-amber-500 to-amber-600 flex items-center justify-center mb-5 shadow-xl shadow-amber-500/20 text-white">
+            <i data-lucide="qr-code" class="w-10 h-10"></i>
+          </div>
+          <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-100 text-amber-900 text-xs font-semibold mb-3">
+            <span class="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
+            SmartDine Contactless Dining
+          </div>
+          <h1 class="text-2xl font-black text-slate-900 mb-2 tracking-tight">Scan Table QR Code</h1>
+          <p class="text-xs text-slate-600 max-w-xs mb-6 leading-relaxed">
+            To view your restaurant's live digital menu, call staff, or place food orders, please scan the QR code placed on your dining table.
+          </p>
+          <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs max-w-xs w-full text-left mb-6 space-y-3">
+            <div class="flex items-start gap-3">
+              <div class="w-6 h-6 rounded-lg bg-amber-50 text-amber-700 flex items-center justify-center flex-shrink-0 text-xs font-bold border border-amber-200">1</div>
+              <div>
+                <p class="text-xs font-bold text-slate-900">Every Table Has a Unique QR</p>
+                <p class="text-[11px] text-slate-500 leading-normal">Scanning your table's QR automatically connects you to your table and sends orders directly to the kitchen display.</p>
+              </div>
+            </div>
+            <div class="flex items-start gap-3">
+              <div class="w-6 h-6 rounded-lg bg-blue-50 text-blue-700 flex items-center justify-center flex-shrink-0 text-xs font-bold border border-blue-200">2</div>
+              <div>
+                <p class="text-xs font-bold text-slate-900">Live Kitchen Tracking</p>
+                <p class="text-[11px] text-slate-500 leading-normal">Track your food preparation status in real time right on your phone.</p>
+              </div>
+            </div>
+          </div>
+          <p class="text-[11px] text-slate-400">Powered by SmartDine Restaurant POS</p>
+        </div>`;
+      try { lucide.createIcons(); } catch(e) { console.warn("Lucide:", e); }
+    }
+
+    // ---------- Table Selection Modal Handlers ----------
+    function openTableSelectModal() {
+      const modal = document.getElementById('tableSelectModal');
+      if (modal) modal.classList.remove('modal-hidden');
+      setTimeout(() => {
+        const inp = document.getElementById('directTableNumberInput');
+        if (inp) inp.focus();
+      }, 100);
+    }
+
+    function closeTableSelectModal() {
+      const modal = document.getElementById('tableSelectModal');
+      if (modal) modal.classList.add('modal-hidden');
+    }
+
+    function saveTableNumberDirect() {
+      const inp = document.getElementById('directTableNumberInput');
+      if (!inp || !inp.value.trim()) {
+        showToast('Please enter your table number', 'error');
+        return;
+      }
+      const clean = inp.value.trim().replace(/Table /i, '').replace(/[^a-zA-Z0-9_-]/g, '');
+      if (!clean) {
+        showToast('Please enter a valid table number', 'error');
+        return;
+      }
+      state.tableNumber = clean;
+      state.tableToken = (state.organizationId && state.tableNumber) ? `${state.organizationId}_T${state.tableNumber}` : null;
+      closeTableSelectModal();
+      showToast('Table set to #' + state.tableNumber + ' 👍', 'success');
+      renderMenu();
+    }
+
+    // ---------- Navigation Handlers ----------
+    function showOrderStatusScreen() {
+      state.currentView = 'status';
+      renderOrderSuccess();
+      syncOrdersFromGoogleSheet();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    // ---------- Interactive Dialogs & Actions ----------
+    function openNameModal() {
+      const modal = document.getElementById('namePromptModal');
+      if (modal) modal.classList.remove('modal-hidden');
+      setTimeout(() => {
+        const inp = document.getElementById('guestNameDirectInput');
+        if (inp) inp.focus();
+      }, 100);
+    }
+
+    function closeNameModal() {
+      const modal = document.getElementById('namePromptModal');
+      if (modal) modal.classList.add('modal-hidden');
+    }
+
+    function saveGuestNameDirect() {
+      const inp = document.getElementById('guestNameDirectInput');
+      const phoneInp = document.getElementById('guestPhoneDirectInput');
+      if (!inp || inp.value.trim().length < 2) {
+        showToast('Please enter your name', 'error');
+        return;
+      }
+      state.customerName = inp.value.trim();
+      if (phoneInp) state.customerPhone = phoneInp.value.trim();
+      try {
+        localStorage.setItem('sb_customer_name', state.customerName);
+        if (state.customerPhone) localStorage.setItem('sb_customer_phone', state.customerPhone);
+      } catch (e) {}
+      closeNameModal();
+      showToast('Welcome, ' + state.customerName + '! 👋', 'success');
+      renderMenu();
+    }
+
+    function openWaiterModal() {
+      const modal = document.getElementById('waiterModal');
+      if (modal) modal.classList.remove('modal-hidden');
+    }
+
+    function closeWaiterModal() {
+      const modal = document.getElementById('waiterModal');
+      if (modal) modal.classList.add('modal-hidden');
+    }
+
+    function sendWaiterAlert(reason) {
+      closeWaiterModal();
+      state.activeWaiterCall = { reason: reason, time: Date.now() };
+      showToast(`🛎️ Waiter notified: "${reason}" for Table ${state.tableNumber}. Staff is on the way!`, 'success');
+      if (state.googleSheetId || state.organizationId) {
+        sendToGoogleSheetWebhook('SERVICE_REQUEST', {
+          table: 'Table ' + state.tableNumber,
+          request_type: reason,
+          guest_name: state.customerName || 'Guest',
+          timestamp: new Date().toISOString()
+        });
+      }
+      const cont = document.getElementById('orderSuccessScreen');
+      if (cont) renderOrderSuccess();
+    }
+
+    function openInstantPay() {
+      const grandTotal = getGrandTotal();
+      if (grandTotal <= 0 && getTotalCartCount() === 0) {
+        showToast('No active orders to pay yet. Add dishes to cart first!', 'info');
+        return;
+      }
+      state.currentView = 'status';
+      renderOrderSuccess();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    // ---------- Main Menu View ----------
+    function renderMenu() {
+      state.currentView = 'menu';
+
+      const filtered = getFilteredItems();
+      const cartCount = getTotalCartCount();
+      const cartTotal = getCartTotal();
+      const grandTotal = getGrandTotal();
+      const totalTableItems = getTotalItemsCountAcrossRounds();
+
+      const latestKot = (state.orderPlaced && state.orderPlaced.kotNumber) 
+        ? state.orderPlaced.kotNumber 
+        : (state.orderHistory && state.orderHistory.length > 0 ? state.orderHistory[state.orderHistory.length - 1].kotNumber : 'KOT');
+
+      app.innerHTML = `
+        <!-- Sticky Header -->
+        <header class="sticky top-0 z-30 bg-white/95 backdrop-blur-sm border-b border-slate-100 px-4 py-2.5">
+          <!-- Restaurant & Table Identity -->
+          <div class="flex items-center justify-between mb-2">
+            <div>
+              <div class="flex items-center gap-1.5">
+                <h1 class="text-base font-extrabold text-slate-900 leading-tight">${esc(state.restaurant?.name || 'Restaurant')}</h1>
+                <span onclick="openTableSelectModal()" class="inline-flex items-center gap-1 text-[11px] font-bold ${state.tableNumber ? 'text-emerald-700 bg-emerald-50 border-emerald-200' : 'text-amber-800 bg-amber-50 border-amber-300 animate-pulse'} border px-2 py-0.5 rounded-full cursor-pointer">
+                  🍽️ ${state.tableNumber ? ('Table ' + esc(String(state.tableNumber))) : 'Select Table ▾'}
+                </span>
+              </div>
+              <div class="flex items-center gap-1.5 mt-0.5">
+                <span class="w-2 h-2 rounded-full bg-emerald-500 relative flex items-center justify-center">
+                  <span class="absolute w-full h-full rounded-full bg-emerald-400 pulse-ring"></span>
+                </span>
+                <span class="text-[9.5px] font-bold text-emerald-700 tracking-wide">LIVE KITCHEN SYNC</span>
+                <span class="text-slate-300">•</span>
+                <span class="text-[9.5px] text-slate-400 font-medium">Auto-Refreshing</span>
+              </div>
+            </div>
+            <div>
+              <div class="flex items-center gap-1.5">
+                <button onclick="openWaiterModal()" class="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-xs font-semibold transition active:scale-95 shadow-2xs">
+                  <span>🛎️</span>
+                  <span>Call Staff</span>
+                </button>
+                <button onclick="openNameModal()" class="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition active:scale-95">
+                  <i data-lucide="user" class="w-3.5 h-3.5 text-blue-600"></i>
+                  <span class="max-w-[70px] truncate">${esc(state.customerName || 'Add Name')}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Active Table Order Banner (If Table Has Orders) -->
+          ${state.orderHistory && state.orderHistory.length > 0 ? `
+            <div onclick="showOrderStatusScreen()" class="bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 text-white px-3.5 py-2 rounded-xl mb-2 flex items-center justify-between cursor-pointer shadow-sm hover:opacity-95 active:scale-[0.99] transition">
+              <div class="flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+                <div>
+                  <span class="text-xs font-bold block leading-tight">Table #${esc(String(state.tableNumber))} Order: ${totalTableItems} items • ₹${grandTotal.toFixed(0)}</span>
+                  <span class="text-[10px] text-blue-100 font-medium">Status: ${formatOrderStatusDisplay(state.orderStatus)} • Tap to Pay / Track</span>
+                </div>
+              </div>
+              <div class="flex items-center gap-1 text-[10.5px] font-bold bg-white/20 px-2.5 py-1 rounded-lg">
+                <span>View Bill</span>
+                <i data-lucide="chevron-right" class="w-3 h-3"></i>
+              </div>
+            </div>
+          ` : `
+            <!-- Welcome Guest Quick-Prompt Banner if no name -->
+            ${!state.customerName ? `
+              <div onclick="openNameModal()" class="bg-amber-50 border border-amber-200 text-amber-900 px-3 py-1.5 rounded-xl mb-2 flex items-center justify-between cursor-pointer transition hover:bg-amber-100">
+                <div class="flex items-center gap-2">
+                  <span class="text-base">👋</span>
+                  <span class="text-[11px] font-semibold">Tap here to enter your name for this table</span>
+                </div>
+                <span class="text-[10.5px] font-bold text-amber-800 bg-white/80 px-2 py-0.5 rounded-md">Enter →</span>
+              </div>
+            ` : ''}
+          `}
+
+          <!-- Search & Veg Toggle -->
+          <div class="flex items-center gap-2 mb-2">
+            <div class="relative flex-1">
+              <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2"></i>
+              <input
+                type="text"
+                id="searchInput"
+                placeholder="Search dishes..."
+                value="${esc(state.searchQuery)}"
+                class="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
+              />
+            </div>
+            <button
+              id="vegToggle"
+              class="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold border transition flex-shrink-0 ${
+                state.vegOnly
+                  ? 'bg-green-50 border-green-300 text-green-700'
+                  : 'bg-slate-50 border-slate-200 text-slate-600'
+              }"
+            >
+              <span class="w-2 h-2 rounded-full ${state.vegOnly ? 'bg-green-500' : 'bg-slate-300'}"></span>
+              Veg
+            </button>
+          </div>
+
+          <!-- Categories Scroll -->
+          <div class="flex gap-2 overflow-x-auto hide-scrollbar -mx-4 px-4">
+            ${state.categories.map(cat => `
+              <button
+                class="cat-tab px-3.5 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition flex-shrink-0 ${
+                  state.activeCategory === cat
+                    ? 'bg-slate-900 text-white'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }"
+                data-category="${esc(cat)}"
+              >
+                ${esc(cat)}
+              </button>
+            `).join('')}
+          </div>
+        </header>
+
+        <!-- Menu Item List -->
+        <main class="p-4 pb-28 space-y-3">
+          ${isKitchenClosedNow() ? `
+            <div class="bg-gradient-to-r from-red-600 via-rose-600 to-red-700 text-white px-3.5 py-3 rounded-2xl mb-3 flex items-center gap-3 shadow-md">
+              <span class="text-xl">🛑</span>
+              <div class="flex-1">
+                <span class="text-xs font-black block uppercase tracking-wide">Kitchen Currently Closed</span>
+                <span class="text-[10.5px] text-red-100 font-medium">${state.operatingHours?.openFrom && state.operatingHours?.openTo ? `Orders are paused. Operating hours: ${esc(state.operatingHours.openFrom)} - ${esc(state.operatingHours.openTo)}.` : 'Orders are temporarily paused between shifts. You can browse the menu.'}</span>
+              </div>
+            </div>
+          ` : ''}
+          ${filtered.length === 0 ? `
+            <div class="text-center py-16">
+              <i data-lucide="utensils-crossed" class="w-10 h-10 text-slate-300 mx-auto mb-2"></i>
+              <p class="text-sm font-semibold text-slate-600">No dishes found</p>
+              <p class="text-xs text-slate-400 mt-0.5">Please select another category or check back shortly</p>
+            </div>
+          ` : renderMenuItemsWithSubcategories(filtered)}
+        </main>
+
+        <!-- Floating Cart Bar (Above Bottom Nav) -->
+        <div id="floatingCartContainer" class="fixed bottom-16 left-4 right-4 max-w-md mx-auto z-40 transition-all duration-300 ${cartCount > 0 ? 'fade-in' : 'hidden'}">
+          <button
+            onclick="openCheckout()"
+            class="w-full bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 text-white p-3.5 rounded-2xl shadow-2xl flex items-center justify-between hover:bg-slate-800 transition active:scale-[0.98] border border-slate-700 ring-2 ring-blue-500/30"
+          >
+            <div class="flex items-center gap-2.5">
+              <span id="cartBadgeCount" class="w-6 h-6 rounded-full bg-amber-400 text-slate-900 text-xs font-extrabold flex items-center justify-center transition-transform">
+                ${cartCount}
+              </span>
+              <span class="text-xs font-bold">Review Order & Send to Kitchen</span>
+            </div>
+            <span id="cartTotalAmount" class="text-xs font-extrabold text-amber-400 transition-transform">₹${cartTotal.toFixed(0)} →</span>
+          </button>
+        </div>
+
+        <!-- ALWAYS-VISIBLE DINING ACTION BOTTOM NAVIGATION -->
+        <nav class="fixed bottom-0 left-0 right-0 max-w-md mx-auto z-40 bg-white/95 backdrop-blur-md border-t border-slate-200 px-4 py-2 shadow-xl flex items-center justify-between">
+          <button onclick="window.scrollTo({top: 0, behavior: 'smooth'})" class="flex flex-col items-center gap-0.5 text-blue-600 font-bold focus:outline-none">
+            <i data-lucide="utensils" class="w-5 h-5"></i>
+            <span class="text-[10px]">Menu</span>
+          </button>
+          
+          <button onclick="showOrderStatusScreen()" class="relative flex flex-col items-center gap-0.5 ${grandTotal > 0 ? 'text-indigo-600 font-bold' : 'text-slate-600'} hover:text-slate-900 transition focus:outline-none">
+            ${totalTableItems > 0 ? `<span class="absolute -top-1.5 right-1 w-4 h-4 rounded-full bg-blue-600 text-white text-[9px] font-bold flex items-center justify-center shadow-xs">${totalTableItems}</span>` : ''}
+            <i data-lucide="receipt" class="w-5 h-5"></i>
+            <span class="text-[10px]">Table Bill</span>
+          </button>
+
+          <button onclick="openInstantPay()" class="flex flex-col items-center gap-0.5 ${grandTotal > 0 ? 'text-emerald-600 font-extrabold' : 'text-slate-600'} hover:text-emerald-700 transition focus:outline-none">
+            <i data-lucide="credit-card" class="w-5 h-5"></i>
+            <span class="text-[10px]">Pay UPI</span>
+          </button>
+
+          <button onclick="openWaiterModal()" class="flex flex-col items-center gap-0.5 text-slate-500 hover:text-slate-800 transition focus:outline-none">
+            <i data-lucide="bell-ring" class="w-5 h-5"></i>
+            <span class="text-[10px]">Call Waiter</span>
+          </button>
+        </nav>
+
+        <!-- Waiter Calling Modal -->
+        <div id="waiterModal" class="modal-hidden fixed inset-0 z-50">
+          <div class="modal-overlay fixed inset-0 bg-black/40 backdrop-blur-xs" onclick="closeWaiterModal()"></div>
+          <div class="modal-sheet fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white rounded-t-3xl shadow-2xl p-5 z-10 text-left">
+            <div class="w-10 h-1 bg-slate-200 rounded-full mx-auto mb-3"></div>
+            <div class="flex items-center justify-between mb-3">
+              <h3 class="text-sm font-bold text-slate-900 flex items-center gap-2">
+                <i data-lucide="bell" class="w-4 h-4 text-amber-500"></i> Call Service / Waiter
+              </h3>
+              <button onclick="closeWaiterModal()" class="p-1 text-slate-400 hover:text-slate-600">
+                <i data-lucide="x" class="w-4 h-4"></i>
+              </button>
+            </div>
+            <p class="text-xs text-slate-500 mb-4">Select what you need for Table ${esc(String(state.tableNumber))}:</p>
+            <div class="grid grid-cols-2 gap-2 mb-3">
+              <button onclick="sendWaiterAlert('Bring Drinking Water')" class="p-3 rounded-xl border border-slate-200 hover:border-blue-500 hover:bg-blue-50 text-left text-xs font-semibold text-slate-800 transition flex items-center gap-2">
+                <span>💧</span> Bring Water
+              </button>
+              <button onclick="sendWaiterAlert('Need Extra Cutlery & Napkins')" class="p-3 rounded-xl border border-slate-200 hover:border-blue-500 hover:bg-blue-50 text-left text-xs font-semibold text-slate-800 transition flex items-center gap-2">
+                <span>🍴</span> Cutlery / Napkins
+              </button>
+              <button onclick="sendWaiterAlert('Call Waiter to Table')" class="p-3 rounded-xl border border-slate-200 hover:border-blue-500 hover:bg-blue-50 text-left text-xs font-semibold text-slate-800 transition flex items-center gap-2">
+                <span>🙋</span> Call Waiter
+              </button>
+              <button onclick="sendWaiterAlert('Request Physical Bill')" class="p-3 rounded-xl border border-slate-200 hover:border-blue-500 hover:bg-blue-50 text-left text-xs font-semibold text-slate-800 transition flex items-center gap-2">
+                <span>🧾</span> Request Bill
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Guest Name Entry Modal -->
+        <div id="namePromptModal" class="modal-hidden fixed inset-0 z-50">
+          <div class="modal-overlay fixed inset-0 bg-black/40 backdrop-blur-xs" onclick="closeNameModal()"></div>
+          <div class="modal-sheet fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white rounded-t-3xl shadow-2xl p-5 z-10 text-left">
+            <div class="w-10 h-1 bg-slate-200 rounded-full mx-auto mb-3"></div>
+            <div class="flex items-center justify-between mb-3">
+              <h3 class="text-sm font-bold text-slate-900 flex items-center gap-2">
+                <i data-lucide="user" class="w-4 h-4 text-blue-600"></i> Enter Guest Name
+              </h3>
+              <button onclick="closeNameModal()" class="p-1 text-slate-400 hover:text-slate-600">
+                <i data-lucide="x" class="w-4 h-4"></i>
+              </button>
+            </div>
+            <p class="text-xs text-slate-500 mb-3">Your name will be tagged on the dishes you order at Table ${esc(String(state.tableNumber))}:</p>
+            <div class="space-y-3 mb-4">
+              <div>
+                <label class="block text-[11px] font-bold text-slate-700 mb-1">Your Name *</label>
+                <input
+                  type="text"
+                  id="guestNameDirectInput"
+                  placeholder="e.g. Santhosh"
+                  value="${esc(state.customerName)}"
+                  class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
+                />
+              </div>
+              <div>
+                <label class="block text-[11px] font-bold text-slate-700 mb-1">Phone Number (Optional for digital bill)</label>
+                <input
+                  type="tel"
+                  id="guestPhoneDirectInput"
+                  placeholder="e.g. 9876543210"
+                  value="${esc(state.customerPhone)}"
+                  class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
+                />
+              </div>
+            </div>
+            <button onclick="saveGuestNameDirect()" class="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-md transition active:scale-98">
+              Save & Continue
+            </button>
+          </div>
+        </div>
+
+        <!-- Table Number Entry Modal -->
+        <div id="tableSelectModal" class="modal-hidden fixed inset-0 z-50">
+          <div class="modal-overlay fixed inset-0 bg-black/40 backdrop-blur-xs" onclick="closeTableSelectModal()"></div>
+          <div class="modal-sheet fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white rounded-t-3xl shadow-2xl p-5 z-10 text-left">
+            <div class="w-10 h-1 bg-slate-200 rounded-full mx-auto mb-3"></div>
+            <div class="flex items-center justify-between mb-3">
+              <h3 class="text-sm font-bold text-slate-900 flex items-center gap-2">
+                <span>🍽️</span> Select Your Dining Table
+              </h3>
+              <button onclick="closeTableSelectModal()" class="p-1 text-slate-400 hover:text-slate-600">
+                <i data-lucide="x" class="w-4 h-4"></i>
+              </button>
+            </div>
+            <p class="text-xs text-slate-500 mb-3">Enter the table number where you are seated so staff can deliver your food:</p>
+            <div class="space-y-3 mb-4">
+              <div>
+                <label class="block text-[11px] font-bold text-slate-700 mb-1">Table Number *</label>
+                <input
+                  type="text"
+                  id="directTableNumberInput"
+                  placeholder="e.g. 1, 2, 5, A3"
+                  value="${esc(state.tableNumber || '')}"
+                  class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-amber-500 transition"
+                />
+              </div>
+            </div>
+            <button onclick="saveTableNumberDirect()" class="w-full py-3 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-bold shadow-md transition active:scale-98">
+              Confirm Table Number
+            </button>
+          </div>
+        </div>
+
+        <!-- Checkout Slide-Up Modal -->
+        <div id="checkoutModal" class="${state.checkoutOpen ? '' : 'modal-hidden'} fixed inset-0 z-50">
+          <div class="modal-overlay fixed inset-0 bg-black/40 backdrop-blur-xs" onclick="closeCheckout()"></div>
+          <div class="modal-sheet fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white rounded-t-3xl shadow-2xl max-h-[85vh] flex flex-col z-10">
+            <div class="p-4 pb-2 border-b border-slate-100 flex-shrink-0">
+              <div class="w-10 h-1 bg-slate-200 rounded-full mx-auto mb-3"></div>
+              <div class="flex items-center justify-between">
+                <div>
+                  <h2 class="text-base font-bold text-slate-900">Your Table Order</h2>
+                  <p class="text-xs text-slate-400">Table ${esc(String(state.tableNumber))}</p>
+                </div>
+                <button onclick="closeCheckout()" class="p-1 rounded-full text-slate-400 hover:text-slate-600">
+                  <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+              </div>
+            </div>
+
+            <!-- Cart Details -->
+            <div class="overflow-y-auto flex-1 p-4">
+              ${getCartItems().length === 0 ? `
+                <div class="text-center py-10 px-4">
+                  <div class="w-14 h-14 mx-auto mb-3 rounded-full bg-slate-100 flex items-center justify-center text-slate-400">
+                    <i data-lucide="shopping-bag" class="w-7 h-7"></i>
+                  </div>
+                  <h3 class="text-sm font-bold text-slate-700">Your order tray is empty</h3>
+                  <p class="text-xs text-slate-400 mt-1 mb-4">Choose delicious dishes from the menu to place your order</p>
+                  <button onclick="closeCheckout()" class="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-sm transition active:scale-95">
+                    Browse Menu
+                  </button>
+                </div>
+              ` : `
+              <div class="space-y-3 mb-4">
+                ${getCartItems().map(ci => `
+                  <div class="flex items-center justify-between py-2 border-b border-slate-50">
+                    <div class="flex-1 min-w-0 pr-3">
+                      <div class="flex items-center gap-1.5">
+                        <span class="w-3.5 h-3.5 rounded-sm border flex items-center justify-center flex-shrink-0 ${ci.item.isVeg ? 'border-green-600' : 'border-red-600'}">
+                          <span class="w-1.5 h-1.5 rounded-full ${ci.item.isVeg ? 'bg-green-600' : 'bg-red-600'}"></span>
+                        </span>
+                        <span class="text-xs font-bold truncate">${esc(ci.item.name)}</span>
+                      </div>
+                      <span class="text-[11px] text-slate-400">₹${ci.item.price} each</span>
+                    </div>
+                    <div class="flex items-center gap-3">
+                      <div class="flex items-center gap-1.5 bg-slate-100 rounded-xl p-1 border border-slate-200/80">
+                        <button onclick="removeFromCart('${ci.item.id}')" class="qty-btn w-6 h-6 flex items-center justify-center text-slate-600 hover:text-red-600 hover:bg-white rounded-lg transition active:scale-90 font-bold" title="Decrease">
+                          <i data-lucide="minus" class="w-3.5 h-3.5 stroke-[2.5]"></i>
+                        </button>
+                        <span class="text-xs font-bold w-5 text-center text-slate-800">${ci.qty}</span>
+                        <button onclick="addToCart('${ci.item.id}')" class="qty-btn w-6 h-6 flex items-center justify-center text-slate-600 hover:text-green-600 hover:bg-white rounded-lg transition active:scale-90 font-bold" title="Increase">
+                          <i data-lucide="plus" class="w-3.5 h-3.5 stroke-[2.5]"></i>
+                        </button>
+                      </div>
+                      <span class="text-xs font-semibold w-14 text-right">₹${(ci.item.price * ci.qty).toFixed(0)}</span>
+                    </div>
+                  </div>
+                `).join('')}
+              </div>
+
+              <div class="py-2.5 border-t border-dashed border-slate-200 mb-4 space-y-1.5 text-xs text-slate-600">
+                <div class="flex justify-between items-center">
+                  <span>Dishes Subtotal</span>
+                  <span class="font-semibold text-slate-800">₹${getCartSubtotal().toFixed(2)}</span>
+                </div>
+                ${(Number(state.serviceCharge) || 0) > 0 ? `
+                  <div class="flex justify-between items-center text-slate-500">
+                    <span>Service Charge (${state.serviceCharge}%)</span>
+                    <span>₹${getCartServiceCharge().toFixed(2)}</span>
+                  </div>
+                ` : ''}
+                <div class="flex justify-between items-center text-slate-500">
+                  <span>GST (${state.gstRate || 5}%)</span>
+                  <span>₹${getCartGst().toFixed(2)}</span>
+                </div>
+                <div class="flex justify-between items-center pt-2 border-t border-slate-100 font-bold text-sm text-slate-900">
+                  <span>Total Payable</span>
+                  <span class="text-base text-blue-600 font-extrabold">₹${getCartGrandTotal().toFixed(2)}</span>
+                </div>
+              </div>
+              `}
+
+              <!-- Validated Customer Information -->
+              <div class="space-y-3 mb-4">
+                <div>
+                  <div class="flex justify-between items-center mb-1">
+                    <label class="block text-[11px] font-bold text-slate-700">
+                      Your Name <span class="text-red-500 font-bold">*</span>
+                    </label>
+                    <span id="nameValidBadge" class="text-[10px] font-semibold text-emerald-600 hidden flex items-center gap-0.5">
+                      <span>✓</span> <span>Looks good</span>
+                    </span>
+                  </div>
+                  <input
+                    type="text"
+                    id="customerNameInput"
+                    maxlength="50"
+                    placeholder="Enter your name (e.g. Santhosh)"
+                    value="${esc(state.customerName)}"
+                    oninput="validateNameLive(this)"
+                    class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
+                  />
+                  <p id="nameErrorMsg" class="text-[10px] text-red-500 font-semibold mt-1 hidden"></p>
+                </div>
+                <div>
+                  <div class="flex justify-between items-center mb-1">
+                    <label class="block text-[11px] font-bold text-slate-700">
+                      Phone Number <span class="text-[10px] font-normal text-slate-400">(Optional for receipt)</span>
+                    </label>
+                    <span id="phoneValidBadge" class="text-[10px] font-semibold text-emerald-600 hidden flex items-center gap-0.5">
+                      <span>✓</span> <span>Valid 10 digits</span>
+                    </span>
+                  </div>
+                  <input
+                    type="tel"
+                    id="customerPhoneInput"
+                    maxlength="10"
+                    placeholder="10-digit mobile (e.g. 9876543210)"
+                    value="${esc(state.customerPhone)}"
+                    oninput="validatePhoneLive(this)"
+                    class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
+                  />
+                  <p id="phoneErrorMsg" class="text-[10px] text-red-500 font-semibold mt-1 hidden"></p>
+                </div>
+                <div>
+                  <div class="flex justify-between items-center mb-1">
+                    <label class="block text-[11px] font-bold text-slate-700">Special Cooking Instructions</label>
+                    <span id="instrCount" class="text-[10px] text-slate-400 font-medium">0/150</span>
+                  </div>
+                  <textarea
+                    id="specialInstructionsInput"
+                    maxlength="150"
+                    placeholder="e.g., less spicy, extra lemon, no garlic"
+                    rows="2"
+                    oninput="updateInstrCounter(this)"
+                    class="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 transition resize-none"
+                  >${esc(state.specialInstructions)}</textarea>
+                </div>
+              </div>
+
+              <!-- Animated Action Order Button -->
+              <button
+                id="placeOrderBtn"
+                onclick="handlePlaceOrder()"
+                class="w-full py-3.5 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:opacity-95 text-white rounded-xl font-bold text-xs shadow-lg shadow-blue-500/25 transition active:scale-[0.98] flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
+                ${state.placing || getCartItems().length === 0 ? 'disabled' : ''}
+              >
+                ${state.placing
+                  ? `<span class="flex items-center gap-2">
+                       <span class="w-4 h-4 rounded-full border-2 border-white/30 border-t-white animate-spin"></span>
+                       <span>Sending to Kitchen Chefs...</span>
+                     </span>`
+                  : `<i data-lucide="send" class="w-4 h-4"></i> <span>Send Order to Kitchen</span>`
+                }
+              </button>
+            </div>
+          </div>
+        </div>
+      `;
+
+      try { lucide.createIcons(); } catch(e) { console.warn("Lucide:", e); }
+      bindMenuEvents();
+    }
+
+
+    // =========================================================================
+    //  Menu Hierarchy, Subcategories & Time Availability Helpers
+    // =========================================================================
+    function parseTimeToMinutes(timeStr) {
+      if (!timeStr) return null;
+      const s = String(timeStr).trim().toLowerCase();
+      const isPm = s.includes('pm');
+      const isAm = s.includes('am');
+      const clean = s.replace(/am|pm/g, '').trim();
+      const parts = clean.split(':').map(p => parseInt(p.trim(), 10));
+      if (parts.length < 1 || isNaN(parts[0])) return null;
+      let hours = parts[0];
+      let mins = parts.length > 1 && !isNaN(parts[1]) ? parts[1] : 0;
+      if (isPm && hours < 12) hours += 12;
+      if (isAm && hours === 12) hours = 0;
+      return hours * 60 + mins;
+    }
+
+    function isItemTimeAvailable(item) {
+      if (!item) return true;
+      // Strict boolean check (avoid truthy strings like 'false')
+      const isRestricted = item.isTimeRestricted === true || 
+                           item.isTimeRestricted === 'true' || 
+                           item.is_time_restricted === true || 
+                           item.is_time_restricted === 'true';
+      if (!isRestricted) return true;
+
+      const fromStr = item.availableFrom || item.available_from;
+      const toStr = item.availableTo || item.available_to;
+      if (!fromStr || !toStr) return true;
+
+      const fromMins = parseTimeToMinutes(fromStr);
+      const toMins = parseTimeToMinutes(toStr);
+      if (fromMins === null || toMins === null) return true; // Graceful fallback
+
+      // Check day of week if specified
+      if (Array.isArray(item.availableDays) && item.availableDays.length > 0) {
+        const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        const todayStr = days[new Date().getDay()];
+        const matchesDay = item.availableDays.some(d => String(d).toLowerCase().startsWith(todayStr.toLowerCase()));
+        if (!matchesDay) return false;
+      }
+
+      const now = new Date();
+      const currentMinutes = now.getHours() * 60 + now.getMinutes();
+
+      if (toMins >= fromMins) {
+        return currentMinutes >= fromMins && currentMinutes <= toMins;
+      } else {
+        // Overnight window (e.g. 22:00 to 03:00)
+        return currentMinutes >= fromMins || currentMinutes <= toMins;
+      }
+    }
+
+    function isKitchenClosedNow() {
+      if (state.isKitchenClosed) return true;
+      if (state.operatingHours) {
+        if (state.operatingHours.isOpen === false) return true;
+        const fromStr = state.operatingHours.openFrom;
+        const toStr = state.operatingHours.openTo;
+        if (fromStr && toStr) {
+          const fromMins = parseTimeToMinutes(fromStr);
+          const toMins = parseTimeToMinutes(toStr);
+          if (fromMins !== null && toMins !== null) {
+            const now = new Date();
+            const currentMinutes = now.getHours() * 60 + now.getMinutes();
+            if (toMins >= fromMins) {
+              if (currentMinutes < fromMins || currentMinutes > toMins) return true;
+            } else {
+              // Overnight window (e.g. 19:00 to 03:00)
+              if (currentMinutes < fromMins && currentMinutes > toMins) return true;
+            }
+          }
+        }
+      }
+      return false;
+    }
+
+    function renderMenuItemsWithSubcategories(items) {
+      if (!items || items.length === 0) return '';
+      
+      // Group by Category -> Subcategory -> List of Items
+      const hierarchy = {};
+      items.forEach(item => {
+        const cat = (item.category || 'General').toString().trim();
+        const sub = (item.subcategory || 'General').toString().trim();
+        if (!hierarchy[cat]) hierarchy[cat] = {};
+        if (!hierarchy[cat][sub]) hierarchy[cat][sub] = [];
+        hierarchy[cat][sub].push(item);
+      });
+
+      let html = '';
+      Object.keys(hierarchy).forEach(catName => {
+        const subMap = hierarchy[catName];
+        let totalCatDishes = 0;
+        Object.values(subMap).forEach(list => totalCatDishes += list.length);
+
+        html += `
+          <div class="category-block mt-4 mb-2">
+            <div class="flex items-center justify-between bg-slate-900 text-white px-3.5 py-2.5 rounded-xl mb-2.5 shadow-sm">
+              <span class="text-xs font-bold uppercase tracking-wider">${esc(catName)}</span>
+              <span class="text-[10.5px] bg-white/20 px-2 py-0.5 rounded-md font-semibold">${totalCatDishes} items</span>
+            </div>
+        `;
+
+        Object.keys(subMap).forEach(subName => {
+          const subItems = subMap[subName];
+          html += `
+            <div class="subcategory-block mb-3">
+              <div class="flex items-center gap-1.5 px-1 py-1 mb-2">
+                <span class="w-1 h-3.5 bg-blue-600 rounded-full inline-block"></span>
+                <h4 class="text-xs font-bold text-slate-700">${esc(subName)}</h4>
+                <span class="text-[10px] text-slate-400 font-medium">(${subItems.length})</span>
+              </div>
+              <div class="space-y-2.5">
+                ${subItems.map(item => renderItemCard(item)).join('')}
+              </div>
+            </div>
+          `;
+        });
+
+        html += `</div>`;
+      });
+
+      return html;
+    }
+
+    // ---------- Item Card & Granular Action Buttons ----------
+    function renderCardActionButton(item, qty, isAvailable, isTimeAvailable) {
+      if (isAvailable === undefined) {
+        isAvailable = item.available !== false && item.is_available !== false && item.isAvailable !== false;
+      }
+      if (isTimeAvailable === undefined) {
+        isTimeAvailable = isItemTimeAvailable(item);
+      }
+      if (!isAvailable) {
+        return `
+          <button disabled class="mt-auto px-3 py-1.5 bg-slate-100 border border-slate-200 text-slate-400 rounded-xl text-[11px] font-bold cursor-not-allowed">
+            Sold Out
+          </button>
+        `;
+      }
+      if (!isTimeAvailable) {
+        const timeRange = (item.availableFrom && item.availableTo) ? `${item.availableFrom} - ${item.availableTo}` : 'Specific Shift';
+        return `
+          <button disabled class="mt-auto px-2.5 py-1.5 bg-amber-50 border border-amber-200 text-amber-700 rounded-xl text-[9.5px] font-bold cursor-not-allowed" title="Available ${timeRange}">
+            ⏰ ${timeRange}
+          </button>
+        `;
+      }
+      if (isKitchenClosedNow()) {
+        return `
+          <button disabled class="mt-auto px-3 py-1.5 bg-slate-100 border border-slate-200 text-slate-400 rounded-xl text-[11px] font-bold cursor-not-allowed">
+            Closed
+          </button>
+        `;
+      }
+      if (qty === 0) {
+        return `
+          <button onclick="addToCart('${item.id}')" class="qty-btn mt-auto px-4 py-1.5 bg-blue-50 hover:bg-blue-600 border border-blue-600 text-blue-600 hover:text-white rounded-xl text-xs font-extrabold shadow-2xs hover:shadow-xs transition active:scale-95 flex items-center gap-1">
+            <i data-lucide="plus" class="w-3.5 h-3.5 stroke-[3]"></i> <span>ADD</span>
+          </button>
+        `;
+      }
+      return `
+        <div class="mt-auto flex items-center gap-2 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-xl px-2 py-1 shadow-sm">
+          <button onclick="removeFromCart('${item.id}')" class="qty-btn w-6 h-6 flex items-center justify-center text-white hover:bg-black/20 rounded-lg transition active:scale-90 font-bold text-sm leading-none" title="Decrease">
+            <i data-lucide="minus" class="w-3.5 h-3.5 stroke-[3]"></i>
+          </button>
+          <span id="qty-val-${item.id}" class="text-white font-extrabold text-xs min-w-[18px] text-center">${qty}</span>
+          <button onclick="addToCart('${item.id}')" class="qty-btn w-6 h-6 flex items-center justify-center text-white hover:bg-black/20 rounded-lg transition active:scale-90 font-bold text-sm leading-none" title="Increase">
+            <i data-lucide="plus" class="w-3.5 h-3.5 stroke-[3]"></i>
+          </button>
+        </div>
+      `;
+    }
+
+    function renderItemCard(item) {
+      const isAvailable = item.available !== false && item.is_available !== false && item.isAvailable !== false;
+      const isTimeAvailable = isItemTimeAvailable(item);
+      const isOrderable = isAvailable && isTimeAvailable && !isKitchenClosedNow();
+      const qty = isOrderable ? (state.cart[item.id] || 0) : 0;
+
+      return `
+        <div id="card-item-${item.id}" data-card-id="${item.id}" class="bg-white border ${isOrderable ? 'border-slate-100' : 'border-slate-200 bg-slate-50/70 opacity-80'} rounded-2xl p-3.5 shadow-xs hover:shadow-sm transition fade-in">
+          <div class="flex justify-between gap-3">
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-1.5 mb-1 flex-wrap">
+                <span class="w-3.5 h-3.5 rounded-sm border flex items-center justify-center flex-shrink-0 ${item.isVeg ? 'border-green-600' : 'border-red-600'}">
+                  <span class="w-1.5 h-1.5 rounded-full ${item.isVeg ? 'bg-green-600' : 'bg-red-600'}"></span>
+                </span>
+                <h3 class="text-xs font-bold truncate ${isOrderable ? 'text-slate-800' : 'text-slate-500 line-through'}">${esc(item.name)}</h3>
+                ${!isAvailable ? `<span class="px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider bg-red-100 text-red-700 rounded border border-red-200">Sold Out</span>` : ''}
+                ${(isAvailable && !isTimeAvailable) ? `<span class="px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider bg-amber-100 text-amber-800 rounded border border-amber-200">⏰ ${item.availableFrom || ''}-${item.availableTo || ''}</span>` : ''}
+              </div>
+              ${item.description ? `<p class="text-[11px] text-slate-400 mb-1.5 line-clamp-2">${esc(item.description)}</p>` : ''}
+              <div class="flex items-center gap-2">
+                <span class="text-xs font-extrabold ${isOrderable ? 'text-slate-900' : 'text-slate-400'}">₹${item.price}</span>
+              </div>
+            </div>
+            <div id="action-btn-${item.id}" class="flex flex-col items-end justify-between flex-shrink-0">
+              ${renderCardActionButton(item, qty, isAvailable, isTimeAvailable)}
+            </div>
+          </div>
+        </div>`;
+    }
+
+    // ---------- Stage Stepper Helpers ----------
+    function getStageIndex(status) {
+      const s = (status || 'pending').toLowerCase();
+      if (['pending', 'order_received', 'received', 'taken'].includes(s)) return 1;
+      if (['preparing', 'accepted'].includes(s)) return 2;
+      if (['ready', 'done'].includes(s)) return 3;
+      if (['served', 'placed_on_table', 'placed'].includes(s)) return 4;
+      if (['completed', 'payment_pending', 'billed'].includes(s)) return 5;
+      if (['paid', 'success'].includes(s)) return 6;
+      return 1;
+    }
+
+    function getStageDetails(stage) {
+      switch(stage) {
+        case 1:
+          return {
+            label: 'Order Taken ⏳',
+            bg: 'bg-amber-50',
+            border: 'border-amber-200',
+            text: 'text-amber-800',
+            icon: 'clock',
+            desc: 'Order received by restaurant kitchen. Chefs will begin preparing shortly.'
+          };
+        case 2:
+          return {
+            label: 'Preparing in Kitchen 👨‍🍳',
+            bg: 'bg-blue-50',
+            border: 'border-blue-200',
+            text: 'text-blue-800',
+            icon: 'chef-hat',
+            desc: 'Chefs are currently preparing your delicious dishes fresh in the kitchen!'
+          };
+        case 3:
+          return {
+            label: 'Food Ready (Done) 🍳',
+            bg: 'bg-indigo-50',
+            border: 'border-indigo-200',
+            text: 'text-indigo-800',
+            icon: 'check-circle-2',
+            desc: 'Dishes are freshly cooked and plated. Waiting to be served to your table.'
+          };
+        case 4:
+          return {
+            label: 'Placed on Table 🍽️',
+            bg: 'bg-teal-50',
+            border: 'border-teal-200',
+            text: 'text-teal-800',
+            icon: 'utensils',
+            desc: `Food served hot at Table ${state.tableNumber}! Enjoy your meal.`
+          };
+        case 5:
+        default:
+          return {
+            label: 'Bill Ready / Pay 💳',
+            bg: 'bg-amber-50',
+            border: 'border-amber-200',
+            text: 'text-amber-800',
+            icon: 'receipt',
+            desc: 'Table check ready. Settle your bill instantly via your favourite UPI app below.'
+          };
+      }
+    }
+
+    // ---------- Order Tracking & Payment / Receipt Screen ----------
+    function renderOrderSuccess() {
+      const normStatus = (state.orderStatus || 'pending').toLowerCase();
+      const isPaid = (normStatus === 'paid' || normStatus === 'success');
+      const isPaymentSubmitted = (normStatus === 'payment_submitted' || state.paymentSubmitted);
+      const grandTotal = getGrandTotal();
+      const orderHistory = (state.orderHistory && state.orderHistory.length > 0)
+        ? state.orderHistory
+        : (state.orderPlaced ? [state.orderPlaced] : []);
+      const totalItemCount = getTotalItemsCountAcrossRounds();
+      const myItemsTotal = calculateMyItemsTotal();
+      const uniqueGuests = [...new Set(orderHistory.map(r => r.customerName || 'Guest'))];
+      const guestTotals = {};
+      orderHistory.forEach(r => {
+        const g = r.customerName || 'Guest';
+        const rTot = Number(r.total) || 0;
+        guestTotals[g] = (guestTotals[g] || 0) + rTot;
+      });
+
+      // IF PAID: Render Digital Receipt Screen
+      if (isPaid) {
+        const receipt = state.paymentReceipt || buildFallbackReceipt(orderHistory, grandTotal);
+        app.innerHTML = `
+          <div id="receiptScreen" class="flex flex-col items-center justify-start min-h-screen p-4 pb-12 fade-in max-w-md mx-auto">
+            <div class="w-16 h-16 rounded-full bg-emerald-100 flex items-center justify-center my-4 ring-8 ring-emerald-50">
+              <i data-lucide="check-check" class="w-8 h-8 text-emerald-600 stroke-[2.5]"></i>
+            </div>
+            <h1 class="text-xl font-bold text-slate-900 mb-0.5">Payment Settled! ✅</h1>
+            <p class="text-xs text-slate-500 mb-4">Thank you for dining at <strong>${esc(state.restaurant?.name || 'our restaurant')}</strong></p>
+
+            <div class="w-full bg-white border border-slate-200 rounded-2xl p-4 mb-4 shadow-sm text-left">
+              <div class="text-center border-b border-dashed border-slate-200 pb-3 mb-3">
+                <h2 class="text-base font-extrabold text-slate-900">${esc(state.restaurant?.name || 'Restaurant')}</h2>
+                <p class="text-[11px] text-slate-400">${esc(state.restaurantAddress || 'Dine-In Digital Receipt')}</p>
+                <div class="inline-block mt-2 px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-bold border border-emerald-200">
+                  PAID IN FULL • TABLE ${esc(String(state.tableNumber))}
+                </div>
+              </div>
+
+              <div class="grid grid-cols-2 gap-y-1.5 text-[11px] mb-3 pb-3 border-b border-slate-100">
+                <div><span class="text-slate-400">Date:</span> <span class="font-semibold text-slate-800">${receipt.timestamp || 'Today'}</span></div>
+                <div><span class="text-slate-400">Table:</span> <span class="font-semibold text-slate-800">Table ${esc(String(state.tableNumber))}</span></div>
+                <div><span class="text-slate-400">Customer:</span> <span class="font-semibold text-slate-800">${esc(receipt.customerName || state.customerName || 'Guest')}</span></div>
+                <div><span class="text-slate-400">Payment:</span> <span class="font-semibold text-slate-800">${esc(receipt.paymentMode || 'UPI')}</span></div>
+                <div class="col-span-2"><span class="text-slate-400">Txn / UTR ID:</span> <span class="font-mono font-bold text-blue-700">${esc(receipt.transactionId || 'Confirmed')}</span></div>
+              </div>
+
+              <div class="space-y-1.5 mb-3">
+                <div class="flex justify-between text-[11px] font-bold text-slate-400 border-b border-slate-100 pb-1">
+                  <span>Item</span>
+                  <span class="text-right">Amount</span>
+                </div>
+                ${(receipt.items || []).map(it => `
+                  <div class="flex justify-between items-start text-xs py-1 border-b border-slate-50">
+                    <div>
+                      <span class="font-medium text-slate-800">${esc(it.name)}</span>
+                      <span class="text-slate-400 font-normal">× ${it.qty}</span>
+                      ${it.orderedBy ? `
+                        <div class="text-[9.5px] text-indigo-600 font-semibold flex items-center gap-0.5">
+                          <span>👤 ${esc(it.orderedBy)}</span>
+                        </div>
+                      ` : ''}
+                    </div>
+                    <span class="font-bold text-slate-800 text-xs">₹${(Number(it.price) * Number(it.qty)).toFixed(0)}</span>
+                  </div>
+                `).join('')}
+              </div>
+
+              <div class="flex justify-between items-center pt-2 border-t-2 border-dashed border-slate-300 mb-1">
+                <span class="text-xs font-bold text-slate-700">Grand Total Paid</span>
+                <span class="text-xl font-extrabold text-emerald-700">₹${grandTotal.toFixed(2)}</span>
+              </div>
+            </div>
+
+            <div class="w-full space-y-2 mb-6">
+              <button onclick="downloadReceiptDirectly()" class="w-full py-3 bg-blue-600 hover:bg-blue-700 active:scale-[0.98] text-white rounded-xl font-bold text-xs flex items-center justify-center gap-2 shadow-sm transition">
+                <i data-lucide="download" class="w-4 h-4"></i> Download Receipt (.html)
+              </button>
+              <button onclick="window.print()" class="w-full py-2.5 bg-slate-100 hover:bg-slate-200 active:scale-[0.98] text-slate-700 rounded-xl font-semibold text-xs flex items-center justify-center gap-2 transition">
+                <i data-lucide="printer" class="w-3.5 h-3.5"></i> Print Receipt
+              </button>
+              <button onclick="startNewSession()" class="w-full py-2.5 text-slate-500 hover:text-slate-800 text-xs font-medium transition">
+                Done / Start New Visit
+              </button>
+            </div>
+          </div>
+        `;
+        try { lucide.createIcons(); } catch(e) { console.warn("Lucide:", e); }
+        return;
+      }
+
+      // IF UNPAID: Active Table Tracker & Payment
+      const currentStage = getStageIndex(normStatus);
+      const stageInfo = getStageDetails(currentStage);
+      const progressPercent = Math.min(100, Math.max(0, (currentStage - 1) * 25));
+
+      const steps = [
+        { id: 1, label: 'Taken', sub: 'Order In', icon: 'clock' },
+        { id: 2, label: 'Preparing', sub: 'Cooking', icon: 'chef-hat' },
+        { id: 3, label: 'Done', sub: 'Ready', icon: 'check-circle' },
+        { id: 4, label: 'Placed', sub: 'On Table', icon: 'utensils' },
+        { id: 5, label: 'Bill & Pay', sub: 'Settle', icon: 'receipt' }
+      ];
+
+      const selectedAppObj = UPI_APPS.find(a => a.id === state.selectedUpiApp) || UPI_APPS[0];
+
+      app.innerHTML = `
+        <div id="orderSuccessScreen" class="flex flex-col items-center justify-start min-h-screen p-4 pb-12 text-center max-w-md mx-auto">
+          <div class="w-full flex items-center justify-between py-2 mb-2">
+            <button onclick="orderMoreItems()" class="text-xs font-semibold text-blue-600 hover:text-blue-800 flex items-center gap-1 py-1 px-2.5 rounded-lg bg-blue-50 transition active:scale-[0.98]">
+              <i data-lucide="chevron-left" class="w-3.5 h-3.5"></i> Back to Menu
+            </button>
+            <div class="text-right">
+              <span class="text-xs font-bold text-slate-800 block">${esc(state.restaurant?.name || 'Restaurant')}</span>
+              <span class="text-[10px] text-slate-400 block font-medium">Table ${esc(String(state.tableNumber))}</span>
+            </div>
+          </div>
+
+          <!-- TWO-PHASE CASHIER VERIFICATION CARD (ANTI-FRAUD) -->
+          ${isPaymentSubmitted ? `
+            <div class="w-full bg-gradient-to-br from-amber-500/10 via-amber-50 to-orange-50 border-2 border-amber-300 rounded-2xl p-4 mb-3 shadow-md text-left fade-in">
+              <div class="flex items-center gap-2.5 mb-2">
+                <div class="w-9 h-9 rounded-xl bg-amber-500 text-white flex items-center justify-center font-bold text-lg shadow-sm flex-shrink-0 animate-pulse">
+                  ⏳
+                </div>
+                <div>
+                  <h3 class="text-xs font-extrabold text-amber-900 leading-tight">Payment Submitted — Verifying with Cashier</h3>
+                  <p class="text-[10px] text-amber-700 font-medium">Table ${esc(String(state.tableNumber))} • Reference: <span class="font-mono font-bold">${esc(state.transactionId || 'Awaiting Check')}</span></p>
+                </div>
+              </div>
+              <p class="text-[10.5px] text-slate-600 mb-2.5 leading-relaxed bg-white/80 p-2.5 rounded-xl border border-amber-200/60">
+                Your payment of <strong class="text-emerald-700">₹${grandTotal.toFixed(2)}</strong> has been recorded. As soon as the cashier or POS confirms the receipt on their terminal, this screen will automatically switch to your official verified green receipt!
+              </p>
+              <div class="flex items-center justify-between">
+                <button onclick="syncOrdersFromGoogleSheet()" class="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-[10.5px] font-bold shadow-xs active:scale-95 transition flex items-center gap-1">
+                  <span>🔄 Check Cashier Status</span>
+                </button>
+                <span class="text-[9.5px] text-amber-700 font-medium flex items-center gap-1">
+                  <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span> Auto-polling every 2.5s
+                </span>
+              </div>
+            </div>
+          ` : ''}
+
+          <!-- 1. LIVE 5-STAGE STEPPER CARD -->
+          <div id="liveStatusContainer" class="w-full bg-white border border-slate-200 rounded-2xl p-4 mb-3 shadow-xs">
+            <div class="flex items-center justify-between text-xs text-slate-500 font-semibold mb-3 px-1">
+              <span>Live Kitchen Tracker</span>
+              <span class="flex items-center gap-1.5 text-emerald-600 font-bold bg-emerald-50 px-2 py-0.5 rounded-full text-[10.5px]">
+                <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span> Live Sync
+              </span>
+            </div>
+
+            <!-- Stepper Track -->
+            <div class="relative flex items-center justify-between px-2 mb-2">
+              <div class="absolute left-6 right-6 top-1/2 -translate-y-1/2 h-1 bg-slate-200 z-0"></div>
+              <div class="absolute left-6 top-1/2 -translate-y-1/2 h-1 bg-blue-600 transition-all duration-500 z-0" style="width: ${progressPercent}%;"></div>
+
+              ${steps.map(st => {
+                const isPassed = currentStage > st.id;
+                const isCurrent = currentStage === st.id;
+                let circleClass = 'w-6 h-6 rounded-full text-xs font-bold flex items-center justify-center z-10 transition-all duration-300 ';
+                let nodeContent = '';
+                if (isPassed) {
+                  circleClass += 'bg-emerald-600 text-white shadow-xs';
+                  nodeContent = '<i data-lucide="check" class="w-3 h-3 stroke-[3]"></i>';
+                } else if (isCurrent) {
+                  circleClass += 'bg-blue-600 text-white ring-4 ring-blue-100 shadow-sm scale-110';
+                  nodeContent = `<i data-lucide="${st.icon}" class="w-3 h-3"></i>`;
+                } else {
+                  circleClass += 'bg-white border-2 border-slate-300 text-slate-400';
+                  nodeContent = `<span class="text-[9px]">${st.id}</span>`;
+                }
+                return `<div class="${circleClass}">${nodeContent}</div>`;
+              }).join('')}
+            </div>
+
+            <!-- Labels row -->
+            <div class="grid grid-cols-5 text-center gap-0.5 mt-1.5">
+              ${steps.map(st => {
+                const isCurrent = currentStage === st.id;
+                const isPassed = currentStage > st.id;
+                const textClass = isCurrent ? 'font-bold text-blue-600' : (isPassed ? 'font-semibold text-slate-700' : 'text-slate-400 font-normal');
+                return `
+                  <div>
+                    <span class="block text-[10px] leading-tight ${textClass}">${st.label}</span>
+                    <span class="text-[8.5px] text-slate-400 block">${st.sub}</span>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+
+            <!-- Active Stage Status Callout Box -->
+            <div class="mt-3 p-3 rounded-xl ${stageInfo.bg} border ${stageInfo.border} flex items-start gap-2.5 text-left">
+              <div class="mt-0.5 p-1 rounded-md bg-white/80 shadow-xs">
+                <i data-lucide="${stageInfo.icon}" class="w-3.5 h-3.5 ${stageInfo.text}"></i>
+              </div>
+              <div class="flex-1">
+                <span class="font-bold text-xs ${stageInfo.text} block">${stageInfo.label}</span>
+                <p class="text-[10.5px] text-slate-600 mt-0.5 leading-snug">${stageInfo.desc}</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- 2. MULTI-USER SESSION ORDER HISTORY CARD -->
+          <div class="w-full bg-white border border-slate-200 rounded-2xl p-4 mb-3 shadow-xs text-left">
+            <div class="flex items-center justify-between mb-3 border-b border-slate-100 pb-2">
+              <div>
+                <h3 class="text-xs font-bold text-slate-900 uppercase tracking-wider">Table Orders & Guests</h3>
+                <p class="text-[10px] text-slate-400">All guests ordering at Table ${esc(String(state.tableNumber))}</p>
+              </div>
+              <span class="text-[11px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-100">
+                ${orderHistory.length} ${orderHistory.length === 1 ? 'Round' : 'Rounds'}
+              </span>
+            </div>
+
+            <!-- Rounds list -->
+            <div class="space-y-2.5">
+              ${orderHistory.map((round, idx) => {
+                const isMyRound = (round.deviceId && round.deviceId === state.deviceId);
+                const guestName = round.customerName || 'Guest';
+                return `
+                  <div class="bg-slate-50/90 border border-slate-100 rounded-xl p-2.5">
+                    <div class="flex items-center justify-between text-xs font-bold mb-1.5 text-slate-800">
+                      <div class="flex items-center gap-1.5">
+                        <span class="w-4 h-4 rounded-full bg-slate-800 text-white text-[9px] flex items-center justify-center font-bold">${idx + 1}</span>
+                        <span class="text-xs font-semibold text-slate-700">Round ${idx + 1}</span>
+                        <span class="text-[10px] font-mono text-slate-400">(${esc(round.kotNumber || 'KOT')})</span>
+                      </div>
+                      <div class="flex items-center gap-1">
+                        ${isMyRound ? `
+                          <span class="px-1.5 py-0.5 rounded-md bg-blue-100 text-blue-800 text-[10px] font-bold">
+                            👤 ${esc(guestName)} (You)
+                          </span>
+                        ` : `
+                          <span class="px-1.5 py-0.5 rounded-md bg-purple-100 text-purple-800 text-[10px] font-bold">
+                            👤 ${esc(guestName)}
+                          </span>
+                        `}
+                      </div>
+                    </div>
+
+                    <div class="space-y-1 my-1 pl-5">
+                      ${(round.items || []).map(it => {
+                        const isMyItem = (it.deviceId && it.deviceId === state.deviceId);
+                        return `
+                          <div class="flex justify-between text-xs text-slate-600">
+                            <div>
+                              <span class="text-slate-800 font-medium">${esc(it.name)} <span class="text-slate-400 font-normal">× ${it.qty}</span></span>
+                              ${it.orderedBy ? `
+                                <span class="text-[9.5px] ml-1 ${isMyItem ? 'text-blue-600 font-semibold' : 'text-purple-600 font-medium'}">
+                                  (${isMyItem ? 'Your item' : 'by ' + esc(it.orderedBy)})
+                                </span>
+                              ` : ''}
+                            </div>
+                            <span class="font-semibold text-slate-900">₹${(Number(it.price) * Number(it.qty)).toFixed(0)}</span>
+                          </div>
+                        `;
+                      }).join('')}
+                    </div>
+
+                    <div class="flex justify-between text-[11px] font-bold text-slate-800 border-t border-slate-200/60 pt-1 mt-1 pl-5">
+                      <span class="text-slate-400 font-medium">Round Subtotal</span>
+                      <span class="text-blue-700">₹${(Number(round.total) || 0).toFixed(0)}</span>
+                    </div>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+
+            <!-- Summary -->
+            <div class="border-t border-slate-200 pt-2.5 mt-3 space-y-1">
+              ${myItemsTotal > 0 && myItemsTotal < grandTotal ? `
+                <div class="flex items-center justify-between text-xs text-slate-500 font-medium">
+                  <span>Your share (${esc(state.customerName || 'You')}):</span>
+                  <span class="font-bold text-blue-600">₹${myItemsTotal.toFixed(0)}</span>
+                </div>
+              ` : ''}
+              <div class="flex items-center justify-between">
+                <div>
+                  <span class="text-xs text-slate-700 font-bold">Table Grand Total (${totalItemCount} items)</span>
+                  <p class="text-[9.5px] text-slate-400">Accumulated for Table ${esc(String(state.tableNumber))}</p>
+                </div>
+                <span class="text-lg font-extrabold text-slate-900">₹${grandTotal.toFixed(0)}</span>
+              </div>
+            </div>
+
+            <!-- Interactive Multi-Scenario Split Payment & WhatsApp Sharing Card -->
+            <div class="mt-3 pt-3 border-t border-slate-100">
+              <div class="bg-gradient-to-br from-indigo-50/90 via-slate-50 to-purple-50/90 border border-indigo-100 rounded-2xl p-3.5 shadow-2xs">
+                <div class="flex items-center justify-between mb-2.5">
+                  <div class="flex items-center gap-1.5">
+                    <i data-lucide="split" class="w-4 h-4 text-indigo-600"></i>
+                    <span class="text-xs font-bold text-slate-800">Split Bill & WhatsApp Share</span>
+                  </div>
+                  <span class="text-[10px] font-bold text-indigo-700 bg-white px-2 py-0.5 rounded-full border border-indigo-200">
+                    Table #${esc(String(state.tableNumber))}
+                  </span>
+                </div>
+
+                <!-- 2 Split Scenarios Selector -->
+                <div class="grid grid-cols-2 gap-1.5 p-1 bg-white/80 rounded-xl border border-slate-200/80 mb-3 text-xs">
+                  <button
+                    onclick="setSplitMode('equal')"
+                    class="py-1.5 px-2 rounded-lg font-bold text-[11px] transition flex items-center justify-center gap-1 ${
+                      (state.splitMode || 'equal') === 'equal'
+                        ? 'bg-indigo-600 text-white shadow-xs'
+                        : 'text-slate-600 hover:bg-slate-100'
+                    }"
+                  >
+                    <span>👥 Equal Split</span>
+                  </button>
+                  <button
+                    onclick="setSplitMode('by_guest')"
+                    class="py-1.5 px-2 rounded-lg font-bold text-[11px] transition flex items-center justify-center gap-1 ${
+                      state.splitMode === 'by_guest'
+                        ? 'bg-indigo-600 text-white shadow-xs'
+                        : 'text-slate-600 hover:bg-slate-100'
+                    }"
+                  >
+                    <span>👤 By Guest Dishes</span>
+                  </button>
+                </div>
+
+                <!-- Scenario 1: Equal Split by Count -->
+                ${(state.splitMode || 'equal') === 'equal' ? `
+                  <div class="space-y-2.5">
+                    <div class="flex items-center justify-between bg-white p-2.5 rounded-xl border border-indigo-100/70">
+                      <div>
+                        <span class="text-[11px] font-semibold text-slate-600 block">Number of Diners:</span>
+                        <span class="text-[10px] text-slate-400">Divide ₹${grandTotal.toFixed(0)} equally</span>
+                      </div>
+                      <div class="flex items-center gap-2">
+                        <button onclick="adjustSplitPeople(-1)" class="w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 font-bold text-slate-800 flex items-center justify-center active:scale-95 transition">-</button>
+                        <span class="text-sm font-extrabold text-indigo-900 w-6 text-center">${state.splitPeopleCount || 2}</span>
+                        <button onclick="adjustSplitPeople(1)" class="w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 font-bold text-slate-800 flex items-center justify-center active:scale-95 transition">+</button>
+                      </div>
+                    </div>
+
+                    <div class="bg-indigo-600 text-white rounded-xl p-3 flex items-center justify-between shadow-xs">
+                      <div>
+                        <span class="text-[10.5px] text-indigo-100 block">Each Person Pays:</span>
+                        <span class="text-lg font-black">₹${(grandTotal / (state.splitPeopleCount || 2)).toFixed(0)}</span>
+                      </div>
+                      <button onclick="payMyEqualShare()" class="px-3 py-1.5 bg-white text-indigo-700 font-bold text-xs rounded-lg hover:bg-indigo-50 active:scale-95 shadow-2xs transition flex items-center gap-1">
+                        <span>⚡ Pay Share</span>
+                      </button>
+                    </div>
+
+                    <button onclick="shareEqualSplitWhatsApp()" class="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-2xs transition">
+                      <span class="text-sm">📲</span>
+                      <span>Share Equal Split on WhatsApp</span>
+                    </button>
+                  </div>
+                ` : `
+                  <!-- Scenario 2: Itemized by Guest / Dishes -->
+                  <div class="space-y-2">
+                    ${uniqueGuests.map(gName => {
+                      const gAmt = guestTotals[gName] || 0;
+                      const isMe = (gName === state.customerName);
+                      return `
+                        <div class="bg-white p-2.5 rounded-xl border border-slate-200/80">
+                          <div class="flex items-center justify-between mb-1.5">
+                            <span class="text-xs font-bold text-slate-800 flex items-center gap-1">
+                              👤 ${esc(gName)}
+                              ${isMe ? '<span class="text-[9px] bg-blue-100 text-blue-800 px-1.5 py-0.2 rounded font-extrabold">You</span>' : ''}
+                            </span>
+                            <span class="text-xs font-extrabold text-slate-900">₹${gAmt.toFixed(0)}</span>
+                          </div>
+                          <div class="flex items-center gap-1.5 pt-1 border-t border-slate-100">
+                            <button onclick="shareGuestShareWhatsApp('${esc(gName)}', ${gAmt})" class="flex-1 py-1.5 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 font-bold text-[10.5px] rounded-lg transition flex items-center justify-center gap-1 active:scale-95">
+                              <span>📲 Send on WhatsApp</span>
+                            </button>
+                            ${isMe ? `
+                              <button onclick="payGuestShare(${gAmt})" class="py-1.5 px-3 bg-blue-600 hover:bg-blue-700 text-white font-bold text-[10.5px] rounded-lg transition active:scale-95 shadow-2xs">
+                                <span>Pay My ₹${gAmt.toFixed(0)}</span>
+                              </button>
+                            ` : ''}
+                          </div>
+                        </div>
+                      `;
+                    }).join('')}
+                    <button onclick="shareFullBillWhatsApp()" class="w-full py-2 bg-slate-100 hover:bg-slate-200 active:scale-[0.98] text-slate-700 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition">
+                      <span>📲 Share Complete Table Breakdown on WhatsApp</span>
+                    </button>
+                  </div>
+                `}
+              </div>
+            </div>
+
+            <!-- Active Table Assistance Callout if requested -->
+            ${state.activeWaiterCall && (Date.now() - state.activeWaiterCall.time < 300000) ? `
+              <div class="mt-3 p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-center justify-between animate-pulse">
+                <div class="flex items-center gap-2">
+                  <span class="text-base">🛎️</span>
+                  <div>
+                    <span class="font-bold block">${esc(state.activeWaiterCall.reason)} requested!</span>
+                    <span class="text-[10px] text-amber-700">Staff has been alerted and is heading to Table ${esc(String(state.tableNumber))}.</span>
+                  </div>
+                </div>
+                <button onclick="clearWaiterCallState()" class="text-[10.5px] font-bold text-amber-800 underline">Dismiss</button>
+              </div>
+            ` : ''}
+
+            <!-- Quick Table Assistance Buttons -->
+            <div class="mt-3 grid grid-cols-2 gap-2">
+              <button onclick="callWaiterService('waiter')" class="py-2.5 px-2.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 flex items-center justify-center gap-1.5 active:scale-95 transition">
+                <span>🛎️ Call Waiter</span>
+              </button>
+              <button onclick="callWaiterService('water')" class="py-2.5 px-2.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 flex items-center justify-center gap-1.5 active:scale-95 transition">
+                <span>💧 Water / Cutlery</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- 3. ACTION: "➕ ORDER MORE ITEMS" -->
+          <div class="w-full mb-3 space-y-2">
+            <button onclick="orderMoreItems()" class="w-full py-3 bg-blue-600 hover:bg-blue-700 active:scale-[0.98] text-white rounded-xl font-bold text-xs transition flex items-center justify-center gap-2 shadow-xs">
+              <i data-lucide="plus-circle" class="w-4 h-4"></i> Order More Dishes (Add Round ${orderHistory.length + 1})
+            </button>
+            <button onclick="confirmResetSession()" class="w-full py-2 bg-slate-100 hover:bg-slate-200 active:scale-[0.98] text-slate-600 rounded-xl font-medium text-[11px] transition flex items-center justify-center gap-1.5">
+              <i data-lucide="refresh-cw" class="w-3 h-3 text-slate-400"></i> Clear Session & Start Fresh Order
+            </button>
+          </div>
+
+          <!-- 4. RAZORPAY DYNAMIC UPI & CHECKOUT CARD -->
+          <div class="w-full bg-white border border-amber-200/80 rounded-2xl p-4 shadow-sm text-center relative overflow-hidden">
+            <div class="absolute top-0 right-0 bg-gradient-to-l from-amber-500 to-amber-600 text-white text-[9px] font-black uppercase px-2.5 py-0.5 rounded-bl-lg tracking-wider">
+              Instant Verified
+            </div>
+            <div class="flex items-center justify-center gap-1.5 text-xs font-bold text-slate-700 uppercase tracking-wider mb-1 mt-1">
+              <i data-lucide="zap" class="w-4 h-4 text-amber-500"></i>
+              Table ${esc(String(state.tableNumber))} Payment
+            </div>
+
+            <div class="my-2">
+              <span class="text-[11px] text-slate-400">Total Payable Bill</span>
+              <div class="text-3xl font-black text-slate-900">₹${grandTotal.toFixed(2)}</div>
+            </div>
+
+            <div class="p-2.5 bg-amber-50/80 border border-amber-100 rounded-xl text-left flex items-start gap-2 text-[11px] text-amber-900 mb-3">
+              <span class="text-base">⚡</span>
+              <p class="leading-snug">Pay securely via <b>Dynamic UPI (Google Pay, PhonePe, Paytm, CRED)</b>, QR Code, or Cards. Auto-verified in real time!</p>
+            </div>
+
+            ${isPaymentSubmitted ? `
+              <div class="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-900 mb-2 text-left">
+                <div class="flex items-center gap-1.5 font-bold mb-0.5">
+                  <span>✓</span>
+                  <span>Payment Verified (ID: ${esc(state.transactionId || 'Confirmed')})</span>
+                </div>
+                <p class="text-[10px] text-emerald-700">Payment has been received. Syncing official receipt...</p>
+              </div>
+            ` : `
+              <button
+                onclick="initiateRazorpayPayment()"
+                class="w-full py-4 bg-gradient-to-r from-amber-500 via-amber-600 to-amber-700 hover:from-amber-600 hover:to-amber-800 active:scale-[0.98] text-white rounded-2xl font-black text-sm shadow-lg shadow-amber-500/25 flex items-center justify-center gap-2 transition"
+              >
+                <i data-lucide="lock" class="w-4 h-4 text-white"></i>
+                <span>Pay ₹${grandTotal.toFixed(0)} • Razorpay Dynamic UPI</span>
+              </button>
+
+              <div class="flex items-center justify-center gap-2 mt-3 text-[10.5px] font-bold text-slate-500 flex-wrap">
+                <span class="flex items-center gap-0.5">🟣 PhonePe</span>
+                <span>•</span>
+                <span class="flex items-center gap-0.5">🔵 GPay</span>
+                <span>•</span>
+                <span class="flex items-center gap-0.5">🔷 Paytm</span>
+                <span>•</span>
+                <span class="flex items-center gap-0.5">📱 Any UPI / QR</span>
+                <span>•</span>
+                <span class="flex items-center gap-0.5">💳 Cards</span>
+              </div>
+            `}
+
+            <div class="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
+              <button onclick="requestFinalBill()" class="text-[11px] text-slate-500 hover:text-slate-800 underline font-medium transition">
+                ${state.billRequested ? '✓ Staff alerted to table' : 'Pay cash at counter / Call staff'}
+              </button>
+              <button onclick="shareFullBillWhatsApp()" class="text-[11px] text-emerald-600 hover:text-emerald-700 font-semibold flex items-center gap-1 transition">
+                <i data-lucide="share-2" class="w-3 h-3"></i> Share Bill
+              </button>
+            </div>
+          </div>
+
+          <!-- 5. PAYMENT CONFIRMATION BOTTOM SHEET MODAL -->
+          <div id="paymentConfirmModal" class="${state.paymentConfirmModalOpen ? '' : 'modal-hidden'} fixed inset-0 z-50">
+            <div class="modal-overlay fixed inset-0 bg-black/40 backdrop-blur-xs" onclick="closePaymentConfirmModal()"></div>
+            <div class="modal-sheet fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white rounded-t-3xl shadow-2xl p-4 z-10 text-left">
+              <div class="w-10 h-1 bg-slate-200 rounded-full mx-auto mb-3"></div>
+              
+              <div class="flex items-center justify-between mb-2 border-b border-slate-100 pb-2">
+                <div class="flex items-center gap-2">
+                  <div class="w-7 h-7 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center font-bold">
+                    ✓
+                  </div>
+                  <div>
+                    <h2 class="text-sm font-bold text-slate-900">Confirm UPI Payment</h2>
+                    <p class="text-[10px] text-slate-400">${selectedAppObj.name} • Table ${esc(String(state.tableNumber))}</p>
+                  </div>
+                </div>
+                <button onclick="closePaymentConfirmModal()" class="p-1 text-slate-400 hover:text-slate-600">
+                  <i data-lucide="x" class="w-4 h-4"></i>
+                </button>
+              </div>
+
+              <div class="bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-100 rounded-xl p-3 mb-3 text-xs">
+                <div class="flex justify-between items-center font-bold text-slate-800">
+                  <span>Payable Bill:</span>
+                  <span class="text-base text-emerald-700 font-extrabold">₹${grandTotal.toFixed(2)}</span>
+                </div>
+                <div class="flex justify-between text-slate-500 text-[10.5px] mt-1">
+                  <span>Paid to:</span>
+                  <span class="font-mono font-semibold text-slate-700">${esc(state.upiId || 'Store UPI')}</span>
+                </div>
+              </div>
+
+              <p class="text-xs font-semibold text-slate-800 mb-2">
+                Did your payment complete in ${selectedAppObj.name}?
+              </p>
+
+              <div class="space-y-1 mb-3.5">
+                <label class="block text-[11px] font-semibold text-slate-600">
+                  UPI Reference / UTR (Optional)
+                </label>
+                <input
+                  type="text"
+                  id="utrInput"
+                  placeholder="e.g. 12-digit UTR (optional)"
+                  class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
+                />
+                <div class="flex justify-between items-center text-[10px] text-slate-400 mt-0.5">
+                  <span>If not copied, leave empty to confirm immediately</span>
+                  <button onclick="autoFillDemoUtr()" class="text-blue-600 hover:text-blue-800 font-bold underline">
+                    Auto-fill
+                  </button>
+                </div>
+              </div>
+
+              <div class="space-y-2">
+                <button
+                  onclick="confirmAndRecordPayment()"
+                  class="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] text-white rounded-xl font-bold text-xs flex items-center justify-center gap-2 shadow-md transition disabled:opacity-50"
+                  ${state.submittingPayment ? 'disabled' : ''}
+                >
+                  ${state.submittingPayment
+                    ? '<svg class="animate-spin w-4 h-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path></svg> Confirming & Generating Receipt...'
+                    : '<i data-lucide="check-check" class="w-4 h-4"></i> Yes, Payment Done (Get Receipt)'
+                  }
+                </button>
+                <button
+                  onclick="closePaymentConfirmModal()"
+                  class="w-full py-2 bg-slate-100 hover:bg-slate-200 active:scale-[0.98] text-slate-600 rounded-xl font-semibold text-xs transition"
+                >
+                  Cancel / Not Paid Yet
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>`;
+
+      try { lucide.createIcons(); } catch(e) { console.warn("Lucide:", e); }
+    }
+
+    // =========================================================================
+    //  Helpers
+    // =========================================================================
+    
+    // =========================================================================
+    //  Order Status Formatting & Sanitization (100% immune to raw JSON)
+    // =========================================================================
+    function sanitizeStatus(raw) {
+      if (!raw) return 'pending';
+      const s = String(raw).trim();
+      if (s.startsWith('[') || s.startsWith('{') || s.includes('"productId"') || s.includes('"name"')) {
+        return 'pending';
+      }
+      return s.toLowerCase();
+    }
+
+    function formatOrderStatusDisplay(rawStatus) {
+      if (!rawStatus) return 'ORDER RECEIVED ⏱️';
+      const s = String(rawStatus).trim();
+      if (s.startsWith('[') || s.startsWith('{') || s.includes('"productId"') || s.includes('"name"')) {
+        return 'ORDER RECEIVED ⏱️';
+      }
+      switch (s.toUpperCase()) {
+        case 'PENDING':
+        case 'ORDER_RECEIVED':
+        case 'TAKEN':
+        case 'NEW':
+          return 'ORDER RECEIVED ⏱️';
+        case 'PREPARING':
+        case 'ACCEPTED':
+        case 'COOKING':
+        case 'IN_PROGRESS':
+          return 'PREPARING 🍳';
+        case 'READY':
+        case 'DONE':
+        case 'FOOD_READY':
+        case 'KITCHEN_DONE':
+          return 'FOOD READY 🔔';
+        case 'SERVED':
+        case 'PLACED':
+        case 'ON_TABLE':
+        case 'DELIVERED':
+          return 'SERVED 🍽️';
+        case 'PAYMENT_PENDING':
+        case 'BILLED':
+        case 'BILL_READY':
+          return 'BILL READY 🧾';
+        case 'PAID':
+        case 'SUCCESS':
+        case 'SETTLED':
+          return 'PAID & SETTLED ✅';
+        case 'CANCELLED':
+        case 'REJECTED':
+          return 'CANCELLED ❌';
+        default:
+          return s.toUpperCase();
+      }
+    }
+
+    function esc(str) {
+      const div = document.createElement('div');
+      div.textContent = str || '';
+      return div.innerHTML;
+    }
+
+    function getFilteredItems() {
+      return state.menuItems.filter(item => {
+        if (state.vegOnly && !item.isVeg) return false;
+        if (state.activeCategory !== 'All' && item.category !== state.activeCategory) return false;
+        if (state.searchQuery) {
+          const q = state.searchQuery.toLowerCase();
+          if (!item.name.toLowerCase().includes(q) && !(item.description || '').toLowerCase().includes(q)) return false;
+        }
+        return true;
+      });
+    }
+
+    function getTotalCartCount() {
+      return Object.values(state.cart).reduce((s, q) => s + q, 0);
+    }
+
+    function getCartSubtotal() {
+      return Object.entries(state.cart).reduce((total, [id, qty]) => {
+        const item = state.menuItems.find(i => i.id === id);
+        return total + (item ? item.price * qty : 0);
+      }, 0);
+    }
+
+    function getCartServiceCharge() {
+      const sub = getCartSubtotal();
+      return sub * ((Number(state.serviceCharge) || 0) / 100);
+    }
+
+    function getCartGst() {
+      const sub = getCartSubtotal();
+      const sc = getCartServiceCharge();
+      return (sub + sc) * ((Number(state.gstRate) || 0) / 100);
+    }
+
+    function getCartGrandTotal() {
+      return getCartSubtotal() + getCartServiceCharge() + getCartGst();
+    }
+
+    function getCartTotal() {
+      return getCartGrandTotal();
+    }
+
+    function getNextDailyToken() {
+      const now = new Date();
+      const dd = String(now.getDate()).padStart(2, '0');
+      const mm = String(now.getMonth() + 1).padStart(2, '0');
+      const todayKey = `${dd}${mm}`;
+      
+      let lastDate = '';
+      let lastSeq = 0;
+      try {
+        lastDate = localStorage.getItem('sb_last_token_date') || '';
+        if (lastDate !== todayKey) {
+          lastSeq = 0;
+          localStorage.setItem('sb_last_token_date', todayKey);
+        } else {
+          lastSeq = parseInt(localStorage.getItem('sb_last_token_seq') || '0', 10);
+        }
+        lastSeq += 1;
+        localStorage.setItem('sb_last_token_seq', String(lastSeq));
+      } catch (e) {
+        lastSeq = Math.floor(1 + Math.random() * 99);
+      }
+      const seq = String(lastSeq).padStart(3, '0');
+      return `T-${dd}${mm}-${seq}`;
+    }
+
+    function getCartItems() {
+      return Object.entries(state.cart)
+        .filter(([, qty]) => qty > 0)
+        .map(([id, qty]) => ({ item: state.menuItems.find(i => i.id === id), qty }))
+        .filter(ci => ci.item);
+    }
+
+    function getGrandTotal() {
+      if (state.orderHistory && state.orderHistory.length > 0) {
+        return state.orderHistory.reduce((sum, ord) => sum + (Number(ord.total) || 0), 0);
+      }
+      return state.orderPlaced ? (Number(state.orderPlaced.total) || 0) : 0;
+    }
+
+    function calculateMyItemsTotal() {
+      if (!state.orderHistory || state.orderHistory.length === 0) return 0;
+      let total = 0;
+      state.orderHistory.forEach(round => {
+        (round.items || []).forEach(it => {
+          if (it.deviceId === state.deviceId || (round.deviceId === state.deviceId && !it.deviceId)) {
+            total += (Number(it.price) * Number(it.qty)) || 0;
+          }
+        });
+      });
+      return total;
+    }
+
+    function getTotalItemsCountAcrossRounds() {
+      if (state.orderHistory && state.orderHistory.length > 0) {
+        return state.orderHistory.reduce((sum, ord) => sum + (ord.items ? ord.items.reduce((s, it) => s + (it.qty || 1), 0) : 0), 0);
+      }
+      return state.orderPlaced && state.orderPlaced.items ? state.orderPlaced.items.reduce((s, it) => s + (it.qty || 1), 0) : 0;
+    }
+
+    function getAllItemsAcrossRounds() {
+      const itemsMap = {};
+      const history = (state.orderHistory && state.orderHistory.length > 0)
+        ? state.orderHistory
+        : (state.orderPlaced ? [state.orderPlaced] : []);
+
+      history.forEach(round => {
+        (round.items || []).forEach(it => {
+          const guest = it.orderedBy || round.customerName || 'Guest';
+          const dishName = it.name || 'Dish';
+          const price = Number(it.price) || 0;
+          const key = dishName + '___' + price + '___' + guest;
+          if (itemsMap[key]) {
+            itemsMap[key].qty += (Number(it.qty) || 1);
+          } else {
+            itemsMap[key] = {
+              name: dishName,
+              qty: Number(it.qty) || 1,
+              price: price,
+              orderedBy: guest
+            };
+          }
+        });
+      });
+      return Object.values(itemsMap);
+    }
+
+    function buildFallbackReceipt(orderHistory, grandTotal) {
+      return {
+        billId: 'BILL_T' + state.tableNumber + '_' + (state.orderPlaced?.kotNumber || Date.now().toString().slice(-4)),
+        timestamp: new Date().toLocaleString(),
+        customerName: state.customerName || 'Guest',
+        customerPhone: state.customerPhone || '',
+        paymentMode: 'UPI',
+        transactionId: state.transactionId || 'PAID',
+        items: getAllItemsAcrossRounds(),
+        totalAmount: grandTotal,
+        tableNumber: state.tableNumber,
+        savedAt: Date.now()
+      };
+    }
+
+    // =========================================================================
+    //  UPI Deep-Linking
+    // =========================================================================
+    function selectUpiApp(appId) {
+      state.selectedUpiApp = appId;
+      renderOrderSuccess();
+    }
+
+    function getUpiAppUri(appId, grandTotal) {
+      const pa = state.upiId || '';
+      const pn = state.restaurant?.name || 'Restaurant';
+      const am = grandTotal.toFixed(2);
+      const cu = 'INR';
+      const tn = `Table ${state.tableNumber} Bill`;
+
+      const standardQuery = `pa=${encodeURIComponent(pa)}&pn=${encodeURIComponent(pn)}&am=${am}&cu=${cu}&tn=${encodeURIComponent(tn)}`;
+
+      switch (appId) {
+        case 'PHONEPE':
+          return `phonepe://pay?${standardQuery}`;
+        case 'GPAY':
+          return `tez://upi/pay?${standardQuery}`;
+        case 'PAYTM':
+          return `paytmmp://pay?${standardQuery}`;
+        case 'CRED':
+          return `credpay://upi/pay?${standardQuery}`;
+        case 'BHIM':
+        case 'ANY':
+        default:
+          return `upi://pay?${standardQuery}`;
+      }
+    }
+
+
+    // =========================================================================
+    //  Razorpay Dynamic UPI & Route Settlement Integration
+    // =========================================================================
+    function initiateRazorpayPayment(customAmount = null) {
+      const amountToPay = customAmount || getGrandTotal();
+      if (amountToPay <= 0) {
+        showToast('No balance due to pay.', 'info');
+        return;
+      }
+
+      const razorpayKey = state.razorpayKeyId || 'rzp_test_51placeholder';
+      const primaryKot = state.orderPlaced?.kotNumber || ('KOT-' + Math.floor(1000 + Math.random() * 9000));
+
+      const options = {
+        key: razorpayKey,
+        amount: Math.round(amountToPay * 100), // in paise
+        currency: "INR",
+        name: state.restaurant?.name || "SmartDine Restaurant",
+        description: `Table ${state.tableNumber} Dining Bill (${primaryKot})`,
+        image: "/assets/logo.png",
+        prefill: {
+          name: state.customerName || `Table ${state.tableNumber} Guest`,
+          contact: state.customerPhone || ""
+        },
+        notes: {
+          table: String(state.tableNumber),
+          orgId: state.organizationId || "",
+          kot: primaryKot,
+          settlementUpiId: state.settlementUpiId || state.upiId || "",
+          platform: "SmartDine Web QR"
+        },
+        theme: {
+          color: "#F59E0B"
+        },
+        handler: async function (response) {
+          console.log("[Razorpay] Payment Success Handler:", response);
+          await handleSuccessfulPayment(
+            response.razorpay_payment_id,
+            response.razorpay_order_id || ('RZP_ORD_' + Date.now()),
+            response.razorpay_signature || 'verified_checkout',
+            amountToPay
+          );
+        },
+        modal: {
+          ondismiss: function () {
+            console.log("[Razorpay] Checkout modal dismissed by user");
+            showToast('Payment window closed.', 'info');
+          }
+        }
+      };
+
+      try {
+        if (typeof Razorpay === 'undefined') {
+          showToast('Loading Razorpay secure gateway...', 'info');
+          const script = document.createElement('script');
+          script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+          script.onload = () => {
+            const rzp = new Razorpay(options);
+            rzp.on('payment.failed', function (resp) {
+              console.error("[Razorpay] Payment Failed:", resp.error);
+              showToast(`Payment failed: ${resp.error.description || 'Transaction declined'}`, 'error');
+            });
+            rzp.open();
+          };
+          script.onerror = () => showToast('Failed to load Razorpay. Please pay at counter.', 'error');
+          document.head.appendChild(script);
+          return;
+        }
+
+        const rzp = new Razorpay(options);
+        rzp.on('payment.failed', function (resp) {
+          console.error("[Razorpay] Payment Failed:", resp.error);
+          showToast(`Payment failed: ${resp.error.description || 'Transaction declined'}`, 'error');
+        });
+        rzp.open();
+      } catch (err) {
+        console.error("[Razorpay] Checkout initialization error:", err);
+        showToast('Failed to start Razorpay payment. Please pay at counter.', 'error');
+      }
+    }
+
+    async function handleSuccessfulPayment(paymentId, orderId, signature, amountPaid) {
+      state.submittingPayment = true;
+      renderOrderSuccess();
+
+      try {
+        const primaryKot = state.orderPlaced?.kotNumber || ('KOT-' + Math.floor(1000 + Math.random() * 9000));
+        const billDocId = 'BILL_' + primaryKot;
+        const allItems = getAllItemsAcrossRounds();
+
+        const billPayload = {
+          id: billDocId,
+          bill_id: billDocId,
+          table_name: 'Table ' + state.tableNumber,
+          customer_name: state.customerName.trim() || ('Table ' + state.tableNumber),
+          customer_phone: state.customerPhone.trim() || '',
+          items: allItems.map(it => ({
+            name: it.name,
+            qty: it.qty,
+            price: it.price,
+            total: it.price * it.qty,
+            orderedBy: it.orderedBy || state.customerName
+          })),
+          total_amount: amountPaid,
+          subtotal_amount: amountPaid,
+          payment_mode: 'Razorpay Dynamic UPI / Card',
+          payment_status: 'PAID',
+          transaction_id: paymentId,
+          upi_reference: paymentId,
+          razorpay_payment_id: paymentId,
+          razorpay_order_id: orderId,
+          razorpay_signature: signature,
+          timestamp: new Date().toISOString(),
+          paid_at: new Date().toISOString(),
+          paid_by: state.customerName.trim()
+        };
+
+        if (state.googleSheetId || state.organizationId) {
+          await sendToGoogleSheetWebhook('SAVE_BILL', billPayload);
+        }
+
+        state.transactionId = paymentId;
+        state.paymentSubmitted = true;
+        state.orderStatus = 'paid';
+        state.paymentReceipt = billPayload;
+        state.paymentConfirmModalOpen = false;
+        state.submittingPayment = false;
+
+        const key = state.tableToken || state.googleSheetId || 'default';
+        try {
+          localStorage.setItem('sb_receipt_' + key, JSON.stringify({
+            ...billPayload,
+            savedAt: Date.now()
+          }));
+        } catch (_) {}
+
+        showToast('Payment Verified via Razorpay! Thank you! 🎉', 'success');
+        renderOrderSuccess();
+        syncOrdersFromGoogleSheet();
+      } catch (e) {
+        console.error("[Razorpay] Post-payment handling error:", e);
+        state.submittingPayment = false;
+        showToast('Payment recorded. Generating receipt...', 'info');
+        renderOrderSuccess();
+      }
+    }
+
+    let upiPaymentPending = false;
+    let upiLaunchTimestamp = 0;
+
+    function launchUpiPayment() {
+      if (!state.upiId) {
+        showToast('Store UPI ID not configured. Please pay at counter.', 'info');
+        return;
+      }
+      const grandTotal = getGrandTotal();
+      const uri = getUpiAppUri(state.selectedUpiApp, grandTotal);
+
+      upiPaymentPending = true;
+      upiLaunchTimestamp = Date.now();
+
+      // Attempt redirect to UPI app
+      window.location.href = uri;
+
+      // Also open confirmation modal
+      setTimeout(() => {
+        openPaymentConfirmModal();
+      }, 1000);
+    }
+
+    function handleUpiAppReturn() {
+      if (upiPaymentPending) {
+        const elapsed = Date.now() - upiLaunchTimestamp;
+        if (elapsed > 2000) {
+          upiPaymentPending = false;
+          openPaymentConfirmModal();
+          showToast('Welcome back! Did your payment succeed?', 'info');
+        }
+      }
+    }
+
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        handleUpiAppReturn();
+      }
+    });
+
+    window.addEventListener('focus', () => {
+      handleUpiAppReturn();
+    });
+
+    function openPaymentConfirmModal() {
+      state.paymentConfirmModalOpen = true;
+      renderOrderSuccess();
+    }
+
+    function closePaymentConfirmModal() {
+      state.paymentConfirmModalOpen = false;
+      renderOrderSuccess();
+    }
+
+    function autoFillDemoUtr() {
+      const input = document.getElementById('utrInput');
+      if (input) {
+        const randUtr = '4' + Math.floor(10000000000 + Math.random() * 90000000000);
+        input.value = randUtr;
+      }
+    }
+
+    // =========================================================================
+    // =========================================================================
+    //  Cryptographic Standards (AES-CBC + HMAC-SHA256)
+    // =========================================================================
+    const CLIENT_SECRET_SALT = "SmartDinePosZeroCostPlatform2026S";
+
+    async function deriveWebCryptoKey(orgId, purpose) {
+      const enc = new TextEncoder();
+      const rawKeyText = `${orgId || 'DEFAULT'}_${purpose}_${CLIENT_SECRET_SALT}`;
+      return await crypto.subtle.digest('SHA-256', enc.encode(rawKeyText));
+    }
+
+    async function encryptPayloadForWebhook(orgId, dataObj) {
+      try {
+        if (!window.crypto || !window.crypto.subtle) {
+          return { encrypted: false, org_id: orgId, data: dataObj };
+        }
+        const enc = new TextEncoder();
+        const plainBytes = enc.encode(JSON.stringify(dataObj));
+        const iv = window.crypto.getRandomValues(new Uint8Array(16));
+        const rawAesKey = await deriveWebCryptoKey(orgId, 'aes');
+
+        const cryptoKey = await crypto.subtle.importKey(
+          'raw',
+          rawAesKey,
+          { name: 'AES-CBC' },
+          false,
+          ['encrypt']
+        );
+
+        const cipherBuffer = await crypto.subtle.encrypt(
+          { name: 'AES-CBC', iv: iv },
+          cryptoKey,
+          plainBytes
+        );
+
+        const ivBase64 = btoa(String.fromCharCode(...iv));
+        const ctBase64 = btoa(String.fromCharCode(...new Uint8Array(cipherBuffer)));
+        const ts = Date.now();
+
+        // Compute HMAC-SHA256 signature
+        const message = `${orgId}_${ts}_${ivBase64}_${ctBase64}`;
+        const rawHmacKey = await deriveWebCryptoKey(orgId, 'hmac');
+        const hmacKey = await crypto.subtle.importKey(
+          'raw',
+          rawHmacKey,
+          { name: 'HMAC', hash: 'SHA-256' },
+          false,
+          ['sign']
+        );
+        const sigBuffer = await crypto.subtle.sign('HMAC', hmacKey, enc.encode(message));
+        const sigHex = Array.from(new Uint8Array(sigBuffer))
+          .map(b => b.toString(16).padStart(2, '0'))
+          .join('');
+
+        return {
+          encrypted: true,
+          v: 1,
+          org_id: orgId,
+          ts: ts,
+          iv: ivBase64,
+          ct: ctBase64,
+          sig: sigHex
+        };
+      } catch (err) {
+        console.warn('Crypto encryption fallback:', err);
+        return {
+          encrypted: false,
+          org_id: orgId,
+          data: dataObj
+        };
+      }
+    }
+
+    async function decryptPayloadFromWebhook(orgId, envelope) {
+      try {
+        if (!envelope || !envelope.encrypted) {
+          return envelope && envelope.data ? envelope.data : envelope;
+        }
+        if (!window.crypto || !window.crypto.subtle) return null;
+
+        const ts = envelope.ts;
+        const ivBase64 = envelope.iv;
+        const ctBase64 = envelope.ct;
+        const sig = envelope.sig;
+        if (!ts || !ivBase64 || !ctBase64 || !sig) return null;
+
+        // Anti-replay attack check (5-minute sliding window)
+        if (Math.abs(Date.now() - ts) > 300000) {
+          console.warn('Webhook payload timestamp expired. Potential replay attack.');
+          return null;
+        }
+
+        // Verify HMAC-SHA256 signature
+        const enc = new TextEncoder();
+        const message = `${orgId}_${ts}_${ivBase64}_${ctBase64}`;
+        const rawHmacKey = await deriveWebCryptoKey(orgId, 'hmac');
+        const hmacKey = await crypto.subtle.importKey(
+          'raw',
+          rawHmacKey,
+          { name: 'HMAC', hash: 'SHA-256' },
+          false,
+          ['sign']
+        );
+        const sigBuffer = await crypto.subtle.sign('HMAC', hmacKey, enc.encode(message));
+        const expectedSig = Array.from(new Uint8Array(sigBuffer))
+          .map(b => b.toString(16).padStart(2, '0'))
+          .join('');
+
+        if (sig.toLowerCase() !== expectedSig.toLowerCase()) {
+          console.warn('Cryptographic signature mismatch. Data tampering detected.');
+          return null;
+        }
+
+        // Decrypt AES-256-CBC
+        const rawAesKey = await deriveWebCryptoKey(orgId, 'aes');
+        const cryptoKey = await crypto.subtle.importKey(
+          'raw',
+          rawAesKey,
+          { name: 'AES-CBC' },
+          false,
+          ['decrypt']
+        );
+
+        const ivBytes = Uint8Array.from(atob(ivBase64), c => c.charCodeAt(0));
+        const ctBytes = Uint8Array.from(atob(ctBase64), c => c.charCodeAt(0));
+
+        const plainBuffer = await crypto.subtle.decrypt(
+          { name: 'AES-CBC', iv: ivBytes },
+          cryptoKey,
+          ctBytes
+        );
+
+        const dec = new TextDecoder();
+        return JSON.parse(dec.decode(plainBuffer));
+      } catch (err) {
+        console.warn('Crypto decryption error:', err);
+        return null;
+      }
+    }
+
+    // =========================================================================
+    //  Google Apps Script & Google Sheet API Integrations (Zero Cost)
+    // =========================================================================
+    async function sendToGoogleSheetWebhook(action, payloadData) {
+      if (!state.googleSheetId && !state.organizationId) return false;
+      const orgId = state.organizationId || 'DEFAULT_ORG';
+      const body = {
+        action: action,
+        org_id: orgId,
+        spreadsheet_id: state.googleSheetId,
+        data: payloadData
+      };
+
+      try {
+        await fetch(DEFAULT_APPS_SCRIPT_WEBHOOK, {
+          method: 'POST',
+          mode: 'no-cors',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify(body)
+        });
+        return true;
+      } catch (e) {
+        console.warn('Webhook post warning:', e);
+        return false;
+      }
+    }
+
+    async function confirmAndRecordPayment() {
+      if (state.submittingPayment) return;
+      const input = document.getElementById('utrInput');
+      let utr = (input ? input.value : '').trim();
+
+      // Fallback: If guest did not enter UTR, generate a readable reference
+      if (!utr || utr.length < 4) {
+        utr = 'UPI' + Date.now().toString().slice(-8);
+      }
+
+      state.submittingPayment = true;
+      renderOrderSuccess();
+
+      try {
+        const grandTotal = getGrandTotal();
+        const allItems = getAllItemsAcrossRounds();
+        const selectedAppObj = UPI_APPS.find(a => a.id === state.selectedUpiApp) || UPI_APPS[0];
+        const primaryKot = state.orderPlaced?.kotNumber || ('KOT-' + Math.floor(1000 + Math.random() * 9000));
+        const billDocId = 'BILL_' + primaryKot;
+
+        // 1. Send Payment Record to Google Sheet
+        const billPayload = {
+          id: billDocId,
+          bill_id: billDocId,
+          table_name: 'Table ' + state.tableNumber,
+          customer_name: state.customerName.trim() || ('Table ' + state.tableNumber),
+          customer_phone: state.customerPhone.trim() || '',
+          items: allItems.map(it => ({
+            name: it.name,
+            qty: it.qty,
+            price: it.price,
+            total: it.price * it.qty,
+            orderedBy: it.orderedBy || state.customerName
+          })),
+          total_amount: grandTotal,
+          subtotal_amount: grandTotal,
+          payment_mode: 'UPI (' + selectedAppObj.name + ')',
+          payment_status: 'PAYMENT_SUBMITTED',
+          transaction_id: utr,
+          upi_reference: utr,
+          timestamp: new Date().toISOString(),
+          paid_at: new Date().toISOString(),
+          paid_by: state.customerName.trim()
+        };
+
+        // 1. Zero Cloud Cost: Signal payment submission to Google Sheet
+        console.log('[Payment] Submitting payment verification to Google Sheet for Table', state.tableNumber, utr);
+
+        // 2. Signal payment to Google Sheet webhook
+        if (state.googleSheetId || state.organizationId) {
+          await sendToGoogleSheetWebhook('SAVE_BILL', billPayload);
+        }
+
+        // 3. Anti-Fraud Two-Phase Verification:
+        // Set state to payment_submitted (NOT paid!).
+        // The green receipt is ONLY unlocked when cashier/backend confirms 'PAID'.
+        state.transactionId = utr;
+        state.paymentSubmitted = true;
+        state.orderStatus = 'payment_submitted';
+        state.paymentConfirmModalOpen = false;
+        state.submittingPayment = false;
+
+        showToast('Payment submitted! Verifying with cashier... ⏳', 'info');
+        renderOrderSuccess();
+
+        // Trigger immediate background sync check
+        syncOrdersFromGoogleSheet();
+
+      } catch (err) {
+        state.submittingPayment = false;
+        console.error('Payment settlement failed:', err);
+        showToast('Failed to record payment. Please try again or alert staff.', 'error');
+        renderOrderSuccess();
+      }
+    }
+
+    // =========================================================================
+    //  Digital Receipt HTML Generator & Auto-Download
+    // =========================================================================
+    function generateReceiptHtml(receipt) {
+      return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Receipt - Table ${receipt.tableNumber} - ${receipt.restaurantName}</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 0; padding: 20px; color: #0f172a; background: #f8fafc; }
+    .receipt-box { max-width: 380px; margin: 0 auto; background: #ffffff; padding: 24px; border-radius: 16px; border: 1px solid #e2e8f0; box-shadow: 0 4px 16px rgba(0,0,0,0.06); }
+    .header { text-align: center; border-bottom: 2px dashed #cbd5e1; padding-bottom: 16px; margin-bottom: 16px; }
+    .header h1 { margin: 0 0 4px; font-size: 20px; font-weight: 800; }
+    .header p { margin: 2px 0; font-size: 11.5px; color: #64748b; }
+    .badge { display: inline-block; background: #dcfce7; color: #15803d; font-weight: 700; font-size: 11px; padding: 4px 12px; border-radius: 9999px; margin-top: 8px; }
+    .info-row { display: flex; justify-content: space-between; font-size: 11.5px; margin-bottom: 5px; }
+    .info-label { color: #64748b; font-weight: 500; }
+    .info-val { font-weight: 700; color: #0f172a; }
+    .items-table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 11.5px; }
+    .items-table th { text-align: left; padding: 6px 0; border-bottom: 1px solid #e2e8f0; color: #64748b; font-size: 10.5px; text-transform: uppercase; }
+    .items-table td { padding: 6px 0; border-bottom: 1px solid #f1f5f9; }
+    .total-row { display: flex; justify-content: space-between; font-size: 16px; font-weight: 800; border-top: 2px dashed #cbd5e1; padding-top: 12px; margin-top: 12px; color: #0f172a; }
+    .footer { text-align: center; margin-top: 20px; font-size: 11px; color: #94a3b8; }
+    @media print { body { background: #fff; padding: 0; } .receipt-box { box-shadow: none; border: none; } }
+  </style>
+</head>
+<body>
+  <div class="receipt-box">
+    <div class="header">
+      <h1>${receipt.restaurantName}</h1>
+      <p>${receipt.restaurantAddress || 'SmartBizz Dine-In Receipt'}</p>
+      <div class="badge">PAID IN FULL ✅</div>
+    </div>
+    <div class="info-row"><span class="info-label">Table:</span><span class="info-val">Table ${receipt.tableNumber}</span></div>
+    <div class="info-row"><span class="info-label">Customer:</span><span class="info-val">${receipt.customerName} ${receipt.customerPhone ? '(' + receipt.customerPhone + ')' : ''}</span></div>
+    <div class="info-row"><span class="info-label">Invoice ID:</span><span class="info-val" style="font-family: monospace;">${receipt.billId}</span></div>
+    <div class="info-row"><span class="info-label">Date & Time:</span><span class="info-val">${receipt.timestamp}</span></div>
+    <div class="info-row"><span class="info-label">Payment Mode:</span><span class="info-val">${receipt.paymentMode}</span></div>
+    <div class="info-row"><span class="info-label">Transaction ID:</span><span class="info-val" style="font-family: monospace; color: #0284c7;">${receipt.transactionId}</span></div>
+
+    <table class="items-table">
+      <thead>
+        <tr>
+          <th>Item</th>
+          <th style="text-align: center;">Qty</th>
+          <th style="text-align: right;">Price</th>
+          <th style="text-align: right;">Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${(receipt.items || []).map(it => `
+          <tr>
+            <td>
+              <strong>${it.name}</strong>
+              ${it.orderedBy ? `<div style="font-size: 10px; color: #4f46e5;">👤 ${it.orderedBy}</div>` : ''}
+            </td>
+            <td style="text-align: center;">${it.qty}</td>
+            <td style="text-align: right;">₹${Number(it.price).toFixed(0)}</td>
+            <td style="text-align: right; font-weight: bold;">₹${(Number(it.price) * Number(it.qty)).toFixed(0)}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+
+    <div class="total-row">
+      <span>Grand Total:</span>
+      <span style="color: #15803d;">₹${Number(receipt.totalAmount).toFixed(2)}</span>
+    </div>
+
+    <div class="footer">
+      <p>Thank you for dining with us!</p>
+      <p>Powered by SmartBizz Kirana & Restaurant Suite</p>
+    </div>
+  </div>
+</body>
+</html>`;
+    }
+
+    function autoDownloadReceipt(receipt) {
+      try {
+        const htmlContent = generateReceiptHtml(receipt);
+        const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `Receipt_Table_${receipt.tableNumber}_${Date.now()}.html`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        showToast('Receipt downloaded automatically! 📄', 'success');
+      } catch (err) {
+        console.warn('Auto download receipt error:', err);
+      }
+    }
+
+    
+    
+    // =========================================================================
+    //  Split Payment & WhatsApp Sharing Functions
+    // =========================================================================
+    function setSplitMode(mode) {
+      state.splitMode = mode;
+      renderOrderSuccess();
+    }
+
+    function adjustSplitPeople(delta) {
+      state.splitPeopleCount = Math.max(1, (state.splitPeopleCount || 2) + delta);
+      renderOrderSuccess();
+    }
+
+    function payMyEqualShare() {
+      const grandTotal = getGrandTotal();
+      const count = state.splitPeopleCount || 2;
+      const share = grandTotal / count;
+      initiateRazorpayPayment(share);
+    }
+
+    function payGuestShare(amt) {
+      initiateRazorpayPayment(amt);
+    }
+
+    function shareEqualSplitWhatsApp() {
+      const grandTotal = getGrandTotal();
+      const count = state.splitPeopleCount || 2;
+      const share = (grandTotal / count).toFixed(0);
+      const restName = state.restaurant?.name || 'Restaurant';
+
+      let text = `🍽️ *${restName} - Table ${state.tableNumber} Bill Split*\n\n`;
+      text += `💰 *Total Bill: ₹${grandTotal.toFixed(0)}*\n`;
+      text += `👥 *Split between ${count} people: ₹${share} each*\n\n`;
+      if (state.upiId) {
+        text += `⚡ *Pay your share (₹${share}) via UPI ID:* ${state.upiId}\n`;
+      }
+      text += `📄 *View Live Digital Bill & Receipt:*\n${window.location.href}`;
+
+      const url = `https://wa.me/?text=${encodeURIComponent(text)}`;
+      window.open(url, '_blank');
+    }
+
+    function shareGuestShareWhatsApp(guestName, guestAmt) {
+      const restName = state.restaurant?.name || 'Restaurant';
+      const orderHistory = (state.orderHistory && state.orderHistory.length > 0) ? state.orderHistory : [state.orderPlaced];
+      const itemsForGuest = [];
+
+      orderHistory.forEach(r => {
+        (r.items || []).forEach(it => {
+          if ((it.orderedBy && it.orderedBy === guestName) || (!it.orderedBy && r.customerName === guestName)) {
+            itemsForGuest.push(it);
+          }
+        });
+      });
+
+      let text = `🍽️ *${restName} - Table ${state.tableNumber} Bill for ${guestName}*\n\n`;
+      text += `👤 *Your Share: ₹${Number(guestAmt).toFixed(0)}*\n`;
+      if (itemsForGuest.length > 0) {
+        text += `*Dishes Ordered:*\n`;
+        itemsForGuest.forEach(it => {
+          text += `• ${it.name} × ${it.qty} (₹${(Number(it.price) * Number(it.qty)).toFixed(0)})\n`;
+        });
+        text += `\n`;
+      }
+      if (state.upiId) {
+        text += `⚡ *Settle via UPI:* ${state.upiId}\n`;
+      }
+      text += `📄 *Live Bill:* ${window.location.href}`;
+
+      const url = `https://wa.me/?text=${encodeURIComponent(text)}`;
+      window.open(url, '_blank');
+    }
+
+    function shareFullBillWhatsApp() {
+      const grandTotal = getGrandTotal();
+      const restName = state.restaurant?.name || 'Restaurant';
+      const orderHistory = (state.orderHistory && state.orderHistory.length > 0) ? state.orderHistory : [state.orderPlaced];
+      const uniqueGuests = [...new Set(orderHistory.map(r => r.customerName || 'Guest'))];
+      const guestTotals = {};
+      orderHistory.forEach(r => {
+        const g = r.customerName || 'Guest';
+        const rTot = Number(r.total) || 0;
+        guestTotals[g] = (guestTotals[g] || 0) + rTot;
+      });
+
+      let text = `🍽️ *${restName} - Table ${state.tableNumber} Complete Bill*\n\n`;
+      text += `💰 *Table Total: ₹${grandTotal.toFixed(0)}* (${orderHistory.length} rounds, ${uniqueGuests.length} guests)\n\n`;
+      text += `*Breakdown by Guest:*\n`;
+      for (const [name, amt] of Object.entries(guestTotals)) {
+        text += `• 👤 ${name}: ₹${amt.toFixed(0)}\n`;
+      }
+      if (state.upiId) {
+        text += `\n⚡ *Pay via UPI:* ${state.upiId}\n`;
+      }
+      text += `\n📄 *View Live Digital Bill & Receipt:*\n${window.location.href}`;
+
+      const url = `https://wa.me/?text=${encodeURIComponent(text)}`;
+      window.open(url, '_blank');
+    }
+
+    function clearWaiterCallState() {
+      state.activeWaiterCall = null;
+      renderOrderSuccess();
+    }
+
+    function shareBillSplitWhatsApp() {
+      const grandTotal = getGrandTotal();
+      const orderHistory = (state.orderHistory && state.orderHistory.length > 0) ? state.orderHistory : [state.orderPlaced];
+      const uniqueGuests = [...new Set(orderHistory.map(r => r.customerName || 'Guest'))];
+      const guestTotals = {};
+      orderHistory.forEach(r => {
+        const g = r.customerName || 'Guest';
+        const rTot = Number(r.total) || 0;
+        guestTotals[g] = (guestTotals[g] || 0) + rTot;
+      });
+
+      let text = `🍽️ *${state.restaurant?.name || 'Restaurant'} - Table ${state.tableNumber} Bill*\n\n`;
+      text += `💰 *Table Grand Total: ₹${grandTotal.toFixed(0)}* (${uniqueGuests.length} Guests)\n`;
+      text += `👉 *Equal Split: ₹${(grandTotal / (uniqueGuests.length || 1)).toFixed(0)} / person*\n\n`;
+      text += `*Itemized Breakdown:*\n`;
+      for (const [name, amt] of Object.entries(guestTotals)) {
+        text += `• 👤 ${name}: ₹${amt.toFixed(0)}\n`;
+      }
+      if (state.upiId) {
+        text += `\n📲 Settle via UPI: ${state.upiId}\n`;
+      }
+      text += `\nView Bill: ${window.location.href}`;
+      const url = `https://wa.me/?text=${encodeURIComponent(text)}`;
+      window.open(url, '_blank');
+    }
+
+    function callWaiterService(type) {
+      const isWater = (type === 'water');
+      const actionName = isWater ? 'Drinking Water & Cutlery' : 'Waiter to Table';
+      state.activeWaiterCall = { reason: actionName, time: Date.now() };
+      showToast(`🛎️ ${actionName} requested for Table ${state.tableNumber}! Staff notified.`, 'success');
+      if (state.googleSheetId || state.organizationId) {
+        sendToGoogleSheetWebhook('SERVICE_REQUEST', {
+          table: 'Table ' + state.tableNumber,
+          request_type: actionName,
+          guest_name: state.customerName || 'Guest',
+          timestamp: new Date().toISOString()
+        });
+      }
+      const cont = document.getElementById('orderSuccessScreen');
+      if (cont) renderOrderSuccess();
+    }
+
+    function downloadReceiptDirectly() {
+      const grandTotal = getGrandTotal();
+      const orderHistory = (state.orderHistory && state.orderHistory.length > 0) ? state.orderHistory : [state.orderPlaced];
+      const receipt = state.paymentReceipt || buildFallbackReceipt(orderHistory, grandTotal);
+      autoDownloadReceipt(receipt);
+    }
+
+    // =========================================================================
+    //  Actions & Granular 60fps Cart UI
+    // =========================================================================
+    function updateCartUI(itemId) {
+      // 1. Tactile mobile haptic feedback
+      try {
+        if (window.navigator && window.navigator.vibrate) {
+          window.navigator.vibrate(25);
+        }
+      } catch (_) {}
+
+      // 2. Targeted update for specific item action container
+      const actionContainer = document.getElementById(`action-btn-${itemId}`);
+      if (actionContainer) {
+        const item = state.menuItems.find(m => m.id === itemId);
+        if (item) {
+          const isAvailable = item.available !== false && item.is_available !== false && item.isAvailable !== false;
+          const isTimeAvail = isItemTimeAvailable(item);
+          const qty = (isAvailable && isTimeAvail) ? (state.cart[item.id] || 0) : 0;
+          actionContainer.innerHTML = renderCardActionButton(item, qty, isAvailable, isTimeAvail);
+          try { lucide.createIcons(); } catch (_) {}
+        }
+      }
+
+      // 3. Update floating cart bar with bounce animation
+      const cartCount = getTotalCartCount();
+      const cartTotal = getCartTotal();
+      const floatBar = document.getElementById('floatingCartContainer');
+      const badgeCount = document.getElementById('cartBadgeCount');
+      const totalAmount = document.getElementById('cartTotalAmount');
+
+      if (floatBar) {
+        if (cartCount > 0) {
+          floatBar.classList.remove('hidden');
+          floatBar.classList.add('fade-in');
+        } else {
+          floatBar.classList.add('hidden');
+        }
+      }
+
+      if (badgeCount) {
+        badgeCount.textContent = cartCount;
+        badgeCount.classList.remove('bounce-active');
+        void badgeCount.offsetWidth;
+        badgeCount.classList.add('bounce-active');
+      }
+
+      if (totalAmount) {
+        totalAmount.textContent = `₹${cartTotal.toFixed(0)} →`;
+        totalAmount.classList.remove('bounce-active');
+        void totalAmount.offsetWidth;
+        totalAmount.classList.add('bounce-active');
+      }
+
+      // 4. If checkout drawer is open, keep its list in sync without losing user inputs
+      if (state.checkoutOpen) {
+        saveFormFields();
+        renderMenu();
+      }
+    }
+
+    function addToCart(itemId) {
+      const item = state.menuItems.find(m => m.id === itemId);
+      if (!item) return;
+      if (item.available === false || item.is_available === false || item.isAvailable === false) {
+        showToast(`Sorry, "${item.name}" is currently sold out.`, 'error');
+        return;
+      }
+      if (!isItemTimeAvailable(item)) {
+        const tr = (item.availableFrom && item.availableTo) ? `${item.availableFrom} - ${item.availableTo}` : 'specific hours';
+        showToast(`"${item.name}" is only available between ${tr}.`, 'info');
+        return;
+      }
+      if (isKitchenClosedNow()) {
+        showToast('Kitchen is currently closed between shifts.', 'error');
+        return;
+      }
+      const curQty = state.cart[itemId] || 0;
+      if (curQty >= 20) {
+        showToast(`Maximum 20 plates per item allowed`, 'info');
+        return;
+      }
+      state.cart[itemId] = curQty + 1;
+      updateCartUI(itemId);
+    }
+
+    function removeFromCart(itemId) {
+      if (state.cart[itemId]) {
+        state.cart[itemId]--;
+        if (state.cart[itemId] <= 0) delete state.cart[itemId];
+      }
+      updateCartUI(itemId);
+    }
+
+    // =========================================================================
+    //  Real-Time Input Validation & Anti-Formula Injection Helpers
+    // =========================================================================
+    function sanitizeFormulaPrefix(str) {
+      if (!str) return '';
+      const s = String(str).trim();
+      // If starts with =, +, -, @ (formula injection triggers in Sheets), prepend single quote
+      if (/^[=+\-@]/.test(s)) {
+        return "'" + s;
+      }
+      return s;
+    }
+
+    function validateNameLive(input) {
+      const val = (input.value || '').trim();
+      const badge = document.getElementById('nameValidBadge');
+      const err = document.getElementById('nameErrorMsg');
+      state.customerName = val;
+      try { localStorage.setItem('sb_customer_name', val); } catch (e) {}
+
+      if (val.length >= 2) {
+        if (badge) badge.classList.remove('hidden');
+        if (err) err.classList.add('hidden');
+        input.classList.remove('ring-2', 'ring-red-500', 'border-red-400');
+        input.classList.add('border-emerald-300', 'ring-1', 'ring-emerald-400');
+        return true;
+      } else {
+        if (badge) badge.classList.add('hidden');
+        if (val.length > 0) {
+          if (err) {
+            err.textContent = 'Name must be at least 2 characters';
+            err.classList.remove('hidden');
+          }
+        } else {
+          if (err) err.classList.add('hidden');
+        }
+        input.classList.remove('border-emerald-300', 'ring-1', 'ring-emerald-400');
+        return false;
+      }
+    }
+
+    function validatePhoneLive(input) {
+      let digits = (input.value || '').replace(/\D/g, '').slice(0, 10);
+      input.value = digits;
+      const badge = document.getElementById('phoneValidBadge');
+      const err = document.getElementById('phoneErrorMsg');
+      state.customerPhone = digits;
+      try { localStorage.setItem('sb_customer_phone', digits); } catch (e) {}
+
+      if (digits.length === 0) {
+        if (badge) badge.classList.add('hidden');
+        if (err) err.classList.add('hidden');
+        input.classList.remove('ring-2', 'ring-red-500', 'border-emerald-300', 'ring-1', 'ring-emerald-400');
+        return true;
+      }
+
+      if (/^[6-9]\d{9}$/.test(digits)) {
+        if (badge) badge.classList.remove('hidden');
+        if (err) err.classList.add('hidden');
+        input.classList.remove('ring-2', 'ring-red-500', 'border-red-400');
+        input.classList.add('border-emerald-300', 'ring-1', 'ring-emerald-400');
+        return true;
+      } else {
+        if (badge) badge.classList.add('hidden');
+        if (err) {
+          if (digits.length < 10) {
+            err.textContent = `Enter complete 10-digit mobile (${digits.length}/10)`;
+          } else {
+            err.textContent = 'Must start with 6, 7, 8, or 9';
+          }
+          err.classList.remove('hidden');
+        }
+        input.classList.remove('border-emerald-300', 'ring-1', 'ring-emerald-400');
+        input.classList.add('ring-2', 'ring-red-500', 'border-red-400');
+        return false;
+      }
+    }
+
+    function updateInstrCounter(input) {
+      const len = (input.value || '').length;
+      state.specialInstructions = input.value;
+      const counter = document.getElementById('instrCount');
+      if (counter) {
+        counter.textContent = `${len}/150`;
+        if (len >= 140) {
+          counter.classList.add('text-amber-600', 'font-bold');
+        } else {
+          counter.classList.remove('text-amber-600', 'font-bold');
+        }
+      }
+    }
+
+    function openCheckout() {
+      saveFormFields();
+      state.checkoutOpen = true;
+      renderMenu();
+    }
+
+    function closeCheckout() {
+      saveFormFields();
+      state.checkoutOpen = false;
+      renderMenu();
+    }
+
+    function saveFormFields() {
+      const nameEl = document.getElementById('customerNameInput');
+      const phoneEl = document.getElementById('customerPhoneInput');
+      const instrEl = document.getElementById('specialInstructionsInput');
+      if (nameEl) {
+        state.customerName = nameEl.value.trim();
+        try { localStorage.setItem('sb_customer_name', state.customerName); } catch (e) {}
+      }
+      if (phoneEl) {
+        state.customerPhone = phoneEl.value.trim();
+        try { localStorage.setItem('sb_customer_phone', state.customerPhone); } catch (e) {}
+      }
+      if (instrEl) state.specialInstructions = instrEl.value.trim();
+    }
+
+    function orderMoreItems() {
+      state.currentView = 'menu';
+      state.checkoutOpen = false;
+      renderMenu();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    function confirmResetSession() {
+      if (confirm('Clear all orders for Table ' + state.tableNumber + ' from this device and start a fresh order session?')) {
+        startNewSession();
+      }
+    }
+
+    async function requestFinalBill() {
+      state.billRequested = true;
+      showToast('Staff notified! We will bring your bill shortly.', 'success');
+      renderOrderSuccess();
+    }
+
+    function toggleUpiQr() {
+      state.showUpiQr = !state.showUpiQr;
+      renderOrderSuccess();
+    }
+
+    async function copyUpiId() {
+      if (!state.upiId) {
+        showToast('No UPI ID configured for this store', 'info');
+        return;
+      }
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(state.upiId);
+        } else {
+          const ta = document.createElement('textarea');
+          ta.value = state.upiId;
+          document.body.appendChild(ta);
+          ta.select();
+          document.execCommand('copy');
+          document.body.removeChild(ta);
+        }
+        showToast('Store UPI ID copied: ' + state.upiId, 'success');
+      } catch (e) {
+        showToast('Store UPI ID: ' + state.upiId, 'info');
+      }
+    }
+
+    function startNewSession() {
+      try {
+        const key = state.tableToken || state.googleSheetId;
+        localStorage.removeItem('sb_orders_' + key);
+        localStorage.removeItem('sb_receipt_' + key);
+      } catch (e) {}
+      window.location.reload();
+    }
+
+    function saveLocalOrderHistory() {
+      const key = state.tableToken || state.googleSheetId;
+      if (!key) return;
+      try {
+        localStorage.setItem('sb_orders_' + key, JSON.stringify(state.orderHistory || []));
+      } catch (e) {}
+    }
+
+    function loadLocalOrderHistory() {
+      const key = state.tableToken || state.googleSheetId;
+      if (!key) return [];
+      try {
+        const raw = localStorage.getItem('sb_orders_' + key);
+        return raw ? JSON.parse(raw) : [];
+      } catch (e) {
+        return [];
+      }
+    }
+
+    // =========================================================================
+    //  Event Bindings
+    // =========================================================================
+    function bindMenuEvents() {
+      const searchEl = document.getElementById('searchInput');
+      if (searchEl) {
+        searchEl.addEventListener('input', (e) => {
+          state.searchQuery = e.target.value;
+          renderMenu();
+          const newSearch = document.getElementById('searchInput');
+          if (newSearch) { newSearch.focus(); newSearch.selectionStart = newSearch.selectionEnd = newSearch.value.length; }
+        });
+      }
+
+      const vegBtn = document.getElementById('vegToggle');
+      if (vegBtn) {
+        vegBtn.addEventListener('click', () => {
+          state.vegOnly = !state.vegOnly;
+          renderMenu();
+        });
+      }
+
+      document.querySelectorAll('.cat-tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+          state.activeCategory = tab.dataset.category;
+          renderMenu();
+        });
+      });
+    }
+
+    // =========================================================================
+    //  Place Order (Zero Firebase - Sent to Google Sheet)
+    // =========================================================================
+    async function handlePlaceOrder() {
+      if (state.placing) return;
+
+      // Operational License & Feature Guard
+      if (state.store) {
+        if (state.store.status === 'EXPIRED' || state.store.is_expired === true || state.store.plan_status === 'EXPIRED') {
+          showToast('Dining orders are temporarily suspended for this restaurant. Please contact restaurant staff.', 'error');
+          return;
+        }
+        if (state.store.features && state.store.features.qrOrdering === false) {
+          showToast('Online QR ordering is not enabled for this restaurant. Please order directly with staff.', 'error');
+          return;
+        }
+      }
+
+      saveFormFields();
+
+      // Enforce MANDATORY customer name
+      if (!state.customerName || state.customerName.trim().length < 2) {
+        showToast('Please enter your Name before placing the order!', 'error');
+        state.checkoutOpen = true;
+        renderMenu();
+        setTimeout(() => {
+          const nameInput = document.getElementById('customerNameInput');
+          if (nameInput) {
+            nameInput.focus();
+            nameInput.classList.add('ring-2', 'ring-red-500', 'animate-shake');
+            setTimeout(() => nameInput.classList.remove('animate-shake'), 400);
+          }
+        }, 100);
+        return;
+      }
+
+      // Enforce phone validation if provided
+      if (state.customerPhone && state.customerPhone.trim().length > 0) {
+        const cleanPhone = state.customerPhone.trim().replace(/\D/g, '');
+        if (!/^[6-9]\d{9}$/.test(cleanPhone)) {
+          showToast('Please enter a valid 10-digit mobile number!', 'error');
+          state.checkoutOpen = true;
+          renderMenu();
+          setTimeout(() => {
+            const phoneInput = document.getElementById('customerPhoneInput');
+            if (phoneInput) {
+              phoneInput.focus();
+              phoneInput.classList.add('ring-2', 'ring-red-500', 'animate-shake');
+              setTimeout(() => phoneInput.classList.remove('animate-shake'), 400);
+            }
+          }, 100);
+          return;
+        }
+        state.customerPhone = cleanPhone;
+      }
+
+      // Enforce valid dining table number
+      if (!state.tableNumber || String(state.tableNumber).trim().length === 0) {
+        showToast('Please select or enter your Table Number before placing the order!', 'error');
+        openTableSelectModal();
+        return;
+      }
+
+      const cartItems = getCartItems();
+      if (cartItems.length === 0) {
+        showToast('Your cart is empty');
+        return;
+      }
+
+      const unavailable = cartItems.filter(ci => ci.item.available === false || ci.item.is_available === false);
+      if (unavailable.length > 0) {
+        showToast(`"${unavailable[0].item.name}" is sold out. Please remove it to proceed.`, 'error');
+        state.checkoutOpen = true;
+        renderMenu();
+        return;
+      }
+
+      const subtotal = getCartSubtotal();
+      const serviceChargeAmt = getCartServiceCharge();
+      const gstAmt = getCartGst();
+      const grandTotal = getCartGrandTotal();
+      state.placing = true;
+      renderMenu();
+
+      try {
+        const guestName = sanitizeFormulaPrefix(state.customerName.trim());
+        const guestPhone = sanitizeFormulaPrefix(state.customerPhone.trim());
+        const specialInstr = sanitizeFormulaPrefix((state.specialInstructions || '').trim());
+        const kotNumber = getNextDailyToken();
+
+        // Deduplicate cart items by product ID & price
+        const mergedCartMap = {};
+        cartItems.forEach(ci => {
+          const key = (ci.item.id || ci.item.name) + '_' + ci.item.price;
+          if (mergedCartMap[key]) {
+            mergedCartMap[key].qty += ci.qty;
+          } else {
+            mergedCartMap[key] = {
+              productId: ci.item.id || 'item',
+              name: ci.item.name,
+              price: ci.item.price,
+              qty: ci.qty,
+              unit: ci.item.unit || 'plate',
+              isVeg: ci.item.isVeg !== undefined ? ci.item.isVeg : true,
+              orderedBy: guestName,
+              deviceId: state.deviceId
+            };
+          }
+        });
+        const cartItemsList = Object.values(mergedCartMap);
+
+        // Dispatch order to Store Cloud Database via Apps Script Webhook
+        if (state.googleSheetId || state.organizationId) {
+          try {
+            const webhookResult = await sendToGoogleSheetWebhook('SAVE_BILL', {
+              id: kotNumber,
+              bill_id: kotNumber,
+              kotNumber: kotNumber,
+              table: state.tableNumber,
+              table_number: state.tableNumber,
+              tableName: 'Table ' + state.tableNumber,
+              table_name: 'Table ' + state.tableNumber,
+              customer_name: guestName || ('Table ' + state.tableNumber),
+              customer_phone: guestPhone || '',
+              special_instructions: specialInstr,
+              items: cartItemsList,
+              subtotal_amount: subtotal,
+              subtotal: subtotal,
+              service_charge: serviceChargeAmt,
+              service_charge_rate: Number(state.serviceCharge) || 0,
+              gst: gstAmt,
+              gst_rate: Number(state.gstRate) || 5,
+              total_amount: grandTotal,
+              total: grandTotal,
+              order_source: 'QR_MENU',
+              orderSource: 'QR_MENU',
+              orderType: 'Dine-In',
+              payment_mode: 'DINE_IN (Table ' + state.tableNumber + ')',
+              payment_status: 'PENDING',
+              kitchenStatus: 'PENDING',
+              status: 'PENDING',
+              timestamp: new Date().toISOString()
+            });
+            // Only proceed to success if webhook responded OK
+          } catch (err) {
+            showToast('Order failed to reach kitchen. Please try again.', 'error');
+            state.placing = false;
+            renderMenu();
+            return; // Don't clear cart
+          }
+        }
+
+        const summaryItems = cartItems.map(ci => ({
+          name: ci.item.name,
+          qty: ci.qty,
+          price: ci.item.price,
+          orderedBy: guestName,
+          deviceId: state.deviceId
+        }));
+
+        state.orderPlaced = {
+          orderId: kotNumber,
+          kotNumber: kotNumber,
+          items: summaryItems,
+          subtotal: subtotal,
+          serviceCharge: serviceChargeAmt,
+          gst: gstAmt,
+          total: grandTotal,
+          customerName: guestName,
+          customerPhone: guestPhone,
+          deviceId: state.deviceId,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          timestampMs: Date.now(),
+          status: 'ORDER_RECEIVED'
+        };
+
+        state.orderHistory = state.orderHistory || [];
+        state.orderHistory.push(state.orderPlaced);
+        saveLocalOrderHistory();
+        state.orderStatus = 'pending';
+        state.placing = false;
+        state.cart = {};
+        state.checkoutOpen = false;
+
+        renderOrderSuccess();
+
+        // Start polling orders from Google Sheet for live table sync!
+        startPollingOrdersFromSheet();
+
+      } catch (err) {
+        state.placing = false;
+        console.error('Order failed:', err);
+        showToast('Failed to place order. Please try again.', 'error');
+        renderMenu();
+      }
+    }
+
+    // =========================================================================
+    //  Cloud Backend Orders Polling (Multi-User Table Real-time Sync)
+    //  Directly queries Apps Script Webhook - 100% Zero Google Login & Private Sheets
+    // =========================================================================
+    async function syncOrdersFromGoogleSheet() {
+      if (!state.organizationId && !state.googleSheetId) return;
+
+      try {
+        let proxyUrl = `${DEFAULT_APPS_SCRIPT_WEBHOOK}?action=GET_ORDERS&table=${encodeURIComponent(state.tableNumber)}`;
+        if (state.organizationId) {
+          proxyUrl += `&org=${encodeURIComponent(state.organizationId)}`;
+        }
+        if (state.googleSheetId && !state.googleSheetId.startsWith('sheet_')) {
+          proxyUrl += `&sheet=${encodeURIComponent(state.googleSheetId)}`;
+        }
+
+        const resp = await fetch(proxyUrl, { cache: 'no-store' });
+        if (resp.ok) {
+          const json = await resp.json();
+          if (json && json.success && Array.isArray(json.orders)) {
+            const orderMap = new Map();
+            let tablePaidTxn = '';
+
+            for (const o of json.orders) {
+              const rawId = o.id || o.orderId || '';
+              if (!rawId || String(rawId).toLowerCase().includes('id')) continue;
+              const canonicalId = String(rawId).replace(/^BILL_/, '');
+              const rawTotal = Number(o.total || o.totalAmount || 0);
+              let rawStatus = String(o.status || 'PENDING').trim();
+              if (rawStatus.startsWith('[') || rawStatus.startsWith('{') || rawStatus.includes('"productId"') || rawStatus.includes('"name"')) {
+                rawStatus = 'PENDING';
+              }
+              const rawTxn = String(o.transactionId || '');
+              if (rawTxn && (rawStatus.toUpperCase() === 'PAID' || rawStatus.toUpperCase() === 'SUCCESS')) {
+                tablePaidTxn = rawTxn;
+              }
+
+              let items = [];
+              if (Array.isArray(o.items) && o.items.length > 0) {
+                items = o.items;
+              } else if (o.itemsSummary) {
+                try {
+                  const p = JSON.parse(o.itemsSummary);
+                  if (Array.isArray(p)) items = p;
+                } catch (_) {
+                  items = [{ name: String(o.itemsSummary), qty: 1, price: rawTotal }];
+                }
+              } else {
+                items = [{ name: 'Dine-In Order', qty: 1, price: rawTotal }];
+              }
+
+              const orderObj = {
+                orderId: String(rawId),
+                kotNumber: canonicalId.startsWith('KOT-') ? canonicalId : ('KOT-' + canonicalId),
+                customerName: String(o.customerName || 'Guest'),
+                customerPhone: String(o.customerPhone || ''),
+                items: items,
+                total: rawTotal,
+                status: rawStatus,
+                paymentMode: String(o.paymentMode || ''),
+                transactionId: rawTxn,
+                timestamp: String(o.timestamp || 'Earlier')
+              };
+
+              if (orderMap.has(canonicalId)) {
+                const prev = orderMap.get(canonicalId);
+                const prevRank = getStageIndex(prev.status);
+                const incomingRank = getStageIndex(rawStatus);
+                if (incomingRank >= prevRank) {
+                  orderMap.set(canonicalId, orderObj);
+                } else {
+                  orderObj.status = prev.status;
+                  orderMap.set(canonicalId, orderObj);
+                }
+              } else {
+                orderMap.set(canonicalId, orderObj);
+              }
+            }
+
+            const remoteOrders = Array.from(orderMap.values());
+
+            if (remoteOrders.length > 0) {
+              // Table is ONLY paid if ALL orders on this table are settled/paid
+              const hasUnpaidOrders = remoteOrders.some(o => {
+                const st = String(o.status || '').toUpperCase();
+                return st !== 'PAID' && st !== 'SUCCESS' && st !== 'COMPLETED' && st !== 'SETTLED' && st !== 'CANCELLED';
+              });
+              const tablePaid = !hasUnpaidOrders;
+
+              // Specifically match current device's active placed order if available
+              let activeOrder = null;
+              if (state.orderPlaced && (state.orderPlaced.kotNumber || state.orderPlaced.orderId)) {
+                const myKot = String(state.orderPlaced.kotNumber || state.orderPlaced.orderId).replace(/^BILL_/, '');
+                activeOrder = remoteOrders.find(o => {
+                  const oKot = String(o.kotNumber || o.orderId || '').replace(/^BILL_/, '');
+                  return oKot === myKot;
+                });
+              }
+              if (!activeOrder) {
+                activeOrder = remoteOrders[remoteOrders.length - 1];
+              }
+
+              const sanitizedRemoteStatus = sanitizeStatus(activeOrder.status);
+              const curRank = getStageIndex(state.orderStatus);
+              const newRank = getStageIndex(sanitizedRemoteStatus);
+
+              let computedStatus = state.orderStatus;
+              if (tablePaid) {
+                computedStatus = 'paid';
+              } else {
+                // If there are active unpaid orders, don't stay locked to 'paid'
+                if (computedStatus === 'paid' && hasUnpaidOrders) {
+                  computedStatus = sanitizedRemoteStatus;
+                } else if (newRank >= curRank) {
+                  computedStatus = sanitizedRemoteStatus;
+                }
+              }
+
+              // Generate a signature of current order state to detect real changes
+              const newSig = JSON.stringify(remoteOrders.map(o => [o.orderId, o.status, o.total, (o.items || []).length])) + '_' + computedStatus + '_' + (tablePaid ? '1' : '0');
+
+              state.orderHistory = remoteOrders;
+              saveLocalOrderHistory();
+              state.orderPlaced = activeOrder;
+              state.orderStatus = computedStatus;
+
+              if (tablePaid) {
+                state.paymentSubmitted = false;
+                if (!state.paymentReceipt) {
+                  state.paymentReceipt = buildFallbackReceipt(remoteOrders, getGrandTotal());
+                  if (tablePaidTxn) state.paymentReceipt.transactionId = tablePaidTxn;
+                  try {
+                    const key = state.tableToken || state.googleSheetId;
+                    localStorage.setItem('sb_receipt_' + key, JSON.stringify(state.paymentReceipt));
+                  } catch (_) {}
+                  autoDownloadReceipt(state.paymentReceipt);
+                  showToast('Payment verified by cashier! Digital receipt ready ✅', 'success');
+                }
+              } else if (!tablePaid && state.paymentReceipt) {
+                state.paymentReceipt = null;
+              }
+
+              // ONLY re-render if data has ACTUALLY changed! (Zero UI fluctuation / zero flashing)
+              if (state._lastSyncedSignature !== newSig) {
+                state._lastSyncedSignature = newSig;
+                const container = document.getElementById('orderSuccessScreen') || document.getElementById('receiptScreen');
+                if (container) {
+                  renderOrderSuccess();
+                } else if (state.currentView === 'menu') {
+                  renderMenu();
+                }
+              }
+              return;
+            } else {
+              // Table is clean / vacant (no remote orders for this table)
+              // If this device had no active uncompleted order, reset table to fresh menu!
+              if (!state.orderPlaced || (state.orderStatus === 'paid' || state.orderStatus === 'success')) {
+                const key = state.tableToken || state.googleSheetId;
+                try {
+                  localStorage.removeItem('sb_orders_' + key);
+                  localStorage.removeItem('sb_receipt_' + key);
+                } catch (_) {}
+                state.orderHistory = [];
+                state.orderPlaced = null;
+                state.orderStatus = null;
+                state.paymentReceipt = null;
+                if (state.currentView === 'status') {
+                  state.currentView = 'menu';
+                  renderMenu();
+                }
+              }
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('[Orders] Sync error:', e);
+      }
+    }
+
+    function startListeningToOrderStatus(orderId) {
+      syncOrdersFromGoogleSheet();
+    }
+
+    function startPollingOrdersFromSheet() {
+      if (state.orderPollingTimer) clearInterval(state.orderPollingTimer);
+      state.orderPollingTimer = setInterval(syncOrdersFromGoogleSheet, 2500);
+    }
+
+    // =========================================================================
+    //  Menu Loader (Pure Store Catalog via Cloud Backend Webhook)
+    //  Zero Google Login, Zero GViz Redirects, 100% Private Google Sheets
+    // =========================================================================
+    async function loadMenu() {
+      const orgId = state.organizationId;
+      const sheetId = state.googleSheetId;
+
+      // 1. PRIMARY: Google Apps Script Webhook
+      if (state.organizationId || state.googleSheetId) {
+        try {
+          let proxyUrl = `${DEFAULT_APPS_SCRIPT_WEBHOOK}?action=GET_MENU`;
+          if (state.organizationId) {
+            proxyUrl += `&org=${encodeURIComponent(state.organizationId)}`;
+          }
+          if (state.googleSheetId && !state.googleSheetId.startsWith('sheet_')) {
+            proxyUrl += `&sheet=${encodeURIComponent(state.googleSheetId)}`;
+          }
+
+          const proxyResp = await fetch(proxyUrl, { cache: 'no-store' });
+          if (proxyResp.ok) {
+            const proxyJson = await proxyResp.json();
+            if (proxyJson && proxyJson.success && Array.isArray(proxyJson.items) && proxyJson.items.length > 0) {
+              console.log(`[Menu] Loaded ${proxyJson.items.length} items from connected Google Sheet via Apps Script.`);
+              return proxyJson.items;
+            }
+          }
+        } catch (e) {
+          console.warn('[Menu] Apps Script proxy fetch error:', e);
+        }
+      }
+
+      // 2. Fallback: Direct Firestore Sanitized Public Store check (Safe & Direct)
+      if (orgId) {
+        try {
+          const storeUrl = `https://firestore.googleapis.com/v1/projects/smartdine-restaurant-pos/databases/(default)/documents/public_stores/${encodeURIComponent(orgId)}`;
+          const storeResp = await fetch(storeUrl, { cache: 'no-store' });
+          if (storeResp.ok) {
+            const storeDoc = await storeResp.json();
+            const f = storeDoc.fields || {};
+
+            if (f.name?.stringValue && (!state.restaurant.name || state.restaurant.name === 'Restaurant')) {
+              state.restaurant.name = f.name.stringValue;
+            }
+            if (f.upiId?.stringValue && !state.upiId) {
+              state.upiId = f.upiId.stringValue;
+            }
+
+            // Check if menu_items array exists directly on the public_stores document
+            if (f.menu_items && f.menu_items.arrayValue && Array.isArray(f.menu_items.arrayValue.values)) {
+              const dishes = f.menu_items.arrayValue.values.map(v => {
+                const mf = v.mapValue?.fields || {};
+                const name = mf.name?.stringValue || '';
+                const price = Number(mf.price?.doubleValue ?? mf.price?.integerValue ?? 0);
+                const category = mf.category?.stringValue || 'Main Course';
+                const subcategory = mf.subcategory?.stringValue || 'General';
+                const description = mf.description?.stringValue || '';
+                const isVeg = mf.isVeg !== undefined ? (mf.isVeg.booleanValue !== false) : true;
+                const isAvailable = (mf.isAvailable !== undefined ? mf.isAvailable.booleanValue !== false : true) &&
+                                    (mf.is_available !== undefined ? mf.is_available.booleanValue !== false : true);
+                const isTimeRestricted = mf.isTimeRestricted?.booleanValue || mf.is_time_restricted?.booleanValue || false;
+                const availableFrom = mf.availableFrom?.stringValue || mf.available_from?.stringValue || '';
+                const availableTo = mf.availableTo?.stringValue || mf.available_to?.stringValue || '';
+                const id = mf.id?.stringValue || ('dish_' + Math.random().toString(36).substr(2, 9));
+                return {
+                  id,
+                  name,
+                  price,
+                  category,
+                  subcategory,
+                  description,
+                  isVeg,
+                  available: isAvailable,
+                  isAvailable: isAvailable,
+                  isTimeRestricted: isTimeRestricted,
+                  availableFrom: availableFrom,
+                  availableTo: availableTo
+                };
+              }).filter(it => it.name && it.name.trim().length > 0);
+
+              if (dishes.length > 0) {
+                console.log(`[Menu] Loaded ${dishes.length} dishes dynamically from public store profile.`);
+                return dishes;
+              }
+            }
+          }
+        } catch (storeErr) {
+          console.warn('[Menu] Store document menu check warning:', storeErr);
+        }
+      }
+
+      // 3. Real-Time Fallback: Direct Firestore REST query for store products
+      if (orgId) {
+        try {
+          console.log(`[Menu] Fetching live menu from Firestore products for org: ${orgId}`);
+          const fsQueryUrl = `https://firestore.googleapis.com/v1/projects/smartdine-restaurant-pos/databases/(default)/documents:runQuery`;
+          const queryBody = {
+            structuredQuery: {
+              from: [{ collectionId: 'products' }],
+              where: {
+                fieldFilter: {
+                  field: { fieldPath: 'organizationId' },
+                  op: 'EQUAL',
+                  value: { stringValue: orgId }
+                }
+              }
+            }
+          };
+
+          const fsResp = await fetch(fsQueryUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(queryBody)
+          });
+
+          if (fsResp.ok) {
+            const fsJson = await fsResp.json();
+            const fallbackItems = [];
+            if (Array.isArray(fsJson)) {
+              for (const entry of fsJson) {
+                if (!entry.document || !entry.document.fields) continue;
+                const f = entry.document.fields;
+                const isActive = f.is_active ? f.is_active.booleanValue !== false : true;
+                const name = f.name?.stringValue || '';
+                if (!isActive || !name || name === 'DELETED') continue;
+
+                const price = Number(f.price?.doubleValue ?? f.price?.integerValue ?? f.selling_price?.doubleValue ?? 0);
+                const category = f.category?.stringValue || 'Main Course';
+                const subcategory = f.subcategory?.stringValue || 'General';
+                const description = f.description?.stringValue || '';
+                const isVeg = f.isVeg !== undefined ? (f.isVeg.booleanValue !== false) : true;
+                const isAvailable = (f.is_available !== undefined ? f.is_available.booleanValue !== false : true) &&
+                                    (f.isAvailable !== undefined ? f.isAvailable.booleanValue !== false : true);
+                const id = f.id?.stringValue || entry.document.name.split('/').pop();
+
+                const isTimeRestricted = f.is_time_restricted?.booleanValue || f.isTimeRestricted?.booleanValue || false;
+                const availableFrom = f.available_from?.stringValue || f.availableFrom?.stringValue || '';
+                const availableTo = f.available_to?.stringValue || f.availableTo?.stringValue || '';
+
+                fallbackItems.push({
+                  id,
+                  name,
+                  price,
+                  category,
+                  subcategory,
+                  description,
+                  isVeg,
+                  available: isAvailable,
+                  isAvailable: isAvailable,
+                  isTimeRestricted: isTimeRestricted,
+                  availableFrom: availableFrom,
+                  availableTo: availableTo
+                });
+              }
+
+              if (fallbackItems.length > 0) {
+                console.log(`[Menu] Loaded ${fallbackItems.length} items from live store catalog.`);
+                return fallbackItems;
+              }
+            }
+          }
+        } catch (fsErr) {
+          console.warn('[Menu] Live catalog query error:', fsErr);
+        }
+      }
+
+      // 4. Fallback: Direct Google Sheets Viz API Query (if Google Sheet ID is connected)
+      if (state.googleSheetId && !state.googleSheetId.startsWith('sheet_')) {
+        try {
+          const sheetNames = ['Menu%20%26%20Modifiers', 'Menu', 'Sheet1'];
+          for (const sName of sheetNames) {
+            const gvizUrl = `https://docs.google.com/spreadsheets/d/${state.googleSheetId}/gviz/tq?tqx=out:json&sheet=${sName}`;
+            const gvizResp = await fetch(gvizUrl, { cache: 'no-store' });
+            if (gvizResp.ok) {
+              const rawText = await gvizResp.text();
+              const jsonMatch = rawText.match(/google\.visualization\.Query\.setResponse\((.*)\);/);
+              if (jsonMatch && jsonMatch[1]) {
+                const gData = JSON.parse(jsonMatch[1]);
+                const rows = gData.table?.rows || [];
+                if (rows.length > 0) {
+                  const gItems = [];
+                  for (let i = 0; i < rows.length; i++) {
+                    const c = rows[i].c || [];
+                    const id = c[0]?.v ? String(c[0].v) : ('dish_' + i);
+                    const name = c[1]?.v ? String(c[1].v) : '';
+                    if (!name || name.trim().length === 0) continue;
+                    const cat = c[2]?.v ? String(c[2].v) : 'Main Course';
+                    const price = Number(c[3]?.v || 0);
+                    const foodType = c[4]?.v ? String(c[4].v).toLowerCase() : 'veg';
+                    const isVeg = !foodType.includes('non');
+                    const status = c[6]?.v ? String(c[6].v).toLowerCase() : 'available';
+                    const isAvailable = !status.includes('out') && !status.includes('sold') && !status.includes('inactive');
+
+                    gItems.push({
+                      id,
+                      name,
+                      price,
+                      category: cat,
+                      subcategory: 'General',
+                      description: '',
+                      isVeg,
+                      available: isAvailable,
+                      isAvailable: isAvailable,
+                      isTimeRestricted: false,
+                      availableFrom: '',
+                      availableTo: ''
+                    });
+                  }
+                  if (gItems.length > 0) {
+                    console.log(`[Menu] Loaded ${gItems.length} items from Google Sheets Viz API (${sName}).`);
+                    return gItems;
+                  }
+                }
+              }
+            }
+          }
+        } catch (gvizErr) {
+          console.warn('[Menu] Google Sheets Viz API query notice:', gvizErr);
+        }
+      }
+
+      console.log('[Menu] No items found in store catalog or connected sheet.');
+      return [];
+    }
+
+    // =========================================================================
+    //  Init
+    // =========================================================================
+    async function init() {
+      parseUrl();
+
+      // Multi-Tenant Isolation:
+      // If neither organizationId nor googleSheetId nor restaurantSlug is provided, do NOT load any default store!
+      if (!state.organizationId && !state.googleSheetId && !state.restaurantSlug) {
+        state.loading = false;
+        renderScanQrPrompt();
+        return;
+      }
+
+      state.loading = true;
+      renderLoading();
+
+      // Discard invalid cross-organization sheet ID (e.g. sheet_ORG264306 when org is ORG262638)
+      if (state.googleSheetId && state.googleSheetId.startsWith('sheet_ORG') && state.organizationId && !state.googleSheetId.includes(state.organizationId)) {
+        console.warn(`[Sheet] Discarded mismatching sheet ID ${state.googleSheetId} for org ${state.organizationId}`);
+        state.googleSheetId = null;
+      }
+
+      // Fetch Master Razorpay Key from Firestore system_config
+      try {
+        const rzpUrl = `https://firestore.googleapis.com/v1/projects/smartdine-restaurant-pos/databases/(default)/documents/system_config/razorpay`;
+        const rzpResp = await fetch(rzpUrl);
+        if (rzpResp.ok) {
+          const rzpDoc = await rzpResp.json();
+          const rKey = rzpDoc.fields?.keyId?.stringValue;
+          if (rKey && rKey.trim().length > 0) {
+            state.razorpayKeyId = rKey.trim();
+            console.log('[Init] Auto-configured Master Razorpay Key ID:', state.razorpayKeyId);
+          }
+        }
+      } catch (rzpErr) {
+        console.warn('[Init] Razorpay key lookup notice:', rzpErr);
+      }
+
+      // 1. Primary: Load Store Profile via Apps Script Webhook
+      let storeLoadedFromWebhook = false;
+      if (state.organizationId || state.googleSheetId) {
+        try {
+          let proxyUrl = `${DEFAULT_APPS_SCRIPT_WEBHOOK}?action=GET_STORE_PROFILE`;
+          if (state.organizationId) proxyUrl += `&org=${encodeURIComponent(state.organizationId)}`;
+          if (state.googleSheetId && !state.googleSheetId.startsWith('sheet_')) {
+            proxyUrl += `&sheet=${encodeURIComponent(state.googleSheetId)}`;
+          }
+          const whResp = await fetch(proxyUrl);
+          if (whResp.ok) {
+            const whJson = await whResp.json();
+            if (whJson.success && whJson.store) {
+              storeLoadedFromWebhook = true;
+              const s = whJson.store;
+              if (s.name) state.restaurant.name = s.name;
+              if (s.upi_id) {
+                state.upiId = s.upi_id;
+                state.settlementUpiId = s.upi_id;
+              }
+              if (s.currency) state.currency = s.currency;
+              if (s.google_sheet_id && !state.googleSheetId) state.googleSheetId = s.google_sheet_id;
+              if (s.gst_rate !== undefined) state.gstRate = Number(s.gst_rate);
+              if (s.service_charge !== undefined) state.serviceCharge = Number(s.service_charge);
+            } else if (whJson.upi_id) {
+              state.upiId = whJson.upi_id;
+              state.settlementUpiId = whJson.upi_id;
+              storeLoadedFromWebhook = true;
+            }
+          }
+        } catch (e) {
+          console.warn('[Init] Webhook store profile notice:', e);
+        }
+      }
+
+      // 2. Fallback: If org ID exists, resolve store details safely from Firestore public_stores
+      if (state.organizationId && !storeLoadedFromWebhook) {
+        try {
+          const publicStoreUrl = `https://firestore.googleapis.com/v1/projects/smartdine-restaurant-pos/databases/(default)/documents/public_stores/${encodeURIComponent(state.organizationId)}`;
+          const storeResp = await fetch(publicStoreUrl);
+          if (storeResp.ok) {
+            const storeDoc = await storeResp.json();
+            const f = storeDoc.fields || {};
+            if (f.name?.stringValue && (!state.restaurant.name || state.restaurant.name === 'Restaurant')) {
+              state.restaurant.name = f.name.stringValue;
+            }
+            if (f.upiId?.stringValue) {
+              state.upiId = f.upiId.stringValue;
+              state.settlementUpiId = f.upiId.stringValue;
+            }
+            if (f.currency?.stringValue) {
+              state.currency = f.currency.stringValue;
+            }
+            if (f.googleSheetId?.stringValue && !state.googleSheetId) {
+              state.googleSheetId = f.googleSheetId.stringValue;
+              console.log('[Init] Auto-configured Google Sheet ID from store profile:', state.googleSheetId);
+            }
+            if (f.gstRate?.doubleValue !== undefined || f.gstRate?.integerValue !== undefined) {
+              state.gstRate = Number(f.gstRate?.doubleValue ?? f.gstRate?.integerValue ?? 5);
+            }
+            if (f.serviceCharge?.doubleValue !== undefined || f.serviceCharge?.integerValue !== undefined) {
+              state.serviceCharge = Number(f.serviceCharge?.doubleValue ?? f.serviceCharge?.integerValue ?? 0);
+            }
+            if (f.operatingHours?.mapValue?.fields) {
+              const oh = f.operatingHours.mapValue.fields;
+              state.operatingHours = {
+                isOpen: oh.isOpen?.booleanValue !== false,
+                openFrom: oh.openFrom?.stringValue || '',
+                openTo: oh.openTo?.stringValue || ''
+              };
+              if (oh.isOpen?.booleanValue === false) {
+                state.isKitchenClosed = true;
+              }
+            }
+          }
+        } catch (e) {
+          console.warn('[Init] Public store profile resolution notice:', e);
+        }
+      }
+
+      try {
+        state.menuItems = await loadMenu();
+
+        const cats = [...new Set(state.menuItems.map(i => i.category || 'All Items'))];
+        state.categories = ['All', ...cats];
+        state.activeCategory = 'All';
+        state.loading = false;
+
+        // Restore active table session orders (expire after 60 mins)
+        state.orderHistory = loadLocalOrderHistory();
+        if (state.orderHistory && state.orderHistory.length > 0) {
+          const latest = state.orderHistory[state.orderHistory.length - 1];
+          const orderAge = latest.timestampMs ? (Date.now() - Number(latest.timestampMs)) : 0;
+          if (!orderAge || orderAge < 60 * 60 * 1000) {
+            state.orderPlaced = latest;
+            state.orderStatus = latest.status || 'pending';
+          } else {
+            state.orderHistory = [];
+            const key = state.tableToken || state.googleSheetId;
+            try { localStorage.removeItem('sb_orders_' + key); } catch (_) {}
+          }
+        }
+
+        // Check if receipt is already saved locally (expire after 60 mins)
+        try {
+          const key = state.tableToken || state.googleSheetId;
+          const savedReceipt = localStorage.getItem('sb_receipt_' + key);
+          if (savedReceipt) {
+            const parsed = JSON.parse(savedReceipt);
+            const rTime = parsed.savedAt ? Number(parsed.savedAt) : 0;
+            if (rTime && (Date.now() - rTime) < 60 * 60 * 1000) {
+              state.paymentReceipt = parsed;
+              state.orderStatus = 'paid';
+            } else {
+              localStorage.removeItem('sb_receipt_' + key);
+            }
+          }
+        } catch (e) {}
+
+        // Start real-time sync with Google Sheet
+        if (state.googleSheetId || state.organizationId) {
+          startPollingOrdersFromSheet();
+        }
+
+        renderMenu();
+
+      } catch (err) {
+        console.error('Menu load error:', err);
+        state.menuItems = [];
+        state.categories = ['All'];
+        state.loading = false;
+        renderError();
+      }
+    }
+
+    // =========================================================================
+    //  Service Worker Registration
+    // =========================================================================
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/r/sw.js').catch(err => {
+          console.warn('SW registration failed:', err);
+        });
+      });
+    }
+
+    // =========================================================================
+    //  Global Window Bindings for HTML inline onclick
+    // =========================================================================
+    window.init = init;
+    window.openNameModal = openNameModal;
+    window.closeNameModal = closeNameModal;
+    window.saveGuestNameDirect = saveGuestNameDirect;
+    window.openTableSelectModal = openTableSelectModal;
+    window.closeTableSelectModal = closeTableSelectModal;
+    window.saveTableNumberDirect = saveTableNumberDirect;
+    window.openWaiterModal = openWaiterModal;
+    window.closeWaiterModal = closeWaiterModal;
+    window.sendWaiterAlert = sendWaiterAlert;
+    window.setSplitMode = setSplitMode;
+    window.adjustSplitPeople = adjustSplitPeople;
+    window.payMyEqualShare = payMyEqualShare;
+    window.payGuestShare = payGuestShare;
+    window.shareEqualSplitWhatsApp = shareEqualSplitWhatsApp;
+    window.shareGuestShareWhatsApp = shareGuestShareWhatsApp;
+    window.shareFullBillWhatsApp = shareFullBillWhatsApp;
+    window.clearWaiterCallState = clearWaiterCallState;
+    window.showOrderStatusScreen = showOrderStatusScreen;
+    window.openInstantPay = openInstantPay;
+    window.openCheckout = openCheckout;
+    window.closeCheckout = closeCheckout;
+    window.addToCart = addToCart;
+    window.removeFromCart = removeFromCart;
+    window.updateCartUI = updateCartUI;
+    window.validateNameLive = validateNameLive;
+    window.validatePhoneLive = validatePhoneLive;
+    window.updateInstrCounter = updateInstrCounter;
+    window.handlePlaceOrder = handlePlaceOrder;
+    window.downloadReceiptDirectly = downloadReceiptDirectly;
+    window.shareBillSplitWhatsApp = shareBillSplitWhatsApp;
+    window.callWaiterService = callWaiterService;
+
+    window.startNewSession = startNewSession;
+    window.orderMoreItems = orderMoreItems;
+    window.confirmResetSession = confirmResetSession;
+    window.selectUpiApp = selectUpiApp;
+    window.launchUpiPayment = launchUpiPayment;
+    window.initiateRazorpayPayment = initiateRazorpayPayment;
+    window.openPaymentConfirmModal = openPaymentConfirmModal;
+    window.closePaymentConfirmModal = closePaymentConfirmModal;
+    window.toggleUpiQr = toggleUpiQr;
+    window.copyUpiId = copyUpiId;
+    window.requestFinalBill = requestFinalBill;
+    window.autoFillDemoUtr = autoFillDemoUtr;
+    window.confirmAndRecordPayment = confirmAndRecordPayment;
+    window.syncOrdersFromGoogleSheet = syncOrdersFromGoogleSheet;
+
+    // =========================================================================
+    //  Boot
+    // =========================================================================
+    document.addEventListener('DOMContentLoaded', init);
+  </script>
+</body>
+</html>

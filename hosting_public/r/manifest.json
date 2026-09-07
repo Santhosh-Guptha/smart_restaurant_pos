@@ -1,0 +1,13 @@
+{
+  "name": "SmartBizz Menu",
+  "short_name": "Menu",
+  "description": "Scan, Browse & Order from your table",
+  "start_url": "/r/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#1e293b",
+  "icons": [
+    { "src": "/assets/logo.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/assets/logo.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
