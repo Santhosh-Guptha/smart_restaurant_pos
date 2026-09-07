@@ -527,6 +527,41 @@ class AppsScriptBackendService {
     }
   }
 
+  /// 13. Fetch Delta Protocol (§3.2, §6.2)
+  static Future<Map<String, dynamic>> fetchDelta({
+    required String outletId,
+    required int since,
+    String? spreadsheetId,
+  }) async {
+    try {
+      final url = getWebhookUrl();
+      if (!_isValidUrl(url)) {
+        return {'ok': false, 'success': false, 'orders': [], 'tables': [], 'alerts': []};
+      }
+
+      final uri = Uri.parse(url).replace(
+        queryParameters: {
+          'action': 'GET_DELTA',
+          'org': outletId.trim(),
+          'since': since.toString(),
+          if (spreadsheetId != null && spreadsheetId.isNotEmpty && !spreadsheetId.startsWith('sheet_ORG'))
+            'sheet': spreadsheetId.trim(),
+        },
+      );
+
+      final res = await http.get(uri).timeout(const Duration(seconds: 10));
+      if (res.statusCode >= 200 && res.statusCode < 300) {
+        final decoded = jsonDecode(res.body);
+        if (decoded is Map<String, dynamic>) {
+          return decoded;
+        }
+      }
+    } catch (e) {
+      debugPrint("AppsScriptBackendService fetchDelta error: $e");
+    }
+    return {'ok': false, 'success': false, 'orders': [], 'tables': [], 'alerts': []};
+  }
+
   static bool _isValidUrl(String url) {
     return url.startsWith('https://script.google.com') && !url.contains('YOUR_APPS_SCRIPT_ID');
   }

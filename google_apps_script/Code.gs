@@ -113,6 +113,10 @@ function doPost(e) {
         }
         return responseJson(migrateDiningBillsToV2(ssMig, json.dry_run !== false));
 
+      case "GET_DELTA":
+      case "FETCH_DELTA":
+        return handleGetDelta(json);
+
       default:
         return responseJson({ success: false, error: "Unknown action: " + action });
     }
@@ -719,6 +723,126 @@ function migrateDiningBillsToV2(ss, isDryRun) {
   };
 }
 
+function handleGetDelta(params) {
+  var orgId = String(params.org || params.org_id || params.outlet || params.outlet_id || params.outletId || "").trim();
+  var sheetId = String(params.sheet || params.spreadsheet_id || params.spreadsheetId || "").trim();
+  if (!sheetId && orgId) {
+    sheetId = getSheetIdForOrg(orgId);
+  }
+  if (!orgId) {
+    return responseJson({ ok: false, success: false, error: "org parameter is required." });
+  }
+
+  try {
+    var sinceRev = parseInt(params.since || params.since_rev || "0", 10) || 0;
+    var currentRev = parseInt(PropertiesService.getScriptProperties().getProperty("rev_" + orgId.trim()), 10) || 0;
+    
+    var deltaOrders = [];
+    var deltaTables = [];
+    var deltaReservations = [];
+    var deltaPayments = [];
+    var deltaAlerts = [];
+    
+    var ss = null;
+    if (sheetId && sheetId.indexOf("sheet_") !== 0) {
+      try { ss = SpreadsheetApp.openById(sheetId); } catch(e) {}
+    }
+    
+    if (ss) {
+      ensureV2Sheets(ss);
+      
+      // 1. Orders delta
+      var ordersSheet = ss.getSheetByName("Orders");
+      if (ordersSheet && ordersSheet.getLastRow() > 1) {
+        var oData = ordersSheet.getDataRange().getValues();
+        var oHeaders = oData[0].map(function(h) { return String(h || "").trim(); });
+        var revCol = oHeaders.indexOf("rev");
+        if (revCol === -1) revCol = oHeaders.length - 1;
+        
+        for (var i = 1; i < oData.length; i++) {
+          var rowRev = parseInt(oData[i][revCol], 10) || 0;
+          if (sinceRev === 0 || rowRev > sinceRev) {
+            var orderObj = {};
+            for (var c = 0; c < oHeaders.length; c++) {
+              orderObj[oHeaders[c]] = oData[i][c];
+            }
+            orderObj.id = orderObj.orderId;
+            orderObj.status = orderObj.kitchenStatus;
+            orderObj.table = orderObj.tableId;
+            orderObj.tableName = "Table " + orderObj.tableId;
+            orderObj.totalAmount = (parseFloat(orderObj.grandTotalP) || 0) / 100;
+            orderObj.subtotal = (parseFloat(orderObj.subtotalP) || 0) / 100;
+            orderObj.rev = rowRev;
+            deltaOrders.push(orderObj);
+          }
+        }
+      }
+      
+      // 2. Tables delta
+      var tablesSheet = ss.getSheetByName("Tables");
+      if (tablesSheet && tablesSheet.getLastRow() > 1) {
+        var tData = tablesSheet.getDataRange().getValues();
+        var tHeaders = tData[0].map(function(h) { return String(h || "").trim(); });
+        var tRevCol = tHeaders.indexOf("rev");
+        if (tRevCol === -1) tRevCol = tHeaders.length - 1;
+        for (var ti = 1; ti < tData.length; ti++) {
+          var tRev = parseInt(tData[ti][tRevCol], 10) || 0;
+          if (sinceRev === 0 || tRev > sinceRev) {
+            var tObj = {};
+            for (var tc = 0; tc < tHeaders.length; tc++) { tObj[tHeaders[tc]] = tData[ti][tc]; }
+            deltaTables.push(tObj);
+          }
+        }
+      }
+
+      // 3. Alerts delta
+      var alertsSheet = ss.getSheetByName("Alerts");
+      if (alertsSheet && alertsSheet.getLastRow() > 1) {
+        var aData = alertsSheet.getDataRange().getValues();
+        var aHeaders = aData[0].map(function(h) { return String(h || "").trim(); });
+        var aRevCol = aHeaders.indexOf("rev");
+        if (aRevCol === -1) aRevCol = aHeaders.length - 1;
+        for (var ai = 1; ai < aData.length; ai++) {
+          var aRev = parseInt(aData[ai][aRevCol], 10) || 0;
+          if (sinceRev === 0 || aRev > sinceRev) {
+            var aObj = {};
+            for (var ac = 0; ac < aHeaders.length; ac++) { aObj[aHeaders[ac]] = aData[ai][ac]; }
+            deltaAlerts.push(aObj);
+          }
+        }
+      }
+    }
+    
+    // Fallback if Orders v2 empty on initial fetch
+    if (deltaOrders.length === 0 && sinceRev === 0) {
+      var rawCached = PropertiesService.getScriptProperties().getProperty("recent_orders_" + orgId.trim());
+      if (rawCached) {
+        try {
+          var cList = JSON.parse(rawCached);
+          if (Array.isArray(cList)) {
+            deltaOrders = cList.filter(function(o) { return !isStatusSettled(o.status); });
+          }
+        } catch(e) {}
+      }
+    }
+
+    return responseJson({
+      ok: true,
+      success: true,
+      rev: currentRev,
+      since: sinceRev,
+      orders: deltaOrders,
+      tables: deltaTables,
+      reservations: deltaReservations,
+      payments: deltaPayments,
+      alerts: deltaAlerts,
+      serverTime: new Date().toISOString()
+    });
+  } catch(errDelta) {
+    return responseJson({ ok: false, success: false, error: errDelta.toString() });
+  }
+}
+
 function doGet(e) {
   var params = (e && e.parameter) ? e.parameter : {};
   var orgId = params.org || params.org_id || "";
@@ -727,6 +851,11 @@ function doGet(e) {
   // Resolve private Google Sheet ID from server-side tenant registry if not explicitly passed
   if (!sheetId && orgId) {
     sheetId = getSheetIdForOrg(orgId);
+  }
+
+  // Adaptive delta sync protocol (§3.2, §6.2)
+  if (params.action === "GET_DELTA" || params.action === "FETCH_DELTA") {
+    return handleGetDelta(params);
   }
 
   var tenantInfo = getTenantInfo(orgId);
