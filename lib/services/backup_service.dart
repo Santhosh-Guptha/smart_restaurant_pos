@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 import 'package:crypto/crypto.dart';
+import 'package:encrypt/encrypt.dart' as enc;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:hive_flutter/hive_flutter.dart';
@@ -11,17 +13,44 @@ import '../core/constants.dart';
 
 /// Handles encrypted backup export and import for all Hive boxes.
 ///
-/// Backup format: a .sbk file (Smart Billing Key) containing:
-///   - A JSON envelope (magic header, version, timestamp, device info)
-///   - AES-XOR encrypted payload of all box data (base64 encoded)
+/// Backup format: a .sbk file containing a JSON envelope:
+///   - magic + version (2)
+///   - kdf: PBKDF2-HMAC-SHA256 parameters and a random per-file salt
+///   - iv: random 96-bit nonce
+///   - data: AES-256-GCM ciphertext (authentication tag appended) of the
+///     JSON payload of all backed-up boxes, base64 encoded
 ///
-/// The encryption key is derived from a fixed app secret + installation ID,
-/// making backups unreadable without the app while still restoring on any device.
+/// X-12: the previous format XOR'd the payload against a 256-byte key derived
+/// from a constant compiled into the app (`_kAppSecret`). That is obfuscation,
+/// not encryption: anyone holding the APK could decrypt any shop's backup, and
+/// because the HMAC used the same constant they could also forge one. The
+/// envelope additionally accepted an `int` checksum, which fell back to
+/// Adler-32 - trivially collidable, so the HMAC could simply be bypassed by
+/// writing a number instead of a string.
+///
+/// V2 derives the key from a passphrase the shop owner chooses, so a stolen
+/// backup file is useless without it and a forged one fails the GCM tag.
+/// V1 files can still be READ (so nobody is locked out of an existing backup)
+/// but only via HMAC-SHA256; the Adler-32 path is gone.
 class BackupService {
   static const String _kMagic = 'SMART_BILLING_BACKUP_V1';
-  static const String _kAppSecret = 'SB@2026!KiranaBackupSecretKey#XY';
+  static const String _kMagicV2 = 'SMART_BILLING_BACKUP_V2';
 
-  // Boxes to include in the backup (excludes device-specific & outbox queue)
+  /// Legacy constant. Used ONLY to read V1 files and to verify their HMAC.
+  /// Never used to protect anything written by this version.
+  static const String _kLegacySecret = 'SB@2026!KiranaBackupSecretKey#XY';
+
+  static const int _kPbkdf2Iterations = 100000;
+  static const int _kMinPassphraseLength = 8;
+
+  // Boxes to include in the backup (excludes device-specific & outbox queue).
+  //
+  // X-12: `restaurant_auth_box` and `shop_users` were in this list, so a
+  // backup carried the staff roster - PIN hashes, roles, session state - and a
+  // restore wrote it back verbatim. A hand-edited .sbk could therefore add an
+  // owner-role staff member to any till. Both boxes are now excluded from
+  // export and from import; the roster is re-established on a new device
+  // through Google owner sign-in (see StaffPinLoginScreen's empty-roster path).
   static const List<String> _kBackupBoxes = [
     kInventoryBoxName,
     kCustomersBoxName,
@@ -31,19 +60,64 @@ class BackupService {
     kSuppliersBoxName,
     kPurchaseOrdersBoxName,
     kReturnsBoxName,
-    kShopUsersBoxName,
     kSelfPickupNotesBoxName,
     'configBox',
     'expenses',
-    'restaurant_auth_box',
     'restaurant_config_box',
   ];
+
+  /// Boxes that must never be written by a restore, whatever the file claims.
+  static const List<String> _kNeverRestoreBoxes = [
+    'restaurant_auth_box',
+    kShopUsersBoxName,
+    'saas_session_box',
+    'outbox',
+  ];
+
+  /// Key fragments that must never be written by a restore, in ANY box.
+  /// Previously this filter ran only for `configBox` / `restaurant_config_box`.
+  static const List<String> _kBlockedKeyFragments = [
+    'secret',
+    'token',
+    'password',
+    'passwd',
+    'pin_hash',
+    'pinhash',
+    'staff',
+    'role',
+    'permission',
+    'session',
+    'webhook',
+    'apps_script',
+    'firebase',
+    'saas_',
+    'licen',
+    'device_id',
+    'installation',
+    'current_user_email',
+  ];
+
+  static bool _isBlockedRestoreKey(String key) {
+    final lower = key.toLowerCase();
+    for (final frag in _kBlockedKeyFragments) {
+      if (lower.contains(frag)) return true;
+    }
+    return false;
+  }
 
   // ─── EXPORT ───────────────────────────────────────────────────────────────
 
   /// Creates an encrypted backup file and shares it.
+  ///
+  /// [passphrase] protects the file: it is the only thing standing between a
+  /// leaked .sbk and the shop's entire sales history. It is never stored.
   /// Returns null on success, or an error message string.
-  static Future<String?> exportBackup() async {
+  static Future<String?> exportBackup({required String passphrase}) async {
+    if (passphrase.trim().length < _kMinPassphraseLength) {
+      return 'Choose a backup passphrase of at least '
+          '$_kMinPassphraseLength characters. Without it the backup cannot be '
+          'protected, and you will need the same passphrase to restore it.';
+    }
     try {
       // 1. Collect all box data
       final Map<String, dynamic> allData = {};
@@ -67,18 +141,36 @@ class BackupService {
       final String jsonStr = jsonEncode(allData);
       final Uint8List jsonBytes = utf8.encode(jsonStr);
 
-      // 3. Encrypt
-      final Uint8List encryptedBytes = _encrypt(jsonBytes);
-      final String encryptedB64 = base64.encode(encryptedBytes);
+      // 3. Encrypt: AES-256-GCM under a passphrase-derived key.
+      final Uint8List salt = _randomBytes(16);
+      final Uint8List key = _deriveKeyPbkdf2(
+        passphrase.trim(),
+        salt,
+        _kPbkdf2Iterations,
+      );
+      final iv = enc.IV(_randomBytes(12));
+      final encrypter = enc.Encrypter(
+        enc.AES(enc.Key(key), mode: enc.AESMode.gcm, padding: null),
+      );
+      // GCM appends the 128-bit authentication tag to the ciphertext, so the
+      // tag IS the integrity check - and it is keyed by the passphrase, which
+      // is why no separate (forgeable) checksum field is written.
+      final String encryptedB64 = encrypter.encryptBytes(jsonBytes, iv: iv).base64;
 
-      // 4. Build envelope with HMAC-SHA256 checksum
+      // 4. Build envelope
       final Map<String, dynamic> envelope = {
-        'magic': _kMagic,
-        'version': 1,
+        'magic': _kMagicV2,
+        'version': 2,
         'created_at': DateTime.now().toIso8601String(),
         'boxes_included': _kBackupBoxes,
+        'cipher': 'AES-256-GCM',
+        'kdf': {
+          'algo': 'PBKDF2-HMAC-SHA256',
+          'iterations': _kPbkdf2Iterations,
+          'salt': base64.encode(salt),
+        },
+        'iv': iv.base64,
         'data': encryptedB64,
-        'checksum': _hmacChecksum(encryptedBytes),
       };
 
       final String envelopeJson = jsonEncode(envelope);
@@ -98,7 +190,9 @@ class BackupService {
         ShareParams(
           files: [XFile(file.path)],
           subject: 'Smart Billing Backup – $timestamp',
-          text: 'Smart Billing encrypted backup. Restore using the app.',
+          text: 'Smart Billing encrypted backup. Restore using the app and '
+              'the passphrase you set. Without that passphrase this file '
+              'cannot be restored by anyone, including us.',
         ),
       );
 
@@ -181,7 +275,8 @@ class BackupService {
   /// Prompts the user to pick a .sbk backup file using Android's native
   /// Storage Access Framework (no third-party package needed).
   /// Returns null on success, or an error message string.
-  static Future<String?> importBackup() async {
+  /// [passphrase] is required for a V2 backup and ignored for a legacy V1 one.
+  static Future<String?> importBackup({String? passphrase}) async {
     try {
       // 1. Open Android's native file picker via platform channel
       const channel = MethodChannel('com.santhosh.smartkiranashop/file_picker');
@@ -196,42 +291,83 @@ class BackupService {
 
       // 3. Parse envelope
       final Map<String, dynamic> envelope = jsonDecode(envelopeJson);
-      if (envelope['magic'] != _kMagic) {
+      final String magic = '${envelope['magic'] ?? ''}';
+      if (magic != _kMagic && magic != _kMagicV2) {
         return 'Invalid backup file. Please select a .sbk file created by Smart Billing.';
       }
 
-      final int version = envelope['version'] ?? 0;
-      if (version != 1) {
+      final int version = envelope['version'] is int ? envelope['version'] as int : 0;
+      if (version != 1 && version != 2) {
         return 'Unsupported backup version ($version). Please update the app.';
       }
 
-      // 4. Verify checksum (HMAC-SHA256 with Adler-32 backwards compatibility)
-      final String encryptedB64 = envelope['data'];
-      final Uint8List encryptedBytes = base64.decode(encryptedB64);
-      final dynamic storedChecksum = envelope['checksum'];
-      if (storedChecksum is String) {
-        if (_hmacChecksum(encryptedBytes) != storedChecksum) {
-          return 'Backup file is corrupted or tampered. Restore aborted.';
+      // 4 + 5. Verify and decrypt.
+      final Uint8List encryptedBytes = base64.decode('${envelope['data'] ?? ''}');
+      late final Uint8List jsonBytes;
+
+      if (version == 2) {
+        final Map<String, dynamic> kdf =
+            Map<String, dynamic>.from(envelope['kdf'] ?? const {});
+        final String saltB64 = '${kdf['salt'] ?? ''}';
+        final int iterations =
+            kdf['iterations'] is int ? kdf['iterations'] as int : 0;
+        final String ivB64 = '${envelope['iv'] ?? ''}';
+        if (saltB64.isEmpty || ivB64.isEmpty || iterations < 10000) {
+          return 'Backup file is missing its encryption parameters. Restore aborted.';
         }
-      } else if (storedChecksum is int) {
-        if (_checksum(encryptedBytes) != storedChecksum) {
-          return 'Backup file is corrupted or tampered. Restore aborted.';
+        final String pass = (passphrase ?? '').trim();
+        if (pass.isEmpty) {
+          return 'This backup is passphrase-protected. Enter the passphrase you '
+              'set when the backup was created.';
+        }
+        try {
+          final Uint8List key =
+              _deriveKeyPbkdf2(pass, base64.decode(saltB64), iterations);
+          final encrypter = enc.Encrypter(
+            enc.AES(enc.Key(key), mode: enc.AESMode.gcm, padding: null),
+          );
+          // A wrong passphrase and a modified file are indistinguishable here:
+          // both fail the GCM tag. That is the point - nothing is written to
+          // Hive unless the file authenticates.
+          jsonBytes = Uint8List.fromList(
+            encrypter.decryptBytes(
+              enc.Encrypted(encryptedBytes),
+              iv: enc.IV(base64.decode(ivB64)),
+            ),
+          );
+        } catch (e) {
+          return 'Could not open the backup. Either the passphrase is wrong or '
+              'the file has been altered. Nothing was changed.';
         }
       } else {
-        return 'Invalid or missing checksum. Restore aborted.';
+        // Legacy V1. X-12: the Adler-32 fallback is deliberately gone - it let
+        // a hand-edited file pass integrity verification by supplying an int.
+        final dynamic storedChecksum = envelope['checksum'];
+        if (storedChecksum is! String || storedChecksum.isEmpty) {
+          return 'This backup uses an obsolete integrity check that can no '
+              'longer be verified. Re-export a fresh backup instead.';
+        }
+        if (_legacyHmacChecksum(encryptedBytes) != storedChecksum) {
+          return 'Backup file is corrupted or tampered. Restore aborted.';
+        }
+        jsonBytes = _legacyXorDecrypt(encryptedBytes);
       }
 
-      // 5. Decrypt
-      final Uint8List jsonBytes = _encrypt(encryptedBytes); // XOR is its own inverse
       final String jsonStr = utf8.decode(jsonBytes);
       final Map<String, dynamic> allData = jsonDecode(jsonStr);
 
       // 6. Restore each box
       int restoredBoxes = 0;
       int restoredKeys = 0;
+      int skippedKeys = 0;
       for (final boxName in allData.keys) {
         try {
-          // Only restore known boxes for safety
+          // Only restore known boxes, and never the identity boxes - a
+          // hand-edited file must not be able to grant itself a staff role.
+          if (_kNeverRestoreBoxes.contains(boxName)) {
+            debugPrint('BackupService: refused to restore protected box $boxName');
+            continue;
+          }
           if (!_kBackupBoxes.contains(boxName)) continue;
 
           final box = Hive.isBoxOpen(boxName)
@@ -241,19 +377,13 @@ class BackupService {
 
           for (final entry in boxData.entries) {
             final keyStr = entry.key.toString();
-            // Whitelist check for config boxes: block credentials and SaaS auth tokens
-            if (boxName == 'configBox' || boxName == 'restaurant_config_box') {
-              final lower = keyStr.toLowerCase();
-              if (lower.startsWith('saas_') ||
-                  lower.startsWith('apps_script_') ||
-                  lower.startsWith('local_password') ||
-                  lower.startsWith('firebase_') ||
-                  lower.contains('secret') ||
-                  lower.contains('token') ||
-                  lower == 'current_user_email') {
-                debugPrint('BackupService: skipped sensitive config key $keyStr during import');
-                continue;
-              }
+            // X-12: this filter used to run for two config boxes only, so a
+            // credential or role key smuggled into any other box was written
+            // straight through. It now applies to every box.
+            if (_isBlockedRestoreKey(keyStr)) {
+              debugPrint('BackupService: skipped protected key $boxName/$keyStr during import');
+              skippedKeys++;
+              continue;
             }
 
             final restored = _deserializeValue(entry.value);
@@ -266,25 +396,74 @@ class BackupService {
         }
       }
 
-      debugPrint('BackupService: successfully restored $restoredBoxes boxes and $restoredKeys keys.');
+      debugPrint('BackupService: restored $restoredBoxes boxes and $restoredKeys keys '
+          '($skippedKeys protected keys skipped).');
       return null; // success — caller shows count
     } catch (e) {
       return 'Restore failed: $e';
     }
   }
 
-  // ─── ENCRYPTION (XOR-256 with derived key) ────────────────────────────────
+  // ─── CRYPTO ───────────────────────────────────────────────────────────────
 
-  /// Derives a 256-byte repeating key from the app secret using FNV-1a hashing.
-  /// The same key encrypts and decrypts (XOR is symmetric).
-  static Uint8List _deriveKey() {
+  /// Cryptographically strong random bytes for the salt and the GCM nonce.
+  static Uint8List _randomBytes(int length) {
+    final rnd = Random.secure();
+    final out = Uint8List(length);
+    for (int i = 0; i < length; i++) {
+      out[i] = rnd.nextInt(256);
+    }
+    return out;
+  }
+
+  /// PBKDF2-HMAC-SHA256, returning a 256-bit AES key.
+  ///
+  /// Implemented here rather than pulling in another package: `crypto` is
+  /// already a direct dependency and this keeps the app's dependency set (and
+  /// its zero-cost licensing) unchanged. Only one block is needed for a
+  /// 32-byte key, so the outer PBKDF2 loop collapses to a single iteration.
+  ///
+  /// NOTE for whoever wires the UI: 100k iterations of pure-Dart HMAC takes a
+  /// noticeable fraction of a second and runs on the calling isolate. Show a
+  /// blocking progress indicator, or move the call into `compute()`.
+  static Uint8List _deriveKeyPbkdf2(
+    String passphrase,
+    Uint8List salt,
+    int iterations,
+  ) {
+    final hmac = Hmac(sha256, utf8.encode(passphrase));
+
+    // U1 = HMAC(pass, salt || INT_BE(1))
+    final firstInput = Uint8List(salt.length + 4)
+      ..setRange(0, salt.length, salt);
+    firstInput[salt.length] = 0;
+    firstInput[salt.length + 1] = 0;
+    firstInput[salt.length + 2] = 0;
+    firstInput[salt.length + 3] = 1;
+
+    Uint8List u = Uint8List.fromList(hmac.convert(firstInput).bytes);
+    final Uint8List result = Uint8List.fromList(u);
+
+    for (int i = 1; i < iterations; i++) {
+      u = Uint8List.fromList(hmac.convert(u).bytes);
+      for (int b = 0; b < result.length; b++) {
+        result[b] ^= u[b];
+      }
+    }
+    return result; // 32 bytes = AES-256
+  }
+
+  // ─── LEGACY V1 READ PATH ──────────────────────────────────────────────────
+  // Kept only so an existing .sbk can still be opened. Nothing written by this
+  // version of the app uses either of these.
+
+  static Uint8List _legacyDeriveKey() {
     final Uint8List key = Uint8List(256);
     int hash = 2166136261;
-    for (int i = 0; i < _kAppSecret.length; i++) {
-      hash ^= _kAppSecret.codeUnitAt(i);
+    for (int i = 0; i < _kLegacySecret.length; i++) {
+      hash ^= _kLegacySecret.codeUnitAt(i);
       hash = (hash * 16777619) & 0xFFFFFFFF;
     }
-    // Fill key buffer with pseudo-random bytes from the hash
     for (int i = 0; i < 256; i++) {
       hash ^= (i + 31);
       hash = (hash * 16777619) & 0xFFFFFFFF;
@@ -293,9 +472,8 @@ class BackupService {
     return key;
   }
 
-  /// XOR-encrypts (or decrypts — same operation) the given bytes.
-  static Uint8List _encrypt(Uint8List data) {
-    final key = _deriveKey();
+  static Uint8List _legacyXorDecrypt(Uint8List data) {
+    final key = _legacyDeriveKey();
     final result = Uint8List(data.length);
     for (int i = 0; i < data.length; i++) {
       result[i] = data[i] ^ key[i % 256];
@@ -303,20 +481,9 @@ class BackupService {
     return result;
   }
 
-  /// HMAC-SHA256 checksum for robust integrity verification.
-  static String _hmacChecksum(Uint8List data) {
-    final hmac = Hmac(sha256, utf8.encode(_kAppSecret));
+  static String _legacyHmacChecksum(Uint8List data) {
+    final hmac = Hmac(sha256, utf8.encode(_kLegacySecret));
     return hmac.convert(data).toString();
-  }
-
-  /// Simple Adler-32 checksum for backwards compatibility verification.
-  static int _checksum(Uint8List data) {
-    int a = 1, b = 0;
-    for (final byte in data) {
-      a = (a + byte) % 65521;
-      b = (b + a) % 65521;
-    }
-    return (b << 16) | a;
   }
 
   // ─── SERIALIZATION ────────────────────────────────────────────────────────

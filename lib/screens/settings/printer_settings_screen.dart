@@ -153,7 +153,10 @@ class _PrinterSettingsScreenState extends ConsumerState<PrinterSettingsScreen> {
   Future<void> _importBackup() async {
     HapticFeedback.lightImpact();
     // Open system file picker via native MethodChannel
-    const channel = MethodChannel('com.devmonks.smartdine/file_picker');
+    // The native handler in MainActivity.kt registers this exact name.
+    // The applicationId-based spelling used here previously matched nothing,
+    // so every "restore printer layout" tap threw MissingPluginException.
+    const channel = MethodChannel('com.santhosh.smartkiranashop/file_picker');
     try {
       final String? pickedPath = await channel.invokeMethod<String>('pickFile');
       if (pickedPath == null) return; // User cancelled
