@@ -162,7 +162,13 @@ class AppsScriptBackendService {
           : (billData['clientRequestId'] ?? billData['client_request_id'] ?? const Uuid().v4()).toString();
 
       if (!_isValidUrl(url)) {
-        return {'success': true, 'ok': true, 'id': billData['id'] ?? billData['bill_id'], 'is_mock': true};
+        return {
+          'success': false,
+          'ok': false,
+          'id': billData['id'] ?? billData['bill_id'],
+          'error': 'Webhook not configured',
+          'error_code': 'NOT_CONFIGURED',
+        };
       }
 
       final res = await http.post(
@@ -222,7 +228,7 @@ class AppsScriptBackendService {
   }) async {
     try {
       final url = getWebhookUrl();
-      if (!_isValidUrl(url)) return true;
+      if (!_isValidUrl(url)) return false;
 
       final res = await http.post(
         Uri.parse(url),
@@ -277,7 +283,7 @@ class AppsScriptBackendService {
   }) async {
     try {
       final url = getWebhookUrl();
-      if (!_isValidUrl(url)) return true; // Mock success if webhook not configured
+      if (!_isValidUrl(url)) return false;
 
       final res = await http.post(
         Uri.parse(url),
@@ -307,7 +313,7 @@ class AppsScriptBackendService {
   }) async {
     try {
       final url = getWebhookUrl();
-      if (!_isValidUrl(url)) return true;
+      if (!_isValidUrl(url)) return false;
       if (spreadsheetId.isEmpty || spreadsheetId.startsWith('sheet_ORG')) return true;
 
       final res = await http.post(
@@ -395,7 +401,7 @@ class AppsScriptBackendService {
   }) async {
     try {
       final url = getWebhookUrl();
-      if (!_isValidUrl(url)) return true;
+      if (!_isValidUrl(url)) return false;
 
       final res = await http.post(
         Uri.parse(url),
@@ -431,7 +437,7 @@ class AppsScriptBackendService {
   }) async {
     try {
       final url = getWebhookUrl();
-      if (!_isValidUrl(url)) return true;
+      if (!_isValidUrl(url)) return false;
       final effectiveRequestId = clientRequestId ?? const Uuid().v4();
 
       final res = await http.post(
@@ -479,10 +485,12 @@ class AppsScriptBackendService {
     required String orgId,
     required String table,
     String? spreadsheetId,
+    String? clientRequestId,
   }) async {
     try {
       final url = getWebhookUrl();
-      if (!_isValidUrl(url)) return true;
+      if (!_isValidUrl(url)) return false;
+      final effectiveRequestId = clientRequestId ?? const Uuid().v4();
 
       final res = await http.post(
         Uri.parse(url),
@@ -491,8 +499,11 @@ class AppsScriptBackendService {
           'action': 'CLEAR_TABLE',
           'org_id': orgId.trim(),
           'spreadsheet_id': spreadsheetId ?? '',
+          'clientRequestId': effectiveRequestId,
+          'client_request_id': effectiveRequestId,
           'data': {
             'table': table,
+            'clientRequestId': effectiveRequestId,
             'timestamp': DateTime.now().toIso8601String(),
           },
         }),
@@ -630,12 +641,14 @@ class AppsScriptBackendService {
     String? reason,
     String? staffId,
     String? spreadsheetId,
+    String? clientRequestId,
   }) async {
+    final clientReqId = clientRequestId ?? const Uuid().v4();
     final res = await _postToWebhook({
       'v': 2,
       'action': 'SET_TABLE_STATUS',
       'outletId': outletId,
-      'clientRequestId': const Uuid().v4(),
+      'clientRequestId': clientReqId,
       if (spreadsheetId != null && spreadsheetId.isNotEmpty) 'spreadsheetId': spreadsheetId,
       'data': {
         'tableId': tableId,
@@ -643,6 +656,7 @@ class AppsScriptBackendService {
         'force': force,
         'reason': reason ?? '',
         'staffId': staffId ?? '',
+        'clientRequestId': clientReqId,
       },
     });
     return res ?? {'ok': false, 'success': false, 'error': 'Network error'};
@@ -653,14 +667,19 @@ class AppsScriptBackendService {
     required String outletId,
     required Map<String, dynamic> reservationData,
     String? spreadsheetId,
+    String? clientRequestId,
   }) async {
+    final clientReqId = clientRequestId ?? const Uuid().v4();
     final res = await _postToWebhook({
       'v': 2,
       'action': 'RESERVE_TABLE',
       'outletId': outletId,
-      'clientRequestId': const Uuid().v4(),
+      'clientRequestId': clientReqId,
       if (spreadsheetId != null && spreadsheetId.isNotEmpty) 'spreadsheetId': spreadsheetId,
-      'data': reservationData,
+      'data': {
+        ...reservationData,
+        'clientRequestId': clientReqId,
+      },
     });
     return res ?? {'ok': false, 'success': false, 'error': 'Network error'};
   }
@@ -671,16 +690,19 @@ class AppsScriptBackendService {
     required String reservationId,
     String? reason,
     String? spreadsheetId,
+    String? clientRequestId,
   }) async {
+    final clientReqId = clientRequestId ?? const Uuid().v4();
     final res = await _postToWebhook({
       'v': 2,
       'action': 'CANCEL_RESERVATION',
       'outletId': outletId,
-      'clientRequestId': const Uuid().v4(),
+      'clientRequestId': clientReqId,
       if (spreadsheetId != null && spreadsheetId.isNotEmpty) 'spreadsheetId': spreadsheetId,
       'data': {
         'reservationId': reservationId,
         'reason': reason ?? 'Customer requested cancellation',
+        'clientRequestId': clientReqId,
       },
     });
     return res != null && (res['ok'] == true || res['success'] == true);
@@ -693,17 +715,20 @@ class AppsScriptBackendService {
     required String tableId,
     String? staffId,
     String? spreadsheetId,
+    String? clientRequestId,
   }) async {
+    final clientReqId = clientRequestId ?? const Uuid().v4();
     final res = await _postToWebhook({
       'v': 2,
       'action': 'SEAT_RESERVATION',
       'outletId': outletId,
-      'clientRequestId': const Uuid().v4(),
+      'clientRequestId': clientReqId,
       if (spreadsheetId != null && spreadsheetId.isNotEmpty) 'spreadsheetId': spreadsheetId,
       'data': {
         'reservationId': reservationId,
         'tableId': tableId,
         'staffId': staffId ?? '',
+        'clientRequestId': clientReqId,
       },
     });
     return res != null && (res['ok'] == true || res['success'] == true);
@@ -715,16 +740,19 @@ class AppsScriptBackendService {
     required String fromTableId,
     required String toTableId,
     String? spreadsheetId,
+    String? clientRequestId,
   }) async {
+    final clientReqId = clientRequestId ?? const Uuid().v4();
     final res = await _postToWebhook({
       'v': 2,
       'action': 'MOVE_TABLE',
       'outletId': outletId,
-      'clientRequestId': const Uuid().v4(),
+      'clientRequestId': clientReqId,
       if (spreadsheetId != null && spreadsheetId.isNotEmpty) 'spreadsheetId': spreadsheetId,
       'data': {
         'fromTableId': fromTableId,
         'toTableId': toTableId,
+        'clientRequestId': clientReqId,
       },
     });
     return res != null && (res['ok'] == true || res['success'] == true);
@@ -736,16 +764,19 @@ class AppsScriptBackendService {
     required List<String> sourceTableIds,
     required String targetTableId,
     String? spreadsheetId,
+    String? clientRequestId,
   }) async {
+    final clientReqId = clientRequestId ?? const Uuid().v4();
     final res = await _postToWebhook({
       'v': 2,
       'action': 'MERGE_TABLES',
       'outletId': outletId,
-      'clientRequestId': const Uuid().v4(),
+      'clientRequestId': clientReqId,
       if (spreadsheetId != null && spreadsheetId.isNotEmpty) 'spreadsheetId': spreadsheetId,
       'data': {
         'sourceTableIds': sourceTableIds,
         'targetTableId': targetTableId,
+        'clientRequestId': clientReqId,
       },
     });
     return res != null && (res['ok'] == true || res['success'] == true);
@@ -758,17 +789,20 @@ class AppsScriptBackendService {
     required bool isAvailable,
     String? itemName,
     String? spreadsheetId,
+    String? clientRequestId,
   }) async {
+    final clientReqId = clientRequestId ?? const Uuid().v4();
     final res = await _postToWebhook({
       'v': 2,
       'action': 'TOGGLE_ITEM_AVAILABILITY',
       'outletId': outletId,
-      'clientRequestId': const Uuid().v4(),
+      'clientRequestId': clientReqId,
       if (spreadsheetId != null && spreadsheetId.isNotEmpty) 'spreadsheetId': spreadsheetId,
       'data': {
         'itemId': itemId,
         'itemName': itemName ?? '',
         'isAvailable': isAvailable,
+        'clientRequestId': clientReqId,
       },
     });
     return res != null && (res['ok'] == true || res['success'] == true);
@@ -779,15 +813,18 @@ class AppsScriptBackendService {
     required String outletId,
     required List<Map<String, dynamic>> items,
     String? spreadsheetId,
+    String? clientRequestId,
   }) async {
+    final clientReqId = clientRequestId ?? const Uuid().v4();
     final res = await _postToWebhook({
       'v': 2,
       'action': 'DECREMENT_INVENTORY',
       'outletId': outletId,
-      'clientRequestId': const Uuid().v4(),
+      'clientRequestId': clientReqId,
       if (spreadsheetId != null && spreadsheetId.isNotEmpty) 'spreadsheetId': spreadsheetId,
       'data': {
         'items': items,
+        'clientRequestId': clientReqId,
       },
     });
     return res != null && (res['ok'] == true || res['success'] == true);
@@ -837,12 +874,14 @@ class AppsScriptBackendService {
     String? before,
     String? after,
     String? spreadsheetId,
+    String? clientRequestId,
   }) async {
+    final clientReqId = clientRequestId ?? const Uuid().v4();
     final res = await _postToWebhook({
       'v': 2,
       'action': 'LOG_AUDIT',
       'outletId': outletId,
-      'clientRequestId': const Uuid().v4(),
+      'clientRequestId': clientReqId,
       if (spreadsheetId != null && spreadsheetId.isNotEmpty) 'spreadsheetId': spreadsheetId,
       'data': {
         'auditAction': action,
@@ -853,6 +892,7 @@ class AppsScriptBackendService {
         'staffName': staffName ?? staffId ?? 'Staff',
         'before': before ?? '',
         'after': after ?? '',
+        'clientRequestId': clientReqId,
       },
     });
     return res != null && (res['ok'] == true || res['success'] == true);
@@ -867,12 +907,14 @@ class AppsScriptBackendService {
     String? staffId,
     String? tableNumber,
     String? spreadsheetId,
+    String? clientRequestId,
   }) async {
+    final clientReqId = clientRequestId ?? const Uuid().v4();
     final res = await _postToWebhook({
       'v': 2,
       'action': 'VOID_ORDER',
       'outletId': outletId,
-      'clientRequestId': const Uuid().v4(),
+      'clientRequestId': clientReqId,
       if (spreadsheetId != null && spreadsheetId.isNotEmpty) 'spreadsheetId': spreadsheetId,
       'data': {
         'orderId': orderId,
@@ -880,12 +922,35 @@ class AppsScriptBackendService {
         'authorizedBy': authorizedBy,
         'staffId': staffId ?? authorizedBy,
         'tableId': tableNumber ?? '',
+        'clientRequestId': clientReqId,
       },
     });
     if (res != null && (res['ok'] == true || res['success'] == true)) {
       return {'success': true, 'data': res};
     }
     return {'success': false, 'error': res?['error'] ?? 'Failed to void order'};
+  }
+
+  /// 27. Refund Payment (§4.4, §6.2, B-29)
+  static Future<bool> refundPayment({
+    required String outletId,
+    required Map<String, dynamic> refundData,
+    String? clientRequestId,
+    String? spreadsheetId,
+  }) async {
+    final clientReqId = clientRequestId ?? const Uuid().v4();
+    final res = await _postToWebhook({
+      'v': 2,
+      'action': 'REFUND_PAYMENT',
+      'outletId': outletId,
+      'clientRequestId': clientReqId,
+      if (spreadsheetId != null && spreadsheetId.isNotEmpty) 'spreadsheetId': spreadsheetId,
+      'data': {
+        ...refundData,
+        'clientRequestId': clientReqId,
+      },
+    });
+    return res != null && (res['ok'] == true || res['success'] == true);
   }
 
   static Future<Map<String, dynamic>?> _postToWebhook(Map<String, dynamic> payload) async {

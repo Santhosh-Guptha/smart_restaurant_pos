@@ -3,12 +3,13 @@ import 'package:hive_flutter/hive_flutter.dart';
 import '../core/restaurant_models.dart';
 
 /// Single-Writer Keyed Local Store (Phase 3: §3.1, §4.3)
-/// Stores entities as Map<id, record> keyed by canonical ID with rev cursor.
+/// Stores entities as `Map<id, record>` keyed by canonical ID with rev cursor.
 /// Eliminates whole-list wipes and ensures O(1) upsert operations.
 class LocalStore {
   static const String _ordersBoxPrefix = 'v2_orders_';
   static const String _tablesBoxPrefix = 'v2_tables_';
   static const String _alertsBoxPrefix = 'v2_alerts_';
+  static const String _dishesBoxPrefix = 'v2_dishes_';
   static const String _metaBox = 'v2_meta';
 
   static Future<Box> _getBox(String name) async {
@@ -37,7 +38,11 @@ class LocalStore {
   // ───────────────────────────────────────────────────────────────────────────
   // Orders Storage: Map<canonicalId, Map<String, dynamic>>
   // ───────────────────────────────────────────────────────────────────────────
-  static Future<void> upsertOrder(String outletId, KotOrder order) async {
+  static Future<void> upsertOrder(
+    String outletId,
+    KotOrder order, {
+    bool allowStatusRegress = false,
+  }) async {
     if (outletId.isEmpty) return;
     final box = await _getBox('$_ordersBoxPrefix$outletId');
     final key = canonicalId(order);
@@ -47,16 +52,24 @@ class LocalStore {
     if (existingRaw is Map) {
       final parsedExisting = KotOrder.fromMap(Map<String, dynamic>.from(existingRaw), key);
       // Status rank guard: never revert preparing/ready/served to pending
-      if (KotOrder.statusRank(order.status) < KotOrder.statusRank(parsedExisting.status)) {
-        debugPrint('[LocalStore] Rejecting status demotion for $key: ${parsedExisting.status.name} -> ${order.status.name}');
-        return;
+      // S-12: Terminal transitions (KotStatus.cancelled) bypass the status demotion guard
+      final isTerminal = order.status == KotStatus.cancelled;
+      if (!isTerminal && !allowStatusRegress) {
+        if (KotOrder.statusRank(order.status) < KotOrder.statusRank(parsedExisting.status)) {
+          debugPrint('[LocalStore] Rejecting status demotion for $key: ${parsedExisting.status.name} -> ${order.status.name}');
+          return;
+        }
       }
     }
 
     await box.put(key, order.toMap());
   }
 
-  static Future<void> upsertOrders(String outletId, List<KotOrder> orders) async {
+  static Future<void> upsertOrders(
+    String outletId,
+    List<KotOrder> orders, {
+    bool allowStatusRegress = false,
+  }) async {
     if (outletId.isEmpty || orders.isEmpty) return;
     final box = await _getBox('$_ordersBoxPrefix$outletId');
     final Map<String, dynamic> entries = {};
@@ -68,8 +81,11 @@ class LocalStore {
       final existingRaw = box.get(key);
       if (existingRaw is Map) {
         final parsedExisting = KotOrder.fromMap(Map<String, dynamic>.from(existingRaw), key);
-        if (KotOrder.statusRank(order.status) < KotOrder.statusRank(parsedExisting.status)) {
-          continue;
+        final isTerminal = order.status == KotStatus.cancelled;
+        if (!isTerminal && !allowStatusRegress) {
+          if (KotOrder.statusRank(order.status) < KotOrder.statusRank(parsedExisting.status)) {
+            continue;
+          }
         }
       }
       entries[key] = order.toMap();
@@ -119,6 +135,9 @@ class LocalStore {
     final box = await _getBox('$_ordersBoxPrefix$outletId');
     final key = cleanOrderId(orderId);
     await box.delete(key);
+    if (orderId != key) {
+      await box.delete(orderId);
+    }
   }
 
   // ───────────────────────────────────────────────────────────────────────────
@@ -171,6 +190,31 @@ class LocalStore {
     return box.values.whereType<Map>().map((m) => Map<String, dynamic>.from(m)).toList();
   }
 
+  // ───────────────────────────────────────────────────────────────────────────
+  // Dishes / Catalog Storage: Map<dishId, Map<String, dynamic>> (S-17)
+  // ───────────────────────────────────────────────────────────────────────────
+  static Future<void> upsertDishes(String outletId, List<Map<String, dynamic>> dishes) async {
+    if (outletId.isEmpty || dishes.isEmpty) return;
+    final box = await _getBox('$_dishesBoxPrefix$outletId');
+    final Map<String, dynamic> entries = {};
+
+    for (final d in dishes) {
+      final key = (d['id'] ?? d['itemId'] ?? d['dishId'] ?? d['name'] ?? '').toString().trim();
+      if (key.isNotEmpty) {
+        entries[key] = d;
+      }
+    }
+    if (entries.isNotEmpty) {
+      await box.putAll(entries);
+    }
+  }
+
+  static Future<List<Map<String, dynamic>>> getDishes(String outletId) async {
+    if (outletId.isEmpty) return [];
+    final box = await _getBox('$_dishesBoxPrefix$outletId');
+    return box.values.whereType<Map>().map((m) => Map<String, dynamic>.from(m)).toList();
+  }
+
   static Future<void> clear(String outletId) async {
     if (outletId.isEmpty) return;
     final oBox = await _getBox('$_ordersBoxPrefix$outletId');
@@ -179,5 +223,7 @@ class LocalStore {
     await tBox.clear();
     final aBox = await _getBox('$_alertsBoxPrefix$outletId');
     await aBox.clear();
+    final dBox = await _getBox('$_dishesBoxPrefix$outletId');
+    await dBox.clear();
   }
 }

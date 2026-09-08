@@ -858,19 +858,36 @@ function handleGetDelta(params) {
     return responseJson({ ok: false, success: false, error: "org parameter is required." });
   }
 
+  var lock = LockService.getScriptLock();
+  var locked = false;
+  try {
+    locked = lock.tryLock(5000);
+  } catch (eLock) {}
+
   try {
     var sinceRev = parseInt(params.since || params.since_rev || "0", 10) || 0;
     var currentRev = parseInt(PropertiesService.getScriptProperties().getProperty("rev_" + orgId.trim()), 10) || 0;
+    var maxScannedRev = currentRev;
     
     var deltaOrders = [];
     var deltaTables = [];
     var deltaReservations = [];
     var deltaPayments = [];
     var deltaAlerts = [];
+    var deltaTombstones = [];
     
     var ss = null;
     if (sheetId && sheetId.indexOf("sheet_") !== 0) {
       try { ss = SpreadsheetApp.openById(sheetId); } catch(e) {}
+      if (!ss) {
+        return responseJson({
+          ok: false,
+          success: false,
+          error: "Spreadsheet unavailable",
+          error_code: "SHEET_UNAVAILABLE",
+          retryable: true
+        });
+      }
     }
     
     if (ss) {
@@ -882,10 +899,18 @@ function handleGetDelta(params) {
         var oData = ordersSheet.getDataRange().getValues();
         var oHeaders = oData[0].map(function(h) { return String(h || "").trim(); });
         var revCol = oHeaders.indexOf("rev");
-        if (revCol === -1) revCol = oHeaders.length - 1;
+        if (revCol === -1) {
+          return responseJson({
+            ok: false,
+            success: false,
+            error: "Orders sheet missing 'rev' column",
+            error_code: "SCHEMA_MISSING_REV"
+          });
+        }
         
         for (var i = 1; i < oData.length; i++) {
           var rowRev = parseInt(oData[i][revCol], 10) || 0;
+          if (rowRev > maxScannedRev) maxScannedRev = rowRev;
           if (sinceRev === 0 || rowRev > sinceRev) {
             var orderObj = {};
             for (var c = 0; c < oHeaders.length; c++) {
@@ -899,6 +924,15 @@ function handleGetDelta(params) {
             orderObj.subtotal = (parseFloat(orderObj.subtotalP) || 0) / 100;
             orderObj.rev = rowRev;
             deltaOrders.push(orderObj);
+
+            // S-13: Collect tombstones / deleted order IDs for cancelled or voided orders
+            var stUpper = String(orderObj.status || orderObj.kitchenStatus || "").toUpperCase().trim();
+            if (stUpper === "CANCELLED" || stUpper === "VOIDED" || stUpper === "DELETED" || orderObj.tombstone === true || orderObj.isDeleted === true) {
+              var tId = String(orderObj.id || orderObj.orderId || "").trim();
+              if (tId && deltaTombstones.indexOf(tId) === -1) {
+                deltaTombstones.push(tId);
+              }
+            }
           }
         }
       }
@@ -909,29 +943,49 @@ function handleGetDelta(params) {
         var tData = tablesSheet.getDataRange().getValues();
         var tHeaders = tData[0].map(function(h) { return String(h || "").trim(); });
         var tRevCol = tHeaders.indexOf("rev");
-        if (tRevCol === -1) tRevCol = tHeaders.length - 1;
         for (var ti = 1; ti < tData.length; ti++) {
-          var tRev = parseInt(tData[ti][tRevCol], 10) || 0;
+          var tRev = tRevCol !== -1 ? (parseInt(tData[ti][tRevCol], 10) || 0) : 0;
+          if (tRev > maxScannedRev) maxScannedRev = tRev;
           if (sinceRev === 0 || tRev > sinceRev) {
             var tObj = {};
             for (var tc = 0; tc < tHeaders.length; tc++) { tObj[tHeaders[tc]] = tData[ti][tc]; }
+            tObj.rev = tRev;
             deltaTables.push(tObj);
           }
         }
       }
 
-      // 3. Alerts delta
+      // 3. Reservations delta (T-05)
+      var reservationsSheet = ss.getSheetByName("Reservations");
+      if (reservationsSheet && reservationsSheet.getLastRow() > 1) {
+        var rData = reservationsSheet.getDataRange().getValues();
+        var rHeaders = rData[0].map(function(h) { return String(h || "").trim(); });
+        var rRevCol = rHeaders.indexOf("rev");
+        for (var ri = 1; ri < rData.length; ri++) {
+          var rRev = rRevCol !== -1 ? (parseInt(rData[ri][rRevCol], 10) || 0) : 0;
+          if (rRev > maxScannedRev) maxScannedRev = rRev;
+          if (sinceRev === 0 || rRev > sinceRev) {
+            var rObj = {};
+            for (var rc = 0; rc < rHeaders.length; rc++) { rObj[rHeaders[rc]] = rData[ri][rc]; }
+            rObj.rev = rRev;
+            deltaReservations.push(rObj);
+          }
+        }
+      }
+
+      // 4. Alerts delta
       var alertsSheet = ss.getSheetByName("Alerts");
       if (alertsSheet && alertsSheet.getLastRow() > 1) {
         var aData = alertsSheet.getDataRange().getValues();
         var aHeaders = aData[0].map(function(h) { return String(h || "").trim(); });
         var aRevCol = aHeaders.indexOf("rev");
-        if (aRevCol === -1) aRevCol = aHeaders.length - 1;
         for (var ai = 1; ai < aData.length; ai++) {
-          var aRev = parseInt(aData[ai][aRevCol], 10) || 0;
+          var aRev = aRevCol !== -1 ? (parseInt(aData[ai][aRevCol], 10) || 0) : 0;
+          if (aRev > maxScannedRev) maxScannedRev = aRev;
           if (sinceRev === 0 || aRev > sinceRev) {
             var aObj = {};
             for (var ac = 0; ac < aHeaders.length; ac++) { aObj[aHeaders[ac]] = aData[ai][ac]; }
+            aObj.rev = aRev;
             deltaAlerts.push(aObj);
           }
         }
@@ -951,7 +1005,7 @@ function handleGetDelta(params) {
       }
     }
 
-    // 4. Phase 7: Inventory / Item Availability Delta
+    // 5. Inventory / Item Availability Delta (§7.2, §7.3, S-19)
     var deltaInventory = [];
     if (ss) {
       try {
@@ -959,35 +1013,41 @@ function handleGetDelta(params) {
         if (invSheet && invSheet.getLastRow() > 1) {
           var inData = invSheet.getDataRange().getValues();
           var inHeaders = inData[0].map(function(h) { return String(h || "").trim().toLowerCase(); });
-          var idCol = -1, nameCol = -1, stockCol = -1, availCol = -1;
+          var idCol = -1, nameCol = -1, stockCol = -1, availCol = -1, inRevCol = -1;
           for (var c = 0; c < inHeaders.length; c++) {
             var h = inHeaders[c];
             if (h.indexOf("id") !== -1 && idCol === -1) idCol = c;
             if ((h.indexOf("name") !== -1 || h.indexOf("dish") !== -1) && nameCol === -1) nameCol = c;
             if (h.indexOf("stock") !== -1 || h.indexOf("qty") !== -1 || h.indexOf("quantity") !== -1) stockCol = c;
             if (h.indexOf("avail") !== -1 || h.indexOf("status") !== -1) availCol = c;
+            if (h === "rev") inRevCol = c;
           }
           if (idCol === -1) idCol = 0;
           if (nameCol === -1) nameCol = 1;
 
           for (var ri = 1; ri < inData.length; ri++) {
-            var pId = String(inData[ri][idCol] || "").trim();
-            var pName = String(inData[ri][nameCol] || "").trim();
-            var pStock = stockCol !== -1 ? inData[ri][stockCol] : -1;
-            var pAvail = true;
-            if (availCol !== -1 && inData[ri][availCol] !== undefined) {
-              var avStr = String(inData[ri][availCol]).toLowerCase().trim();
-              if (avStr === "false" || avStr === "0" || avStr === "no" || avStr === "sold out" || avStr === "unavailable") {
-                pAvail = false;
+            var invRowRev = inRevCol !== -1 ? (parseInt(inData[ri][inRevCol], 10) || 0) : 0;
+            if (invRowRev > maxScannedRev) maxScannedRev = invRowRev;
+            if (sinceRev === 0 || (inRevCol !== -1 && invRowRev > sinceRev)) {
+              var pId = String(inData[ri][idCol] || "").trim();
+              var pName = String(inData[ri][nameCol] || "").trim();
+              var pStock = stockCol !== -1 ? inData[ri][stockCol] : -1;
+              var pAvail = true;
+              if (availCol !== -1 && inData[ri][availCol] !== undefined) {
+                var avStr = String(inData[ri][availCol]).toLowerCase().trim();
+                if (avStr === "false" || avStr === "0" || avStr === "no" || avStr === "sold out" || avStr === "unavailable") {
+                  pAvail = false;
+                }
               }
-            }
-            if (pId) {
-              deltaInventory.push({
-                id: pId,
-                name: pName,
-                stock: pStock !== "" && pStock !== null && pStock !== undefined ? Number(pStock) : -1,
-                isAvailable: pAvail
-              });
+              if (pId) {
+                deltaInventory.push({
+                  id: pId,
+                  name: pName,
+                  stock: pStock !== "" && pStock !== null && pStock !== undefined ? Number(pStock) : -1,
+                  isAvailable: pAvail,
+                  rev: invRowRev
+                });
+              }
             }
           }
         }
@@ -997,7 +1057,7 @@ function handleGetDelta(params) {
     return responseJson({
       ok: true,
       success: true,
-      rev: currentRev,
+      rev: maxScannedRev || currentRev,
       since: sinceRev,
       orders: deltaOrders,
       tables: deltaTables,
@@ -1005,11 +1065,18 @@ function handleGetDelta(params) {
       payments: deltaPayments,
       alerts: deltaAlerts,
       inventory: deltaInventory,
+      tombstones: deltaTombstones,
+      deleted: deltaTombstones,
       serverTime: new Date().toISOString()
     });
   } catch(errDelta) {
     return responseJson({ ok: false, success: false, error: errDelta.toString() });
+  } finally {
+    if (locked) {
+      try { lock.releaseLock(); } catch(eL) {}
+    }
   }
+}
 }
 
 function doGet(e) {

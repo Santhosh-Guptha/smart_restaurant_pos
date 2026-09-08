@@ -63,6 +63,8 @@ class SyncEngine {
 
   Timer? _pollTimer;
   bool _isFetching = false;
+  bool _syncRequested = false;
+  int _epoch = 0;
   String _activeOutletId = '';
   String? _activeSpreadsheetId;
   int _errorCount = 0;
@@ -77,24 +79,34 @@ class SyncEngine {
       return;
     }
 
+    _epoch++;
     _activeOutletId = outletId;
     _activeSpreadsheetId = spreadsheetId;
     _errorCount = 0;
+    _syncRequested = false;
     _currentInterval = const Duration(seconds: 3);
 
     _scheduleNextPoll(Duration.zero);
   }
 
   void stop() {
+    _epoch++;
     _pollTimer?.cancel();
     _pollTimer = null;
     _isFetching = false;
+    _syncRequested = false;
+    _activeOutletId = '';
+    _activeSpreadsheetId = null;
   }
 
   void triggerSync() {
     if (_activeOutletId.isNotEmpty) {
-      _pollTimer?.cancel();
-      _scheduleNextPoll(Duration.zero);
+      if (_isFetching) {
+        _syncRequested = true;
+      } else {
+        _pollTimer?.cancel();
+        _scheduleNextPoll(Duration.zero);
+      }
     }
   }
 
@@ -111,14 +123,23 @@ class SyncEngine {
   Future<void> _poll() async {
     if (_isFetching || _activeOutletId.isEmpty) return;
     _isFetching = true;
+    final localOutletId = _activeOutletId;
+    final localSpreadsheetId = _activeSpreadsheetId;
+    final currentEpoch = _epoch;
 
     try {
-      final currentRev = await LocalStore.getRev(_activeOutletId);
+      final currentRev = await LocalStore.getRev(localOutletId);
       final delta = await AppsScriptBackendService.fetchDelta(
-        outletId: _activeOutletId,
+        outletId: localOutletId,
         since: currentRev,
-        spreadsheetId: _activeSpreadsheetId,
+        spreadsheetId: localSpreadsheetId,
       );
+
+      // S-2: Check tenant race before processing
+      if (_activeOutletId != localOutletId || _epoch != currentEpoch) {
+        debugPrint('[SyncEngine] Tenant changed during poll. Discarding delta.');
+        return;
+      }
 
       final ok = delta['ok'] == true || delta['success'] == true;
       if (!ok) {
@@ -133,8 +154,21 @@ class SyncEngine {
       final rawOrders = delta['orders'] as List? ?? [];
       final rawTables = delta['tables'] as List? ?? [];
       final rawAlerts = delta['alerts'] as List? ?? [];
+      final rawTombstones = delta['tombstones'] as List? ?? delta['deleted'] as List? ?? [];
 
-      // 1. Process Orders Delta with Monotonic Rank Merge & Outbox Guard (§3.4, §3.6)
+      int? lowestUnappliedRev;
+
+      // 0. S-13: Process Tombstones / Deletions
+      if (rawTombstones.isNotEmpty) {
+        for (final t in rawTombstones) {
+          final tId = t?.toString() ?? '';
+          if (tId.isNotEmpty) {
+            await LocalStore.removeOrder(localOutletId, tId);
+          }
+        }
+      }
+
+      // 1. Process Orders Delta with Monotonic Rank Merge & Outbox Guard (§3.4, §3.6, S-3, S-13)
       if (rawOrders.isNotEmpty) {
         final List<KotOrder> validOrders = [];
         for (final item in rawOrders) {
@@ -143,10 +177,23 @@ class SyncEngine {
               final map = Map<String, dynamic>.from(item);
               final docId = map['id']?.toString() ?? map['orderId']?.toString() ?? '';
               if (docId.isEmpty) continue;
+              final rowRev = (map['rev'] as num?)?.toInt() ?? 0;
 
-              // Do not overwrite local entity if pending outbox writes exist (§3.4)
+              // S-13: Check if order was marked cancelled/tombstoned in payload
+              final stUpper = (map['status'] ?? map['kitchenStatus'] ?? '').toString().toUpperCase().trim();
+              if (stUpper == 'CANCELLED' || stUpper == 'VOIDED' || map['tombstone'] == true || map['isDeleted'] == true) {
+                await LocalStore.removeOrder(localOutletId, docId);
+                continue;
+              }
+
+              // Do not overwrite local entity if pending outbox writes exist (§3.4, S-3)
               final hasPendingOutbox = await Outbox.hasPendingFor(docId);
               if (hasPendingOutbox) {
+                if (rowRev > 0) {
+                  lowestUnappliedRev = lowestUnappliedRev == null
+                      ? rowRev
+                      : min(lowestUnappliedRev, rowRev);
+                }
                 continue;
               }
 
@@ -158,9 +205,12 @@ class SyncEngine {
           }
         }
 
+        // S-2: Verify tenant before write
+        if (_activeOutletId != localOutletId || _epoch != currentEpoch) return;
+
         if (validOrders.isNotEmpty) {
-          await LocalStore.upsertOrders(_activeOutletId, validOrders);
-          final allOrders = await LocalStore.getOrders(_activeOutletId);
+          await LocalStore.upsertOrders(localOutletId, validOrders);
+          final allOrders = await LocalStore.getOrders(localOutletId);
           _ordersStream.add(allOrders);
         }
       }
@@ -168,23 +218,25 @@ class SyncEngine {
       // 2. Process Tables Delta
       if (rawTables.isNotEmpty) {
         final tablesList = rawTables.whereType<Map>().map((m) => Map<String, dynamic>.from(m)).toList();
-        await LocalStore.upsertTables(_activeOutletId, tablesList);
+        await LocalStore.upsertTables(localOutletId, tablesList);
         _tablesStream.add(tablesList);
       }
 
       // 3. Process Alerts Delta
       if (rawAlerts.isNotEmpty) {
         final alertsList = rawAlerts.whereType<Map>().map((m) => Map<String, dynamic>.from(m)).toList();
-        await LocalStore.upsertAlerts(_activeOutletId, alertsList);
+        await LocalStore.upsertAlerts(localOutletId, alertsList);
         _alertsStream.add(alertsList);
       }
 
-      // 4. Process Inventory & 86 Delta (§7.2, §7.3)
+      // 4. Process Inventory & 86 Delta (§7.2, §7.3, S-18)
       final rawInventory = delta['inventory'] as List? ?? [];
       if (rawInventory.isNotEmpty) {
         try {
-          final box = Hive.isBoxOpen('restaurant_config_box') ? Hive.box('restaurant_config_box') : null;
-          final saved = box?.get('restaurant_menu_dishes') as List?;
+          final box = Hive.isBoxOpen('restaurant_config_box')
+              ? Hive.box('restaurant_config_box')
+              : await Hive.openBox('restaurant_config_box');
+          final saved = box.get('restaurant_menu_dishes') as List?;
           if (saved != null && saved.isNotEmpty) {
             final dishes = saved.map((e) => Map<String, dynamic>.from(e as Map)).toList();
             bool changed = false;
@@ -215,7 +267,7 @@ class SyncEngine {
             }
 
             if (changed) {
-              await box?.put('restaurant_menu_dishes', dishes);
+              await box.put('restaurant_menu_dishes', dishes);
             }
           }
         } catch (e) {
@@ -223,20 +275,26 @@ class SyncEngine {
         }
       }
 
-      // Advance Rev Cursor
-      if (serverRev > currentRev) {
-        await LocalStore.setRev(_activeOutletId, serverRev);
+      // S-3: Safe Cursor Advance
+      // Only advance cursor up to (lowestUnappliedRev - 1) if any row was skipped, or serverRev if clean
+      int targetRev = serverRev;
+      if (lowestUnappliedRev != null && lowestUnappliedRev <= serverRev) {
+        targetRev = max(currentRev, lowestUnappliedRev - 1);
+      }
+
+      if (targetRev > currentRev) {
+        await LocalStore.setRev(localOutletId, targetRev);
       }
 
       // Trigger automatic drain of Outbox queue
-      await Outbox.drain(spreadsheetId: _activeSpreadsheetId);
+      await Outbox.drain(spreadsheetId: localSpreadsheetId);
 
       stateNotifier.value = SyncState(
         online: true,
         lastOkAt: DateTime.now(),
         pendingOps: Outbox.pendingCount.value,
         degraded: false,
-        currentRev: max(serverRev, currentRev),
+        currentRev: max(targetRev, currentRev),
       );
 
     } catch (e) {
@@ -244,6 +302,10 @@ class SyncEngine {
       _handleError();
     } finally {
       _isFetching = false;
+      if (_syncRequested && _activeOutletId.isNotEmpty) {
+        _syncRequested = false;
+        _scheduleNextPoll(Duration.zero);
+      }
     }
   }
 
