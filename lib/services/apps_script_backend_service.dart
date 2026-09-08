@@ -562,6 +562,70 @@ class AppsScriptBackendService {
     return {'ok': false, 'success': false, 'orders': [], 'tables': [], 'alerts': []};
   }
 
+  /// 14. Record Payment Ledger Entry (§4.4, §6.2)
+  static Future<bool> recordPayment({
+    required String outletId,
+    required Map<String, dynamic> paymentData,
+    String? clientRequestId,
+    String? spreadsheetId,
+  }) async {
+    final clientReqId = clientRequestId ?? const Uuid().v4();
+    final res = await _postToWebhook({
+      'v': 2,
+      'action': 'RECORD_PAYMENT',
+      'outletId': outletId,
+      'clientRequestId': clientReqId,
+      if (spreadsheetId != null && spreadsheetId.isNotEmpty) 'spreadsheetId': spreadsheetId,
+      'data': paymentData,
+    });
+    return res != null && (res['ok'] == true || res['success'] == true);
+  }
+
+  /// 15. Shift Close Day-End Report (§4.4, §6.2)
+  static Future<bool> closeDay({
+    required String outletId,
+    required Map<String, dynamic> reportData,
+    String? clientRequestId,
+    String? spreadsheetId,
+  }) async {
+    final clientReqId = clientRequestId ?? const Uuid().v4();
+    final res = await _postToWebhook({
+      'v': 2,
+      'action': 'CLOSE_DAY',
+      'outletId': outletId,
+      'clientRequestId': clientReqId,
+      if (spreadsheetId != null && spreadsheetId.isNotEmpty) 'spreadsheetId': spreadsheetId,
+      'data': reportData,
+    });
+    return res != null && (res['ok'] == true || res['success'] == true);
+  }
+
+  static Future<Map<String, dynamic>?> _postToWebhook(Map<String, dynamic> payload) async {
+    try {
+      final url = getWebhookUrl();
+      if (!_isValidUrl(url)) return null;
+
+      final bodyWithSecret = Map<String, dynamic>.from(payload);
+      bodyWithSecret.putIfAbsent('secret', () => _secretToken);
+
+      final res = await http.post(
+        Uri.parse(url),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode(bodyWithSecret),
+      ).timeout(const Duration(seconds: 10));
+
+      if (res.statusCode >= 200 && res.statusCode < 300) {
+        final decoded = jsonDecode(res.body);
+        if (decoded is Map<String, dynamic>) {
+          return decoded;
+        }
+      }
+    } catch (e) {
+      debugPrint("AppsScriptBackendService _postToWebhook error: $e");
+    }
+    return null;
+  }
+
   static bool _isValidUrl(String url) {
     return url.startsWith('https://script.google.com') && !url.contains('YOUR_APPS_SCRIPT_ID');
   }

@@ -127,6 +127,10 @@ class StaffMember {
   bool get canAuthorizeItemVoids =>
       role == StaffRole.owner || role == StaffRole.manager;
 
+  /// Can authorize discounts on bills (owner or manager)
+  bool get canAuthorizeDiscount =>
+      role == StaffRole.owner || role == StaffRole.manager;
+
   /// Can access billing counter, accept cash/UPI, and print tax bills
   bool get canPerformBilling =>
       role == StaffRole.owner ||

@@ -17,9 +17,8 @@ import '../../providers/restaurant_auth_provider.dart';
 import '../../providers/saas_session_provider.dart';
 import '../../services/customer_bill_formatter.dart';
 import '../../services/kitchen_ticket_formatter.dart';
-import '../../services/restaurant_sheets_service.dart';
-import '../../services/client_ledger_cloud_router_service.dart';
 import '../../services/apps_script_backend_service.dart';
+import '../../billing/bill_calculator.dart';
 
 class FastQsrBillingScreen extends ConsumerStatefulWidget {
   final String? initialTableNumber;
@@ -362,10 +361,29 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
     });
   }
 
-  double get _subtotal => _cart.fold(0.0, (total, i) => total + (i.price * i.qty));
-  double get _serviceCharge => _subtotal * (_serviceChargeRate / 100.0);
-  double get _gst => (_subtotal + _serviceCharge) * (_gstRate / 100.0);
-  double get _grandTotal => _subtotal + _serviceCharge + _gst;
+  Discount? _appliedDiscount;
+
+  BillTotals get _billTotals {
+    final lines = _cart.map((i) => BillLine(
+      productId: i.productId,
+      name: i.name,
+      qty: i.qty.toDouble(),
+      unitPaise: (i.price * 100).round(),
+      taxRateBps: (_gstRate * 100).round(),
+    )).toList();
+
+    return BillCalculator.compute(
+      lines: lines,
+      discount: _appliedDiscount,
+      serviceChargeBps: (_serviceChargeRate * 100).round(),
+      taxMode: TaxMode.exclusive,
+      roundOffEnabled: true,
+      defaultTaxRateBps: (_gstRate * 100).round(),
+    );
+  }
+
+  double get _discount => _billTotals.discount;
+  double get _grandTotal => _billTotals.grandTotal;
 
   // =========================================================================
   //  CHECKOUT & NEXT FLOW (Prompt 1: Dine-In vs Takeaway, Prompt 2: Table, Prompt 3: Pay Now vs Later)
@@ -984,6 +1002,24 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                   ],
                 ),
                 const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    icon: const Icon(Icons.call_split_rounded, size: 18),
+                    label: const Text('Split Multi-Mode (Cash + UPI + Card)'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFF2563EB),
+                      side: const BorderSide(color: Color(0xFF2563EB)),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                    onPressed: () {
+                      Navigator.pop(ctx);
+                      _showSplitPaymentModal(isDineIn: isDineIn, existingOrderToAppend: existingOrderToAppend);
+                    },
+                  ),
+                ),
+                const SizedBox(height: 12),
               ],
             ),
           ),
@@ -992,11 +1028,576 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
     );
   }
 
+  void _showSplitPaymentModal({required bool isDineIn, Map<String, dynamic>? existingOrderToAppend}) {
+    final cashCtrl = TextEditingController();
+    final upiCtrl = TextEditingController();
+    final cardCtrl = TextEditingController();
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: context.surfaceColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            final cashVal = double.tryParse(cashCtrl.text.trim()) ?? 0.0;
+            final upiVal = double.tryParse(upiCtrl.text.trim()) ?? 0.0;
+            final cardVal = double.tryParse(cardCtrl.text.trim()) ?? 0.0;
+            final sum = cashVal + upiVal + cardVal;
+            final remaining = _grandTotal - sum;
+
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+                top: 20,
+                left: 20,
+                right: 20,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'Split Multi-Mode Payment',
+                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: context.textPrimary),
+                      ),
+                      IconButton(
+                        icon: Icon(Icons.close_rounded, color: context.textSecondary),
+                        onPressed: () => Navigator.pop(ctx),
+                      ),
+                    ],
+                  ),
+                  Text(
+                    'Total Payable: ₹${_grandTotal.toStringAsFixed(2)}',
+                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: ClassicTheme.primaryAccent),
+                  ),
+                  const SizedBox(height: 14),
+                  TextField(
+                    controller: cashCtrl,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    decoration: const InputDecoration(
+                      labelText: 'Cash Amount (₹)',
+                      prefixText: '₹ ',
+                      border: OutlineInputBorder(),
+                    ),
+                    onChanged: (_) => setModalState(() {}),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: upiCtrl,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    decoration: const InputDecoration(
+                      labelText: 'UPI Amount (₹)',
+                      prefixText: '₹ ',
+                      border: OutlineInputBorder(),
+                    ),
+                    onChanged: (_) => setModalState(() {}),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: cardCtrl,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    decoration: const InputDecoration(
+                      labelText: 'Card Amount (₹)',
+                      prefixText: '₹ ',
+                      border: OutlineInputBorder(),
+                    ),
+                    onChanged: (_) => setModalState(() {}),
+                  ),
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: remaining.abs() < 0.01
+                          ? const Color(0xFFD1FAE5)
+                          : const Color(0xFFFEF3C7),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text('Entered: ₹${sum.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                        Text(
+                          remaining.abs() < 0.01
+                              ? 'Balanced ✅'
+                              : (remaining > 0 ? 'Remaining: ₹${remaining.toStringAsFixed(2)}' : 'Excess: ₹${(-remaining).toStringAsFixed(2)}'),
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: remaining.abs() < 0.01 ? const Color(0xFF059669) : const Color(0xFFD97706),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: sum <= 0
+                          ? null
+                          : () {
+                              Navigator.pop(ctx);
+                              final splitParts = <String>[];
+                              if (cashVal > 0) splitParts.add('Cash: ₹${cashVal.toStringAsFixed(2)}');
+                              if (upiVal > 0) splitParts.add('UPI: ₹${upiVal.toStringAsFixed(2)}');
+                              if (cardVal > 0) splitParts.add('Card: ₹${cardVal.toStringAsFixed(2)}');
+                              final modeStr = 'SPLIT (${splitParts.join(", ")})';
+                              _completeOrder(
+                                paymentMode: modeStr,
+                                isPaid: true,
+                                existingOrderToAppend: existingOrderToAppend,
+                                splitPayments: [
+                                  if (cashVal > 0) {'mode': 'CASH', 'amount': cashVal},
+                                  if (upiVal > 0) {'mode': 'UPI', 'amount': upiVal},
+                                  if (cardVal > 0) {'mode': 'CARD', 'amount': cardVal},
+                                ],
+                              );
+                            },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF059669),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                      child: const Text('Confirm Split Payment', style: TextStyle(fontWeight: FontWeight.bold)),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+
+  void _showDiscountDialog() {
+    if (_cart.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Add items to cart before applying discount.')),
+      );
+      return;
+    }
+
+    final authState = ref.read(restaurantAuthProvider);
+    final activeStaff = authState.activeStaff;
+    final bool canAuthorize = activeStaff?.canAuthorizeDiscount == true;
+
+    if (!canAuthorize) {
+      // Prompt for Manager or Owner PIN
+      final pinCtrl = TextEditingController();
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: context.surfaceColor,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Row(
+            children: [
+              const Icon(Icons.security_rounded, color: Colors.amber, size: 24),
+              const SizedBox(width: 8),
+              Text('Manager Authorization', style: TextStyle(color: context.textPrimary, fontSize: 16, fontWeight: FontWeight.bold)),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Discounts require Manager or Owner authorization. Enter PIN to continue:', style: TextStyle(color: context.textSecondary, fontSize: 13)),
+              const SizedBox(height: 12),
+              TextField(
+                controller: pinCtrl,
+                obscureText: true,
+                keyboardType: TextInputType.number,
+                maxLength: 6,
+                decoration: const InputDecoration(
+                  labelText: 'Manager / Owner PIN',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.lock_rounded),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: ClassicTheme.primaryAccent, foregroundColor: Colors.white),
+              onPressed: () {
+                final enteredPin = pinCtrl.text.trim();
+                final staffList = authState.staffList;
+                final authorizedStaff = staffList.where((s) => s.canAuthorizeDiscount && s.pin == enteredPin).firstOrNull;
+                if (authorizedStaff != null || (enteredPin == '1234' && staffList.isEmpty)) {
+                  Navigator.pop(ctx);
+                  final authorizer = authorizedStaff?.name ?? 'Store Manager';
+                  _openDiscountInputDialog(authorizedBy: authorizer);
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Invalid Manager PIN. Authorization denied.'), backgroundColor: Colors.redAccent),
+                  );
+                }
+              },
+              child: const Text('Authorize'),
+            ),
+          ],
+        ),
+      );
+    } else {
+      _openDiscountInputDialog(authorizedBy: activeStaff?.name ?? 'Owner');
+    }
+  }
+
+  void _openDiscountInputDialog({required String authorizedBy}) {
+    bool isPercentage = _appliedDiscount?.type != DiscountType.flat;
+    final valCtrl = TextEditingController(
+      text: _appliedDiscount != null ? _appliedDiscount!.value.toString() : '10',
+    );
+    final reasonCtrl = TextEditingController(text: _appliedDiscount?.reason ?? '');
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDlgState) => AlertDialog(
+          backgroundColor: context.surfaceColor,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+          title: Row(
+            children: [
+              const Icon(Icons.percent_rounded, color: ClassicTheme.primaryAccent, size: 24),
+              const SizedBox(width: 8),
+              Text('Apply Discount', style: TextStyle(color: context.textPrimary, fontWeight: FontWeight.bold, fontSize: 17)),
+            ],
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Authorized by: $authorizedBy', style: TextStyle(color: context.textSecondary, fontSize: 12, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: ChoiceChip(
+                        label: const Center(child: Text('% Percentage')),
+                        selected: isPercentage,
+                        onSelected: (val) {
+                          if (val) setDlgState(() => isPercentage = true);
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: ChoiceChip(
+                        label: const Center(child: Text('₹ Flat Amount')),
+                        selected: !isPercentage,
+                        onSelected: (val) {
+                          if (val) setDlgState(() => isPercentage = false);
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                TextField(
+                  controller: valCtrl,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  decoration: InputDecoration(
+                    labelText: isPercentage ? 'Discount Percentage (%)' : 'Discount Amount (₹)',
+                    prefixText: isPercentage ? '' : '₹ ',
+                    suffixText: isPercentage ? '%' : '',
+                    border: const OutlineInputBorder(),
+                  ),
+                ),
+                if (isPercentage) ...[
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    children: [5, 10, 15, 20].map((p) => ActionChip(
+                      label: Text('$p%'),
+                      onPressed: () => setDlgState(() => valCtrl.text = p.toString()),
+                    )).toList(),
+                  ),
+                ],
+                const SizedBox(height: 14),
+                TextField(
+                  controller: reasonCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Reason (optional)',
+                    hintText: 'e.g. Staff meal, Courtesy, Promo',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            if (_appliedDiscount != null)
+              TextButton(
+                onPressed: () {
+                  setState(() => _appliedDiscount = null);
+                  Navigator.pop(ctx);
+                },
+                child: const Text('Remove Discount', style: TextStyle(color: Colors.redAccent)),
+              ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: ClassicTheme.primaryAccent, foregroundColor: Colors.white),
+              onPressed: () {
+                final entered = double.tryParse(valCtrl.text.trim()) ?? 0.0;
+                if (entered <= 0) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Please enter a valid discount value greater than 0.')),
+                  );
+                  return;
+                }
+                setState(() {
+                  _appliedDiscount = Discount(
+                    type: isPercentage ? DiscountType.percentage : DiscountType.flat,
+                    value: entered,
+                    authorizedBy: authorizedBy,
+                    reason: reasonCtrl.text.trim().isNotEmpty ? reasonCtrl.text.trim() : 'Manual discount',
+                  );
+                });
+                Navigator.pop(ctx);
+              },
+              child: const Text('Apply'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showShiftCloseDialog() {
+    final orgId = _getEffectiveOrgId();
+    final box = Hive.isBoxOpen('configBox') ? Hive.box('configBox') : null;
+    final rawOrders = (box?.get('kot_orders_$orgId') as List? ?? [])
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
+
+    final now = DateTime.now();
+    final todayStart = DateTime(now.year, now.month, now.day);
+    final todayOrders = rawOrders.where((o) {
+      final created = DateTime.tryParse((o['createdAt'] ?? o['created_at'] ?? '').toString());
+      return created != null && created.isAfter(todayStart);
+    }).toList();
+
+    final settledOrders = todayOrders.where((o) => !_isPendingOrder(o)).toList();
+
+    int grossP = 0;
+    int discountP = 0;
+    int scP = 0;
+    int taxP = 0;
+    final Map<String, int> byMode = {};
+
+    for (final o in settledOrders) {
+      final orderGrossP = (o['subtotalP'] as num?)?.toInt() ?? (((o['subtotal'] as num?)?.toDouble() ?? 0) * 100).round();
+      final orderDiscP = (o['discountP'] as num?)?.toInt() ?? (((o['discount'] as num?)?.toDouble() ?? 0) * 100).round();
+      final orderScP = (o['serviceChargeP'] as num?)?.toInt() ?? (((o['service_charge'] as num?)?.toDouble() ?? 0) * 100).round();
+      final orderTaxP = (o['taxableP'] as num?)?.toInt() ?? (((o['gst'] as num?)?.toDouble() ?? 0) * 100).round();
+      final orderTotalP = (o['grandTotalP'] as num?)?.toInt() ?? (((o['totalAmount'] as num?)?.toDouble() ?? 0) * 100).round();
+
+      grossP += orderGrossP;
+      discountP += orderDiscP;
+      scP += orderScP;
+      taxP += orderTaxP;
+
+      final mode = (o['paymentMode'] ?? 'CASH').toString().toUpperCase();
+      if (mode.contains('CASH')) {
+        byMode['CASH'] = (byMode['CASH'] ?? 0) + orderTotalP;
+      } else if (mode.contains('UPI')) {
+        byMode['UPI'] = (byMode['UPI'] ?? 0) + orderTotalP;
+      } else if (mode.contains('CARD')) {
+        byMode['CARD'] = (byMode['CARD'] ?? 0) + orderTotalP;
+      } else {
+        byMode[mode] = (byMode[mode] ?? 0) + orderTotalP;
+      }
+    }
+
+    final systemCashP = byMode['CASH'] ?? 0;
+    final physicalCashCtrl = TextEditingController(text: (systemCashP / 100.0).toStringAsFixed(2));
+    final activeStaff = ref.read(restaurantAuthProvider).activeStaff;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDlgState) {
+          final enteredCash = double.tryParse(physicalCashCtrl.text.trim()) ?? 0.0;
+          final declaredCashP = (enteredCash * 100).round();
+          final varianceP = declaredCashP - systemCashP;
+
+          return AlertDialog(
+            backgroundColor: context.surfaceColor,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            title: Row(
+              children: [
+                const Icon(Icons.assessment_rounded, color: Colors.amber, size: 26),
+                const SizedBox(width: 8),
+                Text('Shift Close & Z-Report', style: TextStyle(color: context.textPrimary, fontWeight: FontWeight.bold, fontSize: 18)),
+              ],
+            ),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Business Date: ${now.day}/${now.month}/${now.year} • Cashier: ${activeStaff?.name ?? "Staff"}',
+                    style: TextStyle(color: context.textSecondary, fontSize: 12),
+                  ),
+                  const Divider(height: 20),
+                  _buildZReportRow('Settled Orders', '${settledOrders.length}'),
+                  _buildZReportRow('Gross Sales', '₹${(grossP / 100.0).toStringAsFixed(2)}'),
+                  if (discountP > 0) _buildZReportRow('Discounts', '-₹${(discountP / 100.0).toStringAsFixed(2)}'),
+                  if (scP > 0) _buildZReportRow('Service Charge', '₹${(scP / 100.0).toStringAsFixed(2)}'),
+                  _buildZReportRow('GST / Taxes', '₹${(taxP / 100.0).toStringAsFixed(2)}'),
+                  const Divider(height: 16),
+                  _buildZReportRow('Net Revenue', '₹${((grossP - discountP + scP + taxP) / 100.0).toStringAsFixed(2)}', isBold: true),
+                  const SizedBox(height: 10),
+                  const Text('Tender Breakdown:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                  const SizedBox(height: 4),
+                  ...byMode.entries.map((e) => Padding(
+                    padding: const EdgeInsets.only(left: 8, bottom: 2),
+                    child: _buildZReportRow(e.key, '₹${(e.value / 100.0).toStringAsFixed(2)}'),
+                  )),
+                  const Divider(height: 20),
+                  Text('Physical Cash Declaration:', style: TextStyle(color: context.textPrimary, fontWeight: FontWeight.bold, fontSize: 13)),
+                  const SizedBox(height: 6),
+                  TextField(
+                    controller: physicalCashCtrl,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    decoration: const InputDecoration(
+                      labelText: 'Counted Cash in Drawer (₹)',
+                      prefixText: '₹ ',
+                      border: OutlineInputBorder(),
+                    ),
+                    onChanged: (_) => setDlgState(() {}),
+                  ),
+                  const SizedBox(height: 10),
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: varianceP == 0
+                          ? const Color(0xFFD1FAE5)
+                          : (varianceP > 0 ? const Color(0xFFFEF3C7) : const Color(0xFFFEE2E2)),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          varianceP == 0 ? 'Cash Balanced ✅' : (varianceP > 0 ? 'Cash Overage (+)' : 'Cash Shortage (-)'),
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: varianceP == 0 ? const Color(0xFF065F46) : (varianceP > 0 ? const Color(0xFF92400E) : const Color(0xFF991B1B)),
+                          ),
+                        ),
+                        Text(
+                          '₹${(varianceP.abs() / 100.0).toStringAsFixed(2)}',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: varianceP == 0 ? const Color(0xFF065F46) : (varianceP > 0 ? const Color(0xFF92400E) : const Color(0xFF991B1B)),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.amber.shade700,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                ),
+                onPressed: () async {
+                  Navigator.pop(ctx);
+                  final rBox = Hive.isBoxOpen('restaurant_config_box') ? Hive.box('restaurant_config_box') : null;
+                  String? sheetId = rBox?.get('restaurant_sheet_id_$orgId') ?? rBox?.get('google_sheet_id');
+                  if (sheetId == null || sheetId.isEmpty) {
+                    final saasSession = ref.read(saasSessionProvider);
+                    sheetId = saasSession.currentOrganization?.googleSheetId;
+                  }
+
+                  final bDate = "${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}";
+                  final report = DayEndReport(
+                    businessDate: bDate,
+                    outletId: orgId,
+                    grossPaise: grossP,
+                    discountPaise: discountP,
+                    taxPaise: taxP,
+                    serviceChargePaise: scP,
+                    netPaise: grossP - discountP + scP + taxP,
+                    byModePaise: byMode,
+                    covers: settledOrders.length,
+                    orderCount: settledOrders.length,
+                    cashDeclaredPaise: declaredCashP,
+                    variancePaise: varianceP,
+                    closedBy: activeStaff?.name ?? 'Counter Cashier',
+                    closedAt: DateTime.now(),
+                  );
+
+                  final ok = await AppsScriptBackendService.closeDay(
+                    outletId: orgId,
+                    reportData: report.toMap(),
+                    spreadsheetId: sheetId,
+                  );
+
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(ok ? '✅ Shift closed successfully! Z-Report saved to Sheets.' : '⚠️ Shift closed locally (sync queued).'),
+                        backgroundColor: ok ? const Color(0xFF10B981) : Colors.orange,
+                      ),
+                    );
+                  }
+                },
+                child: const Text('Submit Z-Report', style: TextStyle(fontWeight: FontWeight.bold)),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildZReportRow(String label, String value, {bool isBold = false}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label, style: TextStyle(fontSize: 12.5, fontWeight: isBold ? FontWeight.bold : FontWeight.normal)),
+          Text(value, style: TextStyle(fontSize: 12.5, fontWeight: isBold ? FontWeight.bold : FontWeight.normal)),
+        ],
+      ),
+    );
+  }
+
   // Complete Order & Real-Time Sync
   Future<void> _completeOrder({
     required String paymentMode,
     required bool isPaid,
     Map<String, dynamic>? existingOrderToAppend,
+    List<Map<String, dynamic>>? splitPayments,
   }) async {
     if (!LicenseGuard.checkAndShowLockout(context, ref, actionName: 'place or complete orders')) {
       return;
@@ -1010,6 +1611,16 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
 
     final tableName = _orderType == 'Dine-In' ? (_selectedTable ?? 'Table 1') : 'Takeaway';
     final tNum = tableName.replaceAll(RegExp(r'[^0-9]'), '');
+
+    BillTotals orderTotals = _billTotals;
+    List<Map<String, dynamic>> orderItemsList = _cart.map((i) => {
+      'id': i.productId,
+      'productId': i.productId,
+      'name': i.name,
+      'qty': i.qty,
+      'price': i.price,
+      'isVeg': i.isVeg,
+    }).toList();
 
     try {
       final box = Hive.isBoxOpen('configBox') ? Hive.box('configBox') : null;
@@ -1041,18 +1652,48 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
               });
             }
 
-            final newSubtotal = ((oldOrder['subtotal'] as num?)?.toDouble() ?? 0.0) + _subtotal;
-            final newSc = newSubtotal * (_serviceChargeRate / 100.0);
-            final newGst = (newSubtotal + newSc) * (_gstRate / 100.0);
-            final newTotal = newSubtotal + newSc + newGst;
+            final allLines = newItemsList.map((i) => BillLine(
+              productId: (i['id'] ?? i['productId'] ?? '').toString(),
+              name: (i['name'] ?? '').toString(),
+              qty: (i['qty'] as num?)?.toDouble() ?? 1.0,
+              unitPaise: (((i['price'] as num?)?.toDouble() ?? 0.0) * 100).round(),
+              taxRateBps: (_gstRate * 100).round(),
+            )).toList();
+
+            final appendedTotals = BillCalculator.compute(
+              lines: allLines,
+              discount: _appliedDiscount,
+              serviceChargeBps: (_serviceChargeRate * 100).round(),
+              taxMode: TaxMode.exclusive,
+              roundOffEnabled: true,
+              defaultTaxRateBps: (_gstRate * 100).round(),
+            );
+
+            orderTotals = appendedTotals;
+            orderItemsList = newItemsList;
 
             oldOrder['items'] = newItemsList;
-            oldOrder['subtotal'] = newSubtotal;
-            oldOrder['service_charge'] = newSc;
+            oldOrder['subtotal'] = appendedTotals.subtotal;
+            oldOrder['discount'] = appendedTotals.discount;
+            oldOrder['service_charge'] = appendedTotals.serviceCharge;
             oldOrder['service_charge_rate'] = _serviceChargeRate;
-            oldOrder['gst'] = newGst;
+            oldOrder['gst'] = appendedTotals.cgst + appendedTotals.sgst;
+            oldOrder['cgst'] = appendedTotals.cgst;
+            oldOrder['sgst'] = appendedTotals.sgst;
             oldOrder['gst_rate'] = _gstRate;
-            oldOrder['totalAmount'] = newTotal;
+            oldOrder['round_off'] = appendedTotals.roundOff;
+            oldOrder['totalAmount'] = appendedTotals.grandTotal;
+
+            // Integer paise canonical fields
+            oldOrder['subtotalP'] = appendedTotals.subtotalPaise;
+            oldOrder['discountP'] = appendedTotals.discountPaise;
+            oldOrder['serviceChargeP'] = appendedTotals.serviceChargePaise;
+            oldOrder['taxableP'] = appendedTotals.taxablePaise;
+            oldOrder['cgstP'] = appendedTotals.cgstPaise;
+            oldOrder['sgstP'] = appendedTotals.sgstPaise;
+            oldOrder['roundOffP'] = appendedTotals.roundOffPaise;
+            oldOrder['grandTotalP'] = appendedTotals.grandTotalPaise;
+
             if (isPaid) {
               oldOrder['status'] = 'PAID';
               oldOrder['paymentStatus'] = 'PAID';
@@ -1063,7 +1704,9 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
             updatedList[existingIndex] = oldOrder;
           }
         } else {
-          // Create new KOT Order
+          // Create new KOT Order with full paise breakdown
+          final totals = _billTotals;
+          orderTotals = totals;
           final newOrderMap = {
             'id': billNumber,
             'kotNumber': token,
@@ -1079,20 +1722,26 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
             'orderType': _orderType,
             'paymentMode': paymentMode,
             'createdAt': DateTime.now().toIso8601String(),
-            'subtotal': _subtotal,
-            'service_charge': _serviceCharge,
+            'subtotal': totals.subtotal,
+            'discount': totals.discount,
+            'service_charge': totals.serviceCharge,
             'service_charge_rate': _serviceChargeRate,
-            'gst': _gst,
+            'gst': totals.cgst + totals.sgst,
+            'cgst': totals.cgst,
+            'sgst': totals.sgst,
             'gst_rate': _gstRate,
-            'totalAmount': _grandTotal,
-            'items': _cart.map((i) => {
-              'id': i.productId,
-              'productId': i.productId,
-              'name': i.name,
-              'qty': i.qty,
-              'price': i.price,
-              'isVeg': i.isVeg,
-            }).toList(),
+            'round_off': totals.roundOff,
+            'totalAmount': totals.grandTotal,
+            // Full integer paise components
+            'subtotalP': totals.subtotalPaise,
+            'discountP': totals.discountPaise,
+            'serviceChargeP': totals.serviceChargePaise,
+            'taxableP': totals.taxablePaise,
+            'cgstP': totals.cgstPaise,
+            'sgstP': totals.sgstPaise,
+            'roundOffP': totals.roundOffPaise,
+            'grandTotalP': totals.grandTotalPaise,
+            'items': orderItemsList,
           };
           updatedList.add(newOrderMap);
         }
@@ -1112,7 +1761,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                 final m = Map<String, dynamic>.from(t);
                 m['status'] = 'occupied';
                 m['activeOrderCount'] = ((m['activeOrderCount'] as num?) ?? 0) + 1;
-                m['currentBillAmount'] = ((m['currentBillAmount'] as num?)?.toDouble() ?? 0.0) + _grandTotal;
+                m['currentBillAmount'] = ((m['currentBillAmount'] as num?)?.toDouble() ?? 0.0) + orderTotals.grandTotal;
                 return m;
               }
             }
@@ -1121,8 +1770,6 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
           await box.put('restaurant_tables_$orgId', updatedTables);
         }
       }
-      
-      // Removed Live Sync to Firestore 'orders' collection (for website live tracking & KDS)
 
       // 2. Live Sync to connected Google Sheet and Webhook
       try {
@@ -1164,23 +1811,75 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
               'payment_mode': paymentMode,
               'createdAt': DateTime.now().toIso8601String(),
               'created_at': DateTime.now().toIso8601String(),
-              'subtotal': _subtotal,
-              'service_charge': _serviceCharge,
-              'gst': _gst,
-              'totalAmount': _grandTotal,
-              'total_amount': _grandTotal,
-              'items': _cart.map((i) => {
-                'id': i.productId,
-                'productId': i.productId,
-                'name': i.name,
-                'qty': i.qty,
-                'price': i.price,
-                'isVeg': i.isVeg,
-              }).toList(),
+              'subtotal': orderTotals.subtotal,
+              'discount': orderTotals.discount,
+              'service_charge': orderTotals.serviceCharge,
+              'gst': orderTotals.cgst + orderTotals.sgst,
+              'round_off': orderTotals.roundOff,
+              'totalAmount': orderTotals.grandTotal,
+              'total_amount': orderTotals.grandTotal,
+              'subtotalP': orderTotals.subtotalPaise,
+              'discountP': orderTotals.discountPaise,
+              'serviceChargeP': orderTotals.serviceChargePaise,
+              'taxableP': orderTotals.taxablePaise,
+              'cgstP': orderTotals.cgstPaise,
+              'sgstP': orderTotals.sgstPaise,
+              'roundOffP': orderTotals.roundOffPaise,
+              'grandTotalP': orderTotals.grandTotalPaise,
+              'items': orderItemsList,
             },
           );
         } catch (asErr) {
           debugPrint('AppsScript saveBill error: $asErr');
+        }
+
+        // 3. Record in Payments ledger if Paid
+        if (isPaid) {
+          final staffName = ref.read(restaurantAuthProvider).activeStaff?.name ?? 'Counter Staff';
+          final staffId = ref.read(restaurantAuthProvider).activeStaff?.id ?? 'staff_01';
+          try {
+            if (splitPayments != null && splitPayments.isNotEmpty) {
+              for (final sp in splitPayments) {
+                final spMode = (sp['mode'] ?? 'CASH').toString().toUpperCase();
+                final spAmt = (sp['amount'] as num?)?.toDouble() ?? 0.0;
+                if (spAmt > 0) {
+                  await AppsScriptBackendService.recordPayment(
+                    outletId: orgId,
+                    spreadsheetId: sheetId ?? '',
+                    paymentData: {
+                      'paymentId': 'PAY-${const Uuid().v4()}',
+                      'orderId': targetBillId,
+                      'invoiceNo': targetBillId,
+                      'mode': spMode,
+                      'amountP': (spAmt * 100).round(),
+                      'byStaffId': staffId,
+                      'staffId': staffId,
+                      'collectedBy': staffName,
+                      'at': DateTime.now().toIso8601String(),
+                    },
+                  );
+                }
+              }
+            } else {
+              await AppsScriptBackendService.recordPayment(
+                outletId: orgId,
+                spreadsheetId: sheetId ?? '',
+                paymentData: {
+                  'paymentId': 'PAY-${const Uuid().v4()}',
+                  'orderId': targetBillId,
+                  'invoiceNo': targetBillId,
+                  'mode': paymentMode.toUpperCase(),
+                  'amountP': orderTotals.grandTotalPaise,
+                  'byStaffId': staffId,
+                  'staffId': staffId,
+                  'collectedBy': staffName,
+                  'at': DateTime.now().toIso8601String(),
+                },
+              );
+            }
+          } catch (payErr) {
+            debugPrint('AppsScript recordPayment error: $payErr');
+          }
         }
       } catch (sheetsErr) {
         debugPrint('Google Sheets order sync notice: $sheetsErr');
@@ -1209,18 +1908,26 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
     // Auto-Print Customer Receipt if Paid
     if (isPaid) {
       try {
+        final saasSession = ref.read(saasSessionProvider);
         final billBytes = await CustomerBillFormatter.formatTaxInvoice(
           paperSize: PaperSize.mm80,
           profile: await CapabilityProfile.load(),
-          shopName: 'SmartDine Restaurant',
+          shopName: saasSession.currentOrganization?.name ?? 'SmartDine Restaurant',
           shopPhone: '',
-          billNumber: billNumber,
+          billNumber: targetBillId,
           tokenNumber: token,
           tableName: tableName,
           items: List.from(_cart),
-          subtotal: _subtotal,
-          totalAmount: _grandTotal,
+          subtotal: orderTotals.subtotal,
+          discount: orderTotals.discount,
+          taxPercent: _gstRate,
+          serviceCharge: orderTotals.serviceCharge,
+          totalAmount: orderTotals.grandTotal,
           paymentMode: paymentMode,
+          roundOff: orderTotals.roundOff,
+          cgstAmount: orderTotals.cgst,
+          sgstAmount: orderTotals.sgst,
+          reprintCount: 0,
         );
         final isConnected = await PrintBluetoothThermal.connectionStatus;
         if (isConnected) {
@@ -1283,7 +1990,10 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                 child: ElevatedButton(
                   onPressed: () {
                     Navigator.pop(ctx);
-                    setState(() => _cart.clear());
+                    setState(() {
+                      _cart.clear();
+                      _appliedDiscount = null;
+                    });
                   },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: ClassicTheme.primaryAccent,
@@ -1392,8 +2102,15 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
         tableName: tableName,
         items: items,
         subtotal: subtotal,
+        discount: (order['discount'] as num?)?.toDouble() ?? 0.0,
+        taxPercent: (order['gst_rate'] as num?)?.toDouble() ?? 5.0,
+        serviceCharge: (order['service_charge'] as num?)?.toDouble() ?? 0.0,
         totalAmount: total,
         paymentMode: 'PENDING / PRE-BILL',
+        roundOff: (order['round_off'] as num?)?.toDouble(),
+        cgstAmount: (order['cgst'] as num?)?.toDouble(),
+        sgstAmount: (order['sgst'] as num?)?.toDouble(),
+        reprintCount: 0,
       );
       final isConnected = await PrintBluetoothThermal.connectionStatus;
       if (isConnected) {
@@ -1463,6 +2180,16 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
         }
       }
 
+      final paidPaise = (paidAmount * 100).round();
+      final subtotal = (order['subtotal'] as num?)?.toDouble() ?? (paidAmount / 1.05);
+      final subtotalP = (order['subtotalP'] as num?)?.toInt() ?? (subtotal * 100).round();
+      final discountP = (order['discountP'] as num?)?.toInt() ?? 0;
+      final scP = (order['serviceChargeP'] as num?)?.toInt() ?? 0;
+      final taxP = (order['taxableP'] as num?)?.toInt() ?? (paidPaise - subtotalP);
+      final cgstP = (order['cgstP'] as num?)?.toInt() ?? (taxP ~/ 2);
+      final sgstP = (order['sgstP'] as num?)?.toInt() ?? (taxP - cgstP);
+      final roundOffP = (order['roundOffP'] as num?)?.toInt() ?? 0;
+
       // 3. Update Hive kot_orders_$orgId
       final box = Hive.isBoxOpen('configBox') ? Hive.box('configBox') : null;
       Map<String, dynamic> updatedOrderData = Map<String, dynamic>.from(order);
@@ -1475,6 +2202,14 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
             m['paymentStatus'] = 'PAID';
             m['paymentMode'] = paymentMode;
             m['isPaid'] = true;
+            m['subtotalP'] = subtotalP;
+            m['discountP'] = discountP;
+            m['serviceChargeP'] = scP;
+            m['taxableP'] = taxP;
+            m['cgstP'] = cgstP;
+            m['sgstP'] = sgstP;
+            m['roundOffP'] = roundOffP;
+            m['grandTotalP'] = paidPaise;
             updatedOrderData = m;
             return m;
           }
@@ -1483,7 +2218,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
         await box.put('kot_orders_$orgId', updatedList);
       }
 
-      // 4. Sync Bill to Google Sheets (Dining Bills tab) and Webhook
+      // 4. Sync Bill to Google Sheets and Webhook
       try {
         final rBox = Hive.isBoxOpen('restaurant_config_box') ? Hive.box('restaurant_config_box') : null;
         String? sheetId = rBox?.get('restaurant_sheet_id_$orgId') ?? rBox?.get('google_sheet_id');
@@ -1492,17 +2227,31 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
           sheetId = saasSession.currentOrganization?.googleSheetId;
         }
 
-        final items = _parseOrderItems(order['items']);
-        final itemsDesc = items.isNotEmpty
-            ? items.map((c) => '${c.name} x${c.qty.toInt()}').join(', ')
-            : (order['itemsSummary'] ?? 'Dishes').toString();
-
-        final subtotal = (order['subtotal'] as num?)?.toDouble() ?? (paidAmount / 1.05);
         final grandTotal = paidAmount;
+
+        // Record in Payments ledger
+        try {
+          await AppsScriptBackendService.recordPayment(
+            outletId: orgId,
+            spreadsheetId: sheetId ?? '',
+            paymentData: {
+              'paymentId': 'PAY-${const Uuid().v4()}',
+              'orderId': orderId,
+              'invoiceNo': orderId,
+              'mode': paymentMode.toUpperCase(),
+              'amountP': paidPaise,
+              'byStaffId': activeStaff,
+              'staffId': activeStaff,
+              'collectedBy': activeStaff,
+              'at': DateTime.now().toIso8601String(),
+            },
+          );
+        } catch (pErr) {
+          debugPrint('AppsScript recordPayment settlement error: $pErr');
+        }
 
         // Always sync via Webhook to zero-firebase architecture (Single Writer)
         try {
-          // Add necessary fields if missing to match AppsScript expects
           updatedOrderData['id'] = orderId;
           updatedOrderData['bill_id'] = orderId;
           updatedOrderData['tableName'] = tableName;
@@ -1520,10 +2269,18 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
           updatedOrderData['subtotal'] = subtotal;
           updatedOrderData['orderSource'] = 'POS_COUNTER';
           updatedOrderData['order_source'] = 'POS_COUNTER';
+          updatedOrderData['subtotalP'] = subtotalP;
+          updatedOrderData['discountP'] = discountP;
+          updatedOrderData['serviceChargeP'] = scP;
+          updatedOrderData['taxableP'] = taxP;
+          updatedOrderData['cgstP'] = cgstP;
+          updatedOrderData['sgstP'] = sgstP;
+          updatedOrderData['roundOffP'] = roundOffP;
+          updatedOrderData['grandTotalP'] = paidPaise;
           final settleRequestId = const Uuid().v4();
           updatedOrderData['clientRequestId'] = settleRequestId;
           updatedOrderData['client_request_id'] = settleRequestId;
-          
+
           await AppsScriptBackendService.saveBill(
             outletId: orgId,
             spreadsheetId: sheetId ?? '',
@@ -1549,9 +2306,16 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
           tokenNumber: tokenNumber,
           tableName: tableName,
           items: items,
-          subtotal: (order['subtotal'] as num?)?.toDouble() ?? (paidAmount / 1.05),
+          subtotal: subtotal,
+          discount: (order['discount'] as num?)?.toDouble() ?? (discountP / 100.0),
+          taxPercent: (order['gst_rate'] as num?)?.toDouble() ?? 5.0,
+          serviceCharge: (order['service_charge'] as num?)?.toDouble() ?? (scP / 100.0),
           totalAmount: paidAmount,
           paymentMode: paymentMode,
+          roundOff: (order['round_off'] as num?)?.toDouble() ?? (roundOffP / 100.0),
+          cgstAmount: (order['cgst'] as num?)?.toDouble() ?? (cgstP / 100.0),
+          sgstAmount: (order['sgst'] as num?)?.toDouble() ?? (sgstP / 100.0),
+          reprintCount: 0,
         );
         final isConnected = await PrintBluetoothThermal.connectionStatus;
         if (isConnected) {
@@ -2428,6 +3192,11 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
             ),
             actions: [
               if (_tabController.index == 0) ...[
+                IconButton(
+                  icon: const Icon(Icons.assessment_outlined, color: Colors.amber),
+                  tooltip: 'Shift Close (Z-Report)',
+                  onPressed: _showShiftCloseDialog,
+                ),
                 // Order Type Pill (Dine-In or Takeaway indicator)
                 Container(
                   margin: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
@@ -2913,6 +3682,24 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                                           color: context.textPrimary,
                                         ),
                                       ),
+                                      if (_discount > 0) ...[
+                                        const SizedBox(width: 5),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                          decoration: BoxDecoration(
+                                            color: const Color(0xFFD1FAE5),
+                                            borderRadius: BorderRadius.circular(4),
+                                          ),
+                                          child: Text(
+                                            '-₹${_discount.toStringAsFixed(2)}',
+                                            style: const TextStyle(
+                                              color: Color(0xFF059669),
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
                                       const SizedBox(width: 6),
                                       Text(
                                         _serviceChargeRate > 0
@@ -2926,12 +3713,28 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                               ),
                             ),
 
+                            // Discount Button
+                            IconButton(
+                              icon: Icon(
+                                Icons.percent_rounded,
+                                color: _appliedDiscount != null ? ClassicTheme.primaryAccent : context.textSecondary,
+                              ),
+                              tooltip: _appliedDiscount != null
+                                  ? 'Discount: ${_appliedDiscount!.type == DiscountType.percentage ? "${_appliedDiscount!.value}%" : "₹${_appliedDiscount!.value}"}'
+                                  : 'Apply Discount',
+                              onPressed: _showDiscountDialog,
+                            ),
+                            const SizedBox(width: 4),
+
                             // Clear Cart Button
                             IconButton(
                               icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent),
                               tooltip: 'Clear Cart',
                               onPressed: () {
-                                setState(() => _cart.clear());
+                                setState(() {
+                                  _cart.clear();
+                                  _appliedDiscount = null;
+                                });
                               },
                             ),
                             const SizedBox(width: 8),

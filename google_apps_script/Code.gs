@@ -117,6 +117,12 @@ function doPost(e) {
       case "FETCH_DELTA":
         return handleGetDelta(json);
 
+      case "RECORD_PAYMENT":
+        return handleRecordPayment(json);
+
+      case "CLOSE_DAY":
+        return handleCloseDay(json);
+
       default:
         return responseJson({ success: false, error: "Unknown action: " + action });
     }
@@ -1966,6 +1972,152 @@ function handleSendOtpEmail(p) {
     return responseJson({ success: true, message: "Email sent successfully to " + email });
   } catch (err) {
     return responseJson({ success: false, error: "Failed to send email: " + err.toString() });
+  }
+}
+
+function handleRecordPayment(json) {
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(20000);
+  } catch (eLock) {
+    return responseJson({ ok: false, success: false, error: "Server busy: lock timeout in handleRecordPayment." });
+  }
+
+  try {
+    var clientRequestId = json.clientRequestId || json.client_request_id;
+    var data = json.data || json.payment || json;
+    var outletId = String(json.outletId || json.org_id || json.organizationId || data.outletId || "").trim();
+    var sId = json.spreadsheet_id || json.spreadsheetId || getSheetIdForOrg(outletId);
+
+    var ss = null;
+    if (sId) {
+      try { ss = SpreadsheetApp.openById(sId); } catch(e) {}
+    }
+
+    if (clientRequestId && ss) {
+      var cached = getFromIdempotency(ss, clientRequestId);
+      if (cached) {
+        return responseJson(cached);
+      }
+    }
+
+    var rev = getAndBumpRev(outletId);
+    var paymentId = data.paymentId || data.id || ("PAY-" + Utilities.getUuid());
+    var sessionId = data.sessionId || "";
+    var invoiceNo = data.invoiceNo || "";
+    var mode = String(data.mode || data.paymentMode || "CASH").toUpperCase();
+    var amountP = parseInt(data.amountP || data.amountPaise || 0, 10);
+    if (!amountP && data.amount) amountP = Math.round(Number(data.amount) * 100);
+    var tipP = parseInt(data.tipP || data.tipPaise || 0, 10);
+    if (!tipP && data.tip) tipP = Math.round(Number(data.tip) * 100);
+    var refUtr = data.refUtr || data.ref_UTR || data.utr || data.ref || "";
+    var gatewayId = data.gatewayId || "";
+    var verified = data.verified !== false;
+    var byStaffId = data.byStaffId || data.staffId || "";
+    var atStr = data.at || new Date().toISOString();
+    var voidedBy = data.voidedBy || "";
+    var voidReason = data.voidReason || "";
+
+    if (ss) {
+      ensureV2Sheets(ss);
+      var pSheet = ss.getSheetByName("Payments");
+      if (pSheet) {
+        pSheet.appendRow([
+          paymentId, sessionId, invoiceNo, mode, amountP, tipP, refUtr,
+          gatewayId, verified, byStaffId, atStr, voidedBy, voidReason, rev
+        ]);
+      }
+    }
+
+    var res = {
+      ok: true,
+      success: true,
+      paymentId: paymentId,
+      rev: rev,
+      amountP: amountP
+    };
+
+    if (clientRequestId && ss) {
+      recordIdempotency(ss, clientRequestId, "RECORD_PAYMENT", res);
+    }
+    return responseJson(res);
+  } catch (err) {
+    return responseJson({ ok: false, success: false, error: String(err) });
+  } finally {
+    try { lock.releaseLock(); } catch(e) {}
+  }
+}
+
+function handleCloseDay(json) {
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(20000);
+  } catch (eLock) {
+    return responseJson({ ok: false, success: false, error: "Server busy: lock timeout in handleCloseDay." });
+  }
+
+  try {
+    var clientRequestId = json.clientRequestId || json.client_request_id;
+    var data = json.data || json.report || json;
+    var outletId = String(json.outletId || json.org_id || json.organizationId || data.outletId || "").trim();
+    var sId = json.spreadsheet_id || json.spreadsheetId || getSheetIdForOrg(outletId);
+
+    var ss = null;
+    if (sId) {
+      try { ss = SpreadsheetApp.openById(sId); } catch(e) {}
+    }
+
+    if (clientRequestId && ss) {
+      var cached = checkIdempotency(ss, clientRequestId);
+      if (cached) {
+        return responseJson(cached);
+      }
+    }
+
+    var rev = getAndBumpRev(outletId);
+    var businessDate = data.businessDate || Utilities.formatDate(new Date(), Session.getScriptTimeZone() || "GMT+05:30", "yyyy-MM-dd");
+    var grossP = parseInt(data.grossP || data.grossPaise || 0, 10);
+    var discountP = parseInt(data.discountP || data.discountPaise || 0, 10);
+    var taxP = parseInt(data.taxP || data.taxPaise || 0, 10);
+    var scP = parseInt(data.serviceChargeP || data.serviceChargePaise || 0, 10);
+    var netP = parseInt(data.netP || data.netPaise || 0, 10);
+    var byModeStr = typeof data.byMode === "string" ? data.byMode : JSON.stringify(data.byMode || {});
+    var covers = parseInt(data.covers || 0, 10);
+    var orders = parseInt(data.orders || data.orderCount || 0, 10);
+    var voids = parseInt(data.voids || data.voidCount || 0, 10);
+    var refunds = parseInt(data.refunds || data.refundCount || 0, 10);
+    var cashDeclaredP = parseInt(data.cashDeclaredP || data.cashDeclaredPaise || 0, 10);
+    var varianceP = parseInt(data.varianceP || data.variancePaise || 0, 10);
+    var closedBy = data.closedBy || "Staff";
+    var closedAt = data.closedAt || new Date().toISOString();
+
+    if (ss) {
+      ensureV2Sheets(ss);
+      var rSheet = ss.getSheetByName("Day End Reports");
+      if (rSheet) {
+        rSheet.appendRow([
+          businessDate, outletId, grossP, discountP, taxP, scP,
+          netP, byModeStr, covers, orders, voids, refunds,
+          cashDeclaredP, varianceP, closedBy, closedAt
+        ]);
+      }
+    }
+
+    var res = {
+      ok: true,
+      success: true,
+      businessDate: businessDate,
+      rev: rev
+    };
+
+    if (clientRequestId && ss) {
+      recordIdempotency(ss, clientRequestId, "CLOSE_DAY", res);
+    }
+    return responseJson(res);
+  } catch (err) {
+    return responseJson({ ok: false, success: false, error: String(err) });
+  } finally {
+    try { lock.releaseLock(); } catch(e) {}
   }
 }
 

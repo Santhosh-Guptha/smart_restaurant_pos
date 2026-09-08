@@ -25,6 +25,10 @@ class CustomerBillFormatter {
     String? cashierName,
     DateTime? billTime,
     bool isDuplicate = false,
+    int reprintCount = 0,
+    double? roundOff,
+    double? cgstAmount,
+    double? sgstAmount,
   }) async {
     final generator = Generator(paperSize, profile);
     List<int> bytes = [];
@@ -37,13 +41,23 @@ class CustomerBillFormatter {
 
     // ── Watermark if Duplicate / Reprint ────────────────────────────────
     if (isDuplicate) {
+      final repText = reprintCount > 0
+          ? '*** DUPLICATE INVOICE (REPRINT #$reprintCount) ***'
+          : '*** DUPLICATE COPY / REPRINT ***';
       bytes += generator.text(
-        '*** DUPLICATE COPY / REPRINT ***',
+        repText,
         styles: const PosStyles(
           align: PosAlign.center,
           bold: true,
           height: PosTextSize.size1,
           width: PosTextSize.size1,
+        ),
+      );
+      bytes += generator.text(
+        'REPRINTED AT: $timeStr',
+        styles: const PosStyles(
+          align: PosAlign.center,
+          bold: true,
         ),
       );
       bytes += generator.hr(ch: '*');
@@ -158,15 +172,21 @@ class CustomerBillFormatter {
       printRow('Discount:', '- Rs. ${discount.toStringAsFixed(2)}');
     }
 
+    if (serviceCharge > 0) {
+      printRow('Service Charge:', 'Rs. ${serviceCharge.toStringAsFixed(2)}');
+    }
+
+    final taxable = (subtotal - discount) + serviceCharge;
     if (taxPercent > 0) {
-      final cgst = (subtotal - discount) * (taxPercent / 200.0);
-      final sgst = cgst;
+      final cgst = cgstAmount ?? (taxable * (taxPercent / 200.0));
+      final sgst = sgstAmount ?? cgst;
       printRow('CGST (${(taxPercent / 2).toStringAsFixed(1)}%):', 'Rs. ${cgst.toStringAsFixed(2)}');
       printRow('SGST (${(taxPercent / 2).toStringAsFixed(1)}%):', 'Rs. ${sgst.toStringAsFixed(2)}');
     }
 
-    if (serviceCharge > 0) {
-      printRow('Service Charge:', 'Rs. ${serviceCharge.toStringAsFixed(2)}');
+    if (roundOff != null && roundOff != 0.0) {
+      final sign = roundOff > 0 ? '+' : '-';
+      printRow('Round-Off:', '$sign Rs. ${roundOff.abs().toStringAsFixed(2)}');
     }
 
     bytes += generator.hr(ch: '=');
