@@ -50,10 +50,13 @@ function doPost(e) {
   try {
     const json = JSON.parse(e.postData.contents);
     
-    // Security verification: allow customer non-settled SAVE_BILL, SERVICE_REQUEST, CALL_WAITER without exposing master secret
+    // Security verification: allow customer non-settled SAVE_BILL, RECORD_PAYMENT, VERIFY_PAYMENT, CLOSE_SESSION, SERVICE_REQUEST, CALL_WAITER without exposing master secret
     var b = json.data || json.bill || {};
     var isPublicAction = (
       (json.action === "SAVE_BILL" && !isStatusSettled(b.payment_status || b.status)) || 
+      json.action === "RECORD_PAYMENT" ||
+      json.action === "VERIFY_PAYMENT" ||
+      json.action === "CLOSE_SESSION" ||
       json.action === "SERVICE_REQUEST" || 
       json.action === "CALL_WAITER" || 
       json.action === "DISMISS_SERVICE_REQUEST" || 
@@ -95,6 +98,12 @@ function doPost(e) {
       case "DISMISS_SERVICE_REQUEST":
       case "RESOLVE_WAITER_CALL":
         return handleDismissServiceRequest(json);
+
+      case "VERIFY_PAYMENT":
+        return handleVerifyPayment(json);
+
+      case "CLOSE_SESSION":
+        return handleCloseSession(json);
 
       case "SYNC_INVENTORY":
         return handleSyncInventory(json);
@@ -486,6 +495,18 @@ function ensureV2Sheets(ss) {
   }
 }
 
+function isTestOrder(orderId, customerName) {
+  var id = String(orderId || "").trim().toUpperCase();
+  var name = String(customerName || "").trim().toUpperCase();
+  if (id === "TEST" || id === "TEST_ORDER" || id === "TEST-ORDER" || id.indexOf("TEST_") === 0 || id.indexOf("TEST-") === 0) {
+    return true;
+  }
+  if (name === "TEST" || name === "TEST USER" || name === "TEST ORDER" || name === "TEST CUSTOMER") {
+    return true;
+  }
+  return false;
+}
+
 function getAndBumpRev(outletId) {
   if (!outletId) return 1;
   var props = PropertiesService.getScriptProperties();
@@ -592,6 +613,15 @@ function persistV2Order(ss, orgId, billId, cleanId, tokenNo, tableName, cTable, 
         }
       }
       
+      var targetKitchenStatus = isSettled ? "SERVED" : String(b.kitchenStatus || b.kitchen_status || "").toUpperCase();
+      if (existingOrderRow > 0) {
+        var existingKitchenStatus = String(oData[existingOrderRow - 1][9] || "").toUpperCase();
+        if (!targetKitchenStatus || (existingKitchenStatus && getStatusRank(existingKitchenStatus) > getStatusRank(targetKitchenStatus) && !b.allow_status_regress)) {
+          targetKitchenStatus = existingKitchenStatus;
+        }
+      }
+      if (!targetKitchenStatus) targetKitchenStatus = "PENDING";
+
       var orderRow = [
         billId,
         sessionId,
@@ -602,7 +632,7 @@ function persistV2Order(ss, orgId, billId, cleanId, tokenNo, tableName, cTable, 
         String(b.order_source || b.orderSource || "POS_COUNTER").trim(),
         String(b.order_type || b.orderType || "Dine-In").trim(),
         String(b.station || "Main Kitchen").trim(),
-        isSettled ? "SERVED" : String(b.kitchenStatus || b.kitchen_status || "PENDING").toUpperCase(),
+        targetKitchenStatus,
         timeStr,
         "",
         isSettled ? timeStr : "",
@@ -1101,7 +1131,6 @@ function handleGetDelta(params) {
     }
   }
 }
-}
 
 function doGet(e) {
   var params = (e && e.parameter) ? e.parameter : {};
@@ -1118,10 +1147,54 @@ function doGet(e) {
     return handleGetDelta(params);
   }
 
+  // W-13 & W-31: Store Profile for diners and configuration
+  if (params.action === "GET_STORE_PROFILE") {
+    if (!orgId) return responseJson({ success: false, error: "org parameter is required" });
+    var reg = getTenantInfo(orgId);
+    var storeObj = {
+      id: orgId,
+      name: reg ? (reg.org_name || reg.name || "Restaurant") : "Restaurant",
+      upi_id: reg ? (reg.upi_id || "") : "",
+      gst_rate: reg ? (parseFloat(reg.gst_rate) || 5) : 5,
+      service_charge_rate: reg ? (parseFloat(reg.service_charge_rate) || 0) : 0,
+      currency: reg ? (reg.currency || "INR") : "INR",
+      status: reg ? (reg.status || "ACTIVE") : "ACTIVE",
+      is_expired: reg ? (reg.status === "EXPIRED" || reg.is_expired === true) : false,
+      features: reg && reg.features ? reg.features : { qrOrdering: true },
+      hours: reg && reg.hours ? reg.hours : { isOpen: true },
+      timezone: reg && reg.timezone ? reg.timezone : "Asia/Kolkata"
+    };
+    return responseJson({ success: true, store: storeObj });
+  }
+
+  // W-25: Legacy slug resolver
+  if (params.action === "RESOLVE_SLUG") {
+    var slug = (params.slug || "").trim().toLowerCase();
+    if (!slug) return responseJson({ success: false, error: "slug parameter is required" });
+    var props = PropertiesService.getScriptProperties();
+    var regRaw = props.getProperty("TENANT_REGISTRY");
+    var reg = regRaw ? JSON.parse(regRaw) : {};
+    for (var o in reg) {
+      var t = reg[o];
+      if (t && t.slug && String(t.slug).trim().toLowerCase() === slug) {
+        return responseJson({ success: true, org_id: o, spreadsheet_id: t.spreadsheet_id || "", name: t.org_name || "" });
+      }
+    }
+    return responseJson({ success: false, error: "SLUG_NOT_FOUND" });
+  }
+
+  // W-06 & W-29: Server-side payment configuration
+  if (params.action === "GET_PAYMENT_CONFIG") {
+    if (!orgId) return responseJson({ success: false, error: "org parameter is required" });
+    var props = PropertiesService.getScriptProperties();
+    var keyId = props.getProperty("razorpay_key_id_" + orgId.trim()) || props.getProperty("RAZORPAY_KEY_ID") || "rzp_test_51placeholder";
+    return responseJson({ success: true, razorpay_key_id: keyId });
+  }
+
   var tenantInfo = getTenantInfo(orgId);
 
-  // 1. GET_MENU / FETCH_MENU for Diners
-  if (sheetId && (params.action === "GET_MENU" || params.action === "FETCH_MENU" || !params.action)) {
+  // 1. GET_MENU / FETCH_MENU for Diners (W-50: require explicit action)
+  if (sheetId && (params.action === "GET_MENU" || params.action === "FETCH_MENU")) {
     try {
       var ss = SpreadsheetApp.openById(sheetId);
       var sheet = getInventorySheet(ss) || ss.getSheets()[0];
@@ -1130,16 +1203,27 @@ function doGet(e) {
       if (data && data.length > 1) {
         var headers = data[0].map(function(h) { return String(h || "").trim().toLowerCase(); });
         var nameIdx = -1, priceIdx = -1, catIdx = -1, vegIdx = -1, descIdx = -1, idIdx = -1, availIdx = -1;
+        var subCatIdx = -1, restrictIdx = -1, fromIdx = -1, toIdx = -1, daysIdx = -1;
         headers.forEach(function(h, idx) {
           if (h.indexOf("name") !== -1 || h.indexOf("dish") !== -1 || h.indexOf("item") !== -1) nameIdx = idx;
           if (h.indexOf("selling") !== -1 || h.indexOf("retail") !== -1 || (h.indexOf("price") !== -1 && h.indexOf("purchase") === -1 && h.indexOf("cost") === -1) || h.indexOf("mrp") !== -1 || h.indexOf("rate") !== -1) {
             if (priceIdx === -1 || h.indexOf("selling") !== -1) priceIdx = idx;
           }
-          if (h.indexOf("cat") !== -1 || h.indexOf("type") !== -1 || h.indexOf("section") !== -1) catIdx = idx;
-          if (h.indexOf("veg") !== -1 || h.indexOf("diet") !== -1) vegIdx = idx;
+          // W-15: Prioritize exact 'category' over 'type' which matches 'Food Type (Veg/NonVeg)'
+          if (h === "category" || h.indexOf("category") !== -1 || (h.indexOf("cat") !== -1 && h.indexOf("subcat") === -1) || h.indexOf("section") !== -1) {
+            if (h.indexOf("food type") === -1 && h.indexOf("diet") === -1) catIdx = idx;
+          } else if (catIdx === -1 && h.indexOf("type") !== -1 && h.indexOf("food") === -1 && h.indexOf("diet") === -1) {
+            catIdx = idx;
+          }
+          if (h.indexOf("subcat") !== -1 || h.indexOf("sub_cat") !== -1 || h.indexOf("sub category") !== -1) subCatIdx = idx;
+          if (h.indexOf("veg") !== -1 || h.indexOf("diet") !== -1 || h.indexOf("food type") !== -1) vegIdx = idx;
           if (h.indexOf("desc") !== -1 || h.indexOf("detail") !== -1) descIdx = idx;
           if (h.indexOf("id") !== -1 && h.indexOf("cat") === -1) idIdx = idx;
           if (h.indexOf("avail") !== -1 || h.indexOf("status") !== -1 || h.indexOf("sold") !== -1) availIdx = idx;
+          if (h.indexOf("timerestrict") !== -1 || h.indexOf("time_restrict") !== -1 || h.indexOf("restricted") !== -1) restrictIdx = idx;
+          if (h.indexOf("availablefrom") !== -1 || h.indexOf("available_from") !== -1 || h.indexOf("from_time") !== -1) fromIdx = idx;
+          if (h.indexOf("availableto") !== -1 || h.indexOf("available_to") !== -1 || h.indexOf("to_time") !== -1) toIdx = idx;
+          if (h.indexOf("days") !== -1 || h.indexOf("available_days") !== -1) daysIdx = idx;
         });
 
         if (nameIdx === -1) nameIdx = 1;
@@ -1152,13 +1236,18 @@ function doGet(e) {
           if (!name || name === "DELETED" || name.toLowerCase() === "product name") continue;
           var price = parseFloat(String(row[priceIdx] || "0").replace(/[^0-9.]/g, "")) || 0;
           var category = (catIdx !== -1 && row[catIdx]) ? String(row[catIdx]).trim() : "All Items";
-          var isVeg = true;
-          if (vegIdx !== -1 && row[vegIdx] !== undefined) {
-            var v = String(row[vegIdx]).toLowerCase();
-            if (v.indexOf("non") !== -1 || v === "egg" || v === "nv" || v === "no" || v === "false") isVeg = false;
-          } else {
-            var l = name.toLowerCase();
-            if (l.indexOf("chicken") !== -1 || l.indexOf("mutton") !== -1 || l.indexOf("egg") !== -1 || l.indexOf("fish") !== -1 || l.indexOf("meat") !== -1 || l.indexOf("kabab") !== -1) isVeg = false;
+          
+          // W-16: Never guess veg/non-veg; require explicit diet column
+          var isVeg = null;
+          var hasDietInfo = false;
+          if (vegIdx !== -1 && row[vegIdx] !== undefined && String(row[vegIdx]).trim() !== "") {
+            hasDietInfo = true;
+            var v = String(row[vegIdx]).toLowerCase().trim();
+            if (v.indexOf("non") !== -1 || v === "egg" || v === "nv" || v === "no" || v === "false") {
+              isVeg = false;
+            } else if (v.indexOf("veg") !== -1 || v === "yes" || v === "true") {
+              isVeg = true;
+            }
           }
 
           var isAvailable = true;
@@ -1169,22 +1258,44 @@ function doGet(e) {
             }
           }
 
-          // Strip out wholesale price, purchase cost, supplier details - public guest safety!
+          var subCat = (subCatIdx !== -1 && row[subCatIdx]) ? String(row[subCatIdx]).trim() : "";
+          var isRestricted = false;
+          if (restrictIdx !== -1 && row[restrictIdx] !== undefined) {
+            var rStr = String(row[restrictIdx]).toLowerCase().trim();
+            isRestricted = (rStr === "true" || rStr === "yes" || rStr === "1");
+          }
+          var availFrom = (fromIdx !== -1 && row[fromIdx]) ? String(row[fromIdx]).trim() : "";
+          var availTo = (toIdx !== -1 && row[toIdx]) ? String(row[toIdx]).trim() : "";
+          var availDays = [];
+          if (daysIdx !== -1 && row[daysIdx]) {
+            availDays = String(row[daysIdx]).split(",").map(function(d) { return d.trim(); }).filter(Boolean);
+          }
+
+          // Strip out wholesale price, purchase cost, supplier details - public guest safety! (W-51 projection)
           items.push({
             id: (idIdx !== -1 && row[idIdx]) ? String(row[idIdx]) : "dish_" + r,
             name: name,
             price: price,
             category: category,
+            subCategory: subCat,
             description: (descIdx !== -1 && row[descIdx]) ? String(row[descIdx]) : "",
             isVeg: isVeg,
-            available: isAvailable
+            hasDietInfo: hasDietInfo,
+            available: isAvailable,
+            isTimeRestricted: isRestricted,
+            availableFrom: availFrom,
+            availableTo: availTo,
+            availableDays: availDays
           });
         }
       }
 
+      var menuRev = parseInt(PropertiesService.getScriptProperties().getProperty("menu_rev_" + (orgId || "DEFAULT")) || "1", 10);
+
       return responseJson({
         success: true,
         items: items,
+        menuRev: menuRev,
         restaurant_name: tenantInfo ? (tenantInfo.org_name || "") : "",
         upi_id: tenantInfo ? (tenantInfo.upi_id || "") : ""
       });
@@ -1227,7 +1338,7 @@ function doGet(e) {
                 continue;
               }
               // Filter out test orders!
-              if (cNormId.indexOf("TEST") !== -1 || (co.customerName && String(co.customerName).toUpperCase().indexOf("TEST") !== -1)) {
+              if (isTestOrder(cNormId, co.customerName)) {
                 continue;
               }
               var coTableClean = cleanTableId(co.tableName || co.table || "");
@@ -1260,7 +1371,7 @@ function doGet(e) {
                 var rawId = cleanOrderId(row[idIdx]);
                 if (!rawId || rawId.toLowerCase() === "bill id" || rawId.toLowerCase() === "id") continue;
                 // Filter out test orders!
-                if (rawId.indexOf("TEST") !== -1 || (row[nameIdx] && String(row[nameIdx]).toUpperCase().indexOf("TEST") !== -1)) continue;
+                if (isTestOrder(rawId, row[nameIdx])) continue;
 
                 var rawStatus = statusIdx !== -1 ? String(row[statusIdx] || "").trim() : "";
                 var rowItemsStr = "";
@@ -1661,7 +1772,7 @@ function handleSaveBill(data) {
           }
         } else {
           // === ORDER IN PROGRESS ===
-          if (cleanId.indexOf("TEST") !== -1 || (customerName && customerName.toUpperCase().indexOf("TEST") !== -1)) {
+          if (isTestOrder(cleanId, customerName)) {
             return responseJson({ success: true, message: "Test order ignored." });
           }
 
@@ -1985,7 +2096,7 @@ function handlePurgeTestOrders(data) {
       var filtered = list.filter(function(o) {
         var id = String(o.id || o.orderId || "").toUpperCase();
         var name = String(o.customerName || "").toUpperCase();
-        if (id.indexOf("TEST") !== -1 || name.indexOf("TEST") !== -1) {
+        if (isTestOrder(id, name)) {
           removed++;
           return false;
         }
@@ -2161,7 +2272,7 @@ function handleServiceRequest(data) {
       timestamp: timeStr,
       status: "PENDING"
     });
-    if (alerts.length > 20) alerts = alerts.slice(-20);
+    if (alerts.length > 100) alerts = alerts.slice(-100);
     props.setProperty(key, JSON.stringify(alerts));
   } catch(e) {}
 
@@ -2256,20 +2367,16 @@ function getActiveWaiterAlerts(orgId, ss) {
     } catch(e) {}
   }
 
-  // Filter out expired alerts (> 10 mins) and alerts for settled tables
-  var now = new Date().getTime();
-  var maxAgeMs = 10 * 60 * 1000; // 10 minutes max age
+  // W-22: Alerts must persist until explicitly resolved; do not prune by 10-minute age
   var validAlerts = alerts.filter(function(a) {
-    var aTime = new Date(a.timestamp).getTime();
-    if (!isNaN(aTime) && (now - aTime > maxAgeMs)) {
-      return false; // Stale alert (> 10 mins)
-    }
+    if (a.status && String(a.status).toUpperCase() === "RESOLVED") return false;
     // Check if table was settled after this alert was created
     if (orgId) {
       var cTable = cleanTableId(a.table || a.tableName);
       var settledRaw = props.getProperty("table_settled_" + orgId.trim() + "_" + cTable);
       if (settledRaw) {
         var settledTime = parseInt(settledRaw, 10);
+        var aTime = new Date(a.timestamp).getTime();
         if (!isNaN(settledTime) && !isNaN(aTime) && aTime <= settledTime) {
           return false; // Table already settled
         }
@@ -2472,6 +2579,93 @@ function handleCloseDay(json) {
   } finally {
     try { lock.releaseLock(); } catch(e) {}
   }
+}
+
+function handleVerifyPayment(json) {
+  var p = json.data || json;
+  var paymentId = String(p.payment_id || p.razorpay_payment_id || p.paymentId || "").trim();
+  var orderId = String(p.order_id || p.razorpay_order_id || p.orderId || "").trim();
+  var signature = String(p.signature || p.razorpay_signature || "").trim();
+  var orgId = String(json.org_id || json.org || p.org_id || p.org || "").trim();
+
+  var props = PropertiesService.getScriptProperties();
+  var keySecret = props.getProperty("razorpay_key_secret_" + orgId) || props.getProperty("RAZORPAY_KEY_SECRET");
+
+  if (!keySecret) {
+    return responseJson({ success: true, verified: true, warning: "NO_SECRET_CONFIGURED" });
+  }
+
+  try {
+    var payload = orderId + "|" + paymentId;
+    var rawSig = Utilities.computeHmacSha256Signature(payload, keySecret);
+    var expectedSig = rawSig.map(function(b) {
+      return ("0" + (b & 0xFF).toString(16)).slice(-2);
+    }).join("");
+
+    if (expectedSig.toLowerCase() === signature.toLowerCase()) {
+      return responseJson({ success: true, verified: true });
+    } else {
+      return responseJson({ success: false, error_code: "INVALID_SIGNATURE", message: "Razorpay payment signature mismatch." });
+    }
+  } catch (err) {
+    return responseJson({ success: false, error: String(err) });
+  }
+}
+
+function handleCloseSession(json) {
+  var data = json.data || json;
+  var orgId = String(json.org_id || json.org || json.outlet_id || data.org_id || data.outlet_id || "").trim();
+  var spreadsheetId = json.spreadsheet_id || data.spreadsheet_id || getSheetIdForOrg(orgId);
+  var sessionId = String(data.session_id || data.sessionId || "").trim();
+  var table = String(data.table || data.tableName || data.tableNumber || "").trim();
+  var cTable = table ? cleanTableId(table) : "";
+
+  if (!spreadsheetId) {
+    return responseJson({ success: true, message: "Session cleared locally." });
+  }
+
+  try {
+    var ss = SpreadsheetApp.openById(spreadsheetId);
+    var sheet = ss.getSheetByName("Sessions");
+    if (sheet && sheet.getLastRow() > 1) {
+      var sData = sheet.getDataRange().getValues();
+      var sHeaders = sData[0].map(function(h) { return String(h || "").trim(); });
+      var idCol = sHeaders.indexOf("sessionId");
+      if (idCol === -1) idCol = 0;
+      var statusCol = sHeaders.indexOf("status");
+      if (statusCol === -1) statusCol = 3;
+      var closedCol = sHeaders.indexOf("closedAt");
+      if (closedCol === -1) closedCol = 11;
+      var revCol = sHeaders.indexOf("rev");
+      if (revCol === -1) revCol = 13;
+
+      var rev = getAndBumpRev(orgId);
+      var nowStr = new Date().toISOString();
+
+      for (var i = sData.length - 1; i >= 1; i--) {
+        var rowId = String(sData[i][idCol] || "").trim();
+        var rowTable = cleanTableId(sData[i][2]);
+        var rowStatus = String(sData[i][statusCol] || "").toUpperCase().trim();
+
+        if (rowStatus === "OPEN" && (sessionId ? (rowId === sessionId) : (cTable && rowTable === cTable))) {
+          sheet.getRange(i + 1, statusCol + 1).setValue("CLOSED");
+          if (closedCol !== -1) sheet.getRange(i + 1, closedCol + 1).setValue(nowStr);
+          if (revCol !== -1) sheet.getRange(i + 1, revCol + 1).setValue(rev);
+        }
+      }
+    }
+  } catch (err) {
+    Logger.log("Error in handleCloseSession: " + err);
+  }
+
+  // Also clear any cached active table settlement lock
+  if (orgId && cTable) {
+    try {
+      PropertiesService.getScriptProperties().deleteProperty("table_settled_" + orgId.trim() + "_" + cTable);
+    } catch(e) {}
+  }
+
+  return responseJson({ success: true, message: "Session closed successfully." });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

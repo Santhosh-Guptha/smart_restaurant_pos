@@ -1,4 +1,17 @@
 /**
+ * =============================================================================
+ * DO NOT DEPLOY — DEPRECATED (W-19)
+ * =============================================================================
+ * WARNING: Do NOT deploy this script to your Google Apps Script project.
+ * The sole canonical, production-ready backend is located at:
+ *   google_apps_script/Code.gs
+ *
+ * Deploying this file will corrupt production sheet schemas and breaks multi-tenant sync.
+ * This file is retained solely for legacy documentation and historical reference.
+ * =============================================================================
+ */
+
+/**
  * SMARTDINE RESTAURANT POS - ZERO-COST MULTI-TENANT CLOUD WEBHOOK
  * 
  * Production-ready Google Apps Script backend for SmartDine POS.

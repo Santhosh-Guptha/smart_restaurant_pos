@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="theme-color" content="#1e293b">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -177,10 +177,69 @@
       settlementUpiId: '',
       operatingHours: null,
       isKitchenClosed: false,
-      activeSubcategory: 'All'
+      activeSubcategory: 'All',
+      timezone: 'Asia/Kolkata',
+      store: null,
+      sessionId: null,
+      activeWaiterCall: null,
+      menuRev: 1
     };
 
     const app = document.getElementById('app');
+
+    function getEffectiveGstRate() {
+      return (state.gstRate !== undefined && state.gstRate !== null && !isNaN(Number(state.gstRate))) ? Number(state.gstRate) : 5;
+    }
+
+    function getCartStorageKey() {
+      const org = state.organizationId || 'store';
+      const tbl = state.tableNumber || '1';
+      return `sb_cart_${org}_${tbl}`;
+    }
+
+    function saveCartToStorage() {
+      try {
+        localStorage.setItem(getCartStorageKey(), JSON.stringify(state.cart || {}));
+      } catch (_) {}
+    }
+
+    function loadCartFromStorage() {
+      try {
+        const raw = localStorage.getItem(getCartStorageKey());
+        return raw ? JSON.parse(raw) : {};
+      } catch (_) {
+        return {};
+      }
+    }
+
+    function getRestaurantCurrentTime(timezone) {
+      try {
+        const tz = timezone || state.timezone || 'Asia/Kolkata';
+        const formatter = new Intl.DateTimeFormat('en-US', {
+          timeZone: tz,
+          hour: 'numeric',
+          minute: 'numeric',
+          hour12: false,
+          weekday: 'short'
+        });
+        const parts = formatter.formatToParts(new Date());
+        let hours = 0, minutes = 0, day = 'Sun';
+        for (const p of parts) {
+          if (p.type === 'hour') hours = parseInt(p.value, 10);
+          if (p.type === 'minute') minutes = parseInt(p.value, 10);
+          if (p.type === 'weekday') day = p.value;
+        }
+        return { hours, minutes, day, currentMinutes: hours * 60 + minutes };
+      } catch (e) {
+        const now = new Date();
+        return {
+          hours: now.getHours(),
+          minutes: now.getMinutes(),
+          day: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][now.getDay()],
+          currentMinutes: now.getHours() * 60 + now.getMinutes()
+        };
+      }
+    }
 
     // =========================================================================
     //  URL Parsing (Direct Google Sheet ID & Parameters)
@@ -218,6 +277,9 @@
       const rawTable = tableParam ? String(tableParam).replace(/Table /i, '').trim().replace(/[^a-zA-Z0-9_-]/g, '') : null;
       state.tableNumber = rawTable;
 
+      // W-30: Pre-assign tableToken so loadLocalOrderHistory doesn't read undefined key
+      state.tableToken = (state.organizationId && state.tableNumber) ? `${state.organizationId}_T${state.tableNumber}` : null;
+
       const lockKey = state.organizationId ? ('sb_active_table_' + state.organizationId) : null;
       let activeLockedTable = null;
       if (lockKey) {
@@ -234,8 +296,10 @@
         if (hasUnfinishedOrders) {
           console.warn(`[Security] Locked to active Table ${activeLockedTable}. Cannot switch to Table ${rawTable} mid-meal.`);
           state.tableNumber = activeLockedTable;
+          state.tableToken = (state.organizationId && state.tableNumber) ? `${state.organizationId}_T${state.tableNumber}` : null;
         } else {
           state.tableNumber = rawTable;
+          state.tableToken = (state.organizationId && state.tableNumber) ? `${state.organizationId}_T${state.tableNumber}` : null;
           if (lockKey) { try { localStorage.setItem(lockKey, rawTable); } catch (e) {} }
         }
       } else if (rawTable && lockKey) {
@@ -255,8 +319,6 @@
         id: state.organizationId || ''
       };
 
-      state.tableToken = (state.organizationId && state.tableNumber) ? `${state.organizationId}_T${state.tableNumber}` : null;
-
       // Check legacy path /r/{slug}/t/{token}
       const path = window.location.pathname;
       const match = path.match(/\/r\/([^/]+)\/t\/([^/?#]+)/);
@@ -267,6 +329,9 @@
         state.restaurantSlug = params.get('slug') || 'restaurant';
         state.tableToken = params.get('token');
       }
+
+      // W-37: Restore draft cart for this table
+      state.cart = loadCartFromStorage();
 
       return true;
     }
@@ -438,8 +503,14 @@
       }
       state.tableNumber = clean;
       state.tableToken = (state.organizationId && state.tableNumber) ? `${state.organizationId}_T${state.tableNumber}` : null;
+      if (state.organizationId) {
+        try { localStorage.setItem('sb_active_table_' + state.organizationId, clean); } catch (_) {}
+      }
+      state.orderHistory = loadLocalOrderHistory();
+      state.cart = loadCartFromStorage();
       closeTableSelectModal();
       showToast('Table set to #' + state.tableNumber + ' 👍', 'success');
+      startPollingOrdersFromSheet();
       renderMenu();
     }
 
@@ -598,6 +669,20 @@
             ` : ''}
           `}
 
+          <!-- Active Waiter Call / Service Request Banner (W-46) -->
+          ${state.activeWaiterCall ? `
+            <div class="bg-amber-50 border border-amber-300 text-amber-900 px-3.5 py-2 rounded-xl mb-2 flex items-center justify-between shadow-2xs">
+              <div class="flex items-center gap-2">
+                <span class="text-base animate-bounce">🛎️</span>
+                <div>
+                  <span class="text-xs font-bold block leading-tight">Staff Summoned (${esc(state.activeWaiterCall.requestType || 'ASSISTANCE')})</span>
+                  <span class="text-[10px] text-amber-700">A team member is on their way to Table ${esc(String(state.tableNumber))}</span>
+                </div>
+              </div>
+              <button onclick="clearWaiterCallState()" class="text-[10.5px] font-bold text-amber-800 bg-white/80 hover:bg-white px-2 py-1 rounded-md border border-amber-200 transition active:scale-95">Dismiss</button>
+            </div>
+          ` : ''}
+
           <!-- Search & Veg Toggle -->
           <div class="flex items-center gap-2 mb-2">
             <div class="relative flex-1">
@@ -610,17 +695,35 @@
                 class="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
               />
             </div>
-            <button
-              id="vegToggle"
-              class="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold border transition flex-shrink-0 ${
-                state.vegOnly
-                  ? 'bg-green-50 border-green-300 text-green-700'
-                  : 'bg-slate-50 border-slate-200 text-slate-600'
-              }"
-            >
-              <span class="w-2 h-2 rounded-full ${state.vegOnly ? 'bg-green-500' : 'bg-slate-300'}"></span>
-              Veg
-            </button>
+            ${(() => {
+              const hasAnyDiet = state.menuItems.some(i => i.hasDietInfo !== false && i.isVeg !== null && i.isVeg !== undefined);
+              if (!hasAnyDiet) {
+                return `
+                  <button
+                    id="vegToggle"
+                    disabled
+                    title="Diet information not configured for this menu"
+                    class="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold border border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed flex-shrink-0"
+                  >
+                    <span class="w-2 h-2 rounded-full bg-slate-300"></span>
+                    Veg (N/A)
+                  </button>
+                `;
+              }
+              return `
+                <button
+                  id="vegToggle"
+                  class="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold border transition flex-shrink-0 ${
+                    state.vegOnly
+                      ? 'bg-green-50 border-green-300 text-green-700'
+                      : 'bg-slate-50 border-slate-200 text-slate-600'
+                  }"
+                >
+                  <span class="w-2 h-2 rounded-full ${state.vegOnly ? 'bg-green-500' : 'bg-slate-300'}"></span>
+                  Veg
+                </button>
+              `;
+            })()}
           </div>
 
           <!-- Categories Scroll -->
@@ -641,7 +744,7 @@
         </header>
 
         <!-- Menu Item List -->
-        <main class="p-4 pb-28 space-y-3">
+        <main id="menuItemsContainer" class="p-4 pb-28 space-y-3">
           ${isKitchenClosedNow() ? `
             <div class="bg-gradient-to-r from-red-600 via-rose-600 to-red-700 text-white px-3.5 py-3 rounded-2xl mb-3 flex items-center gap-3 shadow-md">
               <span class="text-xl">🛑</span>
@@ -1004,16 +1107,14 @@
       const toMins = parseTimeToMinutes(toStr);
       if (fromMins === null || toMins === null) return true; // Graceful fallback
 
+      const restTime = getRestaurantCurrentTime(state.timezone);
+      const currentMinutes = restTime.currentMinutes;
+
       // Check day of week if specified
       if (Array.isArray(item.availableDays) && item.availableDays.length > 0) {
-        const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-        const todayStr = days[new Date().getDay()];
-        const matchesDay = item.availableDays.some(d => String(d).toLowerCase().startsWith(todayStr.toLowerCase()));
+        const matchesDay = item.availableDays.some(d => String(d).toLowerCase().startsWith(restTime.day.toLowerCase()));
         if (!matchesDay) return false;
       }
-
-      const now = new Date();
-      const currentMinutes = now.getHours() * 60 + now.getMinutes();
 
       if (toMins >= fromMins) {
         return currentMinutes >= fromMins && currentMinutes <= toMins;
@@ -1033,8 +1134,8 @@
           const fromMins = parseTimeToMinutes(fromStr);
           const toMins = parseTimeToMinutes(toStr);
           if (fromMins !== null && toMins !== null) {
-            const now = new Date();
-            const currentMinutes = now.getHours() * 60 + now.getMinutes();
+            const restTime = getRestaurantCurrentTime(state.timezone);
+            const currentMinutes = restTime.currentMinutes;
             if (toMins >= fromMins) {
               if (currentMinutes < fromMins || currentMinutes > toMins) return true;
             } else {
@@ -1054,7 +1155,7 @@
       const hierarchy = {};
       items.forEach(item => {
         const cat = (item.category || 'General').toString().trim();
-        const sub = (item.subcategory || 'General').toString().trim();
+        const sub = (item.subCategory || item.subcategory || 'General').toString().trim();
         if (!hierarchy[cat]) hierarchy[cat] = {};
         if (!hierarchy[cat][sub]) hierarchy[cat][sub] = [];
         hierarchy[cat][sub].push(item);
@@ -1157,9 +1258,11 @@
           <div class="flex justify-between gap-3">
             <div class="flex-1 min-w-0">
               <div class="flex items-center gap-1.5 mb-1 flex-wrap">
-                <span class="w-3.5 h-3.5 rounded-sm border flex items-center justify-center flex-shrink-0 ${item.isVeg ? 'border-green-600' : 'border-red-600'}">
-                  <span class="w-1.5 h-1.5 rounded-full ${item.isVeg ? 'bg-green-600' : 'bg-red-600'}"></span>
-                </span>
+                ${(item.hasDietInfo !== false && item.isVeg !== null && item.isVeg !== undefined) ? `
+                  <span class="w-3.5 h-3.5 rounded-sm border flex items-center justify-center flex-shrink-0 ${item.isVeg ? 'border-green-600' : 'border-red-600'}">
+                    <span class="w-1.5 h-1.5 rounded-full ${item.isVeg ? 'bg-green-600' : 'bg-red-600'}"></span>
+                  </span>
+                ` : ''}
                 <h3 class="text-xs font-bold truncate ${isOrderable ? 'text-slate-800' : 'text-slate-500 line-through'}">${esc(item.name)}</h3>
                 ${!isAvailable ? `<span class="px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider bg-red-100 text-red-700 rounded border border-red-200">Sold Out</span>` : ''}
                 ${(isAvailable && !isTimeAvailable) ? `<span class="px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider bg-amber-100 text-amber-800 rounded border border-amber-200">⏰ ${item.availableFrom || ''}-${item.availableTo || ''}</span>` : ''}
@@ -1761,21 +1864,16 @@
               </p>
 
               <div class="space-y-1 mb-3.5">
-                <label class="block text-[11px] font-semibold text-slate-600">
-                  UPI Reference / UTR (Optional)
+                <label class="block text-[11px] font-semibold text-slate-700">
+                  UPI Reference / UTR Number <span class="text-red-500">*</span>
                 </label>
                 <input
                   type="text"
                   id="utrInput"
-                  placeholder="e.g. 12-digit UTR (optional)"
+                  placeholder="Enter 12-digit UTR from your UPI app"
                   class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
                 />
-                <div class="flex justify-between items-center text-[10px] text-slate-400 mt-0.5">
-                  <span>If not copied, leave empty to confirm immediately</span>
-                  <button onclick="autoFillDemoUtr()" class="text-blue-600 hover:text-blue-800 font-bold underline">
-                    Auto-fill
-                  </button>
-                </div>
+                <p class="text-[10px] text-slate-500 mt-0.5">Enter the reference/UTR number from Google Pay, PhonePe, or Paytm.</p>
               </div>
 
               <div class="space-y-2">
@@ -1863,9 +1961,13 @@
     }
 
     function esc(str) {
-      const div = document.createElement('div');
-      div.textContent = str || '';
-      return div.innerHTML;
+      if (str === null || str === undefined) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
     }
 
     function getFilteredItems() {
@@ -1899,7 +2001,7 @@
     function getCartGst() {
       const sub = getCartSubtotal();
       const sc = getCartServiceCharge();
-      return (sub + sc) * ((Number(state.gstRate) || 0) / 100);
+      return (sub + sc) * (getEffectiveGstRate() / 100);
     }
 
     function getCartGrandTotal() {
@@ -2131,13 +2233,62 @@
       renderOrderSuccess();
 
       try {
+        // W-29: Verify payment signature server-side if signature is provided
+        if (signature && (state.googleSheetId || state.organizationId)) {
+          try {
+            await sendToGoogleSheetWebhook('VERIFY_PAYMENT', {
+              razorpay_payment_id: paymentId,
+              razorpay_order_id: orderId,
+              razorpay_signature: signature
+            });
+          } catch (vErr) {
+            console.warn('[Razorpay] Server verification notice:', vErr);
+          }
+        }
+
         const primaryKot = state.orderPlaced?.kotNumber || ('KOT-' + Math.floor(1000 + Math.random() * 9000));
         const billDocId = 'BILL_' + primaryKot;
         const allItems = getAllItemsAcrossRounds();
+        const grandTotal = getGrandTotal();
+        const isPartialSplit = amountPaid < (grandTotal - 0.5);
+
+        if (isPartialSplit) {
+          // W-04: Record partial split payment without marking table bill PAID
+          const partialPayload = {
+            bill_id: billDocId,
+            order_id: state.orderPlaced?.orderId || state.orderPlaced?.id || billDocId,
+            table: state.tableNumber,
+            table_name: 'Table ' + state.tableNumber,
+            amount: amountPaid,
+            total_amount: grandTotal,
+            payment_mode: 'Razorpay Split Share',
+            payment_status: 'PARTIAL',
+            transaction_id: paymentId,
+            razorpay_payment_id: paymentId,
+            razorpay_order_id: orderId,
+            razorpay_signature: signature,
+            customer_name: state.customerName.trim() || ('Guest (Table ' + state.tableNumber + ')'),
+            customer_phone: state.customerPhone.trim() || '',
+            timestamp: new Date().toISOString()
+          };
+
+          if (state.googleSheetId || state.organizationId) {
+            await sendToGoogleSheetWebhook('RECORD_PAYMENT', partialPayload);
+          }
+
+          state.submittingPayment = false;
+          state.paymentConfirmModalOpen = false;
+          const remaining = Math.max(0, grandTotal - amountPaid);
+          showToast(`Your share of ₹${amountPaid.toFixed(2)} paid! Table remaining: ₹${remaining.toFixed(2)} 🎉`, 'success');
+          renderOrderSuccess();
+          syncOrdersFromGoogleSheet();
+          return;
+        }
 
         const billPayload = {
           id: billDocId,
           bill_id: billDocId,
+          table: state.tableNumber,
           table_name: 'Table ' + state.tableNumber,
           customer_name: state.customerName.trim() || ('Table ' + state.tableNumber),
           customer_phone: state.customerPhone.trim() || '',
@@ -2173,7 +2324,7 @@
         state.paymentConfirmModalOpen = false;
         state.submittingPayment = false;
 
-        const key = state.tableToken || state.googleSheetId || 'default';
+        const key = state.sessionId ? ('session_' + state.sessionId) : (state.tableToken || state.googleSheetId || 'default');
         try {
           localStorage.setItem('sb_receipt_' + key, JSON.stringify({
             ...billPayload,
@@ -2246,154 +2397,7 @@
       renderOrderSuccess();
     }
 
-    function autoFillDemoUtr() {
-      const input = document.getElementById('utrInput');
-      if (input) {
-        const randUtr = '4' + Math.floor(10000000000 + Math.random() * 90000000000);
-        input.value = randUtr;
-      }
-    }
 
-    // =========================================================================
-    // =========================================================================
-    //  Cryptographic Standards (AES-CBC + HMAC-SHA256)
-    // =========================================================================
-    const CLIENT_SECRET_SALT = "SmartDinePosZeroCostPlatform2026S";
-
-    async function deriveWebCryptoKey(orgId, purpose) {
-      const enc = new TextEncoder();
-      const rawKeyText = `${orgId || 'DEFAULT'}_${purpose}_${CLIENT_SECRET_SALT}`;
-      return await crypto.subtle.digest('SHA-256', enc.encode(rawKeyText));
-    }
-
-    async function encryptPayloadForWebhook(orgId, dataObj) {
-      try {
-        if (!window.crypto || !window.crypto.subtle) {
-          return { encrypted: false, org_id: orgId, data: dataObj };
-        }
-        const enc = new TextEncoder();
-        const plainBytes = enc.encode(JSON.stringify(dataObj));
-        const iv = window.crypto.getRandomValues(new Uint8Array(16));
-        const rawAesKey = await deriveWebCryptoKey(orgId, 'aes');
-
-        const cryptoKey = await crypto.subtle.importKey(
-          'raw',
-          rawAesKey,
-          { name: 'AES-CBC' },
-          false,
-          ['encrypt']
-        );
-
-        const cipherBuffer = await crypto.subtle.encrypt(
-          { name: 'AES-CBC', iv: iv },
-          cryptoKey,
-          plainBytes
-        );
-
-        const ivBase64 = btoa(String.fromCharCode(...iv));
-        const ctBase64 = btoa(String.fromCharCode(...new Uint8Array(cipherBuffer)));
-        const ts = Date.now();
-
-        // Compute HMAC-SHA256 signature
-        const message = `${orgId}_${ts}_${ivBase64}_${ctBase64}`;
-        const rawHmacKey = await deriveWebCryptoKey(orgId, 'hmac');
-        const hmacKey = await crypto.subtle.importKey(
-          'raw',
-          rawHmacKey,
-          { name: 'HMAC', hash: 'SHA-256' },
-          false,
-          ['sign']
-        );
-        const sigBuffer = await crypto.subtle.sign('HMAC', hmacKey, enc.encode(message));
-        const sigHex = Array.from(new Uint8Array(sigBuffer))
-          .map(b => b.toString(16).padStart(2, '0'))
-          .join('');
-
-        return {
-          encrypted: true,
-          v: 1,
-          org_id: orgId,
-          ts: ts,
-          iv: ivBase64,
-          ct: ctBase64,
-          sig: sigHex
-        };
-      } catch (err) {
-        console.warn('Crypto encryption fallback:', err);
-        return {
-          encrypted: false,
-          org_id: orgId,
-          data: dataObj
-        };
-      }
-    }
-
-    async function decryptPayloadFromWebhook(orgId, envelope) {
-      try {
-        if (!envelope || !envelope.encrypted) {
-          return envelope && envelope.data ? envelope.data : envelope;
-        }
-        if (!window.crypto || !window.crypto.subtle) return null;
-
-        const ts = envelope.ts;
-        const ivBase64 = envelope.iv;
-        const ctBase64 = envelope.ct;
-        const sig = envelope.sig;
-        if (!ts || !ivBase64 || !ctBase64 || !sig) return null;
-
-        // Anti-replay attack check (5-minute sliding window)
-        if (Math.abs(Date.now() - ts) > 300000) {
-          console.warn('Webhook payload timestamp expired. Potential replay attack.');
-          return null;
-        }
-
-        // Verify HMAC-SHA256 signature
-        const enc = new TextEncoder();
-        const message = `${orgId}_${ts}_${ivBase64}_${ctBase64}`;
-        const rawHmacKey = await deriveWebCryptoKey(orgId, 'hmac');
-        const hmacKey = await crypto.subtle.importKey(
-          'raw',
-          rawHmacKey,
-          { name: 'HMAC', hash: 'SHA-256' },
-          false,
-          ['sign']
-        );
-        const sigBuffer = await crypto.subtle.sign('HMAC', hmacKey, enc.encode(message));
-        const expectedSig = Array.from(new Uint8Array(sigBuffer))
-          .map(b => b.toString(16).padStart(2, '0'))
-          .join('');
-
-        if (sig.toLowerCase() !== expectedSig.toLowerCase()) {
-          console.warn('Cryptographic signature mismatch. Data tampering detected.');
-          return null;
-        }
-
-        // Decrypt AES-256-CBC
-        const rawAesKey = await deriveWebCryptoKey(orgId, 'aes');
-        const cryptoKey = await crypto.subtle.importKey(
-          'raw',
-          rawAesKey,
-          { name: 'AES-CBC' },
-          false,
-          ['decrypt']
-        );
-
-        const ivBytes = Uint8Array.from(atob(ivBase64), c => c.charCodeAt(0));
-        const ctBytes = Uint8Array.from(atob(ctBase64), c => c.charCodeAt(0));
-
-        const plainBuffer = await crypto.subtle.decrypt(
-          { name: 'AES-CBC', iv: ivBytes },
-          cryptoKey,
-          ctBytes
-        );
-
-        const dec = new TextDecoder();
-        return JSON.parse(dec.decode(plainBuffer));
-      } catch (err) {
-        console.warn('Crypto decryption error:', err);
-        return null;
-      }
-    }
 
     // =========================================================================
     //  Google Apps Script & Google Sheet API Integrations (Zero Cost)
@@ -2439,9 +2443,15 @@
       const input = document.getElementById('utrInput');
       let utr = (input ? input.value : '').trim();
 
-      // Fallback: If guest did not enter UTR, generate a readable reference
-      if (!utr || utr.length < 4) {
-        utr = 'UPI' + Date.now().toString().slice(-8);
+      // W-28: Require valid UTR/Reference number from customer; do not invent fake UPI IDs
+      if (!utr || utr.length < 6) {
+        showToast('Please enter a valid 12-digit UPI Reference / UTR number from your payment app.', 'error');
+        if (input) {
+          input.focus();
+          input.classList.add('ring-2', 'ring-red-500', 'animate-shake');
+          setTimeout(() => input.classList.remove('animate-shake'), 400);
+        }
+        return;
       }
 
       state.submittingPayment = true;
@@ -2449,27 +2459,21 @@
 
       try {
         const grandTotal = getGrandTotal();
-        const allItems = getAllItemsAcrossRounds();
         const selectedAppObj = UPI_APPS.find(a => a.id === state.selectedUpiApp) || UPI_APPS[0];
         const primaryKot = state.orderPlaced?.kotNumber || ('KOT-' + Math.floor(1000 + Math.random() * 9000));
         const billDocId = 'BILL_' + primaryKot;
 
-        // 1. Send Payment Record to Google Sheet
-        const billPayload = {
+        // W-07: Use RECORD_PAYMENT so we update payment state without rewriting or corrupting previous rounds
+        const paymentPayload = {
           id: billDocId,
           bill_id: billDocId,
+          order_id: state.orderPlaced?.orderId || state.orderPlaced?.id || billDocId,
+          table: state.tableNumber,
           table_name: 'Table ' + state.tableNumber,
           customer_name: state.customerName.trim() || ('Table ' + state.tableNumber),
           customer_phone: state.customerPhone.trim() || '',
-          items: allItems.map(it => ({
-            name: it.name,
-            qty: it.qty,
-            price: it.price,
-            total: it.price * it.qty,
-            orderedBy: it.orderedBy || state.customerName
-          })),
+          amount: grandTotal,
           total_amount: grandTotal,
-          subtotal_amount: grandTotal,
           payment_mode: 'UPI (' + selectedAppObj.name + ')',
           payment_status: 'PAYMENT_SUBMITTED',
           transaction_id: utr,
@@ -2479,15 +2483,13 @@
           paid_by: state.customerName.trim()
         };
 
-        // 1. Zero Cloud Cost: Signal payment submission to Google Sheet
         console.log('[Payment] Submitting payment verification to Google Sheet for Table', state.tableNumber, utr);
 
-        // 2. Signal payment to Google Sheet webhook
         if (state.googleSheetId || state.organizationId) {
-          await sendToGoogleSheetWebhook('SAVE_BILL', billPayload);
+          await sendToGoogleSheetWebhook('RECORD_PAYMENT', paymentPayload);
         }
 
-        // 3. Anti-Fraud Two-Phase Verification:
+        // Anti-Fraud Two-Phase Verification:
         // Set state to payment_submitted (NOT paid!).
         // The green receipt is ONLY unlocked when cashier/backend confirms 'PAID'.
         state.transactionId = utr;
@@ -2514,11 +2516,30 @@
     //  Digital Receipt HTML Generator & Auto-Download
     // =========================================================================
     function generateReceiptHtml(receipt) {
+      const restName = esc(receipt.restaurantName || state.restaurant?.name || 'SmartBizz Restaurant');
+      const restAddr = esc(receipt.restaurantAddress || 'SmartBizz Dine-In Receipt');
+      const tbl = esc(String(receipt.tableNumber || state.tableNumber || ''));
+      const cust = esc(String(receipt.customerName || 'Guest'));
+      const phone = esc(String(receipt.customerPhone || ''));
+      const billId = esc(String(receipt.billId || receipt.id || ''));
+      const timeStr = esc(String(receipt.timestamp || new Date().toLocaleString()));
+      const mode = esc(String(receipt.paymentMode || 'Online'));
+      const txn = esc(String(receipt.transactionId || ''));
+
+      const items = Array.isArray(receipt.items) ? receipt.items : [];
+      const subtotal = Number(receipt.subtotalAmount || receipt.subtotal || 0) || items.reduce((s, it) => s + (Number(it.price) * Number(it.qty)), 0);
+      const sc = Number(receipt.serviceCharge || receipt.service_charge || 0);
+      const gst = Number(receipt.gst || receipt.tax || 0);
+      const grandTotal = Number(receipt.totalAmount || receipt.total || (subtotal + sc + gst));
+      const cgst = (gst / 2).toFixed(2);
+      const sgst = (gst / 2).toFixed(2);
+      const effGstRate = getEffectiveGstRate();
+
       return `<!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Receipt - Table ${receipt.tableNumber} - ${receipt.restaurantName}</title>
+  <title>Receipt - Table ${tbl} - ${restName}</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <style>
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 0; padding: 20px; color: #0f172a; background: #f8fafc; }
@@ -2533,6 +2554,7 @@
     .items-table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 11.5px; }
     .items-table th { text-align: left; padding: 6px 0; border-bottom: 1px solid #e2e8f0; color: #64748b; font-size: 10.5px; text-transform: uppercase; }
     .items-table td { padding: 6px 0; border-bottom: 1px solid #f1f5f9; }
+    .tax-breakdown { border-top: 1px dashed #cbd5e1; padding-top: 8px; margin-top: 10px; }
     .total-row { display: flex; justify-content: space-between; font-size: 16px; font-weight: 800; border-top: 2px dashed #cbd5e1; padding-top: 12px; margin-top: 12px; color: #0f172a; }
     .footer { text-align: center; margin-top: 20px; font-size: 11px; color: #94a3b8; }
     @media print { body { background: #fff; padding: 0; } .receipt-box { box-shadow: none; border: none; } }
@@ -2541,16 +2563,16 @@
 <body>
   <div class="receipt-box">
     <div class="header">
-      <h1>${receipt.restaurantName}</h1>
-      <p>${receipt.restaurantAddress || 'SmartBizz Dine-In Receipt'}</p>
+      <h1>${restName}</h1>
+      <p>${restAddr}</p>
       <div class="badge">PAID IN FULL ✅</div>
     </div>
-    <div class="info-row"><span class="info-label">Table:</span><span class="info-val">Table ${receipt.tableNumber}</span></div>
-    <div class="info-row"><span class="info-label">Customer:</span><span class="info-val">${receipt.customerName} ${receipt.customerPhone ? '(' + receipt.customerPhone + ')' : ''}</span></div>
-    <div class="info-row"><span class="info-label">Invoice ID:</span><span class="info-val" style="font-family: monospace;">${receipt.billId}</span></div>
-    <div class="info-row"><span class="info-label">Date & Time:</span><span class="info-val">${receipt.timestamp}</span></div>
-    <div class="info-row"><span class="info-label">Payment Mode:</span><span class="info-val">${receipt.paymentMode}</span></div>
-    <div class="info-row"><span class="info-label">Transaction ID:</span><span class="info-val" style="font-family: monospace; color: #0284c7;">${receipt.transactionId}</span></div>
+    <div class="info-row"><span class="info-label">Table:</span><span class="info-val">Table ${tbl}</span></div>
+    <div class="info-row"><span class="info-label">Customer:</span><span class="info-val">${cust} ${phone ? '(' + phone + ')' : ''}</span></div>
+    <div class="info-row"><span class="info-label">Invoice ID:</span><span class="info-val" style="font-family: monospace;">${billId}</span></div>
+    <div class="info-row"><span class="info-label">Date & Time:</span><span class="info-val">${timeStr}</span></div>
+    <div class="info-row"><span class="info-label">Payment Mode:</span><span class="info-val">${mode}</span></div>
+    ${txn ? `<div class="info-row"><span class="info-label">Transaction ID:</span><span class="info-val" style="font-family: monospace; color: #0284c7;">${txn}</span></div>` : ''}
 
     <table class="items-table">
       <thead>
@@ -2562,11 +2584,11 @@
         </tr>
       </thead>
       <tbody>
-        ${(receipt.items || []).map(it => `
+        ${items.map(it => `
           <tr>
             <td>
-              <strong>${it.name}</strong>
-              ${it.orderedBy ? `<div style="font-size: 10px; color: #4f46e5;">👤 ${it.orderedBy}</div>` : ''}
+              <strong>${esc(it.name)}</strong>
+              ${it.orderedBy ? `<div style="font-size: 10px; color: #4f46e5;">👤 ${esc(it.orderedBy)}</div>` : ''}
             </td>
             <td style="text-align: center;">${it.qty}</td>
             <td style="text-align: right;">₹${Number(it.price).toFixed(0)}</td>
@@ -2576,35 +2598,44 @@
       </tbody>
     </table>
 
+    <div class="tax-breakdown">
+      <div class="info-row"><span class="info-label">Subtotal:</span><span class="info-val">₹${subtotal.toFixed(2)}</span></div>
+      ${sc > 0 ? `<div class="info-row"><span class="info-label">Service Charge:</span><span class="info-val">₹${sc.toFixed(2)}</span></div>` : ''}
+      ${gst > 0 ? `
+        <div class="info-row"><span class="info-label">CGST (${(effGstRate / 2).toFixed(1)}%):</span><span class="info-val">₹${cgst}</span></div>
+        <div class="info-row"><span class="info-label">SGST (${(effGstRate / 2).toFixed(1)}%):</span><span class="info-val">₹${sgst}</span></div>
+      ` : ''}
+    </div>
+
     <div class="total-row">
       <span>Grand Total:</span>
-      <span style="color: #15803d;">₹${Number(receipt.totalAmount).toFixed(2)}</span>
+      <span style="color: #15803d;">₹${grandTotal.toFixed(2)}</span>
     </div>
 
     <div class="footer">
       <p>Thank you for dining with us!</p>
-      <p>Powered by SmartBizz Kirana & Restaurant Suite</p>
+      <p>Powered by SmartDine Restaurant Suite</p>
     </div>
   </div>
 </body>
 </html>`;
     }
 
-    function autoDownloadReceipt(receipt) {
+    function downloadReceiptFile(receipt) {
       try {
         const htmlContent = generateReceiptHtml(receipt);
         const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8;' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `Receipt_Table_${receipt.tableNumber}_${Date.now()}.html`;
+        a.download = `Receipt_Table_${receipt.tableNumber || state.tableNumber}_${Date.now()}.html`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
-        showToast('Receipt downloaded automatically! 📄', 'success');
+        showToast('Receipt downloaded! 📄', 'success');
       } catch (err) {
-        console.warn('Auto download receipt error:', err);
+        console.warn('Receipt download error:', err);
       }
     }
 
@@ -2762,7 +2793,7 @@
       const grandTotal = getGrandTotal();
       const orderHistory = (state.orderHistory && state.orderHistory.length > 0) ? state.orderHistory : [state.orderPlaced];
       const receipt = state.paymentReceipt || buildFallbackReceipt(orderHistory, grandTotal);
-      autoDownloadReceipt(receipt);
+      downloadReceiptFile(receipt);
     }
 
     // =========================================================================
@@ -2993,6 +3024,20 @@
 
     async function requestFinalBill() {
       state.billRequested = true;
+      if (state.googleSheetId || state.organizationId) {
+        try {
+          await sendToGoogleSheetWebhook('SERVICE_REQUEST', {
+            table: state.tableNumber,
+            tableToken: state.tableToken,
+            type: 'BILL_REQUEST',
+            requestType: 'BILL_REQUEST',
+            customerName: state.customerName || ('Table ' + state.tableNumber),
+            timestamp: new Date().toISOString()
+          });
+        } catch (e) {
+          console.warn('Bill request webhook error:', e);
+        }
+      }
       showToast('Staff notified! We will bring your bill shortly.', 'success');
       renderOrderSuccess();
     }
@@ -3024,11 +3069,26 @@
       }
     }
 
-    function startNewSession() {
+    async function startNewSession() {
+      try {
+        if (state.googleSheetId || state.organizationId) {
+          await sendToGoogleSheetWebhook('CLOSE_SESSION', {
+            table: state.tableNumber,
+            tableToken: state.tableToken,
+            sessionId: state.sessionId
+          });
+        }
+      } catch (e) {
+        console.warn('Close session webhook error:', e);
+      }
       try {
         const key = state.tableToken || state.googleSheetId;
         localStorage.removeItem('sb_orders_' + key);
         localStorage.removeItem('sb_receipt_' + key);
+        if (state.sessionId) {
+          localStorage.removeItem('sb_receipt_session_' + state.sessionId);
+        }
+        localStorage.removeItem(getCartStorageKey());
       } catch (e) {}
       window.location.reload();
     }
@@ -3055,14 +3115,48 @@
     // =========================================================================
     //  Event Bindings
     // =========================================================================
+    let searchDebounceTimer = null;
     function bindMenuEvents() {
       const searchEl = document.getElementById('searchInput');
       if (searchEl) {
         searchEl.addEventListener('input', (e) => {
           state.searchQuery = e.target.value;
-          renderMenu();
-          const newSearch = document.getElementById('searchInput');
-          if (newSearch) { newSearch.focus(); newSearch.selectionStart = newSearch.selectionEnd = newSearch.value.length; }
+          clearTimeout(searchDebounceTimer);
+          searchDebounceTimer = setTimeout(() => {
+            const container = document.getElementById('menuItemsContainer');
+            if (container) {
+              const filtered = getFilteredItems();
+              let content = '';
+              if (isKitchenClosedNow()) {
+                content += `
+                  <div class="bg-gradient-to-r from-red-600 via-rose-600 to-red-700 text-white px-3.5 py-3 rounded-2xl mb-3 flex items-center gap-3 shadow-md">
+                    <span class="text-xl">🛑</span>
+                    <div class="flex-1">
+                      <span class="text-xs font-black block uppercase tracking-wide">Kitchen Currently Closed</span>
+                      <span class="text-[10.5px] text-red-100 font-medium">${state.operatingHours?.openFrom && state.operatingHours?.openTo ? `Orders are paused. Operating hours: ${esc(state.operatingHours.openFrom)} - ${esc(state.operatingHours.openTo)}.` : 'Orders are temporarily paused between shifts. You can browse the menu.'}</span>
+                    </div>
+                  </div>
+                `;
+              }
+              if (filtered.length === 0) {
+                content += `
+                  <div class="text-center py-16">
+                    <i data-lucide="utensils-crossed" class="w-10 h-10 text-slate-300 mx-auto mb-2"></i>
+                    <p class="text-sm font-semibold text-slate-600">No dishes found</p>
+                    <p class="text-xs text-slate-400 mt-0.5">Please select another category or check back shortly</p>
+                  </div>
+                `;
+              } else {
+                content += renderMenuItemsWithSubcategories(filtered);
+              }
+              container.innerHTML = content;
+              if (window.lucide) {
+                try { lucide.createIcons(); } catch (_) {}
+              }
+            } else {
+              renderMenu();
+            }
+          }, 180);
         });
       }
 
@@ -3197,10 +3291,8 @@
         // Dispatch order to Store Cloud Database via Apps Script Webhook
         if (state.googleSheetId || state.organizationId) {
           try {
+            // W-02: Do not send client ID/bill_id/kotNumber so server generates canonical, sequential IDs
             const webhookResult = await sendToGoogleSheetWebhook('SAVE_BILL', {
-              id: kotNumber,
-              bill_id: kotNumber,
-              kotNumber: kotNumber,
               table: state.tableNumber,
               table_number: state.tableNumber,
               tableName: 'Table ' + state.tableNumber,
@@ -3230,11 +3322,10 @@
               const errMsg = (webhookResult && (webhookResult.error || webhookResult.message)) || 'Order submission failed on server';
               throw new Error(errMsg);
             }
-            if (webhookResult && (webhookResult.id || webhookResult.order_id || webhookResult.kotNumber)) {
-              orderId = webhookResult.id || webhookResult.order_id || kotNumber;
-              kotNumber = webhookResult.kotNumber || webhookResult.kot_number || kotNumber;
-              state.lastKotNumber = kotNumber;
-            }
+            // W-02: Consume server-issued order ID and sequential tokenNo
+            orderId = webhookResult.id || webhookResult.order_id || ('ORD_' + Date.now());
+            kotNumber = webhookResult.tokenNo || webhookResult.kotNumber || webhookResult.kot_number || ('KOT-' + Date.now().toString().slice(-4));
+            state.lastKotNumber = kotNumber;
           } catch (err) {
             console.error('Order dispatch error:', err);
             showToast(err.message || 'Order failed to reach kitchen. Please try again.', 'error');
@@ -3274,6 +3365,7 @@
         state.orderStatus = 'pending';
         state.placing = false;
         state.cart = {};
+        saveCartToStorage(); // W-37: Persist cleared cart for this table
         state.checkoutOpen = false;
 
         renderOrderSuccess();
@@ -3308,156 +3400,177 @@
         const resp = await fetch(proxyUrl, { cache: 'no-store' });
         if (resp.ok) {
           const json = await resp.json();
-          if (json && json.success && Array.isArray(json.orders)) {
-            const orderMap = new Map();
-            let tablePaidTxn = '';
-
-            for (const o of json.orders) {
-              const rawId = o.id || o.orderId || '';
-              if (!rawId || String(rawId).toLowerCase().includes('id')) continue;
-              const canonicalId = String(rawId).replace(/^BILL_/, '');
-              const rawTotal = Number(o.total || o.totalAmount || 0);
-              let rawStatus = String(o.status || 'PENDING').trim();
-              if (rawStatus.startsWith('[') || rawStatus.startsWith('{') || rawStatus.includes('"productId"') || rawStatus.includes('"name"')) {
-                rawStatus = 'PENDING';
-              }
-              const rawTxn = String(o.transactionId || '');
-              if (rawTxn && (rawStatus.toUpperCase() === 'PAID' || rawStatus.toUpperCase() === 'SUCCESS')) {
-                tablePaidTxn = rawTxn;
-              }
-
-              let items = [];
-              if (Array.isArray(o.items) && o.items.length > 0) {
-                items = o.items;
-              } else if (o.itemsSummary) {
-                try {
-                  const p = JSON.parse(o.itemsSummary);
-                  if (Array.isArray(p)) items = p;
-                } catch (_) {
-                  items = [{ name: String(o.itemsSummary), qty: 1, price: rawTotal }];
-                }
-              } else {
-                items = [{ name: 'Dine-In Order', qty: 1, price: rawTotal }];
-              }
-
-              const orderObj = {
-                orderId: String(rawId),
-                kotNumber: canonicalId.startsWith('KOT-') ? canonicalId : ('KOT-' + canonicalId),
-                customerName: String(o.customerName || 'Guest'),
-                customerPhone: String(o.customerPhone || ''),
-                items: items,
-                total: rawTotal,
-                status: rawStatus,
-                paymentMode: String(o.paymentMode || ''),
-                transactionId: rawTxn,
-                timestamp: String(o.timestamp || 'Earlier')
-              };
-
-              if (orderMap.has(canonicalId)) {
-                const prev = orderMap.get(canonicalId);
-                const prevRank = getStageIndex(prev.status);
-                const incomingRank = getStageIndex(rawStatus);
-                if (incomingRank >= prevRank) {
-                  orderMap.set(canonicalId, orderObj);
-                } else {
-                  orderObj.status = prev.status;
-                  orderMap.set(canonicalId, orderObj);
-                }
-              } else {
-                orderMap.set(canonicalId, orderObj);
-              }
+          if (json && json.success) {
+            // W-17: Monitor menu catalogue revision and reload if updated on POS
+            if (json.menuRev && state.menuRev && json.menuRev !== state.menuRev) {
+              state.menuRev = json.menuRev;
+              loadMenu().then(renderMenu);
             }
 
-            const remoteOrders = Array.from(orderMap.values());
+            // W-46: Synchronize active waiter call banner from server
+            if (Array.isArray(json.waiterCalls)) {
+              const active = json.waiterCalls.find(w => String(w.table) === String(state.tableNumber) && String(w.status).toUpperCase() !== 'RESOLVED' && String(w.status).toUpperCase() !== 'DISMISSED');
+              state.activeWaiterCall = active || null;
+            }
 
-            if (remoteOrders.length > 0) {
-              // Table is ONLY paid if ALL orders on this table are settled/paid
-              const hasUnpaidOrders = remoteOrders.some(o => {
-                const st = String(o.status || '').toUpperCase();
-                return st !== 'PAID' && st !== 'SUCCESS' && st !== 'COMPLETED' && st !== 'SETTLED' && st !== 'CANCELLED';
-              });
-              const tablePaid = !hasUnpaidOrders;
+            if (Array.isArray(json.orders)) {
+              const orderMap = new Map();
+              let tablePaidTxn = '';
 
-              // Specifically match current device's active placed order if available
-              let activeOrder = null;
-              if (state.orderPlaced && (state.orderPlaced.kotNumber || state.orderPlaced.orderId)) {
-                const myKot = String(state.orderPlaced.kotNumber || state.orderPlaced.orderId).replace(/^BILL_/, '');
-                activeOrder = remoteOrders.find(o => {
-                  const oKot = String(o.kotNumber || o.orderId || '').replace(/^BILL_/, '');
-                  return oKot === myKot;
-                });
-              }
-              if (!activeOrder) {
-                activeOrder = remoteOrders[remoteOrders.length - 1];
-              }
-
-              const sanitizedRemoteStatus = sanitizeStatus(activeOrder.status);
-              const curRank = getStageIndex(state.orderStatus);
-              const newRank = getStageIndex(sanitizedRemoteStatus);
-
-              let computedStatus = state.orderStatus;
-              if (tablePaid) {
-                computedStatus = 'paid';
-              } else {
-                // If there are active unpaid orders, don't stay locked to 'paid'
-                if (computedStatus === 'paid' && hasUnpaidOrders) {
-                  computedStatus = sanitizedRemoteStatus;
-                } else if (newRank >= curRank) {
-                  computedStatus = sanitizedRemoteStatus;
+              for (const o of json.orders) {
+                const rawId = o.id || o.orderId || '';
+                const cleanId = String(rawId).toLowerCase().trim();
+                // W-33: Only skip exact table header keywords, never valid IDs containing substring 'id'
+                if (!cleanId || ['id', 'order id', 'bill id', 'order_id', 'bill_id'].includes(cleanId)) continue;
+                const canonicalId = String(rawId).replace(/^BILL_/, '');
+                const rawTotal = Number(o.total || o.totalAmount || 0);
+                let rawStatus = String(o.status || 'PENDING').trim();
+                if (rawStatus.startsWith('[') || rawStatus.startsWith('{') || rawStatus.includes('"productId"') || rawStatus.includes('"name"')) {
+                  rawStatus = 'PENDING';
                 }
-              }
+                const rawTxn = String(o.transactionId || '');
+                if (rawTxn && (rawStatus.toUpperCase() === 'PAID' || rawStatus.toUpperCase() === 'SUCCESS')) {
+                  tablePaidTxn = rawTxn;
+                }
 
-              // Generate a signature of current order state to detect real changes
-              const newSig = JSON.stringify(remoteOrders.map(o => [o.orderId, o.status, o.total, (o.items || []).length])) + '_' + computedStatus + '_' + (tablePaid ? '1' : '0');
-
-              state.orderHistory = remoteOrders;
-              saveLocalOrderHistory();
-              state.orderPlaced = activeOrder;
-              state.orderStatus = computedStatus;
-
-              if (tablePaid) {
-                state.paymentSubmitted = false;
-                if (!state.paymentReceipt) {
-                  state.paymentReceipt = buildFallbackReceipt(remoteOrders, getGrandTotal());
-                  if (tablePaidTxn) state.paymentReceipt.transactionId = tablePaidTxn;
+                let items = [];
+                if (Array.isArray(o.items) && o.items.length > 0) {
+                  items = o.items;
+                } else if (o.itemsSummary) {
                   try {
-                    const key = state.tableToken || state.googleSheetId;
-                    localStorage.setItem('sb_receipt_' + key, JSON.stringify(state.paymentReceipt));
-                  } catch (_) {}
-                  autoDownloadReceipt(state.paymentReceipt);
-                  showToast('Payment verified by cashier! Digital receipt ready ✅', 'success');
+                    const p = JSON.parse(o.itemsSummary);
+                    if (Array.isArray(p)) items = p;
+                  } catch (_) {
+                    items = [{ name: String(o.itemsSummary), qty: 1, price: rawTotal }];
+                  }
+                } else {
+                  items = [{ name: 'Dine-In Order', qty: 1, price: rawTotal }];
                 }
-              } else if (!tablePaid && state.paymentReceipt) {
-                state.paymentReceipt = null;
+
+                const orderObj = {
+                  orderId: String(rawId),
+                  kotNumber: canonicalId.startsWith('KOT-') ? canonicalId : ('KOT-' + canonicalId),
+                  customerName: String(o.customerName || 'Guest'),
+                  customerPhone: String(o.customerPhone || ''),
+                  items: items,
+                  total: rawTotal,
+                  status: rawStatus,
+                  paymentMode: String(o.paymentMode || ''),
+                  transactionId: rawTxn,
+                  timestamp: String(o.timestamp || 'Earlier')
+                };
+
+                if (orderMap.has(canonicalId)) {
+                  const prev = orderMap.get(canonicalId);
+                  const prevRank = getStageIndex(prev.status);
+                  const incomingRank = getStageIndex(rawStatus);
+                  if (incomingRank >= prevRank) {
+                    orderMap.set(canonicalId, orderObj);
+                  } else {
+                    orderObj.status = prev.status;
+                    orderMap.set(canonicalId, orderObj);
+                  }
+                } else {
+                  orderMap.set(canonicalId, orderObj);
+                }
               }
 
-              // ONLY re-render if data has ACTUALLY changed! (Zero UI fluctuation / zero flashing)
-              if (state._lastSyncedSignature !== newSig) {
-                state._lastSyncedSignature = newSig;
-                const container = document.getElementById('orderSuccessScreen') || document.getElementById('receiptScreen');
-                if (container) {
-                  renderOrderSuccess();
-                } else if (state.currentView === 'menu') {
-                  renderMenu();
+              const remoteOrders = Array.from(orderMap.values());
+              // W-32: Sort chronologically so latest round is always at end
+              remoteOrders.sort((a, b) => {
+                const tA = a.timestamp ? new Date(a.timestamp).getTime() || 0 : 0;
+                const tB = b.timestamp ? new Date(b.timestamp).getTime() || 0 : 0;
+                return tA - tB;
+              });
+
+              if (remoteOrders.length > 0) {
+                // Table is ONLY paid if ALL orders on this table are settled/paid
+                const hasUnpaidOrders = remoteOrders.some(o => {
+                  const st = String(o.status || '').toUpperCase();
+                  return st !== 'PAID' && st !== 'SUCCESS' && st !== 'COMPLETED' && st !== 'SETTLED' && st !== 'CANCELLED';
+                });
+                const tablePaid = !hasUnpaidOrders;
+
+                // Specifically match current device's active placed order if available
+                let activeOrder = null;
+                if (state.orderPlaced && (state.orderPlaced.kotNumber || state.orderPlaced.orderId)) {
+                  const myKot = String(state.orderPlaced.kotNumber || state.orderPlaced.orderId).replace(/^BILL_/, '');
+                  activeOrder = remoteOrders.find(o => {
+                    const oKot = String(o.kotNumber || o.orderId || '').replace(/^BILL_/, '');
+                    return oKot === myKot;
+                  });
                 }
-              }
-              return;
-            } else {
-              // Table is clean / vacant (no remote orders for this table)
-              // If this device had no active uncompleted order, reset table to fresh menu!
-              if (!state.orderPlaced || (state.orderStatus === 'paid' || state.orderStatus === 'success')) {
-                const key = state.tableToken || state.googleSheetId;
-                try {
-                  localStorage.removeItem('sb_orders_' + key);
-                  localStorage.removeItem('sb_receipt_' + key);
-                } catch (_) {}
-                state.orderHistory = [];
-                state.orderPlaced = null;
-                state.orderStatus = null;
-                state.paymentReceipt = null;
-                if (state.currentView === 'status') {
-                  state.currentView = 'menu';
-                  renderMenu();
+                if (!activeOrder) {
+                  activeOrder = remoteOrders[remoteOrders.length - 1];
+                }
+
+                const sanitizedRemoteStatus = sanitizeStatus(activeOrder.status);
+                const curRank = getStageIndex(state.orderStatus);
+                const newRank = getStageIndex(sanitizedRemoteStatus);
+
+                let computedStatus = state.orderStatus;
+                if (tablePaid) {
+                  computedStatus = 'paid';
+                } else {
+                  // If there are active unpaid orders, don't stay locked to 'paid'
+                  if (computedStatus === 'paid' && hasUnpaidOrders) {
+                    computedStatus = sanitizedRemoteStatus;
+                  } else if (newRank >= curRank) {
+                    computedStatus = sanitizedRemoteStatus;
+                  }
+                }
+
+                // Generate a signature of current order state to detect real changes
+                const newSig = JSON.stringify(remoteOrders.map(o => [o.orderId, o.status, o.total, (o.items || []).length])) + '_' + computedStatus + '_' + (tablePaid ? '1' : '0');
+
+                state.orderHistory = remoteOrders;
+                saveLocalOrderHistory();
+                state.orderPlaced = activeOrder;
+                state.orderStatus = computedStatus;
+
+                if (tablePaid) {
+                  state.paymentSubmitted = false;
+                  if (!state.paymentReceipt) {
+                    state.paymentReceipt = buildFallbackReceipt(remoteOrders, getGrandTotal());
+                    if (tablePaidTxn) state.paymentReceipt.transactionId = tablePaidTxn;
+                    // W-48: Scope receipt storage by session
+                    const key = state.sessionId ? ('session_' + state.sessionId) : (state.tableToken || state.googleSheetId || 'default');
+                    try {
+                      localStorage.setItem('sb_receipt_' + key, JSON.stringify(state.paymentReceipt));
+                    } catch (_) {}
+                    // W-47: No automatic popup download; manual tap only
+                    showToast('Payment verified by cashier! Digital receipt ready ✅', 'success');
+                  }
+                } else if (!tablePaid && state.paymentReceipt) {
+                  state.paymentReceipt = null;
+                }
+
+                // ONLY re-render if data has ACTUALLY changed! (Zero UI fluctuation / zero flashing)
+                if (state._lastSyncedSignature !== newSig) {
+                  state._lastSyncedSignature = newSig;
+                  const container = document.getElementById('orderSuccessScreen') || document.getElementById('receiptScreen');
+                  if (container) {
+                    renderOrderSuccess();
+                  } else if (state.currentView === 'menu') {
+                    renderMenu();
+                  }
+                }
+                return;
+              } else {
+                // W-08: Table is clean / vacant (no remote orders for this table)
+                // PRESERVE receipt if customer is currently viewing their settled receipt
+                if (!state.orderPlaced && !state.paymentReceipt && state.orderStatus !== 'paid') {
+                  const key = state.tableToken || state.googleSheetId;
+                  try {
+                    localStorage.removeItem('sb_orders_' + key);
+                  } catch (_) {}
+                  state.orderHistory = [];
+                  state.orderPlaced = null;
+                  state.orderStatus = null;
+                  if (state.currentView === 'status') {
+                    state.currentView = 'menu';
+                    renderMenu();
+                  }
                 }
               }
             }
@@ -3472,10 +3585,39 @@
       syncOrdersFromGoogleSheet();
     }
 
+    // W-09: Adaptive Poller with background visibility pause and jittered backoff
+    let pollTimeoutId = null;
+    let pollErrorStreak = 0;
+
+    function scheduleNextPoll(delayMs) {
+      if (pollTimeoutId) clearTimeout(pollTimeoutId);
+      if (document.hidden) return; // Pause polling when tab is backgrounded (W-09)
+      if (state.orderStatus === 'paid' && state.paymentReceipt) {
+        delayMs = Math.max(delayMs || 15000, 15000); // Slow down once settled
+      }
+      pollTimeoutId = setTimeout(async () => {
+        try {
+          await syncOrdersFromGoogleSheet();
+          pollErrorStreak = 0;
+          scheduleNextPoll(2500);
+        } catch (_) {
+          pollErrorStreak++;
+          const backoff = Math.min(30000, 2500 * Math.pow(1.5, pollErrorStreak) + (Math.random() * 500));
+          scheduleNextPoll(backoff);
+        }
+      }, delayMs || 2500);
+    }
+
     function startPollingOrdersFromSheet() {
       if (state.orderPollingTimer) clearInterval(state.orderPollingTimer);
-      state.orderPollingTimer = setInterval(syncOrdersFromGoogleSheet, 2500);
+      scheduleNextPoll(100);
     }
+
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) {
+        scheduleNextPoll(100);
+      }
+    });
 
     // =========================================================================
     //  Menu Loader (Pure Store Catalog via Cloud Backend Webhook)
@@ -3708,6 +3850,25 @@
     async function init() {
       parseUrl();
 
+      // W-25: Legacy QR slug resolution via Apps Script Webhook
+      if (state.restaurantSlug && !state.organizationId) {
+        try {
+          const slugUrl = `${DEFAULT_APPS_SCRIPT_WEBHOOK}?action=RESOLVE_SLUG&slug=${encodeURIComponent(state.restaurantSlug)}`;
+          const slugResp = await fetch(slugUrl);
+          if (slugResp.ok) {
+            const slugJson = await slugResp.json();
+            if (slugJson.success && slugJson.org_id) {
+              state.organizationId = slugJson.org_id;
+              if (slugJson.spreadsheet_id && !state.googleSheetId) {
+                state.googleSheetId = slugJson.spreadsheet_id;
+              }
+            }
+          }
+        } catch (slugErr) {
+          console.warn('[Init] Slug resolution notice:', slugErr);
+        }
+      }
+
       // Multi-Tenant Isolation:
       // If neither organizationId nor googleSheetId nor restaurantSlug is provided, do NOT load any default store!
       if (!state.organizationId && !state.googleSheetId && !state.restaurantSlug) {
@@ -3725,16 +3886,17 @@
         state.googleSheetId = null;
       }
 
-      // Fetch Master Razorpay Key from Firestore system_config
+      // W-06 & W-29: Fetch Master Razorpay Key from backend webhook
       try {
-        const rzpUrl = `https://firestore.googleapis.com/v1/projects/smartdine-restaurant-pos/databases/(default)/documents/system_config/razorpay`;
+        let rzpUrl = `${DEFAULT_APPS_SCRIPT_WEBHOOK}?action=GET_PAYMENT_CONFIG`;
+        if (state.organizationId) rzpUrl += `&org=${encodeURIComponent(state.organizationId)}`;
         const rzpResp = await fetch(rzpUrl);
         if (rzpResp.ok) {
           const rzpDoc = await rzpResp.json();
-          const rKey = rzpDoc.fields?.keyId?.stringValue;
+          const rKey = rzpDoc.keyId || rzpDoc.key;
           if (rKey && rKey.trim().length > 0) {
             state.razorpayKeyId = rKey.trim();
-            console.log('[Init] Auto-configured Master Razorpay Key ID:', state.razorpayKeyId);
+            console.log('[Init] Configured Razorpay Key ID:', state.razorpayKeyId);
           }
         }
       } catch (rzpErr) {
@@ -3755,6 +3917,7 @@
             const whJson = await whResp.json();
             if (whJson.success && whJson.store) {
               storeLoadedFromWebhook = true;
+              state.store = whJson.store;
               const s = whJson.store;
               if (s.name) state.restaurant.name = s.name;
               if (s.upi_id) {
@@ -3762,9 +3925,19 @@
                 state.settlementUpiId = s.upi_id;
               }
               if (s.currency) state.currency = s.currency;
+              if (s.timezone) state.timezone = s.timezone;
               if (s.google_sheet_id && !state.googleSheetId) state.googleSheetId = s.google_sheet_id;
               if (s.gst_rate !== undefined) state.gstRate = Number(s.gst_rate);
-              if (s.service_charge !== undefined) state.serviceCharge = Number(s.service_charge);
+              if (s.service_charge_rate !== undefined) state.serviceCharge = Number(s.service_charge_rate);
+              else if (s.service_charge !== undefined) state.serviceCharge = Number(s.service_charge);
+              if (s.hours) {
+                state.operatingHours = {
+                  isOpen: s.hours.isOpen !== false,
+                  openFrom: s.hours.openFrom || '',
+                  openTo: s.hours.openTo || ''
+                };
+                if (s.hours.isOpen === false) state.isKitchenClosed = true;
+              }
             } else if (whJson.upi_id) {
               state.upiId = whJson.upi_id;
               state.settlementUpiId = whJson.upi_id;
@@ -3776,7 +3949,15 @@
         }
       }
 
-      // 2. Fallback: If org ID exists, resolve store details safely from Firestore public_stores
+      // W-13 & W-31: License & Dining Suspension Guard
+      if (state.store) {
+        if (state.store.status === 'EXPIRED' || state.store.is_expired === true || state.store.plan_status === 'EXPIRED') {
+          state.loading = false;
+          showToast('Dining orders are temporarily suspended for this restaurant.', 'error');
+        }
+      }
+
+      // 2. Fallback: If org ID exists and webhook failed, resolve store details safely from Firestore public_stores
       if (state.organizationId && !storeLoadedFromWebhook) {
         try {
           const publicStoreUrl = `https://firestore.googleapis.com/v1/projects/smartdine-restaurant-pos/databases/(default)/documents/public_stores/${encodeURIComponent(state.organizationId)}`;
@@ -3844,10 +4025,13 @@
           }
         }
 
-        // Check if receipt is already saved locally (expire after 60 mins)
+        // W-48: Scope receipt retrieval by session or table (expire after 60 mins)
         try {
-          const key = state.tableToken || state.googleSheetId;
-          const savedReceipt = localStorage.getItem('sb_receipt_' + key);
+          const key = state.sessionId ? ('session_' + state.sessionId) : (state.tableToken || state.googleSheetId);
+          let savedReceipt = localStorage.getItem('sb_receipt_' + key);
+          if (!savedReceipt && state.tableToken) {
+            savedReceipt = localStorage.getItem('sb_receipt_' + state.tableToken);
+          }
           if (savedReceipt) {
             const parsed = JSON.parse(savedReceipt);
             const rTime = parsed.savedAt ? Number(parsed.savedAt) : 0;
@@ -3875,6 +4059,7 @@
         renderError();
       }
     }
+
 
     // =========================================================================
     //  Service Worker Registration
