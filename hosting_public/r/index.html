@@ -2233,16 +2233,23 @@
       renderOrderSuccess();
 
       try {
-        // W-29: Verify payment signature server-side if signature is provided
+        // X-01/W-29: the signature verdict decides what we may claim. This used
+        // to fire and ignore the result, then post a settled SAVE_BILL -- which
+        // the server now (correctly) rejects as unauthenticated, while the app
+        // announced "Payment Verified" and printed a receipt for money that was
+        // recorded nowhere.
+        let serverVerified = null;
         if (signature && (state.googleSheetId || state.organizationId)) {
           try {
-            await sendToGoogleSheetWebhook('VERIFY_PAYMENT', {
+            const vRes = await sendToGoogleSheetWebhook('VERIFY_PAYMENT', {
               razorpay_payment_id: paymentId,
               razorpay_order_id: orderId,
               razorpay_signature: signature
             });
+            serverVerified = !!(vRes && vRes.verified === true);
           } catch (vErr) {
             console.warn('[Razorpay] Server verification notice:', vErr);
+            serverVerified = false;
           }
         }
 
@@ -2285,26 +2292,28 @@
           return;
         }
 
+        // X-01: full payment is recorded through RECORD_PAYMENT, never through a
+        // settled SAVE_BILL. The guest browser holds no secret, so a settled
+        // SAVE_BILL is rejected outright; and only the server may decide that a
+        // payment is verified. We keep `items` out of a payment payload so it can
+        // never rewrite an order row (W-07).
         const billPayload = {
-          id: billDocId,
           bill_id: billDocId,
+          order_id: state.orderPlaced?.orderId || state.orderPlaced?.id || billDocId,
+          invoiceNo: state.orderPlaced?.orderId || state.orderPlaced?.id || billDocId,
           table: state.tableNumber,
           table_name: 'Table ' + state.tableNumber,
           customer_name: state.customerName.trim() || ('Table ' + state.tableNumber),
           customer_phone: state.customerPhone.trim() || '',
-          items: allItems.map(it => ({
-            name: it.name,
-            qty: it.qty,
-            price: it.price,
-            total: it.price * it.qty,
-            orderedBy: it.orderedBy || state.customerName
-          })),
-          total_amount: amountPaid,
-          subtotal_amount: amountPaid,
+          amount: amountPaid,
+          amountP: Math.round(amountPaid * 100),
+          total_amount: grandTotal,
+          mode: 'RAZORPAY',
           payment_mode: 'Razorpay Dynamic UPI / Card',
           payment_status: 'PAID',
           transaction_id: paymentId,
           upi_reference: paymentId,
+          gatewayId: paymentId,
           razorpay_payment_id: paymentId,
           razorpay_order_id: orderId,
           razorpay_signature: signature,
@@ -2313,14 +2322,35 @@
           paid_by: state.customerName.trim()
         };
 
+        let recorded = null;
         if (state.googleSheetId || state.organizationId) {
-          await sendToGoogleSheetWebhook('SAVE_BILL', billPayload);
+          recorded = await sendToGoogleSheetWebhook('RECORD_PAYMENT', billPayload);
+        }
+
+        const acceptedByServer = !!(recorded && (recorded.success === true || recorded.ok === true));
+        const verifiedByServer = acceptedByServer && recorded.verified === true;
+
+        if (!acceptedByServer) {
+          // The money may well have left the guest's account, so say exactly that
+          // rather than printing a receipt the restaurant has no record of.
+          state.submittingPayment = false;
+          state.paymentConfirmModalOpen = false;
+          showToast(
+            'Your payment went through with the gateway but the restaurant could not record it. ' +
+            'Please show this screen to the counter before leaving. Ref: ' + paymentId,
+            'error'
+          );
+          renderOrderSuccess();
+          return;
         }
 
         state.transactionId = paymentId;
         state.paymentSubmitted = true;
-        state.orderStatus = 'paid';
-        state.paymentReceipt = billPayload;
+        state.orderStatus = verifiedByServer ? 'paid' : 'payment_submitted';
+        state.paymentReceipt = Object.assign({}, billPayload, {
+          verified: verifiedByServer,
+          payment_status: verifiedByServer ? 'PAID' : 'PAYMENT_SUBMITTED'
+        });
         state.paymentConfirmModalOpen = false;
         state.submittingPayment = false;
 
@@ -2332,7 +2362,12 @@
           }));
         } catch (_) {}
 
-        showToast('Payment Verified via Razorpay! Thank you! 🎉', 'success');
+        showToast(
+          verifiedByServer
+            ? 'Payment verified. Thank you! 🎉'
+            : 'Payment received — the counter will confirm it shortly. Ref: ' + paymentId,
+          'success'
+        );
         renderOrderSuccess();
         syncOrdersFromGoogleSheet();
       } catch (e) {
@@ -3893,8 +3928,11 @@
         const rzpResp = await fetch(rzpUrl);
         if (rzpResp.ok) {
           const rzpDoc = await rzpResp.json();
-          const rKey = rzpDoc.keyId || rzpDoc.key;
-          if (rKey && rKey.trim().length > 0) {
+          // X-03: the server returns `razorpay_key_id` (Code.gs GET_PAYMENT_CONFIG).
+          // Reading `keyId` always yielded undefined, so the placeholder key was
+          // handed to Razorpay and every guest card payment failed to open.
+          const rKey = rzpDoc.razorpay_key_id || rzpDoc.keyId || rzpDoc.key;
+          if (rKey && rKey.trim().length > 0 && !String(rKey).includes('placeholder')) {
             state.razorpayKeyId = rKey.trim();
             console.log('[Init] Configured Razorpay Key ID:', state.razorpayKeyId);
           }

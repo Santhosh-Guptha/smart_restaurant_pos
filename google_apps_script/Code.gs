@@ -52,18 +52,27 @@ function doPost(e) {
     
     // Security verification: allow customer non-settled SAVE_BILL, RECORD_PAYMENT, VERIFY_PAYMENT, CLOSE_SESSION, SERVICE_REQUEST, CALL_WAITER without exposing master secret
     var b = json.data || json.bill || {};
+
+    // Whether this request carried the staff secret. Handlers MUST consult this
+    // before trusting anything a caller asserts (see handleRecordPayment).
+    json.__authenticated = (json.secret === SECRET_TOKEN);
+
+    // X-02: CLOSE_SESSION was public, which let anyone with the /exec URL and an
+    // org id close every occupied table mid-service. RECORD_PAYMENT and
+    // VERIFY_PAYMENT stay reachable by the guest app -- a diner must be able to
+    // claim a payment -- but an unauthenticated claim can now only ever produce
+    // an UNVERIFIED row, and never settles a bill.
     var isPublicAction = (
-      (json.action === "SAVE_BILL" && !isStatusSettled(b.payment_status || b.status)) || 
+      (json.action === "SAVE_BILL" && !isStatusSettled(b.payment_status || b.status)) ||
       json.action === "RECORD_PAYMENT" ||
       json.action === "VERIFY_PAYMENT" ||
-      json.action === "CLOSE_SESSION" ||
-      json.action === "SERVICE_REQUEST" || 
-      json.action === "CALL_WAITER" || 
-      json.action === "DISMISS_SERVICE_REQUEST" || 
+      json.action === "SERVICE_REQUEST" ||
+      json.action === "CALL_WAITER" ||
+      json.action === "DISMISS_SERVICE_REQUEST" ||
       json.action === "RESOLVE_WAITER_CALL"
     );
-    if (!isPublicAction && json.secret !== SECRET_TOKEN) {
-      return responseJson({ success: false, error: "Unauthorized access: Invalid secret token." });
+    if (!isPublicAction && !json.__authenticated) {
+      return responseJson({ success: false, error_code: "UNAUTHORIZED", error: "Unauthorized access: Invalid secret token." });
     }
 
 
@@ -706,6 +715,23 @@ function persistV2Order(ss, orgId, billId, cleanId, tokenNo, tableName, cTable, 
         var nowD = new Date();
         var ymdP = Utilities.formatDate(nowD, Session.getScriptTimeZone() || "GMT+05:30", "yyyyMMdd");
         var paymentId = "PAY-" + ymdP + "-" + ("0000" + paySeq).slice(-4);
+        // X-04: RECORD_PAYMENT is the primary writer of this tab. This append is
+        // the fallback for paths that never call it (the waiter settle loop), so
+        // it must not duplicate a row that handler already wrote for this bill.
+        var alreadyPaid = false;
+        try {
+          var payLast = paySheet.getLastRow();
+          if (payLast > 1) {
+            var payVals = paySheet.getRange(2, 1, payLast - 1, 3).getValues();
+            for (var pi = 0; pi < payVals.length; pi++) {
+              if (String(payVals[pi][2] || "").trim() === String(billId).trim()) {
+                alreadyPaid = true;
+                break;
+              }
+            }
+          }
+        } catch (ePayScan) {}
+
         var payRow = [
           paymentId,
           sessionId,
@@ -722,9 +748,11 @@ function persistV2Order(ss, orgId, billId, cleanId, tokenNo, tableName, cTable, 
           "",
           rev
         ];
-        paySheet.appendRow(payRow);
+        if (!alreadyPaid) {
+          paySheet.appendRow(payRow);
+        }
       }
-      
+
       var sSheet = ss.getSheetByName("Sessions");
       if (sSheet && sessionId) {
         var sData = sSheet.getDataRange().getValues();
@@ -1492,7 +1520,11 @@ function doGet(e) {
                   total: rawTotal,
                   total_recovered: totalRecovered,
                   items: parsedItems,
-                  itemsSummary: rawItems,
+                  // X-09: was `rawItems`, which is not declared in doGet (its only
+                  // declaration is local to migrateDiningBillsToV2). Every non-settled
+                  // row threw a ReferenceError that `catch (ssErr) {}` swallowed, so
+                  // GET_ORDERS silently never returned anything from the Bills sheet.
+                  itemsSummary: cellItems,
                   status: rawStatus,
                   paymentMode: rawMode,
                   table: canonicalTable,
@@ -1939,6 +1971,19 @@ function handleSaveBill(data) {
             cleared: isSettled
           });
         }
+      }
+
+      // X-08: a status update must never CREATE a bill. Falling through here
+      // appended a subtotal-0 / total-0 / items-[] row and then let
+      // persistV2Order overwrite the real V2 Orders row with zeros, so a chef
+      // tapping READY could wipe a live bill's tax ledger.
+      if (existingRow === -1 && isStatusUpdate) {
+        return responseJson({
+          ok: false,
+          success: false,
+          error_code: "ORDER_NOT_FOUND",
+          error: "Status update for an order with no ledger row: " + billId
+        });
       }
 
       const rowData = [
@@ -2471,8 +2516,23 @@ function handleRecordPayment(json) {
     var tipP = parseInt(data.tipP || data.tipPaise || 0, 10);
     if (!tipP && (data.tip || data.tip_amount || data.tipAmount)) tipP = Math.round(Number(data.tip_amount || data.tipAmount || data.tip) * 100);
     var refUtr = data.refUtr || data.ref_UTR || data.utr || data.ref || "";
-    var gatewayId = data.gatewayId || "";
-    var verified = data.verified !== false;
+    var gatewayId = data.gatewayId || data.razorpay_payment_id || "";
+    var byGuest = (json.__authenticated !== true);
+
+    // X-01/X-02: NEVER trust a caller's `verified` claim. A staff client (which
+    // holds the secret) is trusted; a guest browser is not -- its claim is only
+    // verified when the Razorpay signature checks out server-side, otherwise the
+    // row is written UNVERIFIED for the cashier to confirm.
+    var sigOrderId = String(data.razorpay_order_id || data.orderId || data.order_id || "").trim();
+    var signature = String(data.signature || data.razorpay_signature || "").trim();
+    var verified;
+    if (!byGuest) {
+      verified = data.verified !== false;
+    } else if (signature) {
+      verified = (razorpaySignatureValid(outletId, sigOrderId, gatewayId, signature) === true);
+    } else {
+      verified = false;
+    }
     var byStaffId = data.byStaffId || data.staffId || "";
     var atStr = data.at || new Date().toISOString();
     var voidedBy = data.voidedBy || "";
@@ -2494,7 +2554,10 @@ function handleRecordPayment(json) {
       success: true,
       paymentId: paymentId,
       rev: rev,
-      amountP: amountP
+      amountP: amountP,
+      // The client must render its receipt from THIS, not from its own optimism.
+      verified: verified,
+      status: verified ? "VERIFIED" : "PENDING_VERIFICATION"
     };
 
     if (clientRequestId && ss) {
@@ -2581,6 +2644,29 @@ function handleCloseDay(json) {
   }
 }
 
+/**
+ * Verifies a Razorpay payment signature.
+ * Returns true (valid), false (invalid or incomplete), or null when no secret is
+ * configured for the outlet -- callers MUST treat null as "cannot verify", never
+ * as "verified".
+ */
+function razorpaySignatureValid(orgId, orderId, paymentId, signature) {
+  var props = PropertiesService.getScriptProperties();
+  var keySecret = props.getProperty("razorpay_key_secret_" + String(orgId || "").trim()) ||
+                  props.getProperty("RAZORPAY_KEY_SECRET");
+  if (!keySecret) return null;
+  if (!orderId || !paymentId || !signature) return false;
+  try {
+    var raw = Utilities.computeHmacSha256Signature(String(orderId) + "|" + String(paymentId), keySecret);
+    var expected = raw.map(function (bb) {
+      return ("0" + (bb & 0xFF).toString(16)).slice(-2);
+    }).join("");
+    return expected.toLowerCase() === String(signature).toLowerCase();
+  } catch (e) {
+    return false;
+  }
+}
+
 function handleVerifyPayment(json) {
   var p = json.data || json;
   var paymentId = String(p.payment_id || p.razorpay_payment_id || p.paymentId || "").trim();
@@ -2588,28 +2674,26 @@ function handleVerifyPayment(json) {
   var signature = String(p.signature || p.razorpay_signature || "").trim();
   var orgId = String(json.org_id || json.org || p.org_id || p.org || "").trim();
 
-  var props = PropertiesService.getScriptProperties();
-  var keySecret = props.getProperty("razorpay_key_secret_" + orgId) || props.getProperty("RAZORPAY_KEY_SECRET");
-
-  if (!keySecret) {
-    return responseJson({ success: true, verified: true, warning: "NO_SECRET_CONFIGURED" });
+  // X-02: fail CLOSED. This used to return {verified:true} when no secret was
+  // configured, so an outlet that had not set one accepted any signature.
+  var valid = razorpaySignatureValid(orgId, orderId, paymentId, signature);
+  if (valid === null) {
+    return responseJson({
+      success: false,
+      verified: false,
+      error_code: "NO_SECRET_CONFIGURED",
+      message: "Razorpay key secret is not configured for this outlet; payments cannot be verified."
+    });
   }
-
-  try {
-    var payload = orderId + "|" + paymentId;
-    var rawSig = Utilities.computeHmacSha256Signature(payload, keySecret);
-    var expectedSig = rawSig.map(function(b) {
-      return ("0" + (b & 0xFF).toString(16)).slice(-2);
-    }).join("");
-
-    if (expectedSig.toLowerCase() === signature.toLowerCase()) {
-      return responseJson({ success: true, verified: true });
-    } else {
-      return responseJson({ success: false, error_code: "INVALID_SIGNATURE", message: "Razorpay payment signature mismatch." });
-    }
-  } catch (err) {
-    return responseJson({ success: false, error: String(err) });
+  if (valid === true) {
+    return responseJson({ success: true, verified: true });
   }
+  return responseJson({
+    success: false,
+    verified: false,
+    error_code: "INVALID_SIGNATURE",
+    message: "Razorpay payment signature mismatch."
+  });
 }
 
 function handleCloseSession(json) {

@@ -2377,7 +2377,12 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
           explicitId: saasSession.currentOrganization?.googleSheetId,
         );
 
-        final grandTotal = paidAmount;
+        // X-05/N-10: the BILL's own total, never the tender. Assigning
+        // `paidAmount` here (and grandTotalP = paidPaise below) let a short
+        // payment silently restate the bill so the shortfall was unrecoverable.
+        final billGrandTotalP = _numInt(order['grandTotalP'],
+            (_num(order['totalAmount'], _num(order['total'], paidAmount)) * 100).round());
+        final grandTotal = billGrandTotalP / 100.0;
 
         // Record in Payments ledger
         try {
@@ -2416,17 +2421,27 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
           updatedOrderData['isPaid'] = true;
           updatedOrderData['totalAmount'] = grandTotal;
           updatedOrderData['total_amount'] = grandTotal;
+          updatedOrderData['gst_rate'] = _num(order['gst_rate'], _gstRate);
           updatedOrderData['subtotal'] = subtotal;
-          updatedOrderData['orderSource'] = 'POS_COUNTER';
-          updatedOrderData['order_source'] = 'POS_COUNTER';
+          // Settling at the counter does not change where the order came from.
+          // This used to overwrite it, relabelling every settled QR order.
+          if ((updatedOrderData['orderSource'] ?? '').toString().trim().isEmpty) {
+            updatedOrderData['orderSource'] = 'POS_COUNTER';
+            updatedOrderData['order_source'] = 'POS_COUNTER';
+          }
           updatedOrderData['subtotalP'] = subtotalP;
           updatedOrderData['discountP'] = discountP;
           updatedOrderData['serviceChargeP'] = scP;
-          updatedOrderData['taxableP'] = taxP;
+          // X-05: this sent `taxP` (the GST amount) in the taxable-BASE field,
+          // so the server's taxableP+cgstP+sgstP+roundOffP == grandTotalP check
+          // failed on every settlement and it silently re-derived the split at
+          // 5% -- an 18% store recorded taxable 198.00 and a 1064.36 round-off.
+          updatedOrderData['taxableP'] = taxableP;
           updatedOrderData['cgstP'] = cgstP;
           updatedOrderData['sgstP'] = sgstP;
           updatedOrderData['roundOffP'] = roundOffP;
-          updatedOrderData['grandTotalP'] = paidPaise;
+          updatedOrderData['grandTotalP'] = billGrandTotalP;
+          updatedOrderData['paidAmountP'] = paidPaise;
           final settleRequestId = const Uuid().v4();
           updatedOrderData['clientRequestId'] = settleRequestId;
           updatedOrderData['client_request_id'] = settleRequestId;
