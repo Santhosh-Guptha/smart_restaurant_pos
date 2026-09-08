@@ -170,4 +170,44 @@ class KitchenTicketFormatter {
 
     return bytes;
   }
+
+  /// Formats multiple station-specific KOT tickets if items belong to different stations (O-23).
+  /// Returns a Map of stationName -> ticketBytes.
+  static Future<Map<String, List<int>>> formatStationTickets({
+    required PaperSize paperSize,
+    required CapabilityProfile profile,
+    required String tokenNumber,
+    required String tableName,
+    required List<KotItem> items,
+    String? waiterName,
+    String? generalNotes,
+    DateTime? orderTime,
+    int reprintCount = 0,
+    int? courseNo,
+  }) async {
+    final Map<String, List<KotItem>> stationGroups = {};
+    for (final item in items) {
+      final st = (item.station ?? '').trim().isNotEmpty ? item.station!.trim() : 'Main Kitchen';
+      stationGroups.putIfAbsent(st, () => []).add(item);
+    }
+
+    final Map<String, List<int>> result = {};
+    for (final entry in stationGroups.entries) {
+      final bytes = await formatKotTicket(
+        paperSize: paperSize,
+        profile: profile,
+        tokenNumber: tokenNumber,
+        tableName: tableName,
+        items: entry.value,
+        waiterName: waiterName,
+        generalNotes: generalNotes,
+        stationName: entry.key,
+        orderTime: orderTime,
+        reprintCount: reprintCount,
+        courseNo: courseNo,
+      );
+      result[entry.key] = bytes;
+    }
+    return result;
+  }
 }

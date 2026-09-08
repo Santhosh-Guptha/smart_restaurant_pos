@@ -545,6 +545,9 @@ class KotItem {
   final String? voidReason;
   final String? voidedBy;
   final bool sendsToKitchen;
+  final int? seatNo;
+
+  String get id => productId;
 
   KotItem({
     this.lineId,
@@ -564,6 +567,7 @@ class KotItem {
     this.voidReason,
     this.voidedBy,
     this.sendsToKitchen = true,
+    this.seatNo,
   });
 
   Map<String, dynamic> toMap() {
@@ -585,6 +589,8 @@ class KotItem {
       'voidReason': voidReason,
       'voidedBy': voidedBy,
       'sendsToKitchen': sendsToKitchen,
+      'seatNo': seatNo,
+      'seat_no': seatNo,
       'subtotal': price * qty,
     };
   }
@@ -611,6 +617,7 @@ class KotItem {
       voidReason: map['voidReason']?.toString(),
       voidedBy: map['voidedBy']?.toString(),
       sendsToKitchen: map['sendsToKitchen'] != false,
+      seatNo: (map['seatNo'] as num?)?.toInt() ?? (map['seat_no'] as num?)?.toInt(),
     );
   }
 
@@ -632,6 +639,7 @@ class KotItem {
     String? voidReason,
     String? voidedBy,
     bool? sendsToKitchen,
+    int? seatNo,
   }) {
     return KotItem(
       lineId: lineId ?? this.lineId,
@@ -651,6 +659,7 @@ class KotItem {
       voidReason: voidReason ?? this.voidReason,
       voidedBy: voidedBy ?? this.voidedBy,
       sendsToKitchen: sendsToKitchen ?? this.sendsToKitchen,
+      seatNo: seatNo ?? this.seatNo,
     );
   }
 }
@@ -739,6 +748,7 @@ class KotOrder {
   final String? orderType;
   final String? tableNumber;
   final bool? isPaid;
+  final String? tokenNo;
 
   /// Universal dedup key using canonical ID
   String get canonicalKey => canonicalId(this);
@@ -843,6 +853,7 @@ class KotOrder {
     this.orderType,
     this.tableNumber,
     this.isPaid,
+    this.tokenNo,
   });
 
   KotOrder copyWith({
@@ -884,6 +895,7 @@ class KotOrder {
     String? orderType,
     String? tableNumber,
     bool? isPaid,
+    String? tokenNo,
   }) {
     return KotOrder(
       id: id ?? this.id,
@@ -924,6 +936,7 @@ class KotOrder {
       orderType: orderType ?? this.orderType,
       tableNumber: tableNumber ?? this.tableNumber,
       isPaid: isPaid ?? this.isPaid,
+      tokenNo: tokenNo ?? this.tokenNo,
     );
   }
 
@@ -971,6 +984,8 @@ class KotOrder {
       'tableNumber': tableNumber ?? tableName,
       'table_number': tableNumber ?? tableName,
       'isPaid': isPaid,
+      'tokenNo': tokenNo,
+      'token_no': tokenNo,
       'updatedAt': DateTime.now().toIso8601String(),
     };
   }
@@ -1106,6 +1121,7 @@ class KotOrder {
       orderType: (map['orderType'] ?? map['order_type'])?.toString(),
       tableNumber: (map['tableNumber'] ?? map['table_number'] ?? rawTableId).toString(),
       isPaid: isExplicitlyPaid,
+      tokenNo: (map['tokenNo'] ?? map['token_no'] ?? map['token'])?.toString(),
     );
   }
 }

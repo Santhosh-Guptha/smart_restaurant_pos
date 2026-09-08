@@ -249,6 +249,29 @@ class LocalStore {
     return null;
   }
 
+  static const String _terminalKeysBoxPrefix = 'v2_terminal_keys_';
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // Terminal Keys Storage: Set of Canonical Order IDs cleared on this device (O-04)
+  // ───────────────────────────────────────────────────────────────────────────
+  static Future<Set<String>> getTerminalKeys(String outletId) async {
+    if (outletId.isEmpty) return {};
+    final box = await _getBox('$_terminalKeysBoxPrefix$outletId');
+    return box.keys.map((e) => e.toString()).toSet();
+  }
+
+  static Future<void> addTerminalKey(String outletId, String canonicalKey) async {
+    if (outletId.isEmpty || canonicalKey.isEmpty) return;
+    final box = await _getBox('$_terminalKeysBoxPrefix$outletId');
+    await box.put(canonicalKey, DateTime.now().toIso8601String());
+  }
+
+  static Future<void> removeTerminalKey(String outletId, String canonicalKey) async {
+    if (outletId.isEmpty || canonicalKey.isEmpty) return;
+    final box = await _getBox('$_terminalKeysBoxPrefix$outletId');
+    await box.delete(canonicalKey);
+  }
+
   static Future<void> clear(String outletId) async {
     if (outletId.isEmpty) return;
     final oBox = await _getBox('$_ordersBoxPrefix$outletId');
@@ -261,5 +284,7 @@ class LocalStore {
     await dBox.clear();
     final sBox = await _getBox('$_sessionsBoxPrefix$outletId');
     await sBox.clear();
+    final kBox = await _getBox('$_terminalKeysBoxPrefix$outletId');
+    await kBox.clear();
   }
 }

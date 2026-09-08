@@ -159,6 +159,10 @@ function doPost(e) {
       case "CANCEL_ORDER":
         return handleVoidOrder(json);
 
+      case "VOID_LINE":
+      case "CANCEL_LINE":
+        return handleVoidLine(json);
+
       default:
         return responseJson({ success: false, error: "Unknown action: " + action });
     }
@@ -3471,6 +3475,81 @@ function handleVoidOrder(json) {
       voidedBy: authorizedBy,
       tableId: tableId,
       rev: rev
+    });
+  } catch (err) {
+    return responseJson({ ok: false, success: false, error: String(err) });
+  } finally {
+    try { lock.releaseLock(); } catch(e) {}
+  }
+}
+
+function handleVoidLine(json) {
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(20000);
+  } catch (eLock) {
+    return responseJson({ ok: false, success: false, error: "Server busy: lock timeout in handleVoidLine." });
+  }
+
+  try {
+    var data = json.data || json;
+    var outletId = String(json.outletId || json.org_id || data.outletId || "").trim();
+    var sId = json.spreadsheet_id || json.spreadsheetId || getSheetIdForOrg(outletId);
+    var ss = null;
+    if (sId) {
+      try { ss = SpreadsheetApp.openById(sId); } catch(e) {}
+    }
+    if (!ss) {
+      return responseJson({ ok: false, success: false, error: "Spreadsheet not found." });
+    }
+
+    var orderId = cleanOrderId(data.orderId || data.order_id || data.billId || data.id);
+    var lineId = String(data.lineId || data.line_id || "").trim();
+    var productId = String(data.productId || data.product_id || "").trim();
+    var voidQty = parseFloat(data.voidQty || data.voidedQty || data.qty || "1") || 1.0;
+    var reason = String(data.reason || data.voidReason || "").trim();
+    var authorizedBy = String(data.authorizedBy || data.staffName || data.staffId || "Manager").trim();
+
+    if (!orderId) {
+      return responseJson({ ok: false, success: false, error: "Order ID is required to void an item line." });
+    }
+    if (!reason) {
+      return responseJson({ ok: false, success: false, error: "A valid cancellation/void reason is mandatory for audit compliance." });
+    }
+
+    ensureV2Sheets(ss);
+    var rev = getAndBumpRev(outletId);
+    var lineFound = false;
+
+    var oiSheet = ss.getSheetByName("OrderItems");
+    if (oiSheet && oiSheet.getLastRow() >= 2) {
+      var oiData = oiSheet.getDataRange().getValues();
+      for (var j = 1; j < oiData.length; j++) {
+        var rowOrderId = cleanOrderId(oiData[j][1]);
+        var rowLineId = String(oiData[j][0] || "").trim();
+        var rowProdId = String(oiData[j][3] || "").trim();
+
+        if (rowOrderId === orderId && (rowLineId === lineId || (productId && rowProdId === productId))) {
+          lineFound = true;
+          oiSheet.getRange(j + 1, 12).setValue("VOIDED");
+          oiSheet.getRange(j + 1, 13).setValue(voidQty);
+          oiSheet.getRange(j + 1, 14).setValue(reason);
+          oiSheet.getRange(j + 1, 15).setValue(authorizedBy);
+          oiSheet.getRange(j + 1, 16).setValue(rev);
+          break;
+        }
+      }
+    }
+
+    logAuditRecord(ss, outletId, authorizedBy, "VOID_LINE", "OrderItem", lineId || (orderId + ":" + productId), "ACTIVE", "VOIDED (" + voidQty + ")", reason);
+
+    return responseJson({
+      ok: true,
+      success: true,
+      orderId: orderId,
+      lineId: lineId,
+      rev: rev,
+      message: "Item line voided successfully."
     });
   } catch (err) {
     return responseJson({ ok: false, success: false, error: String(err) });

@@ -933,6 +933,41 @@ class AppsScriptBackendService {
     return {'success': false, 'error': res?['error'] ?? 'Failed to void order'};
   }
 
+  /// 26b. Void / Cancel Order Line Item with Reason (Wave 4)
+  static Future<Map<String, dynamic>> voidLine({
+    required String outletId,
+    required String orderId,
+    required String reason,
+    required String authorizedBy,
+    String? lineId,
+    String? productId,
+    double voidQty = 1.0,
+    String? spreadsheetId,
+    String? clientRequestId,
+  }) async {
+    final clientReqId = clientRequestId ?? const Uuid().v4();
+    final res = await _postToWebhook({
+      'v': 2,
+      'action': 'VOID_LINE',
+      'outletId': outletId,
+      'clientRequestId': clientReqId,
+      if (spreadsheetId != null && spreadsheetId.isNotEmpty) 'spreadsheetId': spreadsheetId,
+      'data': {
+        'orderId': orderId,
+        'lineId': lineId ?? '',
+        'productId': productId ?? '',
+        'voidQty': voidQty,
+        'reason': reason,
+        'authorizedBy': authorizedBy,
+        'clientRequestId': clientReqId,
+      },
+    });
+    if (res != null && (res['ok'] == true || res['success'] == true)) {
+      return {'success': true, 'data': res};
+    }
+    return {'success': false, 'error': res?['error'] ?? 'Failed to void item line'};
+  }
+
   /// 27. Refund Payment (§4.4, §6.2, B-29)
   static Future<bool> refundPayment({
     required String outletId,

@@ -13,6 +13,7 @@ import '../../providers/restaurant_auth_provider.dart';
 import '../../providers/saas_session_provider.dart';
 import '../../services/kitchen_ticket_formatter.dart';
 import '../../services/apps_script_backend_service.dart';
+import '../../sync/local_store.dart';
 
 class KitchenDisplayScreen extends ConsumerStatefulWidget {
   const KitchenDisplayScreen({super.key});
@@ -23,11 +24,14 @@ class KitchenDisplayScreen extends ConsumerStatefulWidget {
 
 class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
   String _selectedFilter = 'PENDING'; // New Received first by default!
+  String _selectedStation = 'ALL';
   int _currentStageIndex = 0;
   bool _isKanbanView = true;
   late final PageController _pageController;
   Timer? _tickerTimer;
   Timer? _pollTimer;
+  final ValueNotifier<DateTime> _clockNotifier = ValueNotifier<DateTime>(DateTime.now());
+  Set<String> _terminalKeys = {};
 
   static const List<Map<String, dynamic>> _kdsStages = [
     {'id': 'PENDING', 'label': 'New Received ⏳', 'color': Color(0xFFD97706)},
@@ -39,7 +43,7 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
   // Live active kitchen orders (100% dynamic)
   List<KotOrder> _allOrders = [];
   // Archived served orders history today
-  List<KotOrder> _servedOrdersHistory = [];
+  final List<KotOrder> _servedOrdersHistory = [];
 
   String _getEffectiveOrgId() {
     final saasSession = ref.read(saasSessionProvider);
@@ -50,15 +54,15 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
     );
   }
 
-
   @override
   void initState() {
     super.initState();
     _pageController = PageController(initialPage: 0);
     _loadLiveOrders();
-    // Refresh elapsed timers every second
+    _loadTerminalKeys();
+    // Refresh scoped elapsed timers every second via clock notifier (O-28)
     _tickerTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (mounted) setState(() {});
+      _clockNotifier.value = DateTime.now();
     });
     // Live synchronization poll for incoming table & POS orders
     _pollTimer = Timer.periodic(const Duration(seconds: 3), (_) {
@@ -69,10 +73,20 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
     });
   }
 
+  Future<void> _loadTerminalKeys() async {
+    try {
+      final keys = await LocalStore.getTerminalKeys(_getEffectiveOrgId());
+      if (mounted) {
+        setState(() => _terminalKeys = keys);
+      }
+    } catch (_) {}
+  }
+
   @override
   void dispose() {
     _tickerTimer?.cancel();
     _pollTimer?.cancel();
+    _clockNotifier.dispose();
     _pageController.dispose();
     super.dispose();
   }
@@ -99,7 +113,7 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
           (n) => n.effectiveKitchenStatus == 'PENDING' && !_allOrders.any((o) => canonicalId(o) == canonicalId(n)),
         ).toList();
 
-        if (newlyArrived.isNotEmpty && _allOrders.isNotEmpty) {
+        if (newlyArrived.isNotEmpty) {
           SystemSound.play(SystemSoundType.alert);
           HapticFeedback.heavyImpact();
           if (mounted) {
@@ -247,6 +261,11 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
         continue;
       }
 
+      // O-04: If this order was cleared/served on this device, skip incoming stale active states
+      if (_terminalKeys.contains(o.canonicalKey)) {
+        continue;
+      }
+
       final existing = orderMap[o.canonicalKey];
       if (existing != null) {
         // Monotonic progression: kitchen rank
@@ -281,21 +300,37 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
   }
 
   List<KotOrder> _getOrdersForStage(String stage) {
+    List<KotOrder> orders;
     if (stage == 'PENDING') {
-      return _allOrders.where((o) => o.effectiveKitchenStatus == 'PENDING' && o.items.any((i) => i.sendsToKitchen)).toList();
+      orders = _allOrders.where((o) => o.effectiveKitchenStatus == 'PENDING' && o.items.any((i) => i.sendsToKitchen)).toList();
     } else if (stage == 'PREPARING') {
-      return _allOrders.where((o) => o.effectiveKitchenStatus == 'PREPARING' && o.items.any((i) => i.sendsToKitchen)).toList();
+      orders = _allOrders.where((o) => o.effectiveKitchenStatus == 'PREPARING' && o.items.any((i) => i.sendsToKitchen)).toList();
     } else if (stage == 'READY') {
-      return _allOrders.where((o) => o.effectiveKitchenStatus == 'READY').toList();
+      orders = _allOrders.where((o) => o.effectiveKitchenStatus == 'READY').toList();
     } else if (stage == 'SERVED') {
-      return _servedOrdersHistory;
+      orders = _servedOrdersHistory;
+    } else {
+      orders = _allOrders.where((o) => o.effectiveKitchenStatus != 'SERVED').toList();
     }
-    return _allOrders.where((o) => o.effectiveKitchenStatus != 'SERVED').toList();
+
+    if (_selectedStation != 'ALL') {
+      orders = orders.where((o) {
+        return o.items.any((it) {
+          final itStation = (it.station ?? '').trim().toUpperCase();
+          if (itStation.isEmpty) return _selectedStation.toUpperCase() == 'MAIN KITCHEN';
+          return itStation == _selectedStation.toUpperCase();
+        });
+      }).toList();
+    }
+    return orders;
   }
 
   Future<void> _recallOrder(KotOrder order) async {
     try {
       final orgId = _getEffectiveOrgId();
+      _terminalKeys.remove(order.canonicalKey);
+      await LocalStore.removeTerminalKey(orgId, order.canonicalKey);
+
       final recalledOrder = order.copyWith(
         status: KotStatus.ready,
         kitchenStatus: 'READY',
@@ -356,6 +391,11 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
     try {
       final orgId = _getEffectiveOrgId();
       final isServedAction = (newStatus == KotStatus.served || newStatus == KotStatus.completed);
+
+      if (isServedAction) {
+        _terminalKeys.add(order.canonicalKey);
+        await LocalStore.addTerminalKey(orgId, order.canonicalKey);
+      }
 
       // Update local state immediately
       setState(() {
@@ -480,13 +520,15 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
         return;
       }
       final newReprintCount = order.reprintCount + 1;
-      final bytes = await KitchenTicketFormatter.formatKotTicket(
+      final token = (order.tokenNo != null && order.tokenNo!.isNotEmpty)
+          ? order.tokenNo!
+          : (order.kotNumber.startsWith('#') ? order.kotNumber : '#${order.kotNumber}');
+      final stationTickets = await KitchenTicketFormatter.formatStationTickets(
         paperSize: PaperSize.mm80,
         profile: await CapabilityProfile.load(),
-        tokenNumber: order.kotNumber.startsWith('#') ? order.kotNumber : '#${order.kotNumber}',
+        tokenNumber: token,
         tableName: order.tableName,
         items: kitchenItems,
-        stationName: 'Main Kitchen',
         generalNotes: order.generalNotes,
         orderTime: order.createdAt,
         reprintCount: newReprintCount,
@@ -495,7 +537,9 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
 
       final isConnected = await PrintBluetoothThermal.connectionStatus;
       if (isConnected) {
-        await PrintBluetoothThermal.writeBytes(bytes);
+        for (final bytes in stationTickets.values) {
+          await PrintBluetoothThermal.writeBytes(bytes);
+        }
         final orgId = _getEffectiveOrgId();
         if (Hive.isBoxOpen('configBox')) {
           final box = Hive.box('configBox');
@@ -655,6 +699,7 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
                 ],
               ),
             ),
+          _buildStationFilterBar(),
           if (!_isKanbanView) ...[
             // ── Filter Chips Bar with Swipe Support ─────────────
             Container(
@@ -824,96 +869,138 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
               final stageColor = stage['color'] as Color;
               final stageBg = stage['bg'] as Color;
 
-              return Container(
-                width: colWidth,
-                margin: EdgeInsets.only(right: index < stages.length - 1 ? 12 : 0),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: const Color(0xFFE2E8F0)),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.02),
-                      blurRadius: 6,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-                child: Column(
-                  children: [
-                    // Column Header
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                      decoration: BoxDecoration(
-                        color: stageBg,
-                        borderRadius: const BorderRadius.vertical(top: Radius.circular(15)),
-                        border: const Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
+              return DragTarget<KotOrder>(
+                onWillAcceptWithDetails: (details) {
+                  return details.data.effectiveKitchenStatus != stageId;
+                },
+                onAcceptWithDetails: (details) {
+                  final droppedOrder = details.data;
+                  if (stageId == 'PENDING') {
+                    _updateOrderStatus(droppedOrder, KotStatus.pending);
+                  } else if (stageId == 'PREPARING') {
+                    _updateOrderStatus(droppedOrder, KotStatus.preparing);
+                  } else if (stageId == 'READY') {
+                    _updateOrderStatus(droppedOrder, KotStatus.ready);
+                  }
+                },
+                builder: (context, candidateData, rejectedData) {
+                  final isHovered = candidateData.isNotEmpty;
+                  return AnimatedContainer(
+                    duration: const Duration(milliseconds: 150),
+                    width: colWidth,
+                    margin: EdgeInsets.only(right: index < stages.length - 1 ? 12 : 0),
+                    decoration: BoxDecoration(
+                      color: isHovered ? stageBg.withValues(alpha: 0.6) : Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: isHovered ? stageColor : const Color(0xFFE2E8F0),
+                        width: isHovered ? 2 : 1,
                       ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Row(
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.02),
+                          blurRadius: 6,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      children: [
+                        // Column Header
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                          decoration: BoxDecoration(
+                            color: stageBg,
+                            borderRadius: const BorderRadius.vertical(top: Radius.circular(15)),
+                            border: const Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              CircleAvatar(radius: 4, backgroundColor: stageColor),
-                              const SizedBox(width: 8),
-                              Text(
-                                stage['title'] as String,
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.bold,
+                              Row(
+                                children: [
+                                  CircleAvatar(radius: 4, backgroundColor: stageColor),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    stage['title'] as String,
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.bold,
+                                      color: stageColor,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                decoration: BoxDecoration(
                                   color: stageColor,
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Text(
+                                  '${stageOrders.length}',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                  ),
                                 ),
                               ),
                             ],
                           ),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: stageColor,
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: Text(
-                              '${stageOrders.length}',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 11,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    // Column Orders List
-                    Expanded(
-                      child: stageOrders.isEmpty
-                          ? Center(
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(Icons.inbox_outlined, size: 36, color: Colors.grey.shade300),
-                                  const SizedBox(height: 6),
-                                  Text(
-                                    'No orders',
-                                    style: TextStyle(color: Colors.grey.shade400, fontSize: 12, fontWeight: FontWeight.w500),
+                        ),
+                        // Column Orders List
+                        Expanded(
+                          child: stageOrders.isEmpty
+                              ? Center(
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.inbox_outlined, size: 36, color: Colors.grey.shade300),
+                                      const SizedBox(height: 6),
+                                      Text(
+                                        'No orders',
+                                        style: TextStyle(color: Colors.grey.shade400, fontSize: 12, fontWeight: FontWeight.w500),
+                                      ),
+                                    ],
                                   ),
-                                ],
-                              ),
-                            )
-                          : ListView.separated(
-                              padding: const EdgeInsets.all(10),
-                              itemCount: stageOrders.length,
-                              separatorBuilder: (_, __) => const SizedBox(height: 10),
-                              itemBuilder: (context, i) {
-                                return SizedBox(
-                                  height: 380,
-                                  child: _buildOrderCard(stageOrders[i]),
-                                );
-                              },
-                            ),
+                                )
+                              : ListView.separated(
+                                  padding: const EdgeInsets.all(10),
+                                  itemCount: stageOrders.length,
+                                  separatorBuilder: (_, __) => const SizedBox(height: 10),
+                                  itemBuilder: (context, i) {
+                                    final cardOrder = stageOrders[i];
+                                    return LongPressDraggable<KotOrder>(
+                                      data: cardOrder,
+                                      feedback: Material(
+                                        elevation: 8,
+                                        borderRadius: BorderRadius.circular(16),
+                                        child: SizedBox(
+                                          width: colWidth * 0.95,
+                                          height: 380,
+                                          child: _buildOrderCard(cardOrder),
+                                        ),
+                                      ),
+                                      childWhenDragging: Opacity(
+                                        opacity: 0.35,
+                                        child: SizedBox(
+                                          height: 380,
+                                          child: _buildOrderCard(cardOrder),
+                                        ),
+                                      ),
+                                      child: SizedBox(
+                                        height: 380,
+                                        child: _buildOrderCard(cardOrder),
+                                      ),
+                                    );
+                                  },
+                                ),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
+                  );
+                },
               );
             },
           ),
@@ -961,6 +1048,73 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
                 fontSize: 13,
               ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStationFilterBar() {
+    final stationsSet = <String>{'ALL', 'Main Kitchen'};
+    for (final o in [..._allOrders, ..._servedOrdersHistory]) {
+      for (final item in o.items) {
+        if (item.station != null && item.station!.trim().isNotEmpty) {
+          stationsSet.add(item.station!.trim());
+        }
+      }
+    }
+    final stations = stationsSet.toList();
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      decoration: const BoxDecoration(
+        color: Color(0xFFF8FAFC),
+        border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
+      ),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            const Icon(Icons.room_service_outlined, size: 16, color: Color(0xFF64748B)),
+            const SizedBox(width: 8),
+            const Text(
+              'Station:',
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF64748B)),
+            ),
+            const SizedBox(width: 8),
+            ...stations.map((station) {
+              final isSelected = _selectedStation.toUpperCase() == station.toUpperCase();
+              return Padding(
+                padding: const EdgeInsets.only(right: 6),
+                child: FilterChip(
+                  label: Text(
+                    station,
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                      color: isSelected ? Colors.white : const Color(0xFF1E293B),
+                    ),
+                  ),
+                  selected: isSelected,
+                  selectedColor: const Color(0xFF2563EB),
+                  backgroundColor: Colors.white,
+                  checkmarkColor: Colors.white,
+                  showCheckmark: false,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                    side: BorderSide(
+                      color: isSelected ? const Color(0xFF2563EB) : const Color(0xFFCBD5E1),
+                    ),
+                  ),
+                  onSelected: (val) {
+                    setState(() {
+                      _selectedStation = station;
+                    });
+                  },
+                ),
+              );
+            }),
           ],
         ),
       ),
@@ -1017,38 +1171,15 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
   }
 
   Widget _buildOrderCard(KotOrder order) {
-    final isPending = order.status == KotStatus.pending;
-    final isPreparing = order.status == KotStatus.preparing;
-    final isReady = order.status == KotStatus.ready;
-    final isCompleted = order.status == KotStatus.served || order.status == KotStatus.completed;
+    final kitchenStatus = order.effectiveKitchenStatus;
+    final isPending = kitchenStatus == 'PENDING';
+    final isPreparing = kitchenStatus == 'PREPARING';
+    final isReady = kitchenStatus == 'READY';
+    final isCompleted = kitchenStatus == 'SERVED';
+    final isFoodReadyOrDone = isReady || isCompleted;
 
-    // Freeze timer once food is ready / served / completed!
-    final bool isFoodReadyOrDone = isReady || isCompleted;
-    final Duration elapsed;
-    if (isFoodReadyOrDone) {
-      final stopTime = order.readyAt ?? order.paidAt ?? DateTime.now();
-      elapsed = stopTime.difference(order.createdAt);
-    } else {
-      elapsed = DateTime.now().difference(order.createdAt);
-    }
-
-    final elapsedMinutes = elapsed.inMinutes.abs();
-    final elapsedSeconds = elapsed.inSeconds.abs() % 60;
-    final timerDisplay =
-        '${elapsedMinutes.toString().padLeft(2, '0')}:${elapsedSeconds.toString().padLeft(2, '0')}';
-
-    Color timerBg = const Color(0xFFEFF6FF);
-    Color timerColor = const Color(0xFF2563EB);
-    if (isFoodReadyOrDone) {
-      timerBg = const Color(0xFFD1FAE5);
-      timerColor = const Color(0xFF059669);
-    } else if (elapsedMinutes >= 10 && elapsedMinutes < 20) {
-      timerBg = const Color(0xFFFEF3C7);
-      timerColor = const Color(0xFFD97706);
-    } else if (elapsedMinutes >= 20) {
-      timerBg = const Color(0xFFFEE2E2);
-      timerColor = const Color(0xFFDC2626);
-    }
+    final paymentStatus = order.effectivePaymentStatus;
+    final isPaid = paymentStatus == 'PAID';
 
     Color statusBadgeBg = const Color(0xFFFEF3C7);
     Color statusBadgeColor = const Color(0xFFD97706);
@@ -1138,6 +1269,22 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
                               ),
                             ),
                           ),
+                          const SizedBox(width: 4),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: isPaid ? const Color(0xFFD1FAE5) : const Color(0xFFFEF3C7),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              isPaid ? 'PAID ✅' : 'UNPAID ⏳',
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                                color: isPaid ? const Color(0xFF059669) : const Color(0xFFD97706),
+                              ),
+                            ),
+                          ),
                           if (order.courseNo != null) ...[
                             const SizedBox(width: 4),
                             Container(
@@ -1172,28 +1319,59 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
                     ],
                   ),
                 ),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: timerBg,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: timerColor.withValues(alpha: 0.3)),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(isFoodReadyOrDone ? Icons.check_circle_outline_rounded : Icons.timer_outlined, size: 13, color: timerColor),
-                      const SizedBox(width: 4),
-                      Text(
-                        isFoodReadyOrDone ? 'Ready in $timerDisplay' : timerDisplay,
-                        style: TextStyle(
-                          color: timerColor,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 12,
-                        ),
+                ValueListenableBuilder<DateTime>(
+                  valueListenable: _clockNotifier,
+                  builder: (context, now, _) {
+                    final Duration elapsed;
+                    if (isFoodReadyOrDone) {
+                      final stopTime = order.readyAt ?? order.paidAt ?? order.createdAt;
+                      elapsed = stopTime.difference(order.createdAt);
+                    } else {
+                      elapsed = now.difference(order.createdAt);
+                    }
+
+                    final elapsedMinutes = elapsed.inMinutes.abs();
+                    final elapsedSeconds = elapsed.inSeconds.abs() % 60;
+                    final timerDisplay =
+                        '${elapsedMinutes.toString().padLeft(2, '0')}:${elapsedSeconds.toString().padLeft(2, '0')}';
+
+                    Color timerBg = const Color(0xFFEFF6FF);
+                    Color timerColor = const Color(0xFF2563EB);
+                    if (isFoodReadyOrDone) {
+                      timerBg = const Color(0xFFD1FAE5);
+                      timerColor = const Color(0xFF059669);
+                    } else if (elapsedMinutes >= 10 && elapsedMinutes < 20) {
+                      timerBg = const Color(0xFFFEF3C7);
+                      timerColor = const Color(0xFFD97706);
+                    } else if (elapsedMinutes >= 20) {
+                      timerBg = const Color(0xFFFEE2E2);
+                      timerColor = const Color(0xFFDC2626);
+                    }
+
+                    return Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: timerBg,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: timerColor.withValues(alpha: 0.3)),
                       ),
-                    ],
-                  ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(isFoodReadyOrDone ? Icons.check_circle_outline_rounded : Icons.timer_outlined, size: 13, color: timerColor),
+                          const SizedBox(width: 4),
+                          Text(
+                            isFoodReadyOrDone ? 'Ready in $timerDisplay' : timerDisplay,
+                            style: TextStyle(
+                              color: timerColor,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
                 ),
               ],
             ),
@@ -1554,7 +1732,7 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
   // ── Kitchen Analytics Modal ──────────────────────────────
   void _showKitchenAnalyticsModal() {
     final now = DateTime.now();
-    final serviceCutoff = now.subtract(const Duration(hours: 24));
+    final serviceCutoff = DateTime(now.year, now.month, now.day);
     final completedOrders = _servedOrdersHistory.where((o) => !o.createdAt.isBefore(serviceCutoff)).toList();
     final activeOrders = _allOrders.where((o) => !o.createdAt.isBefore(serviceCutoff)).toList();
     final allOrdersCombined = [...activeOrders, ...completedOrders];

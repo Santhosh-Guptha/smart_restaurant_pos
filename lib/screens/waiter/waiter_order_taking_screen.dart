@@ -104,6 +104,9 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
   @override
   void initState() {
     super.initState();
+    if (widget.existingOrder != null) {
+      _tableOrders = [widget.existingOrder!];
+    }
     final rawCust = (widget.table.currentCustomerName ?? '').trim();
     // Sanitize: Do not prefill if it looks like a dish name, table name, takeaway, or item summary
     if (rawCust.isNotEmpty &&
@@ -119,6 +122,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
     }
     _customerPhoneCtrl.text = widget.table.currentCustomerPhone ?? '';
     _loadMenu();
+    _loadTrayDraft();
     _loadTableActiveOrders();
 
     // Poll every 4 seconds to catch kitchen status updates (e.g. Food Ready!)
@@ -162,16 +166,10 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
         }
       }
 
-      // 3. Filter out placeholder / deleted items
+      // 3. Filter out deleted or empty items (O-36: do not blacklist category prefixes like m_br_)
       items = items.where((d) {
-        final id = d['id']?.toString() ?? '';
-        return !id.startsWith('m_br_') &&
-            !id.startsWith('m_st_') &&
-            !id.startsWith('m_mn_') &&
-            !id.startsWith('m_bf_') &&
-            !id.startsWith('m_bv_') &&
-            !id.startsWith('m_ds_') &&
-            !id.startsWith('dish_br_');
+        final name = d['name']?.toString().trim() ?? '';
+        return name.isNotEmpty && d['isDeleted'] != true;
       }).toList();
     } catch (e) {
       debugPrint('Error loading waiter menu: $e');
@@ -219,6 +217,52 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
     } catch (e) {
       debugPrint('Error fetching menu from cloud in waiter screen: $e');
     }
+  }
+
+  void _loadTrayDraft() {
+    try {
+      final orgId = _getEffectiveOrgId();
+      if (Hive.isBoxOpen('configBox')) {
+        final box = Hive.box('configBox');
+        final raw = box.get('waiter_tray_draft_${orgId}_${widget.table.id}');
+        if (raw is Map && raw.isNotEmpty) {
+          setState(() {
+            raw.forEach((k, v) {
+              if (v is Map) {
+                _tray[k.toString()] = Map<String, dynamic>.from(v);
+              }
+            });
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint('Error loading waiter tray draft: $e');
+    }
+  }
+
+  void _persistTrayDraft() {
+    try {
+      final orgId = _getEffectiveOrgId();
+      if (Hive.isBoxOpen('configBox')) {
+        final box = Hive.box('configBox');
+        if (_tray.isEmpty) {
+          box.delete('waiter_tray_draft_${orgId}_${widget.table.id}');
+        } else {
+          box.put('waiter_tray_draft_${orgId}_${widget.table.id}', _tray);
+        }
+      }
+    } catch (e) {
+      debugPrint('Error saving waiter tray draft: $e');
+    }
+  }
+
+  void _clearTrayDraft() {
+    try {
+      final orgId = _getEffectiveOrgId();
+      if (Hive.isBoxOpen('configBox')) {
+        Hive.box('configBox').delete('waiter_tray_draft_${orgId}_${widget.table.id}');
+      }
+    } catch (_) {}
   }
 
   Future<void> _loadTableActiveOrders() async {
@@ -315,6 +359,13 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
     return count;
   }
 
+  int get _tableTotalItems => _tableOrders.fold<int>(
+    0,
+    (sum, o) => sum + o.items.fold<int>(0, (s, i) => s + (i.voidedQty >= i.qty ? 0 : i.qty.toInt())),
+  );
+
+  double get _tableBalance => _tableOrders.fold<double>(0.0, (sum, o) => sum + o.totalAmount);
+
   void _addToTray(Map<String, dynamic> item) {
     final isAvail = item['isAvailable'] != false && item['is_available'] != false && ((item['stock'] as num?)?.toInt() ?? -1) != 0;
     if (!isAvail) {
@@ -349,6 +400,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
       } else {
         _tray[id] = {'item': item, 'qty': 1};
       }
+      _persistTrayDraft();
     });
   }
 
@@ -364,11 +416,189 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
           _tray.remove(id);
         }
       }
+      _persistTrayDraft();
     });
   }
 
   int _getTrayQty(String id) {
     return (_tray[id]?['qty'] as int?) ?? 0;
+  }
+
+  void _showItemModifierSheet(Map<String, dynamic> item) {
+    final id = item['id']?.toString() ?? item['name'].toString();
+    final trayEntry = _tray[id];
+    final currentNotes = (trayEntry?['item']?['notes'] ?? '').toString();
+    final noteCtrl = TextEditingController(text: currentNotes);
+    final quickModifiers = [
+      'No Onion / Garlic',
+      'Less Spicy 🌶️',
+      'Extra Spicy 🌶️🌶️',
+      'Jain Style',
+      'Gluten Free',
+      'Less Oil',
+      'Crispy',
+      'Extra Dip / Chutney',
+      'Serve Hot',
+    ];
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setSheetState) {
+          return Container(
+            padding: EdgeInsets.only(
+              bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+              top: 16,
+              left: 20,
+              right: 20,
+            ),
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              item['name']?.toString() ?? 'Special Instructions',
+                              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+                            ),
+                            const Text(
+                              'Kitchen instructions & modifiers for this dish',
+                              style: TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close_rounded),
+                        onPressed: () => Navigator.pop(ctx),
+                      ),
+                    ],
+                  ),
+                  const Divider(height: 20),
+                  const Text(
+                    'Quick Notes & Dietary Preferences',
+                    style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: Color(0xFF334155)),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: quickModifiers.map((mod) {
+                      final hasMod = noteCtrl.text.toLowerCase().contains(mod.toLowerCase());
+                      return ActionChip(
+                        label: Text(mod),
+                        labelStyle: TextStyle(
+                          fontSize: 11,
+                          fontWeight: hasMod ? FontWeight.bold : FontWeight.normal,
+                          color: hasMod ? Colors.white : const Color(0xFF1E293B),
+                        ),
+                        backgroundColor: hasMod ? const Color(0xFF2563EB) : const Color(0xFFF1F5F9),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          side: BorderSide(
+                            color: hasMod ? const Color(0xFF2563EB) : const Color(0xFFCBD5E1),
+                          ),
+                        ),
+                        onPressed: () {
+                          setSheetState(() {
+                            if (hasMod) {
+                              final pattern = RegExp(r'\b' + RegExp.escape(mod) + r'[,;]?\s*', caseSensitive: false);
+                              noteCtrl.text = noteCtrl.text.replaceAll(pattern, '').trim();
+                            } else {
+                              if (noteCtrl.text.trim().isEmpty) {
+                                noteCtrl.text = mod;
+                              } else {
+                                noteCtrl.text = '${noteCtrl.text.trim()}, $mod';
+                              }
+                            }
+                          });
+                        },
+                      );
+                    }).toList(),
+                  ),
+                  const SizedBox(height: 14),
+                  const Text(
+                    'Specific Chef Note / Custom Instructions',
+                    style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: Color(0xFF334155)),
+                  ),
+                  const SizedBox(height: 6),
+                  TextField(
+                    controller: noteCtrl,
+                    maxLines: 2,
+                    decoration: InputDecoration(
+                      hintText: 'e.g. Extra spicy, no onions, pack gravy separately...',
+                      hintStyle: TextStyle(fontSize: 12, color: Colors.grey.shade400),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                      contentPadding: const EdgeInsets.all(12),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      if (noteCtrl.text.isNotEmpty)
+                        TextButton(
+                          onPressed: () {
+                            setSheetState(() {
+                              noteCtrl.clear();
+                            });
+                          },
+                          child: const Text('Clear Notes', style: TextStyle(color: Color(0xFFDC2626))),
+                        ),
+                      const Spacer(),
+                      ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF2563EB),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        ),
+                        onPressed: () {
+                          setState(() {
+                            if (_tray.containsKey(id)) {
+                              final currentMap = Map<String, dynamic>.from(_tray[id]!['item'] as Map);
+                              currentMap['notes'] = noteCtrl.text.trim();
+                              _tray[id]!['item'] = currentMap;
+                            } else {
+                              final itemCopy = Map<String, dynamic>.from(item);
+                              itemCopy['notes'] = noteCtrl.text.trim();
+                              _tray[id] = {'item': itemCopy, 'qty': 1};
+                            }
+                            _persistTrayDraft();
+                          });
+                          Navigator.pop(ctx);
+                        },
+                        child: const Text('Save Instructions', style: TextStyle(fontWeight: FontWeight.bold)),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
   }
 
   // ── Dispatch Order directly to Kitchen (KOT) ──────────────────────────
@@ -377,6 +607,33 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
     if (!LicenseGuard.checkAndShowLockout(context, ref, actionName: 'send KOT to kitchen')) return;
 
     setState(() => _isSending = true);
+
+    // O-36: Validate availability against menu before sending KOT
+    final unavailableItems = <String>[];
+    for (final entry in _tray.values) {
+      final it = entry['item'] as Map<String, dynamic>;
+      final dishId = it['id']?.toString() ?? '';
+      final matching = _menuItems.firstWhere(
+        (m) => (m['id']?.toString() ?? '') == dishId,
+        orElse: () => it,
+      );
+      if (matching['isAvailable'] == false || matching['is_available'] == false || ((matching['stock'] as num?)?.toInt() ?? -1) == 0) {
+        unavailableItems.add(it['name']?.toString() ?? 'Dish');
+      }
+    }
+    if (unavailableItems.isNotEmpty) {
+      setState(() => _isSending = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Cannot send KOT: ${unavailableItems.join(", ")} is sold out or unavailable.'),
+            backgroundColor: const Color(0xFFDC2626),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+      return;
+    }
 
     final orgId = _getEffectiveOrgId();
     final activeStaff = ref.read(restaurantAuthProvider).activeStaff;
@@ -399,8 +656,10 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
     final billNumber = existingActiveOrder != null && existingActiveOrder.id.isNotEmpty
         ? existingActiveOrder.id
         : 'SB-${DateTime.now().millisecondsSinceEpoch}-${Random().nextInt(9999).toString().padLeft(4, '0')}';
-    final tableName = 'Table ${widget.table.tableNumber.replaceAll(RegExp(r'^Table\s*', caseSensitive: false), '').trim()}';
-    final tNum = widget.table.tableNumber.replaceAll(RegExp(r'[^0-9]'), '');
+    final tableName = widget.table.name.trim().isNotEmpty
+        ? widget.table.name
+        : 'Table ${widget.table.tableNumber.replaceAll(RegExp(r'^Table\s*', caseSensitive: false), '').trim()}';
+    final tNum = cleanTableId(widget.table.tableNumber);
 
     final guestName = _customerNameCtrl.text.trim().isNotEmpty
         ? _customerNameCtrl.text.trim()
@@ -607,6 +866,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
       setState(() {
         _tray.clear();
       });
+      _clearTrayDraft();
       _loadTableActiveOrders();
 
       if (mounted) {
@@ -749,16 +1009,99 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                                         ),
                                       ],
                                     ),
-                                    const SizedBox(height: 8),
-                                    ...ord.items.map((it) => Padding(
-                                      padding: const EdgeInsets.symmetric(vertical: 2),
-                                      child: Row(
-                                        children: [
-                                          Text('${it.qty == it.qty.toInt() ? it.qty.toInt() : it.qty}x ', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-                                          Expanded(child: Text(it.name, style: const TextStyle(fontSize: 12))),
-                                        ],
-                                      ),
-                                    )),
+                                     const SizedBox(height: 8),
+                                     ...ord.items.map((it) {
+                                       final isVoided = it.voidedQty >= it.qty;
+                                       final itemStatus = isVoided
+                                           ? 'VOIDED'
+                                           : (it.kitchenStatus ?? ord.effectiveKitchenStatus);
+                                       final isItemReady = itemStatus == 'READY';
+
+                                       return Container(
+                                         margin: const EdgeInsets.symmetric(vertical: 3),
+                                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                                         decoration: BoxDecoration(
+                                           color: isVoided ? const Color(0xFFFEF2F2) : Colors.white,
+                                           borderRadius: BorderRadius.circular(8),
+                                           border: Border.all(
+                                             color: isVoided ? const Color(0xFFFECACA) : const Color(0xFFF1F5F9),
+                                           ),
+                                         ),
+                                         child: Row(
+                                           crossAxisAlignment: CrossAxisAlignment.center,
+                                           children: [
+                                             Text(
+                                               '${it.qty == it.qty.toInt() ? it.qty.toInt() : it.qty}x ',
+                                               style: TextStyle(
+                                                 fontWeight: FontWeight.bold,
+                                                 fontSize: 12,
+                                                 color: isVoided ? const Color(0xFF94A3B8) : const Color(0xFF0F172A),
+                                               ),
+                                             ),
+                                             Expanded(
+                                               child: Column(
+                                                 crossAxisAlignment: CrossAxisAlignment.start,
+                                                 children: [
+                                                   Text(
+                                                     it.name,
+                                                     style: TextStyle(
+                                                       fontSize: 12,
+                                                       fontWeight: FontWeight.w600,
+                                                       decoration: isVoided ? TextDecoration.lineThrough : null,
+                                                       color: isVoided ? const Color(0xFF94A3B8) : const Color(0xFF0F172A),
+                                                     ),
+                                                   ),
+                                                   if (it.notes != null && it.notes!.trim().isNotEmpty) ...[
+                                                     const SizedBox(height: 1),
+                                                     Text(
+                                                       'Note: ${it.notes}',
+                                                       style: const TextStyle(fontSize: 10.5, fontStyle: FontStyle.italic, color: Color(0xFFD97706)),
+                                                     ),
+                                                   ],
+                                                   if (it.voidedQty > 0) ...[
+                                                      const SizedBox(height: 1),
+                                                      Text(
+                                                        'Voided ${it.voidedQty.toInt()}x: ${it.voidReason ?? "Cancelled"}',
+                                                        style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFFDC2626)),
+                                                      ),
+                                                    ],
+                                                 ],
+                                               ),
+                                             ),
+                                             const SizedBox(width: 6),
+                                             Container(
+                                               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                               decoration: BoxDecoration(
+                                                 color: isVoided
+                                                     ? const Color(0xFFFEE2E2)
+                                                     : (isItemReady ? const Color(0xFFD1FAE5) : const Color(0xFFEFF6FF)),
+                                                 borderRadius: BorderRadius.circular(6),
+                                               ),
+                                               child: Text(
+                                                 itemStatus,
+                                                 style: TextStyle(
+                                                   fontSize: 9.5,
+                                                   fontWeight: FontWeight.bold,
+                                                   color: isVoided
+                                                       ? const Color(0xFFDC2626)
+                                                       : (isItemReady ? const Color(0xFF059669) : const Color(0xFF2563EB)),
+                                                 ),
+                                               ),
+                                             ),
+                                             if (!isVoided) ...[
+                                               const SizedBox(width: 4),
+                                               IconButton(
+                                                 icon: const Icon(Icons.remove_circle_outline_rounded, size: 16, color: Color(0xFFDC2626)),
+                                                 tooltip: 'Void / Cancel dish',
+                                                 padding: EdgeInsets.zero,
+                                                 constraints: const BoxConstraints(),
+                                                 onPressed: () => _promptVoidLine(ord, it, setSheetState),
+                                               ),
+                                             ],
+                                           ],
+                                         ),
+                                       );
+                                     }),
                                     const SizedBox(height: 8),
                                     Row(
                                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -797,6 +1140,154 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
         );
       },
     );
+  }
+
+  Future<void> _promptVoidLine(KotOrder ord, KotItem it, void Function(void Function()) setSheetState) async {
+    final reasons = [
+      'Customer changed mind',
+      'Punched by mistake',
+      'Kitchen out of ingredients',
+      'Delayed cooking time',
+      'Other reason',
+    ];
+    String selectedReason = reasons.first;
+    final customReasonCtrl = TextEditingController();
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDlgState) => AlertDialog(
+          title: Text('Void Dish: ${it.name}'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Are you sure you want to cancel this line from KOT #${ord.kotNumber}? This will be logged in the audit trail.',
+                style: const TextStyle(fontSize: 12.5, color: Color(0xFF64748B)),
+              ),
+              const SizedBox(height: 12),
+              const Text('Select Reason:', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 6),
+              DropdownButtonFormField<String>(
+                initialValue: selectedReason,
+                decoration: const InputDecoration(
+                  contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  border: OutlineInputBorder(),
+                ),
+                items: reasons.map((r) => DropdownMenuItem(value: r, child: Text(r, style: const TextStyle(fontSize: 12)))).toList(),
+                onChanged: (val) {
+                  if (val != null) setDlgState(() => selectedReason = val);
+                },
+              ),
+              if (selectedReason == 'Other reason') ...[
+                const SizedBox(height: 8),
+                TextField(
+                  controller: customReasonCtrl,
+                  decoration: const InputDecoration(
+                    hintText: 'Enter specific void reason...',
+                    hintStyle: TextStyle(fontSize: 12),
+                    border: OutlineInputBorder(),
+                    contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  ),
+                ),
+              ],
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Keep Dish'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFDC2626)),
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Confirm Void', style: TextStyle(color: Colors.white)),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (confirmed == true && mounted) {
+      final activeStaff = ref.read(restaurantAuthProvider).activeStaff;
+      final finalReason = selectedReason == 'Other reason' && customReasonCtrl.text.trim().isNotEmpty
+          ? customReasonCtrl.text.trim()
+          : selectedReason;
+      final orgId = _getEffectiveOrgId();
+
+      // 1. Webhook call
+      AppsScriptBackendService.voidLine(
+        outletId: orgId,
+        orderId: ord.id,
+        lineId: it.lineId,
+        productId: it.productId,
+        reason: finalReason,
+        authorizedBy: activeStaff?.name ?? 'Waiter',
+        voidQty: it.qty,
+      );
+
+      // 2. Local Hive update
+      if (Hive.isBoxOpen('configBox')) {
+        final box = Hive.box('configBox');
+        final rawOrders = box.get('kot_orders_$orgId') as List? ?? [];
+        final updatedList = rawOrders.map((item) {
+          if (item is Map && canonicalId(item) == canonicalId(ord)) {
+            final m = Map<String, dynamic>.from(item);
+            final rawItems = (m['items'] as List? ?? []).map((rawI) {
+              if (rawI is Map) {
+                final im = Map<String, dynamic>.from(rawI);
+                final matches = (it.lineId != null && it.lineId!.isNotEmpty && im['lineId'] == it.lineId) ||
+                    im['productId'] == it.productId ||
+                    im['id'] == it.productId ||
+                    im['name'] == it.name;
+                if (matches) {
+                  im['voidedQty'] = it.qty;
+                  im['voidReason'] = finalReason;
+                  im['voidedBy'] = activeStaff?.name ?? 'Waiter';
+                }
+                return im;
+              }
+              return rawI;
+            }).toList();
+            m['items'] = rawItems;
+            // Recalculate totals
+            double sub = 0.0;
+            for (final rim in rawItems) {
+              if (rim is Map) {
+                final vQty = (rim['voidedQty'] as num?)?.toDouble() ?? 0.0;
+                final qty = (rim['qty'] as num?)?.toDouble() ?? 0.0;
+                final activeQty = (qty - vQty).clamp(0.0, 999.0);
+                final p = (rim['price'] as num?)?.toDouble() ?? 0.0;
+                sub += p * activeQty;
+              }
+            }
+            final sc = sub * (_storeServiceChargeRate / 100);
+            final gst = (sub + sc) * (_storeGstRate / 100);
+            m['subtotal'] = sub;
+            m['serviceCharge'] = sc;
+            m['service_charge'] = sc;
+            m['gst'] = gst;
+            m['totalAmount'] = sub + sc + gst;
+            m['total_amount'] = sub + sc + gst;
+            return m;
+          }
+          return item;
+        }).toList();
+        await box.put('kot_orders_$orgId', updatedList);
+      }
+
+      await _loadTableActiveOrders();
+      setSheetState(() {});
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${it.name} voided from KOT #${ord.kotNumber}'),
+            backgroundColor: const Color(0xFFDC2626),
+          ),
+        );
+      }
+    }
   }
 
   Future<void> _reprintKot(KotOrder ord) async {
@@ -1071,9 +1562,11 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                             padding: const EdgeInsets.symmetric(vertical: 14),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                           ),
-                          onPressed: () {
-                            Navigator.pop(ctx);
-                            _processSettlePayment('CASH', totalPayable, _selectedTip);
+                          onPressed: () async {
+                            if (await _confirmUnservedVacate()) {
+                              if (ctx.mounted) Navigator.pop(ctx);
+                              _processSettlePayment('CASH', totalPayable, _selectedTip);
+                            }
                           },
                         ),
                       ),
@@ -1088,9 +1581,11 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                             padding: const EdgeInsets.symmetric(vertical: 14),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                           ),
-                          onPressed: () {
-                            Navigator.pop(ctx);
-                            _processSettlePayment('UPI', totalPayable, _selectedTip);
+                          onPressed: () async {
+                            if (await _confirmUnservedVacate()) {
+                              if (ctx.mounted) Navigator.pop(ctx);
+                              _processSettlePayment('UPI', totalPayable, _selectedTip);
+                            }
                           },
                         ),
                       ),
@@ -1105,9 +1600,11 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                             padding: const EdgeInsets.symmetric(vertical: 14),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                           ),
-                          onPressed: () {
-                            Navigator.pop(ctx);
-                            _processSettlePayment('CARD', totalPayable, _selectedTip);
+                          onPressed: () async {
+                            if (await _confirmUnservedVacate()) {
+                              if (ctx.mounted) Navigator.pop(ctx);
+                              _processSettlePayment('CARD', totalPayable, _selectedTip);
+                            }
                           },
                         ),
                       ),
@@ -1120,6 +1617,41 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
         },
       ),
     );
+  }
+
+  Future<bool> _confirmUnservedVacate() async {
+    final hasUnserved = _tableOrders.any((o) =>
+        o.effectiveKitchenStatus == 'PENDING' || o.effectiveKitchenStatus == 'PREPARING');
+    if (!hasUnserved) return true;
+
+    final proceed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Row(
+          children: const [
+            Icon(Icons.warning_amber_rounded, color: Color(0xFFD97706), size: 24),
+            SizedBox(width: 8),
+            Text('Unserved Food Warning'),
+          ],
+        ),
+        content: const Text(
+          'This table still has food in preparation in the kitchen!\n\nSettling now will vacate the table and close the bill. Are you sure you want to proceed?',
+          style: TextStyle(fontSize: 13),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Wait for Kitchen'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFD97706)),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Proceed to Settle', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+    return proceed == true;
   }
 
   Widget _buildTipChip(double amount, String label, double current, Function(double) onSelect) {
@@ -1140,8 +1672,10 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
 
   Future<void> _processSettlePayment(String paymentMode, double totalPaid, double tip) async {
     final orgId = _getEffectiveOrgId();
-    final tNum = widget.table.tableNumber.replaceAll(RegExp(r'[^0-9]'), '');
-    final tableName = 'Table ${widget.table.tableNumber}';
+    final tNum = cleanTableId(widget.table.tableNumber);
+    final tableName = widget.table.name.trim().isNotEmpty
+        ? widget.table.name
+        : 'Table ${widget.table.tableNumber}';
 
     try {
       if (Hive.isBoxOpen('configBox')) {
@@ -1244,6 +1778,10 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
       }
 
       if (mounted) {
+        setState(() {
+          _tray.clear();
+        });
+        _clearTrayDraft();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Table ${widget.table.tableNumber} bill settled (₹${totalPaid.toStringAsFixed(0)})! Table is now vacant. ✅'),
@@ -1290,15 +1828,47 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
       }
     }
 
-    return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFC),
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Color(0xFF0F172A), size: 18),
-          onPressed: () => Navigator.pop(context),
-        ),
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+        if (_tray.isNotEmpty) {
+          final shouldLeave = await showDialog<bool>(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              title: const Text('Unsaved Tray Items'),
+              content: const Text(
+                'You have items in your order tray that have not been sent to the kitchen. Leave and keep draft for this table, or stay and send?',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: const Text('Stay'),
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF2563EB)),
+                  onPressed: () => Navigator.pop(ctx, true),
+                  child: const Text('Leave (Save Draft)', style: TextStyle(color: Colors.white)),
+                ),
+              ],
+            ),
+          );
+          if (shouldLeave == true && context.mounted) {
+            Navigator.pop(context);
+          }
+        } else {
+          Navigator.pop(context);
+        }
+      },
+      child: Scaffold(
+        backgroundColor: const Color(0xFFF8FAFC),
+        appBar: AppBar(
+          backgroundColor: Colors.white,
+          elevation: 0,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Color(0xFF0F172A), size: 18),
+            onPressed: () => Navigator.maybePop(context),
+          ),
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -1385,7 +1955,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                           const Icon(Icons.outdoor_grill_rounded, size: 14, color: Color(0xFFD97706)),
                           const SizedBox(width: 4),
                           Text(
-                            '${_tableOrders.length} active KOTs 📋',
+                            '${_tableOrders.length} Rounds • $_tableTotalItems Items • ₹${_tableBalance.toStringAsFixed(0)} 📋',
                             style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: Color(0xFFB45309)),
                           ),
                         ],
@@ -1620,6 +2190,13 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                                                         color: isAvail ? const Color(0xFF2563EB) : const Color(0xFF94A3B8),
                                                       ),
                                                     ),
+                                                    if (_tray[itemId]?['item']?['notes']?.toString().isNotEmpty == true) ...[
+                                                      const SizedBox(height: 2),
+                                                      Text(
+                                                        '📝 ${_tray[itemId]!['item']['notes']}',
+                                                        style: const TextStyle(fontSize: 10.5, fontStyle: FontStyle.italic, color: Color(0xFFD97706), fontWeight: FontWeight.w600),
+                                                      ),
+                                                    ],
                                                   ],
                                                 ),
                                               ),
@@ -1651,6 +2228,22 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                                                 Row(
                                                   mainAxisSize: MainAxisSize.min,
                                                   children: [
+                                                    IconButton(
+                                                      icon: Icon(
+                                                        _tray[itemId]?['item']?['notes']?.toString().isNotEmpty == true
+                                                            ? Icons.note_alt_rounded
+                                                            : Icons.note_alt_outlined,
+                                                        color: _tray[itemId]?['item']?['notes']?.toString().isNotEmpty == true
+                                                            ? const Color(0xFFD97706)
+                                                            : const Color(0xFF64748B),
+                                                        size: 18,
+                                                      ),
+                                                      tooltip: 'Add notes / modifiers',
+                                                      padding: EdgeInsets.zero,
+                                                      constraints: const BoxConstraints(),
+                                                      onPressed: () => _showItemModifierSheet(item),
+                                                    ),
+                                                    const SizedBox(width: 4),
                                                     IconButton(
                                                       icon: const Icon(Icons.remove_circle_outline_rounded, color: Color(0xFFEF4444), size: 22),
                                                       onPressed: () => _removeFromTray(item),
@@ -1730,6 +2323,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
             ),
         ],
       ),
-    );
+    ),
+  );
   }
 }
