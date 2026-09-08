@@ -125,7 +125,7 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
         }
 
         for (final s in parsedServed) {
-          if (!_servedOrdersHistory.any((x) => x.canonicalKey == s.canonicalKey)) {
+          if (!_servedOrdersHistory.any((x) => canonicalId(x) == canonicalId(s))) {
             _servedOrdersHistory.add(s);
           }
         }
@@ -146,12 +146,13 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
       for (final item in raw) {
         if (item is Map) {
           final m = Map<String, dynamic>.from(item);
-          final id = (m['id'] ?? m['kotNumber'] ?? '').toString();
-          if (id.isNotEmpty) localMap[id] = m;
+          final key = canonicalId(m);
+          if (key.isNotEmpty) localMap[key] = m;
         }
       }
       for (final o in incomingOrders) {
-        localMap[o.canonicalKey] = o.toMap();
+        final key = canonicalId(o);
+        if (key.isNotEmpty) localMap[key] = o.toMap();
       }
       box.put('kot_orders_$orgId', localMap.values.toList());
     }
@@ -166,8 +167,8 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
       final raw = box.get('kot_orders_$orgId');
 
       if (raw is List && raw.isNotEmpty) {
-        final List<KotOrder> orders = [];
-        final List<KotOrder> servedHistory = [];
+        final Map<String, KotOrder> activeMap = {};
+        final Map<String, KotOrder> servedMap = {};
         for (final item in raw) {
           try {
             if (item is Map) {
@@ -176,21 +177,24 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
               if (idStr.startsWith('TEST-')) continue;
               final order = KotOrder.fromMap(map, idStr);
               if (order.status != KotStatus.cancelled) {
-                if (order.effectiveKitchenStatus == 'SERVED') {
-                  servedHistory.add(order);
-                } else {
-                  orders.add(order);
+                final k = canonicalId(order);
+                if (k.isNotEmpty) {
+                  if (order.effectiveKitchenStatus == 'SERVED') {
+                    servedMap[k] = order;
+                  } else {
+                    activeMap[k] = order;
+                  }
                 }
               }
             }
           } catch (_) {}
         }
-        for (final s in servedHistory) {
-          if (!_servedOrdersHistory.any((x) => x.canonicalKey == s.canonicalKey)) {
+        for (final s in servedMap.values) {
+          if (!_servedOrdersHistory.any((x) => canonicalId(x) == canonicalId(s))) {
             _servedOrdersHistory.add(s);
           }
         }
-        _mergeAndSetOrders(orders);
+        _mergeAndSetOrders(activeMap.values.toList());
       }
     } catch (e) {
       debugPrint('Error loading live KDS orders: $e');
@@ -554,6 +558,17 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
           ],
         ),
         actions: [
+          // Served History Action Button
+          IconButton(
+            tooltip: 'Served History (${_servedOrdersHistory.length})',
+            onPressed: _showServedHistoryModal,
+            icon: Badge(
+              isLabelVisible: _servedOrdersHistory.isNotEmpty,
+              label: Text('${_servedOrdersHistory.length}'),
+              backgroundColor: const Color(0xFF059669),
+              child: const Icon(Icons.room_service_rounded, color: Color(0xFF059669), size: 24),
+            ),
+          ),
           // Kitchen Analytics Action Button
           IconButton(
             tooltip: 'Kitchen Analytics',
@@ -671,23 +686,55 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
                     return _buildEmptyStageState(stageId);
                   }
 
-                  return LayoutBuilder(
-                    builder: (context, constraints) {
-                      final crossAxisCount = (constraints.maxWidth / 360).floor().clamp(1, 4);
-                      return GridView.builder(
-                        padding: const EdgeInsets.all(16),
-                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: crossAxisCount,
-                          mainAxisSpacing: 16,
-                          crossAxisSpacing: 16,
-                          childAspectRatio: 0.82,
+                  return Column(
+                    children: [
+                      if (stageId == 'SERVED' && stageOrders.isNotEmpty)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                          color: const Color(0xFFF1F5F9),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                'Served Orders (${stageOrders.length}) • Dismiss or recall as needed',
+                                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF475569)),
+                              ),
+                              TextButton.icon(
+                                onPressed: () {
+                                  setState(() {
+                                    _servedOrdersHistory.clear();
+                                  });
+                                },
+                                icon: const Icon(Icons.delete_sweep_rounded, size: 16, color: Color(0xFFDC2626)),
+                                label: const Text(
+                                  'Clear All',
+                                  style: TextStyle(color: Color(0xFFDC2626), fontWeight: FontWeight.bold, fontSize: 12),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
-                        itemCount: stageOrders.length,
-                        itemBuilder: (context, index) {
-                          return _buildOrderCard(stageOrders[index]);
-                        },
-                      );
-                    },
+                      Expanded(
+                        child: LayoutBuilder(
+                          builder: (context, constraints) {
+                            final crossAxisCount = (constraints.maxWidth / 360).floor().clamp(1, 4);
+                            return GridView.builder(
+                              padding: const EdgeInsets.all(16),
+                              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: crossAxisCount,
+                                mainAxisSpacing: 16,
+                                crossAxisSpacing: 16,
+                                childAspectRatio: 0.82,
+                              ),
+                              itemCount: stageOrders.length,
+                              itemBuilder: (context, index) {
+                                return _buildOrderCard(stageOrders[index]);
+                              },
+                            );
+                          },
+                        ),
+                      ),
+                    ],
                   );
                 },
               ),
@@ -708,7 +755,6 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
       {'id': 'PENDING', 'title': 'New Received ⏳', 'color': const Color(0xFFD97706), 'bg': const Color(0xFFFFFBEB)},
       {'id': 'PREPARING', 'title': 'In Preparation 👨‍🍳', 'color': const Color(0xFF2563EB), 'bg': const Color(0xFFEFF6FF)},
       {'id': 'READY', 'title': 'Food Ready 🍳', 'color': const Color(0xFF059669), 'bg': const Color(0xFFECFDF5)},
-      {'id': 'SERVED', 'title': 'Served / History 🍽️', 'color': const Color(0xFF64748B), 'bg': const Color(0xFFF1F5F9)},
     ];
 
     return LayoutBuilder(
@@ -1295,28 +1341,165 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
                                     ),
                                   ),
                                 )
-                              : ElevatedButton.icon(
-                                  onPressed: () => _recallOrder(order),
-                                  icon: const Icon(Icons.undo_rounded, size: 16),
-                                  label: const Text(
-                                    'RECALL TO KITCHEN ↩️',
-                                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
-                                  ),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: const Color(0xFF2563EB),
-                                    foregroundColor: Colors.white,
-                                    padding: const EdgeInsets.symmetric(vertical: 10),
-                                    elevation: 0,
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(10),
+                              : Row(
+                                  children: [
+                                    Expanded(
+                                      child: OutlinedButton.icon(
+                                        onPressed: () {
+                                          setState(() {
+                                            _servedOrdersHistory.removeWhere((o) => canonicalId(o) == canonicalId(order));
+                                          });
+                                        },
+                                        icon: const Icon(Icons.close_rounded, size: 14),
+                                        label: const Text('DISMISS', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                                        style: OutlinedButton.styleFrom(
+                                          foregroundColor: const Color(0xFF64748B),
+                                          side: const BorderSide(color: Color(0xFFCBD5E1)),
+                                          padding: const EdgeInsets.symmetric(vertical: 10),
+                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                        ),
+                                      ),
                                     ),
-                                  ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: ElevatedButton.icon(
+                                        onPressed: () => _recallOrder(order),
+                                        icon: const Icon(Icons.undo_rounded, size: 14),
+                                        label: const Text('RECALL ↩️', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: const Color(0xFF2563EB),
+                                          foregroundColor: Colors.white,
+                                          padding: const EdgeInsets.symmetric(vertical: 10),
+                                          elevation: 0,
+                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
                                 ),
                 ),
               ],
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  // ── Served Orders History Modal ──────────────────────────────
+  void _showServedHistoryModal() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setModalState) {
+          return Container(
+            height: MediaQuery.of(context).size.height * 0.85,
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+            ),
+            child: Column(
+              children: [
+                const SizedBox(height: 12),
+                Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF1F5F9),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: const Icon(Icons.room_service_rounded, color: Color(0xFF059669), size: 20),
+                          ),
+                          const SizedBox(width: 10),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Served Orders (${_servedOrdersHistory.length})',
+                                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+                              ),
+                              const Text(
+                                'Orders cleared from active cooking board',
+                                style: TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                      Row(
+                        children: [
+                          if (_servedOrdersHistory.isNotEmpty)
+                            TextButton.icon(
+                              onPressed: () {
+                                setState(() {
+                                  _servedOrdersHistory.clear();
+                                });
+                                setModalState(() {});
+                              },
+                              icon: const Icon(Icons.delete_sweep_rounded, size: 18, color: Color(0xFFDC2626)),
+                              label: const Text(
+                                'Clear All',
+                                style: TextStyle(color: Color(0xFFDC2626), fontWeight: FontWeight.bold, fontSize: 12),
+                              ),
+                            ),
+                          IconButton(
+                            icon: const Icon(Icons.close_rounded, size: 20),
+                            onPressed: () => Navigator.pop(ctx),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const Divider(height: 1),
+                Expanded(
+                  child: _servedOrdersHistory.isEmpty
+                      ? Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.done_all_rounded, size: 48, color: Colors.grey.shade300),
+                              const SizedBox(height: 12),
+                              const Text(
+                                'No served orders in recent history',
+                                style: TextStyle(color: Color(0xFF64748B), fontWeight: FontWeight.w600, fontSize: 14),
+                              ),
+                            ],
+                          ),
+                        )
+                      : ListView.separated(
+                          padding: const EdgeInsets.all(16),
+                          itemCount: _servedOrdersHistory.length,
+                          separatorBuilder: (_, __) => const SizedBox(height: 12),
+                          itemBuilder: (context, index) {
+                            final order = _servedOrdersHistory[index];
+                            return SizedBox(
+                              height: 380,
+                              child: _buildOrderCard(order),
+                            );
+                          },
+                        ),
+                ),
+              ],
+            ),
+          );
+        },
       ),
     );
   }

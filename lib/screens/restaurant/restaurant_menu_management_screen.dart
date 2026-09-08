@@ -9,6 +9,7 @@ import '../../providers/restaurant_auth_provider.dart';
 import '../../services/restaurant_sheets_service.dart';
 import '../../services/client_ledger_cloud_router_service.dart';
 import '../../services/apps_script_backend_service.dart';
+import '../../core/classic_theme.dart';
 
 class RestaurantMenuManagementScreen extends ConsumerStatefulWidget {
   const RestaurantMenuManagementScreen({super.key});
@@ -437,11 +438,11 @@ class _RestaurantMenuManagementScreenState
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) {
           return AlertDialog(
-            backgroundColor: Colors.white,
+            backgroundColor: context.surfaceColor,
             surfaceTintColor: Colors.transparent,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(18),
-              side: const BorderSide(color: Color(0xFFE2E8F0)),
+              side: BorderSide(color: context.borderColor),
             ),
             title: Row(
               children: [
@@ -454,17 +455,17 @@ class _RestaurantMenuManagementScreenState
                   child: const Icon(Icons.soup_kitchen_rounded, color: Color(0xFF2563EB), size: 20),
                 ),
                 const SizedBox(width: 10),
-                const Expanded(
+                Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
                         'Kitchen & Prep Stations',
-                        style: TextStyle(color: Color(0xFF0F172A), fontWeight: FontWeight.bold, fontSize: 16),
+                        style: TextStyle(color: context.textPrimary, fontWeight: FontWeight.bold, fontSize: 16),
                       ),
                       Text(
                         'Configure routing for cooking vs direct counter fulfillment',
-                        style: TextStyle(color: Color(0xFF64748B), fontSize: 11),
+                        style: TextStyle(color: context.textSecondary, fontSize: 11),
                       ),
                     ],
                   ),
@@ -482,16 +483,16 @@ class _RestaurantMenuManagementScreenState
                     Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFF8FAFC),
+                        color: context.isDark ? ClassicTheme.cardSurfaceDark : const Color(0xFFF8FAFC),
                         borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                        border: Border.all(color: context.borderColor),
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text(
+                          Text(
                             'Add New Station',
-                            style: TextStyle(color: Color(0xFF0F172A), fontWeight: FontWeight.bold, fontSize: 13),
+                            style: TextStyle(color: context.textPrimary, fontWeight: FontWeight.bold, fontSize: 13),
                           ),
                           const SizedBox(height: 8),
                           Row(
@@ -499,20 +500,20 @@ class _RestaurantMenuManagementScreenState
                               Expanded(
                                 child: TextField(
                                   controller: nameCtrl,
-                                  style: const TextStyle(color: Color(0xFF0F172A), fontSize: 13),
+                                  style: TextStyle(color: context.textPrimary, fontSize: 13),
                                   decoration: InputDecoration(
                                     hintText: 'Station Name (e.g. Chat Counter, Bakery)',
-                                    hintStyle: const TextStyle(color: Color(0xFF94A3B8), fontSize: 12),
+                                    hintStyle: TextStyle(color: context.textSecondary, fontSize: 12),
                                     filled: true,
-                                    fillColor: Colors.white,
+                                    fillColor: context.inputFill,
                                     contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                                     border: OutlineInputBorder(
                                       borderRadius: BorderRadius.circular(10),
-                                      borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
+                                      borderSide: BorderSide(color: context.borderColor),
                                     ),
                                     enabledBorder: OutlineInputBorder(
                                       borderRadius: BorderRadius.circular(10),
-                                      borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
+                                      borderSide: BorderSide(color: context.borderColor),
                                     ),
                                   ),
                                 ),
@@ -555,10 +556,10 @@ class _RestaurantMenuManagementScreenState
                                 activeColor: const Color(0xFF2563EB),
                                 onChanged: (val) => setDialogState(() => newSendsToKitchen = val ?? true),
                               ),
-                              const Expanded(
+                              Expanded(
                                 child: Text(
                                   'Sends to Kitchen (Uncheck for cold drinks, sweets, retail counter items)',
-                                  style: TextStyle(color: Color(0xFF475569), fontSize: 12),
+                                  style: TextStyle(color: context.textSecondary, fontSize: 12),
                                 ),
                               ),
                             ],
@@ -568,9 +569,9 @@ class _RestaurantMenuManagementScreenState
                     ),
                     const SizedBox(height: 16),
 
-                    const Text(
+                    Text(
                       'Configured Stations:',
-                      style: TextStyle(color: Color(0xFF475569), fontSize: 12, fontWeight: FontWeight.w600),
+                      style: TextStyle(color: context.textSecondary, fontSize: 12, fontWeight: FontWeight.w600),
                     ),
                     const SizedBox(height: 8),
 
@@ -586,9 +587,15 @@ class _RestaurantMenuManagementScreenState
                         return Container(
                           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                           decoration: BoxDecoration(
-                            color: isDirect ? const Color(0xFFFFFBEB) : Colors.white,
+                            color: isDirect
+                                ? (context.isDark ? const Color(0xFF451A03) : const Color(0xFFFFFBEB))
+                                : context.surfaceColor,
                             borderRadius: BorderRadius.circular(10),
-                            border: Border.all(color: isDirect ? const Color(0xFFFDE68A) : const Color(0xFFE2E8F0)),
+                            border: Border.all(
+                              color: isDirect
+                                  ? (context.isDark ? const Color(0xFFB45309) : const Color(0xFFFDE68A))
+                                  : context.borderColor,
+                            ),
                           ),
                           child: Row(
                             children: [
@@ -604,14 +611,16 @@ class _RestaurantMenuManagementScreenState
                                   children: [
                                     Text(
                                       station.name,
-                                      style: const TextStyle(color: Color(0xFF0F172A), fontWeight: FontWeight.bold, fontSize: 13),
+                                      style: TextStyle(color: context.textPrimary, fontWeight: FontWeight.bold, fontSize: 13),
                                     ),
                                     Text(
                                       station.sendsToKitchen
                                           ? 'Routes to KDS & Kitchen printer'
                                           : 'Direct Counter fulfillment (bypasses KOT & KDS)',
                                       style: TextStyle(
-                                        color: isDirect ? const Color(0xFFB45309) : const Color(0xFF64748B),
+                                        color: isDirect
+                                            ? (context.isDark ? const Color(0xFFFBBF24) : const Color(0xFFB45309))
+                                            : context.textSecondary,
                                         fontSize: 10,
                                       ),
                                     ),
@@ -678,11 +687,11 @@ class _RestaurantMenuManagementScreenState
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) {
           return AlertDialog(
-            backgroundColor: Colors.white,
+            backgroundColor: context.surfaceColor,
             surfaceTintColor: Colors.transparent,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(18),
-              side: const BorderSide(color: Color(0xFFE2E8F0)),
+              side: BorderSide(color: context.borderColor),
             ),
             title: Row(
               children: [
@@ -695,9 +704,9 @@ class _RestaurantMenuManagementScreenState
                   child: const Icon(Icons.category_rounded, color: Color(0xFF2563EB), size: 20),
                 ),
                 const SizedBox(width: 10),
-                const Text(
+                Text(
                   'Manage Categories & Subs',
-                  style: TextStyle(color: Color(0xFF0F172A), fontWeight: FontWeight.bold, fontSize: 16),
+                  style: TextStyle(color: context.textPrimary, fontWeight: FontWeight.bold, fontSize: 16),
                 ),
               ],
             ),
@@ -714,20 +723,20 @@ class _RestaurantMenuManagementScreenState
                         Expanded(
                           child: TextField(
                             controller: newCatCtrl,
-                            style: const TextStyle(color: Color(0xFF0F172A), fontSize: 13),
+                            style: TextStyle(color: context.textPrimary, fontSize: 13),
                             decoration: InputDecoration(
                               hintText: 'New Category (e.g. Starters, Breads)',
-                              hintStyle: const TextStyle(color: Color(0xFF94A3B8), fontSize: 12),
+                              hintStyle: TextStyle(color: context.textSecondary, fontSize: 12),
                               filled: true,
-                              fillColor: const Color(0xFFF8FAFC),
+                              fillColor: context.inputFill,
                               contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                               border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(10),
-                                borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
+                                borderSide: BorderSide(color: context.borderColor),
                               ),
                               enabledBorder: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(10),
-                                borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
+                                borderSide: BorderSide(color: context.borderColor),
                               ),
                             ),
                           ),
@@ -766,20 +775,20 @@ class _RestaurantMenuManagementScreenState
                         width: double.infinity,
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
-                          color: const Color(0xFFF8FAFC),
+                          color: context.isDark ? ClassicTheme.cardSurfaceDark : const Color(0xFFF8FAFC),
                           borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: const Color(0xFFE2E8F0)),
+                          border: Border.all(color: context.borderColor),
                         ),
-                        child: const Text(
+                        child: Text(
                           'No custom categories created yet. Enter a category name above to create your first category.',
-                          style: TextStyle(color: Color(0xFF64748B), fontSize: 12),
+                          style: TextStyle(color: context.textSecondary, fontSize: 12),
                           textAlign: TextAlign.center,
                         ),
                       )
                     else ...[
-                      const Text(
+                      Text(
                         'Select category to manage subcategories:',
-                        style: TextStyle(color: Color(0xFF475569), fontSize: 12, fontWeight: FontWeight.w600),
+                        style: TextStyle(color: context.textSecondary, fontSize: 12, fontWeight: FontWeight.w600),
                       ),
                       const SizedBox(height: 8),
                       Wrap(
@@ -793,9 +802,11 @@ class _RestaurantMenuManagementScreenState
                             child: Container(
                               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                               decoration: BoxDecoration(
-                                color: isSel ? const Color(0xFF2563EB) : const Color(0xFFF1F5F9),
+                                color: isSel
+                                    ? const Color(0xFF2563EB)
+                                    : (context.isDark ? ClassicTheme.cardSurfaceDark : const Color(0xFFF1F5F9)),
                                 borderRadius: BorderRadius.circular(8),
-                                border: Border.all(color: isSel ? const Color(0xFF2563EB) : const Color(0xFFCBD5E1)),
+                                border: Border.all(color: isSel ? const Color(0xFF2563EB) : context.borderColor),
                               ),
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
@@ -803,7 +814,7 @@ class _RestaurantMenuManagementScreenState
                                   Text(
                                     cat,
                                     style: TextStyle(
-                                      color: isSel ? Colors.white : const Color(0xFF334155),
+                                      color: isSel ? Colors.white : context.textPrimary,
                                       fontWeight: isSel ? FontWeight.bold : FontWeight.normal,
                                       fontSize: 12,
                                     ),
@@ -820,7 +831,7 @@ class _RestaurantMenuManagementScreenState
                                       _saveCategoriesToHive();
                                       setState(() {});
                                     },
-                                    child: Icon(Icons.close, size: 14, color: isSel ? Colors.white70 : const Color(0xFF94A3B8)),
+                                    child: Icon(Icons.close, size: 14, color: isSel ? Colors.white70 : context.textSecondary),
                                   ),
                                 ],
                               ),
@@ -840,20 +851,20 @@ class _RestaurantMenuManagementScreenState
                             Expanded(
                               child: TextField(
                                 controller: newSubCtrl,
-                                style: const TextStyle(color: Color(0xFF0F172A), fontSize: 13),
+                                style: TextStyle(color: context.textPrimary, fontSize: 13),
                                 decoration: InputDecoration(
                                   hintText: 'New Subcategory (e.g. Rotis, Naans)',
-                                  hintStyle: const TextStyle(color: Color(0xFF94A3B8), fontSize: 12),
+                                  hintStyle: TextStyle(color: context.textSecondary, fontSize: 12),
                                   filled: true,
-                                  fillColor: const Color(0xFFF8FAFC),
+                                  fillColor: context.inputFill,
                                   contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                                   border: OutlineInputBorder(
                                     borderRadius: BorderRadius.circular(10),
-                                    borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
+                                    borderSide: BorderSide(color: context.borderColor),
                                   ),
                                   enabledBorder: OutlineInputBorder(
                                     borderRadius: BorderRadius.circular(10),
-                                    borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
+                                    borderSide: BorderSide(color: context.borderColor),
                                   ),
                                 ),
                               ),
@@ -893,10 +904,10 @@ class _RestaurantMenuManagementScreenState
                           runSpacing: 6,
                           children: (_categoriesWithSubs[activeSelectedCategory!] ?? []).map((sub) {
                             return Chip(
-                              backgroundColor: const Color(0xFFF1F5F9),
-                              side: const BorderSide(color: Color(0xFFCBD5E1)),
-                              label: Text(sub, style: const TextStyle(color: Color(0xFF334155), fontSize: 11)),
-                              deleteIcon: const Icon(Icons.close, size: 13, color: Color(0xFF94A3B8)),
+                              backgroundColor: context.isDark ? ClassicTheme.cardSurfaceDark : const Color(0xFFF1F5F9),
+                              side: BorderSide(color: context.borderColor),
+                              label: Text(sub, style: TextStyle(color: context.textPrimary, fontSize: 11)),
+                              deleteIcon: Icon(Icons.close, size: 13, color: context.textSecondary),
                               onDeleted: () {
                                 setDialogState(() {
                                   _categoriesWithSubs[activeSelectedCategory!]?.remove(sub);
@@ -947,11 +958,11 @@ class _RestaurantMenuManagementScreenState
           final subcategoriesForCat = _categoriesWithSubs[category] ?? [];
 
           return AlertDialog(
-            backgroundColor: Colors.white,
+            backgroundColor: context.surfaceColor,
             surfaceTintColor: Colors.transparent,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(20),
-              side: const BorderSide(color: Color(0xFFE2E8F0)),
+              side: BorderSide(color: context.borderColor),
             ),
             title: Row(
               children: [
@@ -966,7 +977,7 @@ class _RestaurantMenuManagementScreenState
                 const SizedBox(width: 10),
                 Text(
                   existing == null ? 'Add New Food Item' : 'Edit Food Item',
-                  style: const TextStyle(color: Color(0xFF0F172A), fontWeight: FontWeight.bold, fontSize: 16),
+                  style: TextStyle(color: context.textPrimary, fontWeight: FontWeight.bold, fontSize: 16),
                 ),
               ],
             ),
@@ -979,16 +990,16 @@ class _RestaurantMenuManagementScreenState
                   children: [
                     TextField(
                       controller: nameCtrl,
-                      style: const TextStyle(color: Color(0xFF0F172A), fontSize: 13),
+                      style: TextStyle(color: context.textPrimary, fontSize: 13),
                       decoration: InputDecoration(
                         labelText: 'Dish Name *',
-                        labelStyle: const TextStyle(color: Color(0xFF64748B), fontSize: 12),
+                        labelStyle: TextStyle(color: context.textSecondary, fontSize: 12),
                         hintText: 'e.g. Butter Chicken, Garlic Naan',
-                        hintStyle: const TextStyle(color: Color(0xFF94A3B8), fontSize: 12),
+                        hintStyle: TextStyle(color: context.textSecondary, fontSize: 12),
                         filled: true,
-                        fillColor: const Color(0xFFF8FAFC),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFCBD5E1))),
-                        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFCBD5E1))),
+                        fillColor: context.inputFill,
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: context.borderColor)),
+                        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: context.borderColor)),
                       ),
                     ),
                     const SizedBox(height: 12),
@@ -999,16 +1010,16 @@ class _RestaurantMenuManagementScreenState
                           child: TextField(
                             controller: priceCtrl,
                             keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                            style: const TextStyle(color: Color(0xFF0F172A), fontSize: 13),
+                            style: TextStyle(color: context.textPrimary, fontSize: 13),
                             decoration: InputDecoration(
                               labelText: 'Price (₹) *',
-                              labelStyle: const TextStyle(color: Color(0xFF64748B), fontSize: 12),
+                              labelStyle: TextStyle(color: context.textSecondary, fontSize: 12),
                               hintText: 'e.g. 240',
-                              hintStyle: const TextStyle(color: Color(0xFF94A3B8), fontSize: 12),
+                              hintStyle: TextStyle(color: context.textSecondary, fontSize: 12),
                               filled: true,
-                              fillColor: const Color(0xFFF8FAFC),
-                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFCBD5E1))),
-                              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFCBD5E1))),
+                              fillColor: context.inputFill,
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: context.borderColor)),
+                              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: context.borderColor)),
                             ),
                           ),
                         ),
@@ -1017,16 +1028,16 @@ class _RestaurantMenuManagementScreenState
                           child: TextField(
                             controller: prepCtrl,
                             keyboardType: TextInputType.number,
-                            style: const TextStyle(color: Color(0xFF0F172A), fontSize: 13),
+                            style: TextStyle(color: context.textPrimary, fontSize: 13),
                             decoration: InputDecoration(
                               labelText: 'Prep Time (Mins)',
-                              labelStyle: const TextStyle(color: Color(0xFF64748B), fontSize: 12),
+                              labelStyle: TextStyle(color: context.textSecondary, fontSize: 12),
                               hintText: 'e.g. 15',
-                              hintStyle: const TextStyle(color: Color(0xFF94A3B8), fontSize: 12),
+                              hintStyle: TextStyle(color: context.textSecondary, fontSize: 12),
                               filled: true,
-                              fillColor: const Color(0xFFF8FAFC),
-                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFCBD5E1))),
-                              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFCBD5E1))),
+                              fillColor: context.inputFill,
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: context.borderColor)),
+                              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: context.borderColor)),
                             ),
                           ),
                         ),
@@ -1041,15 +1052,15 @@ class _RestaurantMenuManagementScreenState
                           child: Container(
                             padding: const EdgeInsets.symmetric(horizontal: 12),
                             decoration: BoxDecoration(
-                              color: const Color(0xFFF8FAFC),
+                              color: context.inputFill,
                               borderRadius: BorderRadius.circular(10),
-                              border: Border.all(color: const Color(0xFFCBD5E1)),
+                              border: Border.all(color: context.borderColor),
                             ),
                             child: DropdownButtonHideUnderline(
                               child: DropdownButton<String>(
                                 value: _categoriesWithSubs.containsKey(category) ? category : (_categoriesWithSubs.isNotEmpty ? _categoriesWithSubs.keys.first : category),
-                                dropdownColor: Colors.white,
-                                style: const TextStyle(color: Color(0xFF0F172A), fontSize: 13),
+                                dropdownColor: context.surfaceColor,
+                                style: TextStyle(color: context.textPrimary, fontSize: 13),
                                 items: (_categoriesWithSubs.isNotEmpty ? _categoriesWithSubs.keys.toList() : ['Main Course', 'Starters', 'Breads', 'Beverages', 'Desserts']).map((cat) {
                                   return DropdownMenuItem(value: cat, child: Text(cat));
                                 }).toList(),
@@ -1075,23 +1086,28 @@ class _RestaurantMenuManagementScreenState
                               builder: (subCtx) {
                                 final catInputCtrl = TextEditingController();
                                 return AlertDialog(
-                                  backgroundColor: Colors.white,
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                                  title: const Text('Add New Category', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
+                                  backgroundColor: context.surfaceColor,
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: BorderSide(color: context.borderColor)),
+                                  title: Text('Add New Category', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: context.textPrimary)),
                                   content: TextField(
                                     controller: catInputCtrl,
                                     autofocus: true,
-                                    style: const TextStyle(fontSize: 13),
+                                    style: TextStyle(color: context.textPrimary, fontSize: 13),
                                     decoration: InputDecoration(
                                       labelText: 'Category Name',
+                                      labelStyle: TextStyle(color: context.textSecondary),
                                       hintText: 'e.g. Tandoor Starters, Desserts',
-                                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                                      hintStyle: TextStyle(color: context.textSecondary),
+                                      filled: true,
+                                      fillColor: context.inputFill,
+                                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: context.borderColor)),
+                                      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: context.borderColor)),
                                     ),
                                   ),
                                   actions: [
                                     TextButton(
                                       onPressed: () => Navigator.pop(subCtx),
-                                      child: const Text('Cancel'),
+                                      child: Text('Cancel', style: TextStyle(color: context.textSecondary)),
                                     ),
                                     ElevatedButton(
                                       onPressed: () {
@@ -1134,16 +1150,16 @@ class _RestaurantMenuManagementScreenState
                               ? Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 12),
                                   decoration: BoxDecoration(
-                                    color: const Color(0xFFF8FAFC),
+                                    color: context.inputFill,
                                     borderRadius: BorderRadius.circular(10),
-                                    border: Border.all(color: const Color(0xFFCBD5E1)),
+                                    border: Border.all(color: context.borderColor),
                                   ),
                                   child: DropdownButtonHideUnderline(
                                     child: DropdownButton<String>(
                                       value: subcategoriesForCat.contains(subcatCtrl.text) ? subcatCtrl.text : (subcategoriesForCat.isNotEmpty ? subcategoriesForCat.first : null),
-                                      hint: const Text('Select Subcategory', style: TextStyle(color: Color(0xFF94A3B8), fontSize: 12)),
-                                      dropdownColor: Colors.white,
-                                      style: const TextStyle(color: Color(0xFF0F172A), fontSize: 13),
+                                      hint: Text('Select Subcategory', style: TextStyle(color: context.textSecondary, fontSize: 12)),
+                                      dropdownColor: context.surfaceColor,
+                                      style: TextStyle(color: context.textPrimary, fontSize: 13),
                                       items: subcategoriesForCat.map((sub) {
                                         return DropdownMenuItem(value: sub, child: Text(sub));
                                       }).toList(),
@@ -1157,16 +1173,16 @@ class _RestaurantMenuManagementScreenState
                                 )
                               : TextField(
                                   controller: subcatCtrl,
-                                  style: const TextStyle(color: Color(0xFF0F172A), fontSize: 13),
+                                  style: TextStyle(color: context.textPrimary, fontSize: 13),
                                   decoration: InputDecoration(
                                     labelText: 'Subcategory (Optional)',
-                                    labelStyle: const TextStyle(color: Color(0xFF64748B), fontSize: 12),
+                                    labelStyle: TextStyle(color: context.textSecondary, fontSize: 12),
                                     hintText: 'e.g. Rotis, Paneer Starters, Mocktails',
-                                    hintStyle: const TextStyle(color: Color(0xFF94A3B8), fontSize: 12),
+                                    hintStyle: TextStyle(color: context.textSecondary, fontSize: 12),
                                     filled: true,
-                                    fillColor: const Color(0xFFF8FAFC),
-                                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFCBD5E1))),
-                                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFCBD5E1))),
+                                    fillColor: context.inputFill,
+                                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: context.borderColor)),
+                                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: context.borderColor)),
                                   ),
                                 ),
                         ),
@@ -1180,23 +1196,28 @@ class _RestaurantMenuManagementScreenState
                               builder: (subCtx) {
                                 final subInputCtrl = TextEditingController();
                                 return AlertDialog(
-                                  backgroundColor: Colors.white,
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                                  title: Text('Add Subcategory to $category', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
+                                  backgroundColor: context.surfaceColor,
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: BorderSide(color: context.borderColor)),
+                                  title: Text('Add Subcategory to $category', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: context.textPrimary)),
                                   content: TextField(
                                     controller: subInputCtrl,
                                     autofocus: true,
-                                    style: const TextStyle(fontSize: 13),
+                                    style: TextStyle(color: context.textPrimary, fontSize: 13),
                                     decoration: InputDecoration(
                                       labelText: 'Subcategory Name',
+                                      labelStyle: TextStyle(color: context.textSecondary),
                                       hintText: 'e.g. Rotis, Naans, Mocktails',
-                                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                                      hintStyle: TextStyle(color: context.textSecondary),
+                                      filled: true,
+                                      fillColor: context.inputFill,
+                                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: context.borderColor)),
+                                      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: context.borderColor)),
                                     ),
                                   ),
                                   actions: [
                                     TextButton(
                                       onPressed: () => Navigator.pop(subCtx),
-                                      child: const Text('Cancel'),
+                                      child: Text('Cancel', style: TextStyle(color: context.textSecondary)),
                                     ),
                                     ElevatedButton(
                                       onPressed: () {
@@ -1247,16 +1268,16 @@ class _RestaurantMenuManagementScreenState
                               width: double.infinity,
                               padding: const EdgeInsets.symmetric(horizontal: 12),
                               decoration: BoxDecoration(
-                                color: const Color(0xFFF8FAFC),
+                                color: context.inputFill,
                                 borderRadius: BorderRadius.circular(10),
-                                border: Border.all(color: const Color(0xFFCBD5E1)),
+                                border: Border.all(color: context.borderColor),
                               ),
                               child: DropdownButtonHideUnderline(
                                 child: DropdownButton<String>(
                                   value: stationNames.contains(station) ? station : stationNames.first,
                                   isExpanded: true,
-                                  dropdownColor: Colors.white,
-                                  style: const TextStyle(color: Color(0xFF0F172A), fontSize: 13),
+                                  dropdownColor: context.surfaceColor,
+                                  style: TextStyle(color: context.textPrimary, fontSize: 13),
                                   items: stationNames.map((name) {
                                     return DropdownMenuItem(
                                       value: name,
@@ -1285,9 +1306,15 @@ class _RestaurantMenuManagementScreenState
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                               decoration: BoxDecoration(
-                                color: sendsToKitchen ? const Color(0xFFF0FDF4) : const Color(0xFFFFFBEB),
+                                color: sendsToKitchen
+                                    ? (context.isDark ? const Color(0xFF064E3B) : const Color(0xFFF0FDF4))
+                                    : (context.isDark ? const Color(0xFF451A03) : const Color(0xFFFFFBEB)),
                                 borderRadius: BorderRadius.circular(10),
-                                border: Border.all(color: sendsToKitchen ? const Color(0xFF86EFAC) : const Color(0xFFFDE68A)),
+                                border: Border.all(
+                                  color: sendsToKitchen
+                                      ? (context.isDark ? const Color(0xFF059669) : const Color(0xFF86EFAC))
+                                      : (context.isDark ? const Color(0xFFB45309) : const Color(0xFFFDE68A)),
+                                ),
                               ),
                               child: Row(
                                 children: [
@@ -1345,7 +1372,9 @@ class _RestaurantMenuManagementScreenState
                             child: Container(
                               padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
                               decoration: BoxDecoration(
-                                color: isVeg ? const Color(0xFFECFDF5) : const Color(0xFFFEF2F2),
+                                color: isVeg
+                                    ? (context.isDark ? const Color(0xFF064E3B) : const Color(0xFFECFDF5))
+                                    : (context.isDark ? const Color(0xFF450A0A) : const Color(0xFFFEF2F2)),
                                 borderRadius: BorderRadius.circular(10),
                                 border: Border.all(color: isVeg ? const Color(0xFF059669) : const Color(0xFFDC2626)),
                               ),
@@ -1368,16 +1397,18 @@ class _RestaurantMenuManagementScreenState
                             child: Container(
                               padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
                               decoration: BoxDecoration(
-                                color: isAvailable ? const Color(0xFFEFF6FF) : const Color(0xFFF1F5F9),
+                                color: isAvailable
+                                    ? (context.isDark ? const Color(0xFF1E3A8A) : const Color(0xFFEFF6FF))
+                                    : (context.isDark ? ClassicTheme.cardSurfaceDark : const Color(0xFFF1F5F9)),
                                 borderRadius: BorderRadius.circular(10),
-                                border: Border.all(color: isAvailable ? const Color(0xFF2563EB) : const Color(0xFFCBD5E1)),
+                                border: Border.all(color: isAvailable ? const Color(0xFF2563EB) : context.borderColor),
                               ),
                               child: Row(
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
-                                  Icon(isAvailable ? Icons.check_circle_outline : Icons.block, color: isAvailable ? const Color(0xFF2563EB) : const Color(0xFF64748B), size: 16),
+                                  Icon(isAvailable ? Icons.check_circle_outline : Icons.block, color: isAvailable ? const Color(0xFF2563EB) : context.textSecondary, size: 16),
                                   const SizedBox(width: 6),
-                                  Text(isAvailable ? 'In Stock' : 'Sold Out', style: TextStyle(color: isAvailable ? const Color(0xFF2563EB) : const Color(0xFF64748B), fontWeight: FontWeight.bold, fontSize: 12)),
+                                  Text(isAvailable ? 'In Stock' : 'Sold Out', style: TextStyle(color: isAvailable ? const Color(0xFF2563EB) : context.textSecondary, fontWeight: FontWeight.bold, fontSize: 12)),
                                 ],
                               ),
                             ),
@@ -1391,9 +1422,9 @@ class _RestaurantMenuManagementScreenState
                     Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFF8FAFC),
+                        color: context.isDark ? ClassicTheme.cardSurfaceDark : const Color(0xFFF8FAFC),
                         borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                        border: Border.all(color: context.borderColor),
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1401,11 +1432,11 @@ class _RestaurantMenuManagementScreenState
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              const Column(
+                              Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text('Time-Restricted Serving', style: TextStyle(color: Color(0xFF0F172A), fontSize: 13, fontWeight: FontWeight.bold)),
-                                  Text('e.g. Breakfast only, Lunch only', style: TextStyle(color: Color(0xFF64748B), fontSize: 11)),
+                                  Text('Time-Restricted Serving', style: TextStyle(color: context.textPrimary, fontSize: 13, fontWeight: FontWeight.bold)),
+                                  Text('e.g. Breakfast only, Lunch only', style: TextStyle(color: context.textSecondary, fontSize: 11)),
                                 ],
                               ),
                               Switch(
@@ -1416,41 +1447,41 @@ class _RestaurantMenuManagementScreenState
                             ],
                           ),
                           if (isTimeRestricted) ...[
-                            const Divider(color: Color(0xFFE2E8F0), height: 16),
+                            Divider(color: context.borderColor, height: 16),
                             Row(
                               children: [
                                 Expanded(
                                   child: TextField(
                                     controller: fromTimeCtrl,
-                                    style: const TextStyle(color: Color(0xFF0F172A), fontSize: 13),
+                                    style: TextStyle(color: context.textPrimary, fontSize: 13),
                                     decoration: InputDecoration(
                                       labelText: 'Available From',
-                                      labelStyle: const TextStyle(color: Color(0xFF64748B), fontSize: 11),
+                                      labelStyle: TextStyle(color: context.textSecondary, fontSize: 11),
                                       hintText: 'HH:mm (e.g. 07:00)',
                                       filled: true,
-                                      fillColor: Colors.white,
+                                      fillColor: context.inputFill,
                                       contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFFCBD5E1))),
-                                      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFFCBD5E1))),
+                                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: context.borderColor)),
+                                      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: context.borderColor)),
                                     ),
                                   ),
                                 ),
                                 const SizedBox(width: 8),
-                                const Text('to', style: TextStyle(color: Color(0xFF64748B))),
+                                Text('to', style: TextStyle(color: context.textSecondary)),
                                 const SizedBox(width: 8),
                                 Expanded(
                                   child: TextField(
                                     controller: toTimeCtrl,
-                                    style: const TextStyle(color: Color(0xFF0F172A), fontSize: 13),
+                                    style: TextStyle(color: context.textPrimary, fontSize: 13),
                                     decoration: InputDecoration(
                                       labelText: 'Available Until',
-                                      labelStyle: const TextStyle(color: Color(0xFF64748B), fontSize: 11),
+                                      labelStyle: TextStyle(color: context.textSecondary, fontSize: 11),
                                       hintText: 'HH:mm (e.g. 11:30)',
                                       filled: true,
-                                      fillColor: Colors.white,
+                                      fillColor: context.inputFill,
                                       contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFFCBD5E1))),
-                                      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFFCBD5E1))),
+                                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: context.borderColor)),
+                                      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: context.borderColor)),
                                     ),
                                   ),
                                 ),
@@ -1542,26 +1573,26 @@ class _RestaurantMenuManagementScreenState
           final isOpen = _operatingHours.isKitchenOpenNow();
 
           return AlertDialog(
-            backgroundColor: Colors.white,
+            backgroundColor: context.surfaceColor,
             surfaceTintColor: Colors.transparent,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(20),
-              side: const BorderSide(color: Color(0xFFE2E8F0)),
+              side: BorderSide(color: context.borderColor),
             ),
             title: Row(
               children: [
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFEFF6FF),
+                    color: const Color(0xFF2563EB).withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: const Icon(Icons.timer_outlined, color: Color(0xFF2563EB), size: 20),
                 ),
                 const SizedBox(width: 10),
-                const Text(
+                Text(
                   'Kitchen Shifts & Timings',
-                  style: TextStyle(color: Color(0xFF0F172A), fontWeight: FontWeight.bold, fontSize: 16),
+                  style: TextStyle(color: context.textPrimary, fontWeight: FontWeight.bold, fontSize: 16),
                 ),
               ],
             ),
@@ -1575,7 +1606,7 @@ class _RestaurantMenuManagementScreenState
                     Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: isOpen ? const Color(0xFFECFDF5) : const Color(0xFFFEF2F2),
+                        color: isOpen ? const Color(0xFF059669).withValues(alpha: 0.1) : const Color(0xFFDC2626).withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(
                           color: isOpen ? const Color(0xFF059669) : const Color(0xFFDC2626),
@@ -1595,7 +1626,7 @@ class _RestaurantMenuManagementScreenState
                       ),
                     ),
                     const SizedBox(height: 16),
-                    const Text('Daily Operational Shifts:', style: TextStyle(color: Color(0xFF475569), fontWeight: FontWeight.bold, fontSize: 13)),
+                    Text('Daily Operational Shifts:', style: TextStyle(color: context.textSecondary, fontWeight: FontWeight.bold, fontSize: 13)),
                     const SizedBox(height: 8),
 
                     ..._operatingHours.shifts.map((shift) {
@@ -1604,9 +1635,9 @@ class _RestaurantMenuManagementScreenState
                         margin: const EdgeInsets.only(bottom: 8),
                         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                         decoration: BoxDecoration(
-                          color: isShiftActive ? const Color(0xFFEFF6FF) : const Color(0xFFF8FAFC),
+                          color: isShiftActive ? const Color(0xFF2563EB).withValues(alpha: 0.1) : context.canvasColor,
                           borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: isShiftActive ? const Color(0xFF2563EB) : const Color(0xFFE2E8F0)),
+                          border: Border.all(color: isShiftActive ? const Color(0xFF2563EB) : context.borderColor),
                         ),
                         child: Row(
                           children: [
@@ -1614,7 +1645,7 @@ class _RestaurantMenuManagementScreenState
                               child: Text(
                                 shift.name,
                                 style: TextStyle(
-                                  color: isShiftActive ? const Color(0xFF2563EB) : const Color(0xFF0F172A),
+                                  color: isShiftActive ? const Color(0xFF2563EB) : context.textPrimary,
                                   fontWeight: FontWeight.bold,
                                   fontSize: 13,
                                 ),
@@ -1622,14 +1653,14 @@ class _RestaurantMenuManagementScreenState
                             ),
                             Text(
                               '${shift.startTime} - ${shift.endTime}',
-                              style: const TextStyle(color: Color(0xFF64748B), fontSize: 12),
+                              style: TextStyle(color: context.textSecondary, fontSize: 12),
                             ),
                             const SizedBox(width: 10),
                             if (isShiftActive)
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                 decoration: BoxDecoration(
-                                  color: const Color(0xFF2563EB).withValues(alpha: 0.1),
+                                  color: const Color(0xFF2563EB).withValues(alpha: 0.15),
                                   borderRadius: BorderRadius.circular(4),
                                 ),
                                 child: const Text(
@@ -1687,17 +1718,17 @@ class _RestaurantMenuManagementScreenState
     }).toList();
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFC),
+      backgroundColor: context.canvasColor,
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: context.surfaceColor,
         elevation: 0,
         scrolledUnderElevation: 0,
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(1),
-          child: Container(color: const Color(0xFFE2E8F0), height: 1),
+          child: Container(color: context.borderColor, height: 1),
         ),
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Color(0xFF0F172A), size: 18),
+          icon: Icon(Icons.arrow_back_ios_new_rounded, color: context.textPrimary, size: 18),
           tooltip: 'Back to Home',
           onPressed: () => Navigator.pop(context),
         ),
@@ -1705,57 +1736,126 @@ class _RestaurantMenuManagementScreenState
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text(
+            Text(
               'Menu Configurations',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: context.textPrimary),
             ),
             Text(
-              '${_dishes.length} dishes • Live Sync Enabled',
-              style: const TextStyle(fontSize: 11, color: Color(0xFF64748B), fontWeight: FontWeight.w500),
+              '${_dishes.length} dishes • Auto Syncing',
+              style: TextStyle(fontSize: 11, color: context.textSecondary, fontWeight: FontWeight.w500),
             ),
           ],
         ),
         actions: [
-          // Live Cloud Sync Button
-          IconButton(
-            tooltip: 'Sync Menu to Website & Cloud',
-            icon: _isSyncing
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF2563EB)),
-                  )
-                : const Icon(Icons.cloud_sync_rounded, color: Color(0xFF2563EB), size: 22),
-            onPressed: _isSyncing ? null : () => _syncDishesToCloud(silent: false),
+          PopupMenuButton<String>(
+            tooltip: 'Menu Options & Management',
+            icon: Icon(Icons.more_vert_rounded, color: context.textPrimary),
+            color: context.surfaceColor,
+            elevation: 4,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+              side: BorderSide(color: context.borderColor),
+            ),
+            onSelected: (action) {
+              if (action == 'categories') {
+                _showManageCategoriesDialog();
+              } else if (action == 'stations') {
+                _showManageStationsDialog();
+              } else if (action == 'shifts') {
+                _showOperatingHoursDialog();
+              } else if (action == 'sync') {
+                _syncDishesToCloud(silent: false);
+              } else if (action == 'pull') {
+                _pullCatalogFromSheets();
+              }
+            },
+            itemBuilder: (pCtx) => [
+              PopupMenuItem(
+                value: 'categories',
+                child: Row(
+                  children: [
+                    const Icon(Icons.category_outlined, size: 18, color: Color(0xFF2563EB)),
+                    const SizedBox(width: 10),
+                    Text('Manage Categories', style: TextStyle(fontSize: 13, color: context.textPrimary)),
+                  ],
+                ),
+              ),
+              PopupMenuItem(
+                value: 'stations',
+                child: Row(
+                  children: [
+                    const Icon(Icons.soup_kitchen_outlined, size: 18, color: Color(0xFF2563EB)),
+                    const SizedBox(width: 10),
+                    Text('Kitchen Stations', style: TextStyle(fontSize: 13, color: context.textPrimary)),
+                  ],
+                ),
+              ),
+              PopupMenuItem(
+                value: 'shifts',
+                child: Row(
+                  children: [
+                    const Icon(Icons.schedule_rounded, size: 18, color: Color(0xFF2563EB)),
+                    const SizedBox(width: 10),
+                    Text('Operating Shifts', style: TextStyle(fontSize: 13, color: context.textPrimary)),
+                  ],
+                ),
+              ),
+              const PopupMenuDivider(),
+              PopupMenuItem(
+                value: 'sync',
+                child: Row(
+                  children: [
+                    const Icon(Icons.cloud_sync_rounded, size: 18, color: Color(0xFF059669)),
+                    const SizedBox(width: 10),
+                    Text('Sync Menu to Cloud', style: TextStyle(fontSize: 13, color: context.textPrimary)),
+                  ],
+                ),
+              ),
+              PopupMenuItem(
+                value: 'pull',
+                child: Row(
+                  children: [
+                    const Icon(Icons.cloud_download_rounded, size: 18, color: Color(0xFF059669)),
+                    const SizedBox(width: 10),
+                    Text('Pull from Google Sheets', style: TextStyle(fontSize: 13, color: context.textPrimary)),
+                  ],
+                ),
+              ),
+            ],
           ),
-          // Pull Catalog & Stock from Google Sheets
-          IconButton(
-            tooltip: 'Pull Catalog & Stock from Google Sheets',
-            icon: const Icon(Icons.cloud_download_rounded, color: Color(0xFF059669), size: 22),
-            onPressed: _isSyncing ? null : _pullCatalogFromSheets,
-          ),
-          IconButton(
-            tooltip: 'Manage Categories',
-            icon: const Icon(Icons.category_outlined, color: Color(0xFF475569), size: 21),
-            onPressed: _showManageCategoriesDialog,
-          ),
-          IconButton(
-            tooltip: 'Kitchen Stations',
-            icon: const Icon(Icons.soup_kitchen_outlined, color: Color(0xFF475569), size: 21),
-            onPressed: _showManageStationsDialog,
-          ),
-          IconButton(
-            tooltip: 'Operating Shifts',
-            icon: const Icon(Icons.schedule_rounded, color: Color(0xFF475569), size: 21),
-            onPressed: _showOperatingHoursDialog,
-          ),
-          IconButton(
-            tooltip: 'Add New Food Item',
-            icon: const Icon(Icons.add_circle_rounded, color: Color(0xFF2563EB), size: 24),
-            onPressed: () => _showAddEditDishModal(),
-          ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 6),
         ],
+      ),
+      bottomNavigationBar: Container(
+        padding: EdgeInsets.fromLTRB(16, 12, 16, MediaQuery.of(context).padding.bottom + 12),
+        decoration: BoxDecoration(
+          color: context.surfaceColor,
+          border: Border(top: BorderSide(color: context.borderColor)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.04),
+              blurRadius: 10,
+              offset: const Offset(0, -3),
+            ),
+          ],
+        ),
+        child: SizedBox(
+          height: 52,
+          child: ElevatedButton.icon(
+            onPressed: () => _showAddEditDishModal(),
+            icon: const Icon(Icons.add_circle_outline_rounded, size: 22),
+            label: const Text(
+              'Add Food Item',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF2563EB),
+              foregroundColor: Colors.white,
+              elevation: 0,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+          ),
+        ),
       ),
       body: _dishes.isEmpty
           ? Center(
@@ -1767,22 +1867,22 @@ class _RestaurantMenuManagementScreenState
                     Container(
                       padding: const EdgeInsets.all(24),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFEFF6FF),
+                        color: const Color(0xFF2563EB).withValues(alpha: 0.1),
                         shape: BoxShape.circle,
-                        border: Border.all(color: const Color(0xFFDBEAFE)),
+                        border: Border.all(color: const Color(0xFF2563EB).withValues(alpha: 0.2)),
                       ),
                       child: const Icon(Icons.restaurant_menu_rounded, size: 48, color: Color(0xFF2563EB)),
                     ),
                     const SizedBox(height: 20),
-                    const Text(
+                    Text(
                       'No Menu Items Configured',
-                      style: TextStyle(color: Color(0xFF0F172A), fontSize: 18, fontWeight: FontWeight.bold),
+                      style: TextStyle(color: context.textPrimary, fontSize: 18, fontWeight: FontWeight.bold),
                     ),
                     const SizedBox(height: 8),
-                    const Text(
+                    Text(
                       'Build your restaurant menu. Add your authentic dishes and categories to make them available for POS billing and online table QR ordering.',
                       textAlign: TextAlign.center,
-                      style: TextStyle(color: Color(0xFF64748B), fontSize: 13, height: 1.4),
+                      style: TextStyle(color: context.textSecondary, fontSize: 13, height: 1.4),
                     ),
                     const SizedBox(height: 24),
                     Wrap(
@@ -1829,22 +1929,23 @@ class _RestaurantMenuManagementScreenState
               ),
             )
           : Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
               child: Column(
                 children: [
                   // Search bar
                   TextField(
                     onChanged: (v) => setState(() => _searchQuery = v),
-                    style: const TextStyle(color: Color(0xFF0F172A), fontSize: 13),
+                    style: TextStyle(color: context.textPrimary, fontSize: 13),
                     decoration: InputDecoration(
                       hintText: 'Search dishes, categories...',
-                      hintStyle: const TextStyle(color: Color(0xFF94A3B8), fontSize: 13),
-                      prefixIcon: const Icon(Icons.search_rounded, color: Color(0xFF64748B), size: 20),
+                      hintStyle: TextStyle(color: context.textSecondary, fontSize: 13),
+                      prefixIcon: Icon(Icons.search_rounded, color: context.textSecondary, size: 20),
                       filled: true,
-                      fillColor: Colors.white,
+                      fillColor: context.inputFill,
                       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFFCBD5E1))),
-                      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFFCBD5E1))),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: context.borderColor)),
+                      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: context.borderColor)),
+                      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFF2563EB))),
                     ),
                   ),
                   const SizedBox(height: 10),
@@ -1862,13 +1963,13 @@ class _RestaurantMenuManagementScreenState
                         return FilterChip(
                           selected: isSel,
                           showCheckmark: false,
-                          backgroundColor: Colors.white,
+                          backgroundColor: context.surfaceColor,
                           selectedColor: const Color(0xFF2563EB),
-                          side: BorderSide(color: isSel ? const Color(0xFF2563EB) : const Color(0xFFCBD5E1)),
+                          side: BorderSide(color: isSel ? const Color(0xFF2563EB) : context.borderColor),
                           label: Text(
                             cat,
                             style: TextStyle(
-                              color: isSel ? Colors.white : const Color(0xFF334155),
+                              color: isSel ? Colors.white : context.textPrimary,
                               fontWeight: isSel ? FontWeight.bold : FontWeight.w500,
                               fontSize: 12,
                             ),
@@ -1898,13 +1999,13 @@ class _RestaurantMenuManagementScreenState
                           final isSel = _selectedSubcategory == sub;
                           return ChoiceChip(
                             selected: isSel,
-                            backgroundColor: Colors.white,
-                            selectedColor: const Color(0xFFEFF6FF),
-                            side: BorderSide(color: isSel ? const Color(0xFF2563EB) : const Color(0xFFCBD5E1)),
+                            backgroundColor: context.surfaceColor,
+                            selectedColor: const Color(0xFF2563EB).withValues(alpha: 0.15),
+                            side: BorderSide(color: isSel ? const Color(0xFF2563EB) : context.borderColor),
                             label: Text(
                               sub,
                               style: TextStyle(
-                                color: isSel ? const Color(0xFF2563EB) : const Color(0xFF64748B),
+                                color: isSel ? const Color(0xFF2563EB) : context.textSecondary,
                                 fontSize: 11,
                                 fontWeight: isSel ? FontWeight.bold : FontWeight.normal,
                               ),
@@ -1919,10 +2020,11 @@ class _RestaurantMenuManagementScreenState
                   // Dishes List
                   Expanded(
                     child: filtered.isEmpty
-                        ? const Center(
-                            child: Text('No dishes match your search or filter.', style: TextStyle(color: Color(0xFF64748B), fontSize: 13)),
+                        ? Center(
+                            child: Text('No dishes match your search or filter.', style: TextStyle(color: context.textSecondary, fontSize: 13)),
                           )
                         : ListView.builder(
+                            padding: const EdgeInsets.only(bottom: 24),
                             itemCount: filtered.length,
                             itemBuilder: (ctx, index) {
                               final dish = filtered[index];
@@ -1933,14 +2035,14 @@ class _RestaurantMenuManagementScreenState
                                 margin: const EdgeInsets.only(bottom: 10),
                                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                                 decoration: BoxDecoration(
-                                  color: Colors.white,
+                                  color: context.surfaceColor,
                                   borderRadius: BorderRadius.circular(14),
                                   border: Border.all(
                                     color: !isAvail
                                         ? const Color(0xFFFCA5A5)
                                         : !isTimeAvail
                                             ? const Color(0xFFFDE68A)
-                                            : const Color(0xFFE2E8F0),
+                                            : context.borderColor,
                                     width: !isAvail || !isTimeAvail ? 1.5 : 1,
                                   ),
                                   boxShadow: [
@@ -1980,7 +2082,7 @@ class _RestaurantMenuManagementScreenState
                                                 child: Text(
                                                   dish['name'] ?? '',
                                                   style: TextStyle(
-                                                    color: isAvail ? const Color(0xFF0F172A) : const Color(0xFF94A3B8),
+                                                    color: isAvail ? context.textPrimary : context.textSecondary,
                                                     fontWeight: FontWeight.bold,
                                                     fontSize: 14,
                                                     decoration: isAvail ? null : TextDecoration.lineThrough,
@@ -2011,7 +2113,7 @@ class _RestaurantMenuManagementScreenState
                                               Container(
                                                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                                 decoration: BoxDecoration(
-                                                  color: const Color(0xFFEFF6FF),
+                                                  color: const Color(0xFF2563EB).withValues(alpha: 0.1),
                                                   borderRadius: BorderRadius.circular(4),
                                                 ),
                                                 child: Text(
@@ -2062,7 +2164,7 @@ class _RestaurantMenuManagementScreenState
                                     // Price
                                     Text(
                                       '₹${((dish['price'] ?? 0.0) as num).toStringAsFixed(0)}',
-                            style: const TextStyle(color: Color(0xFF0F172A), fontWeight: FontWeight.w900, fontSize: 14),
+                                      style: TextStyle(color: context.textPrimary, fontWeight: FontWeight.w900, fontSize: 14),
                                     ),
                                     const SizedBox(width: 8),
 
@@ -2097,10 +2199,13 @@ class _RestaurantMenuManagementScreenState
 
                                     // Actions menu
                                     PopupMenuButton<String>(
-                                      icon: const Icon(Icons.more_vert, color: Color(0xFF64748B), size: 20),
-                                      color: Colors.white,
+                                      icon: Icon(Icons.more_vert, color: context.textSecondary, size: 20),
+                                      color: context.surfaceColor,
                                       elevation: 3,
-                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(10),
+                                        side: BorderSide(color: context.borderColor),
+                                      ),
                                       onSelected: (action) {
                                         if (action == 'edit') {
                                           _showAddEditDishModal(dish);
@@ -2112,13 +2217,13 @@ class _RestaurantMenuManagementScreenState
                                         }
                                       },
                                       itemBuilder: (pCtx) => [
-                                        const PopupMenuItem(
+                                        PopupMenuItem(
                                           value: 'edit',
                                           child: Row(
                                             children: [
-                                              Icon(Icons.edit_outlined, size: 16, color: Color(0xFF2563EB)),
-                                              SizedBox(width: 8),
-                                              Text('Edit Item', style: TextStyle(fontSize: 12, color: Color(0xFF0F172A))),
+                                              const Icon(Icons.edit_outlined, size: 16, color: Color(0xFF2563EB)),
+                                              const SizedBox(width: 8),
+                                              Text('Edit Item', style: TextStyle(fontSize: 12, color: context.textPrimary)),
                                             ],
                                           ),
                                         ),

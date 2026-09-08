@@ -226,11 +226,11 @@ function getOrCreateBillsSheet(ss) {
     return sheet;
   }
   
-  // Verify & fix header row if it has old 9-column format or "Status" at column 8
+  // Verify & fix header row if it has old format, fewer columns, or mismatched columns
   try {
     var headerRange = sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), 12));
     var headers = headerRange.getValues()[0].map(function(h) { return String(h || "").trim(); });
-    if (headers.length < 12 || headers[8] === "Status" || headers[8] === "status") {
+    if (headers.length < 12 || headers[7] !== "Total Amount" || headers[8] !== "Items Summary" || headers[10] !== "Table") {
       sheet.getRange(1, 1, 1, 12).setValues([[
         "Bill ID", "Date & Time", "Customer Name", "Customer Phone", 
         "Payment Mode", "Subtotal", "Discount", "Total Amount", "Items Summary", "Status", "Table", "Transaction ID"
@@ -1079,22 +1079,34 @@ function doGet(e) {
             var data = sheet.getDataRange().getValues();
             if (data && data.length > 1) {
               var headers = data[0].map(function(h) { return String(h || "").trim().toLowerCase(); });
-              var idIdx = 0, dateIdx = 1, nameIdx = -1, phoneIdx = 3, modeIdx = 4, totalIdx = 7, itemsIdx = 8, statusIdx = 9, tableIdx = 10, txnIdx = 11;
-              headers.forEach(function(h, idx) {
-                if (h.indexOf("bill") !== -1 || h.indexOf("kot") !== -1 || (h.indexOf("id") !== -1 && h.indexOf("product") === -1 && h.indexOf("cust") === -1)) idIdx = idx;
-                if (h.indexOf("date") !== -1 || h.indexOf("time") !== -1) dateIdx = idx;
-                if ((h.indexOf("customer") !== -1 || h.indexOf("guest") !== -1 || h.indexOf("client") !== -1 || h === "name") &&
-                    h.indexOf("dish") === -1 && h.indexOf("item") === -1 && h.indexOf("product") === -1) {
-                  nameIdx = idx;
-                }
-                if (h.indexOf("phone") !== -1 || h.indexOf("mobile") !== -1) phoneIdx = idx;
-                if (h.indexOf("mode") !== -1 || h.indexOf("payment") !== -1) modeIdx = idx;
-                if (h.indexOf("total") !== -1 || h.indexOf("amount") !== -1) totalIdx = idx;
-                if (h.indexOf("item") !== -1 || h.indexOf("dish") !== -1 || h.indexOf("summary") !== -1) itemsIdx = idx;
-                if (h.indexOf("status") !== -1 && idx !== itemsIdx) statusIdx = idx;
-                if (h.indexOf("table") !== -1) tableIdx = idx;
-                if (h.indexOf("txn") !== -1 || h.indexOf("utr") !== -1 || h.indexOf("ref") !== -1) txnIdx = idx;
+              var idIdx = -1, dateIdx = -1, nameIdx = -1, phoneIdx = -1, modeIdx = -1, subtotalIdx = -1, totalIdx = -1, itemsIdx = -1, statusIdx = -1, tableIdx = -1, txnIdx = -1;
+              headers.forEach(function(rawH, idx) {
+                var cleanH = String(rawH || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+                if (cleanH === "billid" || cleanH === "id" || cleanH === "kotid") idIdx = idx;
+                else if (cleanH === "datetime" || cleanH === "date" || cleanH === "time" || cleanH === "timestamp") dateIdx = idx;
+                else if (cleanH === "customername" || cleanH === "guestname" || (cleanH === "name" && cleanH.indexOf("dish") === -1 && cleanH.indexOf("item") === -1)) nameIdx = idx;
+                else if (cleanH === "customerphone" || cleanH === "phone" || cleanH === "mobile") phoneIdx = idx;
+                else if (cleanH === "paymentmode" || cleanH === "mode" || cleanH === "payment") modeIdx = idx;
+                else if (cleanH === "subtotal" || cleanH === "subtotalamount") subtotalIdx = idx;
+                else if (cleanH === "totalamount" || cleanH === "nettotal" || cleanH === "grandtotal" || cleanH === "total" || cleanH === "amount") totalIdx = idx;
+                else if (cleanH === "itemssummary" || cleanH === "itemsjson" || cleanH === "items" || cleanH === "dishes") itemsIdx = idx;
+                else if (cleanH === "status" || cleanH === "orderstatus") statusIdx = idx;
+                else if (cleanH === "table" || cleanH === "tablename" || cleanH === "tablelocation" || cleanH === "tabletakeaway") tableIdx = idx;
+                else if (cleanH === "transactionid" || cleanH === "txnid" || cleanH === "utr" || cleanH === "ref") txnIdx = idx;
               });
+
+              // Canonical fallback indexes if headers could not be matched
+              if (idIdx === -1) idIdx = 0;
+              if (dateIdx === -1) dateIdx = 1;
+              if (nameIdx === -1) nameIdx = 2;
+              if (phoneIdx === -1) phoneIdx = 3;
+              if (modeIdx === -1) modeIdx = 4;
+              if (subtotalIdx === -1) subtotalIdx = 5;
+              if (totalIdx === -1) totalIdx = 7;
+              if (itemsIdx === -1) itemsIdx = 8;
+              if (statusIdx === -1) statusIdx = 9;
+              if (tableIdx === -1) tableIdx = 10;
+              if (txnIdx === -1) txnIdx = 11;
 
               for (var r = 1; r < data.length; r++) {
                 var row = data[r];
@@ -1128,8 +1140,6 @@ function doGet(e) {
                 }
 
                 var rawDate = dateIdx !== -1 ? String(row[dateIdx] || "").trim() : "";
-                // Orders are kept active until settled or closed (no 4-hour cutoff)
-
                 var rawMode = modeIdx !== -1 ? String(row[modeIdx] || "").trim() : "";
                 var rawName = nameIdx !== -1 ? String(row[nameIdx] || "").trim() : "";
                 if (rawName.toLowerCase().indexOf("table") === 0 || 
@@ -1142,18 +1152,63 @@ function doGet(e) {
                 }
                 var rawPhone = phoneIdx !== -1 ? String(row[phoneIdx] || "").trim() : "";
                 var rawTxn = txnIdx !== -1 ? String(row[txnIdx] || "").trim() : "";
-                var rawTotal = parseFloat(String(row[totalIdx] || "0").replace(/[^0-9.]/g, "")) || 0;
-                var rawItems = itemsIdx !== -1 ? String(row[itemsIdx] || "").trim() : "";
+
+                // SAFE ITEM & TOTAL EXTRACTION (Guards against shifted columns & scientific notation)
+                var cellTotal = String(row[totalIdx] || "").trim();
+                var cellItems = itemsIdx !== -1 ? String(row[itemsIdx] || "").trim() : "";
+
+                // If cellTotal starts with JSON brackets, columns are shifted (cellTotal has dishes!)
+                if (cellTotal.indexOf("[") === 0 || cellTotal.indexOf("{") === 0) {
+                  cellItems = cellTotal;
+                  cellTotal = subtotalIdx !== -1 ? String(row[subtotalIdx] || "0") : "0";
+                }
+
+                // If cellItems looks like "Table X" or does not contain JSON, scan row for actual JSON items
+                if (cellItems.toLowerCase().indexOf("table ") === 0 || cellItems.toLowerCase().indexOf("table_") === 0 || cellItems === "") {
+                  for (var ci = 0; ci < row.length; ci++) {
+                    var candidate = String(row[ci] || "").trim();
+                    if (candidate.indexOf("[{") === 0 || candidate.indexOf('{"') === 0) {
+                      cellItems = candidate;
+                      break;
+                    }
+                  }
+                }
 
                 var parsedItems = [];
-                if (rawItems.indexOf("[") === 0) {
+                if (cellItems.indexOf("[") === 0) {
                   try {
-                    parsedItems = JSON.parse(rawItems);
+                    parsedItems = JSON.parse(cellItems);
                   } catch (e) {
-                    parsedItems = [{ name: rawItems, qty: 1, price: rawTotal }];
+                    parsedItems = [];
                   }
-                } else if (rawItems) {
-                  parsedItems = [{ name: rawItems, qty: 1, price: rawTotal }];
+                }
+
+                // Parse total with strict corruption limits
+                var rawTotal = 0;
+                if (cellTotal.indexOf("[") === -1 && cellTotal.indexOf("{") === -1) {
+                  var cleanedTotalStr = cellTotal.replace(/[^0-9.]/g, "");
+                  // If cleaned string is longer than 9 digits or NaN, it's corrupted!
+                  if (cleanedTotalStr.length <= 9) {
+                    rawTotal = parseFloat(cleanedTotalStr) || 0;
+                  }
+                }
+
+                // If rawTotal is corrupted, 0, or exceeds 10 million rupees, recalculate from items!
+                if (isNaN(rawTotal) || rawTotal > 10000000 || rawTotal <= 0) {
+                  if (parsedItems && parsedItems.length > 0) {
+                    rawTotal = parsedItems.reduce(function(acc, it) {
+                      var p = parseFloat(it.price || it.rate) || 0;
+                      var q = parseFloat(it.qty || it.quantity) || 1;
+                      if (p > 100000) p = 0; // Guard against item-level corruption
+                      return acc + (p * q);
+                    }, 0);
+                  } else {
+                    rawTotal = 0;
+                  }
+                }
+
+                if (parsedItems.length === 0 && cellItems && cellItems.toLowerCase().indexOf("table ") !== 0) {
+                  parsedItems = [{ name: cellItems, qty: 1, price: rawTotal }];
                 }
 
                 var canonicalTable = row[tableIdx] || ("Table " + rawTableClean);

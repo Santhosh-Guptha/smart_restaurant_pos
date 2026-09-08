@@ -278,6 +278,20 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
     if (mounted) {
       setState(() {
         _tableOrders = matched;
+        if (matched.isNotEmpty) {
+          final active = matched.first;
+          if (_customerNameCtrl.text.trim().isEmpty &&
+              active.customerName != null &&
+              active.customerName!.trim().isNotEmpty &&
+              active.customerName != 'Dine-In Guest') {
+            _customerNameCtrl.text = active.customerName!.trim();
+          }
+          if (_customerPhoneCtrl.text.trim().isEmpty &&
+              active.customerPhone != null &&
+              active.customerPhone!.trim().isNotEmpty) {
+            _customerPhoneCtrl.text = active.customerPhone!.trim();
+          }
+        }
       });
     }
   }
@@ -367,21 +381,31 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
     final orgId = _getEffectiveOrgId();
     final activeStaff = ref.read(restaurantAuthProvider).activeStaff;
     final token = await ref.read(dailyTokenProvider.notifier).getNextToken();
-    final billNumber = 'SB-${DateTime.now().millisecondsSinceEpoch}-${Random().nextInt(9999).toString().padLeft(4, '0')}';
+    final KotOrder? existingActiveOrder = _tableOrders.isNotEmpty ? _tableOrders.first : null;
+    final billNumber = existingActiveOrder != null && existingActiveOrder.id.isNotEmpty
+        ? existingActiveOrder.id
+        : 'SB-${DateTime.now().millisecondsSinceEpoch}-${Random().nextInt(9999).toString().padLeft(4, '0')}';
     final tableName = 'Table ${widget.table.tableNumber.replaceAll(RegExp(r'^Table\s*', caseSensitive: false), '').trim()}';
     final tNum = widget.table.tableNumber.replaceAll(RegExp(r'[^0-9]'), '');
 
-    final guestName = _customerNameCtrl.text.trim().isNotEmpty ? _customerNameCtrl.text.trim() : 'Dine-In Guest';
-    final guestPhone = _customerPhoneCtrl.text.trim();
+    final guestName = _customerNameCtrl.text.trim().isNotEmpty
+        ? _customerNameCtrl.text.trim()
+        : (existingActiveOrder?.customerName ?? 'Dine-In Guest');
+    final guestPhone = _customerPhoneCtrl.text.trim().isNotEmpty
+        ? _customerPhoneCtrl.text.trim()
+        : (existingActiveOrder?.customerPhone ?? '');
 
-    final currentCourse = _tableOrders.length + 1;
-    final List<Map<String, dynamic>> itemsList = [];
+    final currentCourse = existingActiveOrder != null
+        ? (existingActiveOrder.items.map((i) => i.courseNo ?? 1).fold<int>(1, (a, b) => a > b ? a : b) + 1)
+        : (_tableOrders.length + 1);
+
+    final List<Map<String, dynamic>> newRoundItemsList = [];
     for (final entry in _tray.values) {
       final it = entry['item'] as Map<String, dynamic>;
       final qty = (entry['qty'] as num).toInt();
       final price = (it['price'] as num?)?.toDouble() ?? 0.0;
       final sendsToKitchen = it['sendsToKitchen'] != false;
-      itemsList.add({
+      newRoundItemsList.add({
         'lineId': const Uuid().v4(),
         'id': it['id']?.toString() ?? it['name'].toString(),
         'productId': it['id']?.toString() ?? it['name'].toString(),
@@ -400,54 +424,89 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
       });
     }
 
-    final subtotal = _traySubtotal;
-    final serviceCharge = subtotal * (_storeServiceChargeRate / 100);
-    final gst = (subtotal + serviceCharge) * (_storeGstRate / 100);
-    final totalAmount = subtotal + serviceCharge + gst;
+    // Combine previous round items with new round items under the same table bill
+    final List<Map<String, dynamic>> combinedItemsList = [];
+    if (existingActiveOrder != null) {
+      for (final prevIt in existingActiveOrder.items) {
+        combinedItemsList.add(prevIt.toMap());
+      }
+    }
+    combinedItemsList.addAll(newRoundItemsList);
+
+    final combinedSubtotal = combinedItemsList.fold<double>(
+      0.0,
+      (sum, item) => sum + (((item['price'] as num?)?.toDouble() ?? 0.0) * ((item['qty'] as num?)?.toDouble() ?? 1.0)),
+    );
+    final combinedServiceCharge = combinedSubtotal * (_storeServiceChargeRate / 100);
+    final combinedGst = (combinedSubtotal + combinedServiceCharge) * (_storeGstRate / 100);
+    final combinedTotalAmount = combinedSubtotal + combinedServiceCharge + combinedGst;
 
     final clientRequestId = const Uuid().v4();
 
-    final orderMap = {
-      'id': billNumber,
-      'kotNumber': token,
-      'clientRequestId': clientRequestId,
-      'organizationId': orgId,
-      'tableId': tNum,
-      'tableNumber': tNum,
-      'tableName': tableName,
-      'items': itemsList,
-      'status': 'PENDING',
-      'kitchenStatus': 'PENDING',
-      'paymentStatus': 'PENDING',
-      'isPaid': false,
-      'orderSource': 'WAITER_APP',
-      'orderType': 'Dine-In',
-      'customerName': guestName,
-      'customerPhone': guestPhone,
-      'waiterName': activeStaff?.name ?? 'Floor Waiter',
-      'createdAt': DateTime.now().toIso8601String(),
-      'firedAt': DateTime.now().toIso8601String(),
-      'courseNo': currentCourse,
-      'course_no': currentCourse,
-      'reprintCount': 0,
-      'subtotal': subtotal,
-      'serviceCharge': serviceCharge,
-      'gst': gst,
-      'totalAmount': totalAmount,
-    };
-
     try {
-      // 1. Save to local Hive orders
+      // 1. Save or update unified table order in local Hive orders
       if (Hive.isBoxOpen('configBox')) {
         final box = Hive.box('configBox');
         final rawOrders = box.get('kot_orders_$orgId') as List? ?? [];
         final List<Map<String, dynamic>> updatedList = rawOrders
             .map((e) => Map<String, dynamic>.from(e as Map))
             .toList();
-        updatedList.insert(0, orderMap);
+
+        final existingIdx = updatedList.indexWhere((o) => canonicalId(o) == cleanOrderId(billNumber));
+        if (existingIdx >= 0) {
+          final old = Map<String, dynamic>.from(updatedList[existingIdx]);
+          old['items'] = combinedItemsList;
+          old['subtotal'] = combinedSubtotal;
+          old['serviceCharge'] = combinedServiceCharge;
+          old['service_charge'] = combinedServiceCharge;
+          old['gst'] = combinedGst;
+          old['totalAmount'] = combinedTotalAmount;
+          old['total_amount'] = combinedTotalAmount;
+          old['customerName'] = guestName;
+          old['customer_name'] = guestName;
+          old['customerPhone'] = guestPhone;
+          old['customer_phone'] = guestPhone;
+          old['courseNo'] = currentCourse;
+          old['course_no'] = currentCourse;
+          old['kitchenStatus'] = 'PENDING';
+          old['status'] = 'PENDING';
+          updatedList[existingIdx] = old;
+        } else {
+          final orderMap = {
+            'id': billNumber,
+            'kotNumber': token,
+            'clientRequestId': clientRequestId,
+            'organizationId': orgId,
+            'tableId': tNum,
+            'tableNumber': tNum,
+            'tableName': tableName,
+            'items': combinedItemsList,
+            'status': 'PENDING',
+            'kitchenStatus': 'PENDING',
+            'paymentStatus': 'PENDING',
+            'isPaid': false,
+            'orderSource': 'WAITER_APP',
+            'orderType': 'Dine-In',
+            'customerName': guestName,
+            'customerPhone': guestPhone,
+            'waiterName': activeStaff?.name ?? 'Floor Waiter',
+            'createdAt': DateTime.now().toIso8601String(),
+            'firedAt': DateTime.now().toIso8601String(),
+            'courseNo': currentCourse,
+            'course_no': currentCourse,
+            'reprintCount': 0,
+            'subtotal': combinedSubtotal,
+            'serviceCharge': combinedServiceCharge,
+            'service_charge': combinedServiceCharge,
+            'gst': combinedGst,
+            'totalAmount': combinedTotalAmount,
+            'total_amount': combinedTotalAmount,
+          };
+          updatedList.insert(0, orderMap);
+        }
         await box.put('kot_orders_$orgId', updatedList);
 
-        // 2. Mark Table Occupied in Hive
+        // 2. Mark Table Occupied in Hive with customer details & running bill amount
         final rawTables = box.get('restaurant_tables_$orgId') as List? ?? [];
         final cleanWTable = cleanTableId(widget.table.tableNumber);
         final cleanWName = cleanTableId(widget.table.name);
@@ -463,8 +522,9 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
               tm['currentCustomerName'] = guestName;
               tm['currentCustomerPhone'] = guestPhone;
               tm['currentOrderSource'] = 'WAITER_APP';
-              tm['currentBillAmount'] = ((tm['currentBillAmount'] as num?)?.toDouble() ?? 0.0) + totalAmount;
-              tm['activeItemCount'] = ((tm['activeItemCount'] as num?)?.toInt() ?? 0) + itemsList.length;
+              tm['currentBillAmount'] = combinedTotalAmount;
+              tm['activeItemCount'] = combinedItemsList.length;
+              tm['activeBillId'] = billNumber;
             }
             return tm;
           }
@@ -473,11 +533,18 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
         await box.put('restaurant_tables_$orgId', updatedTables);
       }
 
-      // 3. Dispatch to Apps Script Webhook
-      bool remoteSuccess = false;
+      // 3. Dispatch to Apps Script Webhook with explicit spreadsheetId
       try {
-        remoteSuccess = await AppsScriptBackendService.saveBill(
+        final rBox = Hive.isBoxOpen('restaurant_config_box') ? Hive.box('restaurant_config_box') : null;
+        String? sheetId = rBox?.get('restaurant_sheet_id_$orgId') ?? rBox?.get('google_sheet_id');
+        if (sheetId == null || sheetId.isEmpty) {
+          final saasSession = ref.read(saasSessionProvider);
+          sheetId = saasSession.currentOrganization?.googleSheetId;
+        }
+
+        await AppsScriptBackendService.saveBill(
           outletId: orgId,
+          spreadsheetId: sheetId ?? '',
           clientRequestId: clientRequestId,
           billData: {
             'id': billNumber,
@@ -492,13 +559,15 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
             'customer_name': guestName,
             'customer_phone': guestPhone,
             'order_source': 'WAITER_APP',
-            'items': itemsList,
-            'subtotal': subtotal,
-            'service_charge': serviceCharge,
-            'gst': gst,
-            'total_amount': totalAmount,
+            'items': combinedItemsList,
+            'newItems': newRoundItemsList,
+            'subtotal': combinedSubtotal,
+            'service_charge': combinedServiceCharge,
+            'gst': combinedGst,
+            'total_amount': combinedTotalAmount,
             'payment_status': 'PENDING',
             'status': 'PENDING',
+            'kitchenStatus': 'PENDING',
             'courseNo': currentCourse,
             'course_no': currentCourse,
             'firedAt': DateTime.now().toIso8601String(),
@@ -520,23 +589,16 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
           SnackBar(
             content: Row(
               children: [
-                Icon(
-                  remoteSuccess ? Icons.check_circle_rounded : Icons.offline_pin_rounded,
-                  color: Colors.white,
-                  size: 20,
-                ),
+                const Icon(Icons.check_circle_rounded, color: Colors.white, size: 20),
                 const SizedBox(width: 10),
                 Expanded(
-                  child: Text(
-                    remoteSuccess
-                        ? 'KOT $token sent to kitchen! 👨‍🍳 ($tableName)'
-                        : 'KOT $token saved locally (offline). Kitchen will sync shortly.',
-                  ),
+                  child: Text('KOT #$token sent to kitchen! 👨‍🍳 ($tableName • Course $currentCourse)'),
                 ),
               ],
             ),
-            backgroundColor: remoteSuccess ? const Color(0xFF059669) : const Color(0xFFD97706),
+            backgroundColor: const Color(0xFF059669),
             duration: const Duration(seconds: 3),
+            behavior: SnackBarBehavior.floating,
           ),
         );
       }

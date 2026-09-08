@@ -447,7 +447,10 @@ class KotItem {
       name: (map['name'] ?? 'Unknown Item').toString(),
       qty: (map['qty'] as num?)?.toDouble() ?? (map['quantity'] as num?)?.toDouble() ?? 1.0,
       unit: (map['unit'] ?? 'plate').toString(),
-      price: (map['price'] as num?)?.toDouble() ?? (map['rate'] as num?)?.toDouble() ?? 0.0,
+      price: () {
+        final p = (map['price'] as num?)?.toDouble() ?? (map['rate'] as num?)?.toDouble() ?? 0.0;
+        return (p.isNaN || p.isInfinite || p > 100000.0 || p < 0.0) ? 0.0 : p;
+      }(),
       notes: map['notes']?.toString(),
       isVeg: map['isVeg'] ?? true,
       orderedBy: map['orderedBy']?.toString(),
@@ -844,7 +847,13 @@ class KotOrder {
       customerPhone: rawCustomerPhone,
       deviceId: map['deviceId']?.toString(),
       generalNotes: (map['generalNotes'] ?? map['special_instructions'])?.toString(),
-      totalAmount: (map['totalAmount'] as num?)?.toDouble() ?? (map['total'] as num?)?.toDouble() ?? (map['subtotal'] as num?)?.toDouble() ?? 0.0,
+      totalAmount: () {
+        final tot = (map['totalAmount'] as num?)?.toDouble() ?? (map['total'] as num?)?.toDouble() ?? (map['subtotal'] as num?)?.toDouble() ?? 0.0;
+        if (tot.isNaN || tot.isInfinite || tot > 10000000.0 || tot < 0.0) {
+          return itemsList.fold<double>(0.0, (acc, it) => acc + (it.price * it.qty));
+        }
+        return tot;
+      }(),
       createdAt: _parseDateTime(rawCreated),
       acceptedAt: map['acceptedAt'] != null ? _parseDateTime(map['acceptedAt']) : null,
       readyAt: map['readyAt'] != null ? _parseDateTime(map['readyAt']) : null,

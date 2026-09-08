@@ -7,6 +7,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../../core/classic_theme.dart';
 import '../../core/constants.dart';
+import '../../core/restaurant_models.dart';
 import '../../providers/saas_session_provider.dart';
 import '../../providers/restaurant_auth_provider.dart';
 import '../../services/apps_script_backend_service.dart';
@@ -65,12 +66,12 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
         for (final item in raw) {
           if (item is Map) {
             final m = Map<String, dynamic>.from(item);
-            final k = (m['kotNumber'] ?? m['id'] ?? '').toString();
+            final k = canonicalId(m);
             if (k.isNotEmpty) orderMap[k] = m;
           }
         }
         for (final wo in webhookOrders) {
-          final k = (wo['kotNumber'] ?? wo['id'] ?? '').toString();
+          final k = canonicalId(wo);
           if (k.isNotEmpty) orderMap[k] = wo;
         }
         await box.put('kot_orders_$orgId', orderMap.values.toList());
@@ -979,7 +980,8 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
     final type = _normalizeOrderType(order);
     final status = (order['status'] ?? 'PENDING').toString().toUpperCase();
     final paymentMode = (order['paymentMode'] ?? 'CASH').toString();
-    final total = (order['totalAmount'] is num) ? (order['totalAmount'] as num).toDouble() : 0.0;
+    final rawTotal = (order['totalAmount'] is num) ? (order['totalAmount'] as num).toDouble() : 0.0;
+    final total = (rawTotal.isNaN || rawTotal.isInfinite || rawTotal > 1000000.0 || rawTotal < 0.0) ? 0.0 : rawTotal;
     final customerName = (order['customerName'] ?? 'Guest').toString();
     final customerPhone = (order['customerPhone'] ?? '').toString();
     final tableName = (order['tableName'] ?? order['tableNumber'] ?? '').toString();
@@ -1155,7 +1157,13 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
                       ),
                       const SizedBox(width: 12),
                       Text(
-                        '₹${(((it['price'] ?? 0) as num) * ((it['qty'] ?? 1) as num)).toStringAsFixed(0)}',
+                        () {
+                          final p = ((it['price'] ?? 0) as num).toDouble();
+                          final safeP = (p.isNaN || p.isInfinite || p > 100000.0 || p < 0.0) ? 0.0 : p;
+                          final q = ((it['qty'] ?? 1) as num).toDouble();
+                          final safeQ = (q.isNaN || q.isInfinite || q < 0.0) ? 1.0 : q;
+                          return '₹${(safeP * safeQ).toStringAsFixed(0)}';
+                        }(),
                         style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: context.textSecondary),
                       ),
                     ],
