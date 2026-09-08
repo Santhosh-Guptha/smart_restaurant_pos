@@ -230,7 +230,7 @@ class RestaurantAuthNotifier extends StateNotifier<RestaurantAuthState> {
   /// Verifies entered PIN and switches active staff terminal session
   bool unlockWithPin(String pin) {
     for (final staff in state.staffList) {
-      if (staff.pin == pin && staff.isActive) {
+      if (staff.verifyPin(pin) && staff.isActive) {
         state = state.copyWith(
           activeStaff: staff,
           isLocked: false,
@@ -257,11 +257,31 @@ class RestaurantAuthNotifier extends StateNotifier<RestaurantAuthState> {
   Future<void> saveStaffMember(StaffMember member) async {
     final box = await Hive.openBox(boxName);
     final updated = List<StaffMember>.from(state.staffList);
-    final index = updated.indexWhere((s) => s.id == member.id);
+    // Ensure PIN is securely hashed before saving
+    final ensuredMember = (member.pinHash != null && member.pinHash!.isNotEmpty)
+        ? member
+        : StaffMember(
+            id: member.id,
+            name: member.name,
+            email: member.email,
+            role: member.role,
+            roles: member.roles,
+            pin: member.pin,
+            pinHash: StaffMember.hashPin(member.pin),
+            phone: member.phone,
+            password: member.password,
+            assignedOutletId: member.assignedOutletId,
+            assignedStation: member.assignedStation,
+            isSheetAccessGranted: member.isSheetAccessGranted,
+            isActive: member.isActive,
+            createdAt: member.createdAt,
+          );
+
+    final index = updated.indexWhere((s) => s.id == ensuredMember.id);
     if (index >= 0) {
-      updated[index] = member;
+      updated[index] = ensuredMember;
     } else {
-      updated.add(member);
+      updated.add(ensuredMember);
     }
     await box.put(keyStaffList, updated.map((s) => s.toMap()).toList());
     state = state.copyWith(staffList: updated);

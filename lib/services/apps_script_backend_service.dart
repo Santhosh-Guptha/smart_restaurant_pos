@@ -804,6 +804,69 @@ class AppsScriptBackendService {
     return [];
   }
 
+  /// 25. Record Audit Log (§8.1)
+  static Future<bool> logAudit({
+    required String outletId,
+    required String action,
+    required String entity,
+    required String entityId,
+    required String reason,
+    String? staffId,
+    String? staffName,
+    String? before,
+    String? after,
+    String? spreadsheetId,
+  }) async {
+    final res = await _postToWebhook({
+      'v': 2,
+      'action': 'LOG_AUDIT',
+      'outletId': outletId,
+      'clientRequestId': const Uuid().v4(),
+      if (spreadsheetId != null && spreadsheetId.isNotEmpty) 'spreadsheetId': spreadsheetId,
+      'data': {
+        'auditAction': action,
+        'entity': entity,
+        'entityId': entityId,
+        'reason': reason,
+        'staffId': staffId ?? staffName ?? 'Staff',
+        'staffName': staffName ?? staffId ?? 'Staff',
+        'before': before ?? '',
+        'after': after ?? '',
+      },
+    });
+    return res != null && (res['ok'] == true || res['success'] == true);
+  }
+
+  /// 26. Void / Cancel Order with Mandatory Reason (§8.2)
+  static Future<Map<String, dynamic>> voidOrder({
+    required String outletId,
+    required String orderId,
+    required String reason,
+    required String authorizedBy,
+    String? staffId,
+    String? tableNumber,
+    String? spreadsheetId,
+  }) async {
+    final res = await _postToWebhook({
+      'v': 2,
+      'action': 'VOID_ORDER',
+      'outletId': outletId,
+      'clientRequestId': const Uuid().v4(),
+      if (spreadsheetId != null && spreadsheetId.isNotEmpty) 'spreadsheetId': spreadsheetId,
+      'data': {
+        'orderId': orderId,
+        'reason': reason,
+        'authorizedBy': authorizedBy,
+        'staffId': staffId ?? authorizedBy,
+        'tableId': tableNumber ?? '',
+      },
+    });
+    if (res != null && (res['ok'] == true || res['success'] == true)) {
+      return {'success': true, 'data': res};
+    }
+    return {'success': false, 'error': res?['error'] ?? 'Failed to void order'};
+  }
+
   static Future<Map<String, dynamic>?> _postToWebhook(Map<String, dynamic> payload) async {
     try {
       final url = getWebhookUrl();

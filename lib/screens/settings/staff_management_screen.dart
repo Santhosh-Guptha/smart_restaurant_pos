@@ -83,6 +83,9 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
     if (!availableRoles.contains(role)) {
       role = availableRoles.first;
     }
+    Set<StaffRole> selectedRoles = existing != null
+        ? existing.roles.toSet()
+        : {role};
 
     String station = existing?.assignedStation ?? 'All';
     bool grantSheetAccess = existing?.isSheetAccessGranted ?? true;
@@ -228,8 +231,53 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
                     );
                   }).toList(),
                   onChanged: (val) {
-                    if (val != null) setDialogState(() => role = val);
+                    if (val != null) {
+                      setDialogState(() {
+                        role = val;
+                        selectedRoles.add(val);
+                      });
+                    }
                   },
+                ),
+                const SizedBox(height: 12),
+
+                // Multi-Role Capability Selector
+                Text(
+                  'Multi-Role Capabilities (Select All That Apply):',
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: context.textPrimary),
+                ),
+                const SizedBox(height: 6),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 6,
+                  children: availableRoles.map((r) {
+                    final isSelected = selectedRoles.contains(r);
+                    return FilterChip(
+                      label: Text(r.displayName),
+                      selected: isSelected,
+                      selectedColor: ClassicTheme.primaryAccent.withValues(alpha: 0.15),
+                      checkmarkColor: ClassicTheme.primaryAccent,
+                      labelStyle: TextStyle(
+                        color: isSelected ? ClassicTheme.primaryAccent : context.textSecondary,
+                        fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                        fontSize: 11.5,
+                      ),
+                      onSelected: (checked) {
+                        setDialogState(() {
+                          if (checked) {
+                            selectedRoles.add(r);
+                          } else {
+                            if (selectedRoles.length > 1) {
+                              selectedRoles.remove(r);
+                            }
+                          }
+                          if (!selectedRoles.contains(role)) {
+                            role = selectedRoles.first;
+                          }
+                        });
+                      },
+                    );
+                  }).toList(),
                 ),
                 const SizedBox(height: 14),
 
@@ -394,7 +442,9 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
                   name: name,
                   email: newEmail,
                   role: role,
+                  roles: selectedRoles.toList(),
                   pin: pin,
+                  pinHash: StaffMember.hashPin(pin),
                   phone: phoneCtrl.text.trim(),
                   password: password,
                   assignedStation: station,
@@ -416,8 +466,10 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
                     'name': newMember.name,
                     'email': newMember.email,
                     'role': newMember.role.key,
+                    'roles': newMember.roles.map((r) => r.key).toList(),
                     'password': newMember.password,
                     'pin': newMember.pin,
+                    'pinHash': newMember.pinHash,
                     'phone': newMember.phone,
                     'organizationId': orgId,
                     'franchiseId': franchiseId,
@@ -759,24 +811,48 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
                                           overflow: TextOverflow.ellipsis,
                                         ),
                                       ),
-                                      const SizedBox(width: 8),
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                        decoration: BoxDecoration(
-                                          color: badgeColor.withValues(alpha: 0.12),
-                                          borderRadius: BorderRadius.circular(6),
-                                        ),
-                                        child: Text(
-                                          staff.role.displayName,
-                                          style: TextStyle(
-                                            color: badgeColor,
-                                            fontSize: 10,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
+                                       const SizedBox(width: 8),
+                                       Wrap(
+                                         spacing: 4,
+                                         runSpacing: 2,
+                                         children: staff.roles.map((r) {
+                                           Color rBadgeColor = Colors.grey;
+                                           switch (r) {
+                                             case StaffRole.owner:
+                                               rBadgeColor = const Color(0xFFE11D48);
+                                               break;
+                                             case StaffRole.manager:
+                                               rBadgeColor = const Color(0xFFD97706);
+                                               break;
+                                             case StaffRole.billing:
+                                               rBadgeColor = const Color(0xFF059669);
+                                               break;
+                                             case StaffRole.kitchen:
+                                               rBadgeColor = const Color(0xFF7C3AED);
+                                               break;
+                                             case StaffRole.waiter:
+                                               rBadgeColor = const Color(0xFF2563EB);
+                                               break;
+                                           }
+                                           return Container(
+                                             padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                             decoration: BoxDecoration(
+                                               color: rBadgeColor.withValues(alpha: 0.12),
+                                               borderRadius: BorderRadius.circular(5),
+                                             ),
+                                             child: Text(
+                                               r.displayName,
+                                               style: TextStyle(
+                                                 color: rBadgeColor,
+                                                 fontSize: 9.5,
+                                                 fontWeight: FontWeight.bold,
+                                               ),
+                                             ),
+                                           );
+                                         }).toList(),
+                                       ),
+                                     ],
+                                   ),
                                   const SizedBox(height: 2),
                                   Text(
                                     'Station: ${staff.assignedStation}',

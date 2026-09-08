@@ -1,7 +1,7 @@
 # SmartDine Restaurant POS — Architecture & Operations Manual
 
 > **Zero-Firebase Operational Pipeline & Google Sheets Schema v2**  
-> *Last Updated: March 2026 | Version 2.2 (Phases 0–7 Complete)*
+> *Last Updated: March 2026 | Version 2.3 (Phases 0–8 Complete)*
 
 ---
 
@@ -188,6 +188,43 @@ When a spreadsheet is connected, `ensureV2Sheets(ss)` automatically provisions a
 
 ---
 
+
+### **Phase 8 — RBAC Hardening, Multi-Role Architecture & Offline Security**
+- **Multi-Role Capability Assignment for a Single User**:
+  - `StaffMember` supports assigning multiple roles simultaneously (`roles: List<StaffRole>` alongside primary `role`).
+  - Solves the practical reality where a store manager also operates the billing desk during peak rush hours, or a senior captain handles both waiter ordering and KDS expediting.
+  - Role capabilities and permission gates (`canPerformBilling`, `canAuthorizeDiscount`, `canVoidBill`, `canAccessKitchenKDS`, `canTakeOrders`, `canManageStaffAndMenu`) evaluate across all assigned roles via `hasRole(StaffRole)`.
+  - `StaffRole.owner` inherently inherits all permissions across the platform.
+  - Interactive multi-select filter chips in `StaffManagementScreen` allow owners to assign or modify multiple roles in one modal.
+  - Staff list cards render badges for all assigned roles (e.g. `[Manager] [Billing]`).
+  - **Role Destination Switcher on PIN Login (`StaffPinLoginScreen`)**:
+    - When a staff member with multiple operational roles logs in via PIN, the system detects multiple potential workstation interfaces and presents a streamlined destination modal:
+      - `Counter Billing POS` (Billing, payments, takeaway & quick orders)
+      - `Table Management / Floor Plan` (Tables, dine-in orders, KOT & reservations)
+      - `Kitchen Display (KDS)` (Live tickets, kitchen bump & chef screen)
+- **Offline Staff Credential Security (Salted SHA-256 Hashing)**:
+  - Upgraded staff authentication from plain-text PIN storage to SHA-256 salted PIN hashes (`smartdine_salt_<pin>`), eliminating credential extraction vulnerabilities from local storage.
+  - Backward-compatible verification: authenticates both existing legacy plain-text PINs and salted hashes, auto-upgrading to hashes upon next save.
+  - Local Hive caching in `restaurant_auth_box` guarantees that terminals, waiter tablets, and kitchen screens continue to authenticate staff and enforce role capabilities even during complete network dropouts.
+- **Single Writer Audit Logging (`Audit` Sheet Tab)**:
+  - Implemented dedicated backend actions `LOG_AUDIT` and `VOID_ORDER` in `google_apps_script/Code.gs` under `LockService`.
+  - Permanently appends audit trails to the Google Sheets `Audit` tab with columns: `[at, outletId, staffId, action, entity, entityId, before, after, reason]`.
+  - Automatically records:
+    - `DISCOUNT_APPLIED`: Triggered whenever an order is completed with an authorized discount, storing the authorizer, discount paise value, and mandatory reason.
+    - `FORCE_VACATE`: Triggered when an occupied table with unpaid balance is force-cleared, requiring Manager/Owner PIN authorization and mandatory justification.
+    - `VOID_ORDER`: Triggered when an active or settled ticket is cancelled/voided.
+- **Mandatory Non-Empty Reason Enforcement**:
+  - Prohibits empty or whitespace-only inputs across all critical override dialogs:
+    - Applying discounts (with preset chips: `Staff Meal`, `Customer Courtesy`, `Promotional Offer`, `Manager Discretion`).
+    - Voiding or cancelling orders (with preset chips: `Customer Walkout`, `Order Entered in Error`, `Duplicate Ticket`, `Kitchen Shortage`, `Payment Failed`).
+    - Force vacating tables (with preset chips: `Guest Walkout`, `Settled on Another Terminal`, `Order Entered in Error`, `Manager Complimentary`).
+- **Void Order & Finite Stock Restock Workflow**:
+  - Added "Void / Cancel Order" action to Counter POS Pending Bills (`FastQsrBillingScreen`) and Order History (`RestaurantOrderHistoryScreen`).
+  - Protected by Manager/Owner PIN authorization and mandatory void reason.
+  - Dispatches `VOID_ORDER` to Apps Script Single Writer, marks order and line items as `CANCELLED`, frees associated Dine-In tables to `VACANT`, and automatically restocks finite inventory in the `Products & Stock` tab if settled items were voided.
+
+---
+
 ## 5. Configuration & Deployment Guide
 
 ### **A. Google Apps Script Webhook Setup**
@@ -214,8 +251,7 @@ When a spreadsheet is connected, `ensureV2Sheets(ss)` automatically provisions a
 
 ---
 
-## 6. Upcoming Roadmap (Phases 8–10)
+## 6. Upcoming Roadmap (Phases 9–10)
  
-- **Phase 8 — RBAC Hardening & Offline Security**: Audit logging for all manager overrides, void reason enforcement.
 - **Phase 9 — Performance & Storage Optimization**: Automatic sheet partitioning, archival of year-old orders to cold tabs.
 - **Phase 10 — End-to-End Verification & Launch Gate**: Full automated simulation of multi-terminal peak rush hours.

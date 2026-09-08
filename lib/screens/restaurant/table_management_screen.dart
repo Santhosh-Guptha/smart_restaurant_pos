@@ -2933,112 +2933,137 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
 
   void _promptManagerForceVacate(RestaurantTable table, KotOrder unpaidOrder, String orgId) {
     final pinCtrl = TextEditingController();
-    final reasonCtrl = TextEditingController(text: 'Customer dispute / Walkout / Complimentary');
+    final reasonCtrl = TextEditingController();
 
     showDialog(
       context: context,
-      builder: (pCtx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Row(
-          children: [
-            Icon(Icons.shield_outlined, color: Color(0xFFDC2626), size: 22),
-            SizedBox(width: 8),
-            Text('Manager Override', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Enter Manager PIN and reason to force vacate this table:',
-              style: TextStyle(fontSize: 12, color: Color(0xFF475569)),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: pinCtrl,
-              obscureText: true,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                labelText: 'Manager PIN',
-                hintText: 'Enter 4-digit PIN',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.lock_outline),
-              ),
-            ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: reasonCtrl,
-              decoration: const InputDecoration(
-                labelText: 'Audit Reason',
-                hintText: 'Why is table being cleared unpaid?',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.edit_note),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(pCtx),
-            child: const Text('Cancel'),
+      builder: (pCtx) => StatefulBuilder(
+        builder: (ctx, setDlgState) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Row(
+            children: [
+              Icon(Icons.shield_outlined, color: Color(0xFFDC2626), size: 22),
+              SizedBox(width: 8),
+              Text('Manager Override', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            ],
           ),
-          ElevatedButton(
-            onPressed: () async {
-              final pin = pinCtrl.text.trim();
-              final staffList = ref.read(restaurantAuthProvider).staffList;
-              final authorized = staffList.where((s) => s.canAuthorizeDiscount && s.pin == pin).firstOrNull;
-              if (authorized == null && pin != '1234') {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Invalid Manager PIN.'), backgroundColor: Colors.red),
-                );
-                return;
-              }
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Enter Manager PIN and reason to force vacate this table with an active unpaid balance:',
+                  style: TextStyle(fontSize: 12, color: Color(0xFF475569)),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: pinCtrl,
+                  obscureText: true,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Manager PIN *',
+                    hintText: 'Enter 4-digit PIN',
+                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.lock_outline),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: reasonCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Audit Reason *',
+                    hintText: 'Why is table being cleared unpaid?',
+                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.edit_note),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 4,
+                  children: [
+                    'Guest Walkout',
+                    'Settled on Another Terminal',
+                    'Order Entered in Error',
+                    'Manager Complimentary',
+                  ].map((r) => ActionChip(
+                    label: Text(r, style: const TextStyle(fontSize: 11)),
+                    onPressed: () => setDlgState(() => reasonCtrl.text = r),
+                  )).toList(),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(pCtx),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                final reason = reasonCtrl.text.trim();
+                if (reason.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Audit reason is mandatory to force clear an unpaid table.'), backgroundColor: Colors.red),
+                  );
+                  return;
+                }
 
-              Navigator.pop(pCtx);
-              final reason = reasonCtrl.text.trim();
+                final pin = pinCtrl.text.trim();
+                final staffList = ref.read(restaurantAuthProvider).staffList;
+                final authorized = staffList.where((s) => s.canForceVacateTable && s.verifyPin(pin)).firstOrNull;
+                if (authorized == null && pin != '1234') {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Invalid Manager PIN. Override authorization denied.'), backgroundColor: Colors.red),
+                  );
+                  return;
+                }
 
-              setState(() {
-                final idx = _tables.indexWhere((t) => t.id == table.id);
-                if (idx != -1) {
-                  _tables[idx] = _tables[idx].copyWith(
-                    status: TableStatus.vacant,
-                    currentBillAmount: 0.0,
-                    activeItemCount: 0,
-                    clearCustomerInfo: true,
+                Navigator.pop(pCtx);
+
+                setState(() {
+                  final idx = _tables.indexWhere((t) => t.id == table.id);
+                  if (idx != -1) {
+                    _tables[idx] = _tables[idx].copyWith(
+                      status: TableStatus.vacant,
+                      currentBillAmount: 0.0,
+                      activeItemCount: 0,
+                      clearCustomerInfo: true,
+                    );
+                  }
+                  _kotOrders.removeWhere((o) => _matchesTable(o, table));
+                });
+
+                await _saveTablesToHive(orgId);
+                if (Hive.isBoxOpen('configBox')) {
+                  await Hive.box('configBox').put('kot_orders_$orgId', _kotOrders.map((o) => o.toMap()).toList());
+                }
+
+                try {
+                  await AppsScriptBackendService.setTableStatus(
+                    outletId: orgId,
+                    tableId: table.tableNumber,
+                    status: 'VACANT',
+                    force: true,
+                    reason: reason,
+                  );
+                } catch (_) {}
+
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Table ${table.tableNumber} force-cleared. Audit recorded.'),
+                      backgroundColor: Colors.orange.shade800,
+                    ),
                   );
                 }
-                _kotOrders.removeWhere((o) => _matchesTable(o, table));
-              });
-
-              await _saveTablesToHive(orgId);
-              if (Hive.isBoxOpen('configBox')) {
-                await Hive.box('configBox').put('kot_orders_$orgId', _kotOrders.map((o) => o.toMap()).toList());
-              }
-
-              try {
-                await AppsScriptBackendService.setTableStatus(
-                  outletId: orgId,
-                  tableId: table.tableNumber,
-                  status: 'VACANT',
-                  force: true,
-                  reason: reason,
-                );
-              } catch (_) {}
-
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('Table ${table.tableNumber} force-cleared. Audit recorded.'),
-                    backgroundColor: Colors.orange.shade800,
-                  ),
-                );
-              }
-            },
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFDC2626), foregroundColor: Colors.white),
-            child: const Text('Authorize & Vacate'),
-          ),
-        ],
+              },
+              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFDC2626), foregroundColor: Colors.white),
+              child: const Text('Authorize & Vacate'),
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -47,15 +47,135 @@ class _StaffPinLoginScreenState extends ConsumerState<StaffPinLoginScreen> {
   void _verifyPin() {
     if (_selectedStaff == null) return;
 
-    if (_selectedStaff!.pin == _enteredPin) {
+    if (_selectedStaff!.verifyPin(_enteredPin)) {
       ref.read(restaurantAuthProvider.notifier).unlockWithPin(_enteredPin);
-      _navigateToRoleScreen(_selectedStaff!.role);
+      
+      final destinations = _getOperationalDestinations(_selectedStaff!);
+      if (destinations.length > 1) {
+        _showRoleDestinationSelectorModal(_selectedStaff!, destinations);
+      } else {
+        _navigateToRoleScreen(_selectedStaff!.role);
+      }
     } else {
       setState(() {
         _errorMessage = 'Invalid PIN. Please try again.';
         _enteredPin = '';
       });
     }
+  }
+
+  List<Map<String, dynamic>> _getOperationalDestinations(StaffMember staff) {
+    final List<Map<String, dynamic>> list = [];
+    final bool canBilling = staff.canPerformBilling;
+    final bool canTables = staff.canTakeOrders || staff.hasRole(StaffRole.waiter) || staff.hasRole(StaffRole.manager);
+    final bool canKitchen = staff.canAccessKitchenKDS;
+
+    if (canBilling) {
+      list.add({
+        'title': 'Counter Billing POS',
+        'subtitle': 'Billing, payments, takeaway & quick orders',
+        'icon': Icons.point_of_sale_rounded,
+        'color': const Color(0xFF059669),
+        'screen': const FastQsrBillingScreen(),
+      });
+    }
+
+    if (canTables) {
+      list.add({
+        'title': 'Table Management / Floor Plan',
+        'subtitle': 'Tables, dine-in orders, KOT & reservations',
+        'icon': Icons.table_restaurant_rounded,
+        'color': const Color(0xFF2563EB),
+        'screen': const TableManagementScreen(),
+      });
+    }
+
+    if (canKitchen) {
+      list.add({
+        'title': 'Kitchen Display (KDS)',
+        'subtitle': 'Live orders, ticket bump & chef screen',
+        'icon': Icons.soup_kitchen_rounded,
+        'color': const Color(0xFF7C3AED),
+        'screen': const KitchenDisplayScreen(),
+      });
+    }
+
+    return list;
+  }
+
+  void _showRoleDestinationSelectorModal(StaffMember staff, List<Map<String, dynamic>> destinations) {
+    showModalBottomSheet(
+      context: context,
+      isDismissible: false,
+      enableDrag: false,
+      backgroundColor: const Color(0xFF1E293B),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.white24,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Welcome, ${staff.name}!',
+              style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'You have access to multiple operational roles (${staff.roles.map((r) => r.displayName).join(", ")}). Select your workspace destination for this session:',
+              style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 12.5),
+            ),
+            const SizedBox(height: 16),
+            ...destinations.map((d) {
+              final color = d['color'] as Color;
+              return Container(
+                margin: const EdgeInsets.only(bottom: 10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF0F172A),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: color.withValues(alpha: 0.3)),
+                ),
+                child: ListTile(
+                  leading: CircleAvatar(
+                    backgroundColor: color.withValues(alpha: 0.15),
+                    child: Icon(d['icon'] as IconData, color: color, size: 20),
+                  ),
+                  title: Text(
+                    d['title'] as String,
+                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
+                  ),
+                  subtitle: Text(
+                    d['subtitle'] as String,
+                    style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 11.5),
+                  ),
+                  trailing: const Icon(Icons.arrow_forward_ios_rounded, color: Colors.white38, size: 14),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    Navigator.pushReplacement(
+                      context,
+                      MaterialPageRoute(builder: (_) => d['screen'] as Widget),
+                    );
+                  },
+                ),
+              );
+            }),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _signInWithGoogle() async {

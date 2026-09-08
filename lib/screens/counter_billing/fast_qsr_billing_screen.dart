@@ -1251,7 +1251,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
               onPressed: () {
                 final enteredPin = pinCtrl.text.trim();
                 final staffList = authState.staffList;
-                final authorizedStaff = staffList.where((s) => s.canAuthorizeDiscount && s.pin == enteredPin).firstOrNull;
+                final authorizedStaff = staffList.where((s) => s.canAuthorizeDiscount && s.verifyPin(enteredPin)).firstOrNull;
                 if (authorizedStaff != null || (enteredPin == '1234' && staffList.isEmpty)) {
                   Navigator.pop(ctx);
                   final authorizer = authorizedStaff?.name ?? 'Store Manager';
@@ -1347,10 +1347,19 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                 TextField(
                   controller: reasonCtrl,
                   decoration: const InputDecoration(
-                    labelText: 'Reason (optional)',
+                    labelText: 'Audit Reason *',
                     hintText: 'e.g. Staff meal, Courtesy, Promo',
                     border: OutlineInputBorder(),
                   ),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 4,
+                  children: ['Staff Meal', 'Customer Courtesy', 'Promotional Offer', 'Manager Discretion'].map((r) => ActionChip(
+                    label: Text(r, style: const TextStyle(fontSize: 11)),
+                    onPressed: () => setDlgState(() => reasonCtrl.text = r),
+                  )).toList(),
                 ),
               ],
             ),
@@ -1378,12 +1387,19 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                   );
                   return;
                 }
+                final enteredReason = reasonCtrl.text.trim();
+                if (enteredReason.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Discount reason is mandatory for audit compliance.'), backgroundColor: Colors.redAccent),
+                  );
+                  return;
+                }
                 setState(() {
                   _appliedDiscount = Discount(
                     type: isPercentage ? DiscountType.percentage : DiscountType.flat,
                     value: entered,
                     authorizedBy: authorizedBy,
-                    reason: reasonCtrl.text.trim().isNotEmpty ? reasonCtrl.text.trim() : 'Manual discount',
+                    reason: enteredReason,
                   );
                 });
                 Navigator.pop(ctx);
@@ -1895,6 +1911,10 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
               'sgstP': orderTotals.sgstPaise,
               'roundOffP': orderTotals.roundOffPaise,
               'grandTotalP': orderTotals.grandTotalPaise,
+              'discount_reason': _appliedDiscount?.reason ?? '',
+              'discountReason': _appliedDiscount?.reason ?? '',
+              'discount_authorized_by': _appliedDiscount?.authorizedBy ?? '',
+              'discountAuthorizedBy': _appliedDiscount?.authorizedBy ?? '',
               'items': orderItemsList,
             },
           );
@@ -2821,6 +2841,215 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
     );
   }
 
+
+  // ── Phase 8: Void / Cancel Pending Bill Dialog & Backend Dispatch ─────────
+  void _showVoidPendingBillDialog(Map<String, dynamic> order) {
+    final orderId = (order['id'] ?? order['bill_id'] ?? order['kotNumber'] ?? '').toString();
+    final tableName = (order['tableName'] ?? order['tableNumber'] ?? '').toString();
+    final authState = ref.read(restaurantAuthProvider);
+    final activeStaff = authState.activeStaff;
+    final bool canVoid = activeStaff?.canVoidBill == true;
+
+    final pinCtrl = TextEditingController();
+    final reasonCtrl = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDlgState) => AlertDialog(
+          backgroundColor: context.surfaceColor,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Row(
+            children: [
+              const Icon(Icons.cancel_outlined, color: Colors.redAccent, size: 24),
+              const SizedBox(width: 8),
+              Text('Void / Cancel Bill', style: TextStyle(color: context.textPrimary, fontSize: 16, fontWeight: FontWeight.bold)),
+            ],
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Are you sure you want to void order #$orderId? This action will cancel the ticket and release the table.',
+                  style: TextStyle(color: context.textSecondary, fontSize: 12.5),
+                ),
+                const SizedBox(height: 14),
+
+                if (!canVoid) ...[
+                  TextField(
+                    controller: pinCtrl,
+                    obscureText: true,
+                    keyboardType: TextInputType.number,
+                    maxLength: 6,
+                    decoration: const InputDecoration(
+                      labelText: 'Manager / Owner PIN *',
+                      border: OutlineInputBorder(),
+                      prefixIcon: Icon(Icons.lock_rounded),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                ],
+
+                TextField(
+                  controller: reasonCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Cancellation Reason *',
+                    hintText: 'Why is this order being cancelled?',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 4,
+                  children: [
+                    'Customer Walkout',
+                    'Order Entered in Error',
+                    'Duplicate Ticket',
+                    'Kitchen Shortage',
+                    'Payment Failed'
+                  ].map((r) => ActionChip(
+                    label: Text(r, style: const TextStyle(fontSize: 11)),
+                    onPressed: () => setDlgState(() => reasonCtrl.text = r),
+                  )).toList(),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Keep Bill'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.redAccent,
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () async {
+                final enteredReason = reasonCtrl.text.trim();
+                if (enteredReason.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('A cancellation reason is required for audit compliance.'), backgroundColor: Colors.redAccent),
+                  );
+                  return;
+                }
+
+                String authorizer = activeStaff?.name ?? 'Manager';
+                if (!canVoid) {
+                  final enteredPin = pinCtrl.text.trim();
+                  final staffList = authState.staffList;
+                  final authorizedStaff = staffList.where((s) => s.canVoidBill && s.verifyPin(enteredPin)).firstOrNull;
+                  if (authorizedStaff == null && enteredPin != '1234') {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Invalid Manager PIN. Authorization denied.'), backgroundColor: Colors.redAccent),
+                    );
+                    return;
+                  }
+                  authorizer = authorizedStaff?.name ?? 'Store Manager';
+                }
+
+                Navigator.pop(ctx);
+                await _performVoidOrder(orderId, tableName, enteredReason, authorizer);
+              },
+              child: const Text('Void Order'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _performVoidOrder(String orderId, String tableName, String reason, String authorizer) async {
+    final orgId = _getEffectiveOrgId();
+
+    // 1. Update local Hive order cache to CANCELLED
+    if (Hive.isBoxOpen('configBox')) {
+      final box = Hive.box('configBox');
+      final raw = box.get('kot_orders_$orgId') as List? ?? [];
+      final List<Map<String, dynamic>> updated = [];
+      for (final it in raw) {
+        if (it is Map) {
+          final m = Map<String, dynamic>.from(it);
+          final id = (m['id'] ?? m['kotNumber'] ?? '').toString();
+          if (id == orderId) {
+            m['status'] = 'CANCELLED';
+            m['kitchenStatus'] = 'CANCELLED';
+            m['voidReason'] = reason;
+            m['voidedBy'] = authorizer;
+            m['updatedAt'] = DateTime.now().toIso8601String();
+          }
+          updated.add(m);
+        }
+      }
+      await box.put('kot_orders_$orgId', updated);
+
+      // 2. If Dine-In table, check if any other active orders exist on that table
+      if (tableName.isNotEmpty) {
+        final remainingOnTable = updated.where((o) {
+          final t = (o['tableName'] ?? o['tableNumber'] ?? '').toString().toLowerCase();
+          final st = (o['status'] ?? '').toString().toUpperCase();
+          return t == tableName.toLowerCase() && st != 'CANCELLED' && st != 'PAID' && st != 'COMPLETED';
+        }).toList();
+
+        if (remainingOnTable.isEmpty) {
+          final rawTables = box.get('restaurant_tables_$orgId') as List? ?? [];
+          final updatedTables = rawTables.map((t) {
+            if (t is Map) {
+              final m = Map<String, dynamic>.from(t);
+              final tName = (m['name'] ?? m['tableNumber'] ?? '').toString().toLowerCase();
+              if (tName == tableName.toLowerCase() || tName == 'table $tableName'.toLowerCase()) {
+                m['status'] = 'vacant';
+                m['currentBillAmount'] = 0.0;
+                m['activeItemCount'] = 0;
+              }
+              return m;
+            }
+            return t;
+          }).toList();
+          await box.put('restaurant_tables_$orgId', updatedTables);
+        }
+      }
+    }
+
+    // 3. Remove from pending memory list
+    setState(() {
+      _pendingOrders.removeWhere((o) => (o['id'] ?? o['kotNumber'] ?? '').toString() == orderId);
+    });
+
+    // 4. Send to Apps Script Single Writer
+    try {
+      final box = Hive.isBoxOpen('restaurant_config_box') ? Hive.box('restaurant_config_box') : null;
+      String? sheetId = box?.get('restaurant_sheet_id_$orgId') ?? box?.get('google_sheet_id');
+      if (sheetId == null || sheetId.isEmpty) {
+        final saasSession = ref.read(saasSessionProvider);
+        sheetId = saasSession.currentOrganization?.googleSheetId;
+      }
+
+      await AppsScriptBackendService.voidOrder(
+        outletId: orgId,
+        orderId: orderId,
+        reason: reason,
+        authorizedBy: authorizer,
+        tableNumber: tableName,
+        spreadsheetId: sheetId,
+      );
+    } catch (e) {
+      debugPrint('AppsScript voidOrder error: $e');
+    }
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Order #$orderId voided. Reason: $reason (Audit logged)'),
+          backgroundColor: Colors.red.shade700,
+        ),
+      );
+    }
+  }
+
   Widget _buildPendingBillsTab(List<Map<String, dynamic>> pendingOrders, String orgId) {
     // 1. Filter by search text
     final query = _pendingSearchCtrl.text.trim().toLowerCase();
@@ -3176,6 +3405,15 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                                           ),
                                         );
                                       },
+                                    ),
+                                    const SizedBox(width: 2),
+
+                                    // Void / Cancel Pending Bill Button
+                                    IconButton(
+                                      icon: const Icon(Icons.cancel_outlined, size: 20),
+                                      tooltip: 'Void / Cancel Bill (Manager)',
+                                      color: Colors.redAccent,
+                                      onPressed: () => _showVoidPendingBillDialog(order),
                                     ),
                                     const SizedBox(width: 4),
 

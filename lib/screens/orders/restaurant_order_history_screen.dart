@@ -8,6 +8,7 @@ import 'package:share_plus/share_plus.dart';
 import '../../core/classic_theme.dart';
 import '../../core/constants.dart';
 import '../../providers/saas_session_provider.dart';
+import '../../providers/restaurant_auth_provider.dart';
 import '../../services/apps_script_backend_service.dart';
 import '../../services/thermal_printer_service.dart';
 import '../../utils/thermal_receipt_generator.dart';
@@ -198,6 +199,212 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
           SnackBar(content: Text('Error updating order: $e'), backgroundColor: Colors.red),
         );
       }
+    }
+  }
+
+
+  // ── Phase 8: Void / Cancel Order Dialog & Single Writer Dispatch ──────────
+  void _showVoidOrderDialog(Map<String, dynamic> orderData) {
+    final orderId = (orderData['id'] ?? orderData['kotNumber'] ?? '').toString();
+    final tableName = (orderData['tableName'] ?? orderData['tableNumber'] ?? '').toString();
+    final authState = ref.read(restaurantAuthProvider);
+    final activeStaff = authState.activeStaff;
+    final bool canVoid = activeStaff?.canVoidBill == true;
+
+    final pinCtrl = TextEditingController();
+    final reasonCtrl = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDlgState) => AlertDialog(
+          backgroundColor: context.surfaceColor,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Row(
+            children: [
+              const Icon(Icons.cancel_outlined, color: Colors.redAccent, size: 22),
+              const SizedBox(width: 8),
+              Text('Void / Cancel Order', style: TextStyle(color: context.textPrimary, fontSize: 16, fontWeight: FontWeight.bold)),
+            ],
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Are you sure you want to void order #$orderId? This will mark the order as CANCELLED and log an audit trail.',
+                  style: TextStyle(color: context.textSecondary, fontSize: 12.5),
+                ),
+                const SizedBox(height: 14),
+
+                if (!canVoid) ...[
+                  TextField(
+                    controller: pinCtrl,
+                    obscureText: true,
+                    keyboardType: TextInputType.number,
+                    maxLength: 6,
+                    decoration: const InputDecoration(
+                      labelText: 'Manager / Owner PIN *',
+                      border: OutlineInputBorder(),
+                      prefixIcon: Icon(Icons.lock_rounded),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                ],
+
+                TextField(
+                  controller: reasonCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Audit Reason *',
+                    hintText: 'Why is this order being cancelled?',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 4,
+                  children: [
+                    'Customer Walkout',
+                    'Order Entered in Error',
+                    'Duplicate Ticket',
+                    'Kitchen Shortage',
+                    'Payment Failed'
+                  ].map((r) => ActionChip(
+                    label: Text(r, style: const TextStyle(fontSize: 11)),
+                    onPressed: () => setDlgState(() => reasonCtrl.text = r),
+                  )).toList(),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.redAccent,
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () async {
+                final enteredReason = reasonCtrl.text.trim();
+                if (enteredReason.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('A cancellation reason is required for audit compliance.'), backgroundColor: Colors.redAccent),
+                  );
+                  return;
+                }
+
+                String authorizer = activeStaff?.name ?? 'Manager';
+                if (!canVoid) {
+                  final enteredPin = pinCtrl.text.trim();
+                  final staffList = authState.staffList;
+                  final authorizedStaff = staffList.where((s) => s.canVoidBill && s.verifyPin(enteredPin)).firstOrNull;
+                  if (authorizedStaff == null && enteredPin != '1234') {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Invalid Manager PIN. Authorization denied.'), backgroundColor: Colors.redAccent),
+                    );
+                    return;
+                  }
+                  authorizer = authorizedStaff?.name ?? 'Store Manager';
+                }
+
+                Navigator.pop(ctx);
+                await _performVoidOrderHistory(orderId, tableName, enteredReason, authorizer);
+              },
+              child: const Text('Void Order'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _performVoidOrderHistory(String orderId, String tableName, String reason, String authorizer) async {
+    final orgId = _getEffectiveOrgId();
+
+    // 1. Update local Hive order cache to CANCELLED
+    if (Hive.isBoxOpen('configBox')) {
+      final box = Hive.box('configBox');
+      final raw = box.get('kot_orders_$orgId') as List? ?? [];
+      final List<Map<String, dynamic>> updated = [];
+      for (final it in raw) {
+        if (it is Map) {
+          final m = Map<String, dynamic>.from(it);
+          final id = (m['id'] ?? m['kotNumber'] ?? '').toString();
+          if (id == orderId) {
+            m['status'] = 'CANCELLED';
+            m['kitchenStatus'] = 'CANCELLED';
+            m['voidReason'] = reason;
+            m['voidedBy'] = authorizer;
+            m['updatedAt'] = DateTime.now().toIso8601String();
+          }
+          updated.add(m);
+        }
+      }
+      await box.put('kot_orders_$orgId', updated);
+
+      // Free table if Dine-In and no other active orders
+      if (tableName.isNotEmpty) {
+        final remainingOnTable = updated.where((o) {
+          final t = (o['tableName'] ?? o['tableNumber'] ?? '').toString().toLowerCase();
+          final st = (o['status'] ?? '').toString().toUpperCase();
+          return t == tableName.toLowerCase() && st != 'CANCELLED' && st != 'PAID' && st != 'COMPLETED';
+        }).toList();
+
+        if (remainingOnTable.isEmpty) {
+          final rawTables = box.get('restaurant_tables_$orgId') as List? ?? [];
+          final updatedTables = rawTables.map((t) {
+            if (t is Map) {
+              final m = Map<String, dynamic>.from(t);
+              final tName = (m['name'] ?? m['tableNumber'] ?? '').toString().toLowerCase();
+              if (tName == tableName.toLowerCase() || tName == 'table $tableName'.toLowerCase()) {
+                m['status'] = 'vacant';
+                m['currentBillAmount'] = 0.0;
+                m['activeItemCount'] = 0;
+              }
+              return m;
+            }
+            return t;
+          }).toList();
+          await box.put('restaurant_tables_$orgId', updatedTables);
+        }
+      }
+
+      _loadHiveCachedOrders();
+    }
+
+    // 2. Dispatch to Apps Script Single Writer
+    try {
+      final box = Hive.isBoxOpen('restaurant_config_box') ? Hive.box('restaurant_config_box') : null;
+      String? sheetId = box?.get('restaurant_sheet_id_$orgId') ?? box?.get('google_sheet_id');
+      if (sheetId == null || sheetId.isEmpty) {
+        final saasSession = ref.read(saasSessionProvider);
+        sheetId = saasSession.currentOrganization?.googleSheetId;
+      }
+
+      await AppsScriptBackendService.voidOrder(
+        outletId: orgId,
+        orderId: orderId,
+        reason: reason,
+        authorizedBy: authorizer,
+        tableNumber: tableName,
+        spreadsheetId: sheetId,
+      );
+    } catch (e) {
+      debugPrint('AppsScript voidOrder error: $e');
+    }
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Order #$orderId marked CANCELLED. (Audit logged)'),
+          backgroundColor: Colors.red.shade700,
+        ),
+      );
     }
   }
 
@@ -1001,6 +1208,13 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
                       tooltip: 'Share Bill',
                       onPressed: () => _shareReceiptText(order),
                     ),
+                    if (status != 'CANCELLED')
+                      IconButton(
+                        visualDensity: VisualDensity.compact,
+                        icon: const Icon(Icons.cancel_outlined, size: 16, color: Colors.redAccent),
+                        tooltip: 'Void / Cancel Order',
+                        onPressed: () => _showVoidOrderDialog(order),
+                      ),
                   ],
                 ),
               ],

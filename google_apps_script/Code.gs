@@ -148,6 +148,13 @@ function doPost(e) {
       case "DECREMENT_INVENTORY":
         return handleDecrementInventory(json);
 
+      case "LOG_AUDIT":
+        return handleLogAudit(json);
+
+      case "VOID_ORDER":
+      case "CANCEL_ORDER":
+        return handleVoidOrder(json);
+
       default:
         return responseJson({ success: false, error: "Unknown action: " + action });
     }
@@ -568,6 +575,13 @@ function persistV2Order(ss, orgId, billId, cleanId, tokenNo, tableName, cTable, 
         ];
         itemsSheet.appendRow(lineRow);
       }
+    }
+    
+    // Log discount authorization in Audit tab if applicable
+    if (discountP > 0) {
+      var discReason = String(b.discount_reason || b.discountReason || "Authorized discount").trim();
+      var discAuthBy = String(b.discount_authorized_by || b.discountAuthorizedBy || staffName).trim();
+      logAuditRecord(ss, orgId, discAuthBy, "DISCOUNT_APPLIED", "Order", cleanId, "0", String(discountP), discReason);
     }
     
     // 3. Payments tab
@@ -2289,15 +2303,12 @@ function handleSetTableStatus(json) {
         }
       }
 
-      // Log force override in Audit tab if applicable
-      if (force && reason) {
-        var aSheet = ss.getSheetByName("Audit");
-        if (aSheet) {
-          aSheet.appendRow([
-            new Date().toISOString(), outletId, data.staffId || "Staff", "FORCE_VACATE",
-            "Table", tableId, "OCCUPIED", "VACANT", reason
-          ]);
+      // Log force override in Audit tab with mandatory reason check
+      if (force) {
+        if (!reason || !String(reason).trim()) {
+          return responseJson({ ok: false, success: false, error: "Manager override reason is mandatory to force vacate an active table." });
         }
+        logAuditRecord(ss, outletId, data.staffId || "Manager", "FORCE_VACATE", "Table", tableId, "OCCUPIED", "VACANT", reason);
       }
     }
 
@@ -2845,6 +2856,282 @@ function handleDecrementInventory(json) {
       decrementInventoryForOrder(ss, outletId, rawItems);
     }
     return responseJson({ ok: true, success: true });
+  } catch (err) {
+    return responseJson({ ok: false, success: false, error: String(err) });
+  } finally {
+    try { lock.releaseLock(); } catch(e) {}
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 8: Audit Logging & Order Voiding Engine (§8.1, §8.2)
+// ─────────────────────────────────────────────────────────────────────────────
+
+function logAuditRecord(ss, outletId, staffId, action, entity, entityId, beforeVal, afterVal, reason) {
+  if (!ss) return;
+  try {
+    ensureV2Sheets(ss);
+    var aSheet = ss.getSheetByName("Audit");
+    if (!aSheet) {
+      aSheet = ss.insertSheet("Audit");
+      aSheet.appendRow(V2_SCHEMAS["Audit"]);
+      aSheet.getRange(1, 1, 1, V2_SCHEMAS["Audit"].length).setFontWeight("bold");
+      aSheet.setFrozenRows(1);
+    }
+    aSheet.appendRow([
+      new Date().toISOString(),
+      String(outletId || "").trim(),
+      String(staffId || "Staff").trim(),
+      String(action || "").trim(),
+      String(entity || "").trim(),
+      String(entityId || "").trim(),
+      String(beforeVal || "").trim(),
+      String(afterVal || "").trim(),
+      String(reason || "").trim()
+    ]);
+  } catch (eAudit) {
+    console.warn("Failed to log audit record: " + eAudit);
+  }
+}
+
+function handleLogAudit(json) {
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(15000);
+  } catch (eLock) {
+    return responseJson({ ok: false, success: false, error: "Server busy: lock timeout in handleLogAudit." });
+  }
+
+  try {
+    var data = json.data || json;
+    var outletId = String(json.outletId || json.org_id || data.outletId || "").trim();
+    var sId = json.spreadsheet_id || json.spreadsheetId || getSheetIdForOrg(outletId);
+    var ss = null;
+    if (sId) {
+      try { ss = SpreadsheetApp.openById(sId); } catch(e) {}
+    }
+    if (!ss) {
+      return responseJson({ ok: false, success: false, error: "Spreadsheet not found." });
+    }
+
+    var staffId = data.staffId || data.staff_id || data.staffName || "Staff";
+    var action = data.auditAction || data.actionName || data.action || "GENERIC_AUDIT";
+    var entity = data.entity || "System";
+    var entityId = data.entityId || data.id || "";
+    var beforeVal = data.before || "";
+    var afterVal = data.after || "";
+    var reason = data.reason || "";
+
+    if (!reason || !String(reason).trim()) {
+      return responseJson({ ok: false, success: false, error: "Audit reason is required." });
+    }
+
+    logAuditRecord(ss, outletId, staffId, action, entity, entityId, beforeVal, afterVal, reason);
+    var rev = getAndBumpRev(outletId);
+    return responseJson({ ok: true, success: true, rev: rev });
+  } catch (err) {
+    return responseJson({ ok: false, success: false, error: String(err) });
+  } finally {
+    try { lock.releaseLock(); } catch(e) {}
+  }
+}
+
+function handleVoidOrder(json) {
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(20000);
+  } catch (eLock) {
+    return responseJson({ ok: false, success: false, error: "Server busy: lock timeout in handleVoidOrder." });
+  }
+
+  try {
+    var data = json.data || json;
+    var outletId = String(json.outletId || json.org_id || data.outletId || "").trim();
+    var sId = json.spreadsheet_id || json.spreadsheetId || getSheetIdForOrg(outletId);
+    var ss = null;
+    if (sId) {
+      try { ss = SpreadsheetApp.openById(sId); } catch(e) {}
+    }
+    if (!ss) {
+      return responseJson({ ok: false, success: false, error: "Spreadsheet not found." });
+    }
+
+    var orderId = cleanOrderId(data.orderId || data.order_id || data.billId || data.id);
+    var reason = String(data.reason || data.voidReason || "").trim();
+    var authorizedBy = String(data.authorizedBy || data.staffName || data.staffId || "Manager").trim();
+    var tableId = cleanTableId(data.tableId || data.table || data.tableName || "");
+
+    if (!orderId) {
+      return responseJson({ ok: false, success: false, error: "Order ID is required to void an order." });
+    }
+    if (!reason) {
+      return responseJson({ ok: false, success: false, error: "A valid cancellation/void reason is mandatory for audit compliance." });
+    }
+
+    ensureV2Sheets(ss);
+    var rev = getAndBumpRev(outletId);
+    var oldStatus = "PENDING";
+    var orderFound = false;
+    var orderItemsToRestock = [];
+    var sessionId = "";
+
+    // 1. Update in Orders tab
+    var oSheet = ss.getSheetByName("Orders");
+    if (oSheet && oSheet.getLastRow() >= 2) {
+      var oData = oSheet.getDataRange().getValues();
+      for (var i = 1; i < oData.length; i++) {
+        var rowId = cleanOrderId(oData[i][0]);
+        if (rowId === orderId) {
+          orderFound = true;
+          oldStatus = String(oData[i][9] || "PENDING").trim().toUpperCase();
+          sessionId = String(oData[i][1] || "").trim();
+          var oTable = cleanTableId(oData[i][3]);
+          if (oTable && !tableId) tableId = oTable;
+
+          // Column 10 (kitchenStatus) -> CANCELLED
+          oSheet.getRange(i + 1, 10).setValue("CANCELLED");
+          // Column 27 (rev)
+          oSheet.getRange(i + 1, 27).setValue(rev);
+          break;
+        }
+      }
+    }
+
+    // Also update legacy Dining Bills sheet if present
+    var legacySheet = ss.getSheetByName("Dining Bills") || ss.getSheetByName("Bills");
+    if (legacySheet && legacySheet.getLastRow() >= 2) {
+      var lData = legacySheet.getDataRange().getValues();
+      for (var li = 1; li < lData.length; li++) {
+        var lId = cleanOrderId(lData[li][0]);
+        if (lId === orderId) {
+          var statusCol = 5;
+          for (var c = 0; c < lData[0].length; c++) {
+            var h = String(lData[0][c] || "").toLowerCase();
+            if (h === "status" || h === "bill status" || h === "order status") {
+              statusCol = c + 1;
+              break;
+            }
+          }
+          legacySheet.getRange(li + 1, statusCol).setValue("CANCELLED");
+          break;
+        }
+      }
+    }
+
+    // 2. Mark OrderItems as voided
+    var oiSheet = ss.getSheetByName("OrderItems");
+    if (oiSheet && oiSheet.getLastRow() >= 2) {
+      var oiData = oiSheet.getDataRange().getValues();
+      for (var j = 1; j < oiData.length; j++) {
+        var oiOrdId = cleanOrderId(oiData[j][1]);
+        if (oiOrdId === orderId) {
+          var pId = String(oiData[j][3] || "").trim();
+          var pName = String(oiData[j][4] || "").trim();
+          var pQty = parseInt(oiData[j][5], 10) || 0;
+          if (pQty > 0) {
+            orderItemsToRestock.push({ id: pId, name: pName, qty: pQty });
+          }
+          // kitchenStatus (col 12) -> CANCELLED
+          oiSheet.getRange(j + 1, 12).setValue("CANCELLED");
+          // voidedQty (col 13)
+          oiSheet.getRange(j + 1, 13).setValue(oiData[j][5]);
+          // voidReason (col 14)
+          oiSheet.getRange(j + 1, 14).setValue(reason);
+          // voidedBy (col 15)
+          oiSheet.getRange(j + 1, 15).setValue(authorizedBy);
+          // rev (col 16)
+          oiSheet.getRange(j + 1, 16).setValue(rev);
+        }
+      }
+    }
+
+    // 3. If order was paid/settled, restock finite inventory in Products & Stock
+    if (oldStatus === "PAID" || oldStatus === "SETTLED" || oldStatus === "COMPLETED") {
+      var pSheet = getInventorySheet(ss);
+      if (pSheet && pSheet.getLastRow() >= 2 && orderItemsToRestock.length > 0) {
+        var pData = pSheet.getDataRange().getValues();
+        var pHeaders = pData[0].map(function(h) { return String(h || "").trim().toLowerCase(); });
+        var idColIdx = pHeaders.indexOf("product id");
+        var nameColIdx = pHeaders.indexOf("product name");
+        var stockColIdx = pHeaders.indexOf("stock quantity");
+        var isAvailColIdx = -1;
+        for (var c = 0; c < pHeaders.length; c++) {
+          if (pHeaders[c].indexOf("avail") !== -1) { isAvailColIdx = c; break; }
+        }
+
+        if (stockColIdx !== -1) {
+          for (var ri = 0; ri < orderItemsToRestock.length; ri++) {
+            var item = orderItemsToRestock[ri];
+            for (var row = 1; row < pData.length; row++) {
+              var rId = idColIdx !== -1 ? String(pData[row][idColIdx] || "").trim() : "";
+              var rName = nameColIdx !== -1 ? String(pData[row][nameColIdx] || "").trim().toLowerCase() : "";
+              if ((item.id && rId && rId === item.id) || (item.name && rName && rName === item.name.toLowerCase())) {
+                var curStock = parseInt(pData[row][stockColIdx], 10);
+                if (!isNaN(curStock) && curStock >= 0) {
+                  var newStock = curStock + item.qty;
+                  pSheet.getRange(row + 1, stockColIdx + 1).setValue(newStock);
+                  if (newStock > 0 && isAvailColIdx !== -1) {
+                    pSheet.getRange(row + 1, isAvailColIdx + 1).setValue("TRUE");
+                  }
+                }
+                break;
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // 4. Update Table state if table was Dine-In
+    if (tableId) {
+      var tSheet = ss.getSheetByName("Tables");
+      if (tSheet && tSheet.getLastRow() >= 2) {
+        var tData = tSheet.getDataRange().getValues();
+        for (var ti = 1; ti < tData.length; ti++) {
+          var tClean = cleanTableId(tData[ti][0]);
+          if (tClean === tableId) {
+            // tableStatus (col 6) -> VACANT
+            tSheet.getRange(ti + 1, 6).setValue("VACANT");
+            // activeSessionId (col 7) -> ""
+            tSheet.getRange(ti + 1, 7).setValue("");
+            // rev (col 11)
+            tSheet.getRange(ti + 1, 11).setValue(rev);
+            break;
+          }
+        }
+      }
+    }
+
+    // 5. Close Session in Sessions tab if applicable
+    if (sessionId) {
+      var sSheet = ss.getSheetByName("Sessions");
+      if (sSheet && sSheet.getLastRow() >= 2) {
+        var sData = sSheet.getDataRange().getValues();
+        for (var si = 1; si < sData.length; si++) {
+          if (String(sData[si][0] || "").trim() === sessionId) {
+            // sessionStatus (col 4) -> CANCELLED
+            sSheet.getRange(si + 1, 4).setValue("CANCELLED");
+            sSheet.getRange(si + 1, 12).setValue(new Date().toISOString());
+            sSheet.getRange(si + 1, 14).setValue(rev);
+            break;
+          }
+        }
+      }
+    }
+
+    // 6. Log to Audit tab
+    logAuditRecord(ss, outletId, authorizedBy, "VOID_ORDER", "Order", orderId, oldStatus, "CANCELLED", reason);
+
+    return responseJson({
+      ok: true,
+      success: true,
+      orderId: orderId,
+      status: "CANCELLED",
+      voidReason: reason,
+      voidedBy: authorizedBy,
+      tableId: tableId,
+      rev: rev
+    });
   } catch (err) {
     return responseJson({ ok: false, success: false, error: String(err) });
   } finally {
