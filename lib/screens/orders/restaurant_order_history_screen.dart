@@ -304,13 +304,13 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
                   final enteredPin = pinCtrl.text.trim();
                   final staffList = authState.staffList;
                   final authorizedStaff = staffList.where((s) => s.canVoidBill && s.verifyPin(enteredPin)).firstOrNull;
-                  if (authorizedStaff == null && enteredPin != '1234') {
+                  if (authorizedStaff == null) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(content: Text('Invalid Manager PIN. Authorization denied.'), backgroundColor: Colors.redAccent),
                     );
                     return;
                   }
-                  authorizer = authorizedStaff?.name ?? 'Store Manager';
+                  authorizer = authorizedStaff.name;
                 }
 
                 Navigator.pop(ctx);
@@ -612,8 +612,22 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
           ),
         ],
       ),
-      body: ValueListenableBuilder<Box>(
-        valueListenable: Hive.box('configBox').listenable(keys: ['kot_orders_$orgId']),
+      body: !Hive.isBoxOpen('configBox')
+          ? const Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.storage_rounded, size: 48, color: Color(0xFF94A3B8)),
+                  SizedBox(height: 12),
+                  Text(
+                    'Local storage initializing...',
+                    style: TextStyle(fontSize: 16, color: Color(0xFF64748B), fontWeight: FontWeight.w500),
+                  ),
+                ],
+              ),
+            )
+          : ValueListenableBuilder<Box>(
+              valueListenable: Hive.box('configBox').listenable(keys: ['kot_orders_$orgId']),
         builder: (context, box, _) {
           final raw = box.get('kot_orders_$orgId') as List? ?? [];
           List<Map<String, dynamic>> allOrders = [];

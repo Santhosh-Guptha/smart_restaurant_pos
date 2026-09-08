@@ -3226,8 +3226,9 @@
               status: 'PENDING',
               timestamp: new Date().toISOString()
             });
-            if (!webhookResult || (webhookResult.success === false && webhookResult.ok === false)) {
-              throw new Error('Order submission failed on server');
+            if (!webhookResult || webhookResult.success === false || webhookResult.ok === false) {
+              const errMsg = (webhookResult && (webhookResult.error || webhookResult.message)) || 'Order submission failed on server';
+              throw new Error(errMsg);
             }
             if (webhookResult && (webhookResult.id || webhookResult.order_id || webhookResult.kotNumber)) {
               orderId = webhookResult.id || webhookResult.order_id || kotNumber;
@@ -3236,7 +3237,7 @@
             }
           } catch (err) {
             console.error('Order dispatch error:', err);
-            showToast('Order failed to reach kitchen. Please try again.', 'error');
+            showToast(err.message || 'Order failed to reach kitchen. Please try again.', 'error');
             state.placing = false;
             renderMenu();
             return; // Don't clear cart

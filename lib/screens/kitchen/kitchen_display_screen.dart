@@ -308,6 +308,7 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
         orderId: order.id,
         kotNumber: order.kotNumber,
         newStatus: 'READY',
+        tableName: order.tableName,
         clientRequestId: const Uuid().v4(),
       );
 
@@ -392,6 +393,7 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
       }
 
       // Sync status via Webhook
+      bool syncOk = true;
       try {
         final fsStatus = isServedAction
             ? 'SERVED'
@@ -399,14 +401,16 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
                 ? 'PREPARING'
                 : (newStatus == KotStatus.ready ? 'READY' : 'PENDING'));
         
-        await AppsScriptBackendService.updateOrderStatus(
+        syncOk = await AppsScriptBackendService.updateOrderStatus(
           orgId: orgId,
           orderId: order.id,
           kotNumber: order.kotNumber,
           newStatus: fsStatus,
+          tableName: order.tableName,
           clientRequestId: const Uuid().v4(),
         );
       } catch (e) {
+        syncOk = false;
         debugPrint('Error updating KOT status via webhook: $e');
       }
 
@@ -414,14 +418,14 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
         String statusLabel = 'Updated';
         Color snackBg = const Color(0xFF2563EB);
         if (isServedAction) {
-          statusLabel = 'served and removed from active board ✅';
-          snackBg = const Color(0xFF059669);
+          statusLabel = syncOk ? 'served and removed from active board ✅' : 'served locally (sync pending ⏳)';
+          snackBg = syncOk ? const Color(0xFF059669) : const Color(0xFFD97706);
         } else if (newStatus == KotStatus.preparing) {
-          statusLabel = 'started preparing 👨‍🍳';
-          snackBg = const Color(0xFF2563EB);
+          statusLabel = syncOk ? 'started preparing 👨‍🍳' : 'preparing locally (sync pending ⏳)';
+          snackBg = syncOk ? const Color(0xFF2563EB) : const Color(0xFFD97706);
         } else if (newStatus == KotStatus.ready) {
-          statusLabel = 'marked READY for serving! 🍳';
-          snackBg = const Color(0xFF059669);
+          statusLabel = syncOk ? 'marked READY for serving! 🍳' : 'READY locally (sync pending ⏳)';
+          snackBg = syncOk ? const Color(0xFF059669) : const Color(0xFFD97706);
         }
 
         ScaffoldMessenger.of(context).showSnackBar(

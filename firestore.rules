@@ -3,7 +3,8 @@ service cloud.firestore {
   match /databases/{database}/documents {
     // 1. Sanitized public store profile: readable by public diners & app
     match /public_stores/{orgId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow write: if false;
     }
 
     // 2. App versions for client update checks
@@ -104,7 +105,8 @@ service cloud.firestore {
     }
 
     match /system_config/{configId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow write: if false;
     }
 
     // 4. STRICT ZERO-FIREBASE ENFORCEMENT:
@@ -123,7 +125,7 @@ service cloud.firestore {
       allow read, write: if false;
     }
     match /products/{productId} {
-      allow read, write: if false;
+      allow read, write: if request.auth != null;
     }
     match /customers/{customerId} {
       allow read, write: if false;

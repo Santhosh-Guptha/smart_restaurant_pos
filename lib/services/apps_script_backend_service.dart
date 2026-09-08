@@ -425,6 +425,7 @@ class AppsScriptBackendService {
     required String orderId,
     required String kotNumber,
     required String newStatus,
+    String? tableName,
     String? spreadsheetId,
     String? clientRequestId,
   }) async {
@@ -446,6 +447,8 @@ class AppsScriptBackendService {
           'data': {
             'bill_id': orderId,
             'kotNumber': kotNumber,
+            'tableName': tableName ?? '',
+            'table': tableName ?? '',
             'status': newStatus.toUpperCase(),
             'kitchenStatus': newStatus.toUpperCase(),
             'timestamp': DateTime.now().toIso8601String(),
@@ -455,7 +458,16 @@ class AppsScriptBackendService {
         }),
       ).timeout(const Duration(seconds: 6));
 
-      return res.statusCode >= 200 && res.statusCode < 300;
+      if (res.statusCode >= 200 && res.statusCode < 300) {
+        try {
+          final body = jsonDecode(res.body);
+          if (body is Map) {
+            return body['success'] == true || body['ok'] == true;
+          }
+        } catch (_) {}
+        return true;
+      }
+      return false;
     } catch (e) {
       debugPrint("AppsScriptBackendService updateOrderStatus error: $e");
       return false;
@@ -486,7 +498,16 @@ class AppsScriptBackendService {
         }),
       ).timeout(const Duration(seconds: 8));
 
-      return res.statusCode >= 200 && res.statusCode < 300;
+      if (res.statusCode >= 200 && res.statusCode < 300) {
+        try {
+          final body = jsonDecode(res.body);
+          if (body is Map) {
+            return body['success'] == true || body['ok'] == true;
+          }
+        } catch (_) {}
+        return true;
+      }
+      return false;
     } catch (e) {
       debugPrint("AppsScriptBackendService clearTable error: $e");
       return false;

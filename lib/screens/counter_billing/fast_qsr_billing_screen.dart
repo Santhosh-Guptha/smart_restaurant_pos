@@ -1156,7 +1156,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton(
-                      onPressed: sum <= 0
+                      onPressed: remaining > 0.01 || sum <= 0
                           ? null
                           : () {
                               Navigator.pop(ctx);
@@ -2306,7 +2306,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
             m['cgstP'] = cgstP;
             m['sgstP'] = sgstP;
             m['roundOffP'] = roundOffP;
-            m['grandTotalP'] = paidPaise;
+            m['paidAmountP'] = paidPaise;
             updatedOrderData = m;
             return m;
           }
@@ -2942,13 +2942,13 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                   final enteredPin = pinCtrl.text.trim();
                   final staffList = authState.staffList;
                   final authorizedStaff = staffList.where((s) => s.canVoidBill && s.verifyPin(enteredPin)).firstOrNull;
-                  if (authorizedStaff == null && enteredPin != '1234') {
+                  if (authorizedStaff == null) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(content: Text('Invalid Manager PIN. Authorization denied.'), backgroundColor: Colors.redAccent),
                     );
                     return;
                   }
-                  authorizer = authorizedStaff?.name ?? 'Store Manager';
+                  authorizer = authorizedStaff.name;
                 }
 
                 Navigator.pop(ctx);

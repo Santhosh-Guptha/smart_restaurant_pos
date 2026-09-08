@@ -3013,7 +3013,7 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
                 final pin = pinCtrl.text.trim();
                 final staffList = ref.read(restaurantAuthProvider).staffList;
                 final authorized = staffList.where((s) => s.canForceVacateTable && s.verifyPin(pin)).firstOrNull;
-                if (authorized == null && pin != '1234') {
+                if (authorized == null) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(content: Text('Invalid Manager PIN. Override authorization denied.'), backgroundColor: Colors.red),
                   );

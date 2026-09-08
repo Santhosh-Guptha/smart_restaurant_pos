@@ -1220,11 +1220,7 @@ class SaasSessionNotifier extends StateNotifier<SaasSessionState> {
 
     // If the removed account was the active one, clear active session
     if (state.currentUser?.email.trim().toLowerCase() == emailKey) {
-      if (savedAccounts.isNotEmpty) {
-        await clearSession();
-      } else {
-        await clearSession();
-      }
+      await clearSession();
     }
   }
 

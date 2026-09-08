@@ -468,8 +468,11 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
           old['customer_phone'] = guestPhone;
           old['courseNo'] = currentCourse;
           old['course_no'] = currentCourse;
-          old['kitchenStatus'] = 'PENDING';
-          old['status'] = 'PENDING';
+          final hasPendingItems = combinedItemsList.any((i) => i['kitchenStatus'] == 'PENDING' || i['kitchenStatus'] == null);
+          old['kitchenStatus'] = hasPendingItems ? 'PENDING' : (old['kitchenStatus'] ?? 'PENDING');
+          if (old['paymentStatus'] != 'PAID') {
+            old['status'] = hasPendingItems ? 'PENDING' : (old['status'] ?? 'PENDING');
+          }
           updatedList[existingIdx] = old;
         } else {
           final orderMap = {
@@ -523,7 +526,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
               tm['currentCustomerPhone'] = guestPhone;
               tm['currentOrderSource'] = 'WAITER_APP';
               tm['currentBillAmount'] = combinedTotalAmount;
-              tm['activeItemCount'] = combinedItemsList.length;
+              tm['activeItemCount'] = combinedItemsList.fold<int>(0, (sum, i) => sum + ((i['qty'] as num?)?.toInt() ?? 1));
               tm['activeBillId'] = billNumber;
             }
             return tm;
@@ -534,6 +537,8 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
       }
 
       // 3. Dispatch to Apps Script Webhook with explicit spreadsheetId
+      bool isCloudConfirmed = false;
+      String? cloudErrorMsg;
       try {
         final rBox = Hive.isBoxOpen('restaurant_config_box') ? Hive.box('restaurant_config_box') : null;
         String? sheetId = rBox?.get('restaurant_sheet_id_$orgId') ?? rBox?.get('google_sheet_id');
@@ -542,7 +547,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
           sheetId = saasSession.currentOrganization?.googleSheetId;
         }
 
-        await AppsScriptBackendService.saveBill(
+        final saveResult = await AppsScriptBackendService.saveBillDetailed(
           outletId: orgId,
           spreadsheetId: sheetId ?? '',
           clientRequestId: clientRequestId,
@@ -575,6 +580,12 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
             'timestamp': DateTime.now().toIso8601String(),
           },
         );
+
+        if (saveResult['success'] == true || saveResult['ok'] == true) {
+          isCloudConfirmed = true;
+        } else if (saveResult['error'] != null) {
+          cloudErrorMsg = saveResult['error'].toString();
+        }
       } catch (asErr) {
         debugPrint('AppsScript saveBill error: $asErr');
       }
@@ -585,22 +596,46 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
       _loadTableActiveOrders();
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Row(
-              children: [
-                const Icon(Icons.check_circle_rounded, color: Colors.white, size: 20),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text('KOT #$token sent to kitchen! 👨‍🍳 ($tableName • Course $currentCourse)'),
-                ),
-              ],
+        if (isCloudConfirmed) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Row(
+                children: [
+                  const Icon(Icons.check_circle_rounded, color: Colors.white, size: 20),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text('KOT #$token sent to kitchen! 👨‍🍳 ($tableName • Course $currentCourse)'),
+                  ),
+                ],
+              ),
+              backgroundColor: const Color(0xFF059669),
+              duration: const Duration(seconds: 3),
+              behavior: SnackBarBehavior.floating,
             ),
-            backgroundColor: const Color(0xFF059669),
-            duration: const Duration(seconds: 3),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Row(
+                children: [
+                  const Icon(Icons.cloud_off_rounded, color: Colors.white, size: 20),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      cloudErrorMsg != null
+                          ? 'KOT #$token saved locally ($cloudErrorMsg)'
+                          : 'KOT #$token saved locally on device (cloud sync pending ⏳)',
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ],
+              ),
+              backgroundColor: const Color(0xFFD97706),
+              duration: const Duration(seconds: 4),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
       }
     } catch (e) {
       debugPrint('Error sending KOT: $e');
@@ -1097,14 +1132,20 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
     try {
       if (Hive.isBoxOpen('configBox')) {
         final box = Hive.box('configBox');
+        final cleanWTable = cleanTableId(widget.table.tableNumber);
+        final cleanWName = cleanTableId(widget.table.name);
 
         // 1. Mark orders for this table as PAID in Hive
         final rawOrders = box.get('kot_orders_$orgId') as List? ?? [];
         final updatedOrders = rawOrders.map((item) {
           if (item is Map) {
             final m = Map<String, dynamic>.from(item);
-            final oTableDigits = (m['tableName'] ?? m['table'] ?? '').toString().replaceAll(RegExp(r'[^0-9]'), '');
-            if (oTableDigits == tNum) {
+            final cleanOTable = cleanTableId(m['tableName'] ?? m['table'] ?? '');
+            final cleanOId = cleanTableId(m['tableId'] ?? m['tableNumber'] ?? '');
+            final matches = (cleanWTable.isNotEmpty && (cleanWTable == cleanOTable || cleanWTable == cleanOId)) ||
+                (cleanWName.isNotEmpty && (cleanWName == cleanOTable || cleanWName == cleanOId)) ||
+                m['tableId'] == widget.table.id;
+            if (matches) {
               m['status'] = 'PAID';
               m['paymentStatus'] = 'PAID';
               m['paymentMode'] = paymentMode;
@@ -1121,8 +1162,12 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
         final updatedTables = rawTables.map((t) {
           if (t is Map) {
             final tm = Map<String, dynamic>.from(t);
-            final matchId = (tm['tableNumber'] ?? tm['name'] ?? '').toString().replaceAll(RegExp(r'[^0-9]'), '');
-            if (matchId == tNum) {
+            final cleanTNum = cleanTableId(tm['tableNumber']?.toString() ?? '');
+            final cleanTName = cleanTableId(tm['name']?.toString() ?? '');
+            final matches = (cleanWTable.isNotEmpty && cleanWTable == cleanTNum) ||
+                (cleanWName.isNotEmpty && cleanWName == cleanTName) ||
+                tm['id'] == widget.table.id;
+            if (matches) {
               tm['status'] = 'vacant';
               tm['currentCustomerName'] = null;
               tm['currentCustomerPhone'] = null;

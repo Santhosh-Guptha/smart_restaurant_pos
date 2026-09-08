@@ -51,8 +51,9 @@ function doPost(e) {
     const json = JSON.parse(e.postData.contents);
     
     // Security verification: allow customer non-settled SAVE_BILL, SERVICE_REQUEST, CALL_WAITER without exposing master secret
+    var b = json.data || json.bill || {};
     var isPublicAction = (
-      (json.action === "SAVE_BILL" && !(json.bill && isStatusSettled(json.bill.payment_status || json.bill.status))) || 
+      (json.action === "SAVE_BILL" && !isStatusSettled(b.payment_status || b.status)) || 
       json.action === "SERVICE_REQUEST" || 
       json.action === "CALL_WAITER" || 
       json.action === "DISMISS_SERVICE_REQUEST" || 
@@ -292,6 +293,54 @@ function allocateCounter(ss, outletId, kind, businessDate) {
   }
   
   return nextVal;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Shared Bill Columns Resolver (Exact match with canonical fallbacks)
+// ─────────────────────────────────────────────────────────────────────────────
+function resolveBillColumns(headers) {
+  var idIdx = -1, dateIdx = -1, nameIdx = -1, phoneIdx = -1, modeIdx = -1, subtotalIdx = -1, totalIdx = -1, itemsIdx = -1, statusIdx = -1, tableIdx = -1, txnIdx = -1;
+  headers.forEach(function(rawH, idx) {
+    var cleanH = String(rawH || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+    if (cleanH === "billid" || cleanH === "id" || cleanH === "kotid") idIdx = idx;
+    else if (cleanH === "datetime" || cleanH === "date" || cleanH === "time" || cleanH === "timestamp") dateIdx = idx;
+    else if (cleanH === "customername" || cleanH === "guestname" || (cleanH === "name" && cleanH.indexOf("dish") === -1 && cleanH.indexOf("item") === -1)) nameIdx = idx;
+    else if (cleanH === "customerphone" || cleanH === "phone" || cleanH === "mobile") phoneIdx = idx;
+    else if (cleanH === "paymentmode" || cleanH === "mode" || cleanH === "payment") modeIdx = idx;
+    else if (cleanH === "subtotal" || cleanH === "subtotalamount") subtotalIdx = idx;
+    else if (cleanH === "totalamount" || cleanH === "nettotal" || cleanH === "grandtotal" || cleanH === "total" || cleanH === "amount") totalIdx = idx;
+    else if (cleanH === "itemssummary" || cleanH === "itemsjson" || cleanH === "items" || cleanH === "dishes") itemsIdx = idx;
+    else if (cleanH === "status" || cleanH === "orderstatus" || cleanH === "billstatus") statusIdx = idx;
+    else if (cleanH === "table" || cleanH === "tablename" || cleanH === "tablelocation" || cleanH === "tabletakeaway") tableIdx = idx;
+    else if (cleanH === "transactionid" || cleanH === "txnid" || cleanH === "utr" || cleanH === "ref") txnIdx = idx;
+  });
+
+  // Canonical fallback indexes if headers could not be matched
+  if (idIdx === -1) idIdx = 0;
+  if (dateIdx === -1) dateIdx = 1;
+  if (nameIdx === -1) nameIdx = 2;
+  if (phoneIdx === -1) phoneIdx = 3;
+  if (modeIdx === -1) modeIdx = 4;
+  if (subtotalIdx === -1) subtotalIdx = 5;
+  if (totalIdx === -1) totalIdx = 7;
+  if (itemsIdx === -1) itemsIdx = 8;
+  if (statusIdx === -1) statusIdx = 9;
+  if (tableIdx === -1) tableIdx = 10;
+  if (txnIdx === -1) txnIdx = 11;
+
+  return {
+    idIdx: idIdx,
+    dateIdx: dateIdx,
+    nameIdx: nameIdx,
+    phoneIdx: phoneIdx,
+    modeIdx: modeIdx,
+    subtotalIdx: subtotalIdx,
+    totalIdx: totalIdx,
+    itemsIdx: itemsIdx,
+    statusIdx: statusIdx,
+    tableIdx: tableIdx,
+    txnIdx: txnIdx
+  };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1079,34 +1128,10 @@ function doGet(e) {
             var data = sheet.getDataRange().getValues();
             if (data && data.length > 1) {
               var headers = data[0].map(function(h) { return String(h || "").trim().toLowerCase(); });
-              var idIdx = -1, dateIdx = -1, nameIdx = -1, phoneIdx = -1, modeIdx = -1, subtotalIdx = -1, totalIdx = -1, itemsIdx = -1, statusIdx = -1, tableIdx = -1, txnIdx = -1;
-              headers.forEach(function(rawH, idx) {
-                var cleanH = String(rawH || "").toLowerCase().replace(/[^a-z0-9]/g, "");
-                if (cleanH === "billid" || cleanH === "id" || cleanH === "kotid") idIdx = idx;
-                else if (cleanH === "datetime" || cleanH === "date" || cleanH === "time" || cleanH === "timestamp") dateIdx = idx;
-                else if (cleanH === "customername" || cleanH === "guestname" || (cleanH === "name" && cleanH.indexOf("dish") === -1 && cleanH.indexOf("item") === -1)) nameIdx = idx;
-                else if (cleanH === "customerphone" || cleanH === "phone" || cleanH === "mobile") phoneIdx = idx;
-                else if (cleanH === "paymentmode" || cleanH === "mode" || cleanH === "payment") modeIdx = idx;
-                else if (cleanH === "subtotal" || cleanH === "subtotalamount") subtotalIdx = idx;
-                else if (cleanH === "totalamount" || cleanH === "nettotal" || cleanH === "grandtotal" || cleanH === "total" || cleanH === "amount") totalIdx = idx;
-                else if (cleanH === "itemssummary" || cleanH === "itemsjson" || cleanH === "items" || cleanH === "dishes") itemsIdx = idx;
-                else if (cleanH === "status" || cleanH === "orderstatus") statusIdx = idx;
-                else if (cleanH === "table" || cleanH === "tablename" || cleanH === "tablelocation" || cleanH === "tabletakeaway") tableIdx = idx;
-                else if (cleanH === "transactionid" || cleanH === "txnid" || cleanH === "utr" || cleanH === "ref") txnIdx = idx;
-              });
-
-              // Canonical fallback indexes if headers could not be matched
-              if (idIdx === -1) idIdx = 0;
-              if (dateIdx === -1) dateIdx = 1;
-              if (nameIdx === -1) nameIdx = 2;
-              if (phoneIdx === -1) phoneIdx = 3;
-              if (modeIdx === -1) modeIdx = 4;
-              if (subtotalIdx === -1) subtotalIdx = 5;
-              if (totalIdx === -1) totalIdx = 7;
-              if (itemsIdx === -1) itemsIdx = 8;
-              if (statusIdx === -1) statusIdx = 9;
-              if (tableIdx === -1) tableIdx = 10;
-              if (txnIdx === -1) txnIdx = 11;
+              var cols = resolveBillColumns(headers);
+              var idIdx = cols.idIdx, dateIdx = cols.dateIdx, nameIdx = cols.nameIdx, phoneIdx = cols.phoneIdx,
+                  modeIdx = cols.modeIdx, subtotalIdx = cols.subtotalIdx, totalIdx = cols.totalIdx,
+                  itemsIdx = cols.itemsIdx, statusIdx = cols.statusIdx, tableIdx = cols.tableIdx, txnIdx = cols.txnIdx;
 
               for (var r = 1; r < data.length; r++) {
                 var row = data[r];
@@ -1424,24 +1449,26 @@ function handleSaveBill(data) {
     }
     var kotNumber = b.kot_number || b.kotNumber || (tokenNo ? ("#" + tokenNo) : (cleanId ? ("KOT-" + cleanId) : billId));
 
-    // Reject missing table name instead of defaulting to "Table 1"
+    const isStatusUpdate = (b.update_type === "STATUS_UPDATE" || data.update_type === "STATUS_UPDATE" || data.action === "UPDATE_ORDER_STATUS");
+
+    // Reject missing table name instead of defaulting to "Table 1" (skip for STATUS_UPDATE)
     const tableNameRaw = b.table_name || b.tableName || (b.table_number ? ("Table " + b.table_number) : (b.tableNumber ? ("Table " + b.tableNumber) : (b.table || "")));
-    if (!tableNameRaw || String(tableNameRaw).trim() === "") {
+    if (!isStatusUpdate && (!tableNameRaw || String(tableNameRaw).trim() === "")) {
       return responseJson({ success: false, error: "Invalid order: missing table name or table number." });
     }
-    const tableName = String(tableNameRaw).trim();
+    const tableName = String(tableNameRaw || "").trim();
     const cTable = cleanTableId(tableName);
 
     const status = String(b.payment_status || b.paymentStatus || b.status || "ORDER_RECEIVED").toUpperCase().trim();
     const isSettled = isStatusSettled(status);
     const txnId = b.transaction_id || b.transactionId || b.upi_reference || b.upiReference || "";
 
-    // Require total_amount (or totalAmount); DO NOT fall back to subtotal!
+    // Require total_amount (or totalAmount); DO NOT fall back to subtotal! (skip for STATUS_UPDATE)
     const rawTotal = b.total_amount !== undefined ? b.total_amount : (b.totalAmount !== undefined ? b.totalAmount : null);
-    if (rawTotal === null) {
+    if (!isStatusUpdate && rawTotal === null) {
       return responseJson({ success: false, error: "Invalid order: missing total_amount." });
     }
-    const totalAmount = parseFloat(String(rawTotal).replace(/[^0-9.]/g, "")) || 0;
+    const totalAmount = rawTotal !== null ? (parseFloat(String(rawTotal).replace(/[^0-9.]/g, "")) || 0) : 0;
     const timeStr = b.timestamp || b.created_at || b.createdAt || new Date().toISOString();
     const rawItems = b.items || [];
     const paymentMode = String(b.payment_mode || b.paymentMode || (isSettled ? "PAID" : "PENDING")).trim();
@@ -1628,13 +1655,12 @@ function handleSaveBill(data) {
       if (lastRow > 1) {
         const data = sheet.getDataRange().getValues();
         var headers = data[0].map(function(h) { return String(h || "").trim().toLowerCase(); });
-        headers.forEach(function(h, idx) {
-          if (h.indexOf("bill") !== -1 || h.indexOf("kot") !== -1 || (h.indexOf("id") !== -1 && h.indexOf("product") === -1 && h.indexOf("cust") === -1)) idIdx = idx;
-          if (h.indexOf("status") !== -1) statusIdx = idx;
-          if (h.indexOf("mode") !== -1 || h.indexOf("payment") !== -1) modeIdx = idx;
-          if (h.indexOf("table") !== -1) tableIdx = idx;
-          if (h.indexOf("txn") !== -1 || h.indexOf("utr") !== -1 || h.indexOf("ref") !== -1) txnIdx = idx;
-        });
+        var cols = resolveBillColumns(headers);
+        idIdx = cols.idIdx;
+        statusIdx = cols.statusIdx;
+        modeIdx = cols.modeIdx;
+        tableIdx = cols.tableIdx;
+        txnIdx = cols.txnIdx;
 
         // Find matching row by clean ID
         for (let i = 1; i < data.length; i++) {
@@ -1653,7 +1679,7 @@ function handleSaveBill(data) {
         }
 
         // If updating an existing row for status update with no items provided, only update status & txn
-        if (existingRow !== -1 && (b.update_type === "STATUS_UPDATE" || (!rawItems || rawItems.length === 0))) {
+        if (existingRow !== -1 && (isStatusUpdate || b.update_type === "STATUS_UPDATE" || (!rawItems || rawItems.length === 0))) {
           sheet.getRange(existingRow, statusIdx + 1).setValue(isSettled ? "PAID" : status);
           if (txnId) sheet.getRange(existingRow, txnIdx + 1).setValue(txnId);
           return buildResult({
@@ -2142,7 +2168,7 @@ function handleRecordPayment(json) {
     }
 
     if (clientRequestId && ss) {
-      var cached = getFromIdempotency(ss, clientRequestId);
+      var cached = checkIdempotency(ss, clientRequestId);
       if (cached) {
         return responseJson(cached);
       }
@@ -2189,7 +2215,7 @@ function handleRecordPayment(json) {
     }
     return responseJson(res);
   } catch (err) {
-    return responseJson({ ok: false, success: false, error: String(err) });
+    return responseJson({ ok: false, success: false, error: String(err), error_code: "HANDLER_ERROR" });
   } finally {
     try { lock.releaseLock(); } catch(e) {}
   }
@@ -2303,7 +2329,7 @@ function handleSetTableStatus(json) {
     var cTable = cleanTableId(tableId);
 
     // Guard: Prevent vacating a table if it has an active unpaid order
-    if (newStatus === "VACANT" && !force && orgId) {
+    if (newStatus === "VACANT" && !force && outletId) {
       var props = PropertiesService.getScriptProperties();
       var rawCached = props.getProperty("recent_orders_" + outletId);
       if (rawCached) {
@@ -3059,14 +3085,8 @@ function handleVoidOrder(json) {
       for (var li = 1; li < lData.length; li++) {
         var lId = cleanOrderId(lData[li][0]);
         if (lId === orderId) {
-          var statusCol = 5;
-          for (var c = 0; c < lData[0].length; c++) {
-            var h = String(lData[0][c] || "").toLowerCase();
-            if (h === "status" || h === "bill status" || h === "order status") {
-              statusCol = c + 1;
-              break;
-            }
-          }
+          var lCols = resolveBillColumns(lData[0]);
+          var statusCol = lCols.statusIdx + 1;
           legacySheet.getRange(li + 1, statusCol).setValue("CANCELLED");
           break;
         }
