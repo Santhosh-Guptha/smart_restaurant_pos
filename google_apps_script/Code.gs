@@ -121,6 +121,9 @@ function doPost(e) {
       case "RECORD_PAYMENT":
         return handleRecordPayment(json);
 
+      case "REFUND_PAYMENT":
+        return handleRefundPayment(json);
+
       case "CLOSE_DAY":
         return handleCloseDay(json);
 
@@ -299,7 +302,7 @@ function allocateCounter(ss, outletId, kind, businessDate) {
 // Shared Bill Columns Resolver (Exact match with canonical fallbacks)
 // ─────────────────────────────────────────────────────────────────────────────
 function resolveBillColumns(headers) {
-  var idIdx = -1, dateIdx = -1, nameIdx = -1, phoneIdx = -1, modeIdx = -1, subtotalIdx = -1, totalIdx = -1, itemsIdx = -1, statusIdx = -1, tableIdx = -1, txnIdx = -1;
+  var idIdx = -1, dateIdx = -1, nameIdx = -1, phoneIdx = -1, modeIdx = -1, subtotalIdx = -1, totalIdx = -1, itemsIdx = -1, statusIdx = -1, tableIdx = -1, txnIdx = -1, orderSourceIdx = -1, orderTypeIdx = -1;
   headers.forEach(function(rawH, idx) {
     var cleanH = String(rawH || "").toLowerCase().replace(/[^a-z0-9]/g, "");
     if (cleanH === "billid" || cleanH === "id" || cleanH === "kotid") idIdx = idx;
@@ -313,6 +316,8 @@ function resolveBillColumns(headers) {
     else if (cleanH === "status" || cleanH === "orderstatus" || cleanH === "billstatus") statusIdx = idx;
     else if (cleanH === "table" || cleanH === "tablename" || cleanH === "tablelocation" || cleanH === "tabletakeaway") tableIdx = idx;
     else if (cleanH === "transactionid" || cleanH === "txnid" || cleanH === "utr" || cleanH === "ref") txnIdx = idx;
+    else if (cleanH === "ordersource" || cleanH === "source" || cleanH === "channel") orderSourceIdx = idx;
+    else if (cleanH === "ordertype" || cleanH === "type") orderTypeIdx = idx;
   });
 
   // Canonical fallback indexes if headers could not be matched
@@ -339,7 +344,9 @@ function resolveBillColumns(headers) {
     itemsIdx: itemsIdx,
     statusIdx: statusIdx,
     tableIdx: tableIdx,
-    txnIdx: txnIdx
+    txnIdx: txnIdx,
+    orderSourceIdx: orderSourceIdx,
+    orderTypeIdx: orderTypeIdx
   };
 }
 
@@ -534,16 +541,40 @@ function persistV2Order(ss, orgId, billId, cleanId, tokenNo, tableName, cTable, 
       sessionId = findOrCreateActiveSession(ss, orgId, tableName, staffName, customerName, customerPhone, rev);
     }
     
-    var subtotalP = Math.round((subtotal || 0) * 100);
-    var discountP = Math.round((parseFloat(b.discount || b.discount_amount || b.discountP) || 0) * 100);
-    var serviceChargeP = Math.round((parseFloat(b.service_charge || b.service_charge_amount || b.serviceChargeP) || 0) * 100);
-    var gstRate = parseFloat(b.gst_rate || b.gstRate) || 5;
     var grandTotalP = Math.round((totalAmount || 0) * 100);
-    var taxableP = Math.max(0, subtotalP - discountP + serviceChargeP);
-    var gstP = Math.round(taxableP * (gstRate / 100));
-    var cgstP = Math.round(gstP / 2);
-    var sgstP = gstP - cgstP;
-    var roundOffP = grandTotalP - (taxableP + gstP);
+    var subtotalP = b.subtotalP !== undefined ? parseInt(b.subtotalP, 10) : Math.round((subtotal || 0) * 100);
+    var discountP = b.discountP !== undefined ? parseInt(b.discountP, 10) : Math.round((parseFloat(b.discount || b.discount_amount || b.discountP) || 0) * 100);
+    var serviceChargeP = b.serviceChargeP !== undefined ? parseInt(b.serviceChargeP, 10) : Math.round((parseFloat(b.service_charge || b.service_charge_amount || b.serviceChargeP) || 0) * 100);
+
+    var hasClientComponents = (b.cgstP !== undefined && b.sgstP !== undefined) || (b.cgst !== undefined && b.sgst !== undefined);
+    var taxableP, cgstP, sgstP, roundOffP;
+
+    if (hasClientComponents) {
+      taxableP = b.taxableP !== undefined ? parseInt(b.taxableP, 10) : (b.taxable !== undefined ? Math.round(parseFloat(b.taxable) * 100) : Math.max(0, subtotalP - discountP + serviceChargeP));
+      cgstP = b.cgstP !== undefined ? parseInt(b.cgstP, 10) : Math.round(parseFloat(b.cgst) * 100);
+      sgstP = b.sgstP !== undefined ? parseInt(b.sgstP, 10) : Math.round(parseFloat(b.sgst) * 100);
+      roundOffP = b.roundOffP !== undefined ? parseInt(b.roundOffP, 10) : (b.round_off !== undefined ? Math.round(parseFloat(b.round_off) * 100) : (grandTotalP - (taxableP + cgstP + sgstP)));
+
+      if (taxableP + cgstP + sgstP + roundOffP !== grandTotalP) {
+        if (Math.abs((taxableP + cgstP + sgstP + roundOffP) - grandTotalP) <= 1) {
+          roundOffP = grandTotalP - (taxableP + cgstP + sgstP);
+        } else {
+          Logger.log("TOTALS_MISMATCH in persistV2Order: " + billId + " sum=" + (taxableP + cgstP + sgstP + roundOffP) + " vs grand=" + grandTotalP);
+          var gstRateFb = parseFloat(b.gst_rate || b.gstRate) || 5;
+          var gstPFb = Math.round(taxableP * (gstRateFb / 100));
+          cgstP = Math.round(gstPFb / 2);
+          sgstP = gstPFb - cgstP;
+          roundOffP = grandTotalP - (taxableP + cgstP + sgstP);
+        }
+      }
+    } else {
+      var gstRate = parseFloat(b.gst_rate || b.gstRate) || 5;
+      taxableP = Math.max(0, subtotalP - discountP + serviceChargeP);
+      var gstP = Math.round(taxableP * (gstRate / 100));
+      cgstP = Math.round(gstP / 2);
+      sgstP = gstP - cgstP;
+      roundOffP = grandTotalP - (taxableP + gstP);
+    }
     
     // 1. Orders tab
     var ordersSheet = ss.getSheetByName("Orders");
@@ -613,7 +644,7 @@ function persistV2Order(ss, orgId, billId, cleanId, tokenNo, tableName, cTable, 
           itemQty,
           itemPriceP,
           lineTotalP,
-          Math.round(gstRate * 100),
+          Math.round((parseFloat(b.gst_rate || b.gstRate) || 5) * 100),
           String(it.station || b.station || "Main Kitchen").trim(),
           String(it.notes || it.instructions || "").trim(),
           isSettled ? "SERVED" : String(it.kitchenStatus || b.kitchenStatus || "PENDING").toUpperCase(),
@@ -647,7 +678,7 @@ function persistV2Order(ss, orgId, billId, cleanId, tokenNo, tableName, cTable, 
           billId,
           paymentMode || "CASH",
           grandTotalP,
-          Math.round((parseFloat(b.tip || 0) || 0) * 100),
+          b.tipP !== undefined ? parseInt(b.tipP, 10) : Math.round((parseFloat(b.tip_amount || b.tipAmount || b.tip || 0) || 0) * 100),
           txnId || "",
           "",
           true,
@@ -1210,23 +1241,32 @@ function doGet(e) {
 
                 // Parse total with strict corruption limits
                 var rawTotal = 0;
-                if (cellTotal.indexOf("[") === -1 && cellTotal.indexOf("{") === -1) {
+                var totalRecovered = false;
+                var isCorrupted = false;
+
+                if (cellTotal.indexOf("[") !== -1 || cellTotal.indexOf("{") !== -1 || /e[+-]?\d+/i.test(cellTotal)) {
+                  isCorrupted = true;
+                } else {
                   var cleanedTotalStr = cellTotal.replace(/[^0-9.]/g, "");
-                  // If cleaned string is longer than 9 digits or NaN, it's corrupted!
-                  if (cleanedTotalStr.length <= 9) {
+                  if (cleanedTotalStr.length > 9 || (cleanedTotalStr.length > 0 && isNaN(parseFloat(cleanedTotalStr)))) {
+                    isCorrupted = true;
+                  } else {
                     rawTotal = parseFloat(cleanedTotalStr) || 0;
                   }
                 }
 
-                // If rawTotal is corrupted, 0, or exceeds 10 million rupees, recalculate from items!
-                if (isNaN(rawTotal) || rawTotal > 10000000 || rawTotal <= 0) {
+                // Trigger recovery ONLY on genuine corruption (isNaN, >10M, JSON/exponential), not on <= 0 (which can be comped/blank)
+                if (isCorrupted || isNaN(rawTotal) || rawTotal > 10000000) {
                   if (parsedItems && parsedItems.length > 0) {
-                    rawTotal = parsedItems.reduce(function(acc, it) {
+                    var sub = parsedItems.reduce(function(acc, it) {
                       var p = parseFloat(it.price || it.rate) || 0;
                       var q = parseFloat(it.qty || it.quantity) || 1;
-                      if (p > 100000) p = 0; // Guard against item-level corruption
+                      if (isNaN(p) || !isFinite(p) || p < 0) p = 0;
                       return acc + (p * q);
                     }, 0);
+                    var gstRateRec = 5;
+                    rawTotal = Math.round(sub * (1 + (gstRateRec / 100)) * 100) / 100;
+                    totalRecovered = true;
                   } else {
                     rawTotal = 0;
                   }
@@ -1237,6 +1277,9 @@ function doGet(e) {
                 }
 
                 var canonicalTable = row[tableIdx] || ("Table " + rawTableClean);
+                var rawOrderSource = (cols.orderSourceIdx !== -1 && cols.orderSourceIdx !== undefined) ? String(row[cols.orderSourceIdx] || "").trim() : "";
+                var rawOrderType = (cols.orderTypeIdx !== -1 && cols.orderTypeIdx !== undefined) ? String(row[cols.orderTypeIdx] || "").trim() : "";
+
                 var orderObj = {
                   id: rawId,
                   orderId: rawId,
@@ -1245,6 +1288,7 @@ function doGet(e) {
                   customerPhone: rawPhone,
                   totalAmount: rawTotal,
                   total: rawTotal,
+                  total_recovered: totalRecovered,
                   items: parsedItems,
                   itemsSummary: rawItems,
                   status: rawStatus,
@@ -1252,7 +1296,9 @@ function doGet(e) {
                   table: canonicalTable,
                   tableName: canonicalTable,
                   transactionId: rawTxn,
-                  timestamp: rawDate
+                  timestamp: rawDate,
+                  orderSource: rawOrderSource || (canonicalTable.toLowerCase().indexOf("qr") !== -1 ? "QR" : "POS_COUNTER"),
+                  orderType: rawOrderType || "Dine-In"
                 };
 
                 if (ordersMap[rawId]) {
@@ -1493,7 +1539,7 @@ function handleSaveBill(data) {
             }
             if (settledList.indexOf(cleanId) === -1) {
               settledList.push(cleanId);
-              if (settledList.length > 300) settledList = settledList.slice(-300);
+              if (settledList.length > 500) settledList = settledList.slice(-500);
               props.setProperty(settledKey, JSON.stringify(settledList));
             }
           }
@@ -1576,6 +1622,8 @@ function handleSaveBill(data) {
               paymentMode: paymentMode || prev.paymentMode || "DINE_IN",
               table: tableName || prev.table,
               tableName: tableName || prev.tableName,
+              orderSource: String(b.order_source || b.orderSource || prev.orderSource || (tableName.toLowerCase().indexOf("qr") !== -1 ? "QR" : "POS_COUNTER")).trim(),
+              orderType: String(b.order_type || b.orderType || prev.orderType || "Dine-In").trim(),
               transactionId: txnId || prev.transactionId,
               specialInstructions: specialInstructions || prev.specialInstructions || "",
               timestamp: mergedTime
@@ -1603,6 +1651,8 @@ function handleSaveBill(data) {
               paymentMode: paymentMode || "DINE_IN",
               table: tableName,
               tableName: tableName,
+              orderSource: String(b.order_source || b.orderSource || (tableName.toLowerCase().indexOf("qr") !== -1 ? "QR" : "POS_COUNTER")).trim(),
+              orderType: String(b.order_type || b.orderType || "Dine-In").trim(),
               transactionId: txnId,
               specialInstructions: specialInstructions,
               timestamp: timeStr
@@ -1707,6 +1757,9 @@ function handleSaveBill(data) {
       if (existingRow !== -1) {
         sheet.getRange(existingRow, 1, 1, rowData.length).setValues([rowData]);
       } else {
+        if (isSettled && (b.is_settle_only || b.settle_pending || b.isSettlePending || b.target_bill_id)) {
+          Logger.log("SETTLE_ROW_NOT_FOUND: " + billId + " (cleanId: " + cleanId + ")");
+        }
         sheet.appendRow(rowData);
       }
 
@@ -2182,7 +2235,7 @@ function handleRecordPayment(json) {
     var amountP = parseInt(data.amountP || data.amountPaise || 0, 10);
     if (!amountP && data.amount) amountP = Math.round(Number(data.amount) * 100);
     var tipP = parseInt(data.tipP || data.tipPaise || 0, 10);
-    if (!tipP && data.tip) tipP = Math.round(Number(data.tip) * 100);
+    if (!tipP && (data.tip || data.tip_amount || data.tipAmount)) tipP = Math.round(Number(data.tip_amount || data.tipAmount || data.tip) * 100);
     var refUtr = data.refUtr || data.ref_UTR || data.utr || data.ref || "";
     var gatewayId = data.gatewayId || "";
     var verified = data.verified !== false;
@@ -2669,6 +2722,41 @@ function handleMoveTable(json) {
           }
         }
       }
+
+      // Update Bills sheet
+      var bSheet = getOrCreateBillsSheet(ss);
+      if (bSheet) {
+        var bData = bSheet.getDataRange().getValues();
+        if (bData && bData.length > 1) {
+          var bCols = resolveBillColumns(bData[0]);
+          var bTableIdx = bCols.tableIdx;
+          var bStatusIdx = bCols.statusIdx;
+          for (var bi = 1; bi < bData.length; bi++) {
+            var bStatus = bStatusIdx !== -1 ? String(bData[bi][bStatusIdx] || "").trim() : "";
+            if (!isStatusSettled(bStatus)) {
+              var curTable = cleanTableId(bData[bi][bTableIdx]);
+              if (curTable === cFrom) {
+                bSheet.getRange(bi + 1, bTableIdx + 1).setValue("Table " + toTable);
+              }
+            }
+          }
+        }
+      }
+
+      // Update Orders tab
+      var ordersSheet = ss.getSheetByName("Orders");
+      if (ordersSheet && ordersSheet.getLastRow() >= 2) {
+        var oData = ordersSheet.getDataRange().getValues();
+        for (var oi = 1; oi < oData.length; oi++) {
+          var oStatus = String(oData[oi][9] || "").trim();
+          if (!isStatusSettled(oStatus)) {
+            var oTable = cleanTableId(oData[oi][3]);
+            if (oTable === cFrom) {
+              ordersSheet.getRange(oi + 1, 4).setValue("Table " + toTable);
+            }
+          }
+        }
+      }
     }
 
     return responseJson({ ok: true, success: true, fromTable: fromTable, toTable: toTable, rev: rev });
@@ -2737,6 +2825,41 @@ function handleMergeTables(json) {
           } else if (tId === cTarget) {
             tSheet.getRange(i + 1, 6).setValue("OCCUPIED");
             tSheet.getRange(i + 1, 11).setValue(rev);
+          }
+        }
+      }
+
+      // Update Bills sheet
+      var bSheet = getOrCreateBillsSheet(ss);
+      if (bSheet) {
+        var bData = bSheet.getDataRange().getValues();
+        if (bData && bData.length > 1) {
+          var bCols = resolveBillColumns(bData[0]);
+          var bTableIdx = bCols.tableIdx;
+          var bStatusIdx = bCols.statusIdx;
+          for (var bi = 1; bi < bData.length; bi++) {
+            var bStatus = bStatusIdx !== -1 ? String(bData[bi][bStatusIdx] || "").trim() : "";
+            if (!isStatusSettled(bStatus)) {
+              var curTable = cleanTableId(bData[bi][bTableIdx]);
+              if (cSources.indexOf(curTable) !== -1) {
+                bSheet.getRange(bi + 1, bTableIdx + 1).setValue("Table " + targetTable);
+              }
+            }
+          }
+        }
+      }
+
+      // Update Orders tab
+      var ordersSheet = ss.getSheetByName("Orders");
+      if (ordersSheet && ordersSheet.getLastRow() >= 2) {
+        var oData = ordersSheet.getDataRange().getValues();
+        for (var oi = 1; oi < oData.length; oi++) {
+          var oStatus = String(oData[oi][9] || "").trim();
+          if (!isStatusSettled(oStatus)) {
+            var oTable = cleanTableId(oData[oi][3]);
+            if (cSources.indexOf(oTable) !== -1) {
+              ordersSheet.getRange(oi + 1, 4).setValue("Table " + targetTable);
+            }
           }
         }
       }
@@ -3207,6 +3330,141 @@ function handleVoidOrder(json) {
       tableId: tableId,
       rev: rev
     });
+  } catch (err) {
+    return responseJson({ ok: false, success: false, error: String(err) });
+  } finally {
+    try { lock.releaseLock(); } catch(e) {}
+  }
+}
+
+function handleRefundPayment(json) {
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(20000);
+  } catch (eLock) {
+    return responseJson({ ok: false, success: false, error: "Server busy: lock timeout in handleRefundPayment." });
+  }
+
+  try {
+    var clientRequestId = json.clientRequestId || json.client_request_id;
+    var data = json.data || json;
+    var outletId = String(json.outletId || json.org_id || json.organizationId || data.outletId || "").trim();
+    var sId = json.spreadsheet_id || json.spreadsheetId || getSheetIdForOrg(outletId);
+    var originalPaymentId = String(data.paymentId || data.originalPaymentId || "").trim();
+    var billId = String(data.billId || data.orderId || "").trim();
+    var cleanId = cleanOrderId(billId);
+    var reason = String(data.reason || data.refundReason || "").trim();
+    var authorizedBy = String(data.authorizedBy || data.staffName || data.staffId || "Manager").trim();
+    var refundAmount = parseFloat(data.amount || data.refundAmount || 0);
+
+    if (!reason) {
+      return responseJson({ ok: false, success: false, error: "A valid refund reason is mandatory for audit compliance." });
+    }
+
+    var ss = null;
+    if (sId) {
+      try { ss = SpreadsheetApp.openById(sId); } catch(e) {}
+    }
+    if (!ss) {
+      return responseJson({ ok: false, success: false, error: "Spreadsheet not found." });
+    }
+
+    ensureV2Sheets(ss);
+    var rev = getAndBumpRev(outletId);
+
+    // 1. Allocate Credit Note number from INVOICE counter
+    var cnSeq = allocateCounter(ss, outletId, "INVOICE");
+    var nowD = new Date();
+    var ymd = Utilities.formatDate(nowD, Session.getScriptTimeZone() || "GMT+05:30", "yyyyMMdd");
+    var creditNoteNo = "CN-" + ymd + "-" + ("0000" + cnSeq).slice(-4);
+
+    var refundAmountP = Math.round(refundAmount * 100);
+    var origMode = "CASH";
+    var sessionId = "";
+
+    // 2. Find original payment row if paymentId provided, or by billId
+    var pSheet = ss.getSheetByName("Payments");
+    if (pSheet && pSheet.getLastRow() >= 2) {
+      var pData = pSheet.getDataRange().getValues();
+      for (var pi = 1; pi < pData.length; pi++) {
+        var rowPayId = String(pData[pi][0] || "").trim();
+        var rowBillId = String(pData[pi][2] || "").trim();
+        if ((originalPaymentId && rowPayId === originalPaymentId) || (cleanId && cleanOrderId(rowBillId) === cleanId)) {
+          sessionId = String(pData[pi][1] || "").trim();
+          origMode = String(pData[pi][3] || "CASH").trim();
+          if (!refundAmountP) {
+            refundAmountP = parseInt(pData[pi][4] || 0, 10);
+          }
+          break;
+        }
+      }
+    }
+
+    if (refundAmountP > 0) refundAmountP = -refundAmountP;
+
+    // Append negative payment row in Payments tab
+    if (pSheet) {
+      var refPayId = "REF-" + Utilities.getUuid();
+      var atStr = nowD.toISOString();
+      pSheet.appendRow([
+        refPayId,
+        sessionId,
+        creditNoteNo,
+        origMode,
+        refundAmountP,
+        0,
+        originalPaymentId,
+        "",
+        true,
+        authorizedBy,
+        atStr,
+        authorizedBy,
+        reason,
+        rev
+      ]);
+    }
+
+    // 3. Update Orders tab status to REFUNDED
+    var oSheet = ss.getSheetByName("Orders");
+    if (oSheet && oSheet.getLastRow() >= 2 && cleanId) {
+      var oData = oSheet.getDataRange().getValues();
+      for (var oi = 1; oi < oData.length; oi++) {
+        if (cleanOrderId(oData[oi][0]) === cleanId) {
+          oSheet.getRange(oi + 1, 10).setValue("REFUNDED");
+          oSheet.getRange(oi + 1, 27).setValue(rev);
+          break;
+        }
+      }
+    }
+
+    // 4. Update legacy Bills sheet if present
+    var bSheet = getOrCreateBillsSheet(ss);
+    if (bSheet && bSheet.getLastRow() >= 2 && cleanId) {
+      var bData = bSheet.getDataRange().getValues();
+      var cols = resolveBillColumns(bData[0].map(function(h) { return String(h || "").trim().toLowerCase(); }));
+      for (var bi = 1; bi < bData.length; bi++) {
+        if (cleanOrderId(bData[bi][cols.idIdx]) === cleanId) {
+          bSheet.getRange(bi + 1, cols.statusIdx + 1).setValue("REFUNDED");
+          break;
+        }
+      }
+    }
+
+    // 5. Log audit
+    logAuditRecord(ss, outletId, authorizedBy, "REFUND_PAYMENT", "Payment", originalPaymentId || billId, "PAID", "REFUNDED", reason + " (" + creditNoteNo + ")");
+
+    var res = {
+      ok: true,
+      success: true,
+      creditNoteNo: creditNoteNo,
+      refundAmountP: refundAmountP,
+      rev: rev
+    };
+
+    if (clientRequestId && ss) {
+      recordIdempotency(ss, clientRequestId, "REFUND_PAYMENT", res);
+    }
+    return responseJson(res);
   } catch (err) {
     return responseJson({ ok: false, success: false, error: String(err) });
   } finally {

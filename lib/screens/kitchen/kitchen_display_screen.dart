@@ -34,7 +34,6 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
     {'id': 'PREPARING', 'label': 'In Preparation 👨‍🍳', 'color': Color(0xFF2563EB)},
     {'id': 'READY', 'label': 'Food Ready 🍳', 'color': Color(0xFF059669)},
     {'id': 'ALL', 'label': 'All Active 📋', 'color': Color(0xFF4F46E5)},
-    {'id': 'SERVED', 'label': 'Served / History 🍽️', 'color': Color(0xFF64748B)},
   ];
 
   // Live active kitchen orders (100% dynamic)
@@ -124,7 +123,10 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
           }
         }
 
+        final now = DateTime.now();
+        final serviceCutoff = now.subtract(const Duration(hours: 24));
         for (final s in parsedServed) {
+          if (s.createdAt.isBefore(serviceCutoff)) continue;
           if (!_servedOrdersHistory.any((x) => canonicalId(x) == canonicalId(s))) {
             _servedOrdersHistory.add(s);
           }
@@ -152,7 +154,24 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
       }
       for (final o in incomingOrders) {
         final key = canonicalId(o);
-        if (key.isNotEmpty) localMap[key] = o.toMap();
+        if (key.isNotEmpty) {
+          final existing = localMap[key];
+          final incomingMap = o.toMap();
+          if (existing != null) {
+            final merged = Map<String, dynamic>.from(existing);
+            incomingMap.forEach((k, v) {
+              if (v != null) {
+                if (v is String && v.isEmpty && (merged[k]?.toString().isNotEmpty ?? false)) {
+                  return;
+                }
+                merged[k] = v;
+              }
+            });
+            localMap[key] = merged;
+          } else {
+            localMap[key] = incomingMap;
+          }
+        }
       }
       box.put('kot_orders_$orgId', localMap.values.toList());
     }
@@ -189,7 +208,10 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
             }
           } catch (_) {}
         }
+        final now = DateTime.now();
+        final serviceCutoff = now.subtract(const Duration(hours: 24));
         for (final s in servedMap.values) {
+          if (s.createdAt.isBefore(serviceCutoff)) continue;
           if (!_servedOrdersHistory.any((x) => canonicalId(x) == canonicalId(s))) {
             _servedOrdersHistory.add(s);
           }
@@ -457,23 +479,44 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
         }
         return;
       }
+      final newReprintCount = order.reprintCount + 1;
       final bytes = await KitchenTicketFormatter.formatKotTicket(
         paperSize: PaperSize.mm80,
         profile: await CapabilityProfile.load(),
-        tokenNumber: '#${order.kotNumber.replaceAll(RegExp(r'[^0-9]'), '').padLeft(3, '0')}',
+        tokenNumber: order.kotNumber.startsWith('#') ? order.kotNumber : '#${order.kotNumber}',
         tableName: order.tableName,
         items: kitchenItems,
         stationName: 'Main Kitchen',
         generalNotes: order.generalNotes,
         orderTime: order.createdAt,
-        reprintCount: order.reprintCount,
+        reprintCount: newReprintCount,
         courseNo: order.courseNo,
       );
 
       final isConnected = await PrintBluetoothThermal.connectionStatus;
       if (isConnected) {
         await PrintBluetoothThermal.writeBytes(bytes);
+        final orgId = _getEffectiveOrgId();
+        if (Hive.isBoxOpen('configBox')) {
+          final box = Hive.box('configBox');
+          final raw = box.get('kot_orders_$orgId') as List? ?? [];
+          final updated = raw.map((item) {
+            if (item is Map && canonicalId(item) == canonicalId(order)) {
+              final m = Map<String, dynamic>.from(item);
+              m['reprintCount'] = newReprintCount;
+              return m;
+            }
+            return item;
+          }).toList();
+          await box.put('kot_orders_$orgId', updated);
+        }
         if (mounted) {
+          setState(() {
+            final idx = _allOrders.indexWhere((o) => canonicalId(o) == canonicalId(order));
+            if (idx >= 0) {
+              _allOrders[idx] = _allOrders[idx].copyWith(reprintCount: newReprintCount);
+            }
+          });
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text('Kitchen Slip printed for ${order.tableName}'),
@@ -1510,22 +1553,39 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
 
   // ── Kitchen Analytics Modal ──────────────────────────────
   void _showKitchenAnalyticsModal() {
-    final completedOrders = _servedOrdersHistory;
-    final activeOrders = _allOrders;
-    final allOrdersCombined = [..._allOrders, ..._servedOrdersHistory];
-    final pendingOrders = _allOrders.where((o) => o.effectiveKitchenStatus == 'PENDING').toList();
-    final prepOrders = _allOrders.where((o) => o.effectiveKitchenStatus == 'PREPARING').toList();
+    final now = DateTime.now();
+    final serviceCutoff = now.subtract(const Duration(hours: 24));
+    final completedOrders = _servedOrdersHistory.where((o) => !o.createdAt.isBefore(serviceCutoff)).toList();
+    final activeOrders = _allOrders.where((o) => !o.createdAt.isBefore(serviceCutoff)).toList();
+    final allOrdersCombined = [...activeOrders, ...completedOrders];
+    final pendingOrders = activeOrders.where((o) => o.effectiveKitchenStatus == 'PENDING').toList();
+    final prepOrders = activeOrders.where((o) => o.effectiveKitchenStatus == 'PREPARING').toList();
 
-    int totalPrepMinutes = 0;
-    int timedOrdersCount = 0;
+    final List<int> prepMinutesList = [];
     for (final o in completedOrders) {
-      final diff = DateTime.now().difference(o.createdAt).inMinutes;
-      if (diff > 0 && diff < 180) {
-        totalPrepMinutes += diff;
-        timedOrdersCount++;
+      final endTime = o.readyAt ?? o.completedAt;
+      final startTime = o.firedAt ?? o.createdAt;
+      if (endTime != null) {
+        final diff = endTime.difference(startTime).inMinutes;
+        if (diff >= 0 && diff < 300) {
+          prepMinutesList.add(diff);
+        }
       }
     }
-    final avgPrepTime = timedOrdersCount > 0 ? (totalPrepMinutes / timedOrdersCount).round() : 12;
+    prepMinutesList.sort();
+    final int avgPrepTime;
+    final int medianPrepTime;
+    if (prepMinutesList.isNotEmpty) {
+      final sum = prepMinutesList.fold<int>(0, (a, b) => a + b);
+      avgPrepTime = (sum / prepMinutesList.length).round();
+      final mid = prepMinutesList.length ~/ 2;
+      medianPrepTime = prepMinutesList.length.isOdd
+          ? prepMinutesList[mid]
+          : ((prepMinutesList[mid - 1] + prepMinutesList[mid]) / 2).round();
+    } else {
+      avgPrepTime = 12;
+      medianPrepTime = 12;
+    }
 
     final Map<String, int> itemCounts = {};
     int totalPlates = 0;
@@ -1543,10 +1603,11 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
     int dineInOrders = 0;
     int takeawayOrders = 0;
     for (final o in allOrdersCombined) {
-      final name = o.tableName.toLowerCase();
-      if (name.contains('site') || name.contains('self') || name.contains('qr')) {
+      final src = o.orderSource.toUpperCase();
+      final type = (o.orderType ?? '').toUpperCase();
+      if (src == 'QR' || src == 'ONLINE' || type == 'QR') {
         qrOrders++;
-      } else if (name.contains('takeaway') || name.contains('parcel')) {
+      } else if (src == 'TAKEAWAY' || type == 'TAKEAWAY' || type == 'PARCEL') {
         takeawayOrders++;
       } else {
         dineInOrders++;
@@ -1608,7 +1669,7 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
                         child: _buildKitchenKpiCard(
                           title: 'Avg Prep Time',
                           value: '$avgPrepTime min',
-                          subtitle: avgPrepTime <= 15 ? '⚡ High Speed' : '👍 Optimal Flow',
+                          subtitle: 'Median: $medianPrepTime min • ${avgPrepTime <= 15 ? '⚡ Fast' : '👍 Optimal'}',
                           color: avgPrepTime <= 15 ? Colors.green : Colors.blue,
                           icon: Icons.timer_outlined,
                         ),

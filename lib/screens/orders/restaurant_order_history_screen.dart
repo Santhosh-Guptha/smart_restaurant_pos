@@ -179,7 +179,7 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
         _loadHiveCachedOrders();
       }
 
-      AppsScriptBackendService.updateOrderStatus(
+      final ok = await AppsScriptBackendService.updateOrderStatus(
         orgId: orgId,
         orderId: orderId,
         kotNumber: orderId,
@@ -189,8 +189,8 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('✅ Order updated to $newStatus!'),
-            backgroundColor: Colors.green.shade700,
+            content: Text(ok ? '✅ Order updated to $newStatus!' : '⚠️ Order updated locally (cloud sync pending)'),
+            backgroundColor: ok ? Colors.green.shade700 : Colors.amber.shade800,
           ),
         );
       }
@@ -995,7 +995,7 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
     final status = (order['status'] ?? 'PENDING').toString().toUpperCase();
     final paymentMode = (order['paymentMode'] ?? 'CASH').toString();
     final rawTotal = (order['totalAmount'] is num) ? (order['totalAmount'] as num).toDouble() : 0.0;
-    final total = (rawTotal.isNaN || rawTotal.isInfinite || rawTotal > 1000000.0 || rawTotal < 0.0) ? 0.0 : rawTotal;
+    final total = (rawTotal.isNaN || rawTotal.isInfinite || rawTotal < 0.0) ? 0.0 : rawTotal;
     final customerName = (order['customerName'] ?? 'Guest').toString();
     final customerPhone = (order['customerPhone'] ?? '').toString();
     final tableName = (order['tableName'] ?? order['tableNumber'] ?? '').toString();

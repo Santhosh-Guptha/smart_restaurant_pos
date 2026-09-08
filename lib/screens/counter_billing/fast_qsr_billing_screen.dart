@@ -49,6 +49,8 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
 
   final TextEditingController _searchCtrl = TextEditingController();
   final TextEditingController _pendingSearchCtrl = TextEditingController();
+  final TextEditingController _customerNameCtrl = TextEditingController();
+  final TextEditingController _customerPhoneCtrl = TextEditingController();
   String _pendingFilterType = 'All'; // 'All', 'Dine-In', 'Takeaway', 'QR Web'
   
   List<Map<String, dynamic>> _pendingOrders = [];
@@ -56,6 +58,24 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
 
   double _gstRate = 5.0;
   double _serviceChargeRate = 0.0;
+
+  double _num(dynamic val, [double defaultVal = 0.0]) {
+    if (val == null) return defaultVal;
+    if (val is num) return val.toDouble();
+    if (val is String) {
+      return double.tryParse(val.replaceAll(RegExp(r'[^0-9.]'), '')) ?? defaultVal;
+    }
+    return defaultVal;
+  }
+
+  int _numInt(dynamic val, [int defaultVal = 0]) {
+    if (val == null) return defaultVal;
+    if (val is num) return val.toInt();
+    if (val is String) {
+      return int.tryParse(val.replaceAll(RegExp(r'[^0-9]'), '')) ?? defaultVal;
+    }
+    return defaultVal;
+  }
 
   @override
   void initState() {
@@ -178,6 +198,8 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
     _tabController.dispose();
     _searchCtrl.dispose();
     _pendingSearchCtrl.dispose();
+    _customerNameCtrl.dispose();
+    _customerPhoneCtrl.dispose();
     _pendingPollTimer?.cancel();
     super.dispose();
   }
@@ -1436,11 +1458,13 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
     final Map<String, int> byMode = {};
 
     for (final o in settledOrders) {
-      final orderGrossP = (o['subtotalP'] as num?)?.toInt() ?? (((o['subtotal'] as num?)?.toDouble() ?? 0) * 100).round();
-      final orderDiscP = (o['discountP'] as num?)?.toInt() ?? (((o['discount'] as num?)?.toDouble() ?? 0) * 100).round();
-      final orderScP = (o['serviceChargeP'] as num?)?.toInt() ?? (((o['service_charge'] as num?)?.toDouble() ?? 0) * 100).round();
-      final orderTaxP = (o['taxableP'] as num?)?.toInt() ?? (((o['gst'] as num?)?.toDouble() ?? 0) * 100).round();
-      final orderTotalP = (o['grandTotalP'] as num?)?.toInt() ?? (((o['totalAmount'] as num?)?.toDouble() ?? 0) * 100).round();
+      final orderGrossP = _numInt(o['subtotalP'], (_num(o['subtotal']) * 100).round());
+      final orderDiscP = _numInt(o['discountP'], (_num(o['discount']) * 100).round());
+      final orderScP = _numInt(o['serviceChargeP'], (_num(o['service_charge']) * 100).round());
+      final cP = _numInt(o['cgstP'], 0);
+      final sP = _numInt(o['sgstP'], 0);
+      final orderTaxP = (cP + sP > 0) ? (cP + sP) : (_num(o['gst']) * 100).round();
+      final orderTotalP = _numInt(o['grandTotalP'], (_num(o['totalAmount']) * 100).round());
 
       grossP += orderGrossP;
       discountP += orderDiscP;
@@ -1801,6 +1825,8 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
             'paymentStatus': isPaid ? 'PAID' : 'PENDING',
             'isPaid': isPaid,
             'orderSource': 'POS_COUNTER',
+            'customerName': _customerNameCtrl.text.trim().isNotEmpty ? _customerNameCtrl.text.trim() : 'Dine-In Guest',
+            'customerPhone': _customerPhoneCtrl.text.trim(),
             'orderType': _orderType,
             'paymentMode': paymentMode,
             'createdAt': DateTime.now().toIso8601String(),
@@ -1892,6 +1918,10 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
               'order_source': 'POS_COUNTER',
               'orderType': _orderType,
               'order_type': _orderType,
+              'customer_name': (existingOrderToAppend?['customerName'] ?? existingOrderToAppend?['customer_name'] ?? _customerNameCtrl.text.trim()).toString().isNotEmpty ? (existingOrderToAppend?['customerName'] ?? existingOrderToAppend?['customer_name'] ?? _customerNameCtrl.text.trim()) : 'Dine-In Guest',
+              'customerName': (existingOrderToAppend?['customerName'] ?? existingOrderToAppend?['customer_name'] ?? _customerNameCtrl.text.trim()).toString().isNotEmpty ? (existingOrderToAppend?['customerName'] ?? existingOrderToAppend?['customer_name'] ?? _customerNameCtrl.text.trim()) : 'Dine-In Guest',
+              'customer_phone': (existingOrderToAppend?['customerPhone'] ?? existingOrderToAppend?['customer_phone'] ?? _customerPhoneCtrl.text.trim()).toString(),
+              'customerPhone': (existingOrderToAppend?['customerPhone'] ?? existingOrderToAppend?['customer_phone'] ?? _customerPhoneCtrl.text.trim()).toString(),
               'paymentMode': paymentMode,
               'payment_mode': paymentMode,
               'createdAt': DateTime.now().toIso8601String(),
@@ -2011,7 +2041,9 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
           billNumber: targetBillId,
           tokenNumber: token,
           tableName: tableName,
-          items: List.from(_cart),
+          items: existingOrderToAppend != null
+              ? orderItemsList.map((m) => KotItem.fromMap(m)).toList()
+              : List.from(_cart),
           subtotal: orderTotals.subtotal,
           discount: orderTotals.discount,
           taxPercent: _gstRate,
@@ -2184,8 +2216,10 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
     final orderId = (order['id'] ?? order['bill_id'] ?? 'BILL').toString();
     final token = (order['kotNumber'] ?? order['tokenNumber'] ?? '').toString();
     final tableName = (order['tableName'] ?? order['tableNumber'] ?? 'Table').toString();
-    final total = (order['totalAmount'] as num?)?.toDouble() ?? 0.0;
-    final subtotal = (order['subtotal'] as num?)?.toDouble() ?? (total / 1.05);
+    final total = _num(order['totalAmount'] ?? order['total']);
+    final subtotal = order['subtotalP'] != null
+        ? (_num(order['subtotalP']) / 100.0)
+        : _num(order['subtotal'], total / (1.0 + ((_num(order['gst_rate'], _gstRate)) / 100.0)));
     final items = _parseOrderItems(order['items']);
 
     try {
@@ -2278,14 +2312,17 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
       }
 
       final paidPaise = (paidAmount * 100).round();
-      final subtotal = (order['subtotal'] as num?)?.toDouble() ?? (paidAmount / 1.05);
-      final subtotalP = (order['subtotalP'] as num?)?.toInt() ?? (subtotal * 100).round();
-      final discountP = (order['discountP'] as num?)?.toInt() ?? 0;
-      final scP = (order['serviceChargeP'] as num?)?.toInt() ?? 0;
-      final taxP = (order['taxableP'] as num?)?.toInt() ?? (paidPaise - subtotalP);
-      final cgstP = (order['cgstP'] as num?)?.toInt() ?? (taxP ~/ 2);
-      final sgstP = (order['sgstP'] as num?)?.toInt() ?? (taxP - cgstP);
-      final roundOffP = (order['roundOffP'] as num?)?.toInt() ?? 0;
+      final subtotal = order['subtotalP'] != null
+          ? (_num(order['subtotalP']) / 100.0)
+          : _num(order['subtotal'], paidAmount / (1.0 + ((_num(order['gst_rate'], _gstRate)) / 100.0)));
+      final subtotalP = _numInt(order['subtotalP'], (subtotal * 100).round());
+      final discountP = _numInt(order['discountP'], 0);
+      final scP = _numInt(order['serviceChargeP'], 0);
+      final cgstP = _numInt(order['cgstP'], 0);
+      final sgstP = _numInt(order['sgstP'], 0);
+      final taxP = (cgstP + sgstP > 0) ? (cgstP + sgstP) : _numInt(order['taxableP'], paidPaise - subtotalP);
+      final taxableP = _numInt(order['taxableP'], (subtotalP - discountP + scP).clamp(0, 999999999));
+      final roundOffP = _numInt(order['roundOffP'], 0);
 
       // 3. Update Hive kot_orders_$orgId
       final box = Hive.isBoxOpen('configBox') ? Hive.box('configBox') : null;
@@ -2302,7 +2339,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
             m['subtotalP'] = subtotalP;
             m['discountP'] = discountP;
             m['serviceChargeP'] = scP;
-            m['taxableP'] = taxP;
+            m['taxableP'] = taxableP;
             m['cgstP'] = cgstP;
             m['sgstP'] = sgstP;
             m['roundOffP'] = roundOffP;
@@ -2450,11 +2487,17 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
     final orderId = (order['id'] ?? order['bill_id'] ?? 'BILL').toString();
     final token = (order['kotNumber'] ?? order['tokenNumber'] ?? '').toString();
     final tableName = (order['tableName'] ?? order['tableNumber'] ?? 'Table').toString();
-    final orderType = _normalizeOrderType(order);
-    final total = (order['totalAmount'] as num?)?.toDouble() ?? 0.0;
-    final subtotal = (order['subtotal'] as num?)?.toDouble() ?? (total / (1.0 + (_gstRate / 100.0)));
-    final scAmt = (order['service_charge'] as num?)?.toDouble() ?? (subtotal * (_serviceChargeRate / 100.0));
-    final gst = (order['gst'] as num?)?.toDouble() ?? ((subtotal + scAmt) * (_gstRate / 100.0));
+    final orderType = (order['orderType'] ?? order['order_type'] ?? 'Dine-In').toString();
+    final total = _num(order['totalAmount'] ?? order['total']);
+    final subtotal = order['subtotalP'] != null 
+        ? (_num(order['subtotalP']) / 100.0) 
+        : _num(order['subtotal'], total / (1.0 + (_gstRate / 100.0)));
+    final scAmt = order['serviceChargeP'] != null
+        ? (_num(order['serviceChargeP']) / 100.0)
+        : _num(order['service_charge'], subtotal * (_serviceChargeRate / 100.0));
+    final gst = (order['cgstP'] != null && order['sgstP'] != null)
+        ? ((_num(order['cgstP']) + _num(order['sgstP'])) / 100.0)
+        : _num(order['gst'], (subtotal + scAmt) * (_gstRate / 100.0));
     final items = _parseOrderItems(order['items']);
 
     final cashReceivedCtrl = TextEditingController(text: total.toStringAsFixed(0));

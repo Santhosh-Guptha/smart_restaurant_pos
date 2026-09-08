@@ -144,9 +144,85 @@ class RestaurantSheetsService {
         'Day End Reports',
       ];
 
+      final tabHeaders = <String, List<String>>{
+        'Menu & Modifiers': [
+          'Item ID',
+          'Dish Name',
+          'Category',
+          'Price (Rs)',
+          'Food Type (Veg/NonVeg)',
+          'Prep Time (Mins)',
+          'Kitchen Station',
+          'Is Available',
+          'Available From',
+          'Available To',
+          'Is Time Restricted',
+        ],
+        'Dining Bills': [
+          'Bill ID',
+          'Date & Time',
+          'Customer Name',
+          'Customer Phone',
+          'Payment Mode',
+          'Subtotal',
+          'Discount',
+          'Total Amount',
+          'Items Summary',
+          'Status',
+          'Table',
+          'Transaction ID',
+        ],
+        'KOT History': [
+          'KOT ID',
+          'Token Number',
+          'Table Location',
+          'Kitchen Station',
+          'Punched By',
+          'Items Description',
+          'Status',
+          'Timestamp',
+        ],
+        'Tables & QR': [
+          'Table ID',
+          'Table Number',
+          'Section',
+          'Capacity',
+          'Status',
+          'QR Menu Link',
+        ],
+        'Recipe Inventory (BOM)': [
+          'Material ID',
+          'Ingredient Name',
+          'Stock Quantity',
+          'Unit (kg/g/ml/pcs)',
+          'Reorder Level',
+          'Cost Per Unit',
+        ],
+        'Kitchen Expenses': [
+          'Expense ID',
+          'Date',
+          'Category (Dairy/Veggies/Gas)',
+          'Amount (Rs)',
+          'Vendor / Supplier',
+          'Note',
+        ],
+        'Day End Reports': [
+          'Date',
+          'Total Revenue',
+          'Dine-In Sales',
+          'Takeaway Sales',
+          'Online QR Sales',
+          'Cash Collected',
+          'UPI Collected',
+          'Discounts Given',
+        ],
+      };
+
       final requests = <sheets.Request>[];
+      final newlyAddedTabs = <String>[];
       for (final title in requiredTabs) {
         if (!existingTitles.contains(title)) {
+          newlyAddedTabs.add(title);
           requests.add(
             sheets.Request(
               addSheet: sheets.AddSheetRequest(
@@ -165,6 +241,34 @@ class RestaurantSheetsService {
           sheets.BatchUpdateSpreadsheetRequest(requests: requests),
           sheetId,
         );
+
+        // Populate initial headers for newly created tabs
+        final headerRanges = <sheets.ValueRange>[];
+        for (final title in newlyAddedTabs) {
+          if (tabHeaders.containsKey(title)) {
+            final headers = tabHeaders[title]!;
+            final endCol = String.fromCharCode(65 + headers.length - 1);
+            headerRanges.add(
+              sheets.ValueRange(
+                range: "'$title'!A1:${endCol}1",
+                values: [headers],
+              ),
+            );
+          }
+        }
+        if (headerRanges.isNotEmpty) {
+          try {
+            await api.spreadsheets.values.batchUpdate(
+              sheets.BatchUpdateValuesRequest(
+                valueInputOption: 'USER_ENTERED',
+                data: headerRanges,
+              ),
+              sheetId,
+            );
+          } catch (eHdr) {
+            debugPrint('Error populating headers for new tabs: $eHdr');
+          }
+        }
       }
     } catch (e) {
       debugPrint('ensureRestaurantTabsExist notice: $e');
@@ -447,46 +551,6 @@ class RestaurantSheetsService {
     }
   }
 
-  /// [DEPRECATED - Phase 2 Single Writer]: Use AppsScriptBackendService.saveBill instead
-  @deprecated
-  static Future<bool> recordDiningBill({
-    required http.Client authenticatedClient,
-    required String sheetId,
-    required Map<String, dynamic> billData,
-  }) async {
-    try {
-      await ensureRestaurantTabsExist(
-        authenticatedClient: authenticatedClient,
-        sheetId: sheetId,
-      );
-
-      final api = sheets.SheetsApi(authenticatedClient);
-      final row = [
-        billData['billId'] ?? '',
-        billData['dateTime'] ?? DateTime.now().toIso8601String(),
-        billData['tokenNumber'] ?? '',
-        billData['tableName'] ?? '',
-        billData['cashierName'] ?? '',
-        billData['subtotal'] ?? 0.0,
-        billData['discount'] ?? 0.0,
-        billData['gst'] ?? 0.0,
-        billData['totalAmount'] ?? 0.0,
-        billData['paymentMode'] ?? 'CASH',
-        billData['itemsSummary'] ?? '',
-      ];
-
-      await api.spreadsheets.values.append(
-        sheets.ValueRange(values: [row]),
-        sheetId,
-        "'Dining Bills'!A:K",
-        valueInputOption: 'USER_ENTERED',
-      );
-      return true;
-    } catch (e) {
-      debugPrint('Failed to record dining bill to Google Sheet: $e');
-      return false;
-    }
-  }
 
   /// Overwrites and syncs dishes to the 'Menu & Modifiers' tab in Google Sheets
   static Future<bool> syncMenuDishes({
@@ -542,43 +606,6 @@ class RestaurantSheetsService {
     }
   }
 
-  /// [DEPRECATED - Phase 2 Single Writer]: Use AppsScriptBackendService.saveBill instead
-  @deprecated
-  static Future<bool> recordKot({
-    required http.Client authenticatedClient,
-    required String sheetId,
-    required Map<String, dynamic> kotData,
-  }) async {
-    try {
-      await ensureRestaurantTabsExist(
-        authenticatedClient: authenticatedClient,
-        sheetId: sheetId,
-      );
-
-      final api = sheets.SheetsApi(authenticatedClient);
-      final row = [
-        kotData['kotId'] ?? '',
-        kotData['tokenNumber'] ?? '',
-        kotData['tableName'] ?? '',
-        kotData['station'] ?? 'Main Kitchen',
-        kotData['punchedBy'] ?? 'Counter Staff',
-        kotData['itemsSummary'] ?? '',
-        kotData['status'] ?? 'Pending',
-        DateTime.now().toIso8601String(),
-      ];
-
-      await api.spreadsheets.values.append(
-        sheets.ValueRange(values: [row]),
-        sheetId,
-        "'KOT History'!A:H",
-        valueInputOption: 'USER_ENTERED',
-      );
-      return true;
-    } catch (e) {
-      debugPrint('Failed to record KOT to Google Sheet: $e');
-      return false;
-    }
-  }
 
   /// Syncs restaurant tables to 'Tables & QR' tab in Google Sheet
   static Future<bool> syncTables({

@@ -449,7 +449,7 @@ class KotItem {
       unit: (map['unit'] ?? 'plate').toString(),
       price: () {
         final p = (map['price'] as num?)?.toDouble() ?? (map['rate'] as num?)?.toDouble() ?? 0.0;
-        return (p.isNaN || p.isInfinite || p > 100000.0 || p < 0.0) ? 0.0 : p;
+        return (p.isNaN || p.isInfinite || p < 0.0) ? 0.0 : p;
       }(),
       notes: map['notes']?.toString(),
       isVeg: map['isVeg'] ?? true,
@@ -582,6 +582,13 @@ class KotOrder {
   final int reprintCount;
   final String? waiterName;
   final String? staffId;
+  final double? subtotal;
+  final double? serviceCharge;
+  final double? gst;
+  final double? tipAmount;
+  final String? orderType;
+  final String? tableNumber;
+  final bool? isPaid;
 
   /// Universal dedup key using canonical ID
   String get canonicalKey => canonicalId(this);
@@ -665,6 +672,13 @@ class KotOrder {
     this.reprintCount = 0,
     this.waiterName,
     this.staffId,
+    this.subtotal,
+    this.serviceCharge,
+    this.gst,
+    this.tipAmount,
+    this.orderType,
+    this.tableNumber,
+    this.isPaid,
   });
 
   KotOrder copyWith({
@@ -698,6 +712,13 @@ class KotOrder {
     int? reprintCount,
     String? waiterName,
     String? staffId,
+    double? subtotal,
+    double? serviceCharge,
+    double? gst,
+    double? tipAmount,
+    String? orderType,
+    String? tableNumber,
+    bool? isPaid,
   }) {
     return KotOrder(
       id: id ?? this.id,
@@ -730,6 +751,13 @@ class KotOrder {
       reprintCount: reprintCount ?? this.reprintCount,
       waiterName: waiterName ?? this.waiterName,
       staffId: staffId ?? this.staffId,
+      subtotal: subtotal ?? this.subtotal,
+      serviceCharge: serviceCharge ?? this.serviceCharge,
+      gst: gst ?? this.gst,
+      tipAmount: tipAmount ?? this.tipAmount,
+      orderType: orderType ?? this.orderType,
+      tableNumber: tableNumber ?? this.tableNumber,
+      isPaid: isPaid ?? this.isPaid,
     );
   }
 
@@ -765,6 +793,17 @@ class KotOrder {
       'paidBy': paidBy,
       'paidAt': paidAt?.toIso8601String(),
       'completedAt': completedAt?.toIso8601String(),
+      'subtotal': subtotal,
+      'serviceCharge': serviceCharge,
+      'service_charge': serviceCharge,
+      'gst': gst,
+      'tipAmount': tipAmount,
+      'tip_amount': tipAmount,
+      'orderType': orderType,
+      'order_type': orderType,
+      'tableNumber': tableNumber ?? tableName,
+      'table_number': tableNumber ?? tableName,
+      'isPaid': isPaid,
       'updatedAt': DateTime.now().toIso8601String(),
     };
   }
@@ -849,7 +888,7 @@ class KotOrder {
       generalNotes: (map['generalNotes'] ?? map['special_instructions'])?.toString(),
       totalAmount: () {
         final tot = (map['totalAmount'] as num?)?.toDouble() ?? (map['total'] as num?)?.toDouble() ?? (map['subtotal'] as num?)?.toDouble() ?? 0.0;
-        if (tot.isNaN || tot.isInfinite || tot > 10000000.0 || tot < 0.0) {
+        if (tot.isNaN || tot.isInfinite || tot < 0.0) {
           return itemsList.fold<double>(0.0, (acc, it) => acc + (it.price * it.qty));
         }
         return tot;
@@ -868,6 +907,13 @@ class KotOrder {
       reprintCount: (map['reprintCount'] as num?)?.toInt() ?? (map['reprint_count'] as num?)?.toInt() ?? 0,
       waiterName: (map['waiterName'] ?? map['waiter_name'])?.toString(),
       staffId: (map['staffId'] ?? map['staff_id'])?.toString(),
+      subtotal: (map['subtotal'] as num?)?.toDouble() ?? (map['subtotalAmount'] as num?)?.toDouble() ?? (map['subtotalP'] != null ? ((map['subtotalP'] as num).toDouble() / 100.0) : null),
+      serviceCharge: (map['serviceCharge'] as num?)?.toDouble() ?? (map['service_charge'] as num?)?.toDouble() ?? (map['serviceChargeP'] != null ? ((map['serviceChargeP'] as num).toDouble() / 100.0) : null),
+      gst: (map['gst'] as num?)?.toDouble() ?? (map['tax'] as num?)?.toDouble() ?? ((map['cgstP'] != null && map['sgstP'] != null) ? (((map['cgstP'] as num).toDouble() + (map['sgstP'] as num).toDouble()) / 100.0) : null),
+      tipAmount: (map['tipAmount'] as num?)?.toDouble() ?? (map['tip_amount'] as num?)?.toDouble() ?? (map['tip'] as num?)?.toDouble() ?? (map['tipP'] != null ? ((map['tipP'] as num).toDouble() / 100.0) : null),
+      orderType: (map['orderType'] ?? map['order_type'])?.toString(),
+      tableNumber: (map['tableNumber'] ?? map['table_number'] ?? rawTableId).toString(),
+      isPaid: map['isPaid'] == true || statusToUse?.toUpperCase() == 'PAID' || statusToUse?.toUpperCase() == 'SETTLED',
     );
   }
 }

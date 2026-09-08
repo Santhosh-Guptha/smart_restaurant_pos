@@ -380,8 +380,22 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
 
     final orgId = _getEffectiveOrgId();
     final activeStaff = ref.read(restaurantAuthProvider).activeStaff;
-    final token = await ref.read(dailyTokenProvider.notifier).getNextToken();
-    final KotOrder? existingActiveOrder = _tableOrders.isNotEmpty ? _tableOrders.first : null;
+
+    // R-NEW-3: Explicitly select merge target: only merge into an unpaid order from WAITER_APP
+    KotOrder? existingActiveOrder;
+    try {
+      existingActiveOrder = _tableOrders.firstWhere(
+        (o) => o.orderSource == 'WAITER_APP' && o.status != KotStatus.paid && o.status != KotStatus.completed,
+      );
+    } catch (_) {
+      existingActiveOrder = null;
+    }
+
+    // R-NEW-4: Only consume daily token when creating a new order record
+    final token = existingActiveOrder != null
+        ? existingActiveOrder.kotNumber
+        : await ref.read(dailyTokenProvider.notifier).getNextToken();
+
     final billNumber = existingActiveOrder != null && existingActiveOrder.id.isNotEmpty
         ? existingActiveOrder.id
         : 'SB-${DateTime.now().millisecondsSinceEpoch}-${Random().nextInt(9999).toString().padLeft(4, '0')}';
@@ -803,7 +817,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
       final bytes = await KitchenTicketFormatter.formatKotTicket(
         paperSize: PaperSize.mm80,
         profile: await CapabilityProfile.load(),
-        tokenNumber: '#${ord.kotNumber.replaceAll(RegExp(r'[^0-9]'), '').padLeft(3, '0')}',
+        tokenNumber: ord.kotNumber.startsWith('#') ? ord.kotNumber : '#${ord.kotNumber}',
         tableName: ord.tableName,
         items: kitchenItems,
         waiterName: ord.waiterName,
@@ -1187,6 +1201,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
           ? _tableOrders.first.id
           : 'BILL-$tNum-${DateTime.now().millisecondsSinceEpoch}';
 
+      bool isPrimary = true;
       for (final ord in _tableOrders) {
         AppsScriptBackendService.saveBill(
           outletId: orgId,
@@ -1202,10 +1217,11 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
             'payment_status': 'PAID',
             'status': 'PAID',
             'total_amount': ord.totalAmount,
-            'tip_amount': tip,
+            'tip_amount': isPrimary ? tip : 0.0,
             'timestamp': DateTime.now().toIso8601String(),
           },
         );
+        isPrimary = false;
       }
       if (_tableOrders.isEmpty) {
         AppsScriptBackendService.saveBill(
