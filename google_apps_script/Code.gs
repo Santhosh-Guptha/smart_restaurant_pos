@@ -202,12 +202,50 @@ function getOrCreateInventorySheet(ss) {
   if (!sheet) {
     sheet = ss.insertSheet("Products & Stock");
     sheet.appendRow([
-      "Product ID", "Product Name", "Category", "Cost Price (₹)", "Selling Price (₹)", "Stock Quantity", "Unit"
+      "Product ID", "Product Name", "Category", "Cost Price (₹)", "Selling Price (₹)", "Stock Quantity", "Unit", "Is Available", "rev"
     ]);
-    sheet.getRange("A1:G1").setFontWeight("bold").setBackground("#FEF3C7");
+    sheet.getRange("A1:I1").setFontWeight("bold").setBackground("#FEF3C7");
     sheet.setFrozenRows(1);
   }
+  return ensureInventoryRevColumn(sheet);
+}
+
+/**
+ * X-15: GET_DELTA filters inventory on a per-row `rev`, but the provisioning
+ * above never created that column -- so `inRevCol === -1` excluded EVERY row
+ * once the cursor left 0 and marking a dish sold out propagated to nobody.
+ * Adds the column when it is missing (idempotent).
+ */
+function ensureInventoryRevColumn(sheet) {
+  if (!sheet) return sheet;
+  try {
+    var lastCol = sheet.getLastColumn();
+    if (lastCol < 1) return sheet;
+    var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0]
+      .map(function (h) { return String(h || "").trim().toLowerCase(); });
+    if (headers.indexOf("rev") === -1) {
+      sheet.getRange(1, lastCol + 1).setValue("rev");
+      sheet.getRange(1, lastCol + 1).setFontWeight("bold").setBackground("#FEF3C7");
+    }
+  } catch (eRev) {}
   return sheet;
+}
+
+// X-15/S-19: single exact-header column resolver for the Inventory sheet.
+// Substring matching (`h.indexOf("id")`, `h.indexOf("status")`) let a
+// Paid / Valid / Void column claim the id and a Status column claim
+// availability, silently decrementing or 86-ing the wrong dish.
+function resolveInventoryColumns(headers) {
+  var cols = { id: -1, name: -1, stock: -1, avail: -1, rev: -1 };
+  for (var c = 0; c < headers.length; c++) {
+    var hn = String(headers[c] || "").trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+    if (cols.id === -1 && (hn === "productid" || hn === "dishid" || hn === "itemid" || hn === "id")) cols.id = c;
+    else if (cols.name === -1 && (hn === "productname" || hn === "dishname" || hn === "itemname" || hn === "name")) cols.name = c;
+    else if (cols.stock === -1 && (hn === "stock" || hn === "stockqty" || hn === "qty" || hn === "quantity" || hn === "stockquantity")) cols.stock = c;
+    else if (cols.avail === -1 && (hn === "isavailable" || hn === "available" || hn === "availability")) cols.avail = c;
+    else if (cols.rev === -1 && hn === "rev") cols.rev = c;
+  }
+  return cols;
 }
 
 function getStatusRank(status) {
@@ -671,10 +709,39 @@ function persistV2Order(ss, orgId, billId, cleanId, tokenNo, tableName, cTable, 
     // 2. OrderItems tab
     var itemsSheet = ss.getSheetByName("OrderItems");
     if (itemsSheet && Array.isArray(rawItems) && rawItems.length > 0) {
+      // X-10: this appended unconditionally with a positional lineId
+      // (billId + "_L" + idx), discarding the client's own uuid lineId -- so a
+      // re-save duplicated every line with colliding ids, and because the void
+      // columns were hardcoded to 0/"" below, a void recorded earlier was erased
+      // by the next save. Index the existing rows once and upsert by lineId.
+      var oiExisting = {};
+      try {
+        if (itemsSheet.getLastRow() >= 2) {
+          // Clamp to the tab's real width: a legacy 15-column OrderItems would
+          // make a fixed 16-column read throw and silently fall back to append.
+          var oiWidth = Math.min(16, Math.max(1, itemsSheet.getLastColumn()));
+          var oiAll = itemsSheet.getRange(2, 1, itemsSheet.getLastRow() - 1, oiWidth).getValues();
+          for (var oiI = 0; oiI < oiAll.length; oiI++) {
+            var kExist = String(oiAll[oiI][0] || "").trim();
+            if (kExist) {
+              oiExisting[kExist] = {
+                row: oiI + 2,
+                voidedQty: oiWidth > 12 ? oiAll[oiI][12] : 0,
+                voidReason: oiWidth > 13 ? oiAll[oiI][13] : "",
+                voidedBy: oiWidth > 14 ? oiAll[oiI][14] : ""
+              };
+            }
+          }
+        }
+      } catch (eOiScan) {}
+
       for (var idx = 0; idx < rawItems.length; idx++) {
         var it = rawItems[idx];
         if (!it) continue;
-        var lineId = billId + "_L" + (idx + 1);
+        // Prefer the client's stable line id; fall back to the positional one
+        // only for legacy payloads that carry none.
+        var lineId = String(it.lineId || it.line_id || "").trim() || (billId + "_L" + (idx + 1));
+        var prevLine = oiExisting[lineId];
         var itemQty = parseFloat(it.qty || it.quantity) || 1;
         var itemPriceP = Math.round((parseFloat(it.price || it.unitPrice || 0) || 0) * 100);
         var lineTotalP = Math.round(itemQty * itemPriceP);
@@ -691,12 +758,17 @@ function persistV2Order(ss, orgId, billId, cleanId, tokenNo, tableName, cTable, 
           String(it.station || b.station || "Main Kitchen").trim(),
           String(it.notes || it.instructions || "").trim(),
           isSettled ? "SERVED" : String(it.kitchenStatus || b.kitchenStatus || "PENDING").toUpperCase(),
-          0,
-          "",
-          "",
+          // Preserve any void already recorded against this line.
+          prevLine ? prevLine.voidedQty : 0,
+          prevLine ? prevLine.voidReason : "",
+          prevLine ? prevLine.voidedBy : "",
           rev
         ];
-        itemsSheet.appendRow(lineRow);
+        if (prevLine) {
+          itemsSheet.getRange(prevLine.row, 1, 1, lineRow.length).setValues([lineRow]);
+        } else {
+          itemsSheet.appendRow(lineRow);
+        }
       }
     }
     
@@ -1094,15 +1166,11 @@ function handleGetDelta(params) {
         if (invSheet && invSheet.getLastRow() > 1) {
           var inData = invSheet.getDataRange().getValues();
           var inHeaders = inData[0].map(function(h) { return String(h || "").trim().toLowerCase(); });
-          var idCol = -1, nameCol = -1, stockCol = -1, availCol = -1, inRevCol = -1;
-          for (var c = 0; c < inHeaders.length; c++) {
-            var h = inHeaders[c];
-            if (h.indexOf("id") !== -1 && idCol === -1) idCol = c;
-            if ((h.indexOf("name") !== -1 || h.indexOf("dish") !== -1) && nameCol === -1) nameCol = c;
-            if (h.indexOf("stock") !== -1 || h.indexOf("qty") !== -1 || h.indexOf("quantity") !== -1) stockCol = c;
-            if (h.indexOf("avail") !== -1 || h.indexOf("status") !== -1) availCol = c;
-            if (h === "rev") inRevCol = c;
-          }
+          // S-19: exact-header resolution, shared with the write paths, so the
+          // delta reports availability from the same column the POS writes.
+          var inCols = resolveInventoryColumns(inHeaders);
+          var idCol = inCols.id, nameCol = inCols.name, stockCol = inCols.stock;
+          var availCol = inCols.avail, inRevCol = inCols.rev;
           if (idCol === -1) idCol = 0;
           if (nameCol === -1) nameCol = 1;
 
@@ -3326,24 +3394,25 @@ function decrementInventoryForOrder(ss, outletId, rawItems) {
   if (data.length <= 1) return;
 
   var headers = data[0].map(function(h) { return String(h || "").trim().toLowerCase(); });
-  var idCol = -1, nameCol = -1, stockCol = -1, availCol = -1;
-  for (var c = 0; c < headers.length; c++) {
-    var h = headers[c];
-    if (h.indexOf("id") !== -1 && idCol === -1) idCol = c;
-    if ((h.indexOf("name") !== -1 || h.indexOf("dish") !== -1) && nameCol === -1) nameCol = c;
-    if (h.indexOf("stock") !== -1 || h.indexOf("qty") !== -1 || h.indexOf("quantity") !== -1) stockCol = c;
-    if (h.indexOf("avail") !== -1 || h.indexOf("status") !== -1) availCol = c;
-  }
+  var invCols = resolveInventoryColumns(headers);
+  var idCol = invCols.id, nameCol = invCols.name, stockCol = invCols.stock;
+  var availCol = invCols.avail, invRevCol = invCols.rev;
   if (idCol === -1) idCol = 0;
   if (nameCol === -1) nameCol = 1;
   if (stockCol === -1) return; // No stock column found
 
+  var nextFreeCol = headers.length;
   if (availCol === -1) {
-    availCol = headers.length;
-    sheet.getRange(1, availCol + 1).setValue("Available").setFontWeight("bold");
+    availCol = nextFreeCol++;
+    sheet.getRange(1, availCol + 1).setValue("Is Available").setFontWeight("bold");
+  }
+  if (invRevCol === -1) {
+    invRevCol = nextFreeCol++;
+    sheet.getRange(1, invRevCol + 1).setValue("rev").setFontWeight("bold");
   }
 
   var updated = false;
+  var touchedRows = [];
   items.forEach(function(item) {
     var orderItemId = String(item.productId || item.id || "").trim();
     var orderItemName = String(item.name || "").trim().toLowerCase();
@@ -3363,6 +3432,7 @@ function decrementInventoryForOrder(ss, outletId, rawItems) {
           data[r][stockCol] = newStock;
           sheet.getRange(r + 1, stockCol + 1).setValue(newStock);
           updated = true;
+          if (touchedRows.indexOf(r) === -1) touchedRows.push(r);
 
           // Auto-86: Mark unavailable if stock reaches 0
           if (newStock === 0) {
@@ -3376,7 +3446,16 @@ function decrementInventoryForOrder(ss, outletId, rawItems) {
   });
 
   if (updated && outletId) {
-    getAndBumpRev(outletId);
+    var rev = getAndBumpRev(outletId);
+    // X-15: GET_DELTA filters inventory rows on `rowRev > sinceRev`. A stock
+    // change (and an auto-86 at stock 0) that leaves the row's rev untouched is
+    // never sent again after the first poll, so guest phones keep offering a
+    // dish the kitchen has run out of. Stamp every row we wrote.
+    try {
+      for (var t = 0; t < touchedRows.length; t++) {
+        sheet.getRange(touchedRows[t] + 1, invRevCol + 1).setValue(rev);
+      }
+    } catch (eStamp) {}
   }
 }
 
@@ -3415,19 +3494,21 @@ function handleToggleItemAvailability(json) {
       return responseJson({ ok: false, success: false, error: "Inventory is empty." });
     }
 
+    // S-19: `h.indexOf("id")` let a Paid / Valid / Void column claim the id, and
+    // `indexOf("status")` let a Status column claim availability. Match exactly,
+    // on a normalized header, with positional fallbacks.
     var headers = values[0].map(function(h) { return String(h || "").trim().toLowerCase(); });
-    var idCol = -1, nameCol = -1, availCol = -1;
-    for (var c = 0; c < headers.length; c++) {
-      var h = headers[c];
-      if (h.indexOf("id") !== -1 && idCol === -1) idCol = c;
-      if ((h.indexOf("name") !== -1 || h.indexOf("dish") !== -1) && nameCol === -1) nameCol = c;
-      if (h.indexOf("avail") !== -1 || h.indexOf("status") !== -1) availCol = c;
-    }
+    var invCols = resolveInventoryColumns(headers);
+    var idCol = invCols.id, nameCol = invCols.name, availCol = invCols.avail, invRevCol = invCols.rev;
     if (idCol === -1) idCol = 0;
     if (nameCol === -1) nameCol = 1;
     if (availCol === -1) {
       availCol = headers.length;
-      sheet.getRange(1, availCol + 1).setValue("Available").setFontWeight("bold");
+      sheet.getRange(1, availCol + 1).setValue("Is Available").setFontWeight("bold");
+    }
+    if (invRevCol === -1) {
+      invRevCol = (availCol === headers.length) ? headers.length + 1 : headers.length;
+      sheet.getRange(1, invRevCol + 1).setValue("rev").setFontWeight("bold");
     }
 
     var matchRow = -1;
@@ -3446,6 +3527,10 @@ function handleToggleItemAvailability(json) {
 
     sheet.getRange(matchRow, availCol + 1).setValue(isAvailable ? "TRUE" : "FALSE");
     var rev = getAndBumpRev(outletId);
+    // X-15: without a per-row rev, GET_DELTA's inventory filter
+    // (`invRowRev > sinceRev`) excludes every row after the first poll, so
+    // 86'ing an item never reached a single guest phone.
+    try { sheet.getRange(matchRow, invRevCol + 1).setValue(rev); } catch (eStamp) {}
 
     return responseJson({
       ok: true,
@@ -3761,6 +3846,15 @@ function handleVoidOrder(json) {
   }
 }
 
+/** Service-charge rate recorded on a cached order, if any. */
+function b_serviceChargeRateFallback(co) {
+  if (!co) return 0;
+  var sub = parseFloat(co.subtotal) || 0;
+  var sc = parseFloat(co.serviceCharge || co.service_charge) || 0;
+  if (sub > 0 && sc > 0) return (sc / sub) * 100;
+  return 0;
+}
+
 function handleVoidLine(json) {
   var lock = LockService.getScriptLock();
   try {
@@ -3819,6 +3913,62 @@ function handleVoidLine(json) {
       }
     }
 
+    // X-11: the void used to touch ONLY the OrderItems tab -- never
+    // recent_orders_ (which is what GET_ORDERS serves) and never the order
+    // total. So the waiter's device dropped the dish while the cashier's screen
+    // and the KDS kept showing it, and the chef cooked it. Update the live cache
+    // and recompute the order's money from the surviving lines.
+    var newTotal = null;
+    try {
+      var props = PropertiesService.getScriptProperties();
+      var cacheKey = "recent_orders_" + outletId.trim();
+      var rawCached = props.getProperty(cacheKey);
+      if (rawCached) {
+        var cachedOrders = JSON.parse(rawCached);
+        for (var ci = 0; ci < cachedOrders.length; ci++) {
+          if (cleanOrderId(cachedOrders[ci].id || cachedOrders[ci].orderId) !== orderId) continue;
+
+          var co = cachedOrders[ci];
+          var items = Array.isArray(co.items) ? co.items : [];
+          var keptSubtotal = 0;
+          for (var ii = 0; ii < items.length; ii++) {
+            var cit = items[ii];
+            var citLine = String(cit.lineId || cit.line_id || "").trim();
+            var citProd = String(cit.productId || cit.id || "").trim();
+            var isTarget = (lineId && citLine === lineId) || (!lineId && productId && citProd === productId);
+            if (isTarget) {
+              cit.voidedQty = voidQty;
+              cit.voidReason = reason;
+              cit.voidedBy = authorizedBy;
+              cit.kitchenStatus = "VOIDED";
+            }
+            var remainingQty = (parseFloat(cit.qty || cit.quantity) || 0) - (parseFloat(cit.voidedQty) || 0);
+            if (remainingQty > 0) {
+              keptSubtotal += remainingQty * (parseFloat(cit.price || cit.rate) || 0);
+            }
+          }
+
+          // Rebuild the total from the surviving lines using the order's own
+          // rates, so the cashier sees the reduced amount immediately.
+          var scRate = parseFloat(co.serviceChargeRate || b_serviceChargeRateFallback(co)) || 0;
+          var gstRate = parseFloat(co.gstRate || co.gst_rate) || 0;
+          var scAmt = keptSubtotal * (scRate / 100);
+          var gstAmt = (keptSubtotal + scAmt) * (gstRate / 100);
+          newTotal = Math.round((keptSubtotal + scAmt + gstAmt) * 100) / 100;
+
+          co.items = items;
+          co.subtotal = keptSubtotal;
+          co.totalAmount = newTotal;
+          co.total = newTotal;
+          cachedOrders[ci] = co;
+          break;
+        }
+        props.setProperty(cacheKey, JSON.stringify(cachedOrders));
+      }
+    } catch (eVoidCache) {
+      Logger.log("VOID_LINE cache update failed: " + eVoidCache);
+    }
+
     logAuditRecord(ss, outletId, authorizedBy, "VOID_LINE", "OrderItem", lineId || (orderId + ":" + productId), "ACTIVE", "VOIDED (" + voidQty + ")", reason);
 
     return responseJson({
@@ -3826,6 +3976,8 @@ function handleVoidLine(json) {
       success: true,
       orderId: orderId,
       lineId: lineId,
+      lineFound: lineFound,
+      newTotal: newTotal,
       rev: rev,
       message: "Item line voided successfully."
     });
