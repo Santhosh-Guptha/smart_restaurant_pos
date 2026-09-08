@@ -3,6 +3,7 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:smart_restaurant_pos/core/rbac_permissions.dart';
 import 'package:smart_restaurant_pos/core/restaurant_models.dart';
+import 'package:smart_restaurant_pos/services/apps_script_backend_service.dart';
 
 int compareVersions(String v1, String v2) {
   final cleanV1 = v1.split('+').first.trim();
@@ -186,6 +187,36 @@ void main() {
       expect(hash1.length, equals(64));
       expect(hash1, isNot(equals(hash3)));
       expect(hash1, isNot(contains('AdminPass2026'))); // Pre-image salt protection
+    });
+  });
+
+  group('5. Apps Script HTTP Redirect & Webhook Delivery Tests', () {
+    test('resolveSpreadsheetId rejects dummy or empty IDs and prioritizes explicit ID', () {
+      expect(AppsScriptBackendService.resolveSpreadsheetId(explicitId: ''), isNull);
+      expect(AppsScriptBackendService.resolveSpreadsheetId(explicitId: 'sheet_ORG_123'), isNull);
+      expect(
+        AppsScriptBackendService.resolveSpreadsheetId(explicitId: '1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms'),
+        equals('1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms'),
+      );
+    });
+
+    test('postWithRedirects follows HTTP 302 to echo endpoint and returns 200', () async {
+      const url =
+          'https://script.google.com/macros/s/AKfycbxIAGxL_Chf3xMKfpqMyJ8fHkYq990x-WHSH6coCWpxQaWCH7zRV599esQ604oEVtrF/exec';
+      final res = await AppsScriptBackendService.postWithRedirects(
+        Uri.parse(url),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'secret': 'SMART_POS_SECURE_TOKEN_2026',
+          'action': 'PING',
+        }),
+        timeout: const Duration(seconds: 20),
+      );
+
+      // Must follow 302 Found and return 200 OK
+      expect(res.statusCode, equals(200));
+      final body = jsonDecode(res.body);
+      expect(body, isA<Map<String, dynamic>>());
     });
   });
 }

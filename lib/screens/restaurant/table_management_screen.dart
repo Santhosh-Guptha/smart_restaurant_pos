@@ -121,31 +121,11 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
 
   String _getGoogleSheetId(String orgId) {
     final saasSession = ref.read(saasSessionProvider);
-    final orgSheet = saasSession.currentOrganization?.googleSheetId;
-    if (orgSheet != null && orgSheet.trim().isNotEmpty && (!orgSheet.startsWith('sheet_ORG') || orgSheet.contains(orgId))) {
-      return _cleanSheetId(orgSheet);
-    }
-
-    try {
-      final box = Hive.box('configBox');
-      final localOrgSheet = box.get('store_google_sheet_id_$orgId');
-      if (localOrgSheet != null && localOrgSheet.toString().trim().isNotEmpty) {
-        final s = localOrgSheet.toString().trim();
-        // Never return a sheet ID belonging to another organization!
-        if (!s.contains('sheet_ORG') || s.contains(orgId)) {
-          return _cleanSheetId(s);
-        }
-      }
-      final legacySheet = box.get('spreadsheet_id');
-      if (legacySheet != null && legacySheet.toString().trim().isNotEmpty) {
-        final s = legacySheet.toString().trim();
-        // Discard legacy sheet if it belongs to another organization!
-        if (!s.contains('sheet_ORG') || s.contains(orgId)) {
-          return _cleanSheetId(s);
-        }
-      }
-    } catch (_) {}
-    return '';
+    final resolved = AppsScriptBackendService.resolveSpreadsheetId(
+      orgId: orgId,
+      explicitId: saasSession.currentOrganization?.googleSheetId,
+    );
+    return resolved != null ? _cleanSheetId(resolved) : '';
   }
 
   String _getDefaultUpiId() {
@@ -268,13 +248,9 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
 
     // Live Sync to connected Google Sheet
     try {
-      final configBox = Hive.isBoxOpen('restaurant_config_box') ? Hive.box('restaurant_config_box') : null;
-      String? sheetId = configBox?.get('restaurant_sheet_id_$orgId') ?? configBox?.get('google_sheet_id');
-      if (sheetId == null || sheetId.isEmpty) {
-        sheetId = box.get('store_google_sheet_id_$orgId');
-      }
+      final sheetId = _getGoogleSheetId(orgId);
 
-      if (sheetId != null && sheetId.isNotEmpty && !sheetId.startsWith('sheet_')) {
+      if (sheetId.isNotEmpty && !sheetId.startsWith('sheet_')) {
         final authClient = await ClientLedgerCloudRouterService.getAuthenticatedClientIfAvailable() ??
             ref.read(restaurantAuthProvider.notifier).authenticatedHttpClient;
         if (authClient != null) {

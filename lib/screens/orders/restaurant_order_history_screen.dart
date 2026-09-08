@@ -380,12 +380,11 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
 
     // 2. Dispatch to Apps Script Single Writer
     try {
-      final box = Hive.isBoxOpen('restaurant_config_box') ? Hive.box('restaurant_config_box') : null;
-      String? sheetId = box?.get('restaurant_sheet_id_$orgId') ?? box?.get('google_sheet_id');
-      if (sheetId == null || sheetId.isEmpty) {
-        final saasSession = ref.read(saasSessionProvider);
-        sheetId = saasSession.currentOrganization?.googleSheetId;
-      }
+      final saasSession = ref.read(saasSessionProvider);
+      final sheetId = AppsScriptBackendService.resolveSpreadsheetId(
+        orgId: orgId,
+        explicitId: saasSession.currentOrganization?.googleSheetId,
+      );
 
       await AppsScriptBackendService.voidOrder(
         outletId: orgId,

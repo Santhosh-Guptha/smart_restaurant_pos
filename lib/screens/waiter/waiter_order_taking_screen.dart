@@ -813,12 +813,11 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
       bool isCloudConfirmed = false;
       String? cloudErrorMsg;
       try {
-        final rBox = Hive.isBoxOpen('restaurant_config_box') ? Hive.box('restaurant_config_box') : null;
-        String? sheetId = rBox?.get('restaurant_sheet_id_$orgId') ?? rBox?.get('google_sheet_id');
-        if (sheetId == null || sheetId.isEmpty) {
-          final saasSession = ref.read(saasSessionProvider);
-          sheetId = saasSession.currentOrganization?.googleSheetId;
-        }
+        final saasSession = ref.read(saasSessionProvider);
+        final sheetId = AppsScriptBackendService.resolveSpreadsheetId(
+          orgId: orgId,
+          explicitId: saasSession.currentOrganization?.googleSheetId,
+        );
 
         final saveResult = await AppsScriptBackendService.saveBillDetailed(
           outletId: orgId,

@@ -1596,12 +1596,11 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                 ),
                 onPressed: () async {
                   Navigator.pop(ctx);
-                  final rBox = Hive.isBoxOpen('restaurant_config_box') ? Hive.box('restaurant_config_box') : null;
-                  String? sheetId = rBox?.get('restaurant_sheet_id_$orgId') ?? rBox?.get('google_sheet_id');
-                  if (sheetId == null || sheetId.isEmpty) {
-                    final saasSession = ref.read(saasSessionProvider);
-                    sheetId = saasSession.currentOrganization?.googleSheetId;
-                  }
+                  final saasSession = ref.read(saasSessionProvider);
+                  final sheetId = AppsScriptBackendService.resolveSpreadsheetId(
+                    orgId: orgId,
+                    explicitId: saasSession.currentOrganization?.googleSheetId,
+                  );
 
                   final bDate = "${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}";
                   final report = DayEndReport(
@@ -1896,12 +1895,11 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
 
       // 2. Live Sync to connected Google Sheet and Webhook
       try {
-        final box = Hive.isBoxOpen('restaurant_config_box') ? Hive.box('restaurant_config_box') : null;
-        String? sheetId = box?.get('restaurant_sheet_id_$orgId') ?? box?.get('google_sheet_id');
-        if (sheetId == null || sheetId.isEmpty) {
-          final saasSession = ref.read(saasSessionProvider);
-          sheetId = saasSession.currentOrganization?.googleSheetId;
-        }
+        final saasSession = ref.read(saasSessionProvider);
+        final sheetId = AppsScriptBackendService.resolveSpreadsheetId(
+          orgId: orgId,
+          explicitId: saasSession.currentOrganization?.googleSheetId,
+        );
 
         // Sync full order data to webhook for Zero-Firebase architecture (Single Writer)
         try {
@@ -2373,12 +2371,11 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
 
       // 4. Sync Bill to Google Sheets and Webhook
       try {
-        final rBox = Hive.isBoxOpen('restaurant_config_box') ? Hive.box('restaurant_config_box') : null;
-        String? sheetId = rBox?.get('restaurant_sheet_id_$orgId') ?? rBox?.get('google_sheet_id');
-        if (sheetId == null || sheetId.isEmpty) {
-          final saasSession = ref.read(saasSessionProvider);
-          sheetId = saasSession.currentOrganization?.googleSheetId;
-        }
+        final saasSession = ref.read(saasSessionProvider);
+        final sheetId = AppsScriptBackendService.resolveSpreadsheetId(
+          orgId: orgId,
+          explicitId: saasSession.currentOrganization?.googleSheetId,
+        );
 
         final grandTotal = paidAmount;
 
@@ -3079,12 +3076,11 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
 
     // 4. Send to Apps Script Single Writer
     try {
-      final box = Hive.isBoxOpen('restaurant_config_box') ? Hive.box('restaurant_config_box') : null;
-      String? sheetId = box?.get('restaurant_sheet_id_$orgId') ?? box?.get('google_sheet_id');
-      if (sheetId == null || sheetId.isEmpty) {
-        final saasSession = ref.read(saasSessionProvider);
-        sheetId = saasSession.currentOrganization?.googleSheetId;
-      }
+      final saasSession = ref.read(saasSessionProvider);
+      final sheetId = AppsScriptBackendService.resolveSpreadsheetId(
+        orgId: orgId,
+        explicitId: saasSession.currentOrganization?.googleSheetId,
+      );
 
       await AppsScriptBackendService.voidOrder(
         outletId: orgId,

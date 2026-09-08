@@ -22,6 +22,110 @@ class AppsScriptBackendService {
     await box.put('apps_script_webhook_url', url.trim());
   }
 
+  /// Resolves the effective Google Sheet ID from all possible Hive boxes & session keys
+  static String? resolveSpreadsheetId({String? orgId, String? explicitId}) {
+    if (explicitId != null && explicitId.trim().isNotEmpty && !explicitId.startsWith('sheet_ORG')) {
+      return explicitId.trim();
+    }
+
+    // 1. Check restaurant_config_box
+    if (Hive.isBoxOpen('restaurant_config_box')) {
+      final rBox = Hive.box('restaurant_config_box');
+      if (orgId != null && orgId.isNotEmpty) {
+        final id = rBox.get('restaurant_sheet_id_$orgId');
+        if (id != null && id.toString().trim().isNotEmpty && !id.toString().startsWith('sheet_ORG')) {
+          return id.toString().trim();
+        }
+      }
+      final rSheetId = rBox.get('google_sheet_id') ?? rBox.get('restaurant_google_sheet_id');
+      if (rSheetId != null && rSheetId.toString().trim().isNotEmpty && !rSheetId.toString().startsWith('sheet_ORG')) {
+        return rSheetId.toString().trim();
+      }
+    }
+
+    // 2. Check configBox
+    if (Hive.isBoxOpen('configBox')) {
+      final cBox = Hive.box('configBox');
+      if (orgId != null && orgId.isNotEmpty) {
+        final id = cBox.get('store_google_sheet_id_$orgId') ?? cBox.get('restaurant_sheet_id_$orgId');
+        if (id != null && id.toString().trim().isNotEmpty && !id.toString().startsWith('sheet_ORG')) {
+          return id.toString().trim();
+        }
+      }
+      final cSheetId = cBox.get('google_sheet_id') ?? cBox.get('spreadsheet_id') ?? cBox.get('restaurant_google_sheet_id');
+      if (cSheetId != null && cSheetId.toString().trim().isNotEmpty && !cSheetId.toString().startsWith('sheet_ORG')) {
+        return cSheetId.toString().trim();
+      }
+    }
+
+    return null;
+  }
+
+  /// Performs an HTTP POST and follows HTTP redirects (301, 302, 303, 307, 308),
+  /// converting 302/303 to GET as mandated by Google Apps Script web app architecture.
+  static Future<http.Response> postWithRedirects(
+    Uri uri, {
+    Map<String, String>? headers,
+    Object? body,
+    Duration timeout = const Duration(seconds: 18),
+    http.Client? client,
+  }) async {
+    final httpClient = client ?? http.Client();
+    final shouldClose = client == null;
+    try {
+      var response = await httpClient.post(uri, headers: headers, body: body).timeout(timeout);
+      int redirects = 0;
+      while ((response.statusCode == 301 ||
+              response.statusCode == 302 ||
+              response.statusCode == 303 ||
+              response.statusCode == 307 ||
+              response.statusCode == 308) &&
+          redirects < 5) {
+        final location = response.headers['location'];
+        if (location == null || location.isEmpty) break;
+        // Google Apps Script redirect echo endpoints expect GET
+        response = await httpClient.get(Uri.parse(location)).timeout(timeout);
+        redirects++;
+      }
+      return response;
+    } finally {
+      if (shouldClose) {
+        httpClient.close();
+      }
+    }
+  }
+
+  /// Performs an HTTP GET and follows HTTP redirects (301, 302, 303, 307, 308).
+  static Future<http.Response> getWithRedirects(
+    Uri uri, {
+    Map<String, String>? headers,
+    Duration timeout = const Duration(seconds: 15),
+    http.Client? client,
+  }) async {
+    final httpClient = client ?? http.Client();
+    final shouldClose = client == null;
+    try {
+      var response = await httpClient.get(uri, headers: headers).timeout(timeout);
+      int redirects = 0;
+      while ((response.statusCode == 301 ||
+              response.statusCode == 302 ||
+              response.statusCode == 303 ||
+              response.statusCode == 307 ||
+              response.statusCode == 308) &&
+          redirects < 5) {
+        final location = response.headers['location'];
+        if (location == null || location.isEmpty) break;
+        response = await httpClient.get(Uri.parse(location)).timeout(timeout);
+        redirects++;
+      }
+      return response;
+    } finally {
+      if (shouldClose) {
+        httpClient.close();
+      }
+    }
+  }
+
   /// 1. System Admin: Onboard a new Client / Organization
   static Future<Map<String, dynamic>> onboardOrganization({
     required String orgId,
@@ -39,7 +143,7 @@ class AppsScriptBackendService {
         return {'success': true, 'org_id': orgId, 'is_mock': true};
       }
 
-      final res = await http.post(
+      final res = await postWithRedirects(
         Uri.parse(url),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
@@ -54,7 +158,8 @@ class AppsScriptBackendService {
           'plan_tier': planTier,
           'features': features,
         }),
-      ).timeout(const Duration(seconds: 12));
+        timeout: const Duration(seconds: 18),
+      );
 
       if (res.statusCode >= 200 && res.statusCode < 300) {
         return jsonDecode(res.body);
@@ -106,7 +211,7 @@ class AppsScriptBackendService {
         };
       }
 
-      final res = await http.post(
+      final res = await postWithRedirects(
         Uri.parse(url),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
@@ -119,7 +224,8 @@ class AppsScriptBackendService {
           'address': address ?? '',
           'spreadsheet_id': allocatedSheetId,
         }),
-      ).timeout(const Duration(seconds: 15));
+        timeout: const Duration(seconds: 18),
+      );
 
       if (res.statusCode >= 200 && res.statusCode < 300) {
         final decoded = jsonDecode(res.body);
@@ -171,14 +277,16 @@ class AppsScriptBackendService {
         };
       }
 
-      final res = await http.post(
+      final resolvedSheetId = resolveSpreadsheetId(orgId: outletId, explicitId: spreadsheetId);
+
+      final res = await postWithRedirects(
         Uri.parse(url),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'secret': _secretToken,
           'action': 'SAVE_BILL',
           'outlet_id': outletId,
-          'spreadsheet_id': spreadsheetId,
+          'spreadsheet_id': resolvedSheetId ?? '',
           'clientRequestId': effectiveRequestId,
           'client_request_id': effectiveRequestId,
           'data': {
@@ -187,7 +295,8 @@ class AppsScriptBackendService {
             'client_request_id': effectiveRequestId,
           },
         }),
-      ).timeout(const Duration(seconds: 10));
+        timeout: const Duration(seconds: 18),
+      );
 
       if (res.statusCode >= 200 && res.statusCode < 300) {
         try {
@@ -230,18 +339,21 @@ class AppsScriptBackendService {
       final url = getWebhookUrl();
       if (!_isValidUrl(url)) return false;
 
-      final res = await http.post(
+      final resolvedSheetId = resolveSpreadsheetId(orgId: outletId, explicitId: spreadsheetId);
+
+      final res = await postWithRedirects(
         Uri.parse(url),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'secret': _secretToken,
           'action': 'SYNC_INVENTORY',
           'outlet_id': outletId,
-          'spreadsheet_id': spreadsheetId,
+          'spreadsheet_id': resolvedSheetId ?? '',
           'items': items,
           'replace_all': replaceAll,
         }),
-      ).timeout(const Duration(seconds: 12));
+        timeout: const Duration(seconds: 18),
+      );
 
       return res.statusCode >= 200 && res.statusCode < 300;
     } catch (e) {
@@ -256,14 +368,15 @@ class AppsScriptBackendService {
       final url = getWebhookUrl();
       if (!_isValidUrl(url)) return null;
 
-      final res = await http.post(
+      final res = await postWithRedirects(
         Uri.parse(url),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'secret': _secretToken,
           'action': 'FETCH_MASTER_ANALYTICS',
         }),
-      ).timeout(const Duration(seconds: 10));
+        timeout: const Duration(seconds: 15),
+      );
 
       if (res.statusCode >= 200 && res.statusCode < 300) {
         return jsonDecode(res.body);
@@ -285,7 +398,7 @@ class AppsScriptBackendService {
       final url = getWebhookUrl();
       if (!_isValidUrl(url)) return false;
 
-      final res = await http.post(
+      final res = await postWithRedirects(
         Uri.parse(url),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
@@ -295,7 +408,8 @@ class AppsScriptBackendService {
           'client_name': clientName,
           'otp_code': otpCode,
         }),
-      ).timeout(const Duration(seconds: 10));
+        timeout: const Duration(seconds: 15),
+      );
 
       return res.statusCode >= 200 && res.statusCode < 300;
     } catch (e) {
@@ -316,7 +430,7 @@ class AppsScriptBackendService {
       if (!_isValidUrl(url)) return false;
       if (spreadsheetId.isEmpty || spreadsheetId.startsWith('sheet_ORG')) return true;
 
-      final res = await http.post(
+      final res = await postWithRedirects(
         Uri.parse(url),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
@@ -327,7 +441,8 @@ class AppsScriptBackendService {
           'org_name': orgName ?? '',
           'upi_id': upiId ?? '',
         }),
-      ).timeout(const Duration(seconds: 10));
+        timeout: const Duration(seconds: 15),
+      );
 
       return res.statusCode >= 200 && res.statusCode < 300;
     } catch (e) {
@@ -348,17 +463,19 @@ class AppsScriptBackendService {
         return {'orders': <Map<String, dynamic>>[], 'waiterCalls': <Map<String, dynamic>>[]};
       }
 
+      final resolvedSheetId = resolveSpreadsheetId(orgId: orgId, explicitId: spreadsheetId);
+
       final uri = Uri.parse(url).replace(
         queryParameters: {
           'action': 'GET_ORDERS',
           'org': orgId.trim(),
-          if (spreadsheetId != null && spreadsheetId.isNotEmpty && !spreadsheetId.startsWith('sheet_ORG'))
-            'sheet': spreadsheetId.trim(),
+          if (resolvedSheetId != null && resolvedSheetId.isNotEmpty && !resolvedSheetId.startsWith('sheet_ORG'))
+            'sheet': resolvedSheetId.trim(),
           if (table != null && table.isNotEmpty) 'table': table.trim(),
         },
       );
 
-      final res = await http.get(uri).timeout(const Duration(seconds: 8));
+      final res = await getWithRedirects(uri, timeout: const Duration(seconds: 12));
       if (res.statusCode >= 200 && res.statusCode < 300) {
         final decoded = jsonDecode(res.body);
         if (decoded is Map<String, dynamic> && decoded['success'] == true) {
@@ -403,20 +520,23 @@ class AppsScriptBackendService {
       final url = getWebhookUrl();
       if (!_isValidUrl(url)) return false;
 
-      final res = await http.post(
+      final resolvedSheetId = resolveSpreadsheetId(orgId: orgId, explicitId: spreadsheetId);
+
+      final res = await postWithRedirects(
         Uri.parse(url),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'secret': _secretToken,
           'action': 'DISMISS_SERVICE_REQUEST',
           'org_id': orgId.trim(),
-          'spreadsheet_id': spreadsheetId ?? '',
+          'spreadsheet_id': resolvedSheetId ?? '',
           'data': {
             'alert_id': alertId,
             'table': table ?? '',
           },
         }),
-      ).timeout(const Duration(seconds: 8));
+        timeout: const Duration(seconds: 15),
+      );
 
       return res.statusCode >= 200 && res.statusCode < 300;
     } catch (e) {
@@ -439,15 +559,16 @@ class AppsScriptBackendService {
       final url = getWebhookUrl();
       if (!_isValidUrl(url)) return false;
       final effectiveRequestId = clientRequestId ?? const Uuid().v4();
+      final resolvedSheetId = resolveSpreadsheetId(orgId: orgId, explicitId: spreadsheetId);
 
-      final res = await http.post(
+      final res = await postWithRedirects(
         Uri.parse(url),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'secret': _secretToken,
           'action': 'SAVE_BILL',
           'org_id': orgId.trim(),
-          'spreadsheet_id': spreadsheetId ?? '',
+          'spreadsheet_id': resolvedSheetId ?? '',
           'clientRequestId': effectiveRequestId,
           'client_request_id': effectiveRequestId,
           'data': {
@@ -462,7 +583,8 @@ class AppsScriptBackendService {
             'clientRequestId': effectiveRequestId,
           },
         }),
-      ).timeout(const Duration(seconds: 6));
+        timeout: const Duration(seconds: 15),
+      );
 
       if (res.statusCode >= 200 && res.statusCode < 300) {
         try {
@@ -491,14 +613,15 @@ class AppsScriptBackendService {
       final url = getWebhookUrl();
       if (!_isValidUrl(url)) return false;
       final effectiveRequestId = clientRequestId ?? const Uuid().v4();
+      final resolvedSheetId = resolveSpreadsheetId(orgId: orgId, explicitId: spreadsheetId);
 
-      final res = await http.post(
+      final res = await postWithRedirects(
         Uri.parse(url),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'action': 'CLEAR_TABLE',
           'org_id': orgId.trim(),
-          'spreadsheet_id': spreadsheetId ?? '',
+          'spreadsheet_id': resolvedSheetId ?? '',
           'clientRequestId': effectiveRequestId,
           'client_request_id': effectiveRequestId,
           'data': {
@@ -507,7 +630,8 @@ class AppsScriptBackendService {
             'timestamp': DateTime.now().toIso8601String(),
           },
         }),
-      ).timeout(const Duration(seconds: 8));
+        timeout: const Duration(seconds: 15),
+      );
 
       if (res.statusCode >= 200 && res.statusCode < 300) {
         try {
@@ -534,16 +658,18 @@ class AppsScriptBackendService {
       final url = getWebhookUrl();
       if (!_isValidUrl(url)) return [];
 
+      final resolvedSheetId = resolveSpreadsheetId(orgId: orgId, explicitId: spreadsheetId);
+
       final uri = Uri.parse(url).replace(
         queryParameters: {
           'action': 'GET_MENU',
           'org': orgId.trim(),
-          if (spreadsheetId != null && spreadsheetId.isNotEmpty && !spreadsheetId.startsWith('sheet_ORG'))
-            'sheet': spreadsheetId.trim(),
+          if (resolvedSheetId != null && resolvedSheetId.isNotEmpty && !resolvedSheetId.startsWith('sheet_ORG'))
+            'sheet': resolvedSheetId.trim(),
         },
       );
 
-      final res = await http.get(uri).timeout(const Duration(seconds: 10));
+      final res = await getWithRedirects(uri, timeout: const Duration(seconds: 15));
       if (res.statusCode >= 200 && res.statusCode < 300) {
         final decoded = jsonDecode(res.body);
         if (decoded is Map<String, dynamic> && decoded['success'] == true) {
@@ -571,17 +697,19 @@ class AppsScriptBackendService {
         return {'ok': false, 'success': false, 'orders': [], 'tables': [], 'alerts': []};
       }
 
+      final resolvedSheetId = resolveSpreadsheetId(orgId: outletId, explicitId: spreadsheetId);
+
       final uri = Uri.parse(url).replace(
         queryParameters: {
           'action': 'GET_DELTA',
           'org': outletId.trim(),
           'since': since.toString(),
-          if (spreadsheetId != null && spreadsheetId.isNotEmpty && !spreadsheetId.startsWith('sheet_ORG'))
-            'sheet': spreadsheetId.trim(),
+          if (resolvedSheetId != null && resolvedSheetId.isNotEmpty && !resolvedSheetId.startsWith('sheet_ORG'))
+            'sheet': resolvedSheetId.trim(),
         },
       );
 
-      final res = await http.get(uri).timeout(const Duration(seconds: 10));
+      final res = await getWithRedirects(uri, timeout: const Duration(seconds: 15));
       if (res.statusCode >= 200 && res.statusCode < 300) {
         final decoded = jsonDecode(res.body);
         if (decoded is Map<String, dynamic>) {
@@ -841,15 +969,18 @@ class AppsScriptBackendService {
       final baseUrl = getWebhookUrl();
       if (!_isValidUrl(baseUrl)) return [];
 
+      final resolvedSheetId = resolveSpreadsheetId(orgId: outletId, explicitId: spreadsheetId);
+
       final uri = Uri.parse(baseUrl).replace(
         queryParameters: {
           'action': 'GET_MENU',
           'org': outletId,
-          if (spreadsheetId != null && spreadsheetId.isNotEmpty) 'sheet': spreadsheetId,
+          if (resolvedSheetId != null && resolvedSheetId.isNotEmpty && !resolvedSheetId.startsWith('sheet_ORG'))
+            'sheet': resolvedSheetId,
         },
       );
 
-      final res = await http.get(uri).timeout(const Duration(seconds: 10));
+      final res = await getWithRedirects(uri, timeout: const Duration(seconds: 15));
       if (res.statusCode >= 200 && res.statusCode < 300) {
         final decoded = jsonDecode(res.body);
         if (decoded is Map<String, dynamic> && decoded['items'] is List) {
@@ -998,11 +1129,23 @@ class AppsScriptBackendService {
       final bodyWithSecret = Map<String, dynamic>.from(payload);
       bodyWithSecret.putIfAbsent('secret', () => _secretToken);
 
-      final res = await http.post(
+      // Auto-resolve spreadsheetId if missing or unconfigured
+      final currentSheet = bodyWithSecret['spreadsheetId'] ?? bodyWithSecret['spreadsheet_id'];
+      if (currentSheet == null || currentSheet.toString().isEmpty || currentSheet.toString().startsWith('sheet_ORG')) {
+        final org = bodyWithSecret['outletId'] ?? bodyWithSecret['outlet_id'] ?? bodyWithSecret['org_id'] ?? bodyWithSecret['org'];
+        final resolved = resolveSpreadsheetId(orgId: org?.toString());
+        if (resolved != null && resolved.isNotEmpty) {
+          bodyWithSecret['spreadsheetId'] = resolved;
+          bodyWithSecret['spreadsheet_id'] = resolved;
+        }
+      }
+
+      final res = await postWithRedirects(
         Uri.parse(url),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode(bodyWithSecret),
-      ).timeout(const Duration(seconds: 10));
+        timeout: const Duration(seconds: 18),
+      );
 
       if (res.statusCode >= 200 && res.statusCode < 300) {
         final decoded = jsonDecode(res.body);
