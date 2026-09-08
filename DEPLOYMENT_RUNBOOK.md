@@ -52,7 +52,7 @@ flowchart TD
         GUEST["Diner Mobile Device"]
         STAND["Table QR Standee\n(https://smartdine-restaurant-pos.web.app/r/...)"]
         GUEST -->|"Scans QR"| STAND
-        STAND -->|"Opens Progressive Web App"| WEBAPP["Customer Table Web App\n(WebCrypto AES-256 + HMAC)"]
+        STAND -->|"Opens Progressive Web App"| WEBAPP["Customer Table Web App\n(plaintext JSON over TLS)"]
     end
 
     subgraph Zero-Cost Cloud Edge
@@ -74,7 +74,7 @@ flowchart TD
         ADMIN["Master App Admins\n(smartdine.platform@gmail.com\nsanthoshbukka5@gmail.com)"]
     end
 
-    WEBAPP -->|"Encrypted POST"| WEBHOOK
+    WEBAPP -->|"HTTPS POST (plaintext body)"| WEBHOOK
     WEBHOOK -->|"Direct Sheet Append"| DRIVE
     POS <-->|"License & Sync Stream"| FIRESTORE
     POS -->|"Backup & Sync"| WEBHOOK
@@ -449,13 +449,23 @@ This section contains real-world incidents, root cause analyses, and immediate r
 
 ---
 
-### Incident 10: Potential Replay Attack / Clock Drift Error
-- **Symptom**: Order submissions fail with `Webhook payload timestamp expired. Potential replay attack.`
-- **Root Cause**: Symmetrical AES-256 cryptography enforces a strict **300,000 ms (5 minute)** sliding time window. If the POS tablet or client device clock is more than 5 minutes out of sync with Google's NTP servers, payloads are rejected.
+### Incident 10: Device Clock Drift
+> **Corrected 2026-09 (X-20).** This entry described a replay-protection
+> window enforced by "symmetrical AES-256 cryptography". No such window and no
+> such cryptography exists in the code, and the webhook never returns
+> `Webhook payload timestamp expired`. The genuine clock-drift symptoms are
+> below.
+- **Symptom**: Bills and KOTs appear in the sheet with wrong timestamps, land in
+  the wrong day's Z-report, or sort out of order in order history. Google
+  sign-in may also fail with a token error.
+- **Root Cause**: `timestamp` / `firedAt` are generated on the device and
+  written through unchanged. A tablet with a wrong clock poisons every record it
+  creates, and OAuth rejects tokens minted against a skewed clock.
 - **Resolution**:
   1. Open POS device Settings -> **System -> Date & Time**.
   2. Enable **"Set time automatically"** (NTP network sync).
-  3. The error will immediately resolve upon clock synchronization.
+  3. Records already written keep their bad timestamps — correct them in the
+     sheet by hand, and re-run the affected day's Z-report.
 
 ---
 
@@ -532,8 +542,13 @@ Run these commands from any terminal to verify system integrity:
 # 1. Test Serverless Webhook Health
 curl.exe -L "https://script.google.com/macros/s/AKfycbxIAGxL_Chf3xMKfpqMyJ8fHkYq990x-WHSH6coCWpxQaWCH7zRV599esQ604oEVtrF/exec"
 
-# Expected Output:
-# {"status":"online","service":"SmartDine Restaurant POS Serverless Gateway","version":"2.5.0","encryption":"AES-256-CBC + HMAC-SHA256",...}
+# Expected: HTTP 200 and a JSON body. The webhook does not serve a fixed
+# health banner - the previously documented
+# {"status":"online",...,"encryption":"AES-256-CBC + HMAC-SHA256"} response
+# does not exist in Code.gs (X-20). Verify the deployment with a real read
+# instead, which also proves tenant resolution works:
+#   curl.exe -sL "<WEBHOOK_URL>?action=GET_STORE_PROFILE&org=<ORG_ID>"
+# and check that "success":true comes back with your outlet's name.
 
 # 2. Test Customer Table Ordering Web Portal
 curl.exe -I "https://smartdine-restaurant-pos.web.app/r/"
@@ -579,9 +594,21 @@ All transactional data (bills, KOTs, menus) is stored in Google Sheets. If an ac
 
 ### 3. Local POS Offline Cache (Zero-Downtime Terminal Fallback)
 If cloud connectivity or internet fails completely:
-1. SmartDine POS automatically runs in **Offline-First Mode** using encrypted local Hive storage.
+1. SmartDine POS continues to run against local Hive storage.
+
+   > **Corrected 2026-09 (X-20).** Hive storage here is **not encrypted** —
+   > there is no `HiveAesCipher` anywhere in `lib/`. A lost, stolen or rooted
+   > tablet exposes the local bills, customers and ledger boxes in plaintext.
+   > Treat POS tablets as devices holding readable business data: enforce a
+   > device lock screen and full-disk encryption at the OS level.
 2. Orders, KOTs, and bills continue printing to thermal printers without interruption.
-3. Once internet connectivity is re-established, the POS terminal queues and syncs all offline transactions to the Google Sheet and Firestore automatically.
+3. On the **waiter round-dispatch and table-settlement** paths, a write that
+   fails is queued in the durable Outbox and retried automatically on
+   reconnect, reusing its original `clientRequestId` so nothing double-bills.
+   **On the counter-billing, KDS and table-state paths it is not** — those
+   report the failure to the operator and do not retry. Until that coverage is
+   completed, a prolonged outage at the counter needs the totals reconciled
+   against the sheet before the day is closed.
 
 ---
 
@@ -658,7 +685,14 @@ azorpayDynamicUpi, splitBill
 2. Enter the Master Razorpay **Key ID** (
 zp_live_... or 
 zp_test_...) and **Key Secret**.
-3. Save credentials. They are encrypted and stored in Firestore system_config/razorpay.
+3. Save credentials. They are stored in Firestore at
+   `system_config/razorpay`.
+
+   > **Corrected 2026-09 (X-20).** These are stored **as entered, not
+   > encrypted**. Anyone with read access to that Firestore document holds the
+   > live Razorpay key secret. Restrict access to it accordingly, and rotate
+   > the secret in the Razorpay dashboard if the document has ever been widely
+   > readable.
 
 ### 2. Restaurant Route Auto-Settlement Setup
 1. In the restaurant POS, open **Store Settings -> UPI & Settlement Tab**.

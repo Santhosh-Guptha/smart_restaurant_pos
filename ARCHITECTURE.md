@@ -47,10 +47,10 @@ flowchart TD
     subgraph Customer Table Dining Experience
         ST["Table Standee QR Code"]
         WEB["Table Ordering Web App (smartbizz.devmonks.space/r/)"]
-        CRYPTO["WebCrypto AES-256-CBC + HMAC"]
+        CRYPTO["TLS 1.2+ (no app-layer crypto)"]
         ST --> WEB
         WEB --> CRYPTO
-        CRYPTO -->|"Encrypted Order Payload"| GAS
+        CRYPTO -->|"Plaintext JSON over TLS"| GAS
         GAS -->|"Appends Row"| GS1
         GS1 -->|"Live Order Polling"| HIVE
     end
@@ -124,14 +124,14 @@ SmartDine employs a **hybrid local-first cloud architecture**:
 1. `configBox`: SaaS tenant session, active branch ID, printer MAC addresses, offline credentials.
 2. `restaurant_auth_box`: Staff roster, multi-role definitions, and salted SHA-256 PIN hashes.
 3. `restaurant_config_box`: Dynamic store settings, tax rates, GST configuration, and active UPI ID.
-4. `outbox` & `outbox_dead`: Offline mutation queue with exponential backoff, jitter, and dead-letter fault isolation.
+4. `outbox_queue` & `outbox_dead`: Offline mutation queue with exponential backoff, jitter, and dead-letter fault isolation. Started from `main()` via `Outbox.startAutoDrain()`; drains every 30s and immediately on regained connectivity. **Partial coverage:** the waiter round-dispatch and table-settlement paths enqueue on failure; the counter-billing and KDS paths do not yet.
 5. `kot_orders_$orgId`: Cached KOT order tickets and dining bill records with monotonic lifecycle ranking.
 6. `restaurant_tables_$orgId`: Table numbers, dining room sections, active sessions, and preserved printed QR URLs.
 
 ### Cloud Operational Engine (Google Sheets + Apps Script `Code.gs`)
 - **Single Canonical Backend**: `google_apps_script/Code.gs` is the authoritative cloud operational gateway. All operational mutations (orders, tables, bills, settlements, voids) flow through `Code.gs`.
 - **Zero-Firebase Operational Truth**: Firebase is strictly reserved for SaaS metadata (licenses, organizations, subscription plans, app versions). All operational revenue and dining data resides 100% in Google Sheets and local Hive caches.
-- **Offline Outbox & Idempotency**: Every client mutation generates a unique `clientRequestId`. The `Outbox` processes mutations with exponential backoff (up to 300s) + jitter. Operations failing >8 times are safely isolated in `outbox_dead`.
+- **Offline Outbox & Idempotency**: Every client mutation generates a unique `clientRequestId`. The `Outbox` processes mutations with exponential backoff (up to 300s) + jitter, and operations failing >8 times are isolated in `outbox_dead`. The same `clientRequestId` is reused on retry, so the server's `Idempotency` ledger collapses a retry of a request that did in fact arrive. **Not every write path routes through it yet** - see §Hive boxes above for current coverage.
 
 ### 11-Column Sheet Ledger
 1. **`Bills` / `Dining Bills`**: Authoritative dining bills (`orderId`, `timestamp`, `customer_name`, `table`, `payment_mode`, `subtotal`, `discount`, `total_amount`, `status`, `order_source`, `rev`).
@@ -169,44 +169,40 @@ for (final adminEmail in kAdminEmails) {
 
 ---
 
-## 🔐 5. End-to-End Cryptographic Standard
+## 🔐 5. Transport Security — Actual State
 
-All communication between external web clients, POS devices, and the Google Apps Script webhook uses symmetric AES-256-CBC encryption and HMAC-SHA256 data signing:
+> **Corrected 2026-09 (X-20).** This section previously specified an
+> "End-to-End Cryptographic Standard": an AES-256-CBC + HMAC-SHA256 envelope
+> `{ encrypted, v, org_id, ts, iv, ct, sig }`, a 5-minute anti-replay window,
+> and per-payload confidentiality. **None of that is implemented.** There is no
+> `crypto.subtle` call anywhere in `hosting_public/`, no envelope encryption or
+> HMAC verification in `Code.gs` beyond the Razorpay webhook signature check,
+> and no replay window. Anyone deploying this on the strength of the old text
+> would have believed guest details and billing amounts were protected in a way
+> they are not. The design below is what the code actually does.
 
-```
-Raw Payload JSON
-       │
-       ▼
-AES-256-CBC Encryption ────► Ciphertext (Base64) + Random IV (Base64)
-       │
-       ▼
-Timestamp Generation ──────► Epoch Milliseconds (Replay Protection)
-       │
-       ▼
-HMAC-SHA256 Signing ───────► Digital Signature (Hex Digest)
-       │
-       ▼
-Standard Envelope ─────────► { encrypted: true, v: 1, org_id, ts, iv, ct, sig }
-```
+### What protects traffic today
 
-### Cryptographic Envelope Specification
-```json
-{
-  "encrypted": true,
-  "v": 1,
-  "org_id": "ORG261234",
-  "ts": 1725619200000,
-  "iv": "dGhpcyBpcyBhbiBpdjE2",
-  "ct": "c29tZSBjaXBoZXJ0ZXh0...",
-  "sig": "a1b2c3d4e5f67890abcdef1234567890abcdef1234567890abcdef1234567890"
-}
-```
+| Layer | Mechanism | Reality |
+|---|---|---|
+| Confidentiality in transit | **TLS 1.2+** on `script.google.com` and Firebase Hosting | Real. Payloads are plaintext JSON *inside* TLS. |
+| Caller authentication | Shared `SECRET_TOKEN` in the request body | Real, but a single static token for the whole deployment. Guest-facing actions are deliberately allowed without it (`isPublicAction`); every other action now sets `json.__authenticated` and privileged handlers check it. |
+| Guest table binding | Signed table QR (planned) | **Not implemented.** A guest who can guess a table id can currently join that table's session. |
+| Write integrity | `clientRequestId` + the `Idempotency` sheet | Real. Protects against duplicate delivery, not against a forged request. |
+| Payment integrity | Razorpay HMAC-SHA256 signature, verified server-side | Real, and now fails closed when the key secret is not configured. |
+| At rest, on device | Hive boxes | **Plaintext.** There is no `HiveAesCipher` anywhere in `lib/`. A stolen or rooted tablet exposes the local bill, customer and ledger boxes. |
+| At rest, in the sheet | Google Drive encryption | Google's, not ours. Anyone with the sheet link and access reads everything. |
 
-### Security Properties
-1. **Confidentiality**: Guest details, order contents, and billing amounts cannot be inspected in transit.
-2. **Integrity**: Any tampering with the ciphertext, initialization vector, or timestamp causes the HMAC verification to fail immediately.
-3. **Anti-Replay Attack**: Payloads older than 300,000 ms (5 minutes) are unconditionally rejected by both the Apps Script webhook and Flutter services.
-4. **Transparent Fallback**: Legacy unencrypted requests are accepted with a migration notice, ensuring zero downtime for older clients.
+### The gap that matters most
+
+The `SECRET_TOKEN` is a bearer credential shipped inside the app and the guest
+web page. Anyone who extracts it can call every non-public action for every
+outlet on that deployment. The idempotency ledger and the `__authenticated`
+checks limit accidental damage, not a deliberate attacker.
+
+If per-payload encryption is wanted, it has to be built - it is not there to
+turn on. The prerequisite is a per-outlet secret that never reaches the guest
+web page, which is a schema and provisioning change, not a client-side one.
 
 ---
 
@@ -274,7 +270,7 @@ To guarantee that application updates never break existing client stores or corr
 | **Zero-Firebase Operational Truth** | Orders, KOTs, tables, and bills reside in client Google Sheet + Hive; 0% operational reliance on Firestore |
 | **Monotonic Status Ranking** | KDS kitchen stage transitions are monotonic (rank 1..6); paid/served orders cannot be demoted |
 | **Fail-Closed RBAC & Terminal Security** | Terminal PIN entry with 5-attempt rate limiter & 30s lockout; unknown roles default to unassigned (0 permissions) |
-| **Offline Outbox Resilience** | Outbox queue with jittered exponential backoff & dead-letter queue; deduplicated by canonical ID |
+| **Offline Outbox Resilience** | Outbox queue with jittered exponential backoff & dead-letter queue, deduplicated by `clientRequestId`. Covers the waiter round and settlement paths; counter billing and KDS writes are still direct-only |
 | **Data Ownership** | All dining bills and financial records reside in client's own Google Drive |
 | **Admin Oversight** | Master Admin retains co-ownership and dynamic license control |
 | **Financial Burden** | Zero recurring server costs (Spark Tier + Sheets + 0% MDR UPI) |

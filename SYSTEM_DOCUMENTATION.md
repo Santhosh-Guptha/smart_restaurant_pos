@@ -16,7 +16,7 @@ Specifically:
 - **Tables & Floor Plan**: Table states (vacant, occupied, billed), active covers, and running bills are tracked in Hive and synchronized directly to the Google Sheet `Table State` tab.
 - **Menu & Inventory**: Master dish catalog, categories, pricing, veg/non-veg status, and 86 (sold out) toggles live in the Google Sheet `Inventory` & `Categories` tabs.
 - **Financials & Shift Close**: Canonical integer paise calculations, multi-mode tender splits, manager discount authorizations, and Shift Close Z-Reports are appended to the `Payments` and `Day End Reports` tabs.
-- **Offline Resilience**: Offline actions are saved to an append-only local `Outbox` in Hive and reconciled with Google Sheets via a monotonic revision cursor (`GET_DELTA`).
+- **Offline Resilience**: Failed writes on the covered paths are saved to a durable local `Outbox` in Hive and retried with exponential backoff, reusing the original `clientRequestId` so a retry cannot double-bill. Reads reconcile via a monotonic revision cursor (`GET_DELTA`). **Coverage is partial** — see the Outbox note in Phase 3 below for exactly which paths are protected.
 
 ### **What is the ONLY thing that touches Firebase?**
 Firebase is strictly isolated to **SaaS Multi-Tenant Infrastructure**:
@@ -118,8 +118,21 @@ When a spreadsheet is connected, `ensureV2Sheets(ss)` automatically provisions a
 
 ### **Phase 3 — Local Store, Outbox & Sync Engine**
 - **Local Store (`lib/sync/local_store.dart`)**: Hive-backed offline store with transaction safety and snapshot isolation.
-- **Outbox Queue (`lib/sync/outbox.dart`)**: FIFO mutation queue with exponential backoff retry for network interruptions.
-- **Sync Engine (`lib/sync/sync_engine.dart`)**: Background delta synchronization using cursor-based `GET_DELTA` polling, reconciling changes without overwriting local offline work.
+- **Outbox Queue (`lib/sync/outbox.dart`)**: FIFO mutation queue with jittered exponential backoff (capped at 300s) and a dead-letter box after 8 attempts.
+
+  > **Corrected 2026-09 (X-18/X-20).** Until this release the Outbox had **zero
+  > call sites** — this document told operators that offline actions were
+  > queued and reconciled, and they were not: a KOT or settlement that failed
+  > to reach the sheet was simply lost, while the app reported "saved locally,
+  > cloud sync pending". `Outbox.startAutoDrain()` is now called from `main()`
+  > and drives a 30s sweep plus an immediate drain on regained connectivity.
+  >
+  > **Currently covered:** waiter round dispatch (KOT) and waiter table
+  > settlement — both enqueue on failure with the original `clientRequestId`.
+  > **Not yet covered:** counter-billing writes, KDS status updates, table
+  > state changes, and payment recording. On those paths a failed write is
+  > still reported to the operator and not retried.
+- **Sync Engine (`lib/sync/sync_engine.dart`)**: Cursor-based `GET_DELTA` delta synchronization designed to reconcile without overwriting local offline work. **Not wired in** — this file has no call sites; the screens still poll independently. Treat it as a design artifact, not a running component.
 - **Apps Script Backend Bridge**: Added `AppsScriptBackendService.fetchDelta` to fetch delta logs since the last observed revision.
 
 ### **Phase 4 — Order Lifecycle & Kitchen Operations**
