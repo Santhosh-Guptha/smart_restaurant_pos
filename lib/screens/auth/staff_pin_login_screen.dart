@@ -5,6 +5,7 @@ import '../../providers/restaurant_auth_provider.dart';
 import '../kitchen/kitchen_display_screen.dart';
 import '../counter_billing/fast_qsr_billing_screen.dart';
 import '../restaurant/table_management_screen.dart';
+import '../../providers/saas_session_provider.dart';
 
 class StaffPinLoginScreen extends ConsumerStatefulWidget {
   const StaffPinLoginScreen({super.key});
@@ -378,7 +379,12 @@ class _StaffPinLoginScreenState extends ConsumerState<StaffPinLoginScreen> {
                       ],
                     ),
                     const SizedBox(height: 14),
-                    Expanded(
+                    // X-13: with the lock no longer skipped for an empty roster,
+                    // a fresh or freshly-cleared device must still have a way in.
+                    // Only the tenant OWNER / MASTER_ADMIN can take it, and it
+                    // exists purely to reach Staff Management and create PINs.
+                    if (staffList.isEmpty) _buildEmptyRosterState(),
+                    if (staffList.isNotEmpty) Expanded(
                       child: ListView.separated(
                         itemCount: staffList.length,
                         separatorBuilder: (_, __) => const SizedBox(height: 12),
@@ -774,6 +780,88 @@ class _StaffPinLoginScreenState extends ConsumerState<StaffPinLoginScreen> {
         child: Text(
           digit,
           style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+        ),
+      ),
+    );
+  }
+}
+
+/// First-run / recovered-device state for the PIN screen.
+///
+/// X-13: the terminal lock used to be bypassed entirely when no staff existed
+/// (`isLocked && staffList.isNotEmpty`), which meant a device whose roster had
+/// been cleared — the exact result of a failed roster load or a tenant switch —
+/// granted full owner access with no PIN. The lock now always holds, so this is
+/// the one legitimate way past it: the signed-in SaaS user must be the tenant
+/// owner, and it leads only to staff setup.
+extension _EmptyRosterState on _StaffPinLoginScreenState {
+  Widget _buildEmptyRosterState() {
+    final saas = ref.read(saasSessionProvider);
+    final role = (saas.currentUser?.role ?? '').toUpperCase();
+    final isTenantOwner = role == 'OWNER' || role == 'MASTER_ADMIN';
+
+    return Expanded(
+      child: Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.badge_outlined, color: Color(0xFF64748B), size: 44),
+              const SizedBox(height: 14),
+              const Text(
+                'No staff set up on this device',
+                style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                isTenantOwner
+                    ? 'Sign in with your Google account to pull the staff list, '
+                        'or continue to Staff Management to create PINs.'
+                    : 'Ask the store owner to add you in Staff Management. '
+                        'This terminal stays locked until a staff PIN exists.',
+                style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 13, height: 1.4),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: _isSigningIn ? null : _signInWithGoogle,
+                  icon: const Icon(Icons.login_rounded, size: 18),
+                  label: Text(_isSigningIn ? 'Signing in…' : 'Sign in with Google'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF2563EB),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                ),
+              ),
+              if (isTenantOwner) ...[
+                const SizedBox(height: 10),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: () {
+                      // Owner-only first-run escape hatch, explicitly audited by
+                      // being the ONLY unlock that is not a PIN.
+                      ref.read(restaurantAuthProvider.notifier).unlockForOwnerSetup();
+                    },
+                    icon: const Icon(Icons.settings_rounded, size: 18),
+                    label: const Text('Continue to staff setup (owner)'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.amber,
+                      side: const BorderSide(color: Colors.amber),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
         ),
       ),
     );

@@ -155,11 +155,16 @@ class RestaurantAuthNotifier extends StateNotifier<RestaurantAuthState> {
           }
         }
 
+        // X-13: a cached Google session must NOT unlock the terminal. This set
+        // `isLocked: false` whenever the signed-in email matched any active
+        // staff row, so a cold start flashed the PIN screen for one frame and
+        // then opened the dashboard with no PIN entered -- and it picked the
+        // first email match, reintroducing the wrong-staff activation too.
+        // Silent sign-in resolves Google identity and Sheets headers only; the
+        // PIN is the sole thing that clears `isLocked`.
         state = state.copyWith(
-          activeStaff: matchedStaff ?? state.activeStaff,
           authHeaders: authHeaders,
           googleEmail: email,
-          isLocked: matchedStaff != null ? false : state.isLocked,
         );
       }
     } catch (e) {
@@ -301,6 +306,21 @@ class RestaurantAuthNotifier extends StateNotifier<RestaurantAuthState> {
   }
 
   /// Lock current terminal screen
+  /// First-run unlock for a device with NO staff roster.
+  ///
+  /// X-13: the terminal lock previously did not apply at all when the roster was
+  /// empty, so any such device opened as OWNER with no credential. The lock now
+  /// always applies, and this is the single non-PIN way past it: it exists only
+  /// so a tenant owner can reach Staff Management and create PINs. The caller
+  /// (the PIN screen) gates it on the SaaS role, and it refuses outright once
+  /// any staff record exists -- from then on a PIN is the only way in.
+  bool unlockForOwnerSetup() {
+    if (state.staffList.isNotEmpty) return false;
+    state = state.copyWith(isLocked: false);
+    debugPrint('[Auth] Owner first-run unlock: no staff roster on this device.');
+    return true;
+  }
+
   void lockTerminal() {
     state = state.copyWith(activeStaff: null, isLocked: true);
   }

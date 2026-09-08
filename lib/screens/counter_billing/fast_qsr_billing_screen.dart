@@ -867,7 +867,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Total Amount: ₹${_grandTotal.toStringAsFixed(2)} for ${_selectedTable ?? "Dine-In"}',
+                  'Total Amount: ₹${_payableTotal(existingOrderToAppend).toStringAsFixed(2)} for ${_selectedTable ?? "Dine-In"}',
                   style: TextStyle(fontSize: 13, color: context.textSecondary),
                 ),
                 const SizedBox(height: 20),
@@ -990,7 +990,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Total Payable: ₹${_grandTotal.toStringAsFixed(2)}',
+                  'Total Payable: ₹${_payableTotal(existingOrderToAppend).toStringAsFixed(2)}',
                   style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: ClassicTheme.primaryAccent),
                 ),
                 const SizedBox(height: 18),
@@ -1076,6 +1076,50 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
     );
   }
 
+  /// Total the guest actually owes for this transaction.
+  ///
+  /// X-07: the tender and split modals used `_grandTotal`, which covers the CART
+  /// ONLY. When appending to a table that already owed money, `_completeOrder`
+  /// wrote the combined total and marked the bill PAID -- so entering the cart
+  /// amount satisfied the "no underpayment" gate and closed a larger bill short.
+  /// This mirrors the combined calculation `_completeOrder` performs.
+  double _payableTotal(Map<String, dynamic>? existingOrderToAppend) {
+    if (existingOrderToAppend == null) return _grandTotal;
+
+    final oldItems = (existingOrderToAppend['items'] as List?) ?? [];
+    final combined = <BillLine>[];
+    for (final e in oldItems) {
+      if (e is! Map) continue;
+      final i = Map<String, dynamic>.from(e);
+      combined.add(BillLine(
+        productId: (i['id'] ?? i['productId'] ?? '').toString(),
+        name: (i['name'] ?? '').toString(),
+        qty: (i['qty'] as num?)?.toDouble() ?? 1.0,
+        unitPaise: (((i['price'] as num?)?.toDouble() ?? 0.0) * 100).round(),
+        taxRateBps: (_gstRate * 100).round(),
+      ));
+    }
+    for (final cartItem in _cart) {
+      combined.add(BillLine(
+        productId: cartItem.productId,
+        name: cartItem.name,
+        qty: cartItem.qty.toDouble(),
+        unitPaise: (cartItem.price * 100).round(),
+        taxRateBps: (_gstRate * 100).round(),
+      ));
+    }
+    if (combined.isEmpty) return _grandTotal;
+
+    return BillCalculator.compute(
+      lines: combined,
+      discount: _appliedDiscount,
+      serviceChargeBps: (_serviceChargeRate * 100).round(),
+      taxMode: TaxMode.exclusive,
+      roundOffEnabled: true,
+      defaultTaxRateBps: (_gstRate * 100).round(),
+    ).grandTotal;
+  }
+
   void _showSplitPaymentModal({required bool isDineIn, Map<String, dynamic>? existingOrderToAppend}) {
     final cashCtrl = TextEditingController();
     final upiCtrl = TextEditingController();
@@ -1095,7 +1139,8 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
             final upiVal = double.tryParse(upiCtrl.text.trim()) ?? 0.0;
             final cardVal = double.tryParse(cardCtrl.text.trim()) ?? 0.0;
             final sum = cashVal + upiVal + cardVal;
-            final remaining = _grandTotal - sum;
+            final payable = _payableTotal(existingOrderToAppend);
+            final remaining = payable - sum;
 
             return Padding(
               padding: EdgeInsets.only(
@@ -1122,7 +1167,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                     ],
                   ),
                   Text(
-                    'Total Payable: ₹${_grandTotal.toStringAsFixed(2)}',
+                    'Total Payable: ₹${payable.toStringAsFixed(2)}',
                     style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: ClassicTheme.primaryAccent),
                   ),
                   const SizedBox(height: 14),

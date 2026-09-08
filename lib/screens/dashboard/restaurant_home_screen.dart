@@ -184,7 +184,12 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
   @override
   Widget build(BuildContext context) {
     final restaurantAuth = ref.watch(restaurantAuthProvider);
-    if (restaurantAuth.isLocked && restaurantAuth.staffList.isNotEmpty) {
+    // X-13: the lock used to be gated on `staffList.isNotEmpty`, so a device
+    // with no roster -- which is exactly what a failed roster load or a tenant
+    // switch produces -- opened the whole dashboard with no PIN. A locked
+    // terminal with no staff shows the PIN screen, which offers first-run staff
+    // setup rather than silently granting access.
+    if (restaurantAuth.isLocked) {
       return const StaffPinLoginScreen();
     }
 
