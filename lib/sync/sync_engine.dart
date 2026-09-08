@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 import '../core/restaurant_models.dart';
 import '../services/apps_script_backend_service.dart';
 import 'local_store.dart';
@@ -176,6 +177,50 @@ class SyncEngine {
         final alertsList = rawAlerts.whereType<Map>().map((m) => Map<String, dynamic>.from(m)).toList();
         await LocalStore.upsertAlerts(_activeOutletId, alertsList);
         _alertsStream.add(alertsList);
+      }
+
+      // 4. Process Inventory & 86 Delta (§7.2, §7.3)
+      final rawInventory = delta['inventory'] as List? ?? [];
+      if (rawInventory.isNotEmpty) {
+        try {
+          final box = Hive.isBoxOpen('restaurant_config_box') ? Hive.box('restaurant_config_box') : null;
+          final saved = box?.get('restaurant_menu_dishes') as List?;
+          if (saved != null && saved.isNotEmpty) {
+            final dishes = saved.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+            bool changed = false;
+
+            for (final inv in rawInventory) {
+              if (inv is! Map) continue;
+              final pId = (inv['id'] ?? '').toString().trim();
+              final pName = (inv['name'] ?? '').toString().trim().toLowerCase();
+              final pAvail = inv['isAvailable'] != false;
+              final pStock = (inv['stock'] as num?)?.toInt() ?? -1;
+
+              final idx = dishes.indexWhere((d) {
+                final dId = (d['id'] ?? '').toString().trim();
+                final dName = (d['name'] ?? '').toString().trim().toLowerCase();
+                return (pId.isNotEmpty && dId == pId) || (dName == pName);
+              });
+
+              if (idx != -1) {
+                if (dishes[idx]['isAvailable'] != pAvail ||
+                    dishes[idx]['is_available'] != pAvail ||
+                    dishes[idx]['stock'] != pStock) {
+                  dishes[idx]['isAvailable'] = pAvail;
+                  dishes[idx]['is_available'] = pAvail;
+                  dishes[idx]['stock'] = pStock;
+                  changed = true;
+                }
+              }
+            }
+
+            if (changed) {
+              await box?.put('restaurant_menu_dishes', dishes);
+            }
+          }
+        } catch (e) {
+          debugPrint('[SyncEngine] Error applying inventory delta: $e');
+        }
       }
 
       // Advance Rev Cursor

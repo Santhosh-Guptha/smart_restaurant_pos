@@ -3335,14 +3335,34 @@ class _DishAvailabilitySheetState extends ConsumerState<_DishAvailabilitySheet> 
   }
 
   void _toggleAvailability(String id, bool val) {
+    String itemName = '';
     setState(() {
       final idx = _dishes.indexWhere((d) => d['id'] == id);
       if (idx != -1) {
         _dishes[idx]['is_available'] = val;
+        _dishes[idx]['isAvailable'] = val;
+        itemName = (_dishes[idx]['name'] ?? '').toString();
       }
     });
     final box = Hive.isBoxOpen('restaurant_config_box') ? Hive.box('restaurant_config_box') : null;
     box?.put('restaurant_menu_dishes', _dishes);
+
+    try {
+      final saasSession = ref.read(saasSessionProvider);
+      final orgId = resolveOutletId(
+        userOrgId: saasSession.currentUser?.organizationId,
+        sessionOrgId: saasSession.currentOrganization?.id,
+        hiveBox: Hive.isBoxOpen('configBox') ? Hive.box('configBox') : null,
+      );
+      AppsScriptBackendService.toggleItemAvailability(
+        outletId: orgId,
+        itemId: id,
+        itemName: itemName,
+        isAvailable: val,
+      );
+    } catch (e) {
+      debugPrint('Error syncing 86 availability to cloud: $e');
+    }
   }
 
   @override

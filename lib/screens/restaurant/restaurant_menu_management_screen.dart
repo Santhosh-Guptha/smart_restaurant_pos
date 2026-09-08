@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../core/restaurant_models.dart';
+import '../../core/constants.dart';
 import '../../providers/saas_session_provider.dart';
 import '../../providers/restaurant_auth_provider.dart';
 import '../../services/restaurant_sheets_service.dart';
@@ -303,6 +304,100 @@ class _RestaurantMenuManagementScreenState
           ),
         );
       }
+    } finally {
+      if (mounted) setState(() => _isSyncing = false);
+    }
+  }
+
+  Future<void> _pullCatalogFromSheets() async {
+    if (_isSyncing) return;
+    setState(() => _isSyncing = true);
+    final sm = ScaffoldMessenger.of(context);
+
+    try {
+      final saasSession = ref.read(saasSessionProvider);
+      final orgId = resolveOutletId(
+        userOrgId: saasSession.currentUser?.organizationId,
+        sessionOrgId: saasSession.currentOrganization?.id,
+        hiveBox: Hive.isBoxOpen('configBox') ? Hive.box('configBox') : null,
+      );
+
+      final box = Hive.isBoxOpen('restaurant_config_box') ? Hive.box('restaurant_config_box') : null;
+      String? spreadsheetId = box?.get('restaurant_sheet_id_$orgId') ?? box?.get('google_sheet_id');
+
+      final remoteItems = await AppsScriptBackendService.pullCatalogFromSheets(
+        outletId: orgId,
+        spreadsheetId: spreadsheetId,
+      );
+
+      if (remoteItems.isEmpty) {
+        sm.showSnackBar(
+          const SnackBar(
+            content: Text('No items found in Google Sheets inventory or unable to connect.'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        return;
+      }
+
+      int updatedCount = 0;
+      int addedCount = 0;
+
+      setState(() {
+        for (final item in remoteItems) {
+          final id = (item['id'] ?? '').toString().trim();
+          final name = (item['name'] ?? '').toString().trim();
+          final price = (item['price'] as num?)?.toDouble() ?? 0.0;
+          final cat = (item['category'] ?? 'Main Course').toString().trim();
+          final isVeg = item['isVeg'] != false;
+          final isAvail = item['available'] != false && item['is_available'] != false;
+          final desc = (item['description'] ?? '').toString();
+
+          final existingIdx = _dishes.indexWhere((d) {
+            final eId = (d['id'] ?? '').toString().trim();
+            final eName = (d['name'] ?? '').toString().trim().toLowerCase();
+            return (id.isNotEmpty && eId == id) || (eName == name.toLowerCase());
+          });
+
+          if (existingIdx != -1) {
+            _dishes[existingIdx]['price'] = price;
+            _dishes[existingIdx]['isAvailable'] = isAvail;
+            _dishes[existingIdx]['is_available'] = isAvail;
+            if (desc.isNotEmpty) _dishes[existingIdx]['description'] = desc;
+            updatedCount++;
+          } else {
+            _dishes.add({
+              'id': id.isNotEmpty ? id : 'dish_${DateTime.now().millisecondsSinceEpoch}_$addedCount',
+              'name': name,
+              'category': cat,
+              'subcategory': 'General',
+              'price': price,
+              'isVeg': isVeg,
+              'prepTime': 15,
+              'station': 'main_kitchen',
+              'sendsToKitchen': true,
+              'isAvailable': isAvail,
+              'is_available': isAvail,
+              'isTimeRestricted': false,
+              'description': desc,
+            });
+            addedCount++;
+          }
+        }
+      });
+
+      _saveDishesToHive();
+
+      sm.showSnackBar(
+        SnackBar(
+          content: Text('✅ Pulled catalog: $updatedCount updated, $addedCount new dishes from Google Sheets!'),
+          backgroundColor: const Color(0xFF059669),
+        ),
+      );
+    } catch (e) {
+      sm.showSnackBar(
+        SnackBar(content: Text('Catalog pull notice: $e'), backgroundColor: Colors.orange),
+      );
     } finally {
       if (mounted) setState(() => _isSyncing = false);
     }
@@ -1633,6 +1728,12 @@ class _RestaurantMenuManagementScreenState
                 : const Icon(Icons.cloud_sync_rounded, color: Color(0xFF2563EB), size: 22),
             onPressed: _isSyncing ? null : () => _syncDishesToCloud(silent: false),
           ),
+          // Pull Catalog & Stock from Google Sheets
+          IconButton(
+            tooltip: 'Pull Catalog & Stock from Google Sheets',
+            icon: const Icon(Icons.cloud_download_rounded, color: Color(0xFF059669), size: 22),
+            onPressed: _isSyncing ? null : _pullCatalogFromSheets,
+          ),
           IconButton(
             tooltip: 'Manage Categories',
             icon: const Icon(Icons.category_outlined, color: Color(0xFF475569), size: 21),
@@ -1961,7 +2062,7 @@ class _RestaurantMenuManagementScreenState
                                     // Price
                                     Text(
                                       '₹${((dish['price'] ?? 0.0) as num).toStringAsFixed(0)}',
-                                      style: const TextStyle(color: Color(0xFF0F172A), fontWeight: FontWeight.w900, fontSize: 14),
+                            style: const TextStyle(color: Color(0xFF0F172A), fontWeight: FontWeight.w900, fontSize: 14),
                                     ),
                                     const SizedBox(width: 8),
 
@@ -1972,8 +2073,25 @@ class _RestaurantMenuManagementScreenState
                                       onChanged: (val) {
                                         setState(() {
                                           dish['isAvailable'] = val;
+                                          dish['is_available'] = val;
                                         });
                                         _saveDishesToHive();
+                                        try {
+                                          final saasSession = ref.read(saasSessionProvider);
+                                          final orgId = resolveOutletId(
+                                            userOrgId: saasSession.currentUser?.organizationId,
+                                            sessionOrgId: saasSession.currentOrganization?.id,
+                                            hiveBox: Hive.isBoxOpen('configBox') ? Hive.box('configBox') : null,
+                                          );
+                                          AppsScriptBackendService.toggleItemAvailability(
+                                            outletId: orgId,
+                                            itemId: (dish['id'] ?? '').toString(),
+                                            itemName: (dish['name'] ?? '').toString(),
+                                            isAvailable: val,
+                                          );
+                                        } catch (e) {
+                                          debugPrint('Error syncing 86 toggle: $e');
+                                        }
                                       },
                                     ),
 

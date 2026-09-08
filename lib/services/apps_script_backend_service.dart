@@ -730,6 +730,80 @@ class AppsScriptBackendService {
     return res != null && (res['ok'] == true || res['success'] == true);
   }
 
+  /// 22. Toggle Item Availability (86 / Sold-Out) (§7.2)
+  static Future<bool> toggleItemAvailability({
+    required String outletId,
+    required String itemId,
+    required bool isAvailable,
+    String? itemName,
+    String? spreadsheetId,
+  }) async {
+    final res = await _postToWebhook({
+      'v': 2,
+      'action': 'TOGGLE_ITEM_AVAILABILITY',
+      'outletId': outletId,
+      'clientRequestId': const Uuid().v4(),
+      if (spreadsheetId != null && spreadsheetId.isNotEmpty) 'spreadsheetId': spreadsheetId,
+      'data': {
+        'itemId': itemId,
+        'itemName': itemName ?? '',
+        'isAvailable': isAvailable,
+      },
+    });
+    return res != null && (res['ok'] == true || res['success'] == true);
+  }
+
+  /// 23. Decrement Inventory on Settle (§7.1)
+  static Future<bool> decrementInventory({
+    required String outletId,
+    required List<Map<String, dynamic>> items,
+    String? spreadsheetId,
+  }) async {
+    final res = await _postToWebhook({
+      'v': 2,
+      'action': 'DECREMENT_INVENTORY',
+      'outletId': outletId,
+      'clientRequestId': const Uuid().v4(),
+      if (spreadsheetId != null && spreadsheetId.isNotEmpty) 'spreadsheetId': spreadsheetId,
+      'data': {
+        'items': items,
+      },
+    });
+    return res != null && (res['ok'] == true || res['success'] == true);
+  }
+
+  /// 24. Pull Catalog from Sheets (§7.3)
+  static Future<List<Map<String, dynamic>>> pullCatalogFromSheets({
+    required String outletId,
+    String? spreadsheetId,
+  }) async {
+    try {
+      final baseUrl = getWebhookUrl();
+      if (!_isValidUrl(baseUrl)) return [];
+
+      final uri = Uri.parse(baseUrl).replace(
+        queryParameters: {
+          'action': 'GET_MENU',
+          'org': outletId,
+          if (spreadsheetId != null && spreadsheetId.isNotEmpty) 'sheet': spreadsheetId,
+        },
+      );
+
+      final res = await http.get(uri).timeout(const Duration(seconds: 10));
+      if (res.statusCode >= 200 && res.statusCode < 300) {
+        final decoded = jsonDecode(res.body);
+        if (decoded is Map<String, dynamic> && decoded['items'] is List) {
+          return (decoded['items'] as List)
+              .whereType<Map<String, dynamic>>()
+              .toList();
+        }
+      }
+    } catch (e) {
+      debugPrint("AppsScriptBackendService pullCatalogFromSheets error: $e");
+    }
+    return [];
+  }
+
   static Future<Map<String, dynamic>?> _postToWebhook(Map<String, dynamic> payload) async {
     try {
       final url = getWebhookUrl();

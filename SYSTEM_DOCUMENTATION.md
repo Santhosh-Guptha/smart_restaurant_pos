@@ -1,7 +1,7 @@
 # SmartDine Restaurant POS — Architecture & Operations Manual
 
 > **Zero-Firebase Operational Pipeline & Google Sheets Schema v2**  
-> *Last Updated: March 2026 | Version 2.1 (Phases 0–6 Complete)*
+> *Last Updated: March 2026 | Version 2.2 (Phases 0–7 Complete)*
 
 ---
 
@@ -168,6 +168,24 @@ When a spreadsheet is connected, `ensureV2Sheets(ss)` automatically provisions a
   - Dynamic conflict checking prevents double booking the same table for overlapping time windows.
   - "Seat Reserved Guest" action seats the reservation, changes table state to `OCCUPIED`, and routes directly into the Waiter Pad.
 
+### **Phase 7 — Catalog & Inventory Sync**
+- **Automated Stock Decrement on Settlement**:
+  - Automatically decrements recipe and product stock quantities in the Google Sheets `Products & Stock` / `Inventory` tab upon bill settlement (`isSettled === true`).
+  - Items with stock set to `-1` are preserved as infinite food items prepared to order.
+  - For finite items (beverages, desserts, packaged snacks), quantity is deducted under `LockService`.
+  - **Auto-86**: When stock hits zero (`stock <= 0`), the backend automatically flips `is_available` to `FALSE` and bumps `rev`.
+  - Cashier terminals deduct local stock in Hive `restaurant_menu_dishes` immediately upon completing an order or settling a bill, giving instant visual feedback without network latency.
+- **Real-Time 86 (Sold-Out) Synchronization**:
+  - Implemented single-writer action `TOGGLE_ITEM_AVAILABILITY` (`Code.gs`) allowing kitchen staff, cashiers, or managers to mark items in stock or sold out with sub-second propagation.
+  - Fast-path caching in `ScriptProperties` ensures instant response times.
+  - Delta synchronization (`GET_DELTA`) packages `inventory` deltas so all connected POS terminals, Waiter pads, and KDS screens update their menu catalogs in real-time.
+  - Waiter pad (`WaiterOrderTakingScreen`) and Counter POS (`FastQsrBillingScreen`) show a high-visibility `SOLD OUT` tag, strike through item names, and prevent adding exhausted dishes to orders.
+  - Customer QR Menu (`hosting_public/r/index.html`) disables the "ADD" button and displays a "Sold Out" badge.
+- **Menu Catalog Hydration & Pull from Sheets**:
+  - Added "Pull Catalog & Stock from Google Sheets" action (`_pullCatalogFromSheets`) to `RestaurantMenuManagementScreen`.
+  - Enables POS operators to modify dish names, prices, categories, and stock quantities directly in the Google Spreadsheet on a desktop PC, then pull updates into the POS with a single tap.
+  - Backend endpoint `GET_MENU` / `AppsScriptBackendService.pullCatalogFromSheets` securely sanitizes catalog fields, ensuring internal supplier costs remain private.
+
 ---
 
 ## 5. Configuration & Deployment Guide
@@ -196,9 +214,8 @@ When a spreadsheet is connected, `ensureV2Sheets(ss)` automatically provisions a
 
 ---
 
-## 6. Upcoming Roadmap (Phases 7–10)
+## 6. Upcoming Roadmap (Phases 8–10)
  
-- **Phase 7 — Catalog & Inventory Sync**: Stock decrement on settlement, 86 status synchronization across terminals and QR menu.
 - **Phase 8 — RBAC Hardening & Offline Security**: Audit logging for all manager overrides, void reason enforcement.
 - **Phase 9 — Performance & Storage Optimization**: Automatic sheet partitioning, archival of year-old orders to cold tabs.
 - **Phase 10 — End-to-End Verification & Launch Gate**: Full automated simulation of multi-terminal peak rush hours.

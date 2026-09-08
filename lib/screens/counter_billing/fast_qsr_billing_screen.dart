@@ -276,7 +276,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
   }
 
   bool _isItemAvailableNow(Map<String, dynamic> item) {
-    if (item['isAvailable'] == false) return false;
+    if (item['isAvailable'] == false || item['is_available'] == false || ((item['stock'] as num?)?.toInt() ?? -1) == 0) return false;
     if (item['isTimeRestricted'] != true) return true;
 
     final from = item['availableFrom']?.toString();
@@ -306,11 +306,25 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
   }
 
   void _addToCart(Map<String, dynamic> item) {
-    if (item['isAvailable'] == false) {
+    final isAvail = item['isAvailable'] != false && item['is_available'] != false && ((item['stock'] as num?)?.toInt() ?? -1) != 0;
+    if (!isAvail) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text("${item['name']} is SOLD OUT (86)!"),
           backgroundColor: Colors.redAccent,
+          duration: const Duration(milliseconds: 1400),
+        ),
+      );
+      return;
+    }
+
+    final stock = (item['stock'] as num?)?.toInt() ?? -1;
+    final itemId = (item['id'] ?? item['productId'] ?? '').toString();
+    if (stock > 0 && _getCartQty(itemId) >= stock) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("Cannot add more: Only $stock in stock!"),
+          backgroundColor: Colors.orange.shade800,
           duration: const Duration(milliseconds: 1400),
         ),
       );
@@ -1595,6 +1609,51 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
     );
   }
 
+  void _decrementLocalStock(List<dynamic> items) {
+    try {
+      final configBox = Hive.isBoxOpen('restaurant_config_box') ? Hive.box('restaurant_config_box') : null;
+      final saved = configBox?.get('restaurant_menu_dishes') as List?;
+      if (saved == null || saved.isEmpty) return;
+
+      final dishes = saved.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+      bool changed = false;
+
+      for (final item in items) {
+        if (item is! Map) continue;
+        final pId = (item['productId'] ?? item['id'] ?? '').toString().trim();
+        final pName = (item['name'] ?? '').toString().trim().toLowerCase();
+        final qty = ((item['qty'] ?? item['quantity'] ?? 1) as num).toInt();
+        if (qty <= 0) continue;
+
+        final idx = dishes.indexWhere((d) {
+          final dId = (d['id'] ?? '').toString().trim();
+          final dName = (d['name'] ?? '').toString().trim().toLowerCase();
+          return (pId.isNotEmpty && dId == pId) || (dName == pName);
+        });
+
+        if (idx != -1) {
+          final currentStock = dishes[idx]['stock'];
+          if (currentStock != null && currentStock is num && currentStock >= 0) {
+            final newStock = (currentStock.toInt() - qty).clamp(0, 999999);
+            dishes[idx]['stock'] = newStock;
+            if (newStock == 0) {
+              dishes[idx]['isAvailable'] = false;
+              dishes[idx]['is_available'] = false;
+            }
+            changed = true;
+          }
+        }
+      }
+
+      if (changed) {
+        configBox?.put('restaurant_menu_dishes', dishes);
+        _loadMenuDishes();
+      }
+    } catch (e) {
+      debugPrint('Error decrementing local stock: $e');
+    }
+  }
+
   // Complete Order & Real-Time Sync
   Future<void> _completeOrder({
     required String paymentMode,
@@ -1754,6 +1813,9 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
         }
 
         await box.put('kot_orders_$orgId', updatedList);
+        if (isPaid) {
+          _decrementLocalStock(orderItemsList);
+        }
 
         // Update table status in Hive to 'occupied' if Dine-In
         if (_orderType == 'Dine-In') {
@@ -2232,6 +2294,10 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
         }).toList();
         await box.put('kot_orders_$orgId', updatedList);
       }
+
+      // Decrement local stock for settled items
+      final settledItems = (order['items'] as List?) ?? [];
+      _decrementLocalStock(settledItems);
 
       // 4. Sync Bill to Google Sheets and Webhook
       try {
@@ -3484,7 +3550,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                                           itemBuilder: (context, itIdx) {
                                             final item = items[itIdx];
                                             final itemId = item['id']?.toString() ?? '$itIdx';
-                                            final isAvailable = item['isAvailable'] != false;
+                                            final isAvailable = item['isAvailable'] != false && item['is_available'] != false && ((item['stock'] as num?)?.toInt() ?? -1) != 0;
                                             final isOrderable = _isItemAvailableNow(item);
                                             final qtyInCart = _getCartQty(itemId);
                                             final price = (item['price'] as num?)?.toDouble() ?? 0.0;

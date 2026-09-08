@@ -141,6 +141,13 @@ function doPost(e) {
       case "MERGE_TABLES":
         return handleMergeTables(json);
 
+      case "TOGGLE_ITEM_AVAILABILITY":
+      case "SET_ITEM_AVAILABILITY":
+        return handleToggleItemAvailability(json);
+
+      case "DECREMENT_INVENTORY":
+        return handleDecrementInventory(json);
+
       default:
         return responseJson({ success: false, error: "Unknown action: " + action });
     }
@@ -850,6 +857,49 @@ function handleGetDelta(params) {
       }
     }
 
+    // 4. Phase 7: Inventory / Item Availability Delta
+    var deltaInventory = [];
+    if (ss) {
+      try {
+        var invSheet = getInventorySheet(ss);
+        if (invSheet && invSheet.getLastRow() > 1) {
+          var inData = invSheet.getDataRange().getValues();
+          var inHeaders = inData[0].map(function(h) { return String(h || "").trim().toLowerCase(); });
+          var idCol = -1, nameCol = -1, stockCol = -1, availCol = -1;
+          for (var c = 0; c < inHeaders.length; c++) {
+            var h = inHeaders[c];
+            if (h.indexOf("id") !== -1 && idCol === -1) idCol = c;
+            if ((h.indexOf("name") !== -1 || h.indexOf("dish") !== -1) && nameCol === -1) nameCol = c;
+            if (h.indexOf("stock") !== -1 || h.indexOf("qty") !== -1 || h.indexOf("quantity") !== -1) stockCol = c;
+            if (h.indexOf("avail") !== -1 || h.indexOf("status") !== -1) availCol = c;
+          }
+          if (idCol === -1) idCol = 0;
+          if (nameCol === -1) nameCol = 1;
+
+          for (var ri = 1; ri < inData.length; ri++) {
+            var pId = String(inData[ri][idCol] || "").trim();
+            var pName = String(inData[ri][nameCol] || "").trim();
+            var pStock = stockCol !== -1 ? inData[ri][stockCol] : -1;
+            var pAvail = true;
+            if (availCol !== -1 && inData[ri][availCol] !== undefined) {
+              var avStr = String(inData[ri][availCol]).toLowerCase().trim();
+              if (avStr === "false" || avStr === "0" || avStr === "no" || avStr === "sold out" || avStr === "unavailable") {
+                pAvail = false;
+              }
+            }
+            if (pId) {
+              deltaInventory.push({
+                id: pId,
+                name: pName,
+                stock: pStock !== "" && pStock !== null && pStock !== undefined ? Number(pStock) : -1,
+                isAvailable: pAvail
+              });
+            }
+          }
+        }
+      } catch(eInv) {}
+    }
+
     return responseJson({
       ok: true,
       success: true,
@@ -860,6 +910,7 @@ function handleGetDelta(params) {
       reservations: deltaReservations,
       payments: deltaPayments,
       alerts: deltaAlerts,
+      inventory: deltaInventory,
       serverTime: new Date().toISOString()
     });
   } catch(errDelta) {
@@ -1571,6 +1622,15 @@ function handleSaveBill(data) {
         rawItems, paymentMode, customerName, customerPhone, 
         specialInstructions, txnId, clientRequestId, b, rev
       );
+
+      // Phase 7: Decrement product stock and auto-86 if stock reaches 0
+      if (isSettled && ss) {
+        try {
+          decrementInventoryForOrder(ss, orgId, rawItems);
+        } catch(eStock) {
+          console.warn("Stock decrement warning: " + eStock);
+        }
+      }
 
       return buildResult({
         row: existingRow !== -1 ? existingRow : lastRow + 1,
@@ -2601,4 +2661,193 @@ function handleMergeTables(json) {
 function responseJson(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj))
     .setMimeType(ContentService.MimeType.JSON);
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 7: Catalog & Inventory Handlers (§7.1, §7.2)
+// ─────────────────────────────────────────────────────────────────────────────
+
+function decrementInventoryForOrder(ss, outletId, rawItems) {
+  if (!ss || !rawItems) return;
+  var items = [];
+  if (typeof rawItems === "string") {
+    try { items = JSON.parse(rawItems); } catch(e) { return; }
+  } else if (Array.isArray(rawItems)) {
+    items = rawItems;
+  } else {
+    return;
+  }
+  if (!items || items.length === 0) return;
+
+  var sheet = getInventorySheet(ss);
+  if (!sheet) return;
+
+  var data = sheet.getDataRange().getValues();
+  if (data.length <= 1) return;
+
+  var headers = data[0].map(function(h) { return String(h || "").trim().toLowerCase(); });
+  var idCol = -1, nameCol = -1, stockCol = -1, availCol = -1;
+  for (var c = 0; c < headers.length; c++) {
+    var h = headers[c];
+    if (h.indexOf("id") !== -1 && idCol === -1) idCol = c;
+    if ((h.indexOf("name") !== -1 || h.indexOf("dish") !== -1) && nameCol === -1) nameCol = c;
+    if (h.indexOf("stock") !== -1 || h.indexOf("qty") !== -1 || h.indexOf("quantity") !== -1) stockCol = c;
+    if (h.indexOf("avail") !== -1 || h.indexOf("status") !== -1) availCol = c;
+  }
+  if (idCol === -1) idCol = 0;
+  if (nameCol === -1) nameCol = 1;
+  if (stockCol === -1) return; // No stock column found
+
+  if (availCol === -1) {
+    availCol = headers.length;
+    sheet.getRange(1, availCol + 1).setValue("Available").setFontWeight("bold");
+  }
+
+  var updated = false;
+  items.forEach(function(item) {
+    var orderItemId = String(item.productId || item.id || "").trim();
+    var orderItemName = String(item.name || "").trim().toLowerCase();
+    var qty = parseInt(item.qty || item.quantity || 1, 10);
+    if (qty <= 0) return;
+
+    for (var r = 1; r < data.length; r++) {
+      var rowId = String(data[r][idCol] || "").trim();
+      var rowName = String(data[r][nameCol] || "").trim().toLowerCase();
+
+      if ((orderItemId && rowId === orderItemId) || (orderItemName && rowName === orderItemName)) {
+        var currentStock = data[r][stockCol];
+        // -1 represents infinite stock (never decrement)
+        if (currentStock !== "" && currentStock !== null && currentStock !== undefined && Number(currentStock) >= 0) {
+          var numStock = Number(currentStock);
+          var newStock = Math.max(0, numStock - qty);
+          data[r][stockCol] = newStock;
+          sheet.getRange(r + 1, stockCol + 1).setValue(newStock);
+          updated = true;
+
+          // Auto-86: Mark unavailable if stock reaches 0
+          if (newStock === 0) {
+            data[r][availCol] = "FALSE";
+            sheet.getRange(r + 1, availCol + 1).setValue("FALSE");
+          }
+        }
+        break;
+      }
+    }
+  });
+
+  if (updated && outletId) {
+    getAndBumpRev(outletId);
+  }
+}
+
+function handleToggleItemAvailability(json) {
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(20000);
+  } catch (eLock) {
+    return responseJson({ ok: false, success: false, error: "Server busy: lock timeout in handleToggleItemAvailability." });
+  }
+
+  try {
+    var data = json.data || json;
+    var outletId = String(json.outletId || json.org_id || json.organizationId || data.outletId || "").trim();
+    var sId = json.spreadsheet_id || json.spreadsheetId || getSheetIdForOrg(outletId);
+    var itemId = String(data.itemId || data.id || "").trim();
+    var itemName = String(data.name || data.itemName || "").trim().toLowerCase();
+    var isAvailable = data.isAvailable !== false && data.is_available !== false && data.available !== false;
+
+    var ss = null;
+    if (sId) {
+      try { ss = SpreadsheetApp.openById(sId); } catch(e) {}
+    }
+
+    if (!ss) {
+      return responseJson({ ok: false, success: false, error: "Spreadsheet not found or not connected." });
+    }
+
+    var sheet = getInventorySheet(ss);
+    if (!sheet) {
+      return responseJson({ ok: false, success: false, error: "Inventory sheet not found." });
+    }
+
+    var values = sheet.getDataRange().getValues();
+    if (values.length <= 1) {
+      return responseJson({ ok: false, success: false, error: "Inventory is empty." });
+    }
+
+    var headers = values[0].map(function(h) { return String(h || "").trim().toLowerCase(); });
+    var idCol = -1, nameCol = -1, availCol = -1;
+    for (var c = 0; c < headers.length; c++) {
+      var h = headers[c];
+      if (h.indexOf("id") !== -1 && idCol === -1) idCol = c;
+      if ((h.indexOf("name") !== -1 || h.indexOf("dish") !== -1) && nameCol === -1) nameCol = c;
+      if (h.indexOf("avail") !== -1 || h.indexOf("status") !== -1) availCol = c;
+    }
+    if (idCol === -1) idCol = 0;
+    if (nameCol === -1) nameCol = 1;
+    if (availCol === -1) {
+      availCol = headers.length;
+      sheet.getRange(1, availCol + 1).setValue("Available").setFontWeight("bold");
+    }
+
+    var matchRow = -1;
+    for (var r = 1; r < values.length; r++) {
+      var rowId = String(values[r][idCol] || "").trim();
+      var rowName = String(values[r][nameCol] || "").trim().toLowerCase();
+      if ((itemId && rowId === itemId) || (itemName && rowName === itemName)) {
+        matchRow = r + 1;
+        break;
+      }
+    }
+
+    if (matchRow === -1) {
+      return responseJson({ ok: false, success: false, error: "Item not found in inventory: " + (itemId || itemName) });
+    }
+
+    sheet.getRange(matchRow, availCol + 1).setValue(isAvailable ? "TRUE" : "FALSE");
+    var rev = getAndBumpRev(outletId);
+
+    return responseJson({
+      ok: true,
+      success: true,
+      itemId: itemId,
+      isAvailable: isAvailable,
+      rev: rev
+    });
+  } catch (err) {
+    return responseJson({ ok: false, success: false, error: String(err) });
+  } finally {
+    try { lock.releaseLock(); } catch(e) {}
+  }
+}
+
+function handleDecrementInventory(json) {
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(20000);
+  } catch (eLock) {
+    return responseJson({ ok: false, success: false, error: "Server busy: lock timeout in handleDecrementInventory." });
+  }
+
+  try {
+    var data = json.data || json;
+    var outletId = String(json.outletId || json.org_id || data.outletId || "").trim();
+    var sId = json.spreadsheet_id || json.spreadsheetId || getSheetIdForOrg(outletId);
+    var rawItems = data.items || data.orderItems || [];
+
+    var ss = null;
+    if (sId) {
+      try { ss = SpreadsheetApp.openById(sId); } catch(e) {}
+    }
+
+    if (ss) {
+      decrementInventoryForOrder(ss, outletId, rawItems);
+    }
+    return responseJson({ ok: true, success: true });
+  } catch (err) {
+    return responseJson({ ok: false, success: false, error: String(err) });
+  } finally {
+    try { lock.releaseLock(); } catch(e) {}
+  }
 }

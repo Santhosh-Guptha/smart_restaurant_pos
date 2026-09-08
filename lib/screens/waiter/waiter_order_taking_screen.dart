@@ -165,9 +165,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
       // 3. Filter out placeholder / deleted items
       items = items.where((d) {
         final id = d['id']?.toString() ?? '';
-        final isAvail = d['isAvailable'] != false && d['is_available'] != false;
-        return isAvail &&
-            !id.startsWith('m_br_') &&
+        return !id.startsWith('m_br_') &&
             !id.startsWith('m_st_') &&
             !id.startsWith('m_mn_') &&
             !id.startsWith('m_bf_') &&
@@ -304,8 +302,33 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
   }
 
   void _addToTray(Map<String, dynamic> item) {
-    HapticFeedback.selectionClick();
+    final isAvail = item['isAvailable'] != false && item['is_available'] != false && ((item['stock'] as num?)?.toInt() ?? -1) != 0;
+    if (!isAvail) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("⚠️ ${item['name'] ?? 'Item'} is currently sold out!"),
+          backgroundColor: Colors.redAccent,
+          duration: const Duration(milliseconds: 1400),
+        ),
+      );
+      return;
+    }
+
+    final stock = (item['stock'] as num?)?.toInt() ?? -1;
     final id = item['id']?.toString() ?? item['name'].toString();
+    final currentInTray = _tray[id]?['qty'] as int? ?? 0;
+    if (stock > 0 && currentInTray >= stock) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("Cannot add more: Only $stock in stock!"),
+          backgroundColor: Colors.orange.shade800,
+          duration: const Duration(milliseconds: 1400),
+        ),
+      );
+      return;
+    }
+
+    HapticFeedback.selectionClick();
     setState(() {
       if (_tray.containsKey(id)) {
         _tray[id]!['qty'] = (_tray[id]!['qty'] as int) + 1;
@@ -1413,32 +1436,30 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                                       physics: const NeverScrollableScrollPhysics(),
                                       itemCount: items.length,
                                       separatorBuilder: (_, __) => const SizedBox(height: 6),
-                                      itemBuilder: (context, itIdx) {
+                      itemBuilder: (context, itIdx) {
                                         final item = items[itIdx];
                                         final itemId = item['id']?.toString() ?? item['name'].toString();
                                         final price = (item['price'] as num?)?.toDouble() ?? 0.0;
                                         final isVeg = item['isVeg'] != false;
                                         final inTrayQty = _getTrayQty(itemId);
+                                        final isAvail = item['isAvailable'] != false && item['is_available'] != false && ((item['stock'] as num?)?.toInt() ?? -1) != 0;
 
                                         return Container(
                                           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                                           decoration: BoxDecoration(
                                             color: Colors.white,
                                             borderRadius: BorderRadius.circular(10),
-                                            border: Border.all(
-                                              color: inTrayQty > 0 ? const Color(0xFF2563EB) : const Color(0xFFE2E8F0),
-                                              width: inTrayQty > 0 ? 1.5 : 1.0,
-                                            ),
+                                            border: Border.all(color: const Color(0xFFE2E8F0)),
                                           ),
                                           child: Row(
                                             children: [
-                                              // Veg/Non-Veg icon
+                                              // Veg / Non-Veg Indicator
                                               Container(
                                                 width: 14,
                                                 height: 14,
                                                 decoration: BoxDecoration(
                                                   border: Border.all(
-                                                    color: isVeg ? const Color(0xFF10B981) : const Color(0xFFEF4444),
+                                                    color: isVeg ? const Color(0xFF16A34A) : const Color(0xFFDC2626),
                                                     width: 1.5,
                                                   ),
                                                   borderRadius: BorderRadius.circular(3),
@@ -1448,7 +1469,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                                                     width: 6,
                                                     height: 6,
                                                     decoration: BoxDecoration(
-                                                      color: isVeg ? const Color(0xFF10B981) : const Color(0xFFEF4444),
+                                                      color: isVeg ? const Color(0xFF16A34A) : const Color(0xFFDC2626),
                                                       shape: BoxShape.circle,
                                                     ),
                                                   ),
@@ -1461,18 +1482,37 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                                                   children: [
                                                     Text(
                                                       item['name']?.toString() ?? 'Dish',
-                                                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+                                                      style: TextStyle(
+                                                        fontSize: 13,
+                                                        fontWeight: FontWeight.bold,
+                                                        color: isAvail ? const Color(0xFF0F172A) : const Color(0xFF94A3B8),
+                                                        decoration: isAvail ? null : TextDecoration.lineThrough,
+                                                      ),
                                                     ),
                                                     Text(
                                                       '₹${price.toStringAsFixed(0)}',
-                                                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF2563EB)),
+                                                      style: TextStyle(
+                                                        fontSize: 12,
+                                                        fontWeight: FontWeight.w600,
+                                                        color: isAvail ? const Color(0xFF2563EB) : const Color(0xFF94A3B8),
+                                                      ),
                                                     ),
                                                   ],
                                                 ),
                                               ),
 
-                                              // Quantity Stepper
-                                              if (inTrayQty == 0)
+                                              // Quantity Stepper / Sold Out
+                                              if (!isAvail)
+                                                Container(
+                                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                                  decoration: BoxDecoration(
+                                                    color: const Color(0xFFFEE2E2),
+                                                    borderRadius: BorderRadius.circular(8),
+                                                    border: Border.all(color: const Color(0xFFFCA5A5)),
+                                                  ),
+                                                  child: const Text('SOLD OUT', style: TextStyle(color: Color(0xFFDC2626), fontSize: 10.5, fontWeight: FontWeight.bold)),
+                                                )
+                                              else if (inTrayQty == 0)
                                                 ElevatedButton(
                                                   style: ElevatedButton.styleFrom(
                                                     backgroundColor: const Color(0xFFEFF6FF),
