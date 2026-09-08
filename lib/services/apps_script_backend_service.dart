@@ -619,6 +619,7 @@ class AppsScriptBackendService {
         Uri.parse(url),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
+          'secret': _secretToken,
           'action': 'CLEAR_TABLE',
           'org_id': orgId.trim(),
           'spreadsheet_id': resolvedSheetId ?? '',
