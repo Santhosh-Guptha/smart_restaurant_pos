@@ -18,7 +18,6 @@ import 'services/firebase_connection_service.dart';
 import 'services/database_cleanup_service.dart';
 import 'services/subscription_plan_service.dart';
 import 'screens/dashboard/restaurant_home_screen.dart';
-import 'screens/auth/staff_pin_login_screen.dart';
 import 'screens/login/saas_login_screen.dart';
 import 'screens/login/saas_expired_screen.dart';
 import 'screens/login/first_login_password_screen.dart';
@@ -54,14 +53,20 @@ void main() async {
   await Hive.openBox('restaurant_auth_box');
   await Hive.openBox('restaurant_config_box');
 
-  try {
-    final tempDir = await getTemporaryDirectory();
-    if (tempDir.existsSync()) {
-      tempDir.listSync().forEach((f) {
-        try { f.deleteSync(recursive: true); } catch (_) {}
-      });
-    }
-  } catch (_) {}
+  Future.microtask(() async {
+    try {
+      final tempDir = await getTemporaryDirectory();
+      if (tempDir.existsSync()) {
+        for (final entity in tempDir.listSync()) {
+          try {
+            final name = entity.path.split(Platform.pathSeparator).last.toLowerCase();
+            if (name.endsWith('.sbk') || name.endsWith('.csv')) continue;
+            entity.deleteSync(recursive: true);
+          } catch (_) {}
+        }
+      }
+    } catch (_) {}
+  });
 
   PaintingBinding.instance.imageCache.maximumSizeBytes = 50 * 1024 * 1024;
   PaintingBinding.instance.imageCache.maximumSize = 100;
@@ -127,6 +132,23 @@ Future<void> _bootstrapMasterDatabaseIfNeeded() async {
   }
 }
 
+const String kCurrentAppVersion = '1.1.0';
+
+int _compareVersions(String v1, String v2) {
+  final cleanV1 = v1.split('+').first.trim();
+  final cleanV2 = v2.split('+').first.trim();
+  final parts1 = cleanV1.split('.').map((p) => int.tryParse(p) ?? 0).toList();
+  final parts2 = cleanV2.split('.').map((p) => int.tryParse(p) ?? 0).toList();
+  final len = parts1.length > parts2.length ? parts1.length : parts2.length;
+  for (int i = 0; i < len; i++) {
+    final p1 = i < parts1.length ? parts1[i] : 0;
+    final p2 = i < parts2.length ? parts2[i] : 0;
+    if (p1 < p2) return -1;
+    if (p1 > p2) return 1;
+  }
+  return 0;
+}
+
 class SmartDineApp extends ConsumerWidget {
   const SmartDineApp({super.key});
 
@@ -141,7 +163,7 @@ class SmartDineApp extends ConsumerWidget {
       final latestVer = updateData['latestVersion'] as String? ?? '1.0.0';
       final mandatory = updateData['mandatory'] == true;
       final apkUrl = updateData['apkUrl'] as String? ?? '';
-      if (latestVer != '1.0.0' && mandatory && apkUrl.isNotEmpty) {
+      if (_compareVersions(kCurrentAppVersion, latestVer) < 0 && mandatory && apkUrl.isNotEmpty) {
         return MaterialApp(
           navigatorKey: navigatorKey,
           scaffoldMessengerKey: scaffoldMessengerKey,

@@ -25,6 +25,8 @@ import '../restaurant/store_configuration_screen.dart';
 import '../settings/settings_sidebar_dialog.dart';
 import '../analytics/restaurant_analytics_screen.dart';
 import '../orders/restaurant_order_history_screen.dart';
+import '../auth/staff_pin_login_screen.dart';
+import '../../core/rbac_permissions.dart';
 
 class RestaurantHomeScreen extends ConsumerStatefulWidget {
   const RestaurantHomeScreen({super.key});
@@ -181,18 +183,28 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final restaurantAuth = ref.watch(restaurantAuthProvider);
+    if (restaurantAuth.isLocked && restaurantAuth.staffList.isNotEmpty) {
+      return const StaffPinLoginScreen();
+    }
+
+    final activeStaff = restaurantAuth.activeStaff;
     final saasSession = ref.watch(saasSessionProvider);
     final user = saasSession.currentUser;
     final org = saasSession.currentOrganization;
-    final roleStr = user?.role.toUpperCase() ?? 'OWNER';
+
+    // Fail-closed role resolution: prefer authenticated activeStaff, fallback to SaaS user, else unassigned
+    final StaffRole effectiveRole = activeStaff?.role ??
+        (user != null ? StaffRoleExtension.fromKey(user.role) : StaffRole.unassigned);
+    final String roleStr = effectiveRole.key;
     final storeName = org?.name ?? org?.appName ?? 'SmartDine Restaurant';
 
-    // Determine role permissions
-    final bool isOwner = roleStr == 'OWNER' || roleStr == 'MASTER_ADMIN';
-    final bool isManager = roleStr == 'MANAGER';
-    final bool isBilling = roleStr == 'BILLING' || roleStr == 'CASHIER';
-    final bool isKitchen = roleStr == 'KITCHEN' || roleStr == 'CHEF';
-    final bool isWaiter = roleStr == 'WAITER' || roleStr == 'CAPTAIN';
+    // Determine role permissions (fail-closed)
+    final bool isOwner = effectiveRole == StaffRole.owner;
+    final bool isManager = effectiveRole == StaffRole.manager;
+    final bool isBilling = effectiveRole == StaffRole.billing;
+    final bool isKitchen = effectiveRole == StaffRole.kitchen;
+    final bool isWaiter = effectiveRole == StaffRole.waiter;
 
     // Feature enablement from license plan (backward compatible: defaults to true if empty/legacy)
     final bool featBilling = LicenseGuard.hasFeature(ref, 'qsrBilling', defaultValue: true);
@@ -213,18 +225,21 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
     final bool canStaff = (isOwner || isManager) && featStaff;
     final bool canStoreConfig = (isOwner || isManager) && featStoreConfig;
     final bool canAnalytics = (isOwner || isManager) && featAnalytics;
+    final bool canOrders = isOwner || isManager || isBilling;
 
-    final String roleDisplayName = isOwner
-        ? 'Restaurant Owner (Master Admin)'
-        : isManager
-            ? 'Store Manager'
-            : isBilling
-                ? 'Billing & Cashier'
-                : isKitchen
-                    ? 'Kitchen Chef (KDS)'
-                    : isWaiter
-                        ? 'Floor Captain / Waiter'
-                        : 'Staff Member';
+    final String roleDisplayName = activeStaff != null
+        ? '${activeStaff.name} (${activeStaff.role.displayName})'
+        : isOwner
+            ? 'Restaurant Owner (Master Admin)'
+            : isManager
+                ? 'Store Manager'
+                : isBilling
+                    ? 'Billing & Cashier'
+                    : isKitchen
+                        ? 'Kitchen Chef (KDS)'
+                        : isWaiter
+                            ? 'Floor Captain / Waiter'
+                            : 'Unassigned Staff';
 
     return Scaffold(
       backgroundColor: context.canvasColor,
@@ -289,13 +304,32 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
           ],
         ),
         actions: [
+          if (restaurantAuth.staffList.isNotEmpty)
+            IconButton(
+              tooltip: 'Lock Terminal / Switch Staff',
+              icon: const Icon(Icons.lock_outline_rounded, color: Colors.amber, size: 22),
+              onPressed: () {
+                ref.read(restaurantAuthProvider.notifier).lockTerminal();
+              },
+            ),
           IconButton(
             tooltip: 'Store & Hardware Settings',
             icon: Icon(Icons.settings_outlined, color: context.textPrimary, size: 22),
-            onPressed: () => showDialog(
-              context: context,
-              builder: (_) => const SettingsSidebarDialog(initialTab: 0),
-            ),
+            onPressed: () {
+              if (canStoreConfig) {
+                showDialog(
+                  context: context,
+                  builder: (_) => const SettingsSidebarDialog(initialTab: 0),
+                );
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Access Denied: Settings require Owner or Manager role.'),
+                    backgroundColor: Colors.redAccent,
+                  ),
+                );
+              }
+            },
           ),
           IconButton(
             tooltip: 'Log Out of POS',
@@ -367,10 +401,9 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
                 builder: (context, ref, _) {
                   final layoutState = ref.watch(dashboardLayoutProvider);
                   final saasSession = ref.watch(saasSessionProvider);
-                  final userRole = saasSession.currentUser?.role ?? 'OWNER';
 
                   final allowedCards = kAllDashboardCards.where((c) {
-                    return c.isAllowedFor(license: saasSession.currentLicense, role: userRole);
+                    return c.isAllowedFor(license: saasSession.currentLicense, role: roleStr);
                   }).toList();
                   final allowedCardIds = allowedCards.map((c) => c.id).toSet();
 
@@ -378,7 +411,7 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
                   final primaryCards = <Widget>[];
                   for (final cardId in layoutState.primaryCardIds) {
                     if (!allowedCardIds.contains(cardId)) continue;
-                    final w = _buildCardById(cardId, context, isOwner, canBilling, canTables, canKds, canMenu, canOutlets, canStaff, canStoreConfig, canAnalytics);
+                    final w = _buildCardById(cardId, context, isOwner, canBilling, canTables, canKds, canMenu, canOutlets, canStaff, canStoreConfig, canAnalytics, canOrders);
                     if (w != null) primaryCards.add(w);
                   }
 
@@ -520,31 +553,49 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
                                     if (cardId == null) return;
                                     switch (cardId) {
                                       case 'counter_billing':
-                                        Navigator.push(context, MaterialPageRoute(builder: (_) => const FastQsrBillingScreen()));
+                                        if (canBilling) {
+                                          Navigator.push(context, MaterialPageRoute(builder: (_) => const FastQsrBillingScreen()));
+                                        }
                                         break;
                                       case 'tables':
-                                        Navigator.push(context, MaterialPageRoute(builder: (_) => const TableManagementScreen()));
+                                        if (canTables) {
+                                          Navigator.push(context, MaterialPageRoute(builder: (_) => const TableManagementScreen()));
+                                        }
                                         break;
                                       case 'orders_history':
-                                        Navigator.push(context, MaterialPageRoute(builder: (_) => const RestaurantOrderHistoryScreen()));
+                                        if (canOrders) {
+                                          Navigator.push(context, MaterialPageRoute(builder: (_) => const RestaurantOrderHistoryScreen()));
+                                        }
                                         break;
                                       case 'kds':
-                                        Navigator.push(context, MaterialPageRoute(builder: (_) => const KitchenDisplayScreen()));
+                                        if (canKds) {
+                                          Navigator.push(context, MaterialPageRoute(builder: (_) => const KitchenDisplayScreen()));
+                                        }
                                         break;
                                       case 'menu':
-                                        Navigator.push(context, MaterialPageRoute(builder: (_) => const RestaurantMenuManagementScreen()));
+                                        if (canMenu) {
+                                          Navigator.push(context, MaterialPageRoute(builder: (_) => const RestaurantMenuManagementScreen()));
+                                        }
                                         break;
                                       case 'outlets':
-                                        Navigator.push(context, MaterialPageRoute(builder: (_) => const BranchManagementScreen()));
+                                        if (canOutlets) {
+                                          Navigator.push(context, MaterialPageRoute(builder: (_) => const BranchManagementScreen()));
+                                        }
                                         break;
                                       case 'staff':
-                                        Navigator.push(context, MaterialPageRoute(builder: (_) => const StaffManagementScreen()));
+                                        if (canStaff) {
+                                          Navigator.push(context, MaterialPageRoute(builder: (_) => const StaffManagementScreen()));
+                                        }
                                         break;
                                       case 'store_config':
-                                        Navigator.push(context, MaterialPageRoute(builder: (_) => const StoreConfigurationScreen()));
+                                        if (canStoreConfig) {
+                                          Navigator.push(context, MaterialPageRoute(builder: (_) => const StoreConfigurationScreen()));
+                                        }
                                         break;
                                       case 'analytics':
-                                        Navigator.push(context, MaterialPageRoute(builder: (_) => const RestaurantAnalyticsScreen()));
+                                        if (canAnalytics) {
+                                          Navigator.push(context, MaterialPageRoute(builder: (_) => const RestaurantAnalyticsScreen()));
+                                        }
                                         break;
                                     }
                                   },
@@ -567,7 +618,7 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
   }
 
 
-  Widget? _buildCardById(String id, BuildContext context, bool isOwner, bool canBilling, bool canTables, bool canKds, bool canMenu, bool canOutlets, bool canStaff, bool canStoreConfig, bool canAnalytics) {
+  Widget? _buildCardById(String id, BuildContext context, bool isOwner, bool canBilling, bool canTables, bool canKds, bool canMenu, bool canOutlets, bool canStaff, bool canStoreConfig, bool canAnalytics, [bool canOrders = true]) {
     switch (id) {
       case 'counter_billing':
         if (!canBilling) return null;
@@ -596,7 +647,7 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
           ),
         );
       case 'orders_history':
-        if (!isOwner && !canBilling && !canAnalytics) return null;
+        if (!canOrders) return null;
         return _buildFeatureCard(
           title: 'Order History',
           subtitle: 'All bills, modes & online orders',

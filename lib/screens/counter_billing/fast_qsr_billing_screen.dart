@@ -86,7 +86,16 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
     });
 
     final activeStaff = ref.read(restaurantAuthProvider).activeStaff;
-    if (activeStaff != null && !activeStaff.canPerformBilling) {
+    final saasUser = ref.read(saasSessionProvider).currentUser;
+    final bool hasBillingAccess = (activeStaff != null)
+        ? activeStaff.canPerformBilling
+        : (saasUser != null &&
+            (saasUser.role == 'OWNER' ||
+                saasUser.role == 'MASTER_ADMIN' ||
+                saasUser.role == 'MANAGER' ||
+                saasUser.role == 'BILLING'));
+
+    if (!hasBillingAccess) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(

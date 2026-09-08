@@ -5,12 +5,12 @@ import 'package:crypto/crypto.dart';
 // Enforces permissions across Owner, Manager, Billing Cashier, Kitchen Chef, and Waiter.
 
 enum StaffRole {
-
   owner,
   manager,
   billing,
   kitchen,
   waiter,
+  unassigned,
 }
 
 extension StaffRoleExtension on StaffRole {
@@ -26,6 +26,8 @@ extension StaffRoleExtension on StaffRole {
         return 'Kitchen / Chef';
       case StaffRole.waiter:
         return 'Waiter / Captain';
+      case StaffRole.unassigned:
+        return 'Unassigned';
     }
   }
 
@@ -47,8 +49,9 @@ extension StaffRoleExtension on StaffRole {
       case 'WAITER':
       case 'CAPTAIN':
         return StaffRole.waiter;
+      case 'UNASSIGNED':
       default:
-        return StaffRole.waiter;
+        return StaffRole.unassigned;
     }
   }
 }
@@ -218,5 +221,40 @@ class StaffMember {
       hasRole(StaffRole.owner) ||
       hasRole(StaffRole.manager) ||
       hasRole(StaffRole.billing);
+
+  // --- Canonical Navigation & Screen Access Gates ---
+
+  /// Can access Counter Billing screen
+  bool get canAccessBilling => canPerformBilling;
+
+  /// Can access Kitchen Display Screen (KDS)
+  bool get canAccessKitchen => canAccessKitchenKDS;
+
+  /// Can access Order History & Ledger
+  bool get canAccessOrders =>
+      hasRole(StaffRole.owner) ||
+      hasRole(StaffRole.manager) ||
+      hasRole(StaffRole.billing);
+
+  /// Can access Table Management & Floor Plan
+  bool get canAccessTables =>
+      hasRole(StaffRole.owner) ||
+      hasRole(StaffRole.manager) ||
+      hasRole(StaffRole.billing) ||
+      hasRole(StaffRole.waiter);
+
+  /// Can access Menu Management & Dish Pricing
+  bool get canAccessMenu => canManageStaffAndMenu;
+
+  /// Can access Analytics & Financial Reports
+  bool get canAccessReports => canViewFinancialReports;
+
+  /// Can access Staff Management
+  bool get canManageStaff =>
+      hasRole(StaffRole.owner) || hasRole(StaffRole.manager);
+
+  /// Can access Store Settings & Config
+  bool get canAccessSettings =>
+      hasRole(StaffRole.owner) || hasRole(StaffRole.manager);
 }
 

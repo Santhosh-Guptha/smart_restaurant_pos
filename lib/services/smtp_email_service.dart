@@ -26,8 +26,8 @@ class SmtpConfig {
       host: map['host'] ?? 'smtp.gmail.com',
       port: (map['port'] as num?)?.toInt() ?? 587,
       isSsl: map['isSsl'] == true,
-      username: map['username'] ?? 'santhoshbukka5@gmail.com',
-      password: map['password'] ?? 'nqkqhuovlhivtdan',
+      username: map['username'] ?? '',
+      password: map['password'] ?? '',
       fromName: map['fromName'] ?? 'SmartDine POS',
     );
   }
@@ -43,7 +43,8 @@ class SmtpConfig {
     };
   }
 
-  bool get isConfigured => host.isNotEmpty && username.isNotEmpty && password.isNotEmpty;
+  bool get isConfigured =>
+      host.isNotEmpty && username.isNotEmpty && password.isNotEmpty;
 }
 
 class SmtpEmailService {
@@ -74,13 +75,13 @@ class SmtpEmailService {
       if (config.isConfigured) return config;
     }
 
-    // 3. Default preprod fallback credentials
+    // 3. Default unconfigured fallback
     return SmtpConfig(
       host: 'smtp.gmail.com',
       port: 587,
       isSsl: false,
-      username: 'santhoshbukka5@gmail.com',
-      password: 'nqkqhuovlhivtdan',
+      username: '',
+      password: '',
       fromName: 'SmartDine POS',
     );
   }

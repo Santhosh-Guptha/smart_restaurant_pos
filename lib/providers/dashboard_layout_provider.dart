@@ -26,15 +26,20 @@ class DashboardCardMeta {
   });
 
   bool isAllowedFor({SaasLicense? license, String? role}) {
+    final normRole = role?.toUpperCase() ?? 'UNASSIGNED';
+    // Fail-closed for unknown or unassigned roles
+    if (normRole == 'UNASSIGNED') {
+      return false;
+    }
+
     // Master admin sees everything
-    final normRole = role?.toUpperCase();
     if (normRole == 'MASTER_ADMIN') {
       return true;
     }
 
-    // Role check
+    // Role check (fail-closed)
     if (allowedRoles != null && allowedRoles!.isNotEmpty) {
-      if (normRole == null || !allowedRoles!.map((r) => r.toUpperCase()).contains(normRole)) {
+      if (!allowedRoles!.map((r) => r.toUpperCase()).contains(normRole)) {
         return false;
       }
     }
@@ -50,7 +55,7 @@ class DashboardCardMeta {
   }
 }
 
-/// All available dashboard cards registered for the restaurant POS.
+/// All available dashboard cards registered for the restaurant POS with RBAC constraints.
 const List<DashboardCardMeta> kAllDashboardCards = [
   DashboardCardMeta(
     id: 'counter_billing',
@@ -60,6 +65,7 @@ const List<DashboardCardMeta> kAllDashboardCards = [
     icon: Icons.point_of_sale_rounded,
     defaultColor: Colors.amber,
     requiredFeature: 'qsrBilling',
+    allowedRoles: ['OWNER', 'MANAGER', 'BILLING', 'CASHIER'],
   ),
   DashboardCardMeta(
     id: 'tables',
@@ -69,6 +75,7 @@ const List<DashboardCardMeta> kAllDashboardCards = [
     icon: Icons.table_restaurant_rounded,
     defaultColor: Color(0xFF10B981),
     requiredFeature: 'tableManagement',
+    allowedRoles: ['OWNER', 'MANAGER', 'BILLING', 'CASHIER', 'WAITER', 'CAPTAIN'],
   ),
   DashboardCardMeta(
     id: 'orders_history',
@@ -77,6 +84,7 @@ const List<DashboardCardMeta> kAllDashboardCards = [
     badge: 'Live Ledger',
     icon: Icons.receipt_long_rounded,
     defaultColor: Color(0xFF6366F1),
+    allowedRoles: ['OWNER', 'MANAGER', 'BILLING', 'CASHIER'],
   ),
   DashboardCardMeta(
     id: 'kds',
@@ -86,6 +94,7 @@ const List<DashboardCardMeta> kAllDashboardCards = [
     icon: Icons.outdoor_grill_rounded,
     defaultColor: Color(0xFFFF6B35),
     requiredFeature: 'kdsEnabled',
+    allowedRoles: ['OWNER', 'MANAGER', 'KITCHEN', 'CHEF'],
   ),
   DashboardCardMeta(
     id: 'menu',
@@ -95,6 +104,7 @@ const List<DashboardCardMeta> kAllDashboardCards = [
     icon: Icons.restaurant_menu_rounded,
     defaultColor: Colors.teal,
     requiredFeature: 'menuManagement',
+    allowedRoles: ['OWNER', 'MANAGER'],
   ),
   DashboardCardMeta(
     id: 'outlets',
@@ -104,7 +114,7 @@ const List<DashboardCardMeta> kAllDashboardCards = [
     icon: Icons.storefront_rounded,
     defaultColor: Colors.blueAccent,
     requiredFeature: 'multiOutlet',
-    allowedRoles: ['OWNER', 'CLIENT', 'MASTER_ADMIN'],
+    allowedRoles: ['OWNER', 'MANAGER'],
   ),
   DashboardCardMeta(
     id: 'staff',
@@ -114,7 +124,7 @@ const List<DashboardCardMeta> kAllDashboardCards = [
     icon: Icons.people_alt_rounded,
     defaultColor: Colors.deepPurpleAccent,
     requiredFeature: 'staffManagement',
-    allowedRoles: ['OWNER', 'CLIENT', 'MASTER_ADMIN'],
+    allowedRoles: ['OWNER', 'MANAGER'],
   ),
   DashboardCardMeta(
     id: 'store_config',
@@ -124,7 +134,7 @@ const List<DashboardCardMeta> kAllDashboardCards = [
     icon: Icons.tune_rounded,
     defaultColor: Colors.deepOrangeAccent,
     requiredFeature: 'storeConfiguration',
-    allowedRoles: ['OWNER', 'CLIENT', 'MASTER_ADMIN'],
+    allowedRoles: ['OWNER', 'MANAGER'],
   ),
   DashboardCardMeta(
     id: 'analytics',
@@ -134,6 +144,7 @@ const List<DashboardCardMeta> kAllDashboardCards = [
     icon: Icons.analytics_rounded,
     defaultColor: Colors.pinkAccent,
     requiredFeature: 'dayEndReports',
+    allowedRoles: ['OWNER', 'MANAGER'],
   ),
 ];
 

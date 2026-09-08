@@ -240,14 +240,20 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
       });
       box.put('restaurant_tables_$orgId', loaded.map((t) => t.toMap()).toList());
     } else {
-      // Ensure each table's QR URL is up-to-date
+      // Preserve existing non-empty QR URLs so physical printed QR stands remain valid.
+      // Only generate if missing, and persist back if any table was updated.
+      bool needsPersist = false;
       loaded = loaded.map((t) {
-        final expectedUrl = _buildQrUrl(t.tableNumber, shopName, orgId);
-        if (t.qrUrl != expectedUrl) {
+        if (t.qrUrl == null || t.qrUrl!.isEmpty) {
+          needsPersist = true;
+          final expectedUrl = _buildQrUrl(t.tableNumber, shopName, orgId);
           return t.copyWith(qrUrl: expectedUrl, token: t.token ?? const Uuid().v4());
         }
         return t;
       }).toList();
+      if (needsPersist) {
+        box.put('restaurant_tables_$orgId', loaded.map((t) => t.toMap()).toList());
+      }
     }
 
     setState(() {

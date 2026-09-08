@@ -396,7 +396,7 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
                     'Shares restaurant operational spreadsheet with staff email',
                     style: TextStyle(color: context.textSecondary, fontSize: 11),
                   ),
-                  activeColor: Colors.amber,
+                  activeThumbColor: Colors.amber,
                   value: grantSheetAccess,
                   onChanged: (val) =>
                       setDialogState(() => grantSheetAccess = val),
@@ -763,6 +763,10 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
                       iconData = Icons.room_service_rounded;
                       badgeColor = Colors.cyan;
                       break;
+                    case StaffRole.unassigned:
+                      iconData = Icons.person_outline_rounded;
+                      badgeColor = Colors.grey;
+                      break;
                   }
 
                   final isOwner = staff.role == StaffRole.owner;
@@ -832,6 +836,9 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
                                                break;
                                              case StaffRole.waiter:
                                                rBadgeColor = const Color(0xFF2563EB);
+                                               break;
+                                             case StaffRole.unassigned:
+                                               rBadgeColor = Colors.grey;
                                                break;
                                            }
                                            return Container(
@@ -972,7 +979,7 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
                                         ),
                                       ),
                                       Text(
-                                        staff.pin,
+                                        staff.pin.isEmpty ? 'Not set' : ('•' * staff.pin.length),
                                         style: TextStyle(
                                           color: Colors.amber.shade900,
                                           fontWeight: FontWeight.w900,

@@ -92,7 +92,7 @@ class FirebaseConnectionService {
     try {
       final plainText = jsonEncode(config);
       final key = enc.Key.fromUtf8(_deriveKey(orgId));
-      final iv = enc.IV.fromLength(16);
+      final iv = enc.IV.fromSecureRandom(16);
       final encrypter = enc.Encrypter(enc.AES(key));
       final encrypted = encrypter.encrypt(plainText, iv: iv);
       return {'encrypted': encrypted.base64, 'iv': iv.base64};
@@ -216,7 +216,6 @@ class FirebaseConnectionService {
     if (_customerApp == null) return;
 
     // Null out the public references FIRST so callers stop using them.
-    final appToDelete = _customerApp;
     _customerApp = null;
     _customerFirestore = null;
     _customerStorage = null;
@@ -279,17 +278,9 @@ class FirebaseConnectionService {
       debugPrint("Connection test Firebase error for project $projectId: [${e.code}] ${e.message}");
       if (e.code == 'permission-denied' || e.code == 'PERMISSION_DENIED') {
         return 'PERMISSION_DENIED: Your Firebase project\'s Firestore security rules are '
-            'blocking read/write access. Please go to your Firebase Console → '
-            'Firestore Database → Rules, and set:\n\n'
-            'rules_version = \'2\';\n'
-            'service cloud.firestore {\n'
-            '  match /databases/{database}/documents {\n'
-            '    match /{document=**} {\n'
-            '      allow read, write: if true;\n'
-            '    }\n'
-            '  }\n'
-            '}\n\n'
-            'Then click "Publish" and retry.';
+            'blocking access. Please check your Firebase Console → '
+            'Firestore Database → Rules and configure authenticated or role-scoped access '
+            'rules for your organization.';
       } else if (e.code == 'not-found') {
         return 'Project not found. Please verify the Firebase Project ID is correct.';
       } else if (e.code == 'unavailable') {

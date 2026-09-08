@@ -273,20 +273,70 @@ class SaasSessionNotifier extends StateNotifier<SaasSessionState> {
 
 
   Future<void> _clearTenantDataBoxes() async {
+    final boxesToClear = [
+      kOutboxBoxName,
+      kInventoryBoxName,
+      kCustomersBoxName,
+      kLedgerBoxName,
+      kBillsBoxName,
+      kSuppliersBoxName,
+      kPurchaseOrdersBoxName,
+      kReturnsBoxName,
+      kShopUsersBoxName,
+      kSelfPickupNotesBoxName,
+      'expenses',
+    ];
+
+    for (final boxName in boxesToClear) {
+      try {
+        if (Hive.isBoxOpen(boxName)) {
+          await Hive.box(boxName).clear();
+        } else {
+          final b = await Hive.openBox(boxName);
+          await b.clear();
+        }
+      } catch (e) {
+        debugPrint("Notice: clearing box $boxName: $e");
+      }
+    }
+
+    // Clean tenant-scoped keys from restaurant_config_box (P-26)
     try {
-      await Hive.box(kOutboxBoxName).clear();
-      await Hive.box(kInventoryBoxName).clear();
-      await Hive.box(kCustomersBoxName).clear();
-      await Hive.box(kLedgerBoxName).clear();
-      await Hive.box(kBillsBoxName).clear();
-      await Hive.box(kSuppliersBoxName).clear();
-      await Hive.box(kPurchaseOrdersBoxName).clear();
-      await Hive.box(kReturnsBoxName).clear();
-      await Hive.box(kShopUsersBoxName).clear();
-      await Hive.box(kSelfPickupNotesBoxName).clear();
-      await Hive.box('expenses').clear();
+      if (Hive.isBoxOpen('restaurant_config_box')) {
+        final rBox = Hive.box('restaurant_config_box');
+        final rKeys = rBox.keys.where((k) {
+          final s = k.toString();
+          return s.startsWith('restaurant_menu_dishes') ||
+              s.startsWith('menu_') ||
+              s.startsWith('category_');
+        }).toList();
+        for (final k in rKeys) {
+          await rBox.delete(k);
+        }
+      }
     } catch (e) {
-      debugPrint("Notice: _clearTenantDataBoxes: $e");
+      debugPrint("Notice: clearing restaurant_config_box tenant keys: $e");
+    }
+
+    // Clean tenant-scoped order/table/sheet keys from configBox
+    try {
+      if (Hive.isBoxOpen('configBox')) {
+        final cBox = Hive.box('configBox');
+        final cKeys = cBox.keys.where((k) {
+          final s = k.toString();
+          return s.startsWith('kot_orders_') ||
+              s.startsWith('restaurant_tables_') ||
+              s.startsWith('restaurant_sheet_id_') ||
+              s.startsWith('restaurant_menu_dishes_') ||
+              s == 'restaurant_menu_dishes' ||
+              s == 'smtp_config';
+        }).toList();
+        for (final k in cKeys) {
+          await cBox.delete(k);
+        }
+      }
+    } catch (e) {
+      debugPrint("Notice: clearing configBox tenant keys: $e");
     }
   }
 
@@ -558,6 +608,9 @@ class SaasSessionNotifier extends StateNotifier<SaasSessionState> {
       await _updateSavedUsersList();
 
       await _initializeSaaSLocalProfile(email, organization.name);
+
+      _setupRealtimeListeners(orgId);
+      refreshSessionFromFirestore();
 
       // Log Audit Event
       await logAudit(
@@ -1050,6 +1103,7 @@ class SaasSessionNotifier extends StateNotifier<SaasSessionState> {
   }
 
   Future<void> clearSession() async {
+    _cancelListeners();
     final box = Hive.box('configBox');
     await box.put('saas_logged_in', false);
     await box.put('session_active', false);

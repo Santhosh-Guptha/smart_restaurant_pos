@@ -1,5 +1,7 @@
 
 import 'dart:async';
+import 'dart:convert';
+import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart';
@@ -92,10 +94,16 @@ class AuthNotifier extends StateNotifier<ShopAccount?> {
     }
   }
 
-  /// Hashes the password locally using a salted polynomial checksum (offline safe)
+  /// Hashes the password locally using salted SHA-256 (offline safe)
   String _hashPassword(String password) {
+    final bytes = utf8.encode("SmartBillingPassSalt2026_$password");
+    return sha256.convert(bytes).toString();
+  }
+
+  /// Legacy DJB2 hash for backwards compatibility during password migration
+  String _legacyDjb2Hash(String password) {
     int hash = 5381;
-    final String salted = password + "SmartBillingPassSalt2026";
+    final String salted = '${password}SmartBillingPassSalt2026';
     for (int i = 0; i < salted.length; i++) {
       hash = ((hash << 5) + hash) + salted.codeUnitAt(i);
       hash = hash & 0xFFFFFFFF;
@@ -184,15 +192,22 @@ class AuthNotifier extends StateNotifier<ShopAccount?> {
     final String? storedPass = box.get('local_password');
     
     final String hashedEntered = _hashPassword(password);
-    
-    if (storedUser != null && 
-        storedUser.toLowerCase().trim() == username.toLowerCase().trim() && 
-        storedPass == hashedEntered) {
+    final String legacyHash = _legacyDjb2Hash(password);
+    final bool passMatches =
+        storedPass == hashedEntered || (storedPass != null && storedPass == legacyHash);
+
+    if (storedUser != null &&
+        storedUser.toLowerCase().trim() == username.toLowerCase().trim() &&
+        passMatches) {
+      if (storedPass == legacyHash) {
+        // Upgrade legacy DJB2 hash to salted SHA-256 on successful login
+        await box.put('local_password', hashedEntered);
+      }
       await box.put('session_active', true);
       final String todayStr = DateTime.now().toIso8601String().substring(0, 10);
       await box.put('last_login_date', todayStr);
       await LicenseHelper.updateLastActiveTime();
-      
+
       // Update SaaS session role matching local account
       _ref.read(saasSessionProvider.notifier).setMockRole('OWNER');
       _ref.read(activeSessionSelectedProvider.notifier).state = true;
@@ -234,8 +249,7 @@ class AuthNotifier extends StateNotifier<ShopAccount?> {
   }
 
   Future<void> _clearAllLocalCaches() async {
-    // Clear restaurant-specific local data
-    try { await Hive.box('restaurant_auth_box').clear(); } catch (_) {}
+    // Clear restaurant-specific local data (preserve staff roster in restaurant_auth_box)
     try { await Hive.box('restaurant_config_box').clear(); } catch (_) {}
     try { await Hive.box('expenses').clear(); } catch (_) {}
 

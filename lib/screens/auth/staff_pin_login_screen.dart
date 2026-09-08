@@ -47,18 +47,41 @@ class _StaffPinLoginScreenState extends ConsumerState<StaffPinLoginScreen> {
   void _verifyPin() {
     if (_selectedStaff == null) return;
 
-    if (_selectedStaff!.verifyPin(_enteredPin)) {
-      ref.read(restaurantAuthProvider.notifier).unlockWithPin(_enteredPin);
-      
+    final authNotifier = ref.read(restaurantAuthProvider.notifier);
+    if (authNotifier.isLockedOut) {
+      setState(() {
+        _errorMessage =
+            'Terminal locked out. Please wait ${authNotifier.lockoutRemainingSeconds}s.';
+        _enteredPin = '';
+      });
+      return;
+    }
+
+    final success = authNotifier.unlockWithPin(
+      _enteredPin,
+      targetStaffId: _selectedStaff!.id,
+    );
+
+    if (success) {
       final destinations = _getOperationalDestinations(_selectedStaff!);
       if (destinations.length > 1) {
         _showRoleDestinationSelectorModal(_selectedStaff!, destinations);
+      } else if (destinations.length == 1) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => destinations.first['screen'] as Widget),
+        );
       } else {
         _navigateToRoleScreen(_selectedStaff!.role);
       }
     } else {
       setState(() {
-        _errorMessage = 'Invalid PIN. Please try again.';
+        if (authNotifier.isLockedOut) {
+          _errorMessage =
+              'Too many failed attempts. Locked out for ${authNotifier.lockoutRemainingSeconds}s.';
+        } else {
+          _errorMessage = 'Invalid PIN. Please try again.';
+        }
         _enteredPin = '';
       });
     }
@@ -193,7 +216,15 @@ class _StaffPinLoginScreenState extends ConsumerState<StaffPinLoginScreen> {
       if (result['success'] == true) {
         final staff = ref.read(restaurantAuthProvider).activeStaff;
         if (staff != null) {
+          setState(() {
+            _isSigningIn = false;
+          });
           _navigateToRoleScreen(staff.role);
+        } else {
+          setState(() {
+            _isSigningIn = false;
+          });
+          _showUnregisteredDialog();
         }
       } else {
         setState(() {
@@ -251,6 +282,7 @@ class _StaffPinLoginScreenState extends ConsumerState<StaffPinLoginScreen> {
         break;
       case StaffRole.owner:
       case StaffRole.manager:
+      case StaffRole.unassigned:
         destination = const TableManagementScreen();
         break;
     }
@@ -376,6 +408,10 @@ class _StaffPinLoginScreenState extends ConsumerState<StaffPinLoginScreen> {
                             case StaffRole.waiter:
                               iconData = Icons.room_service_rounded;
                               badgeColor = const Color(0xFF94A3B8); // Slate Sky
+                              break;
+                            case StaffRole.unassigned:
+                              iconData = Icons.person_outline_rounded;
+                              badgeColor = const Color(0xFF64748B);
                               break;
                           }
 

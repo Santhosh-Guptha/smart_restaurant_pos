@@ -1,6 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
+import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:hive_flutter/hive_flutter.dart';
@@ -35,6 +35,8 @@ class BackupService {
     kSelfPickupNotesBoxName,
     'configBox',
     'expenses',
+    'restaurant_auth_box',
+    'restaurant_config_box',
   ];
 
   // ─── EXPORT ───────────────────────────────────────────────────────────────
@@ -47,7 +49,9 @@ class BackupService {
       final Map<String, dynamic> allData = {};
       for (final boxName in _kBackupBoxes) {
         try {
-          final box = Hive.box(boxName);
+          final box = Hive.isBoxOpen(boxName)
+              ? Hive.box(boxName)
+              : await Hive.openBox(boxName);
           final Map<String, dynamic> boxData = {};
           for (final key in box.keys) {
             final value = box.get(key);
@@ -67,14 +71,14 @@ class BackupService {
       final Uint8List encryptedBytes = _encrypt(jsonBytes);
       final String encryptedB64 = base64.encode(encryptedBytes);
 
-      // 4. Build envelope
+      // 4. Build envelope with HMAC-SHA256 checksum
       final Map<String, dynamic> envelope = {
         'magic': _kMagic,
         'version': 1,
         'created_at': DateTime.now().toIso8601String(),
         'boxes_included': _kBackupBoxes,
         'data': encryptedB64,
-        'checksum': _checksum(encryptedBytes),
+        'checksum': _hmacChecksum(encryptedBytes),
       };
 
       final String envelopeJson = jsonEncode(envelope);
@@ -201,12 +205,20 @@ class BackupService {
         return 'Unsupported backup version ($version). Please update the app.';
       }
 
-      // 4. Verify checksum
+      // 4. Verify checksum (HMAC-SHA256 with Adler-32 backwards compatibility)
       final String encryptedB64 = envelope['data'];
       final Uint8List encryptedBytes = base64.decode(encryptedB64);
-      final int storedChecksum = envelope['checksum'] ?? 0;
-      if (_checksum(encryptedBytes) != storedChecksum) {
-        return 'Backup file is corrupted or tampered. Restore aborted.';
+      final dynamic storedChecksum = envelope['checksum'];
+      if (storedChecksum is String) {
+        if (_hmacChecksum(encryptedBytes) != storedChecksum) {
+          return 'Backup file is corrupted or tampered. Restore aborted.';
+        }
+      } else if (storedChecksum is int) {
+        if (_checksum(encryptedBytes) != storedChecksum) {
+          return 'Backup file is corrupted or tampered. Restore aborted.';
+        }
+      } else {
+        return 'Invalid or missing checksum. Restore aborted.';
       }
 
       // 5. Decrypt
@@ -222,10 +234,28 @@ class BackupService {
           // Only restore known boxes for safety
           if (!_kBackupBoxes.contains(boxName)) continue;
 
-          final box = Hive.box(boxName);
+          final box = Hive.isBoxOpen(boxName)
+              ? Hive.box(boxName)
+              : await Hive.openBox(boxName);
           final Map<String, dynamic> boxData = Map<String, dynamic>.from(allData[boxName]);
 
           for (final entry in boxData.entries) {
+            final keyStr = entry.key.toString();
+            // Whitelist check for config boxes: block credentials and SaaS auth tokens
+            if (boxName == 'configBox' || boxName == 'restaurant_config_box') {
+              final lower = keyStr.toLowerCase();
+              if (lower.startsWith('saas_') ||
+                  lower.startsWith('apps_script_') ||
+                  lower.startsWith('local_password') ||
+                  lower.startsWith('firebase_') ||
+                  lower.contains('secret') ||
+                  lower.contains('token') ||
+                  lower == 'current_user_email') {
+                debugPrint('BackupService: skipped sensitive config key $keyStr during import');
+                continue;
+              }
+            }
+
             final restored = _deserializeValue(entry.value);
             await box.put(entry.key, restored);
             restoredKeys++;
@@ -236,6 +266,7 @@ class BackupService {
         }
       }
 
+      debugPrint('BackupService: successfully restored $restoredBoxes boxes and $restoredKeys keys.');
       return null; // success — caller shows count
     } catch (e) {
       return 'Restore failed: $e';
@@ -272,7 +303,13 @@ class BackupService {
     return result;
   }
 
-  /// Simple Adler-32 checksum for integrity verification.
+  /// HMAC-SHA256 checksum for robust integrity verification.
+  static String _hmacChecksum(Uint8List data) {
+    final hmac = Hmac(sha256, utf8.encode(_kAppSecret));
+    return hmac.convert(data).toString();
+  }
+
+  /// Simple Adler-32 checksum for backwards compatibility verification.
   static int _checksum(Uint8List data) {
     int a = 1, b = 0;
     for (final byte in data) {

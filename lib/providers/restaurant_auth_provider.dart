@@ -23,6 +23,8 @@ enum OperatingMode {
   dineFirstPostpaid, // Casual/Fine dining: Table seated -> KOT rounds -> Eat -> Bill & Pay
 }
 
+const Object _sentinel = Object();
+
 class RestaurantAuthState {
   final StaffMember? activeStaff;
   final List<StaffMember> staffList;
@@ -41,20 +43,24 @@ class RestaurantAuthState {
   });
 
   RestaurantAuthState copyWith({
-    StaffMember? activeStaff,
+    Object? activeStaff = _sentinel,
     List<StaffMember>? staffList,
     OperatingMode? operatingMode,
     bool? isLocked,
     Map<String, String>? authHeaders,
-    String? googleEmail,
+    Object? googleEmail = _sentinel,
   }) {
     return RestaurantAuthState(
-      activeStaff: activeStaff ?? this.activeStaff,
+      activeStaff: identical(activeStaff, _sentinel)
+          ? this.activeStaff
+          : activeStaff as StaffMember?,
       staffList: staffList ?? this.staffList,
       operatingMode: operatingMode ?? this.operatingMode,
       isLocked: isLocked ?? this.isLocked,
       authHeaders: authHeaders ?? this.authHeaders,
-      googleEmail: googleEmail ?? this.googleEmail,
+      googleEmail: identical(googleEmail, _sentinel)
+          ? this.googleEmail
+          : googleEmail as String?,
     );
   }
 }
@@ -103,11 +109,18 @@ class RestaurantAuthNotifier extends StateNotifier<RestaurantAuthState> {
         }
       }
 
+      if (matchedStaff == null) {
+        return {
+          'success': false,
+          'error': 'Account ($email) is not registered in this store\'s Staff Management. Please contact the store owner.',
+        };
+      }
+
       state = state.copyWith(
-        activeStaff: matchedStaff ?? state.activeStaff,
+        activeStaff: matchedStaff,
         authHeaders: authHeaders,
         googleEmail: email,
-        isLocked: matchedStaff != null ? false : state.isLocked,
+        isLocked: false,
       );
       return {
         'success': true,
@@ -189,17 +202,33 @@ class RestaurantAuthNotifier extends StateNotifier<RestaurantAuthState> {
     state = state.copyWith(
       staffList: loaded,
       operatingMode: mode,
-      activeStaff: loaded.isNotEmpty ? loaded.first : null,
-      isLocked: false,
+      activeStaff: null,
+      isLocked: true,
     );
   }
 
+  int _failedPinAttempts = 0;
+  DateTime? _lockoutUntil;
+
+  /// Returns true if the terminal PIN entry is currently locked out
+  bool get isLockedOut =>
+      _lockoutUntil != null && DateTime.now().isBefore(_lockoutUntil!);
+
+  /// Returns the remaining lockout countdown in seconds
+  int get lockoutRemainingSeconds =>
+      isLockedOut ? _lockoutUntil!.difference(DateTime.now()).inSeconds : 0;
+
   /// Authenticates staff member using email and password
   bool loginWithEmailAndPassword(String email, String password) {
+    if (password.trim().isEmpty) return false;
     final cleanEmail = email.trim().toLowerCase();
     for (final staff in state.staffList) {
       if (staff.email.toLowerCase() == cleanEmail && staff.isActive) {
-        if (staff.password == null || staff.password!.isEmpty || staff.password == password) {
+        if (staff.password != null &&
+            staff.password!.isNotEmpty &&
+            staff.password == password) {
+          _failedPinAttempts = 0;
+          _lockoutUntil = null;
           state = state.copyWith(
             activeStaff: staff,
             isLocked: false,
@@ -217,6 +246,8 @@ class RestaurantAuthNotifier extends StateNotifier<RestaurantAuthState> {
     final cleanEmail = email.trim().toLowerCase();
     for (final staff in state.staffList) {
       if (staff.email.toLowerCase() == cleanEmail && staff.isActive) {
+        _failedPinAttempts = 0;
+        _lockoutUntil = null;
         state = state.copyWith(
           activeStaff: staff,
           isLocked: false,
@@ -227,23 +258,51 @@ class RestaurantAuthNotifier extends StateNotifier<RestaurantAuthState> {
     return false;
   }
 
-  /// Verifies entered PIN and switches active staff terminal session
-  bool unlockWithPin(String pin) {
-    for (final staff in state.staffList) {
-      if (staff.verifyPin(pin) && staff.isActive) {
+  /// Verifies entered PIN and switches active staff terminal session.
+  /// If [targetStaffId] is provided, verifies specifically against that staff member.
+  /// Enforces a 30-second lockout after 5 consecutive failed attempts.
+  bool unlockWithPin(String pin, {String? targetStaffId}) {
+    if (isLockedOut) return false;
+
+    if (targetStaffId != null) {
+      final staff = state.staffList.cast<StaffMember?>().firstWhere(
+            (s) => s?.id == targetStaffId,
+            orElse: () => null,
+          );
+      if (staff != null && staff.isActive && staff.verifyPin(pin)) {
+        _failedPinAttempts = 0;
+        _lockoutUntil = null;
         state = state.copyWith(
           activeStaff: staff,
           isLocked: false,
         );
         return true;
       }
+    } else {
+      for (final staff in state.staffList) {
+        if (staff.verifyPin(pin) && staff.isActive) {
+          _failedPinAttempts = 0;
+          _lockoutUntil = null;
+          state = state.copyWith(
+            activeStaff: staff,
+            isLocked: false,
+          );
+          return true;
+        }
+      }
+    }
+
+    _failedPinAttempts++;
+    if (_failedPinAttempts >= 5) {
+      _lockoutUntil = DateTime.now().add(const Duration(seconds: 30));
+      _failedPinAttempts = 0;
     }
     return false;
   }
 
   /// Lock current terminal screen
   void lockTerminal() {
-    state = state.copyWith(isLocked: true);
+    state = state.copyWith(activeStaff: null, isLocked: true);
   }
 
   /// Switch Operating Mode (Pay-First vs Dine-First)
