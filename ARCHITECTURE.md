@@ -122,19 +122,24 @@ SmartDine employs a **hybrid local-first cloud architecture**:
 
 ### Local Storage (Hive Boxes)
 1. `configBox`: SaaS tenant session, active branch ID, printer MAC addresses, offline credentials.
-2. `dishesBox`: Complete restaurant menu with dish pricing, categories, and vegetarian flags.
-3. `tablesBox`: Table numbers, floor areas, active dining sessions, and seating capacities.
-4. `ordersBox`: Cached KOT order tickets and bill records.
-5. `tokensBox`: Daily sequential order token counters (resets at midnight).
+2. `restaurant_auth_box`: Staff roster, multi-role definitions, and salted SHA-256 PIN hashes.
+3. `restaurant_config_box`: Dynamic store settings, tax rates, GST configuration, and active UPI ID.
+4. `outbox` & `outbox_dead`: Offline mutation queue with exponential backoff, jitter, and dead-letter fault isolation.
+5. `kot_orders_$orgId`: Cached KOT order tickets and dining bill records with monotonic lifecycle ranking.
+6. `restaurant_tables_$orgId`: Table numbers, dining room sections, active sessions, and preserved printed QR URLs.
 
-### Cloud Bookkeeping (7-Tab Restaurant Google Sheet)
-1. **`Bills`**: Historical dining bills (Order ID, Table, Customer, Items JSON, Subtotal, Discount, Total, Payment Mode, Status, Timestamp).
-2. **`KOT_Orders`**: Kitchen tickets queue (KOT ID, Table, Items JSON, Cooking Status, Timestamp).
-3. **`Menu`**: Dish catalog (Item ID, Name, Category, Price, Description, Available, Is Veg, Updated At).
-4. **`Tables`**: Dining room tables (Table Number, Capacity, Floor Area, QR URL, Status).
-5. **`Staff`**: Staff roster (Staff ID, Name, Email, Role, Phone, Active).
-6. **`DayEnd_Summary`**: Shift reconciliation (Date, Total Orders, Dine-In, Takeaway, Cash, UPI, Gross Revenue).
-7. **`Organizations` / `Outlets`**: Master SaaS multi-tenant directory (held in Master Registry).
+### Cloud Operational Engine (Google Sheets + Apps Script `Code.gs`)
+- **Single Canonical Backend**: `google_apps_script/Code.gs` is the authoritative cloud operational gateway. All operational mutations (orders, tables, bills, settlements, voids) flow through `Code.gs`.
+- **Zero-Firebase Operational Truth**: Firebase is strictly reserved for SaaS metadata (licenses, organizations, subscription plans, app versions). All operational revenue and dining data resides 100% in Google Sheets and local Hive caches.
+- **Offline Outbox & Idempotency**: Every client mutation generates a unique `clientRequestId`. The `Outbox` processes mutations with exponential backoff (up to 300s) + jitter. Operations failing >8 times are safely isolated in `outbox_dead`.
+
+### 11-Column Sheet Ledger
+1. **`Bills` / `Dining Bills`**: Authoritative dining bills (`orderId`, `timestamp`, `customer_name`, `table`, `payment_mode`, `subtotal`, `discount`, `total_amount`, `status`, `order_source`, `rev`).
+2. **`Orders` & `OrderItems`**: Full item-level dining course history.
+3. **`Payments`**: Immutable payment ledger recording individual tender modes, tips, and UTR references.
+4. **`Menu`**: Dish catalog with category dayparting, prep time, and station routing.
+5. **`Tables`**: Dining room tables with preserved QR stand tokens.
+6. **`DayEnd_Summary`**: Shift reconciliation with cash variance tracking.
 
 ---
 
@@ -266,6 +271,10 @@ To guarantee that application updates never break existing client stores or corr
 | Feature | Architectural Guarantee |
 | :--- | :--- |
 | **Operational Continuity** | POS functions 100% offline; queues sync when network resumes |
+| **Zero-Firebase Operational Truth** | Orders, KOTs, tables, and bills reside in client Google Sheet + Hive; 0% operational reliance on Firestore |
+| **Monotonic Status Ranking** | KDS kitchen stage transitions are monotonic (rank 1..6); paid/served orders cannot be demoted |
+| **Fail-Closed RBAC & Terminal Security** | Terminal PIN entry with 5-attempt rate limiter & 30s lockout; unknown roles default to unassigned (0 permissions) |
+| **Offline Outbox Resilience** | Outbox queue with jittered exponential backoff & dead-letter queue; deduplicated by canonical ID |
 | **Data Ownership** | All dining bills and financial records reside in client's own Google Drive |
 | **Admin Oversight** | Master Admin retains co-ownership and dynamic license control |
 | **Financial Burden** | Zero recurring server costs (Spark Tier + Sheets + 0% MDR UPI) |

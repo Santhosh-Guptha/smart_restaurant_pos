@@ -228,9 +228,60 @@ When transitioning from local development to the brand-new production environmen
 - [x] Android app registered (`com.devmonks.smartdine`) with production `google-services.json`.
 - [x] Web app registered (`1:486476143616:web:8bee0b3b52aa403b928ce5`).
 
+### Issue 7: Multi-Round Order Merging & Monotonic Kitchen Lifecycle Ranking
+- **Problem**: In multi-course dining, subsequent order rounds would overwrite kitchen status back to `PENDING` (re-firing already-cooked courses) or strip served items from the bill.
+- **Resolution**:
+  - Implemented monotonic kitchen status ranking (`KotOrder.statusRank`) in `KotOrder` and `Code.gs`. A higher kitchen stage (`READY`, `SERVED`) can never be demoted by incoming order payloads or payment claims.
+  - Implemented non-destructive field-wise merging in KDS and waiter app preserving item-level status and pricing components.
+
+---
+
+### Issue 8: Bill Settlement Idempotency & Revenue Duplication in Sheets
+- **Problem**: Settling a dining bill via counter or waiter app created duplicate rows in Google Sheets or wiped active dining sessions prematurely.
+- **Resolution**:
+  - Refactored `Code.gs` with `resolveBillColumns(headers)` and strict `cleanId` matching to locate and update the exact existing row upon settlement.
+  - Guarded `handleClearTable` and `handleSaveBill` with strict permissions and removed dangerous table-wide session purges.
+
+---
+
+### Issue 9: Zero-Firebase Operational Architecture Migration
+- **Problem**: Critical operational features (KDS, Table Management, Billing, Order History) had mixed reliance on Firestore `orders` and `restaurant_tables`, incurring cloud costs and risking Firestore quota exhaustion.
+- **Resolution**:
+  - Migrated KDS, Table Management, Counter Billing, and Order History to 100% Zero-Firebase operations using Apps Script Webhook + Hive caches.
+  - Restricted Firebase Firestore strictly to SaaS platform governance (licenses, tenant registry, app versions).
+
+---
+
+### Issue 10: Fail-Closed Role-Based Access Control & Staff PIN Security
+- **Problem**: POS terminals auto-authenticated as staff member #0 at boot, lacked rate limiting on PIN entry, and had hardcoded `1234` backdoor PINs.
+- **Resolution**:
+  - Implemented locked terminal boot (`activeStaff: null`, `isLocked: true`) requiring explicit staff selection and PIN entry.
+  - Added 5-attempt rate limiter with 30-second exponential lockout.
+  - Upgraded local storage to salted SHA-256 PIN hashing with auto-migration from legacy hashes.
+  - Added fail-closed `StaffRole.unassigned` ensuring unrecognized roles hold 0 permissions.
+
+---
+
+### Issue 11: Offline Outbox Queue & Network Flap Resilience
+- **Problem**: Temporary Wi-Fi disconnects caused silent order loss while still showing a green "KOT sent to kitchen" success snackbar.
+- **Resolution**:
+  - Implemented client `Outbox` queue with `clientRequestId` idempotency, jittered exponential backoff (up to 300s), and dead-letter fault isolation (`outbox_dead`).
+  - Added visual offline indicators informing staff when orders are queued locally.
+
+---
+
+### Issue 12: Authenticated Encrypted Backups with HMAC Integrity & Config Whitelisting
+- **Problem**: Local `.sbk` backups used a weak repeating XOR pad with non-cryptographic checksum, and restoring could overwrite SaaS tenant session keys.
+- **Resolution**:
+  - Implemented HMAC-SHA256 checksum verification with Adler-32 backwards compatibility in `BackupService`.
+  - Added strict key whitelisting during restore to prevent malicious privilege escalation or token injection.
+  - Included `restaurant_auth_box` and `restaurant_config_box` in backup manifests.
+
+---
+
 ### Step 2: Google Apps Script Webhook Deployment
 - [x] Logged into [script.google.com](https://script.google.com) with production account `smartdine.platform@gmail.com`.
-- [x] Deployed `scripts/sheets_backend_webhook.js` as Web App:
+- [x] Deployed `google_apps_script/Code.gs` as Web App (the canonical production operational gateway):
   - **Execute as**: `Me (smartdine.platform@gmail.com)`
   - **Who has access**: `Anyone`
 - [x] Generated Web App URL:

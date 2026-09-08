@@ -78,7 +78,9 @@ class OtpVerificationService {
         debugPrint("SMTP dispatch error: $e");
       }
 
-
+      if (emailDelivered) {
+        debugPrint("OTP verification email delivered successfully to $cleanEmail.");
+      }
 
       return {
         'success': true,

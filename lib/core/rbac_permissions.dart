@@ -54,6 +54,32 @@ extension StaffRoleExtension on StaffRole {
         return StaffRole.unassigned;
     }
   }
+
+  bool get canAccessBilling =>
+      this == StaffRole.owner || this == StaffRole.manager || this == StaffRole.billing;
+
+  bool get canAccessKitchen =>
+      this == StaffRole.owner || this == StaffRole.manager || this == StaffRole.kitchen;
+
+  bool get canAccessOrders =>
+      this == StaffRole.owner || this == StaffRole.manager || this == StaffRole.billing;
+
+  bool get canAccessTables =>
+      this == StaffRole.owner ||
+      this == StaffRole.manager ||
+      this == StaffRole.billing ||
+      this == StaffRole.waiter;
+
+  bool get canAccessMenu =>
+      this == StaffRole.owner || this == StaffRole.manager;
+
+  bool get canAccessReports => this == StaffRole.owner;
+
+  bool get canManageStaff =>
+      this == StaffRole.owner || this == StaffRole.manager;
+
+  bool get canAccessSettings =>
+      this == StaffRole.owner || this == StaffRole.manager;
 }
 
 class StaffMember {
