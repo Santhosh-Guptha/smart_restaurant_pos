@@ -15,6 +15,7 @@ import '../../providers/restaurant_auth_provider.dart';
 import '../../providers/saas_session_provider.dart';
 import '../../services/apps_script_backend_service.dart';
 import '../../services/kitchen_ticket_formatter.dart';
+import '../../sync/outbox.dart';
 import 'package:esc_pos_utils_plus/esc_pos_utils_plus.dart';
 import 'package:print_bluetooth_thermal/print_bluetooth_thermal.dart';
 
@@ -835,7 +836,10 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
 
       // 3. Dispatch to Apps Script Webhook with explicit spreadsheetId
       bool isCloudConfirmed = false;
+      bool cloudQueued = false;
       String? cloudErrorMsg;
+      // Declared outside the try so the catch below can still queue the round.
+      Map<String, dynamic>? roundPayload;
       try {
         final saasSession = ref.read(saasSessionProvider);
         final sheetId = AppsScriptBackendService.resolveSpreadsheetId(
@@ -843,11 +847,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
           explicitId: saasSession.currentOrganization?.googleSheetId,
         );
 
-        final saveResult = await AppsScriptBackendService.saveBillDetailed(
-          outletId: orgId,
-          spreadsheetId: sheetId ?? '',
-          clientRequestId: clientRequestId,
-          billData: {
+        roundPayload = <String, dynamic>{
             'id': billNumber,
             'bill_id': billNumber,
             'kotNumber': token,
@@ -883,16 +883,33 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
             'firedAt': DateTime.now().toIso8601String(),
             'reprintCount': 0,
             'timestamp': DateTime.now().toIso8601String(),
-          },
+        };
+
+        final saveResult = await AppsScriptBackendService.saveBillDetailed(
+          outletId: orgId,
+          spreadsheetId: sheetId ?? '',
+          clientRequestId: clientRequestId,
+          billData: roundPayload,
         );
 
         if (saveResult['success'] == true || saveResult['ok'] == true) {
           isCloudConfirmed = true;
-        } else if (saveResult['error'] != null) {
-          cloudErrorMsg = saveResult['error'].toString();
+        } else {
+          if (saveResult['error'] != null) {
+            cloudErrorMsg = saveResult['error'].toString();
+          }
+          // X-18: a round that does not reach the server never reaches the
+          // kitchen either - the KOT simply evaporates. Queue it so it fires as
+          // soon as the network returns, carrying the same clientRequestId so a
+          // request that did arrive is not duplicated.
+          cloudQueued = await _queueSettlement(orgId, clientRequestId, roundPayload);
         }
       } catch (asErr) {
         debugPrint('AppsScript saveBill error: $asErr');
+        if (roundPayload != null) {
+          cloudQueued =
+              await _queueSettlement(orgId, clientRequestId, roundPayload);
+        }
       }
 
       setState(() {
@@ -924,20 +941,31 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
             SnackBar(
               content: Row(
                 children: [
-                  const Icon(Icons.cloud_off_rounded, color: Colors.white, size: 20),
+                  Icon(
+                    cloudQueued ? Icons.cloud_sync_rounded : Icons.cloud_off_rounded,
+                    color: Colors.white,
+                    size: 20,
+                  ),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
-                      cloudErrorMsg != null
-                          ? 'KOT #$token saved locally ($cloudErrorMsg)'
-                          : 'KOT #$token saved locally on device (cloud sync pending ⏳)',
+                      cloudQueued
+                          ? 'KOT #$token queued — it will reach the kitchen '
+                              'automatically when the network returns. Tell the '
+                              'kitchen verbally if the guest is waiting.'
+                          : cloudErrorMsg != null
+                              ? 'KOT #$token did NOT reach the kitchen '
+                                  '($cloudErrorMsg). Tell the kitchen now.'
+                              : 'KOT #$token did NOT reach the kitchen. '
+                                  'Tell the kitchen now.',
                       style: const TextStyle(fontWeight: FontWeight.w600),
                     ),
                   ),
                 ],
               ),
-              backgroundColor: const Color(0xFFD97706),
-              duration: const Duration(seconds: 4),
+              backgroundColor:
+                  cloudQueued ? const Color(0xFFD97706) : const Color(0xFFDC2626),
+              duration: Duration(seconds: cloudQueued ? 5 : 8),
               behavior: SnackBarBehavior.floating,
             ),
           );
@@ -1773,52 +1801,77 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
       // every local surface showing it closed.
       bool isPrimary = true;
       int settleFailures = 0;
+      int settleQueued = 0;
       for (final ord in _tableOrders) {
         final settleReqId = const Uuid().v4();
+        final settlePayload = <String, dynamic>{
+          'id': ord.id,
+          'bill_id': ord.id,
+          'kotNumber': ord.kotNumber,
+          'clientRequestId': settleReqId,
+          'client_request_id': settleReqId,
+          'table_name': tableName,
+          'table': tableName,
+          'tableNumber': tNum,
+          'table_number': tNum,
+          'payment_mode': paymentMode,
+          'payment_status': 'PAID',
+          'status': 'PAID',
+          'total_amount': ord.totalAmount,
+          'subtotal': ord.subtotal ?? ord.totalAmount,
+          'gst_rate': _storeGstRate,
+          'tip_amount': isPrimary ? tip : 0.0,
+          'timestamp': DateTime.now().toIso8601String(),
+        };
         final ok = await AppsScriptBackendService.saveBill(
           outletId: orgId,
           clientRequestId: settleReqId,
-          billData: {
-            'id': ord.id,
-            'bill_id': ord.id,
-            'kotNumber': ord.kotNumber,
-            'clientRequestId': settleReqId,
-            'client_request_id': settleReqId,
-            'table_name': tableName,
-            'table': tableName,
-            'tableNumber': tNum,
-            'table_number': tNum,
-            'payment_mode': paymentMode,
-            'payment_status': 'PAID',
-            'status': 'PAID',
-            'total_amount': ord.totalAmount,
-            'subtotal': ord.subtotal ?? ord.totalAmount,
-            'gst_rate': _storeGstRate,
-            'tip_amount': isPrimary ? tip : 0.0,
-            'timestamp': DateTime.now().toIso8601String(),
-          },
+          billData: settlePayload,
         );
-        if (!ok) settleFailures++;
+        if (!ok) {
+          // X-18: hand the failed settlement to the durable Outbox rather than
+          // dropping it. The same clientRequestId goes with it, so when the
+          // retry lands the server's idempotency check collapses it to one
+          // settlement even if the original request did in fact arrive.
+          final queued = await _queueSettlement(orgId, settleReqId, settlePayload);
+          if (queued) {
+            settleQueued++;
+          } else {
+            settleFailures++;
+          }
+        }
         isPrimary = false;
       }
       if (_tableOrders.isEmpty) {
-        await AppsScriptBackendService.saveBill(
+        final emptyReqId = const Uuid().v4();
+        final emptyPayload = <String, dynamic>{
+          'id': primaryBillId,
+          'bill_id': primaryBillId,
+          'clientRequestId': emptyReqId,
+          'client_request_id': emptyReqId,
+          'table_name': tableName,
+          'table': tableName,
+          'tableNumber': tNum,
+          'table_number': tNum,
+          'payment_mode': paymentMode,
+          'payment_status': 'PAID',
+          'status': 'PAID',
+          'total_amount': totalPaid,
+          'tip_amount': tip,
+          'timestamp': DateTime.now().toIso8601String(),
+        };
+        final okEmpty = await AppsScriptBackendService.saveBill(
           outletId: orgId,
-          billData: {
-            'id': primaryBillId,
-            'bill_id': primaryBillId,
-            'table_name': tableName,
-            'table': tableName,
-            'tableNumber': tNum,
-            'table_number': tNum,
-            'payment_mode': paymentMode,
-            'payment_status': 'PAID',
-            'status': 'PAID',
-            'total_amount': totalPaid,
-            'tip_amount': tip,
-            'timestamp': DateTime.now().toIso8601String(),
-          },
+          clientRequestId: emptyReqId,
+          billData: emptyPayload,
         );
+        if (!okEmpty) {
+          if (await _queueSettlement(orgId, emptyReqId, emptyPayload)) {
+            settleQueued++;
+          } else {
+            settleFailures++;
+          }
+        }
       }
 
       if (mounted) {
@@ -1829,22 +1882,53 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              settleFailures == 0
-                  ? 'Table ${widget.table.tableNumber} bill settled (₹${totalPaid.toStringAsFixed(0)}). Table is now vacant.'
-                  : 'Table ${widget.table.tableNumber} settled on this device, but '
-                      '$settleFailures round(s) did NOT reach the cloud. Tell the '
-                      'counter before the guest leaves.',
+              settleFailures > 0
+                  ? 'Table ${widget.table.tableNumber} settled on this device, but '
+                      '$settleFailures round(s) did NOT reach the cloud and could '
+                      'not be queued. Tell the counter before the guest leaves.'
+                  : settleQueued > 0
+                      ? 'Table ${widget.table.tableNumber} bill settled '
+                          '(₹${totalPaid.toStringAsFixed(0)}). $settleQueued round(s) '
+                          'are queued and will sync automatically.'
+                      : 'Table ${widget.table.tableNumber} bill settled '
+                          '(₹${totalPaid.toStringAsFixed(0)}). Table is now vacant.',
             ),
-            backgroundColor: settleFailures == 0
-                ? const Color(0xFF10B981)
-                : const Color(0xFFDC2626),
-            duration: Duration(seconds: settleFailures == 0 ? 3 : 8),
+            backgroundColor: settleFailures > 0
+                ? const Color(0xFFDC2626)
+                : settleQueued > 0
+                    ? const Color(0xFFF59E0B)
+                    : const Color(0xFF10B981),
+            duration: Duration(
+              seconds: settleFailures > 0 ? 8 : (settleQueued > 0 ? 5 : 3),
+            ),
           ),
         );
         Navigator.pop(context); // Return to Table Management
       }
     } catch (e) {
       debugPrint('Error settling table bill: $e');
+    }
+  }
+
+  /// Queues a settlement that failed to reach the server, so the durable
+  /// Outbox retries it with backoff instead of the money being lost.
+  /// Returns true if the op is safely on disk.
+  Future<bool> _queueSettlement(
+    String orgId,
+    String clientRequestId,
+    Map<String, dynamic> payload,
+  ) async {
+    try {
+      await Outbox.enqueue(
+        outletId: orgId,
+        action: 'SAVE_BILL',
+        clientRequestId: clientRequestId,
+        payload: payload,
+      );
+      return true;
+    } catch (e) {
+      debugPrint('Outbox enqueue failed for settlement $clientRequestId: $e');
+      return false;
     }
   }
 

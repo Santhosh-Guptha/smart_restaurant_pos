@@ -71,7 +71,8 @@ class BackupService {
     'restaurant_auth_box',
     kShopUsersBoxName,
     'saas_session_box',
-    'outbox',
+    kOutboxBoxName,
+    'outbox_dead',
   ];
 
   /// Key fragments that must never be written by a restore, in ANY box.

@@ -273,8 +273,25 @@ class SaasSessionNotifier extends StateNotifier<SaasSessionState> {
 
 
   Future<void> _clearTenantDataBoxes() async {
+    // X-18: kOutboxBoxName used to be in this list, so logging out - or a
+    // different owner signing in on the same till - wiped the durable queue.
+    // Every box below is a CACHE that the server can rebuild; the outbox is
+    // unsent work, and clearing it destroys settlements and KOTs that never
+    // reached the sheet. Each op carries its own outletId, so keeping the queue
+    // across a tenant switch delivers each op to the outlet it belongs to.
+    try {
+      final pending = Hive.isBoxOpen(kOutboxBoxName)
+          ? Hive.box(kOutboxBoxName).length
+          : (await Hive.openBox(kOutboxBoxName)).length;
+      if (pending > 0) {
+        debugPrint('Notice: preserving $pending un-synced outbox op(s) across '
+            'tenant data clear.');
+      }
+    } catch (e) {
+      debugPrint('Notice: could not inspect outbox before clear: $e');
+    }
+
     final boxesToClear = [
-      kOutboxBoxName,
       kInventoryBoxName,
       kCustomersBoxName,
       kLedgerBoxName,

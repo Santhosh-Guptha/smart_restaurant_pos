@@ -14,6 +14,7 @@ import 'core/theme.dart';
 import 'providers/auth_provider.dart';
 import 'providers/saas_session_provider.dart';
 import 'providers/theme_provider.dart';
+import 'sync/outbox.dart';
 import 'services/firebase_connection_service.dart';
 import 'services/database_cleanup_service.dart';
 import 'services/subscription_plan_service.dart';
@@ -52,6 +53,16 @@ void main() async {
   await Hive.openBox('deviceBox');
   await Hive.openBox('restaurant_auth_box');
   await Hive.openBox('restaurant_config_box');
+
+  // X-18: the durable Outbox existed but nothing started it, so its retry
+  // backoff was never honoured and a write that failed while the network was
+  // down stayed queued indefinitely. Start the drain loop at boot, before any
+  // screen can enqueue.
+  try {
+    await Outbox.startAutoDrain();
+  } catch (e) {
+    debugPrint('Outbox auto-drain failed to start: $e');
+  }
 
   Future.microtask(() async {
     try {

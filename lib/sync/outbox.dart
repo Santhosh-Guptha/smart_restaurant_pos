@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math' as math;
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:uuid/uuid.dart';
@@ -92,6 +93,57 @@ class Outbox {
   static final ValueNotifier<int> pendingCount = ValueNotifier<int>(0);
   static final ValueNotifier<int> deadCount = ValueNotifier<int>(0);
   static bool _isDraining = false;
+
+  /// X-18: nothing ever woke this queue up. `enqueue()` kicked a single drain
+  /// and `drain()` computed an exponential-backoff `nextAttemptAt` that no
+  /// timer ever came back to honour, so a failed op sat in Hive until the next
+  /// unrelated enqueue happened to sweep past it - which on a quiet till could
+  /// be the next morning. These two make the backoff real.
+  static Timer? _autoDrainTimer;
+  static StreamSubscription<List<ConnectivityResult>>? _connSub;
+
+  /// Interval between sweeps. Ops whose backoff window has not elapsed are
+  /// skipped by `drain()`, so this can be short without hammering the network:
+  /// the per-op backoff, not the timer, decides when a retry is actually sent.
+  static const Duration autoDrainInterval = Duration(seconds: 30);
+
+  /// Starts periodic draining and drains immediately whenever connectivity is
+  /// regained. Idempotent - safe to call more than once.
+  static Future<void> startAutoDrain({String? Function()? spreadsheetIdGetter}) async {
+    await init();
+
+    _autoDrainTimer?.cancel();
+    _autoDrainTimer = Timer.periodic(autoDrainInterval, (_) {
+      if (pendingCount.value == 0) return;
+      drain(spreadsheetId: spreadsheetIdGetter?.call());
+    });
+
+    await _connSub?.cancel();
+    try {
+      _connSub = Connectivity().onConnectivityChanged.listen((results) {
+        final online = results.any((r) => r != ConnectivityResult.none);
+        if (online && pendingCount.value > 0) {
+          debugPrint('[Outbox] Connectivity restored - draining '
+              '${pendingCount.value} pending op(s).');
+          drain(spreadsheetId: spreadsheetIdGetter?.call());
+        }
+      });
+    } catch (e) {
+      // Connectivity is an optimisation; the periodic timer still covers us.
+      debugPrint('[Outbox] Could not subscribe to connectivity changes: $e');
+    }
+
+    if (pendingCount.value > 0) {
+      drain(spreadsheetId: spreadsheetIdGetter?.call());
+    }
+  }
+
+  static Future<void> stopAutoDrain() async {
+    _autoDrainTimer?.cancel();
+    _autoDrainTimer = null;
+    await _connSub?.cancel();
+    _connSub = null;
+  }
 
   static Future<Box> _getBox([String name = boxName]) async {
     if (Hive.isBoxOpen(name)) {
