@@ -702,10 +702,22 @@ String cleanOrderId(String id) {
 
 String cleanTableId(String t) {
   if (t.isEmpty) return '';
+  // The three channels spell the same table differently: the QR payload
+  // carries tableId "T5", the waiter app and the sheet carry "Table 5", and
+  // the sheet sometimes holds a bare "5". Only the "table" prefix used to be
+  // stripped, so "T5" normalised to 't5' while "Table 5" normalised to '5' -
+  // the same physical table under two keys. A guest ordering from the QR
+  // therefore opened a second occupancy record beside the waiter's, and
+  // Outbox.hasPendingFor could not match a queued write to the table it
+  // belonged to.
+  //
+  // The bare "t" is stripped only when a digit follows, so a table actually
+  // named "Terrace 3" or "Tasting Room" keeps its name.
   return t
       .toLowerCase()
       .trim()
-      .replaceAll(RegExp(r'^table[\s_-]*'), '')
+      .replaceFirst(RegExp(r'^table[\s_-]*'), '')
+      .replaceFirst(RegExp(r'^t[\s_-]*(?=\d)'), '')
       .replaceAll(RegExp(r'[^a-z0-9]'), '');
 }
 

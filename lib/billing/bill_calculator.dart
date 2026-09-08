@@ -169,19 +169,35 @@ class BillCalculator {
       cgstPaise = (totalTaxPaise / 2).round();
       sgstPaise = totalTaxPaise - cgstPaise;
     } else {
-      // Inclusive: line prices already contain tax
-      // taxable = (netAfterDiscount * 10000) / (10000 + defaultTaxRateBps)
-      final int baseTaxable = ((netAfterDiscount * 10000) / (10000 + defaultTaxRateBps)).round();
-      final int totalTaxPaise = netAfterDiscount - baseTaxable;
-      taxablePaise = baseTaxable + serviceChargePaise;
+      // Inclusive: line prices already contain tax.
+      //
+      // This branch used to back out the tax from the line net only, then add
+      // the service charge into `taxablePaise` untaxed:
+      //     baseTaxable = net / (1 + r);  taxable = baseTaxable + SC
+      //     tax         = net - baseTaxable
+      // The declared taxable value therefore included the service charge while
+      // the declared GST did not, so `tax != taxable * r`. Under Indian GST a
+      // service charge is part of the value of supply and attracts tax at the
+      // same rate, so the restaurant was declaring a taxable value it had not
+      // collected the tax on - and, unlike exclusive mode, the same outlet
+      // taxed its service charge differently purely because of the tax mode.
+      //
+      // An outlet on inclusive pricing means "the amount shown is the amount
+      // paid", so the fix backs the tax out of the all-in amount INCLUDING the
+      // service charge. The guest-facing total is unchanged; the split is now
+      // internally consistent, and the service charge bears tax in both modes.
+      final int inclusiveTotalPaise = netAfterDiscount + serviceChargePaise;
+      taxablePaise =
+          ((inclusiveTotalPaise * 10000) / (10000 + defaultTaxRateBps)).round();
+      final int totalTaxPaise = inclusiveTotalPaise - taxablePaise;
       cgstPaise = (totalTaxPaise / 2).round();
       sgstPaise = totalTaxPaise - cgstPaise;
     }
 
-    // 5. Pre-round sum
-    final int preRound = (taxMode == TaxMode.exclusive)
-        ? (taxablePaise + cgstPaise + sgstPaise)
-        : (netAfterDiscount + serviceChargePaise);
+    // 5. Pre-round sum. In both modes this is now taxable + CGST + SGST, which
+    // is the invariant every downstream consumer (receipt, Payments ledger,
+    // Z-report, GST return) depends on.
+    final int preRound = taxablePaise + cgstPaise + sgstPaise;
 
     // 6. Round-Off to nearest rupee (100 paise)
     int roundOffPaise = 0;
@@ -293,20 +309,43 @@ class PaymentRecord {
 enum DerivedPaymentStatus {
   unpaid,
   partial,
+
+  /// Enough money has been claimed to cover the bill, but some of it is not
+  /// verified - a guest-submitted gateway payment whose signature did not
+  /// check out, or that arrived with no signature at all. The counter must
+  /// confirm before the table is released. This is NOT `paid`.
+  awaitingVerification,
   paid,
   voided,
   refunded,
 }
 
+/// Derives payment state from the Payments ledger.
+///
+/// Unverified payments deliberately cannot produce `paid`. `RECORD_PAYMENT`
+/// accepts guest-submitted payments and marks them `verified: false` when the
+/// Razorpay signature is absent or does not validate; counting those toward a
+/// settled bill would let a guest close their own table by claiming to have
+/// paid. They are surfaced as `awaitingVerification` so the counter sees the
+/// claim without the bill being written off.
 DerivedPaymentStatus computePaymentStatus({
   required int grandTotalPaise,
   required List<PaymentRecord> payments,
 }) {
   final activePayments = payments.where((p) => !p.isVoided).toList();
   if (activePayments.isEmpty) return DerivedPaymentStatus.unpaid;
-  final totalPaidPaise = activePayments.fold<int>(0, (sum, p) => sum + p.amountPaise);
-  if (totalPaidPaise <= 0) return DerivedPaymentStatus.unpaid;
-  if (totalPaidPaise >= grandTotalPaise) return DerivedPaymentStatus.paid;
+
+  final int verifiedPaise = activePayments
+      .where((p) => p.verified)
+      .fold<int>(0, (sum, p) => sum + p.amountPaise);
+  final int claimedPaise =
+      activePayments.fold<int>(0, (sum, p) => sum + p.amountPaise);
+
+  if (claimedPaise <= 0) return DerivedPaymentStatus.unpaid;
+  if (verifiedPaise >= grandTotalPaise) return DerivedPaymentStatus.paid;
+  if (claimedPaise >= grandTotalPaise) {
+    return DerivedPaymentStatus.awaitingVerification;
+  }
   return DerivedPaymentStatus.partial;
 }
 

@@ -200,23 +200,22 @@ void main() {
       );
     });
 
-    test('postWithRedirects follows HTTP 302 to echo endpoint and returns 200', () async {
-      const url =
-          'https://script.google.com/macros/s/AKfycbxIAGxL_Chf3xMKfpqMyJ8fHkYq990x-WHSH6coCWpxQaWCH7zRV599esQ604oEVtrF/exec';
-      final res = await AppsScriptBackendService.postWithRedirects(
-        Uri.parse(url),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'secret': 'SMART_POS_SECURE_TOKEN_2026',
-          'action': 'PING',
-        }),
-        timeout: const Duration(seconds: 20),
-      );
-
-      // Must follow 302 Found and return 200 OK
-      expect(res.statusCode, equals(200));
-      final body = jsonDecode(res.body);
-      expect(body, isA<Map<String, dynamic>>());
-    });
+    // REMOVED (X-19): this group previously made a live HTTP POST to a
+    // production Apps Script deployment, with the shared SECRET_TOKEN
+    // hardcoded in the test body. Three problems, in order of severity:
+    //
+    //   1. It committed a live credential to version control, where it stays
+    //      in the git history even after removal. Rotate SMART_POS_SECURE_
+    //      TOKEN_2026 in the Apps Script project - it has been readable to
+    //      anyone with repository access.
+    //   2. `flutter test` wrote to a real deployment. A PING is harmless, but
+    //      a test suite that can reach production is one edit away from not
+    //      being harmless.
+    //   3. It failed in CI, offline, and behind any proxy, for reasons that
+    //      have nothing to do with the code under test.
+    //
+    // Redirect following is transport behaviour and belongs in an integration
+    // check run deliberately against a staging deployment, not in the unit
+    // suite. The deployment health check in DEPLOYMENT_RUNBOOK.md covers it.
   });
 }

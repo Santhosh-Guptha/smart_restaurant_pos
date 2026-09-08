@@ -267,7 +267,19 @@ function cleanOrderId(id) {
 function cleanTableId(t) {
   if (!t) return "";
   var s = String(t).toLowerCase().trim();
-  s = s.replace(/^table[\s_-]*/, "").replace(/[^a-z0-9]/g, "");
+  // Must stay byte-for-byte equivalent to cleanTableId() in
+  // lib/core/restaurant_models.dart - client and server compare table identity
+  // through this function, so any divergence splits one table into two.
+  //
+  // The QR payload carries tableId "T5" while the waiter app and the sheet
+  // carry "Table 5". Only the "table" prefix used to be stripped, so those
+  // normalised to "t5" and "5" - the same physical table under two keys. The
+  // bare "t" is stripped only when a digit follows, so "Terrace 3" keeps its
+  // name. Rows already stored as "T5" still match a payload of "5", because
+  // both sides normalise before comparing; no sheet migration is needed.
+  s = s.replace(/^table[\s_-]*/, "")
+       .replace(/^t[\s_-]*(?=\d)/, "")
+       .replace(/[^a-z0-9]/g, "");
   return s;
 }
 
