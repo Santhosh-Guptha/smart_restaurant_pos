@@ -11,11 +11,17 @@ service cloud.firestore {
       allow read, write: if true;
     }
     
-    // 3. SaaS Tenant Metadata & Auth (Organizations, Licenses, Features, Limits, Users):
+    // 3. SaaS Tenant Metadata & Auth (Organizations, Licenses, Features, Limits, Users, Configs, Devices):
     // Used exclusively for multi-tenant SaaS licensing & staff account management
+    match /users/{userId} {
+      allow read, write: if true;
+      match /{allChildren=**} {
+        allow read, write: if true;
+      }
+    }
+
     match /organizations/{orgId} {
       allow read, write: if true;
-      
       match /{allChildren=**} {
         allow read, write: if true;
       }
@@ -23,6 +29,9 @@ service cloud.firestore {
 
     match /licenses/{licenseId} {
       allow read, write: if true;
+      match /{allChildren=**} {
+        allow read, write: if true;
+      }
     }
 
     match /limits/{limitId} {
@@ -37,11 +46,34 @@ service cloud.firestore {
       allow read, write: if true;
     }
 
-    match /users/{userId} {
+    match /device_registry/{deviceId} {
       allow read, write: if true;
     }
 
-    match /device_registry/{deviceId} {
+    match /firebase_configs/{configId} {
+      allow read, write: if true;
+    }
+
+    match /excel_configs/{configId} {
+      allow read, write: if true;
+    }
+
+    match /franchises/{franchiseId} {
+      allow read, write: if true;
+      match /{allChildren=**} {
+        allow read, write: if true;
+      }
+    }
+
+    match /audit_logs/{logId} {
+      allow read, write: if true;
+    }
+
+    match /_conn_test/{docId} {
+      allow read, write: if true;
+    }
+
+    match /staff_users/{userId} {
       allow read, write: if true;
     }
 
