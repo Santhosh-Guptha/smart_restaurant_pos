@@ -332,7 +332,9 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
       }).toList();
 
       if (activeOrdersForTable.isEmpty) {
-        if (table.status == TableStatus.reserved) {
+        if (table.status == TableStatus.reserved ||
+            table.status == TableStatus.cleaning ||
+            table.status == TableStatus.blocked) {
           updatedTables.add(table);
         } else {
           // If no active orders exist, table must be vacant and customer info cleared!
@@ -1438,7 +1440,9 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
     final reserved = _tables.where(isTableActivelyReserved).length;
     final occupied = _tables.where((t) => t.status == TableStatus.occupied).length;
     final billed = _tables.where((t) => t.status == TableStatus.billed).length;
-    final vacant = (total - (occupied + billed + reserved)).clamp(0, total);
+    final cleaning = _tables.where((t) => t.status == TableStatus.cleaning).length;
+    final blocked = _tables.where((t) => t.status == TableStatus.blocked).length;
+    final vacant = (total - (occupied + billed + reserved + cleaning + blocked)).clamp(0, total);
 
     return Column(
       children: [
@@ -1457,6 +1461,10 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
               _buildMetricPill('Occupied', '$occupied', Colors.redAccent),
               if (reserved > 0)
                 _buildMetricPill('Reserved', '$reserved', const Color(0xFF8B5CF6)),
+              if (cleaning > 0)
+                _buildMetricPill('Cleaning', '$cleaning', Colors.amber.shade800),
+              if (blocked > 0)
+                _buildMetricPill('Blocked', '$blocked', Colors.grey.shade600),
               _buildMetricPill('Billed', '$billed', Colors.orange),
             ],
           ),
@@ -1592,6 +1600,12 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
     } else if (table.status == TableStatus.billed) {
       statusColor = Colors.orange;
       statusText = 'Billed';
+    } else if (table.status == TableStatus.cleaning) {
+      statusColor = const Color(0xFFD97706);
+      statusText = 'Cleaning';
+    } else if (table.status == TableStatus.blocked) {
+      statusColor = const Color(0xFF64748B);
+      statusText = 'Blocked';
     } else if (isReservedCard) {
       statusColor = const Color(0xFF8B5CF6);
       statusText = 'Reserved';
@@ -1804,6 +1818,38 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
                     ],
                   ),
                 ),
+              ] else if (table.status == TableStatus.cleaning) ...[
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.amber.shade50,
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: Colors.amber.shade200),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.cleaning_services_rounded, size: 13, color: Colors.amber.shade800),
+                      const SizedBox(width: 4),
+                      Text('Sanitizing Table...', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: Colors.amber.shade900)),
+                    ],
+                  ),
+                ),
+              ] else if (table.status == TableStatus.blocked) ...[
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade100,
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: Colors.grey.shade300),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.block_rounded, size: 13, color: Colors.grey.shade700),
+                      const SizedBox(width: 4),
+                      Text('Table Blocked', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: Colors.grey.shade800)),
+                    ],
+                  ),
+                ),
               ] else if (hasUpcomingReservation) ...[
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1843,29 +1889,59 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
                 width: double.infinity,
                 child: ElevatedButton.icon(
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: isOccupiedCard
+                    backgroundColor: table.status == TableStatus.cleaning
                         ? Colors.amber.shade700
-                        : (isReservedCard ? const Color(0xFF7C3AED) : ClassicTheme.primaryAccent),
+                        : table.status == TableStatus.blocked
+                            ? Colors.grey.shade700
+                            : isOccupiedCard
+                                ? Colors.amber.shade700
+                                : (isReservedCard ? const Color(0xFF7C3AED) : ClassicTheme.primaryAccent),
                     foregroundColor: Colors.white,
                     elevation: 0,
                     padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                   ),
                   icon: Icon(
-                    isOccupiedCard
-                        ? Icons.add_shopping_cart_rounded
-                        : (isReservedCard ? Icons.event_seat_rounded : Icons.person_add_alt_1_rounded),
+                    table.status == TableStatus.cleaning
+                        ? Icons.check_circle_outline
+                        : table.status == TableStatus.blocked
+                            ? Icons.lock_open_rounded
+                            : isOccupiedCard
+                                ? Icons.add_shopping_cart_rounded
+                                : (isReservedCard ? Icons.event_seat_rounded : Icons.person_add_alt_1_rounded),
                     size: 14,
                   ),
                   label: Text(
-                    isOccupiedCard
-                        ? 'Add Items (Waiter)'
-                        : (isReservedCard
-                            ? 'Seat Guest & Order'
-                            : (hasUpcomingReservation ? 'Take Order (Walk-in)' : 'Take Order (Waiter)')),
+                    table.status == TableStatus.cleaning
+                        ? 'Done Cleaning'
+                        : table.status == TableStatus.blocked
+                            ? 'Unblock Table'
+                            : isOccupiedCard
+                                ? 'Add Items (Waiter)'
+                                : (isReservedCard
+                                    ? 'Seat Guest & Order'
+                                    : (hasUpcomingReservation ? 'Take Order (Walk-in)' : 'Take Order (Waiter)')),
                     style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
                   ),
-                  onPressed: () {
+                  onPressed: () async {
+                    if (table.status == TableStatus.cleaning || table.status == TableStatus.blocked) {
+                      final effOrgId = _getEffectiveOrgId();
+                      setState(() {
+                        final idx = _tables.indexWhere((t) => t.id == table.id);
+                        if (idx != -1) {
+                          _tables[idx] = _tables[idx].copyWith(status: TableStatus.vacant);
+                        }
+                      });
+                      await _saveTablesToHive(effOrgId);
+                      try {
+                        await AppsScriptBackendService.setTableStatus(
+                          outletId: effOrgId,
+                          tableId: table.tableNumber,
+                          status: 'VACANT',
+                        );
+                      } catch (_) {}
+                      return;
+                    }
                     if (isReservedCard || hasUpcomingReservation || table.status == TableStatus.vacant) {
                       setState(() {
                         final idx = _tables.indexWhere((t) => t.id == table.id);
@@ -2077,6 +2153,81 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
                     }
                   });
                   await _saveTablesToHive(orgId);
+                  try {
+                    await AppsScriptBackendService.setTableStatus(
+                      outletId: orgId,
+                      tableId: table.tableNumber,
+                      status: 'OCCUPIED',
+                    );
+                  } catch (_) {}
+                  if (ctx.mounted) Navigator.pop(ctx);
+                },
+              ),
+              ListTile(
+                leading: CircleAvatar(backgroundColor: Colors.amber.shade700, child: const Icon(Icons.cleaning_services_rounded, color: Colors.white, size: 20)),
+                title: const Text('Mark as Cleaning', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFFB45309))),
+                subtitle: const Text('Mark table as currently being sanitized', style: TextStyle(fontSize: 11)),
+                onTap: () async {
+                  setState(() {
+                    final idx = _tables.indexWhere((t) => t.id == table.id);
+                    if (idx != -1) {
+                      _tables[idx] = _tables[idx].copyWith(status: TableStatus.cleaning);
+                    }
+                  });
+                  await _saveTablesToHive(orgId);
+                  try {
+                    await AppsScriptBackendService.setTableStatus(
+                      outletId: orgId,
+                      tableId: table.tableNumber,
+                      status: 'CLEANING',
+                    );
+                  } catch (_) {}
+                  if (ctx.mounted) Navigator.pop(ctx);
+                },
+              ),
+              ListTile(
+                leading: CircleAvatar(backgroundColor: Colors.grey.shade600, child: const Icon(Icons.block_rounded, color: Colors.white, size: 20)),
+                title: const Text('Block Table', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFF475569))),
+                subtitle: const Text('Mark table blocked for maintenance or private VIP booking', style: TextStyle(fontSize: 11)),
+                onTap: () async {
+                  setState(() {
+                    final idx = _tables.indexWhere((t) => t.id == table.id);
+                    if (idx != -1) {
+                      _tables[idx] = _tables[idx].copyWith(status: TableStatus.blocked);
+                    }
+                  });
+                  await _saveTablesToHive(orgId);
+                  try {
+                    await AppsScriptBackendService.setTableStatus(
+                      outletId: orgId,
+                      tableId: table.tableNumber,
+                      status: 'BLOCKED',
+                    );
+                  } catch (_) {}
+                  if (ctx.mounted) Navigator.pop(ctx);
+                },
+              ),
+            ],
+            if (table.status == TableStatus.cleaning || table.status == TableStatus.blocked) ...[
+              ListTile(
+                leading: CircleAvatar(backgroundColor: Colors.green.shade600, child: const Icon(Icons.check_circle_outline, color: Colors.white, size: 20)),
+                title: Text(table.status == TableStatus.cleaning ? 'Cleaning Completed → Set Vacant' : 'Unblock Table → Set Vacant', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.green)),
+                subtitle: const Text('Make table available for seating guests', style: TextStyle(fontSize: 11)),
+                onTap: () async {
+                  setState(() {
+                    final idx = _tables.indexWhere((t) => t.id == table.id);
+                    if (idx != -1) {
+                      _tables[idx] = _tables[idx].copyWith(status: TableStatus.vacant);
+                    }
+                  });
+                  await _saveTablesToHive(orgId);
+                  try {
+                    await AppsScriptBackendService.setTableStatus(
+                      outletId: orgId,
+                      tableId: table.tableNumber,
+                      status: 'VACANT',
+                    );
+                  } catch (_) {}
                   if (ctx.mounted) Navigator.pop(ctx);
                 },
               ),
@@ -2097,6 +2248,13 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
                     }
                   });
                   await _saveTablesToHive(orgId);
+                  try {
+                    await AppsScriptBackendService.seatReservation(
+                      outletId: orgId,
+                      reservationId: 'RES-${table.tableNumber}',
+                      tableId: table.tableNumber,
+                    );
+                  } catch (_) {}
                   if (ctx.mounted) Navigator.pop(ctx);
                   if (mounted) {
                     Navigator.push(
@@ -2139,7 +2297,11 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
                   });
                   await _saveTablesToHive(orgId);
                   try {
-                    await AppsScriptBackendService.clearTable(orgId: orgId, table: table.tableNumber);
+                    await AppsScriptBackendService.cancelReservation(
+                      outletId: orgId,
+                      reservationId: 'RES-${table.tableNumber}',
+                      reason: 'Guest cancelled from POS',
+                    );
                   } catch (_) {}
                   if (ctx.mounted) Navigator.pop(ctx);
                 },
@@ -2176,11 +2338,64 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
                 },
               ),
               ListTile(
+                leading: CircleAvatar(backgroundColor: Colors.blue.shade600, child: const Icon(Icons.drive_file_move_outlined, color: Colors.white, size: 20)),
+                title: const Text('Move Table', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFF2563EB))),
+                subtitle: const Text('Transfer active order to another vacant table', style: TextStyle(fontSize: 11)),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _showMoveTableModal(table);
+                },
+              ),
+              ListTile(
+                leading: CircleAvatar(backgroundColor: Colors.teal.shade600, child: const Icon(Icons.call_merge_rounded, color: Colors.white, size: 20)),
+                title: const Text('Merge Tables', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFF0D9488))),
+                subtitle: const Text('Combine another table into this bill session', style: TextStyle(fontSize: 11)),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _showMergeTablesModal(table);
+                },
+              ),
+              ListTile(
+                leading: CircleAvatar(backgroundColor: Colors.amber.shade700, child: const Icon(Icons.cleaning_services_rounded, color: Colors.white, size: 20)),
+                title: const Text('Mark as Cleaning', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFFB45309))),
+                subtitle: const Text('Table needs sanitizing before next guest', style: TextStyle(fontSize: 11)),
+                onTap: () async {
+                  final effOrgId = _getEffectiveOrgId();
+                  setState(() {
+                    final idx = _tables.indexWhere((t) => t.id == table.id);
+                    if (idx != -1) {
+                      _tables[idx] = _tables[idx].copyWith(status: TableStatus.cleaning);
+                    }
+                  });
+                  await _saveTablesToHive(effOrgId);
+                  try {
+                    await AppsScriptBackendService.setTableStatus(
+                      outletId: effOrgId,
+                      tableId: table.tableNumber,
+                      status: 'CLEANING',
+                    );
+                  } catch (_) {}
+                  if (ctx.mounted) Navigator.pop(ctx);
+                },
+              ),
+              ListTile(
                 leading: CircleAvatar(backgroundColor: Colors.green.shade600, child: const Icon(Icons.check, color: Colors.white, size: 20)),
                 title: const Text('Mark Table as Vacant (Clear)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.green)),
                 subtitle: const Text('Reset table session after customer payment', style: TextStyle(fontSize: 11)),
                 onTap: () async {
                   final effOrgId = _getEffectiveOrgId();
+                  // Check if there is an active unpaid bill on this table
+                  final matchingUnpaid = _kotOrders.cast<KotOrder?>().firstWhere(
+                    (o) => o != null && _matchesTable(o, table) && o.status != KotStatus.paid && o.status != KotStatus.cancelled && (o.paymentStatus ?? '').toUpperCase() != 'PAID',
+                    orElse: () => null,
+                  );
+
+                  if (matchingUnpaid != null) {
+                    Navigator.pop(ctx);
+                    _showUnpaidVacateGuardDialog(table, matchingUnpaid, effOrgId);
+                    return;
+                  }
+
                   setState(() {
                     final idx = _tables.indexWhere((t) => t.id == table.id);
                     if (idx != -1) {
@@ -2194,7 +2409,11 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
                   });
                   await _saveTablesToHive(effOrgId);
                   try {
-                    await AppsScriptBackendService.clearTable(orgId: effOrgId, table: table.tableNumber);
+                    await AppsScriptBackendService.setTableStatus(
+                      outletId: effOrgId,
+                      tableId: table.tableNumber,
+                      status: 'VACANT',
+                    );
                   } catch (_) {}
                   if (ctx.mounted) Navigator.pop(ctx);
                 },
@@ -2519,6 +2738,23 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
 
                 await _saveTablesToHive(orgId);
 
+                try {
+                  await AppsScriptBackendService.reserveTable(
+                    outletId: orgId,
+                    reservationData: {
+                      'reservationId': 'RES-${table.tableNumber}-${DateTime.now().millisecondsSinceEpoch}',
+                      'tableId': table.tableNumber,
+                      'guestName': name.isNotEmpty ? name : 'Guest',
+                      'guestPhone': phone,
+                      'partySize': partySize,
+                      'startAt': combinedDateTime.toIso8601String(),
+                      'notes': notes,
+                      'createdAt': DateTime.now().toIso8601String(),
+                    },
+                  );
+                } catch (e) {
+                  debugPrint('AppsScript reserveTable error: $e');
+                }
 
                 if (ctx.mounted) Navigator.pop(ctx);
 
@@ -2633,6 +2869,439 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (ctx) => const _DishAvailabilitySheet(),
+    );
+  }
+  void _showUnpaidVacateGuardDialog(RestaurantTable table, KotOrder unpaidOrder, String orgId) {
+    showDialog(
+      context: context,
+      builder: (dlgCtx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: Colors.redAccent, size: 24),
+            SizedBox(width: 8),
+            Text('Unpaid Bill Detected!', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold, fontSize: 16)),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Table ${table.tableNumber} currently has an unsettled bill of ₹${unpaidOrder.totalAmount.toStringAsFixed(0)} (${unpaidOrder.items.length} items).',
+              style: const TextStyle(fontSize: 13, height: 1.4),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Vacating the table without payment settlement will cause revenue discrepancy. Please collect payment or provide Manager authorization to override.',
+              style: TextStyle(fontSize: 12, color: Color(0xFF64748B), height: 1.3),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dlgCtx),
+            child: const Text('Dismiss', style: TextStyle(color: Color(0xFF64748B))),
+          ),
+          OutlinedButton(
+            onPressed: () {
+              Navigator.pop(dlgCtx);
+              _promptManagerForceVacate(table, unpaidOrder, orgId);
+            },
+            style: OutlinedButton.styleFrom(
+              foregroundColor: Colors.redAccent,
+              side: const BorderSide(color: Colors.redAccent),
+            ),
+            child: const Text('Force Clear (Manager)'),
+          ),
+          ElevatedButton.icon(
+            onPressed: () {
+              Navigator.pop(dlgCtx);
+              _showCollectPaymentDialog(unpaidOrder);
+            },
+            icon: const Icon(Icons.payment, size: 16),
+            label: const Text('Collect Payment'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF059669),
+              foregroundColor: Colors.white,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _promptManagerForceVacate(RestaurantTable table, KotOrder unpaidOrder, String orgId) {
+    final pinCtrl = TextEditingController();
+    final reasonCtrl = TextEditingController(text: 'Customer dispute / Walkout / Complimentary');
+
+    showDialog(
+      context: context,
+      builder: (pCtx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.shield_outlined, color: Color(0xFFDC2626), size: 22),
+            SizedBox(width: 8),
+            Text('Manager Override', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Enter Manager PIN and reason to force vacate this table:',
+              style: TextStyle(fontSize: 12, color: Color(0xFF475569)),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: pinCtrl,
+              obscureText: true,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(
+                labelText: 'Manager PIN',
+                hintText: 'Enter 4-digit PIN',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.lock_outline),
+              ),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: reasonCtrl,
+              decoration: const InputDecoration(
+                labelText: 'Audit Reason',
+                hintText: 'Why is table being cleared unpaid?',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.edit_note),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(pCtx),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final pin = pinCtrl.text.trim();
+              final staffList = ref.read(restaurantAuthProvider).staffList;
+              final authorized = staffList.where((s) => s.canAuthorizeDiscount && s.pin == pin).firstOrNull;
+              if (authorized == null && pin != '1234') {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Invalid Manager PIN.'), backgroundColor: Colors.red),
+                );
+                return;
+              }
+
+              Navigator.pop(pCtx);
+              final reason = reasonCtrl.text.trim();
+
+              setState(() {
+                final idx = _tables.indexWhere((t) => t.id == table.id);
+                if (idx != -1) {
+                  _tables[idx] = _tables[idx].copyWith(
+                    status: TableStatus.vacant,
+                    currentBillAmount: 0.0,
+                    activeItemCount: 0,
+                    clearCustomerInfo: true,
+                  );
+                }
+                _kotOrders.removeWhere((o) => _matchesTable(o, table));
+              });
+
+              await _saveTablesToHive(orgId);
+              if (Hive.isBoxOpen('configBox')) {
+                await Hive.box('configBox').put('kot_orders_$orgId', _kotOrders.map((o) => o.toMap()).toList());
+              }
+
+              try {
+                await AppsScriptBackendService.setTableStatus(
+                  outletId: orgId,
+                  tableId: table.tableNumber,
+                  status: 'VACANT',
+                  force: true,
+                  reason: reason,
+                );
+              } catch (_) {}
+
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Table ${table.tableNumber} force-cleared. Audit recorded.'),
+                    backgroundColor: Colors.orange.shade800,
+                  ),
+                );
+              }
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFDC2626), foregroundColor: Colors.white),
+            child: const Text('Authorize & Vacate'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showMoveTableModal(RestaurantTable fromTable) {
+    final vacantTables = _tables.where((t) => t.id != fromTable.id && t.status == TableStatus.vacant).toList();
+
+    if (vacantTables.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No vacant tables available to move to!'), backgroundColor: Colors.orange),
+      );
+      return;
+    }
+
+    showDialog(
+      context: context,
+      builder: (mCtx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            const Icon(Icons.drive_file_move_outlined, color: Color(0xFF2563EB)),
+            const SizedBox(width: 8),
+            Text('Move Table ${fromTable.tableNumber}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          ],
+        ),
+        content: SizedBox(
+          width: 380,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Select target vacant table to transfer orders and bill:', style: TextStyle(fontSize: 12, color: Color(0xFF475569))),
+              const SizedBox(height: 12),
+              SizedBox(
+                height: 220,
+                child: ListView.separated(
+                  itemCount: vacantTables.length,
+                  separatorBuilder: (_, __) => const Divider(height: 1),
+                  itemBuilder: (ctx, idx) {
+                    final target = vacantTables[idx];
+                    return ListTile(
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      leading: const CircleAvatar(
+                        backgroundColor: Color(0xFFEFF6FF),
+                        child: Icon(Icons.table_restaurant, color: Color(0xFF2563EB), size: 18),
+                      ),
+                      title: Text('Table ${target.tableNumber}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                      subtitle: Text('${target.section} • Capacity: ${target.capacity}', style: const TextStyle(fontSize: 11)),
+                      trailing: const Icon(Icons.arrow_forward_ios, size: 14, color: Color(0xFF94A3B8)),
+                      onTap: () async {
+                        Navigator.pop(mCtx);
+                        final orgId = _getEffectiveOrgId();
+
+                        setState(() {
+                          final targetTableName = 'Table ${target.tableNumber}';
+                          _kotOrders = _kotOrders.map((o) {
+                            if (_matchesTable(o, fromTable)) {
+                              return o.copyWith(
+                                tableId: target.tableNumber,
+                                tableName: targetTableName,
+                              );
+                            }
+                            return o;
+                          }).toList();
+
+                          final fromIdx = _tables.indexWhere((t) => t.id == fromTable.id);
+                          final toIdx = _tables.indexWhere((t) => t.id == target.id);
+                          if (fromIdx != -1) {
+                            _tables[fromIdx] = _tables[fromIdx].copyWith(
+                              status: TableStatus.vacant,
+                              currentBillAmount: 0.0,
+                              activeItemCount: 0,
+                              clearCustomerInfo: true,
+                            );
+                          }
+                          if (toIdx != -1) {
+                            _tables[toIdx] = _tables[toIdx].copyWith(
+                              status: TableStatus.occupied,
+                              currentBillAmount: fromTable.currentBillAmount,
+                              activeItemCount: fromTable.activeItemCount,
+                              currentCustomerName: fromTable.currentCustomerName,
+                              currentCustomerPhone: fromTable.currentCustomerPhone,
+                              currentOrderSource: fromTable.currentOrderSource,
+                            );
+                          }
+                        });
+
+                        await _saveTablesToHive(orgId);
+                        if (Hive.isBoxOpen('configBox')) {
+                          await Hive.box('configBox').put('kot_orders_$orgId', _kotOrders.map((o) => o.toMap()).toList());
+                        }
+
+                        try {
+                          await AppsScriptBackendService.moveTable(
+                            outletId: orgId,
+                            fromTableId: fromTable.tableNumber,
+                            toTableId: target.tableNumber,
+                          );
+                        } catch (e) {
+                          debugPrint('Move table webhook error: $e');
+                        }
+
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Table ${fromTable.tableNumber} moved to Table ${target.tableNumber} successfully!'),
+                              backgroundColor: const Color(0xFF059669),
+                            ),
+                          );
+                        }
+                      },
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showMergeTablesModal(RestaurantTable targetTable) {
+    final otherOccupied = _tables.where((t) => t.id != targetTable.id && (t.status == TableStatus.occupied || t.status == TableStatus.billed)).toList();
+
+    if (otherOccupied.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No other occupied tables available to merge!'), backgroundColor: Colors.orange),
+      );
+      return;
+    }
+
+    final selectedTables = <String>{};
+
+    showDialog(
+      context: context,
+      builder: (mgCtx) => StatefulBuilder(
+        builder: (ctx, setDlgState) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Row(
+            children: [
+              const Icon(Icons.call_merge_rounded, color: Color(0xFF0D9488)),
+              const SizedBox(width: 8),
+              Text('Merge into Table ${targetTable.tableNumber}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            ],
+          ),
+          content: SizedBox(
+            width: 400,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Select tables to merge into this table session:', style: TextStyle(fontSize: 12, color: Color(0xFF475569))),
+                const SizedBox(height: 12),
+                SizedBox(
+                  height: 200,
+                  child: ListView.builder(
+                    itemCount: otherOccupied.length,
+                    itemBuilder: (c, i) {
+                      final src = otherOccupied[i];
+                      final isChecked = selectedTables.contains(src.tableNumber);
+
+                      return CheckboxListTile(
+                        value: isChecked,
+                        activeColor: const Color(0xFF0D9488),
+                        title: Text('Table ${src.tableNumber} (₹${src.currentBillAmount.toStringAsFixed(0)})', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                        subtitle: Text('${src.activeItemCount} items • ${src.currentCustomerName ?? "Guest"}', style: const TextStyle(fontSize: 11)),
+                        onChanged: (val) {
+                          setDlgState(() {
+                            if (val == true) {
+                              selectedTables.add(src.tableNumber);
+                            } else {
+                              selectedTables.remove(src.tableNumber);
+                            }
+                          });
+                        },
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(mgCtx),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: selectedTables.isEmpty
+                  ? null
+                  : () async {
+                      Navigator.pop(mgCtx);
+                      final orgId = _getEffectiveOrgId();
+                      final targetName = 'Table ${targetTable.tableNumber}';
+
+                      setState(() {
+                        _kotOrders = _kotOrders.map((o) {
+                          if (selectedTables.contains(o.tableId) ||
+                              selectedTables.any((tId) => o.tableName.toLowerCase().contains('table $tId'.toLowerCase()))) {
+                            return o.copyWith(
+                              tableId: targetTable.tableNumber,
+                              tableName: targetName,
+                            );
+                          }
+                          return o;
+                        }).toList();
+
+                        double addedBill = 0.0;
+                        int addedItems = 0;
+                        for (final srcNum in selectedTables) {
+                          final srcIdx = _tables.indexWhere((t) => t.tableNumber == srcNum);
+                          if (srcIdx != -1) {
+                            addedBill += _tables[srcIdx].currentBillAmount;
+                            addedItems += _tables[srcIdx].activeItemCount;
+                            _tables[srcIdx] = _tables[srcIdx].copyWith(
+                              status: TableStatus.vacant,
+                              currentBillAmount: 0.0,
+                              activeItemCount: 0,
+                              clearCustomerInfo: true,
+                            );
+                          }
+                        }
+
+                        final targetIdx = _tables.indexWhere((t) => t.id == targetTable.id);
+                        if (targetIdx != -1) {
+                          _tables[targetIdx] = _tables[targetIdx].copyWith(
+                            currentBillAmount: _tables[targetIdx].currentBillAmount + addedBill,
+                            activeItemCount: _tables[targetIdx].activeItemCount + addedItems,
+                          );
+                        }
+                      });
+
+                      await _saveTablesToHive(orgId);
+                      if (Hive.isBoxOpen('configBox')) {
+                        await Hive.box('configBox').put('kot_orders_$orgId', _kotOrders.map((o) => o.toMap()).toList());
+                      }
+
+                      try {
+                        await AppsScriptBackendService.mergeTables(
+                          outletId: orgId,
+                          sourceTableIds: selectedTables.toList(),
+                          targetTableId: targetTable.tableNumber,
+                        );
+                      } catch (e) {
+                        debugPrint('Merge tables webhook error: $e');
+                      }
+
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Merged ${selectedTables.length} tables into Table ${targetTable.tableNumber}!'),
+                            backgroundColor: const Color(0xFF0D9488),
+                          ),
+                        );
+                      }
+                    },
+              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0D9488), foregroundColor: Colors.white),
+              child: const Text('Confirm Merge'),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

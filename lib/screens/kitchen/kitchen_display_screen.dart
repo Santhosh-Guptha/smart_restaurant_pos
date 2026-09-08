@@ -256,9 +256,9 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
 
   List<KotOrder> _getOrdersForStage(String stage) {
     if (stage == 'PENDING') {
-      return _allOrders.where((o) => o.effectiveKitchenStatus == 'PENDING').toList();
+      return _allOrders.where((o) => o.effectiveKitchenStatus == 'PENDING' && o.items.any((i) => i.sendsToKitchen)).toList();
     } else if (stage == 'PREPARING') {
-      return _allOrders.where((o) => o.effectiveKitchenStatus == 'PREPARING').toList();
+      return _allOrders.where((o) => o.effectiveKitchenStatus == 'PREPARING' && o.items.any((i) => i.sendsToKitchen)).toList();
     } else if (stage == 'READY') {
       return _allOrders.where((o) => o.effectiveKitchenStatus == 'READY').toList();
     } else if (stage == 'SERVED') {
@@ -436,12 +436,25 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
 
   Future<void> _printKitchenSlip(KotOrder order) async {
     try {
+      final kitchenItems = order.items.where((i) => i.sendsToKitchen).toList();
+      if (kitchenItems.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('This order contains only Direct Counter items. No KOT required.'),
+              backgroundColor: Color(0xFFD97706),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+        return;
+      }
       final bytes = await KitchenTicketFormatter.formatKotTicket(
         paperSize: PaperSize.mm80,
         profile: await CapabilityProfile.load(),
         tokenNumber: '#${order.kotNumber.replaceAll(RegExp(r'[^0-9]'), '').padLeft(3, '0')}',
         tableName: order.tableName,
-        items: order.items,
+        items: kitchenItems,
         stationName: 'Main Kitchen',
         generalNotes: order.generalNotes,
         orderTime: order.createdAt,
@@ -1125,13 +1138,38 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            item.name,
-                            style: const TextStyle(
-                              color: Color(0xFF1E293B),
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                            ),
+                          Row(
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  item.name,
+                                  style: TextStyle(
+                                    color: item.sendsToKitchen ? const Color(0xFF1E293B) : const Color(0xFF64748B),
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                              if (!item.sendsToKitchen) ...[
+                                const SizedBox(width: 6),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFFEF3C7),
+                                    borderRadius: BorderRadius.circular(4),
+                                    border: Border.all(color: const Color(0xFFF59E0B), width: 0.8),
+                                  ),
+                                  child: const Text(
+                                    'Direct Counter',
+                                    style: TextStyle(
+                                      color: Color(0xFFB45309),
+                                      fontSize: 9,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ],
                           ),
                           if (item.notes != null && item.notes!.isNotEmpty)
                             Padding(

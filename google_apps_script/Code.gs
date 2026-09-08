@@ -123,6 +123,24 @@ function doPost(e) {
       case "CLOSE_DAY":
         return handleCloseDay(json);
 
+      case "SET_TABLE_STATUS":
+        return handleSetTableStatus(json);
+
+      case "RESERVE_TABLE":
+        return handleReserveTable(json);
+
+      case "CANCEL_RESERVATION":
+        return handleCancelReservation(json);
+
+      case "SEAT_RESERVATION":
+        return handleSeatReservation(json);
+
+      case "MOVE_TABLE":
+        return handleMoveTable(json);
+
+      case "MERGE_TABLES":
+        return handleMergeTables(json);
+
       default:
         return responseJson({ success: false, error: "Unknown action: " + action });
     }
@@ -2114,6 +2132,465 @@ function handleCloseDay(json) {
       recordIdempotency(ss, clientRequestId, "CLOSE_DAY", res);
     }
     return responseJson(res);
+  } catch (err) {
+    return responseJson({ ok: false, success: false, error: String(err) });
+  } finally {
+    try { lock.releaseLock(); } catch(e) {}
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 6: Table Lifecycle, Occupancy, Reservations & Floor Operations
+// ─────────────────────────────────────────────────────────────────────────────
+
+function handleSetTableStatus(json) {
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(20000);
+  } catch (eLock) {
+    return responseJson({ ok: false, success: false, error: "Server busy: lock timeout in handleSetTableStatus." });
+  }
+
+  try {
+    var clientRequestId = json.clientRequestId || json.client_request_id;
+    var data = json.data || json;
+    var outletId = String(json.outletId || json.org_id || json.organizationId || data.outletId || "").trim();
+    var sId = json.spreadsheet_id || json.spreadsheetId || getSheetIdForOrg(outletId);
+    var tableId = String(data.tableId || data.table || data.tableNumber || "").trim();
+    var newStatus = String(data.status || data.tableStatus || "VACANT").toUpperCase().trim();
+    var force = data.force === true;
+    var reason = String(data.reason || "").trim();
+
+    var ss = null;
+    if (sId) {
+      try { ss = SpreadsheetApp.openById(sId); } catch(e) {}
+    }
+
+    if (clientRequestId && ss) {
+      var cached = checkIdempotency(ss, clientRequestId);
+      if (cached) return responseJson(cached);
+    }
+
+    var cTable = cleanTableId(tableId);
+
+    // Guard: Prevent vacating a table if it has an active unpaid order
+    if (newStatus === "VACANT" && !force && orgId) {
+      var props = PropertiesService.getScriptProperties();
+      var rawCached = props.getProperty("recent_orders_" + outletId);
+      if (rawCached) {
+        try {
+          var orders = JSON.parse(rawCached);
+          var activeUnpaid = orders.find(function(o) {
+            var oTable = cleanTableId(o.tableName || o.table || o.tableNumber || "");
+            var oStat = String(o.status || o.paymentStatus || "").toUpperCase();
+            return oTable === cTable && !isStatusSettled(oStat);
+          });
+          if (activeUnpaid) {
+            return responseJson({
+              ok: false,
+              success: false,
+              error: "Cannot mark table vacant: Active unpaid bill exists (" + (activeUnpaid.id || activeUnpaid.bill_id || "Bill") + "). Settle bill first or provide override reason.",
+              activeBillId: activeUnpaid.id || activeUnpaid.bill_id
+            });
+          }
+        } catch(e) {}
+      }
+    }
+
+    var rev = getAndBumpRev(outletId);
+
+    // Update in Tables tab
+    if (ss) {
+      ensureV2Sheets(ss);
+      var tSheet = ss.getSheetByName("Tables");
+      if (tSheet) {
+        var tData = tSheet.getDataRange().getValues();
+        var rowIdx = -1;
+        for (var i = 1; i < tData.length; i++) {
+          if (String(tData[i][0] || "").trim() === tableId || cleanTableId(tData[i][0]) === cTable) {
+            rowIdx = i + 1;
+            break;
+          }
+        }
+        var occupiedAt = newStatus === "OCCUPIED" ? (data.occupiedAt || new Date().toISOString()) : "";
+        var cleaningUntil = newStatus === "CLEANING" ? (data.cleaningUntil || new Date(Date.now() + 15*60000).toISOString()) : "";
+        var capacity = parseInt(data.capacity || 4, 10);
+        var section = data.section || "Main Floor";
+
+        if (rowIdx > 0) {
+          tSheet.getRange(rowIdx, 6, 1, 6).setValues([[
+            newStatus, data.activeSessionId || "", occupiedAt, cleaningUntil, data.qrToken || "", rev
+          ]]);
+        } else {
+          tSheet.appendRow([
+            tableId, outletId, "Table " + tableId, section, capacity,
+            newStatus, data.activeSessionId || "", occupiedAt, cleaningUntil, data.qrToken || "", rev
+          ]);
+        }
+      }
+
+      // Log force override in Audit tab if applicable
+      if (force && reason) {
+        var aSheet = ss.getSheetByName("Audit");
+        if (aSheet) {
+          aSheet.appendRow([
+            new Date().toISOString(), outletId, data.staffId || "Staff", "FORCE_VACATE",
+            "Table", tableId, "OCCUPIED", "VACANT", reason
+          ]);
+        }
+      }
+    }
+
+    var res = {
+      ok: true,
+      success: true,
+      tableId: tableId,
+      status: newStatus,
+      rev: rev
+    };
+
+    if (clientRequestId && ss) {
+      recordIdempotency(ss, clientRequestId, "SET_TABLE_STATUS", res);
+    }
+    return responseJson(res);
+  } catch (err) {
+    return responseJson({ ok: false, success: false, error: String(err) });
+  } finally {
+    try { lock.releaseLock(); } catch(e) {}
+  }
+}
+
+function handleReserveTable(json) {
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(20000);
+  } catch (eLock) {
+    return responseJson({ ok: false, success: false, error: "Server busy: lock timeout in handleReserveTable." });
+  }
+
+  try {
+    var clientRequestId = json.clientRequestId || json.client_request_id;
+    var data = json.data || json;
+    var outletId = String(json.outletId || json.org_id || json.organizationId || data.outletId || "").trim();
+    var sId = json.spreadsheet_id || json.spreadsheetId || getSheetIdForOrg(outletId);
+
+    var ss = null;
+    if (sId) {
+      try { ss = SpreadsheetApp.openById(sId); } catch(e) {}
+    }
+
+    if (clientRequestId && ss) {
+      var cached = checkIdempotency(ss, clientRequestId);
+      if (cached) return responseJson(cached);
+    }
+
+    var tableId = String(data.tableId || data.table || "").trim();
+    var guestName = String(data.guestName || data.name || "Guest").trim();
+    var guestPhone = String(data.guestPhone || data.phone || "").trim();
+    var partySize = parseInt(data.partySize || data.guests || 2, 10);
+    var startAtStr = data.startAt || new Date().toISOString();
+    var durationMin = parseInt(data.durationMin || 90, 10);
+    var startTime = new Date(startAtStr).getTime();
+    var endTime = startTime + (durationMin * 60 * 1000);
+
+    if (ss) {
+      ensureV2Sheets(ss);
+      var rSheet = ss.getSheetByName("Reservations");
+      if (rSheet) {
+        var rData = rSheet.getDataRange().getValues();
+        for (var i = 1; i < rData.length; i++) {
+          var rowTable = String(rData[i][2] || "").trim();
+          var rowStatus = String(rData[i][8] || "").toUpperCase().trim();
+          if (rowTable === tableId && (rowStatus === "BOOKED" || rowStatus === "CONFIRMED")) {
+            var rowStart = new Date(rData[i][6]).getTime();
+            var rowDur = parseInt(rData[i][7] || 90, 10);
+            var rowEnd = rowStart + (rowDur * 60 * 1000);
+            // Overlap check
+            if (startTime < rowEnd && endTime > rowStart) {
+              return responseJson({
+                ok: false,
+                success: false,
+                error: "Reservation conflict: Table " + tableId + " already booked between " +
+                       Utilities.formatDate(new Date(rowStart), "GMT+05:30", "HH:mm") + " - " +
+                       Utilities.formatDate(new Date(rowEnd), "GMT+05:30", "HH:mm")
+              });
+            }
+          }
+        }
+      }
+    }
+
+    var rev = getAndBumpRev(outletId);
+    var resId = data.reservationId || ("RES-" + Utilities.getUuid());
+
+    if (ss) {
+      var rSheet = ss.getSheetByName("Reservations");
+      if (rSheet) {
+        rSheet.appendRow([
+          resId, outletId, tableId, guestName, guestPhone, partySize,
+          startAtStr, durationMin, "CONFIRMED", data.notes || "",
+          data.createdBy || "Staff", new Date().toISOString(), "", rev
+        ]);
+      }
+    }
+
+    var res = {
+      ok: true,
+      success: true,
+      reservationId: resId,
+      tableId: tableId,
+      startAt: startAtStr,
+      rev: rev
+    };
+
+    if (clientRequestId && ss) {
+      recordIdempotency(ss, clientRequestId, "RESERVE_TABLE", res);
+    }
+    return responseJson(res);
+  } catch (err) {
+    return responseJson({ ok: false, success: false, error: String(err) });
+  } finally {
+    try { lock.releaseLock(); } catch(e) {}
+  }
+}
+
+function handleCancelReservation(json) {
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(20000);
+  } catch (eLock) {
+    return responseJson({ ok: false, success: false, error: "Server busy: lock timeout." });
+  }
+
+  try {
+    var data = json.data || json;
+    var outletId = String(json.outletId || json.org_id || data.outletId || "").trim();
+    var sId = json.spreadsheet_id || json.spreadsheetId || getSheetIdForOrg(outletId);
+    var resId = String(data.reservationId || data.id || "").trim();
+
+    var ss = null;
+    if (sId) {
+      try { ss = SpreadsheetApp.openById(sId); } catch(e) {}
+    }
+
+    var rev = getAndBumpRev(outletId);
+
+    if (ss) {
+      var rSheet = ss.getSheetByName("Reservations");
+      if (rSheet) {
+        var rData = rSheet.getDataRange().getValues();
+        for (var i = 1; i < rData.length; i++) {
+          if (String(rData[i][0] || "").trim() === resId) {
+            rSheet.getRange(i + 1, 9).setValue("CANCELLED");
+            rSheet.getRange(i + 1, 14).setValue(rev);
+            break;
+          }
+        }
+      }
+    }
+
+    return responseJson({ ok: true, success: true, reservationId: resId, rev: rev });
+  } catch (err) {
+    return responseJson({ ok: false, success: false, error: String(err) });
+  } finally {
+    try { lock.releaseLock(); } catch(e) {}
+  }
+}
+
+function handleSeatReservation(json) {
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(20000);
+  } catch (eLock) {
+    return responseJson({ ok: false, success: false, error: "Server busy: lock timeout." });
+  }
+
+  try {
+    var data = json.data || json;
+    var outletId = String(json.outletId || json.org_id || data.outletId || "").trim();
+    var sId = json.spreadsheet_id || json.spreadsheetId || getSheetIdForOrg(outletId);
+    var resId = String(data.reservationId || data.id || "").trim();
+    var tableId = String(data.tableId || "").trim();
+
+    var ss = null;
+    if (sId) {
+      try { ss = SpreadsheetApp.openById(sId); } catch(e) {}
+    }
+
+    var rev = getAndBumpRev(outletId);
+
+    if (ss) {
+      var rSheet = ss.getSheetByName("Reservations");
+      if (rSheet) {
+        var rData = rSheet.getDataRange().getValues();
+        for (var i = 1; i < rData.length; i++) {
+          if (String(rData[i][0] || "").trim() === resId) {
+            rSheet.getRange(i + 1, 9).setValue("SEATED");
+            rSheet.getRange(i + 1, 14).setValue(rev);
+            break;
+          }
+        }
+      }
+
+      // Mark Table as Occupied
+      var tSheet = ss.getSheetByName("Tables");
+      if (tSheet) {
+        var tData = tSheet.getDataRange().getValues();
+        for (var j = 1; j < tData.length; j++) {
+          if (String(tData[j][0] || "").trim() === tableId || cleanTableId(tData[j][0]) === cleanTableId(tableId)) {
+            tSheet.getRange(j + 1, 6).setValue("OCCUPIED");
+            tSheet.getRange(j + 1, 8).setValue(new Date().toISOString());
+            tSheet.getRange(j + 1, 11).setValue(rev);
+            break;
+          }
+        }
+      }
+    }
+
+    return responseJson({ ok: true, success: true, reservationId: resId, tableId: tableId, rev: rev });
+  } catch (err) {
+    return responseJson({ ok: false, success: false, error: String(err) });
+  } finally {
+    try { lock.releaseLock(); } catch(e) {}
+  }
+}
+
+function handleMoveTable(json) {
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(20000);
+  } catch (eLock) {
+    return responseJson({ ok: false, success: false, error: "Server busy: lock timeout in handleMoveTable." });
+  }
+
+  try {
+    var data = json.data || json;
+    var outletId = String(json.outletId || json.org_id || data.outletId || "").trim();
+    var sId = json.spreadsheet_id || json.spreadsheetId || getSheetIdForOrg(outletId);
+    var fromTable = String(data.fromTableId || data.fromTable || "").trim();
+    var toTable = String(data.toTableId || data.toTable || "").trim();
+
+    var cFrom = cleanTableId(fromTable);
+    var cTo = cleanTableId(toTable);
+
+    var rev = getAndBumpRev(outletId);
+
+    // Reassign active orders in memory cache
+    var props = PropertiesService.getScriptProperties();
+    var cacheKey = "recent_orders_" + outletId;
+    var rawCached = props.getProperty(cacheKey);
+    if (rawCached) {
+      try {
+        var orders = JSON.parse(rawCached);
+        orders.forEach(function(o) {
+          if (cleanTableId(o.tableName || o.table || o.tableNumber) === cFrom) {
+            o.tableName = "Table " + toTable;
+            o.table = toTable;
+            o.tableNumber = toTable;
+            o.tableId = toTable;
+          }
+        });
+        props.setProperty(cacheKey, JSON.stringify(orders));
+      } catch(e) {}
+    }
+
+    var ss = null;
+    if (sId) {
+      try { ss = SpreadsheetApp.openById(sId); } catch(e) {}
+    }
+
+    if (ss) {
+      ensureV2Sheets(ss);
+      // Update Tables tab: fromTable -> VACANT/CLEANING, toTable -> OCCUPIED
+      var tSheet = ss.getSheetByName("Tables");
+      if (tSheet) {
+        var tData = tSheet.getDataRange().getValues();
+        for (var i = 1; i < tData.length; i++) {
+          var tId = cleanTableId(tData[i][0]);
+          if (tId === cFrom) {
+            tSheet.getRange(i + 1, 6).setValue("CLEANING");
+            tSheet.getRange(i + 1, 11).setValue(rev);
+          } else if (tId === cTo) {
+            tSheet.getRange(i + 1, 6).setValue("OCCUPIED");
+            tSheet.getRange(i + 1, 8).setValue(new Date().toISOString());
+            tSheet.getRange(i + 1, 11).setValue(rev);
+          }
+        }
+      }
+    }
+
+    return responseJson({ ok: true, success: true, fromTable: fromTable, toTable: toTable, rev: rev });
+  } catch (err) {
+    return responseJson({ ok: false, success: false, error: String(err) });
+  } finally {
+    try { lock.releaseLock(); } catch(e) {}
+  }
+}
+
+function handleMergeTables(json) {
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(20000);
+  } catch (eLock) {
+    return responseJson({ ok: false, success: false, error: "Server busy: lock timeout in handleMergeTables." });
+  }
+
+  try {
+    var data = json.data || json;
+    var outletId = String(json.outletId || json.org_id || data.outletId || "").trim();
+    var sId = json.spreadsheet_id || json.spreadsheetId || getSheetIdForOrg(outletId);
+    var sourceTables = data.sourceTableIds || data.sources || [];
+    var targetTable = String(data.targetTableId || data.target || "").trim();
+
+    var cTarget = cleanTableId(targetTable);
+    var cSources = sourceTables.map(function(s) { return cleanTableId(s); });
+
+    var rev = getAndBumpRev(outletId);
+
+    // Merge active orders in memory cache to target table
+    var props = PropertiesService.getScriptProperties();
+    var cacheKey = "recent_orders_" + outletId;
+    var rawCached = props.getProperty(cacheKey);
+    if (rawCached) {
+      try {
+        var orders = JSON.parse(rawCached);
+        orders.forEach(function(o) {
+          var oTable = cleanTableId(o.tableName || o.table || o.tableNumber);
+          if (cSources.indexOf(oTable) !== -1) {
+            o.tableName = "Table " + targetTable;
+            o.table = targetTable;
+            o.tableNumber = targetTable;
+            o.tableId = targetTable;
+          }
+        });
+        props.setProperty(cacheKey, JSON.stringify(orders));
+      } catch(e) {}
+    }
+
+    var ss = null;
+    if (sId) {
+      try { ss = SpreadsheetApp.openById(sId); } catch(e) {}
+    }
+
+    if (ss) {
+      ensureV2Sheets(ss);
+      var tSheet = ss.getSheetByName("Tables");
+      if (tSheet) {
+        var tData = tSheet.getDataRange().getValues();
+        for (var i = 1; i < tData.length; i++) {
+          var tId = cleanTableId(tData[i][0]);
+          if (cSources.indexOf(tId) !== -1) {
+            tSheet.getRange(i + 1, 6).setValue("VACANT");
+            tSheet.getRange(i + 1, 11).setValue(rev);
+          } else if (tId === cTarget) {
+            tSheet.getRange(i + 1, 6).setValue("OCCUPIED");
+            tSheet.getRange(i + 1, 11).setValue(rev);
+          }
+        }
+      }
+    }
+
+    return responseJson({ ok: true, success: true, sourceTables: sourceTables, targetTable: targetTable, rev: rev });
   } catch (err) {
     return responseJson({ ok: false, success: false, error: String(err) });
   } finally {

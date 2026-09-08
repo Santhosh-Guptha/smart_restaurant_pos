@@ -357,6 +357,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
       final it = entry['item'] as Map<String, dynamic>;
       final qty = (entry['qty'] as num).toInt();
       final price = (it['price'] as num?)?.toDouble() ?? 0.0;
+      final sendsToKitchen = it['sendsToKitchen'] != false;
       itemsList.add({
         'lineId': const Uuid().v4(),
         'id': it['id']?.toString() ?? it['name'].toString(),
@@ -367,10 +368,11 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
         'price': price,
         'rate': price,
         'isVeg': it['isVeg'] != false,
+        'sendsToKitchen': sendsToKitchen,
         'courseNo': currentCourse,
         'course_no': currentCourse,
         'station': (it['station'] ?? 'Main Kitchen').toString(),
-        'kitchenStatus': 'PENDING',
+        'kitchenStatus': sendsToKitchen ? 'PENDING' : 'SERVED',
         'notes': it['notes']?.toString(),
       });
     }
@@ -665,13 +667,25 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
 
   Future<void> _reprintKot(KotOrder ord) async {
     try {
+      final kitchenItems = ord.items.where((i) => i.sendsToKitchen).toList();
+      if (kitchenItems.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('This order contains only direct counter items. No KOT to print.'),
+              backgroundColor: Color(0xFFD97706),
+            ),
+          );
+        }
+        return;
+      }
       final newReprintCount = ord.reprintCount + 1;
       final bytes = await KitchenTicketFormatter.formatKotTicket(
         paperSize: PaperSize.mm80,
         profile: await CapabilityProfile.load(),
         tokenNumber: '#${ord.kotNumber.replaceAll(RegExp(r'[^0-9]'), '').padLeft(3, '0')}',
         tableName: ord.tableName,
-        items: ord.items,
+        items: kitchenItems,
         waiterName: ord.waiterName,
         generalNotes: ord.generalNotes,
         orderTime: ord.createdAt,

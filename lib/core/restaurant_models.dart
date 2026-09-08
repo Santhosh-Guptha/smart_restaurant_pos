@@ -59,6 +59,119 @@ enum TableStatus {
   occupied,
   billed,
   reserved,
+  cleaning,
+  blocked,
+}
+
+
+class KitchenStation {
+  final String id;
+  final String name;
+  final bool sendsToKitchen;
+  final int displayOrder;
+  final String? defaultPrinter;
+
+  const KitchenStation({
+    required this.id,
+    required this.name,
+    this.sendsToKitchen = true,
+    this.displayOrder = 0,
+    this.defaultPrinter,
+  });
+
+  Map<String, dynamic> toMap() => {
+    'id': id,
+    'name': name,
+    'sendsToKitchen': sendsToKitchen,
+    'displayOrder': displayOrder,
+    'defaultPrinter': defaultPrinter,
+  };
+
+  factory KitchenStation.fromMap(Map<String, dynamic> map) => KitchenStation(
+    id: (map['id'] ?? '').toString(),
+    name: (map['name'] ?? 'Station').toString(),
+    sendsToKitchen: map['sendsToKitchen'] != false,
+    displayOrder: (map['displayOrder'] as num?)?.toInt() ?? 0,
+    defaultPrinter: map['defaultPrinter']?.toString(),
+  );
+
+  static List<KitchenStation> get defaultStations => const [
+    KitchenStation(id: 'main_kitchen', name: 'Main Kitchen', sendsToKitchen: true, displayOrder: 1),
+    KitchenStation(id: 'tandoor', name: 'Tandoor & Starters', sendsToKitchen: true, displayOrder: 2),
+    KitchenStation(id: 'bar', name: 'Bar & Beverages', sendsToKitchen: true, displayOrder: 3),
+    KitchenStation(id: 'desserts', name: 'Desserts & Bakery', sendsToKitchen: true, displayOrder: 4),
+    KitchenStation(id: 'direct_counter', name: 'Direct Counter (No KOT)', sendsToKitchen: false, displayOrder: 5),
+  ];
+}
+
+class TableReservation {
+  final String reservationId;
+  final String outletId;
+  final String tableId;
+  final String tableName;
+  final String guestName;
+  final String guestPhone;
+  final int partySize;
+  final DateTime startAt;
+  final int durationMin;
+  final String status; // 'BOOKED', 'CONFIRMED', 'SEATED', 'NO_SHOW', 'CANCELLED'
+  final String? notes;
+  final String? createdBy;
+  final DateTime createdAt;
+  final String? seatedSessionId;
+
+  const TableReservation({
+    required this.reservationId,
+    required this.outletId,
+    required this.tableId,
+    this.tableName = '',
+    required this.guestName,
+    required this.guestPhone,
+    required this.partySize,
+    required this.startAt,
+    this.durationMin = 90,
+    this.status = 'CONFIRMED',
+    this.notes,
+    this.createdBy,
+    required this.createdAt,
+    this.seatedSessionId,
+  });
+
+  DateTime get endAt => startAt.add(Duration(minutes: durationMin));
+
+  Map<String, dynamic> toMap() => {
+    'reservationId': reservationId,
+    'outletId': outletId,
+    'tableId': tableId,
+    'tableName': tableName,
+    'guestName': guestName,
+    'guestPhone': guestPhone,
+    'partySize': partySize,
+    'startAt': startAt.toIso8601String(),
+    'durationMin': durationMin,
+    'status': status,
+    'notes': notes,
+    'createdBy': createdBy,
+    'createdAt': createdAt.toIso8601String(),
+    'seatedSessionId': seatedSessionId,
+  };
+
+  factory TableReservation.fromMap(Map<String, dynamic> map) => TableReservation(
+    reservationId: (map['reservationId'] ?? map['id'] ?? '').toString(),
+    outletId: (map['outletId'] ?? map['org_id'] ?? '').toString(),
+    tableId: (map['tableId'] ?? '').toString(),
+    tableName: (map['tableName'] ?? '').toString(),
+    guestName: (map['guestName'] ?? map['name'] ?? 'Guest').toString(),
+    guestPhone: (map['guestPhone'] ?? map['phone'] ?? '').toString(),
+    partySize: (map['partySize'] as num?)?.toInt() ?? (map['guests'] as num?)?.toInt() ?? 2,
+    startAt: map['startAt'] != null ? _parseDateTime(map['startAt']) : DateTime.now(),
+    durationMin: (map['durationMin'] as num?)?.toInt() ?? 90,
+    status: (map['status'] ?? 'CONFIRMED').toString().toUpperCase(),
+    notes: map['notes']?.toString(),
+    createdBy: map['createdBy']?.toString(),
+    createdAt: map['createdAt'] != null ? _parseDateTime(map['createdAt']) : DateTime.now(),
+    seatedSessionId: map['seatedSessionId']?.toString(),
+  );
 }
 
 enum KotStatus {
@@ -228,6 +341,10 @@ class RestaurantTable {
           return TableStatus.billed;
         case 'RESERVED':
           return TableStatus.reserved;
+        case 'CLEANING':
+          return TableStatus.cleaning;
+        case 'BLOCKED':
+          return TableStatus.blocked;
         default:
           return TableStatus.vacant;
       }
@@ -278,6 +395,7 @@ class KotItem {
   final double voidedQty;
   final String? voidReason;
   final String? voidedBy;
+  final bool sendsToKitchen;
 
   KotItem({
     this.lineId,
@@ -296,6 +414,7 @@ class KotItem {
     this.voidedQty = 0.0,
     this.voidReason,
     this.voidedBy,
+    this.sendsToKitchen = true,
   });
 
   Map<String, dynamic> toMap() {
@@ -316,6 +435,7 @@ class KotItem {
       'voidedQty': voidedQty,
       'voidReason': voidReason,
       'voidedBy': voidedBy,
+      'sendsToKitchen': sendsToKitchen,
       'subtotal': price * qty,
     };
   }
@@ -338,6 +458,7 @@ class KotItem {
       voidedQty: (map['voidedQty'] as num?)?.toDouble() ?? 0.0,
       voidReason: map['voidReason']?.toString(),
       voidedBy: map['voidedBy']?.toString(),
+      sendsToKitchen: map['sendsToKitchen'] != false,
     );
   }
 
@@ -358,6 +479,7 @@ class KotItem {
     double? voidedQty,
     String? voidReason,
     String? voidedBy,
+    bool? sendsToKitchen,
   }) {
     return KotItem(
       lineId: lineId ?? this.lineId,
@@ -376,6 +498,7 @@ class KotItem {
       voidedQty: voidedQty ?? this.voidedQty,
       voidReason: voidReason ?? this.voidReason,
       voidedBy: voidedBy ?? this.voidedBy,
+      sendsToKitchen: sendsToKitchen ?? this.sendsToKitchen,
     );
   }
 }
@@ -761,6 +884,7 @@ class RestaurantMenuItem {
   final List<String> availableDays; // e.g. ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
   final String? description;
   final String? imageUrl;
+  final bool sendsToKitchen;
 
   const RestaurantMenuItem({
     required this.id,
@@ -779,6 +903,7 @@ class RestaurantMenuItem {
     this.availableDays = const ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
     this.description,
     this.imageUrl,
+    this.sendsToKitchen = true,
   });
 
   /// Evaluates whether the dish is currently orderable based on stock & time-window.
@@ -833,6 +958,7 @@ class RestaurantMenuItem {
       'availableDays': availableDays,
       'description': description,
       'imageUrl': imageUrl,
+      'sendsToKitchen': sendsToKitchen,
       'updatedAt': DateTime.now().toIso8601String(),
     };
   }
@@ -857,6 +983,7 @@ class RestaurantMenuItem {
           : const ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
       description: map['description']?.toString(),
       imageUrl: map['imageUrl']?.toString(),
+      sendsToKitchen: map['sendsToKitchen'] != false,
     );
   }
 
@@ -877,6 +1004,7 @@ class RestaurantMenuItem {
     List<String>? availableDays,
     String? description,
     String? imageUrl,
+    bool? sendsToKitchen,
   }) {
     return RestaurantMenuItem(
       id: id ?? this.id,
@@ -895,6 +1023,7 @@ class RestaurantMenuItem {
       availableDays: availableDays ?? this.availableDays,
       description: description ?? this.description,
       imageUrl: imageUrl ?? this.imageUrl,
+      sendsToKitchen: sendsToKitchen ?? this.sendsToKitchen,
     );
   }
 }

@@ -33,11 +33,15 @@ class _RestaurantMenuManagementScreenState
   // Dishes list
   List<Map<String, dynamic>> _dishes = [];
 
+  // Dynamic Kitchen Stations with direct counter option
+  List<KitchenStation> _stations = [];
+
   @override
   void initState() {
     super.initState();
     _loadCategoriesFromHive();
     _loadDishesFromHive();
+    _loadStationsFromHive();
 
     // Auto sync on start: if dishes exist in Hive, push to Firestore so website is immediately populated!
     // If Hive is empty, attempt to restore from Firestore cloud
@@ -77,6 +81,31 @@ class _RestaurantMenuManagementScreenState
       box?.put('restaurant_categories_map', _categoriesWithSubs);
     } catch (e) {
       debugPrint('Error saving categories to Hive: $e');
+    }
+  }
+
+  void _loadStationsFromHive() {
+    try {
+      final box = Hive.isBoxOpen('restaurant_config_box') ? Hive.box('restaurant_config_box') : null;
+      final raw = box?.get('restaurant_kitchen_stations');
+      if (raw is List && raw.isNotEmpty) {
+        _stations = raw.map((e) => KitchenStation.fromMap(Map<String, dynamic>.from(e as Map))).toList();
+      } else {
+        _stations = List.from(KitchenStation.defaultStations);
+        _saveStationsToHive();
+      }
+    } catch (e) {
+      debugPrint('Error loading stations from Hive: $e');
+      _stations = List.from(KitchenStation.defaultStations);
+    }
+  }
+
+  void _saveStationsToHive() {
+    try {
+      final box = Hive.isBoxOpen('restaurant_config_box') ? Hive.box('restaurant_config_box') : null;
+      box?.put('restaurant_kitchen_stations', _stations.map((s) => s.toMap()).toList());
+    } catch (e) {
+      debugPrint('Error saving stations to Hive: $e');
     }
   }
 
@@ -302,6 +331,246 @@ class _RestaurantMenuManagementScreenState
     } catch (_) {
       return true;
     }
+  }
+
+  void _showManageStationsDialog() {
+    final nameCtrl = TextEditingController();
+    bool newSendsToKitchen = true;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          return AlertDialog(
+            backgroundColor: Colors.white,
+            surfaceTintColor: Colors.transparent,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(18),
+              side: const BorderSide(color: Color(0xFFE2E8F0)),
+            ),
+            title: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEFF6FF),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(Icons.soup_kitchen_rounded, color: Color(0xFF2563EB), size: 20),
+                ),
+                const SizedBox(width: 10),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Kitchen & Prep Stations',
+                        style: TextStyle(color: Color(0xFF0F172A), fontWeight: FontWeight.bold, fontSize: 16),
+                      ),
+                      Text(
+                        'Configure routing for cooking vs direct counter fulfillment',
+                        style: TextStyle(color: Color(0xFF64748B), fontSize: 11),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            content: SizedBox(
+              width: 520,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Create New Station
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Add New Station',
+                            style: TextStyle(color: Color(0xFF0F172A), fontWeight: FontWeight.bold, fontSize: 13),
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: TextField(
+                                  controller: nameCtrl,
+                                  style: const TextStyle(color: Color(0xFF0F172A), fontSize: 13),
+                                  decoration: InputDecoration(
+                                    hintText: 'Station Name (e.g. Chat Counter, Bakery)',
+                                    hintStyle: const TextStyle(color: Color(0xFF94A3B8), fontSize: 12),
+                                    filled: true,
+                                    fillColor: Colors.white,
+                                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(10),
+                                      borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
+                                    ),
+                                    enabledBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(10),
+                                      borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              ElevatedButton.icon(
+                                onPressed: () {
+                                  final name = nameCtrl.text.trim();
+                                  if (name.isNotEmpty && !_stations.any((s) => s.name.toLowerCase() == name.toLowerCase())) {
+                                    setDialogState(() {
+                                      _stations.add(KitchenStation(
+                                        id: 'station_${DateTime.now().millisecondsSinceEpoch}',
+                                        name: name,
+                                        sendsToKitchen: newSendsToKitchen,
+                                        displayOrder: _stations.length + 1,
+                                      ));
+                                      nameCtrl.clear();
+                                    });
+                                    _saveStationsToHive();
+                                    setState(() {});
+                                  }
+                                },
+                                icon: const Icon(Icons.add, size: 16),
+                                label: const Text('Add'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: const Color(0xFF2563EB),
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                  elevation: 0,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              Checkbox(
+                                value: newSendsToKitchen,
+                                activeColor: const Color(0xFF2563EB),
+                                onChanged: (val) => setDialogState(() => newSendsToKitchen = val ?? true),
+                              ),
+                              const Expanded(
+                                child: Text(
+                                  'Sends to Kitchen (Uncheck for cold drinks, sweets, retail counter items)',
+                                  style: TextStyle(color: Color(0xFF475569), fontSize: 12),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+
+                    const Text(
+                      'Configured Stations:',
+                      style: TextStyle(color: Color(0xFF475569), fontSize: 12, fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 8),
+
+                    ListView.separated(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      itemCount: _stations.length,
+                      separatorBuilder: (_, __) => const SizedBox(height: 6),
+                      itemBuilder: (ctx, idx) {
+                        final station = _stations[idx];
+                        final isDirect = !station.sendsToKitchen;
+
+                        return Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: isDirect ? const Color(0xFFFFFBEB) : Colors.white,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: isDirect ? const Color(0xFFFDE68A) : const Color(0xFFE2E8F0)),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                isDirect ? Icons.inventory_2_outlined : Icons.soup_kitchen_outlined,
+                                color: isDirect ? const Color(0xFFD97706) : const Color(0xFF2563EB),
+                                size: 18,
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      station.name,
+                                      style: const TextStyle(color: Color(0xFF0F172A), fontWeight: FontWeight.bold, fontSize: 13),
+                                    ),
+                                    Text(
+                                      station.sendsToKitchen
+                                          ? 'Routes to KDS & Kitchen printer'
+                                          : 'Direct Counter fulfillment (bypasses KOT & KDS)',
+                                      style: TextStyle(
+                                        color: isDirect ? const Color(0xFFB45309) : const Color(0xFF64748B),
+                                        fontSize: 10,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Switch(
+                                value: station.sendsToKitchen,
+                                activeThumbColor: const Color(0xFF2563EB),
+                                onChanged: (val) {
+                                  setDialogState(() {
+                                    _stations[idx] = KitchenStation(
+                                      id: station.id,
+                                      name: station.name,
+                                      sendsToKitchen: val,
+                                      displayOrder: station.displayOrder,
+                                      defaultPrinter: station.defaultPrinter,
+                                    );
+                                  });
+                                  _saveStationsToHive();
+                                  setState(() {});
+                                },
+                              ),
+                              if (_stations.length > 1)
+                                IconButton(
+                                  icon: const Icon(Icons.delete_outline, color: Color(0xFFEF4444), size: 18),
+                                  tooltip: 'Delete Station',
+                                  onPressed: () {
+                                    setDialogState(() {
+                                      _stations.removeAt(idx);
+                                    });
+                                    _saveStationsToHive();
+                                    setState(() {});
+                                  },
+                                ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Done', style: TextStyle(color: Color(0xFF2563EB), fontWeight: FontWeight.bold)),
+              ),
+            ],
+          );
+        },
+      ),
+    );
   }
 
   void _showManageCategoriesDialog() {
@@ -570,7 +839,8 @@ class _RestaurantMenuManagementScreenState
     final subcatCtrl = TextEditingController(text: existing?['subcategory'] ?? '');
 
     String category = existing?['category'] ?? (_categoriesWithSubs.isNotEmpty ? _categoriesWithSubs.keys.first : 'Main Course');
-    String station = existing?['station'] ?? 'Main Kitchen';
+    String station = existing?['station'] ?? (_stations.isNotEmpty ? _stations.first.name : 'Main Kitchen');
+    bool sendsToKitchen = existing?['sendsToKitchen'] ?? true;
     bool isVeg = existing?['isVeg'] ?? true;
     bool isAvailable = existing?['isAvailable'] ?? true;
     bool isTimeRestricted = existing?['isTimeRestricted'] ?? false;
@@ -867,30 +1137,106 @@ class _RestaurantMenuManagementScreenState
                     ),
                     const SizedBox(height: 12),
 
-                    // Station
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF8FAFC),
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: const Color(0xFFCBD5E1)),
-                      ),
-                      child: DropdownButtonHideUnderline(
-                        child: DropdownButton<String>(
-                          value: station,
-                          dropdownColor: Colors.white,
-                          style: const TextStyle(color: Color(0xFF0F172A), fontSize: 13),
-                          items: const [
-                            DropdownMenuItem(value: 'Main Kitchen', child: Text('Main Kitchen')),
-                            DropdownMenuItem(value: 'Tandoor & Starters', child: Text('Tandoor & Starters')),
-                            DropdownMenuItem(value: 'Bar & Beverages', child: Text('Bar & Beverages')),
-                            DropdownMenuItem(value: 'Desserts & Bakery', child: Text('Desserts & Bakery')),
+                    // Station & Kitchen Routing
+                    Builder(
+                      builder: (ctx) {
+                        final stationNames = _stations.map((s) => s.name).toSet().toList();
+                        if (!stationNames.contains(station)) {
+                          stationNames.add(station);
+                        }
+
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.symmetric(horizontal: 12),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF8FAFC),
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(color: const Color(0xFFCBD5E1)),
+                              ),
+                              child: DropdownButtonHideUnderline(
+                                child: DropdownButton<String>(
+                                  value: stationNames.contains(station) ? station : stationNames.first,
+                                  isExpanded: true,
+                                  dropdownColor: Colors.white,
+                                  style: const TextStyle(color: Color(0xFF0F172A), fontSize: 13),
+                                  items: stationNames.map((name) {
+                                    return DropdownMenuItem(
+                                      value: name,
+                                      child: Text(name),
+                                    );
+                                  }).toList(),
+                                  onChanged: (val) {
+                                    if (val != null) {
+                                      final found = _stations.cast<KitchenStation?>().firstWhere(
+                                        (s) => s?.name == val,
+                                        orElse: () => null,
+                                      );
+                                      setDialogState(() {
+                                        station = val;
+                                        if (found != null) {
+                                          sendsToKitchen = found.sendsToKitchen;
+                                        }
+                                      });
+                                    }
+                                  },
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            // Direct Counter / Sends to Kitchen Switch
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: sendsToKitchen ? const Color(0xFFF0FDF4) : const Color(0xFFFFFBEB),
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(color: sendsToKitchen ? const Color(0xFF86EFAC) : const Color(0xFFFDE68A)),
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    sendsToKitchen ? Icons.soup_kitchen : Icons.inventory_2_outlined,
+                                    color: sendsToKitchen ? const Color(0xFF16A34A) : const Color(0xFFD97706),
+                                    size: 18,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          sendsToKitchen ? 'Sends to Kitchen (KOT & KDS)' : 'Direct Counter (No Kitchen / No KOT)',
+                                          style: TextStyle(
+                                            color: sendsToKitchen ? const Color(0xFF16A34A) : const Color(0xFFB45309),
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                        Text(
+                                          sendsToKitchen
+                                              ? 'Item appears on kitchen KDS & prints KOT'
+                                              : 'Auto-marked ready. Skips KOT print (cold drinks, sweets, etc.)',
+                                          style: TextStyle(
+                                            color: sendsToKitchen ? const Color(0xFF15803D) : const Color(0xFF92400E),
+                                            fontSize: 10,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  Switch(
+                                    value: sendsToKitchen,
+                                    activeThumbColor: const Color(0xFF16A34A),
+                                    onChanged: (val) => setDialogState(() => sendsToKitchen = val),
+                                  ),
+                                ],
+                              ),
+                            ),
                           ],
-                          onChanged: (val) {
-                            if (val != null) setDialogState(() => station = val);
-                          },
-                        ),
-                      ),
+                        );
+                      },
                     ),
                     const SizedBox(height: 12),
 
@@ -1058,6 +1404,7 @@ class _RestaurantMenuManagementScreenState
                     'isVeg': isVeg,
                     'prepTime': prep,
                     'station': station,
+                    'sendsToKitchen': sendsToKitchen,
                     'isAvailable': isAvailable,
                     'isTimeRestricted': isTimeRestricted,
                     'availableFrom': fromTimeCtrl.text.trim(),
@@ -1292,6 +1639,11 @@ class _RestaurantMenuManagementScreenState
             onPressed: _showManageCategoriesDialog,
           ),
           IconButton(
+            tooltip: 'Kitchen Stations',
+            icon: const Icon(Icons.soup_kitchen_outlined, color: Color(0xFF475569), size: 21),
+            onPressed: _showManageStationsDialog,
+          ),
+          IconButton(
             tooltip: 'Operating Shifts',
             icon: const Icon(Icons.schedule_rounded, color: Color(0xFF475569), size: 21),
             onPressed: _showOperatingHoursDialog,
@@ -1353,6 +1705,16 @@ class _RestaurantMenuManagementScreenState
                           onPressed: _showManageCategoriesDialog,
                           icon: const Icon(Icons.category_rounded, size: 18, color: Color(0xFF2563EB)),
                           label: const Text('Manage Categories', style: TextStyle(color: Color(0xFF2563EB), fontWeight: FontWeight.bold)),
+                          style: OutlinedButton.styleFrom(
+                            side: const BorderSide(color: Color(0xFF2563EB)),
+                            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
+                        ),
+                        OutlinedButton.icon(
+                          onPressed: _showManageStationsDialog,
+                          icon: const Icon(Icons.soup_kitchen_rounded, size: 18, color: Color(0xFF2563EB)),
+                          label: const Text('Kitchen Stations', style: TextStyle(color: Color(0xFF2563EB), fontWeight: FontWeight.bold)),
                           style: OutlinedButton.styleFrom(
                             side: const BorderSide(color: Color(0xFF2563EB)),
                             padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
@@ -1556,6 +1918,28 @@ class _RestaurantMenuManagementScreenState
                                                   style: const TextStyle(color: Color(0xFF2563EB), fontSize: 10, fontWeight: FontWeight.w600),
                                                 ),
                                               ),
+                                              if (dish['sendsToKitchen'] == false) ...[
+                                                const SizedBox(width: 6),
+                                                Container(
+                                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                                  decoration: BoxDecoration(
+                                                    color: const Color(0xFFFEF3C7),
+                                                    borderRadius: BorderRadius.circular(4),
+                                                    border: Border.all(color: const Color(0xFFF59E0B)),
+                                                  ),
+                                                  child: const Row(
+                                                    mainAxisSize: MainAxisSize.min,
+                                                    children: [
+                                                      Icon(Icons.flash_on, size: 10, color: Color(0xFFD97706)),
+                                                      SizedBox(width: 2),
+                                                      Text(
+                                                        'Direct Counter / No KOT',
+                                                        style: TextStyle(color: Color(0xFFB45309), fontSize: 9, fontWeight: FontWeight.bold),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ),
+                                              ],
                                               if (dish['isTimeRestricted'] == true) ...[
                                                 const SizedBox(width: 6),
                                                 Text(

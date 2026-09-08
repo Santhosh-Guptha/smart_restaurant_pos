@@ -600,6 +600,136 @@ class AppsScriptBackendService {
     return res != null && (res['ok'] == true || res['success'] == true);
   }
 
+  /// 16. Update Table Lifecycle Status (§6.2)
+  static Future<Map<String, dynamic>> setTableStatus({
+    required String outletId,
+    required String tableId,
+    required String status,
+    bool force = false,
+    String? reason,
+    String? staffId,
+    String? spreadsheetId,
+  }) async {
+    final res = await _postToWebhook({
+      'v': 2,
+      'action': 'SET_TABLE_STATUS',
+      'outletId': outletId,
+      'clientRequestId': const Uuid().v4(),
+      if (spreadsheetId != null && spreadsheetId.isNotEmpty) 'spreadsheetId': spreadsheetId,
+      'data': {
+        'tableId': tableId,
+        'status': status.toUpperCase(),
+        'force': force,
+        'reason': reason ?? '',
+        'staffId': staffId ?? '',
+      },
+    });
+    return res ?? {'ok': false, 'success': false, 'error': 'Network error'};
+  }
+
+  /// 17. Reserve Table (§6.2)
+  static Future<Map<String, dynamic>> reserveTable({
+    required String outletId,
+    required Map<String, dynamic> reservationData,
+    String? spreadsheetId,
+  }) async {
+    final res = await _postToWebhook({
+      'v': 2,
+      'action': 'RESERVE_TABLE',
+      'outletId': outletId,
+      'clientRequestId': const Uuid().v4(),
+      if (spreadsheetId != null && spreadsheetId.isNotEmpty) 'spreadsheetId': spreadsheetId,
+      'data': reservationData,
+    });
+    return res ?? {'ok': false, 'success': false, 'error': 'Network error'};
+  }
+
+  /// 18. Cancel Reservation (§6.2)
+  static Future<bool> cancelReservation({
+    required String outletId,
+    required String reservationId,
+    String? reason,
+    String? spreadsheetId,
+  }) async {
+    final res = await _postToWebhook({
+      'v': 2,
+      'action': 'CANCEL_RESERVATION',
+      'outletId': outletId,
+      'clientRequestId': const Uuid().v4(),
+      if (spreadsheetId != null && spreadsheetId.isNotEmpty) 'spreadsheetId': spreadsheetId,
+      'data': {
+        'reservationId': reservationId,
+        'reason': reason ?? 'Customer requested cancellation',
+      },
+    });
+    return res != null && (res['ok'] == true || res['success'] == true);
+  }
+
+  /// 19. Seat Reservation (§6.2)
+  static Future<bool> seatReservation({
+    required String outletId,
+    required String reservationId,
+    required String tableId,
+    String? staffId,
+    String? spreadsheetId,
+  }) async {
+    final res = await _postToWebhook({
+      'v': 2,
+      'action': 'SEAT_RESERVATION',
+      'outletId': outletId,
+      'clientRequestId': const Uuid().v4(),
+      if (spreadsheetId != null && spreadsheetId.isNotEmpty) 'spreadsheetId': spreadsheetId,
+      'data': {
+        'reservationId': reservationId,
+        'tableId': tableId,
+        'staffId': staffId ?? '',
+      },
+    });
+    return res != null && (res['ok'] == true || res['success'] == true);
+  }
+
+  /// 20. Move Table (§6.2)
+  static Future<bool> moveTable({
+    required String outletId,
+    required String fromTableId,
+    required String toTableId,
+    String? spreadsheetId,
+  }) async {
+    final res = await _postToWebhook({
+      'v': 2,
+      'action': 'MOVE_TABLE',
+      'outletId': outletId,
+      'clientRequestId': const Uuid().v4(),
+      if (spreadsheetId != null && spreadsheetId.isNotEmpty) 'spreadsheetId': spreadsheetId,
+      'data': {
+        'fromTableId': fromTableId,
+        'toTableId': toTableId,
+      },
+    });
+    return res != null && (res['ok'] == true || res['success'] == true);
+  }
+
+  /// 21. Merge Tables (§6.2)
+  static Future<bool> mergeTables({
+    required String outletId,
+    required List<String> sourceTableIds,
+    required String targetTableId,
+    String? spreadsheetId,
+  }) async {
+    final res = await _postToWebhook({
+      'v': 2,
+      'action': 'MERGE_TABLES',
+      'outletId': outletId,
+      'clientRequestId': const Uuid().v4(),
+      if (spreadsheetId != null && spreadsheetId.isNotEmpty) 'spreadsheetId': spreadsheetId,
+      'data': {
+        'sourceTableIds': sourceTableIds,
+        'targetTableId': targetTableId,
+      },
+    });
+    return res != null && (res['ok'] == true || res['success'] == true);
+  }
+
   static Future<Map<String, dynamic>?> _postToWebhook(Map<String, dynamic> payload) async {
     try {
       final url = getWebhookUrl();

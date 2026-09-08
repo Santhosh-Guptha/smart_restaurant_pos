@@ -1,7 +1,7 @@
 # SmartDine Restaurant POS — Architecture & Operations Manual
 
 > **Zero-Firebase Operational Pipeline & Google Sheets Schema v2**  
-> *Last Updated: March 2026 | Version 2.0 (Phases 0–5 Complete)*
+> *Last Updated: March 2026 | Version 2.1 (Phases 0–6 Complete)*
 
 ---
 
@@ -142,6 +142,32 @@ When a spreadsheet is connected, `ensureV2Sheets(ss)` automatically provisions a
   - Submits signed Z-report snapshots to the `Day End Reports` sheet tab via `AppsScriptBackendService.closeDay`.
 - **Tax Invoice Print Formatting**: Formatter incorporates reprint counts, dual CGST/SGST lines, round-offs, and service charges.
 
+### **Phase 6 — Table Lifecycle, Guarded Vacate, Move/Merge & Dynamic Kitchen Stations**
+- **Dynamic Kitchen Stations & Direct Counter Fulfillment**:
+  - Configurable station routing via `KitchenStation` model (`main_kitchen`, `tandoor`, `bar`, `desserts`, `direct_counter`).
+  - Added station manager dialog in `RestaurantMenuManagementScreen` allowing restaurants to add/edit custom stations, map default printers, and toggle whether each station sends KOTs to the kitchen (`sendsToKitchen: bool`).
+  - **Direct Counter Bypass (Cold drinks, sweets, packaged snacks, retail items)**:
+    - Items mapped to stations with `sendsToKitchen = false` bypass kitchen display pipelines completely.
+    - Added direct toggle on dish creation/edit form and `[Direct Counter / No KOT]` badge in the menu catalog.
+    - When ordered in Counter Billing (`FastQsrBillingScreen`) or Waiter Pad (`WaiterOrderTakingScreen`), non-kitchen items are automatically marked `kitchenStatus: 'SERVED'`.
+    - Thermal KOT printing (`_printKotSlip`) isolates kitchen prep items. If an order contains only direct counter items, KOT printing is skipped completely, saving paper and kitchen confusion.
+    - In KDS (`KitchenDisplayScreen`), orders with 0 kitchen prep items are omitted from cooking stages (`PENDING`/`PREPARING`), and mixed tickets clearly flag direct counter items with a distinct badge.
+- **Table Lifecycle State Machine (`lib/screens/restaurant/table_management_screen.dart`)**:
+  - Expanded `TableStatus` enum to include `cleaning` (amber) and `blocked` (slate grey), alongside `vacant` (green), `occupied` (red), and `billed` (orange).
+  - Summary metric pills in the floor layout bar track counts for all 5 lifecycle states plus active reservations.
+  - Interactive status toggles on table cards allow staff to quickly mark tables as Cleaning or Blocked (e.g. for maintenance or VIP reservation hold).
+- **Guarded Table Vacate with Manager Override**:
+  - Guarded "Mark Table as Vacant" against active unpaid orders to eliminate accidental table abandonment.
+  - If unpaid balance exists, the system prompts for Manager/Owner PIN override (`canAuthorizeDiscount` or Admin role) and requires an audit reason (e.g. "Customer relocated", "Cashier settled on different terminal").
+  - Google Apps Script Single Writer rejects unauthorized vacate requests via backend checks.
+- **Move Table & Merge Tables**:
+  - **Move Table**: Seamlessly transfers active guest sessions and pending orders from Table A to Table B with atomic status updates in Hive and Google Sheets.
+  - **Merge Tables**: Combines two or more occupied tables into a single master tab, merging party orders and updating table states atomically.
+- **Single-Writer Table Reservation System**:
+  - Full reservation lifecycle: `RESERVE_TABLE`, `CANCEL_RESERVATION`, `SEAT_RESERVATION` in Apps Script Single Writer engine.
+  - Dynamic conflict checking prevents double booking the same table for overlapping time windows.
+  - "Seat Reserved Guest" action seats the reservation, changes table state to `OCCUPIED`, and routes directly into the Waiter Pad.
+
 ---
 
 ## 5. Configuration & Deployment Guide
@@ -170,9 +196,8 @@ When a spreadsheet is connected, `ensureV2Sheets(ss)` automatically provisions a
 
 ---
 
-## 6. Upcoming Roadmap (Phases 6–10)
-
-- **Phase 6 — Occupancy & Reservations**: Single writer table mutations, floor plan visual sync, guest waitlist management.
+## 6. Upcoming Roadmap (Phases 7–10)
+ 
 - **Phase 7 — Catalog & Inventory Sync**: Stock decrement on settlement, 86 status synchronization across terminals and QR menu.
 - **Phase 8 — RBAC Hardening & Offline Security**: Audit logging for all manager overrides, void reason enforcement.
 - **Phase 9 — Performance & Storage Optimization**: Automatic sheet partitioning, archival of year-old orders to cold tabs.

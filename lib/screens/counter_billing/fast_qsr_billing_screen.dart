@@ -334,6 +334,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
         final existing = _cart[existingIndex];
         _cart[existingIndex] = existing.copyWith(qty: existing.qty + 1);
       } else {
+        final sendsToKitchen = item['sendsToKitchen'] != false;
         _cart.add(
           KotItem(
             productId: item['id']?.toString() ?? UniqueKey().toString(),
@@ -341,6 +342,8 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
             price: (item['price'] as num?)?.toDouble() ?? 0.0,
             qty: 1,
             isVeg: item['isVeg'] != false,
+            sendsToKitchen: sendsToKitchen,
+            kitchenStatus: sendsToKitchen ? 'PENDING' : 'SERVED',
           ),
         );
       }
@@ -1620,6 +1623,8 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
       'qty': i.qty,
       'price': i.price,
       'isVeg': i.isVeg,
+      'sendsToKitchen': i.sendsToKitchen,
+      'kitchenStatus': i.sendsToKitchen ? 'PENDING' : 'SERVED',
     }).toList();
 
     try {
@@ -1649,6 +1654,8 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                 'qty': cartItem.qty,
                 'price': cartItem.price,
                 'isVeg': cartItem.isVeg,
+                'sendsToKitchen': cartItem.sendsToKitchen,
+                'kitchenStatus': cartItem.sendsToKitchen ? 'PENDING' : 'SERVED',
               });
             }
 
@@ -1888,18 +1895,23 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
       debugPrint('Error updating orders/tables: $e');
     }
 
-    // Auto-Print KOT Ticket to Kitchen
+    // Auto-Print KOT Ticket to Kitchen (ONLY for items requiring kitchen prep!)
     try {
-      final kotBytes = await KitchenTicketFormatter.formatKotTicket(
-        paperSize: PaperSize.mm80,
-        profile: await CapabilityProfile.load(),
-        tokenNumber: token,
-        tableName: '$tableName ($token)',
-        items: List.from(_cart),
-      );
-      final isConnected = await PrintBluetoothThermal.connectionStatus;
-      if (isConnected) {
-        await PrintBluetoothThermal.writeBytes(kotBytes);
+      final kitchenItems = _cart.where((i) => i.sendsToKitchen).toList();
+      if (kitchenItems.isNotEmpty) {
+        final kotBytes = await KitchenTicketFormatter.formatKotTicket(
+          paperSize: PaperSize.mm80,
+          profile: await CapabilityProfile.load(),
+          tokenNumber: token,
+          tableName: '$tableName ($token)',
+          items: kitchenItems,
+        );
+        final isConnected = await PrintBluetoothThermal.connectionStatus;
+        if (isConnected) {
+          await PrintBluetoothThermal.writeBytes(kotBytes);
+        }
+      } else {
+        debugPrint('All items in order are direct counter / retail. Skipping KOT print.');
       }
     } catch (e) {
       debugPrint('KOT print error: $e');
@@ -2069,12 +2081,15 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
     return rawItems.map((item) {
       if (item is KotItem) return item;
       if (item is Map) {
+        final sendsToKitchen = item['sendsToKitchen'] != false;
         return KotItem(
           productId: (item['id'] ?? item['productId'] ?? UniqueKey().toString()).toString(),
           name: (item['name'] ?? 'Item').toString(),
           price: (item['price'] as num?)?.toDouble() ?? 0.0,
           qty: (item['qty'] as num?)?.toDouble() ?? 1.0,
           isVeg: item['isVeg'] != false,
+          sendsToKitchen: sendsToKitchen,
+          kitchenStatus: sendsToKitchen ? 'PENDING' : 'SERVED',
         );
       }
       return KotItem(productId: 'item', name: item.toString(), price: 0.0, qty: 1.0);
