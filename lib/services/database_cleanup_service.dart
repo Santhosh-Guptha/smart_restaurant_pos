@@ -63,8 +63,16 @@ class DatabaseCleanupService {
         'expenses',
         'purchase_orders',
         'registration_requests',
+        'renewal_requests',
         'email_otps',
         'branding',
+        'device_registry',
+        'orders',
+        'restaurant_tables',
+        'public_stores',
+        'audit_logs',
+        'firebase_configs',
+        'excel_configs',
       ];
 
       int totalDeleted = 0;
