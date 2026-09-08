@@ -110,7 +110,14 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
           }
         }
         final newlyArrived = parsedActive.where(
-          (n) => n.effectiveKitchenStatus == 'PENDING' && !_allOrders.any((o) => canonicalId(o) == canonicalId(n)),
+          (n) =>
+              n.effectiveKitchenStatus == 'PENDING' &&
+              // A ticket this screen already cleared is not new. Without this the
+              // server kept returning it as PENDING (its status push may not have
+              // landed), the terminal-key guard kept it out of _allOrders, and the
+              // alarm fired on every 3-second poll indefinitely.
+              !_terminalKeys.contains(n.canonicalKey) &&
+              !_allOrders.any((o) => canonicalId(o) == canonicalId(n)),
         ).toList();
 
         if (newlyArrived.isNotEmpty) {

@@ -638,24 +638,38 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
     final orgId = _getEffectiveOrgId();
     final activeStaff = ref.read(restaurantAuthProvider).activeStaff;
 
-    // R-NEW-3: Explicitly select merge target: only merge into an unpaid order from WAITER_APP
-    KotOrder? existingActiveOrder;
+    // X-06: ONE ORDER RECORD PER ROUND.
+    //
+    // Merging every round into a single record was right for the bill and wrong
+    // for the kitchen: it rewrote the record's items to previous+new and reset
+    // the order-level status to PENDING, so the KDS re-fired already-served
+    // courses and the slip reprinted them. Then the server's monotonic rank
+    // guard discarded the reset (SERVED outranks PENDING) and the KDS terminal-
+    // key set -- keyed on the order id the merge reuses -- filtered the order off
+    // the board for good, so a second round reached NO kitchen display at all
+    // while still being billed.
+    //
+    // Per-round records restore per-round kitchen state at no cost to billing:
+    // the settle path already loops over every round on the table, and
+    // _tableBalance already sums them.
+    //
+    // This order is only used for context that carries across rounds (the guest,
+    // and the course number) -- never as a merge target.
+    KotOrder? tableContextOrder;
     try {
-      existingActiveOrder = _tableOrders.firstWhere(
+      tableContextOrder = _tableOrders.firstWhere(
         (o) => o.orderSource == 'WAITER_APP' && o.status != KotStatus.paid && o.status != KotStatus.completed,
       );
     } catch (_) {
-      existingActiveOrder = null;
+      tableContextOrder = null;
     }
 
-    // R-NEW-4: Only consume daily token when creating a new order record
-    final token = existingActiveOrder != null
-        ? existingActiveOrder.kotNumber
-        : await ref.read(dailyTokenProvider.notifier).getNextToken();
-
-    final billNumber = existingActiveOrder != null && existingActiveOrder.id.isNotEmpty
-        ? existingActiveOrder.id
-        : 'SB-${DateTime.now().millisecondsSinceEpoch}-${Random().nextInt(9999).toString().padLeft(4, '0')}';
+    // Each round is its own KOT, so each round gets its own token and id. The
+    // record stores the token it was issued, so the printed slip, the KDS card
+    // and the waiter's toast all agree and the daily series cannot drift.
+    final token = await ref.read(dailyTokenProvider.notifier).getNextToken();
+    final billNumber =
+        'SB-${DateTime.now().millisecondsSinceEpoch}-${Random().nextInt(9999).toString().padLeft(4, '0')}';
     final tableName = widget.table.name.trim().isNotEmpty
         ? widget.table.name
         : 'Table ${widget.table.tableNumber.replaceAll(RegExp(r'^Table\s*', caseSensitive: false), '').trim()}';
@@ -663,14 +677,22 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
 
     final guestName = _customerNameCtrl.text.trim().isNotEmpty
         ? _customerNameCtrl.text.trim()
-        : (existingActiveOrder?.customerName ?? 'Dine-In Guest');
+        : (tableContextOrder?.customerName ?? 'Dine-In Guest');
     final guestPhone = _customerPhoneCtrl.text.trim().isNotEmpty
         ? _customerPhoneCtrl.text.trim()
-        : (existingActiveOrder?.customerPhone ?? '');
+        : (tableContextOrder?.customerPhone ?? '');
 
-    final currentCourse = existingActiveOrder != null
-        ? (existingActiveOrder.items.map((i) => i.courseNo ?? 1).fold<int>(1, (a, b) => a > b ? a : b) + 1)
-        : (_tableOrders.length + 1);
+    // Course = the highest round already on this table, plus one.
+    int highestCourse = 0;
+    for (final o in _tableOrders) {
+      final oc = o.courseNo ?? 0;
+      if (oc > highestCourse) highestCourse = oc;
+      for (final it in o.items) {
+        final ic = it.courseNo ?? 0;
+        if (ic > highestCourse) highestCourse = ic;
+      }
+    }
+    final currentCourse = highestCourse + 1;
 
     final List<Map<String, dynamic>> newRoundItemsList = [];
     for (final entry in _tray.values) {
@@ -697,22 +719,25 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
       });
     }
 
-    // Combine previous round items with new round items under the same table bill
-    final List<Map<String, dynamic>> combinedItemsList = [];
-    if (existingActiveOrder != null) {
-      for (final prevIt in existingActiveOrder.items) {
-        combinedItemsList.add(prevIt.toMap());
-      }
-    }
-    combinedItemsList.addAll(newRoundItemsList);
-
-    final combinedSubtotal = combinedItemsList.fold<double>(
+    // This round's own money. The table bill is the sum of its rounds.
+    final roundSubtotal = newRoundItemsList.fold<double>(
       0.0,
       (sum, item) => sum + (((item['price'] as num?)?.toDouble() ?? 0.0) * ((item['qty'] as num?)?.toDouble() ?? 1.0)),
     );
-    final combinedServiceCharge = combinedSubtotal * (_storeServiceChargeRate / 100);
-    final combinedGst = (combinedSubtotal + combinedServiceCharge) * (_storeGstRate / 100);
-    final combinedTotalAmount = combinedSubtotal + combinedServiceCharge + combinedGst;
+    final roundServiceCharge = roundSubtotal * (_storeServiceChargeRate / 100);
+    final roundGst = (roundSubtotal + roundServiceCharge) * (_storeGstRate / 100);
+    final roundTotalAmount = roundSubtotal + roundServiceCharge + roundGst;
+
+    // Integer-paise components so the server does not have to re-derive the tax
+    // split -- without these it falls back to a hardcoded 5%, which recorded
+    // CGST 27.50 and a 143.00 "round-off" on a 1,298.00 bill at an 18% store.
+    final roundSubtotalP = (roundSubtotal * 100).round();
+    final roundScP = (roundServiceCharge * 100).round();
+    final roundTaxableP = roundSubtotalP + roundScP;
+    final roundGstP = (roundGst * 100).round();
+    final roundCgstP = (roundGstP / 2).round();
+    final roundSgstP = roundGstP - roundCgstP;
+    final roundGrandTotalP = roundTaxableP + roundGstP;
 
     final clientRequestId = const Uuid().v4();
 
@@ -725,61 +750,46 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
             .map((e) => Map<String, dynamic>.from(e as Map))
             .toList();
 
-        final existingIdx = updatedList.indexWhere((o) => canonicalId(o) == cleanOrderId(billNumber));
-        if (existingIdx >= 0) {
-          final old = Map<String, dynamic>.from(updatedList[existingIdx]);
-          old['items'] = combinedItemsList;
-          old['subtotal'] = combinedSubtotal;
-          old['serviceCharge'] = combinedServiceCharge;
-          old['service_charge'] = combinedServiceCharge;
-          old['gst'] = combinedGst;
-          old['totalAmount'] = combinedTotalAmount;
-          old['total_amount'] = combinedTotalAmount;
-          old['customerName'] = guestName;
-          old['customer_name'] = guestName;
-          old['customerPhone'] = guestPhone;
-          old['customer_phone'] = guestPhone;
-          old['courseNo'] = currentCourse;
-          old['course_no'] = currentCourse;
-          final hasPendingItems = combinedItemsList.any((i) => i['kitchenStatus'] == 'PENDING' || i['kitchenStatus'] == null);
-          old['kitchenStatus'] = hasPendingItems ? 'PENDING' : (old['kitchenStatus'] ?? 'PENDING');
-          if (old['paymentStatus'] != 'PAID') {
-            old['status'] = hasPendingItems ? 'PENDING' : (old['status'] ?? 'PENDING');
-          }
-          updatedList[existingIdx] = old;
-        } else {
-          final orderMap = {
-            'id': billNumber,
-            'kotNumber': token,
-            'clientRequestId': clientRequestId,
-            'organizationId': orgId,
-            'tableId': tNum,
-            'tableNumber': tNum,
-            'tableName': tableName,
-            'items': combinedItemsList,
-            'status': 'PENDING',
-            'kitchenStatus': 'PENDING',
-            'paymentStatus': 'PENDING',
-            'isPaid': false,
-            'orderSource': 'WAITER_APP',
-            'orderType': 'Dine-In',
-            'customerName': guestName,
-            'customerPhone': guestPhone,
-            'waiterName': activeStaff?.name ?? 'Floor Waiter',
-            'createdAt': DateTime.now().toIso8601String(),
-            'firedAt': DateTime.now().toIso8601String(),
-            'courseNo': currentCourse,
-            'course_no': currentCourse,
-            'reprintCount': 0,
-            'subtotal': combinedSubtotal,
-            'serviceCharge': combinedServiceCharge,
-            'service_charge': combinedServiceCharge,
-            'gst': combinedGst,
-            'totalAmount': combinedTotalAmount,
-            'total_amount': combinedTotalAmount,
-          };
-          updatedList.insert(0, orderMap);
-        }
+        final orderMap = {
+          'id': billNumber,
+          'kotNumber': token,
+          'clientRequestId': clientRequestId,
+          'organizationId': orgId,
+          'tableId': tNum,
+          'tableNumber': tNum,
+          'tableName': tableName,
+          'items': newRoundItemsList,
+          'status': 'PENDING',
+          'kitchenStatus': 'PENDING',
+          'paymentStatus': 'UNPAID',
+          'isPaid': false,
+          'orderSource': 'WAITER_APP',
+          'orderType': 'Dine-In',
+          'customerName': guestName,
+          'customerPhone': guestPhone,
+          'waiterName': activeStaff?.name ?? 'Floor Waiter',
+          'staffId': activeStaff?.id ?? '',
+          'createdAt': DateTime.now().toIso8601String(),
+          'firedAt': DateTime.now().toIso8601String(),
+          'courseNo': currentCourse,
+          'course_no': currentCourse,
+          'reprintCount': 0,
+          'subtotal': roundSubtotal,
+          'serviceCharge': roundServiceCharge,
+          'service_charge': roundServiceCharge,
+          'gst': roundGst,
+          'gst_rate': _storeGstRate,
+          'totalAmount': roundTotalAmount,
+          'total_amount': roundTotalAmount,
+          'subtotalP': roundSubtotalP,
+          'serviceChargeP': roundScP,
+          'taxableP': roundTaxableP,
+          'cgstP': roundCgstP,
+          'sgstP': roundSgstP,
+          'roundOffP': 0,
+          'grandTotalP': roundGrandTotalP,
+        };
+        updatedList.insert(0, orderMap);
         await box.put('kot_orders_$orgId', updatedList);
 
         // 2. Mark Table Occupied in Hive with customer details & running bill amount
@@ -798,8 +808,22 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
               tm['currentCustomerName'] = guestName;
               tm['currentCustomerPhone'] = guestPhone;
               tm['currentOrderSource'] = 'WAITER_APP';
-              tm['currentBillAmount'] = combinedTotalAmount;
-              tm['activeItemCount'] = combinedItemsList.fold<int>(0, (sum, i) => sum + ((i['qty'] as num?)?.toInt() ?? 1));
+              // Running table total = every unpaid round already on the table
+              // plus this one. Writing only this round's total made the floor
+              // card understate the bill as soon as a second round was fired.
+              double runningTotal = roundTotalAmount;
+              int runningItems = newRoundItemsList.fold<int>(
+                  0, (sum, i) => sum + ((i['qty'] as num?)?.toInt() ?? 1));
+              for (final o in _tableOrders) {
+                if (o.status == KotStatus.paid || o.status == KotStatus.cancelled) continue;
+                if ((o.paymentStatus ?? '').toUpperCase() == 'PAID') continue;
+                runningTotal += o.totalAmount;
+                for (final it in o.items) {
+                  runningItems += it.qty.toInt();
+                }
+              }
+              tm['currentBillAmount'] = runningTotal;
+              tm['activeItemCount'] = runningItems;
               tm['activeBillId'] = billNumber;
             }
             return tm;
@@ -836,12 +860,21 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
             'customer_name': guestName,
             'customer_phone': guestPhone,
             'order_source': 'WAITER_APP',
-            'items': combinedItemsList,
-            'newItems': newRoundItemsList,
-            'subtotal': combinedSubtotal,
-            'service_charge': combinedServiceCharge,
-            'gst': combinedGst,
-            'total_amount': combinedTotalAmount,
+            'items': newRoundItemsList,
+            'subtotal': roundSubtotal,
+            'service_charge': roundServiceCharge,
+            'gst': roundGst,
+            'gst_rate': _storeGstRate,
+            'total_amount': roundTotalAmount,
+            'subtotalP': roundSubtotalP,
+            'serviceChargeP': roundScP,
+            'taxableP': roundTaxableP,
+            'cgstP': roundCgstP,
+            'sgstP': roundSgstP,
+            'roundOffP': 0,
+            'grandTotalP': roundGrandTotalP,
+            'waiter_name': activeStaff?.name ?? 'Floor Waiter',
+            'staff_id': activeStaff?.id ?? '',
             'payment_status': 'PENDING',
             'status': 'PENDING',
             'kitchenStatus': 'PENDING',
@@ -1734,14 +1767,23 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
           ? _tableOrders.first.id
           : 'BILL-$tNum-${DateTime.now().millisecondsSinceEpoch}';
 
+      // These calls were fire-and-forget with their results discarded, while the
+      // snackbar below announced "bill settled - table is now vacant" either
+      // way. A failed settlement left the server holding an unpaid bill and
+      // every local surface showing it closed.
       bool isPrimary = true;
+      int settleFailures = 0;
       for (final ord in _tableOrders) {
-        AppsScriptBackendService.saveBill(
+        final settleReqId = const Uuid().v4();
+        final ok = await AppsScriptBackendService.saveBill(
           outletId: orgId,
+          clientRequestId: settleReqId,
           billData: {
             'id': ord.id,
             'bill_id': ord.id,
             'kotNumber': ord.kotNumber,
+            'clientRequestId': settleReqId,
+            'client_request_id': settleReqId,
             'table_name': tableName,
             'table': tableName,
             'tableNumber': tNum,
@@ -1750,14 +1792,17 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
             'payment_status': 'PAID',
             'status': 'PAID',
             'total_amount': ord.totalAmount,
+            'subtotal': ord.subtotal ?? ord.totalAmount,
+            'gst_rate': _storeGstRate,
             'tip_amount': isPrimary ? tip : 0.0,
             'timestamp': DateTime.now().toIso8601String(),
           },
         );
+        if (!ok) settleFailures++;
         isPrimary = false;
       }
       if (_tableOrders.isEmpty) {
-        AppsScriptBackendService.saveBill(
+        await AppsScriptBackendService.saveBill(
           outletId: orgId,
           billData: {
             'id': primaryBillId,
@@ -1783,8 +1828,17 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
         _clearTrayDraft();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Table ${widget.table.tableNumber} bill settled (₹${totalPaid.toStringAsFixed(0)})! Table is now vacant. ✅'),
-            backgroundColor: const Color(0xFF10B981),
+            content: Text(
+              settleFailures == 0
+                  ? 'Table ${widget.table.tableNumber} bill settled (₹${totalPaid.toStringAsFixed(0)}). Table is now vacant.'
+                  : 'Table ${widget.table.tableNumber} settled on this device, but '
+                      '$settleFailures round(s) did NOT reach the cloud. Tell the '
+                      'counter before the guest leaves.',
+            ),
+            backgroundColor: settleFailures == 0
+                ? const Color(0xFF10B981)
+                : const Color(0xFFDC2626),
+            duration: Duration(seconds: settleFailures == 0 ? 3 : 8),
           ),
         );
         Navigator.pop(context); // Return to Table Management
