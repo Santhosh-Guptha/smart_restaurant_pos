@@ -282,12 +282,12 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
             final matchesDigits = targetDigits.isNotEmpty && orderDigits == targetDigits;
             final matchesName = tName.trim().toLowerCase() == tableName.trim().toLowerCase();
 
-            final status = (order['status'] ?? '').toString().toLowerCase();
-            final paymentStatus = (order['paymentStatus'] ?? '').toString().toLowerCase();
+            final status = (order['status'] ?? '').toString().toUpperCase();
+            final paymentStatus = (order['paymentStatus'] ?? '').toString().toUpperCase();
+            final isPaid = order['isPaid'] == true || paymentStatus == 'PAID' || paymentStatus == 'SUCCESS' || paymentStatus == 'COMPLETED' || status == 'PAID' || status == 'SETTLED';
+            final isCancelled = status == 'CANCELLED' || paymentStatus == 'VOIDED' || paymentStatus == 'CANCELLED';
 
-            if ((matchesDigits || matchesName) &&
-                status != 'completed' && status != 'paid' && status != 'settled' && status != 'cancelled' &&
-                paymentStatus != 'paid' && paymentStatus != 'completed') {
+            if ((matchesDigits || matchesName) && !isPaid && !isCancelled) {
               return Map<String, dynamic>.from(order);
             }
           }
@@ -1618,8 +1618,8 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                     spreadsheetId: sheetId,
                   );
 
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
+                  if (ctx.mounted) {
+                    ScaffoldMessenger.of(ctx).showSnackBar(
                       SnackBar(
                         content: Text(ok ? '✅ Shift closed successfully! Z-Report saved to Sheets.' : '⚠️ Shift closed locally (sync queued).'),
                         backgroundColor: ok ? const Color(0xFF10B981) : Colors.orange,
@@ -1801,10 +1801,13 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
             oldOrder['grandTotalP'] = appendedTotals.grandTotalPaise;
 
             if (isPaid) {
-              oldOrder['status'] = 'PAID';
+              final oldKitchen = (oldOrder['kitchenStatus'] ?? '').toString().toUpperCase();
               oldOrder['paymentStatus'] = 'PAID';
               oldOrder['paymentMode'] = paymentMode;
               oldOrder['isPaid'] = true;
+              if (oldKitchen.isEmpty || oldKitchen == 'PENDING') {
+                oldOrder['status'] = 'PAID';
+              }
             }
 
             updatedList[existingIndex] = oldOrder;
@@ -1859,7 +1862,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
           _decrementLocalStock(orderItemsList);
         }
 
-        // Update table status in Hive to 'occupied' if Dine-In
+        // Update table status in Hive to 'OCCUPIED' if Dine-In
         if (_orderType == 'Dine-In') {
           final rawTables = box.get('restaurant_tables_$orgId') as List? ?? [];
           final updatedTables = rawTables.map((t) {
@@ -1870,7 +1873,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
               final matchesName = existingName == tableName.toLowerCase() || existingName == 'table $tNum'.toLowerCase();
               if (matchesNum || matchesName || t['tableNumber'] == tableName) {
                 final m = Map<String, dynamic>.from(t);
-                m['status'] = 'occupied';
+                m['status'] = 'OCCUPIED';
                 m['activeOrderCount'] = ((m['activeOrderCount'] as num?) ?? 0) + 1;
                 m['currentBillAmount'] = ((m['currentBillAmount'] as num?)?.toDouble() ?? 0.0) + orderTotals.grandTotal;
                 return m;
@@ -2299,7 +2302,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
               final matchesName = existingName == tableName.toLowerCase() || existingName == 'table $tNum'.toLowerCase();
               if (matchesNum || matchesName || t['tableNumber'] == tableName) {
                 final m = Map<String, dynamic>.from(t);
-                m['status'] = 'vacant';
+                m['status'] = 'VACANT';
                 m['activeOrderCount'] = 0;
                 m['currentBillAmount'] = 0.0;
                 return m;
@@ -2332,10 +2335,13 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
         final updatedList = rawOrders.map((o) {
           if (o is Map && (canonicalId(o) == canonicalId(orderId) || canonicalId(o) == canonicalId(order))) {
             final m = Map<String, dynamic>.from(o);
-            m['status'] = 'PAID';
+            final oldKitchen = (m['kitchenStatus'] ?? '').toString().toUpperCase();
             m['paymentStatus'] = 'PAID';
             m['paymentMode'] = paymentMode;
             m['isPaid'] = true;
+            if (oldKitchen.isEmpty || oldKitchen == 'PENDING') {
+              m['status'] = 'PAID';
+            }
             m['subtotalP'] = subtotalP;
             m['discountP'] = discountP;
             m['serviceChargeP'] = scP;

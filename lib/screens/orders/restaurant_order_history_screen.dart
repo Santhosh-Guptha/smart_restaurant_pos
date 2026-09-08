@@ -482,6 +482,7 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
     text += '\n*Grand Total: ₹$total*\n';
     text += 'Thank you for dining with us! 🙏';
 
+    // ignore: deprecated_member_use
     Share.share(
       text,
       subject: 'Bill #$billId from $shopName',
@@ -652,11 +653,22 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
             return type == _selectedOrderType;
           }).toList();
 
-          // Filter by Status
+          // Filter by Status (B-04)
           if (_selectedStatus != 'ALL') {
             filtered = filtered.where((o) {
-              final s = (o['status'] ?? 'PENDING').toString().toUpperCase();
-              return s == _selectedStatus;
+              final rawPay = (o['paymentStatus'] ?? '').toString().toUpperCase();
+              final rawStat = (o['status'] ?? 'PENDING').toString().toUpperCase();
+              final isPaid = o['isPaid'] == true || rawPay == 'PAID' || rawPay == 'SUCCESS' || rawStat == 'PAID';
+              final isCancelled = rawStat == 'CANCELLED' || rawPay == 'VOIDED' || rawPay == 'CANCELLED';
+
+              if (_selectedStatus == 'PAID') {
+                return isPaid;
+              } else if (_selectedStatus == 'PENDING') {
+                return !isPaid && !isCancelled;
+              } else if (_selectedStatus == 'CANCELLED') {
+                return isCancelled;
+              }
+              return rawStat == _selectedStatus || rawPay == _selectedStatus;
             }).toList();
           }
 
@@ -679,7 +691,7 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
             }).toList();
           }
 
-          // Calculate KPI totals
+          // Calculate KPI totals (B-04)
           double totalRevenue = 0.0;
           int dineInCount = 0;
           int takeawayCount = 0;
@@ -689,13 +701,16 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
 
           for (final o in filtered) {
             final amt = (o['totalAmount'] is num) ? (o['totalAmount'] as num).toDouble() : 0.0;
-            final status = (o['status'] ?? 'PENDING').toString().toUpperCase();
+            final rawPay = (o['paymentStatus'] ?? '').toString().toUpperCase();
+            final rawStat = (o['status'] ?? 'PENDING').toString().toUpperCase();
+            final isPaid = o['isPaid'] == true || rawPay == 'PAID' || rawPay == 'SUCCESS' || rawStat == 'PAID';
+            final isCancelled = rawStat == 'CANCELLED' || rawPay == 'VOIDED' || rawPay == 'CANCELLED';
             final type = _normalizeOrderType(o);
 
-            if (status == 'PAID' || status == 'COMPLETED') {
+            if (isPaid) {
               totalRevenue += amt;
               paidCount++;
-            } else if (status != 'CANCELLED') {
+            } else if (!isCancelled) {
               pendingCount++;
             }
 
@@ -1002,21 +1017,22 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
     final dt = _parseTimestamp(order['createdAt'] ?? order['timestamp']);
     final items = (order['items'] as List?) ?? [];
 
+    final rawPay = (order['paymentStatus'] ?? '').toString().toUpperCase();
+    final rawKitchen = (order['kitchenStatus'] ?? '').toString().toUpperCase();
+    final isPaid = order['isPaid'] == true || rawPay == 'PAID' || rawPay == 'SUCCESS' || status == 'PAID';
+    final isCancelled = status == 'CANCELLED' || rawPay == 'VOIDED' || rawPay == 'CANCELLED';
+
     Color statusColor;
-    switch (status) {
-      case 'PAID':
-      case 'COMPLETED':
-        statusColor = Colors.green;
-        break;
-      case 'PENDING':
-      case 'PREPARING':
-        statusColor = Colors.orange.shade800;
-        break;
-      case 'CANCELLED':
-        statusColor = Colors.red;
-        break;
-      default:
-        statusColor = Colors.blue;
+    String statusDisplay;
+    if (isCancelled) {
+      statusColor = Colors.red;
+      statusDisplay = 'CANCELLED ❌';
+    } else if (isPaid) {
+      statusColor = Colors.green;
+      statusDisplay = rawKitchen.isNotEmpty ? 'PAID ✅ ($rawKitchen)' : 'PAID ✅';
+    } else {
+      statusColor = Colors.orange.shade800;
+      statusDisplay = rawKitchen.isNotEmpty ? '$rawKitchen ⏳' : (status == 'PENDING' ? 'PENDING ⏳' : status);
     }
 
     Color typeBadgeBg;
@@ -1092,7 +1108,7 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
                     borderRadius: BorderRadius.circular(6),
                   ),
                   child: Text(
-                    status == 'PAID' ? 'PAID ✅' : (status == 'PENDING' ? 'PENDING ⏳' : status),
+                    statusDisplay,
                     style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: statusColor),
                   ),
                 ),

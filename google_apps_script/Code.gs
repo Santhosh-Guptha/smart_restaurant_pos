@@ -871,6 +871,7 @@ function handleGetDelta(params) {
     
     var deltaOrders = [];
     var deltaTables = [];
+    var deltaSessions = [];
     var deltaReservations = [];
     var deltaPayments = [];
     var deltaAlerts = [];
@@ -951,6 +952,24 @@ function handleGetDelta(params) {
             for (var tc = 0; tc < tHeaders.length; tc++) { tObj[tHeaders[tc]] = tData[ti][tc]; }
             tObj.rev = tRev;
             deltaTables.push(tObj);
+          }
+        }
+      }
+
+      // 2b. Sessions delta
+      var sessionsSheet = ss.getSheetByName("Sessions");
+      if (sessionsSheet && sessionsSheet.getLastRow() > 1) {
+        var sesData = sessionsSheet.getDataRange().getValues();
+        var sesHeaders = sesData[0].map(function(h) { return String(h || "").trim(); });
+        var sesRevCol = sesHeaders.indexOf("rev");
+        for (var si = 1; si < sesData.length; si++) {
+          var sRev = sesRevCol !== -1 ? (parseInt(sesData[si][sesRevCol], 10) || 0) : 0;
+          if (sRev > maxScannedRev) maxScannedRev = sRev;
+          if (sinceRev === 0 || sRev > sinceRev) {
+            var sesObj = {};
+            for (var sc = 0; sc < sesHeaders.length; sc++) { sesObj[sesHeaders[sc]] = sesData[si][sc]; }
+            sesObj.rev = sRev;
+            deltaSessions.push(sesObj);
           }
         }
       }
@@ -1061,6 +1080,7 @@ function handleGetDelta(params) {
       since: sinceRev,
       orders: deltaOrders,
       tables: deltaTables,
+      sessions: deltaSessions,
       reservations: deltaReservations,
       payments: deltaPayments,
       alerts: deltaAlerts,
@@ -1899,12 +1919,48 @@ function handleClearTable(data) {
             props.setProperty(waiterKey, JSON.stringify(wList));
           } catch(e) {}
         }
+        var sId = data.spreadsheet_id || data.spreadsheetId || getSheetIdForOrg(orgId);
+        if (sId) {
+          try {
+            var ss = SpreadsheetApp.openById(sId);
+            if (ss) {
+              ensureV2Sheets(ss);
+              var rev = getAndBumpRev(orgId);
+              var sSheet = ss.getSheetByName("Sessions");
+              if (sSheet && sSheet.getLastRow() > 1) {
+                var sData = sSheet.getDataRange().getValues();
+                for (var si = sData.length - 1; si >= 1; si--) {
+                  var rowOut = String(sData[si][1] || "").trim();
+                  var rowTables = String(sData[si][2] || "").trim().split(",").map(function(t) { return cleanTableId(t); });
+                  var rowStatus = String(sData[si][3] || "").trim().toUpperCase();
+                  if (rowOut === orgId && (rowStatus === "OPEN" || rowStatus === "BILL_REQUESTED") && rowTables.indexOf(cTable) !== -1) {
+                    sSheet.getRange(si + 1, 4).setValue("CLOSED");
+                    sSheet.getRange(si + 1, 12).setValue(new Date().toISOString());
+                    sSheet.getRange(si + 1, 14).setValue(rev);
+                    break;
+                  }
+                }
+              }
+              var tSheet = ss.getSheetByName("Tables");
+              if (tSheet && tSheet.getLastRow() > 1) {
+                var tData = tSheet.getDataRange().getValues();
+                for (var ti = 1; ti < tData.length; ti++) {
+                  if (cleanTableId(tData[ti][0]) === cTable) {
+                    tSheet.getRange(ti + 1, 6, 1, 3).setValues([["VACANT", "", ""]]);
+                    tSheet.getRange(ti + 1, 11).setValue(rev);
+                    break;
+                  }
+                }
+              }
+            }
+          } catch(eClearSs) {}
+        }
       } catch(e) {}
     }
 
-    // Task 0.5: Clearing table resets in-memory cache ONLY. It NEVER marks unpaid Sheet rows as PAID!
+    // Task 0.5: Clearing table resets in-memory cache and marks table VACANT. It NEVER marks unpaid Sheet rows as PAID!
 
-    return responseJson({ success: true, message: "Table " + table + " cache cleared successfully." });
+    return responseJson({ success: true, message: "Table " + table + " cache and session cleared successfully." });
   } finally {
     try { lock.releaseLock(); } catch(e) {}
   }
@@ -2487,7 +2543,7 @@ function handleSetTableStatus(json) {
             break;
           }
         }
-        var occupiedAt = newStatus === "OCCUPIED" ? (data.occupiedAt || new Date().toISOString()) : "";
+        var occupiedAt = (newStatus === "OCCUPIED" || newStatus === "SEATED") ? (data.occupiedAt || new Date().toISOString()) : "";
         var cleaningUntil = newStatus === "CLEANING" ? (data.cleaningUntil || new Date(Date.now() + 15*60000).toISOString()) : "";
         var capacity = parseInt(data.capacity || 4, 10);
         var section = data.section || "Main Floor";
@@ -2501,6 +2557,25 @@ function handleSetTableStatus(json) {
             tableId, outletId, "Table " + tableId, section, capacity,
             newStatus, data.activeSessionId || "", occupiedAt, cleaningUntil, data.qrToken || "", rev
           ]);
+        }
+
+        // Close active session in Sessions sheet if vacating
+        if (newStatus === "VACANT") {
+          var sSheet = ss.getSheetByName("Sessions");
+          if (sSheet && sSheet.getLastRow() > 1) {
+            var sData = sSheet.getDataRange().getValues();
+            for (var si = sData.length - 1; si >= 1; si--) {
+              var rowOut = String(sData[si][1] || "").trim();
+              var rowTables = String(sData[si][2] || "").trim().split(",").map(function(t) { return cleanTableId(t); });
+              var rowStatus = String(sData[si][3] || "").trim().toUpperCase();
+              if (rowOut === outletId && (rowStatus === "OPEN" || rowStatus === "BILL_REQUESTED") && rowTables.indexOf(cTable) !== -1) {
+                sSheet.getRange(si + 1, 4).setValue("CLOSED");
+                sSheet.getRange(si + 1, 12).setValue(new Date().toISOString());
+                sSheet.getRange(si + 1, 14).setValue(rev);
+                break;
+              }
+            }
+          }
         }
       }
 

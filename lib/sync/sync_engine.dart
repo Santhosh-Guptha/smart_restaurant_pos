@@ -61,6 +61,9 @@ class SyncEngine {
   final StreamController<List<Map<String, dynamic>>> _alertsStream = StreamController<List<Map<String, dynamic>>>.broadcast();
   Stream<List<Map<String, dynamic>>> get alertsStream => _alertsStream.stream;
 
+  final StreamController<List<Map<String, dynamic>>> _sessionsStream = StreamController<List<Map<String, dynamic>>>.broadcast();
+  Stream<List<Map<String, dynamic>>> get sessionsStream => _sessionsStream.stream;
+
   Timer? _pollTimer;
   bool _isFetching = false;
   bool _syncRequested = false;
@@ -154,6 +157,7 @@ class SyncEngine {
       final rawOrders = delta['orders'] as List? ?? [];
       final rawTables = delta['tables'] as List? ?? [];
       final rawAlerts = delta['alerts'] as List? ?? [];
+      final rawSessions = delta['sessions'] as List? ?? [];
       final rawTombstones = delta['tombstones'] as List? ?? delta['deleted'] as List? ?? [];
 
       int? lowestUnappliedRev;
@@ -227,6 +231,13 @@ class SyncEngine {
         final alertsList = rawAlerts.whereType<Map>().map((m) => Map<String, dynamic>.from(m)).toList();
         await LocalStore.upsertAlerts(localOutletId, alertsList);
         _alertsStream.add(alertsList);
+      }
+
+      // 3b. Process Sessions Delta
+      if (rawSessions.isNotEmpty) {
+        final sessionsList = rawSessions.whereType<Map>().map((m) => Map<String, dynamic>.from(m)).toList();
+        await LocalStore.upsertSessions(localOutletId, sessionsList);
+        _sessionsStream.add(sessionsList);
       }
 
       // 4. Process Inventory & 86 Delta (§7.2, §7.3, S-18)

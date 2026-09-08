@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -38,6 +39,14 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
 
   List<RestaurantTable> _tables = [];
   List<KotOrder> _kotOrders = [];
+
+  String _generateSessionId(String orgId, String tableNumber) {
+    final now = DateTime.now();
+    final ymd = '${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}';
+    final rand = Random().nextInt(9999).toString().padLeft(4, '0');
+    final cleanT = tableNumber.replaceAll(RegExp(r'[^0-9]'), '');
+    return 'SES-$ymd-T${cleanT.isNotEmpty ? cleanT : '1'}-$rand';
+  }
   List<Map<String, dynamic>> _activeWaiterCalls = [];
   final List<Map<String, dynamic>> _settledBills = [];
   Timer? _pollingTimer;
@@ -336,13 +345,25 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
             table.status == TableStatus.cleaning ||
             table.status == TableStatus.blocked) {
           updatedTables.add(table);
+        } else if (table.status == TableStatus.seated ||
+                   (table.status == TableStatus.occupied && (table.currentCustomerName != null || table.activeSessionId != null))) {
+          // Manual seating or guest seated before KOT is placed: preserve SEATED status and details! (T-03)
+          updatedTables.add(table.copyWith(
+            status: TableStatus.seated,
+            currentBillAmount: 0.0,
+            activeItemCount: 0,
+            activeOrderCount: 0,
+          ));
         } else {
-          // If no active orders exist, table must be vacant and customer info cleared!
+          // Vacant table remains vacant
           updatedTables.add(table.copyWith(
             status: TableStatus.vacant,
             currentBillAmount: 0.0,
             activeItemCount: 0,
+            activeOrderCount: 0,
             clearCustomerInfo: true,
+            clearReservation: true,
+            clearSession: true,
           ));
         }
       } else {
@@ -1428,21 +1449,23 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
 
     final now = DateTime.now();
     bool isTableActivelyReserved(RestaurantTable t) {
-      if (t.status == TableStatus.occupied || t.status == TableStatus.billed) return false;
-      if (t.reservedTime != null) {
+      if (t.status == TableStatus.occupied || t.status == TableStatus.billed || t.status == TableStatus.seated) return false;
+      if (t.status == TableStatus.reserved) return true;
+      if (t.reservedTime != null && t.status == TableStatus.vacant) {
         final diff = t.reservedTime!.difference(now).inMinutes;
-        return diff <= 30 && diff >= -90;
+        return diff <= 30 && diff >= 0;
       }
-      return t.status == TableStatus.reserved;
+      return false;
     }
 
     final total = _tables.length;
+    final seated = _tables.where((t) => t.status == TableStatus.seated).length;
     final reserved = _tables.where(isTableActivelyReserved).length;
     final occupied = _tables.where((t) => t.status == TableStatus.occupied).length;
     final billed = _tables.where((t) => t.status == TableStatus.billed).length;
     final cleaning = _tables.where((t) => t.status == TableStatus.cleaning).length;
     final blocked = _tables.where((t) => t.status == TableStatus.blocked).length;
-    final vacant = (total - (occupied + billed + reserved + cleaning + blocked)).clamp(0, total);
+    final vacant = (total - (seated + occupied + billed + reserved + cleaning + blocked)).clamp(0, total);
 
     return Column(
       children: [
@@ -1458,6 +1481,8 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
             children: [
               _buildMetricPill('Total', '$total', Colors.blue),
               _buildMetricPill('Vacant', '$vacant', Colors.green),
+              if (seated > 0)
+                _buildMetricPill('Seated', '$seated', const Color(0xFF3B82F6)),
               _buildMetricPill('Occupied', '$occupied', Colors.redAccent),
               if (reserved > 0)
                 _buildMetricPill('Reserved', '$reserved', const Color(0xFF8B5CF6)),
@@ -1567,15 +1592,17 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
   Widget _buildTableCard(RestaurantTable table, String shopName, String shopPhone, String shopAddress, String orgId) {
     final now = DateTime.now();
 
-    // Determine reservation timing
+    // Determine reservation timing (T-01)
     bool isActivelyReserved = false;
     bool hasUpcomingReservation = false;
     String upcomingResvText = '';
 
-    if (table.reservedTime != null) {
+    if (table.status == TableStatus.reserved) {
+      isActivelyReserved = true;
+    } else if (table.reservedTime != null && table.status == TableStatus.vacant) {
       final diff = table.reservedTime!.difference(now).inMinutes;
-      if (diff <= 30 && diff >= -90) {
-        // Within 30 minutes before reservation slot (or up to 90 min after slot if not yet seated)
+      if (diff <= 30 && diff >= 0) {
+        // Within 30 minutes before reservation slot on an unseated vacant table
         isActivelyReserved = true;
       } else if (diff > 30) {
         // More than 30 mins away: keep open for walk-in guests!
@@ -1585,16 +1612,17 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
         final ampm = table.reservedTime!.hour >= 12 ? 'PM' : 'AM';
         upcomingResvText = '$h:$m $ampm';
       }
-    } else if (table.status == TableStatus.reserved) {
-      isActivelyReserved = true;
     }
 
-    final isOccupiedCard = table.status == TableStatus.occupied || table.status == TableStatus.billed;
+    final isOccupiedCard = table.status == TableStatus.occupied || table.status == TableStatus.billed || table.status == TableStatus.seated;
     final isReservedCard = !isOccupiedCard && isActivelyReserved;
 
     Color statusColor;
     String statusText;
-    if (table.status == TableStatus.occupied) {
+    if (table.status == TableStatus.seated) {
+      statusColor = const Color(0xFF3B82F6);
+      statusText = 'Seated';
+    } else if (table.status == TableStatus.occupied) {
       statusColor = Colors.redAccent;
       statusText = 'Occupied';
     } else if (table.status == TableStatus.billed) {
@@ -1942,11 +1970,17 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
                       } catch (_) {}
                       return;
                     }
-                    if (isReservedCard || hasUpcomingReservation || table.status == TableStatus.vacant) {
+                    String sessionId = table.activeSessionId ?? '';
+                    if (isReservedCard || hasUpcomingReservation || table.status == TableStatus.vacant || table.status == TableStatus.seated) {
+                      sessionId = table.activeSessionId ?? _generateSessionId(orgId, table.tableNumber);
                       setState(() {
                         final idx = _tables.indexWhere((t) => t.id == table.id);
                         if (idx != -1) {
-                          _tables[idx] = _tables[idx].copyWith(status: TableStatus.occupied);
+                          _tables[idx] = _tables[idx].copyWith(
+                            status: TableStatus.seated,
+                            activeSessionId: sessionId,
+                            clearReservation: isReservedCard,
+                          );
                         }
                       });
                       _saveTablesToHive(orgId);
@@ -1954,7 +1988,11 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (_) => WaiterOrderTakingScreen(table: table),
+                        builder: (_) => WaiterOrderTakingScreen(table: table.copyWith(
+                          status: TableStatus.seated,
+                          activeSessionId: sessionId.isNotEmpty ? sessionId : table.activeSessionId,
+                          clearReservation: isReservedCard,
+                        )),
                       ),
                     );
                   },
@@ -2029,6 +2067,7 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
                         side: BorderSide(color: context.borderColor),
                       ),
                       onPressed: () {
+                        // ignore: deprecated_member_use
                         Share.share(
                           'Order food at $shopName from Table ${table.tableNumber}: ${table.qrMenuUrl}',
                           subject: '$shopName Table ${table.tableNumber} Menu',
@@ -2142,14 +2181,19 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
                 },
               ),
               ListTile(
-                leading: const CircleAvatar(backgroundColor: Colors.amber, child: Icon(Icons.person_pin_rounded, color: Colors.black, size: 20)),
-                title: const Text('Mark Table as Guests Occupied', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                subtitle: const Text('Update status to occupied when walk-in guests arrive', style: TextStyle(fontSize: 11)),
+                leading: const CircleAvatar(backgroundColor: Color(0xFF3B82F6), child: Icon(Icons.person_pin_rounded, color: Colors.white, size: 20)),
+                title: const Text('Seat Walk-in Guests', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                subtitle: const Text('Seat guests at table and start new dining session', style: TextStyle(fontSize: 11)),
                 onTap: () async {
+                  final newSessionId = table.activeSessionId ?? _generateSessionId(orgId, table.tableNumber);
                   setState(() {
                     final idx = _tables.indexWhere((t) => t.id == table.id);
                     if (idx != -1) {
-                      _tables[idx] = _tables[idx].copyWith(status: TableStatus.occupied);
+                      _tables[idx] = _tables[idx].copyWith(
+                        status: TableStatus.seated,
+                        activeSessionId: newSessionId,
+                        clearReservation: true,
+                      );
                     }
                   });
                   await _saveTablesToHive(orgId);
@@ -2157,7 +2201,8 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
                     await AppsScriptBackendService.setTableStatus(
                       outletId: orgId,
                       tableId: table.tableNumber,
-                      status: 'OCCUPIED',
+                      status: 'SEATED',
+                      activeSessionId: newSessionId,
                     );
                   } catch (_) {}
                   if (ctx.mounted) Navigator.pop(ctx);
@@ -2241,10 +2286,17 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
                 title: const Text('Seat Reserved Guest & Start Order', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.green)),
                 subtitle: Text('Guest ${table.reservedGuestName ?? ""} arrived! Seat and place order', style: const TextStyle(fontSize: 11)),
                 onTap: () async {
+                  final newSessionId = table.activeSessionId ?? _generateSessionId(orgId, table.tableNumber);
                   setState(() {
                     final idx = _tables.indexWhere((t) => t.id == table.id);
                     if (idx != -1) {
-                      _tables[idx] = _tables[idx].copyWith(status: TableStatus.occupied);
+                      _tables[idx] = _tables[idx].copyWith(
+                        status: TableStatus.seated,
+                        activeSessionId: newSessionId,
+                        clearReservation: true,
+                        currentCustomerName: table.reservedGuestName,
+                        currentCustomerPhone: table.reservedGuestPhone,
+                      );
                     }
                   });
                   await _saveTablesToHive(orgId);
@@ -2260,7 +2312,13 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (_) => WaiterOrderTakingScreen(table: table),
+                        builder: (_) => WaiterOrderTakingScreen(table: table.copyWith(
+                          status: TableStatus.seated,
+                          activeSessionId: newSessionId,
+                          clearReservation: true,
+                          currentCustomerName: table.reservedGuestName,
+                          currentCustomerPhone: table.reservedGuestPhone,
+                        )),
                       ),
                     );
                   }
@@ -2307,7 +2365,7 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
                 },
               ),
             ],
-            if (table.status == TableStatus.occupied || table.status == TableStatus.billed) ...[
+            if (table.status == TableStatus.seated || table.status == TableStatus.occupied || table.status == TableStatus.billed) ...[
               Builder(
                 builder: (context) {
                   final matchingOrder = _kotOrders.cast<KotOrder?>().firstWhere(
@@ -2384,7 +2442,7 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
                 subtitle: const Text('Reset table session after customer payment', style: TextStyle(fontSize: 11)),
                 onTap: () async {
                   final effOrgId = _getEffectiveOrgId();
-                  // Check if there is an active unpaid bill on this table
+                  // Check if there is an active unpaid bill on this table (T-06)
                   final matchingUnpaid = _kotOrders.cast<KotOrder?>().firstWhere(
                     (o) => o != null && _matchesTable(o, table) && o.status != KotStatus.paid && o.status != KotStatus.cancelled && (o.paymentStatus ?? '').toUpperCase() != 'PAID',
                     orElse: () => null,
@@ -2396,6 +2454,17 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
                     return;
                   }
 
+                  if (table.currentBillAmount > 0) {
+                    Navigator.pop(ctx);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Table ${table.tableNumber} has pending bill of ₹${table.currentBillAmount.toStringAsFixed(0)}. Settle bill first or force override.'),
+                        backgroundColor: Colors.redAccent,
+                      ),
+                    );
+                    return;
+                  }
+
                   setState(() {
                     final idx = _tables.indexWhere((t) => t.id == table.id);
                     if (idx != -1) {
@@ -2403,16 +2472,26 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
                         status: TableStatus.vacant,
                         currentBillAmount: 0.0,
                         activeItemCount: 0,
+                        activeOrderCount: 0,
                         clearCustomerInfo: true,
+                        clearReservation: true,
+                        clearSession: true,
                       );
                     }
                   });
                   await _saveTablesToHive(effOrgId);
+                  final clientReqId = 'CLR-${DateTime.now().millisecondsSinceEpoch}-${table.tableNumber}';
                   try {
+                    await AppsScriptBackendService.clearTable(
+                      orgId: effOrgId,
+                      table: table.tableNumber,
+                      clientRequestId: clientReqId,
+                    );
                     await AppsScriptBackendService.setTableStatus(
                       outletId: effOrgId,
                       tableId: table.tableNumber,
                       status: 'VACANT',
+                      clientRequestId: clientReqId,
                     );
                   } catch (_) {}
                   if (ctx.mounted) Navigator.pop(ctx);

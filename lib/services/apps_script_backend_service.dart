@@ -637,6 +637,7 @@ class AppsScriptBackendService {
     required String outletId,
     required String tableId,
     required String status,
+    String? activeSessionId,
     bool force = false,
     String? reason,
     String? staffId,
@@ -653,6 +654,7 @@ class AppsScriptBackendService {
       'data': {
         'tableId': tableId,
         'status': status.toUpperCase(),
+        'activeSessionId': activeSessionId ?? '',
         'force': force,
         'reason': reason ?? '',
         'staffId': staffId ?? '',

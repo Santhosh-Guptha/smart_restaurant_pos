@@ -1,3 +1,4 @@
+import 'dart:convert';
 import '../services/saas_crypto_service.dart';
 
 DateTime _parseDateTime(dynamic value, {DateTime? fallback}) {
@@ -56,11 +57,20 @@ DateTime _parseDateTime(dynamic value, {DateTime? fallback}) {
 
 enum TableStatus {
   vacant,
+  seated,
   occupied,
   billed,
   reserved,
   cleaning,
   blocked,
+}
+
+enum PaymentStatus {
+  unpaid,
+  partial,
+  paid,
+  voided,
+  refunded,
 }
 
 
@@ -198,6 +208,7 @@ class RestaurantTable {
   final String? activeSessionId;
   final double currentBillAmount;
   final int activeItemCount;
+  final int activeOrderCount;
   final DateTime? occupiedAt;
   final String? notes;
   final String? token;
@@ -223,6 +234,7 @@ class RestaurantTable {
     this.activeSessionId,
     this.currentBillAmount = 0.0,
     this.activeItemCount = 0,
+    this.activeOrderCount = 0,
     this.occupiedAt,
     this.notes,
     this.token,
@@ -261,6 +273,7 @@ class RestaurantTable {
     String? activeSessionId,
     double? currentBillAmount,
     int? activeItemCount,
+    int? activeOrderCount,
     DateTime? occupiedAt,
     String? notes,
     String? token,
@@ -275,6 +288,7 @@ class RestaurantTable {
     String? currentOrderSource,
     bool clearCustomerInfo = false,
     bool clearReservation = false,
+    bool clearSession = false,
   }) {
     return RestaurantTable(
       id: id ?? this.id,
@@ -285,9 +299,10 @@ class RestaurantTable {
       section: section ?? this.section,
       capacity: capacity ?? this.capacity,
       status: status ?? this.status,
-      activeSessionId: activeSessionId ?? this.activeSessionId,
+      activeSessionId: clearSession ? null : (activeSessionId ?? this.activeSessionId),
       currentBillAmount: currentBillAmount ?? this.currentBillAmount,
       activeItemCount: activeItemCount ?? this.activeItemCount,
+      activeOrderCount: activeOrderCount ?? this.activeOrderCount,
       occupiedAt: occupiedAt ?? this.occupiedAt,
       notes: notes ?? this.notes,
       token: token ?? this.token,
@@ -316,6 +331,7 @@ class RestaurantTable {
       'activeSessionId': activeSessionId,
       'currentBillAmount': currentBillAmount,
       'activeItemCount': activeItemCount,
+      'activeOrderCount': activeOrderCount,
       'occupiedAt': occupiedAt?.toIso8601String(),
       'notes': notes,
       'token': token,
@@ -335,6 +351,8 @@ class RestaurantTable {
   factory RestaurantTable.fromMap(Map<String, dynamic> map, String docId) {
     TableStatus parseStatus(String? s) {
       switch (s?.toUpperCase()) {
+        case 'SEATED':
+          return TableStatus.seated;
         case 'OCCUPIED':
           return TableStatus.occupied;
         case 'BILLED':
@@ -362,6 +380,7 @@ class RestaurantTable {
       activeSessionId: map['activeSessionId'],
       currentBillAmount: (map['currentBillAmount'] as num?)?.toDouble() ?? 0.0,
       activeItemCount: (map['activeItemCount'] as num?)?.toInt() ?? 0,
+      activeOrderCount: (map['activeOrderCount'] as num?)?.toInt() ?? 0,
       occupiedAt: map['occupiedAt'] != null ? _parseDateTime(map['occupiedAt']) : null,
       notes: map['notes'],
       token: map['token'],
@@ -374,6 +393,136 @@ class RestaurantTable {
       currentCustomerName: map['currentCustomerName']?.toString() ?? map['customerName']?.toString(),
       currentCustomerPhone: map['currentCustomerPhone']?.toString() ?? map['customerPhone']?.toString(),
       currentOrderSource: map['currentOrderSource']?.toString() ?? map['orderSource']?.toString(),
+    );
+  }
+}
+
+/// First-class Dining Session model representing the dining table check lifecycle (O-27)
+class DiningSession {
+  final String sessionId;
+  final String outletId;
+  final List<String> tableIds;
+  final String sessionStatus; // OPEN, BILL_REQUESTED, SETTLED, CLOSED, ABANDONED
+  final int covers;
+  final String source; // DINE_IN, TAKEAWAY, DELIVERY
+  final String? guestName;
+  final String? guestPhone;
+  final String? reservationId;
+  final String? openedBy;
+  final DateTime openedAt;
+  final DateTime? closedAt;
+  final List<String> orderIds;
+  final List<String> invoiceNos;
+  final int rev;
+
+  DiningSession({
+    required this.sessionId,
+    required this.outletId,
+    this.tableIds = const [],
+    this.sessionStatus = 'OPEN',
+    this.covers = 1,
+    this.source = 'DINE_IN',
+    this.guestName,
+    this.guestPhone,
+    this.reservationId,
+    this.openedBy,
+    required this.openedAt,
+    this.closedAt,
+    this.orderIds = const [],
+    this.invoiceNos = const [],
+    this.rev = 1,
+  });
+
+  DiningSession copyWith({
+    String? sessionId,
+    String? outletId,
+    List<String>? tableIds,
+    String? sessionStatus,
+    int? covers,
+    String? source,
+    String? guestName,
+    String? guestPhone,
+    String? reservationId,
+    String? openedBy,
+    DateTime? openedAt,
+    DateTime? closedAt,
+    List<String>? orderIds,
+    List<String>? invoiceNos,
+    int? rev,
+  }) {
+    return DiningSession(
+      sessionId: sessionId ?? this.sessionId,
+      outletId: outletId ?? this.outletId,
+      tableIds: tableIds ?? this.tableIds,
+      sessionStatus: sessionStatus ?? this.sessionStatus,
+      covers: covers ?? this.covers,
+      source: source ?? this.source,
+      guestName: guestName ?? this.guestName,
+      guestPhone: guestPhone ?? this.guestPhone,
+      reservationId: reservationId ?? this.reservationId,
+      openedBy: openedBy ?? this.openedBy,
+      openedAt: openedAt ?? this.openedAt,
+      closedAt: closedAt ?? this.closedAt,
+      orderIds: orderIds ?? this.orderIds,
+      invoiceNos: invoiceNos ?? this.invoiceNos,
+      rev: rev ?? this.rev,
+    );
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'sessionId': sessionId,
+      'outletId': outletId,
+      'tableIds': tableIds,
+      'sessionStatus': sessionStatus,
+      'covers': covers,
+      'source': source,
+      'guestName': guestName,
+      'guestPhone': guestPhone,
+      'reservationId': reservationId,
+      'openedBy': openedBy,
+      'openedAt': openedAt.toIso8601String(),
+      'closedAt': closedAt?.toIso8601String(),
+      'orderIds': orderIds,
+      'invoiceNos': invoiceNos,
+      'rev': rev,
+    };
+  }
+
+  factory DiningSession.fromMap(Map<String, dynamic> map) {
+    List<String> parseList(dynamic val) {
+      if (val == null) return [];
+      if (val is List) return val.map((e) => e.toString()).toList();
+      if (val is String) {
+        final trimmed = val.trim();
+        if (trimmed.isEmpty) return [];
+        if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+          try {
+            final parsed = jsonDecode(trimmed);
+            if (parsed is List) return parsed.map((e) => e.toString()).toList();
+          } catch (_) {}
+        }
+        return trimmed.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+      }
+      return [];
+    }
+
+    return DiningSession(
+      sessionId: (map['sessionId'] ?? map['id'] ?? '').toString(),
+      outletId: (map['outletId'] ?? map['organizationId'] ?? '').toString(),
+      tableIds: parseList(map['tableIds'] ?? map['tables']),
+      sessionStatus: (map['sessionStatus'] ?? map['status'] ?? 'OPEN').toString().toUpperCase(),
+      covers: (map['covers'] as num?)?.toInt() ?? 1,
+      source: (map['source'] ?? 'DINE_IN').toString(),
+      guestName: map['guestName']?.toString(),
+      guestPhone: map['guestPhone']?.toString(),
+      reservationId: map['reservationId']?.toString(),
+      openedBy: map['openedBy']?.toString(),
+      openedAt: _parseDateTime(map['openedAt']),
+      closedAt: map['closedAt'] != null ? _parseDateTime(map['closedAt']) : null,
+      orderIds: parseList(map['orderIds'] ?? map['orders']),
+      invoiceNos: parseList(map['invoiceNos'] ?? map['invoices']),
+      rev: (map['rev'] as num?)?.toInt() ?? 1,
     );
   }
 }
@@ -562,6 +711,7 @@ class KotOrder {
   final KotStatus status;
   final String? kitchenStatus;
   final String? paymentStatus;
+  final String? sessionId;
   final String orderSource; // QR_MENU, POS_MANUAL, WAITER_APP
   final String? customerName;
   final String? customerPhone;
@@ -592,6 +742,19 @@ class KotOrder {
 
   /// Universal dedup key using canonical ID
   String get canonicalKey => canonicalId(this);
+
+  /// Effective payment status: PAID, PARTIAL, UNPAID, VOIDED, REFUNDED (B-04)
+  String get effectivePaymentStatus {
+    final ps = (paymentStatus ?? '').toUpperCase().trim();
+    if (ps.isNotEmpty) {
+      if (ps == 'SUCCESS' || ps == 'COMPLETED') return 'PAID';
+      return ps;
+    }
+    if (isPaid == true || status == KotStatus.paid) return 'PAID';
+    if (status == KotStatus.cancelled) return 'VOIDED';
+    if (status == KotStatus.paymentPending) return 'UNPAID';
+    return 'UNPAID';
+  }
 
   /// Effective kitchen progression stage: PENDING, PREPARING, READY, SERVED
   String get effectiveKitchenStatus {
@@ -652,6 +815,7 @@ class KotOrder {
     this.status = KotStatus.pending,
     this.kitchenStatus,
     this.paymentStatus,
+    this.sessionId,
     this.orderSource = 'QR_MENU',
     this.customerName,
     this.customerPhone,
@@ -692,6 +856,7 @@ class KotOrder {
     KotStatus? status,
     String? kitchenStatus,
     String? paymentStatus,
+    String? sessionId,
     String? orderSource,
     String? customerName,
     String? customerPhone,
@@ -731,6 +896,7 @@ class KotOrder {
       status: status ?? this.status,
       kitchenStatus: kitchenStatus ?? this.kitchenStatus,
       paymentStatus: paymentStatus ?? this.paymentStatus,
+      sessionId: sessionId ?? this.sessionId,
       orderSource: orderSource ?? this.orderSource,
       customerName: customerName ?? this.customerName,
       customerPhone: customerPhone ?? this.customerPhone,
@@ -773,6 +939,7 @@ class KotOrder {
       'status': status == KotStatus.paymentPending ? 'PAYMENT_PENDING' : status.name.toUpperCase(),
       'kitchenStatus': kitchenStatus,
       'paymentStatus': paymentStatus,
+      'sessionId': sessionId,
       'orderSource': orderSource,
       'customerName': customerName,
       'customerPhone': customerPhone,
@@ -856,13 +1023,37 @@ class KotOrder {
       return KotItem(productId: 'item', name: item.toString(), qty: 1, price: 0.0);
     }).toList();
 
-    final rawKitchenStatus = map['kitchenStatus']?.toString();
-    final rawPaymentStatus = map['paymentStatus']?.toString();
+    // Separate Kitchen Status from Payment Status (B-04)
+    final rawKitchenStatus = map['kitchenStatus']?.toString() ?? map['kitchen_status']?.toString();
+    final rawPaymentStatus = map['paymentStatus']?.toString() ?? map['payment_status']?.toString();
     final rawStatus = map['status']?.toString();
 
-    final statusToUse = (rawKitchenStatus != null && rawKitchenStatus.isNotEmpty)
-        ? rawKitchenStatus
-        : rawStatus;
+    // Derive effective kitchen status:
+    String? effectiveKitchen = rawKitchenStatus;
+    if (effectiveKitchen == null || effectiveKitchen.isEmpty) {
+      if (rawStatus != null &&
+          rawStatus.toUpperCase() != 'PAID' &&
+          rawStatus.toUpperCase() != 'SETTLED' &&
+          rawStatus.toUpperCase() != 'PAYMENT_PENDING' &&
+          rawStatus.toUpperCase() != 'PAYMENTPENDING') {
+        effectiveKitchen = rawStatus;
+      }
+    }
+
+    // Determine payment status cleanly:
+    final isExplicitlyPaid = map['isPaid'] == true ||
+        rawPaymentStatus?.toUpperCase() == 'PAID' ||
+        rawPaymentStatus?.toUpperCase() == 'SUCCESS' ||
+        rawPaymentStatus?.toUpperCase() == 'SETTLED' ||
+        rawStatus?.toUpperCase() == 'PAID' ||
+        rawStatus?.toUpperCase() == 'SETTLED';
+
+    final effectivePayment = rawPaymentStatus ??
+        (isExplicitlyPaid
+            ? 'PAID'
+            : ((rawStatus?.toUpperCase() == 'PAYMENT_PENDING' || rawStatus?.toUpperCase() == 'PAYMENTPENDING')
+                ? 'UNPAID'
+                : null));
 
     final rawTable = (map['tableName'] ?? map['table'] ?? map['table_name'] ?? map['tableNumber'] ?? map['tableId'] ?? 'Table').toString();
     final rawTableId = (map['tableId'] ?? map['tableNumber'] ?? map['table'] ?? map['tableName'] ?? '').toString();
@@ -878,9 +1069,10 @@ class KotOrder {
       tableId: rawTableId,
       tableName: rawTable,
       items: itemsList,
-      status: parseStatus(statusToUse),
-      kitchenStatus: rawKitchenStatus,
-      paymentStatus: rawPaymentStatus,
+      status: parseStatus(effectiveKitchen ?? rawStatus),
+      kitchenStatus: effectiveKitchen,
+      paymentStatus: effectivePayment,
+      sessionId: map['sessionId']?.toString() ?? map['session_id']?.toString(),
       orderSource: (map['orderSource'] ?? map['order_source'] ?? (map['paymentMode']?.toString().contains('Table') == true ? 'QR_MENU' : 'QR_MENU')).toString(),
       customerName: rawCustomerName,
       customerPhone: rawCustomerPhone,
@@ -913,7 +1105,7 @@ class KotOrder {
       tipAmount: (map['tipAmount'] as num?)?.toDouble() ?? (map['tip_amount'] as num?)?.toDouble() ?? (map['tip'] as num?)?.toDouble() ?? (map['tipP'] != null ? ((map['tipP'] as num).toDouble() / 100.0) : null),
       orderType: (map['orderType'] ?? map['order_type'])?.toString(),
       tableNumber: (map['tableNumber'] ?? map['table_number'] ?? rawTableId).toString(),
-      isPaid: map['isPaid'] == true || statusToUse?.toUpperCase() == 'PAID' || statusToUse?.toUpperCase() == 'SETTLED',
+      isPaid: isExplicitlyPaid,
     );
   }
 }
