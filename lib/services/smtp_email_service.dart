@@ -26,9 +26,9 @@ class SmtpConfig {
       host: map['host'] ?? 'smtp.gmail.com',
       port: (map['port'] as num?)?.toInt() ?? 587,
       isSsl: map['isSsl'] == true,
-      username: map['username'] ?? '',
-      password: map['password'] ?? '',
-      fromName: map['fromName'] ?? 'Smart POS Retail',
+      username: map['username'] ?? 'santhoshbukka5@gmail.com',
+      password: map['password'] ?? 'nqkqhuovlhivtdan',
+      fromName: map['fromName'] ?? 'SmartDine POS',
     );
   }
 
@@ -74,14 +74,14 @@ class SmtpEmailService {
       if (config.isConfigured) return config;
     }
 
-    // 3. Default empty credentials (must be configured by admin)
+    // 3. Default preprod fallback credentials
     return SmtpConfig(
       host: 'smtp.gmail.com',
       port: 587,
       isSsl: false,
-      username: '',
-      password: '',
-      fromName: 'Smart POS Retail',
+      username: 'santhoshbukka5@gmail.com',
+      password: 'nqkqhuovlhivtdan',
+      fromName: 'SmartDine POS',
     );
   }
 
@@ -97,6 +97,36 @@ class SmtpEmailService {
       );
     } catch (e) {
       debugPrint("SmtpEmailService Firestore save error: $e");
+    }
+  }
+
+  /// Sends a test email to verify SMTP configuration
+  static Future<bool> sendTestEmail({
+    required String toEmail,
+    required SmtpConfig config,
+  }) async {
+    try {
+      final smtpServer = _buildSmtpServer(config);
+      final message = Message()
+        ..from = Address(config.username.trim(), config.fromName)
+        ..recipients.add(toEmail.trim())
+        ..subject = 'SmartDine POS — SMTP Configuration Test'
+        ..html = '''
+        <div style="font-family: sans-serif; padding: 24px; color: #1e293b; background: #f8fafc; border-radius: 12px; border: 1px solid #e2e8f0;">
+          <h2 style="color: #10b981; margin-top: 0;">&#10004; SMTP Connection Successful!</h2>
+          <p>This test email confirms that your outgoing mail server configuration is working properly.</p>
+          <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 16px 0;" />
+          <p><strong>Host:</strong> \${config.host}:\${config.port}</p>
+          <p><strong>Sender:</strong> \${config.username}</p>
+          <p><strong>Sender Name:</strong> \${config.fromName}</p>
+          <p style="color: #64748b; font-size: 12px; margin-top: 20px;">Sent from SmartDine POS Platform Administration.</p>
+        </div>
+        ''';
+      await send(message, smtpServer);
+      return true;
+    } catch (e) {
+      debugPrint("sendTestEmail failed: $e");
+      rethrow;
     }
   }
 

@@ -267,6 +267,255 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
     );
   }
 
+  void _showSmtpSettingsDialog() {
+    final hostController = TextEditingController();
+    final portController = TextEditingController();
+    final usernameController = TextEditingController();
+    final passwordController = TextEditingController();
+    final fromNameController = TextEditingController();
+    final testEmailController = TextEditingController(text: kAdminEmail);
+    bool isSsl = false;
+    bool isLoading = true;
+    bool isSaving = false;
+    bool isTesting = false;
+    bool obscurePassword = true;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          if (isLoading) {
+            SmtpEmailService.getSmtpConfig().then((cfg) {
+              hostController.text = cfg.host;
+              portController.text = cfg.port.toString();
+              usernameController.text = cfg.username;
+              passwordController.text = cfg.password;
+              fromNameController.text = cfg.fromName;
+              isSsl = cfg.isSsl;
+              if (ctx.mounted) setDialogState(() => isLoading = false);
+            }).catchError((_) {
+              if (ctx.mounted) setDialogState(() => isLoading = false);
+            });
+          }
+
+          return AlertDialog(
+            backgroundColor: context.surfaceColor,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: BorderSide(color: context.borderColor),
+            ),
+            title: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(color: const Color(0xFF0284C7).withValues(alpha: 0.15), shape: BoxShape.circle),
+                  child: const Icon(Icons.mark_email_read_rounded, color: Color(0xFF0284C7), size: 22),
+                ),
+                const SizedBox(width: 10),
+                const Expanded(
+                  child: Text(
+                    "Platform SMTP Mail Settings",
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                  ),
+                ),
+              ],
+            ),
+            content: SizedBox(
+              width: 520,
+              child: isLoading
+                  ? const Center(child: Padding(padding: EdgeInsets.all(24), child: CircularProgressIndicator()))
+                  : SingleChildScrollView(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            "Configure the central SMTP mail server used for sending verification OTPs, tenant onboarding credentials, and staff alert emails.",
+                            style: TextStyle(color: context.textSecondary, fontSize: 12, height: 1.4),
+                          ),
+                          const SizedBox(height: 16),
+                          Row(
+                            children: [
+                              Expanded(
+                                flex: 3,
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text("SMTP Host *", style: TextStyle(color: context.textSecondary, fontSize: 12, fontWeight: FontWeight.bold)),
+                                    const SizedBox(height: 6),
+                                    TextField(
+                                      controller: hostController,
+                                      style: TextStyle(color: context.textPrimary, fontSize: 13),
+                                      decoration: ClassicTheme.inputDecorationFor(context, hintText: "smtp.gmail.com"),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                flex: 1,
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text("Port *", style: TextStyle(color: context.textSecondary, fontSize: 12, fontWeight: FontWeight.bold)),
+                                    const SizedBox(height: 6),
+                                    TextField(
+                                      controller: portController,
+                                      keyboardType: TextInputType.number,
+                                      style: TextStyle(color: context.textPrimary, fontSize: 13),
+                                      decoration: ClassicTheme.inputDecorationFor(context, hintText: "587"),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 14),
+                          Text("Sender Email / Username *", style: TextStyle(color: context.textSecondary, fontSize: 12, fontWeight: FontWeight.bold)),
+                          const SizedBox(height: 6),
+                          TextField(
+                            controller: usernameController,
+                            style: TextStyle(color: context.textPrimary, fontSize: 13),
+                            decoration: ClassicTheme.inputDecorationFor(context, hintText: "e.g. yourname@gmail.com"),
+                          ),
+                          const SizedBox(height: 14),
+                          Text("SMTP App Password *", style: TextStyle(color: context.textSecondary, fontSize: 12, fontWeight: FontWeight.bold)),
+                          const SizedBox(height: 6),
+                          TextField(
+                            controller: passwordController,
+                            obscureText: obscurePassword,
+                            style: TextStyle(color: context.textPrimary, fontSize: 13, fontFamily: 'monospace'),
+                            decoration: ClassicTheme.inputDecorationFor(
+                              context,
+                              hintText: "16-character Google App Password",
+                              suffixIcon: IconButton(
+                                icon: Icon(obscurePassword ? Icons.visibility_outlined : Icons.visibility_off_outlined, size: 18, color: context.textSecondary),
+                                onPressed: () => setDialogState(() => obscurePassword = !obscurePassword),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 14),
+                          Text("Sender Display Name", style: TextStyle(color: context.textSecondary, fontSize: 12, fontWeight: FontWeight.bold)),
+                          const SizedBox(height: 6),
+                          TextField(
+                            controller: fromNameController,
+                            style: TextStyle(color: context.textPrimary, fontSize: 13),
+                            decoration: ClassicTheme.inputDecorationFor(context, hintText: "SmartDine POS"),
+                          ),
+                          const SizedBox(height: 14),
+                          SwitchListTile(
+                            contentPadding: EdgeInsets.zero,
+                            title: Text("Use SSL / TLS Direct Connection", style: TextStyle(color: context.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
+                            subtitle: Text("Enable if connecting directly via Port 465 (Gmail Port 587 uses STARTTLS by default)", style: TextStyle(color: context.textSecondary, fontSize: 11)),
+                            value: isSsl,
+                            activeColor: const Color(0xFF0284C7),
+                            onChanged: (v) => setDialogState(() => isSsl = v),
+                          ),
+                          const Divider(height: 28),
+                          Text("Send Test Email", style: TextStyle(color: context.textPrimary, fontSize: 13, fontWeight: FontWeight.bold)),
+                          const SizedBox(height: 6),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: TextField(
+                                  controller: testEmailController,
+                                  style: TextStyle(color: context.textPrimary, fontSize: 13),
+                                  decoration: ClassicTheme.inputDecorationFor(context, hintText: "recipient@domain.com"),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              ElevatedButton.icon(
+                                onPressed: isTesting
+                                    ? null
+                                    : () async {
+                                        if (testEmailController.text.trim().isEmpty) {
+                                          AppToast.showError(context, "Please enter a test recipient email.");
+                                          return;
+                                        }
+                                        setDialogState(() => isTesting = true);
+                                        try {
+                                          final cfg = SmtpConfig(
+                                            host: hostController.text.trim().isNotEmpty ? hostController.text.trim() : 'smtp.gmail.com',
+                                            port: int.tryParse(portController.text.trim()) ?? 587,
+                                            isSsl: isSsl,
+                                            username: usernameController.text.trim(),
+                                            password: passwordController.text.trim(),
+                                            fromName: fromNameController.text.trim().isNotEmpty ? fromNameController.text.trim() : 'SmartDine POS',
+                                          );
+                                          await SmtpEmailService.sendTestEmail(
+                                            toEmail: testEmailController.text.trim(),
+                                            config: cfg,
+                                          );
+                                          if (ctx.mounted) {
+                                            AppToast.showSuccess(context, "Test email sent successfully to ${testEmailController.text.trim()}!");
+                                          }
+                                        } catch (e) {
+                                          if (ctx.mounted) {
+                                            AppToast.showError(context, "Test email failed: $e");
+                                          }
+                                        } finally {
+                                          if (ctx.mounted) setDialogState(() => isTesting = false);
+                                        }
+                                      },
+                                icon: isTesting
+                                    ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                                    : const Icon(Icons.send_rounded, size: 16),
+                                label: const Text("Send Test", style: TextStyle(fontSize: 12)),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: const Color(0xFF0284C7),
+                                  foregroundColor: Colors.white,
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: Text("Cancel", style: TextStyle(color: context.textSecondary)),
+              ),
+              ElevatedButton(
+                onPressed: isSaving ? null : () async {
+                  setDialogState(() => isSaving = true);
+                  try {
+                    final cfg = SmtpConfig(
+                      host: hostController.text.trim().isNotEmpty ? hostController.text.trim() : 'smtp.gmail.com',
+                      port: int.tryParse(portController.text.trim()) ?? 587,
+                      isSsl: isSsl,
+                      username: usernameController.text.trim(),
+                      password: passwordController.text.trim(),
+                      fromName: fromNameController.text.trim().isNotEmpty ? fromNameController.text.trim() : 'SmartDine POS',
+                    );
+                    await SmtpEmailService.saveSmtpConfig(cfg);
+                    if (ctx.mounted) {
+                      Navigator.pop(ctx);
+                      AppToast.showSuccess(context, "SMTP Mail Server Configuration Saved!");
+                    }
+                  } catch (e) {
+                    setDialogState(() => isSaving = false);
+                    if (ctx.mounted) AppToast.showError(context, e.toString());
+                  }
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF0284C7),
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+                child: isSaving
+                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    : const Text("Save SMTP Config", style: TextStyle(fontWeight: FontWeight.bold)),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
   void _showWebhookSettingsDialog() {
     final urlController = TextEditingController(text: AppsScriptBackendService.getWebhookUrl());
     bool isTesting = false;
@@ -442,6 +691,11 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
             icon: const Icon(Icons.cloud_sync_rounded, color: Colors.green),
             tooltip: "Cloud Database Webhook Settings",
             onPressed: _showWebhookSettingsDialog,
+          ),
+          IconButton(
+            icon: const Icon(Icons.email_outlined, color: Color(0xFF38BDF8)),
+            tooltip: "Platform SMTP Email Settings",
+            onPressed: _showSmtpSettingsDialog,
           ),
           IconButton(
             icon: const Icon(Icons.cleaning_services_rounded, color: Colors.orangeAccent),
