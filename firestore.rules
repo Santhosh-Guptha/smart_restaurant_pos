@@ -89,6 +89,20 @@ service cloud.firestore {
       allow read, write: if true;
     }
 
+    match /outlets/{outletId} {
+      allow read, write: if true;
+      match /{allChildren=**} {
+        allow read, write: if true;
+      }
+    }
+
+    match /expenses/{expenseId} {
+      allow read, write: if true;
+      match /{allChildren=**} {
+        allow read, write: if true;
+      }
+    }
+
     match /system_config/{configId} {
       allow read, write: if true;
     }
@@ -115,9 +129,6 @@ service cloud.firestore {
       allow read, write: if false;
     }
     match /suppliers/{supplierId} {
-      allow read, write: if false;
-    }
-    match /expenses/{expenseId} {
       allow read, write: if false;
     }
     match /purchase_orders/{poId} {
