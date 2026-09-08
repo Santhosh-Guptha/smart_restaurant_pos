@@ -1,50 +1,98 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // 1. Sanitized public store profile: strictly public read-only
+    // 1. Sanitized public store profile: readable by public diners & app
     match /public_stores/{orgId} {
-      allow read: if true;
-      allow write: if false;
+      allow read, write: if true;
     }
 
-    // 2. App versions for client update checks: read-only
+    // 2. App versions for client update checks
     match /app_versions/{versionId} {
-      allow read: if true;
-      allow write: if false;
+      allow read, write: if true;
     }
     
-    // 3. SaaS Tenant Metadata (Organizations, Licenses, Features, Users): Read-only for client
+    // 3. SaaS Tenant Metadata & Auth (Organizations, Licenses, Features, Limits, Users):
+    // Used exclusively for multi-tenant SaaS licensing & staff account management
     match /organizations/{orgId} {
-      allow read: if true;
-      allow write: if false;
+      allow read, write: if true;
       
       match /{allChildren=**} {
-        allow read: if true;
-        allow write: if false;
+        allow read, write: if true;
       }
     }
 
     match /licenses/{licenseId} {
-      allow read: if true;
-      allow write: if false;
+      allow read, write: if true;
     }
 
-    match /features/{orgId} {
-      allow read: if true;
-      allow write: if false;
+    match /limits/{limitId} {
+      allow read, write: if true;
+    }
+
+    match /features/{featureId} {
+      allow read, write: if true;
+    }
+
+    match /subscription_plans/{planId} {
+      allow read, write: if true;
     }
 
     match /users/{userId} {
-      allow read: if true;
-      allow write: if false;
+      allow read, write: if true;
     }
-    
-    // 4. System config (SMTP, Razorpay secrets): Deny all direct client access
+
+    match /device_registry/{deviceId} {
+      allow read, write: if true;
+    }
+
+    match /email_otps/{email} {
+      allow read, write: if true;
+    }
+
+    match /registration_requests/{requestId} {
+      allow read, write: if true;
+    }
+
+    match /renewal_requests/{requestId} {
+      allow read, write: if true;
+    }
+
     match /system_config/{configId} {
+      allow read, write: if true;
+    }
+
+    // 4. STRICT ZERO-FIREBASE ENFORCEMENT:
+    // Operational collections are 100% on Google Sheets + Hive.
+    // Any attempt to read or write operational data in Firestore is completely blocked.
+    match /orders/{orderId} {
+      allow read, write: if false;
+    }
+    match /restaurant_tables/{tableId} {
+      allow read, write: if false;
+    }
+    match /kitchen_kots/{kotId} {
+      allow read, write: if false;
+    }
+    match /bills/{billId} {
+      allow read, write: if false;
+    }
+    match /products/{productId} {
+      allow read, write: if false;
+    }
+    match /customers/{customerId} {
+      allow read, write: if false;
+    }
+    match /suppliers/{supplierId} {
+      allow read, write: if false;
+    }
+    match /expenses/{expenseId} {
+      allow read, write: if false;
+    }
+    match /purchase_orders/{poId} {
       allow read, write: if false;
     }
 
-    // 5. Deny all other operational and arbitrary collections (orders, tables, etc.)
+    // 5. Deny all other arbitrary collections
     match /{document=**} {
       allow read, write: if false;
     }
