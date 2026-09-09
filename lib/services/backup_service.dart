@@ -50,7 +50,7 @@ class BackupService {
   // restore wrote it back verbatim. A hand-edited .sbk could therefore add an
   // owner-role staff member to any till. Both boxes are now excluded from
   // export and from import; the roster is re-established on a new device
-  // through Google owner sign-in (see StaffPinLoginScreen's empty-roster path).
+  // through Google owner sign-in or staff configuration.
   static const List<String> _kBackupBoxes = [
     kInventoryBoxName,
     kCustomersBoxName,

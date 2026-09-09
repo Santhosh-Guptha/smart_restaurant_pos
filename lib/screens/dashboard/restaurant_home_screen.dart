@@ -299,14 +299,6 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
           ],
         ),
         actions: [
-          if (restaurantAuth.staffList.isNotEmpty)
-            IconButton(
-              tooltip: 'Lock Terminal / Switch Staff',
-              icon: const Icon(Icons.lock_outline_rounded, color: Colors.amber, size: 22),
-              onPressed: () {
-                ref.read(restaurantAuthProvider.notifier).lockTerminal();
-              },
-            ),
           IconButton(
             tooltip: 'Store & Hardware Settings',
             icon: Icon(Icons.settings_outlined, color: context.textPrimary, size: 22),

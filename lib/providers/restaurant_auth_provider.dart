@@ -172,7 +172,7 @@ class RestaurantAuthNotifier extends StateNotifier<RestaurantAuthState> {
     state = state.copyWith(
       authHeaders: const {},
       googleEmail: null,
-      isLocked: true,
+      isLocked: false,
       activeStaff: null,
     );
   }
@@ -203,7 +203,7 @@ class RestaurantAuthNotifier extends StateNotifier<RestaurantAuthState> {
       staffList: loaded,
       operatingMode: mode,
       activeStaff: null,
-      isLocked: true,
+      isLocked: false,
     );
   }
 
@@ -317,7 +317,7 @@ class RestaurantAuthNotifier extends StateNotifier<RestaurantAuthState> {
   }
 
   void lockTerminal() {
-    state = state.copyWith(activeStaff: null, isLocked: true);
+    state = state.copyWith(activeStaff: null, isLocked: false);
   }
 
   /// Switch Operating Mode (Pay-First vs Dine-First)
