@@ -327,6 +327,11 @@ class RestaurantAuthNotifier extends StateNotifier<RestaurantAuthState> {
     state = state.copyWith(operatingMode: mode);
   }
 
+  /// Sets or clears the active staff member session directly
+  void setActiveStaff(StaffMember? staff) {
+    state = state.copyWith(activeStaff: staff, isLocked: false);
+  }
+
   /// Add or update staff member
   Future<void> saveStaffMember(StaffMember member) async {
     final box = await Hive.openBox(boxName);
@@ -337,6 +342,7 @@ class RestaurantAuthNotifier extends StateNotifier<RestaurantAuthState> {
         : StaffMember(
             id: member.id,
             name: member.name,
+            username: member.username,
             email: member.email,
             role: member.role,
             roles: member.roles,

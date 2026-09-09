@@ -85,6 +85,7 @@ extension StaffRoleExtension on StaffRole {
 class StaffMember {
   final String id;
   final String name;
+  final String? username;
   final String email; // Email used for Google Sign-In and shared Google Sheet access
   final StaffRole role; // Primary role
   final List<StaffRole> roles; // All assigned roles (multi-role capability)
@@ -101,10 +102,11 @@ class StaffMember {
   StaffMember({
     required this.id,
     required this.name,
+    this.username,
     required this.email,
     required this.role,
     List<StaffRole>? roles,
-    required this.pin,
+    this.pin = '',
     String? pinHash,
     this.phone,
     this.password,
@@ -147,11 +149,12 @@ class StaffMember {
     return {
       'id': id,
       'name': name,
+      if (username != null) 'username': username,
       'email': email,
       'role': role.key,
       'roles': roles.map((r) => r.key).toList(),
       'pin': pin,
-      'pinHash': pinHash ?? (pin.isNotEmpty ? hashPin(pin) : null),
+      if (pinHash != null) 'pinHash': pinHash,
       'phone': phone,
       'password': password,
       'assignedOutletId': assignedOutletId,
@@ -175,12 +178,13 @@ class StaffMember {
       parsedRoles.insert(0, primaryRole);
     }
 
-    final plainPin = map['pin']?.toString() ?? '1234';
+    final plainPin = map['pin']?.toString() ?? '';
     final storedHash = map['pinHash']?.toString() ?? (plainPin.isNotEmpty ? hashPin(plainPin) : null);
 
     return StaffMember(
       id: map['id'] ?? '',
       name: map['name'] ?? 'Staff',
+      username: map['username'],
       email: map['email'] ?? '',
       role: primaryRole,
       roles: parsedRoles,

@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import '../../core/classic_theme.dart';
 import '../../providers/auth_provider.dart';
-import '../../providers/saas_session_provider.dart';
 import '../../utils/ui_feedback.dart';
 import '../../providers/theme_provider.dart';
 import 'client_signup_screen.dart';
@@ -25,7 +24,6 @@ class _SaaSLoginScreenState extends ConsumerState<SaaSLoginScreen> {
   bool _obscurePassword = true;
   bool _rememberMe = false;
   String? _errorMessage;
-  bool _showManualForm = false;
 
   @override
   void initState() {
@@ -72,10 +70,6 @@ class _SaaSLoginScreenState extends ConsumerState<SaaSLoginScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final saasSession = ref.watch(saasSessionProvider);
-    final savedUsers = saasSession.savedUsers;
-    final displayChooser = savedUsers.isNotEmpty && !_showManualForm;
-
     return Scaffold(
       backgroundColor: context.canvasColor,
       appBar: AppBar(
@@ -112,9 +106,9 @@ class _SaaSLoginScreenState extends ConsumerState<SaaSLoginScreen> {
                     width: 64,
                     height: 64,
                     decoration: BoxDecoration(
-                      color: ClassicTheme.primaryAccent.withOpacity(0.12),
+                      color: ClassicTheme.primaryAccent.withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(18),
-                      border: Border.all(color: ClassicTheme.primaryAccent.withOpacity(0.3)),
+                      border: Border.all(color: ClassicTheme.primaryAccent.withValues(alpha: 0.3)),
                     ),
                     child: const Icon(
                       Icons.storefront_rounded,
@@ -159,8 +153,8 @@ class _SaaSLoginScreenState extends ConsumerState<SaaSLoginScreen> {
                           Container(
                             padding: const EdgeInsets.all(12),
                             decoration: BoxDecoration(
-                              color: ClassicTheme.dangerRed.withOpacity(0.15),
-                              border: Border.all(color: ClassicTheme.dangerRed.withOpacity(0.4)),
+                              color: ClassicTheme.dangerRed.withValues(alpha: 0.15),
+                              border: Border.all(color: ClassicTheme.dangerRed.withValues(alpha: 0.4)),
                               borderRadius: BorderRadius.circular(10),
                             ),
                             child: Row(
@@ -193,7 +187,7 @@ class _SaaSLoginScreenState extends ConsumerState<SaaSLoginScreen> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  "Email Address",
+                                  "Username or Email",
                                   style: TextStyle(
                                     color: context.textSecondary,
                                     fontSize: 13,
@@ -203,14 +197,14 @@ class _SaaSLoginScreenState extends ConsumerState<SaaSLoginScreen> {
                                 const SizedBox(height: 6),
                                 TextFormField(
                                   controller: _emailController,
-                                  keyboardType: TextInputType.emailAddress,
+                                  keyboardType: TextInputType.text,
                                   style: TextStyle(color: context.textPrimary, fontSize: 14),
                                   decoration: ClassicTheme.inputDecorationFor(
                                     context,
-                                    hintText: "owner@restaurant.com",
-                                    prefixIcon: Icon(Icons.email_outlined, color: context.textSecondary, size: 20),
+                                    hintText: "Enter username or email",
+                                    prefixIcon: Icon(Icons.person_outline_rounded, color: context.textSecondary, size: 20),
                                   ),
-                                  validator: (v) => v == null || v.isEmpty ? "Email is required" : null,
+                                  validator: (v) => v == null || v.trim().isEmpty ? "Username or email is required" : null,
                                 ),
                                 const SizedBox(height: 16),
                                 Text(

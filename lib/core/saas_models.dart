@@ -348,6 +348,7 @@ class SaasOrganization {
 class SaasUser {
   final String id;
   final String email;
+  final String? username;
   final String fullName;
   final String role; // MASTER_ADMIN, CLIENT (OWNER alias supported)
   final String organizationId;
@@ -359,6 +360,7 @@ class SaasUser {
   SaasUser({
     required this.id,
     required this.email,
+    this.username,
     required this.fullName,
     required this.role,
     required this.organizationId,
@@ -375,6 +377,7 @@ class SaasUser {
     return SaasUser(
       id: json['id'] ?? '',
       email: json['email'] ?? '',
+      username: json['username'],
       fullName: json['fullName'] ?? '',
       role: json['role'] ?? 'CLIENT',
       organizationId: json['organizationId'] ?? '',
@@ -389,6 +392,7 @@ class SaasUser {
     return {
       'id': id,
       'email': email,
+      if (username != null) 'username': username,
       'fullName': fullName,
       'role': role,
       'organizationId': organizationId,
@@ -403,6 +407,7 @@ class SaasUser {
     return SaasUser(
       id: docId,
       email: data['email'] ?? '',
+      username: data['username'],
       fullName: data['fullName'] ?? '',
       role: data['role'] ?? 'CLIENT',
       organizationId: data['organizationId'] ?? '',
@@ -416,6 +421,7 @@ class SaasUser {
   Map<String, dynamic> toFirestore() {
     return {
       'email': email,
+      if (username != null) 'username': username,
       'fullName': fullName,
       'role': role,
       'organizationId': organizationId,

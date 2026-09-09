@@ -15,8 +15,10 @@ class DatabaseCleanupService {
 
       // 1. Primary Platform Master Admin
       final adminDoc = await _firestore.collection('users').doc('usr_master_admin').get();
-      if (!adminDoc.exists || adminDoc.data()?['role'] != 'MASTER_ADMIN') {
+      if (!adminDoc.exists || adminDoc.data()?['role'] != 'MASTER_ADMIN' || adminDoc.data()?['username'] != 'admin') {
         await _firestore.collection('users').doc('usr_master_admin').set({
+          'id': 'usr_master_admin',
+          'username': 'admin',
           'email': kAdminEmail,
           'fullName': 'SmartDine Platform Admin',
           'role': 'MASTER_ADMIN',
@@ -25,13 +27,15 @@ class DatabaseCleanupService {
           'createdAt': FieldValue.serverTimestamp(),
           'updatedAt': FieldValue.serverTimestamp(),
         }, SetOptions(merge: true));
-        debugPrint("✓ Master admin user usr_master_admin ($kAdminEmail) regenerated successfully.");
+        debugPrint("✓ Master admin user usr_master_admin ($kAdminEmail) regenerated with username 'admin'.");
       }
 
       // 2. Co-Owner Master Admin (Santhosh Bukka)
       final santhoshDoc = await _firestore.collection('users').doc('usr_master_admin_santhosh').get();
-      if (!santhoshDoc.exists || santhoshDoc.data()?['role'] != 'MASTER_ADMIN') {
+      if (!santhoshDoc.exists || santhoshDoc.data()?['role'] != 'MASTER_ADMIN' || santhoshDoc.data()?['username'] != 'santhosh') {
         await _firestore.collection('users').doc('usr_master_admin_santhosh').set({
+          'id': 'usr_master_admin_santhosh',
+          'username': 'santhosh',
           'email': 'santhoshbukka5@gmail.com',
           'fullName': 'Santhosh Bukka',
           'role': 'MASTER_ADMIN',
@@ -40,7 +44,7 @@ class DatabaseCleanupService {
           'createdAt': FieldValue.serverTimestamp(),
           'updatedAt': FieldValue.serverTimestamp(),
         }, SetOptions(merge: true));
-        debugPrint("✓ Master admin user usr_master_admin_santhosh (santhoshbukka5@gmail.com) regenerated successfully.");
+        debugPrint("✓ Master admin user usr_master_admin_santhosh (santhoshbukka5@gmail.com) regenerated with username 'santhosh'.");
       }
     } catch (e) {
       debugPrint("Error ensuring master admin user: $e");

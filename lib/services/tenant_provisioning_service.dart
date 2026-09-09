@@ -35,18 +35,33 @@ class TenantProvisioningService {
     bool mustChangePassword = false,
     String storageMode = 'CLIENTS_OWN_SHEETS',
     String? settlementUpiId,
+    String? username,
   }) async {
     final cleanEmail = email.trim().toLowerCase();
     final cleanName = clientName.trim();
     final cleanShopName = shopName.trim().isNotEmpty ? shopName.trim() : "$cleanName Restaurant";
     final cleanCategory = category?.trim().isNotEmpty == true ? category!.trim() : 'Restaurant & Cafe';
     final cleanMobile = mobile.trim();
+    final candidateUsername = (username != null && username.trim().isNotEmpty)
+        ? username.trim().toLowerCase().replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '')
+        : cleanEmail.split('@').first.replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_');
+    String cleanUsername = candidateUsername;
 
     try {
       // 1. Check for duplicate registered email
       final existUser = await _firestore.collection('users').where('email', isEqualTo: cleanEmail).limit(1).get();
       if (existUser.docs.isNotEmpty) {
         throw Exception("An account with email '$cleanEmail' is already registered. Please sign in.");
+      }
+
+      // Check for duplicate username
+      final existUsername = await _firestore.collection('users').where('username', isEqualTo: cleanUsername).limit(1).get();
+      if (existUsername.docs.isNotEmpty) {
+        if (username != null && username.trim().isNotEmpty) {
+          throw Exception("Username '@$cleanUsername' is already taken. Please choose another.");
+        } else {
+          cleanUsername = '${cleanUsername}_${DateTime.now().millisecondsSinceEpoch.toString().substring(8)}';
+        }
       }
 
       // 2. Generate unique Org ID or use custom
@@ -75,6 +90,7 @@ class TenantProvisioningService {
         'ownerGoogleEmail': cleanEmail,
         'ownerEmail': cleanEmail,
         'ownerUserId': newUserId,
+        'ownerUsername': cleanUsername,
         'tableCount': plan.tableCount,
         'operatingMode': plan.operatingMode,
         'aadhaar': aadhaar?.trim() ?? '',
@@ -92,6 +108,7 @@ class TenantProvisioningService {
       // 5. Create Owner User Account
       await _firestore.collection('users').doc(newUserId).set({
         'id': newUserId,
+        'username': cleanUsername,
         'email': cleanEmail,
         'fullName': cleanName,
         'phone': cleanMobile,

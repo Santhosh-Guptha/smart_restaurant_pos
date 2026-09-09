@@ -216,9 +216,9 @@ class AuthNotifier extends StateNotifier<ShopAccount?> {
     return false;
   }
 
-  /// SaaS Login endpoint utilizing saasSessionProvider
-  Future<String?> loginSaaS(String email, String password, {bool rememberMe = false}) async {
-    return await _ref.read(saasSessionProvider.notifier).login(email, password, rememberMe: rememberMe);
+  /// SaaS Login endpoint utilizing saasSessionProvider (supports username or email)
+  Future<String?> loginSaaS(String usernameOrEmail, String password, {bool rememberMe = false}) async {
+    return await _ref.read(saasSessionProvider.notifier).login(usernameOrEmail, password, rememberMe: rememberMe);
   }
 
   /// Logs out the current user session (SaaS & Local)

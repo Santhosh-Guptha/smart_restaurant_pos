@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:bcrypt/bcrypt.dart';
 import '../../core/classic_theme.dart';
 import '../../core/rbac_permissions.dart';
 import '../../providers/restaurant_auth_provider.dart';
@@ -65,6 +66,7 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
     }
 
     final nameCtrl = TextEditingController(text: existing?.name ?? '');
+    final usernameCtrl = TextEditingController(text: existing?.username ?? '');
     final emailCtrl = TextEditingController(text: existing?.email ?? '');
     final passwordCtrl = TextEditingController(text: existing?.password ?? '');
     final pinCtrl = TextEditingController(text: existing?.pin ?? '1234');
@@ -118,6 +120,37 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
                     labelStyle: TextStyle(color: context.textSecondary),
                     hintText: 'e.g. Ramesh Kumar',
                     hintStyle: TextStyle(color: context.textSecondary.withValues(alpha: 0.5)),
+                    filled: true,
+                    fillColor: context.canvasColor,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: context.borderColor),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: context.borderColor),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: Colors.amber),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 14),
+
+                // Username (Unique ID)
+                TextField(
+                  controller: usernameCtrl,
+                  style: TextStyle(color: context.textPrimary),
+                  decoration: InputDecoration(
+                    labelText: 'Staff Username (Unique Login Handle)',
+                    labelStyle: TextStyle(color: context.textSecondary),
+                    prefixText: '@',
+                    prefixStyle: TextStyle(color: Colors.amber.shade700, fontWeight: FontWeight.bold, fontSize: 15),
+                    hintText: 'e.g. chef_ravi, cashier1',
+                    hintStyle: TextStyle(color: context.textSecondary.withValues(alpha: 0.5)),
+                    helperText: 'Unique username for direct login on POS terminal',
+                    helperStyle: const TextStyle(color: Colors.amber, fontSize: 11),
                     filled: true,
                     fillColor: context.canvasColor,
                     border: OutlineInputBorder(
@@ -413,21 +446,70 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
             ElevatedButton(
               onPressed: () async {
                 final name = nameCtrl.text.trim();
+                final cleanUsername = usernameCtrl.text.trim().toLowerCase();
                 final newEmail = emailCtrl.text.trim();
                 final password = passwordCtrl.text.trim();
                 final pin = pinCtrl.text.trim();
 
-                if (name.isEmpty ||
-                    newEmail.isEmpty ||
-                    password.isEmpty ||
-                    pin.length != 4) {
+                if (name.isEmpty || cleanUsername.isEmpty || password.isEmpty) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
-                      content: Text(
-                          'Please fill in Name, Google Email, Password and 4-digit PIN.'),
+                      content: Text('Please fill in Name, Username, and Login Password.'),
                       backgroundColor: Colors.redAccent,
                     ),
                   );
+                  return;
+                }
+
+                if (!RegExp(r'^[a-zA-Z0-9._-]+$').hasMatch(cleanUsername)) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Username can only contain letters, numbers, dots, dashes, and underscores.'),
+                      backgroundColor: Colors.redAccent,
+                    ),
+                  );
+                  return;
+                }
+
+                // Uniqueness check in Firestore /users
+                try {
+                  final userDocs = await FirebaseFirestore.instance
+                      .collection('users')
+                      .where('username', isEqualTo: cleanUsername)
+                      .limit(1)
+                      .get();
+                  if (userDocs.docs.isNotEmpty) {
+                    final docId = userDocs.docs.first.id;
+                    final currentStaffId = existing?.id;
+                    if (docId != currentStaffId && docId != 'usr_$currentStaffId') {
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Username "@$cleanUsername" is already taken. Please choose another.'),
+                            backgroundColor: Colors.redAccent,
+                          ),
+                        );
+                      }
+                      return;
+                    }
+                  }
+                } catch (e) {
+                  debugPrint('Notice: username uniqueness remote check: $e');
+                }
+
+                // Uniqueness check in local staff roster
+                final duplicateLocal = staffList.any((s) =>
+                    s.id != existing?.id &&
+                    s.username?.trim().toLowerCase() == cleanUsername);
+                if (duplicateLocal) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Username "@$cleanUsername" is already assigned to another staff member.'),
+                        backgroundColor: Colors.redAccent,
+                      ),
+                    );
+                  }
                   return;
                 }
 
@@ -436,15 +518,23 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
                     existing.email.trim().toLowerCase() !=
                         newEmail.toLowerCase();
 
+                final saasSession = ref.read(saasSessionProvider);
+                final orgId = saasSession.currentOrganization?.id ?? '';
+                final franchiseId = saasSession.currentUser?.franchiseId ?? '';
+                final effectiveEmail = newEmail.isNotEmpty
+                    ? newEmail
+                    : '$cleanUsername@${orgId.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '')}.pos';
+
                 final newMember = StaffMember(
                   id: existing?.id ??
                       'STAFF_${DateTime.now().millisecondsSinceEpoch}',
                   name: name,
-                  email: newEmail,
+                  username: cleanUsername,
+                  email: effectiveEmail,
                   role: role,
                   roles: selectedRoles.toList(),
-                  pin: pin,
-                  pinHash: StaffMember.hashPin(pin),
+                  pin: pin.isNotEmpty ? pin : '1234',
+                  pinHash: StaffMember.hashPin(pin.isNotEmpty ? pin : '1234'),
                   phone: phoneCtrl.text.trim(),
                   password: password,
                   assignedStation: station,
@@ -452,22 +542,41 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
                   isActive: existing?.isActive ?? true,
                 );
 
-                // 1. Sync staff credentials to Firestore
+                // 1. Sync staff credentials to Firestore (/users and /staff_users)
+                final hashedPassword = BCrypt.hashpw(password, BCrypt.gensalt());
+                final usersDocId = existing?.id ?? 'usr_${newMember.id}';
+
                 try {
-                  final saasSession = ref.read(saasSessionProvider);
-                  final orgId = saasSession.currentOrganization?.id ?? '';
-                  final franchiseId =
-                      saasSession.currentUser?.franchiseId ?? '';
+                  await FirebaseFirestore.instance.collection('users').doc(usersDocId).set({
+                    'id': usersDocId,
+                    'username': cleanUsername,
+                    'email': effectiveEmail,
+                    'fullName': newMember.name,
+                    'passwordHash': hashedPassword,
+                    'role': newMember.role.key,
+                    'organizationId': orgId,
+                    'franchiseId': franchiseId,
+                    'status': 'ACTIVE',
+                    'phone': newMember.phone,
+                    'updatedAt': FieldValue.serverTimestamp(),
+                  }, SetOptions(merge: true));
+                } catch (e) {
+                  debugPrint('Firestore users sync skipped: $e');
+                }
+
+                try {
                   await FirebaseFirestore.instance
                       .collection('staff_users')
                       .doc(newMember.id)
                       .set({
                     'id': newMember.id,
                     'name': newMember.name,
+                    'username': cleanUsername,
                     'email': newMember.email,
                     'role': newMember.role.key,
                     'roles': newMember.roles.map((r) => r.key).toList(),
                     'password': newMember.password,
+                    'passwordHash': hashedPassword,
                     'pin': newMember.pin,
                     'pinHash': newMember.pinHash,
                     'phone': newMember.phone,
@@ -622,6 +731,14 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
                 await FirebaseFirestore.instance
                     .collection('staff_users')
                     .doc(staff.id)
+                    .delete();
+                await FirebaseFirestore.instance
+                    .collection('users')
+                    .doc(staff.id)
+                    .delete();
+                await FirebaseFirestore.instance
+                    .collection('users')
+                    .doc('usr_${staff.id}')
                     .delete();
               } catch (e) {
                 debugPrint('Firestore staff delete skipped: $e');
@@ -815,6 +932,24 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
                                           overflow: TextOverflow.ellipsis,
                                         ),
                                       ),
+                                       if (staff.username != null && staff.username!.isNotEmpty) ...[
+                                         const SizedBox(width: 6),
+                                         Container(
+                                           padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                           decoration: BoxDecoration(
+                                             color: Colors.amber.withValues(alpha: 0.15),
+                                             borderRadius: BorderRadius.circular(4),
+                                           ),
+                                           child: Text(
+                                             '@${staff.username}',
+                                             style: TextStyle(
+                                               color: Colors.amber.shade900,
+                                               fontSize: 10,
+                                               fontWeight: FontWeight.bold,
+                                             ),
+                                           ),
+                                         ),
+                                       ],
                                        const SizedBox(width: 8),
                                        Wrap(
                                          spacing: 4,
