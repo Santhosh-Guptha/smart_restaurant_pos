@@ -793,6 +793,106 @@ class AppsScriptBackendService {
     return res ?? {'ok': false, 'success': false, 'error': 'Network error'};
   }
 
+  // ── Per-franchise Razorpay credentials ────────────────────────────────────
+  //
+  // The secret is written to Apps Script Script Properties and is never
+  // returned by any of these calls. `system_config/razorpay` in Firestore held
+  // the platform key secret in plaintext, readable by anyone with access to
+  // that document; per-outlet credentials deliberately do not go there.
+
+  /// Verifies a key pair with Razorpay and, if it is accepted, stores it
+  /// against this outlet. Leave [keySecret] empty to keep the stored secret
+  /// while changing the key id or webhook secret.
+  static Future<Map<String, dynamic>> setOutletRazorpay({
+    required String outletId,
+    required String keyId,
+    String keySecret = '',
+    String webhookSecret = '',
+    String? updatedBy,
+    String? spreadsheetId,
+    String? clientRequestId,
+  }) async {
+    final clientReqId = clientRequestId ?? const Uuid().v4();
+    final res = await _postToWebhook({
+      'v': 2,
+      'action': 'SET_OUTLET_RAZORPAY',
+      'outletId': outletId,
+      'clientRequestId': clientReqId,
+      if (spreadsheetId != null && spreadsheetId.isNotEmpty) 'spreadsheetId': spreadsheetId,
+      'data': {
+        'outletId': outletId,
+        'keyId': keyId.trim(),
+        'keySecret': keySecret.trim(),
+        'webhookSecret': webhookSecret.trim(),
+        'updatedBy': updatedBy ?? 'master-admin',
+        'clientRequestId': clientReqId,
+      },
+    });
+    return res ?? {'ok': false, 'success': false, 'error': 'Network error'};
+  }
+
+  /// Removes this outlet's own credentials, falling it back to the platform
+  /// gateway.
+  static Future<Map<String, dynamic>> clearOutletRazorpay({
+    required String outletId,
+    String? updatedBy,
+    String? spreadsheetId,
+  }) async {
+    final clientReqId = const Uuid().v4();
+    final res = await _postToWebhook({
+      'v': 2,
+      'action': 'SET_OUTLET_RAZORPAY',
+      'outletId': outletId,
+      'clientRequestId': clientReqId,
+      if (spreadsheetId != null && spreadsheetId.isNotEmpty) 'spreadsheetId': spreadsheetId,
+      'data': {
+        'outletId': outletId,
+        'clear': true,
+        'updatedBy': updatedBy ?? 'master-admin',
+        'clientRequestId': clientReqId,
+      },
+    });
+    return res ?? {'ok': false, 'success': false, 'error': 'Network error'};
+  }
+
+  /// Tests a pair against Razorpay. Pass both values to test before saving, or
+  /// neither to test whatever is currently stored for the outlet.
+  static Future<Map<String, dynamic>> testOutletRazorpay({
+    required String outletId,
+    String keyId = '',
+    String keySecret = '',
+    String? spreadsheetId,
+  }) async {
+    final res = await _postToWebhook({
+      'v': 2,
+      'action': 'TEST_OUTLET_RAZORPAY',
+      'outletId': outletId,
+      if (spreadsheetId != null && spreadsheetId.isNotEmpty) 'spreadsheetId': spreadsheetId,
+      'data': {
+        'outletId': outletId,
+        'keyId': keyId.trim(),
+        'keySecret': keySecret.trim(),
+      },
+    });
+    return res ?? {'ok': false, 'success': false, 'error': 'Network error'};
+  }
+
+  /// Reports whether an outlet is configured. Returns `keySecretSet` as a
+  /// boolean - the secret itself is never sent back.
+  static Future<Map<String, dynamic>> getOutletRazorpayStatus({
+    required String outletId,
+    String? spreadsheetId,
+  }) async {
+    final res = await _postToWebhook({
+      'v': 2,
+      'action': 'GET_OUTLET_RAZORPAY_STATUS',
+      'outletId': outletId,
+      if (spreadsheetId != null && spreadsheetId.isNotEmpty) 'spreadsheetId': spreadsheetId,
+      'data': {'outletId': outletId},
+    });
+    return res ?? {'ok': false, 'success': false, 'error': 'Network error'};
+  }
+
   /// 17. Reserve Table (§6.2)
   static Future<Map<String, dynamic>> reserveTable({
     required String outletId,

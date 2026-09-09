@@ -86,7 +86,17 @@ class SmtpEmailService {
     );
   }
 
-  /// Updates SMTP Configuration in Firestore & local cache
+  /// Updates SMTP Configuration in Firestore & local cache.
+  ///
+  /// The Firestore write used to be wrapped in a `catch` that only
+  /// `debugPrint`ed, so a failed write still let the console report
+  /// "Configuration Saved!". The config existed on that one device's Hive and
+  /// nowhere else: every other terminal, and every OTP or onboarding mail sent
+  /// from anywhere but that device, silently kept using the old settings.
+  /// It now throws, and the caller is responsible for telling the truth.
+  ///
+  /// The local cache is still written first, so a save that fails only because
+  /// the device is offline leaves this terminal working.
   static Future<void> saveSmtpConfig(SmtpConfig config) async {
     final box = Hive.box('configBox');
     await box.put('smtp_config', config.toMap());
@@ -98,6 +108,11 @@ class SmtpEmailService {
       );
     } catch (e) {
       debugPrint("SmtpEmailService Firestore save error: $e");
+      throw Exception(
+        'Saved on this device only — the platform copy could not be written, '
+        'so other terminals will keep using the previous SMTP settings. '
+        'Check your connection and save again. ($e)',
+      );
     }
   }
 
@@ -117,9 +132,10 @@ class SmtpEmailService {
           <h2 style="color: #10b981; margin-top: 0;">&#10004; SMTP Connection Successful!</h2>
           <p>This test email confirms that your outgoing mail server configuration is working properly.</p>
           <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 16px 0;" />
-          <p><strong>Host:</strong> \${config.host}:\${config.port}</p>
-          <p><strong>Sender:</strong> \${config.username}</p>
-          <p><strong>Sender Name:</strong> \${config.fromName}</p>
+          <p><strong>Host:</strong> ${config.host}:${config.port}</p>
+          <p><strong>Encryption:</strong> ${config.isSsl ? 'SSL' : 'STARTTLS / none'}</p>
+          <p><strong>Sender:</strong> ${config.username}</p>
+          <p><strong>Sender Name:</strong> ${config.fromName}</p>
           <p style="color: #64748b; font-size: 12px; margin-top: 20px;">Sent from SmartDine POS Platform Administration.</p>
         </div>
         ''';

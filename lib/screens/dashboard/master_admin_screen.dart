@@ -18,6 +18,7 @@ import '../../providers/theme_provider.dart';
 import '../../core/subscription_plan_model.dart';
 import '../../services/subscription_plan_service.dart';
 import '../../services/tenant_provisioning_service.dart';
+import 'franchise_payment_settings_dialog.dart';
 
 class MasterAdminScreen extends ConsumerStatefulWidget {
   const MasterAdminScreen({super.key});
@@ -227,6 +228,20 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
                     ),
             ),
             actions: [
+              OutlinedButton.icon(
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  _showFranchisePaymentSettingsDialog();
+                },
+                icon: const Icon(Icons.storefront_rounded, size: 16),
+                label: const Text("Franchise Gateways"),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFFF59E0B),
+                  side: const BorderSide(color: Color(0xFFF59E0B)),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+              ),
+              const Spacer(),
               TextButton(
                 onPressed: () => Navigator.pop(ctx),
                 child: Text("Cancel", style: TextStyle(color: context.textSecondary)),
@@ -264,6 +279,13 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
           );
         },
       ),
+    );
+  }
+
+  void _showFranchisePaymentSettingsDialog() {
+    showDialog(
+      context: context,
+      builder: (ctx) => const FranchisePaymentSettingsDialog(),
     );
   }
 
@@ -715,6 +737,11 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
                 },
               );
             },
+          ),
+          IconButton(
+            icon: const Icon(Icons.storefront_rounded, color: Color(0xFF10B981)),
+            onPressed: _showFranchisePaymentSettingsDialog,
+            tooltip: "Franchise Razorpay Gateways",
           ),
           IconButton(
             icon: const Icon(Icons.payment_rounded, color: Color(0xFFF59E0B)),
