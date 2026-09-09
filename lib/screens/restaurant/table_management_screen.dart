@@ -134,6 +134,20 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
     if (orgUpi != null && orgUpi.trim().isNotEmpty) return orgUpi.trim();
 
     try {
+      if (Hive.isBoxOpen('restaurant_config_box')) {
+        final box = Hive.box('restaurant_config_box');
+        final upi = box.get('restaurant_upi_id');
+        if (upi != null && upi.toString().trim().isNotEmpty) {
+          return upi.toString().trim();
+        }
+      }
+      if (Hive.isBoxOpen('configBox')) {
+        final box = Hive.box('configBox');
+        final upi = box.get('restaurant_upi_id');
+        if (upi != null && upi.toString().trim().isNotEmpty) {
+          return upi.toString().trim();
+        }
+      }
       final user = saasSession.currentUser;
       final email = user?.email ?? '';
       final box = Hive.box('configBox');
@@ -329,29 +343,6 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
       return true;
     }
     return false;
-  }
-
-  String _getDefaultUpiId() {
-    final saasSession = ref.read(saasSessionProvider);
-    final orgUpi = saasSession.currentOrganization?.upiId;
-    if (orgUpi != null && orgUpi.trim().isNotEmpty) return orgUpi.trim();
-    try {
-      if (Hive.isBoxOpen('restaurant_config_box')) {
-        final box = Hive.box('restaurant_config_box');
-        final upi = box.get('restaurant_upi_id');
-        if (upi != null && upi.toString().trim().isNotEmpty) {
-          return upi.toString().trim();
-        }
-      }
-      if (Hive.isBoxOpen('configBox')) {
-        final box = Hive.box('configBox');
-        final upi = box.get('restaurant_upi_id');
-        if (upi != null && upi.toString().trim().isNotEmpty) {
-          return upi.toString().trim();
-        }
-      }
-    } catch (_) {}
-    return '';
   }
 
   double _getGstRate() {
@@ -2925,7 +2916,15 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
   void _showCollectPaymentDialog(KotOrder? order, {RestaurantTable? table}) {
     if (order == null && table == null) return;
 
-    final resolvedTable = table ?? _tables.firstWhereOrNull((t) => order != null && _matchesTable(order, t));
+    RestaurantTable? resolvedTable = table;
+    if (resolvedTable == null && order != null) {
+      for (final t in _tables) {
+        if (_matchesTable(order, t)) {
+          resolvedTable = t;
+          break;
+        }
+      }
+    }
     final activeOrders = _kotOrders.where((o) {
       if (resolvedTable != null) {
         return _matchesTable(o, resolvedTable) &&

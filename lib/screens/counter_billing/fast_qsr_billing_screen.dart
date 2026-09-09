@@ -2595,7 +2595,6 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
       final scP = _numInt(order['serviceChargeP'], 0);
       final cgstP = _numInt(order['cgstP'], 0);
       final sgstP = _numInt(order['sgstP'], 0);
-      final taxP = (cgstP + sgstP > 0) ? (cgstP + sgstP) : _numInt(order['taxableP'], paidPaise - subtotalP);
       final taxableP = _numInt(order['taxableP'], (subtotalP - discountP + scP).clamp(0, 999999999));
       final roundOffP = _numInt(order['roundOffP'], 0);
 

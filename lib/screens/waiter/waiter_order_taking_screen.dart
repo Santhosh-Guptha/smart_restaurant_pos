@@ -2030,8 +2030,8 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
 
     final activeStaff = ref.read(restaurantAuthProvider).activeStaff;
     final currentUser = ref.read(saasSessionProvider).currentUser;
-    final staffName = activeStaff?.name ?? currentUser?.name ?? 'Floor Waiter';
-    final staffRole = activeStaff?.role ?? currentUser?.role ?? 'WAITER';
+    final staffName = activeStaff?.name ?? currentUser?.username ?? currentUser?.email ?? 'Floor Waiter';
+    final staffRole = activeStaff?.role.name ?? currentUser?.role ?? 'WAITER';
 
     try {
       // 1. Consolidate all items across all rounds for this table into a single unified item list
@@ -2215,42 +2215,6 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
       }
     } catch (e) {
       debugPrint('Error settling payment: $e');
-    }
-  }
-
-      if (mounted) {
-        setState(() {
-          _tray.clear();
-        });
-        _clearTrayDraft();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              settleFailures > 0
-                  ? 'Table ${widget.table.tableNumber} settled on this device, but '
-                      '$settleFailures round(s) did NOT reach the cloud and could '
-                      'not be queued. Tell the counter before the guest leaves.'
-                  : settleQueued > 0
-                      ? 'Table ${widget.table.tableNumber} bill settled '
-                          '(₹${totalPaid.toStringAsFixed(0)}). $settleQueued round(s) '
-                          'are queued and will sync automatically.'
-                      : 'Table ${widget.table.tableNumber} bill settled '
-                          '(₹${totalPaid.toStringAsFixed(0)}). Table is now vacant.',
-            ),
-            backgroundColor: settleFailures > 0
-                ? const Color(0xFFDC2626)
-                : settleQueued > 0
-                    ? const Color(0xFFF59E0B)
-                    : const Color(0xFF10B981),
-            duration: Duration(
-              seconds: settleFailures > 0 ? 8 : (settleQueued > 0 ? 5 : 3),
-            ),
-          ),
-        );
-        Navigator.pop(context); // Return to Table Management
-      }
-    } catch (e) {
-      debugPrint('Error settling table bill: $e');
     }
   }
 
