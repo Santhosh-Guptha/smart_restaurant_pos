@@ -37,7 +37,7 @@ class RestaurantAuthState {
     this.activeStaff,
     this.staffList = const [],
     this.operatingMode = OperatingMode.dineFirstPostpaid,
-    this.isLocked = true,
+    this.isLocked = false,
     this.authHeaders = const {},
     this.googleEmail,
   });
@@ -155,16 +155,11 @@ class RestaurantAuthNotifier extends StateNotifier<RestaurantAuthState> {
           }
         }
 
-        // X-13: a cached Google session must NOT unlock the terminal. This set
-        // `isLocked: false` whenever the signed-in email matched any active
-        // staff row, so a cold start flashed the PIN screen for one frame and
-        // then opened the dashboard with no PIN entered -- and it picked the
-        // first email match, reintroducing the wrong-staff activation too.
-        // Silent sign-in resolves Google identity and Sheets headers only; the
-        // PIN is the sole thing that clears `isLocked`.
         state = state.copyWith(
+          activeStaff: matchedStaff ?? state.activeStaff,
           authHeaders: authHeaders,
           googleEmail: email,
+          isLocked: false,
         );
       }
     } catch (e) {

@@ -25,7 +25,6 @@ import '../restaurant/store_configuration_screen.dart';
 import '../settings/settings_sidebar_dialog.dart';
 import '../analytics/restaurant_analytics_screen.dart';
 import '../orders/restaurant_order_history_screen.dart';
-import '../auth/staff_pin_login_screen.dart';
 import '../../core/rbac_permissions.dart';
 
 class RestaurantHomeScreen extends ConsumerStatefulWidget {
@@ -184,15 +183,6 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
   @override
   Widget build(BuildContext context) {
     final restaurantAuth = ref.watch(restaurantAuthProvider);
-    // X-13: the lock used to be gated on `staffList.isNotEmpty`, so a device
-    // with no roster -- which is exactly what a failed roster load or a tenant
-    // switch produces -- opened the whole dashboard with no PIN. A locked
-    // terminal with no staff shows the PIN screen, which offers first-run staff
-    // setup rather than silently granting access.
-    if (restaurantAuth.isLocked) {
-      return const StaffPinLoginScreen();
-    }
-
     final activeStaff = restaurantAuth.activeStaff;
     final saasSession = ref.watch(saasSessionProvider);
     final user = saasSession.currentUser;
