@@ -7,6 +7,7 @@ import 'package:uuid/uuid.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:esc_pos_utils_plus/esc_pos_utils_plus.dart';
 import 'package:print_bluetooth_thermal/print_bluetooth_thermal.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../core/classic_theme.dart';
 import '../../core/constants.dart';
@@ -2196,6 +2197,192 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
   //  PENDING BILLS & PAYMENT SETTLEMENT HELPERS
   // =========================================================================
 
+  bool _isGenericCustomerName(String? name) {
+    if (name == null) return true;
+    final clean = name.trim().toLowerCase();
+    if (clean.isEmpty) return true;
+    if (clean == 'guest' ||
+        clean == 'dine-in guest' ||
+        clean == 'walk-in' ||
+        clean == 'walkin' ||
+        clean == 'customer' ||
+        clean.startsWith('table') ||
+        clean.startsWith('t-') ||
+        clean.startsWith('takeaway') ||
+        clean.contains(' x') ||
+        clean.contains('{') ||
+        clean.contains('[') ||
+        clean.contains(',')) {
+      return true;
+    }
+    return false;
+  }
+
+  String _getDefaultUpiId() {
+    final saasSession = ref.read(saasSessionProvider);
+    final orgUpi = saasSession.currentOrganization?.upiId;
+    if (orgUpi != null && orgUpi.trim().isNotEmpty) return orgUpi.trim();
+    try {
+      if (Hive.isBoxOpen('restaurant_config_box')) {
+        final box = Hive.box('restaurant_config_box');
+        final upi = box.get('restaurant_upi_id');
+        if (upi != null && upi.toString().trim().isNotEmpty) {
+          return upi.toString().trim();
+        }
+      }
+      if (Hive.isBoxOpen('configBox')) {
+        final box = Hive.box('configBox');
+        final upi = box.get('restaurant_upi_id');
+        if (upi != null && upi.toString().trim().isNotEmpty) {
+          return upi.toString().trim();
+        }
+      }
+    } catch (_) {}
+    return '';
+  }
+
+  /// Consolidates multi-round orders for the same table into a single unified bill.
+  List<Map<String, dynamic>> _consolidatePendingOrders(List<Map<String, dynamic>> orders) {
+    final Map<String, List<Map<String, dynamic>>> tableGroups = {};
+    final List<Map<String, dynamic>> nonTableOrders = [];
+
+    for (final order in orders) {
+      final isDineIn = _normalizeOrderType(order) == 'Dine-In';
+      final rawTable = (order['tableName'] ?? order['tableNumber'] ?? '').toString().trim();
+      final tableNum = rawTable.replaceAll(RegExp(r'[^0-9]'), '');
+
+      if (isDineIn && (tableNum.isNotEmpty || rawTable.isNotEmpty)) {
+        final key = tableNum.isNotEmpty ? 'T$tableNum' : rawTable.toUpperCase();
+        tableGroups.putIfAbsent(key, () => []).add(order);
+      } else {
+        nonTableOrders.add(order);
+      }
+    }
+
+    final List<Map<String, dynamic>> consolidated = [];
+
+    // Process table groups
+    tableGroups.forEach((tableKey, groupOrders) {
+      if (groupOrders.length == 1) {
+        consolidated.add(groupOrders.first);
+      } else {
+        // Multi-round table orders: consolidate into 1 single bill!
+        groupOrders.sort((a, b) {
+          final dtA = _parseTimestamp(a['createdAt'] ?? a['timestamp']);
+          final dtB = _parseTimestamp(b['createdAt'] ?? b['timestamp']);
+          return dtA.compareTo(dtB);
+        });
+
+        final primary = groupOrders.first;
+        final roundIds = groupOrders
+            .map((o) => (o['id'] ?? o['bill_id'] ?? '').toString())
+            .where((id) => id.isNotEmpty)
+            .toSet()
+            .toList();
+        final tokens = groupOrders
+            .map((o) => (o['kotNumber'] ?? o['tokenNumber'] ?? '').toString())
+            .where((t) => t.isNotEmpty)
+            .toSet()
+            .toList();
+
+        String customerName = '';
+        String customerPhone = '';
+        String waiterName = '';
+        for (final o in groupOrders) {
+          final name = (o['customerName'] ?? '').toString().trim();
+          if (customerName.isEmpty && !_isGenericCustomerName(name)) {
+            customerName = name;
+          }
+          final phone = (o['customerPhone'] ?? '').toString().trim();
+          if (customerPhone.isEmpty && phone.isNotEmpty) {
+            customerPhone = phone;
+          }
+          final wName = (o['waiterName'] ?? o['placedByStaffName'] ?? '').toString().trim();
+          if (waiterName.isEmpty && wName.isNotEmpty) {
+            waiterName = wName;
+          }
+        }
+
+        // Aggregate all items across rounds
+        final List<dynamic> consolidatedRawItems = [];
+        final Map<String, Map<String, dynamic>> mergedItemsMap = {};
+
+        for (final o in groupOrders) {
+          final items = o['items'];
+          if (items is List) {
+            for (final it in items) {
+              if (it is Map) {
+                final itemId = (it['id'] ?? it['productId'] ?? it['name'] ?? '').toString();
+                final price = (it['price'] as num?)?.toDouble() ?? 0.0;
+                final qty = (it['qty'] as num?)?.toDouble() ?? 1.0;
+                final mapKey = '$itemId-$price';
+                if (mergedItemsMap.containsKey(mapKey)) {
+                  final prev = mergedItemsMap[mapKey]!;
+                  prev['qty'] = ((prev['qty'] as num?)?.toDouble() ?? 0.0) + qty;
+                } else {
+                  final copy = Map<String, dynamic>.from(it);
+                  mergedItemsMap[mapKey] = copy;
+                }
+              }
+            }
+          }
+        }
+        consolidatedRawItems.addAll(mergedItemsMap.values);
+
+        // Sum amounts across rounds
+        double subtotal = 0.0;
+        int subtotalP = 0;
+        int discountP = 0;
+        int serviceChargeP = 0;
+        int cgstP = 0;
+        int sgstP = 0;
+        int roundOffP = 0;
+        int grandTotalP = 0;
+        double totalAmount = 0.0;
+
+        for (final o in groupOrders) {
+          totalAmount += _num(o['totalAmount'] ?? o['total']);
+          final oSub = o['subtotalP'] != null ? (_num(o['subtotalP']) / 100.0) : _num(o['subtotal']);
+          subtotal += oSub;
+          subtotalP += _numInt(o['subtotalP'], (oSub * 100).round());
+          discountP += _numInt(o['discountP'], 0);
+          serviceChargeP += _numInt(o['serviceChargeP'], 0);
+          cgstP += _numInt(o['cgstP'], 0);
+          sgstP += _numInt(o['sgstP'], 0);
+          roundOffP += _numInt(o['roundOffP'], 0);
+          grandTotalP += _numInt(o['grandTotalP'], (_num(o['totalAmount'] ?? o['total']) * 100).round());
+        }
+
+        final consolidatedOrder = Map<String, dynamic>.from(primary);
+        consolidatedOrder['isConsolidated'] = true;
+        consolidatedOrder['sessionRoundsCount'] = groupOrders.length;
+        consolidatedOrder['roundIds'] = roundIds;
+        consolidatedOrder['allOrders'] = groupOrders;
+        consolidatedOrder['items'] = consolidatedRawItems;
+        consolidatedOrder['kotNumber'] = tokens.join(', ');
+        consolidatedOrder['tokenNumber'] = tokens.join(', ');
+        consolidatedOrder['totalAmount'] = totalAmount;
+        consolidatedOrder['total'] = totalAmount;
+        consolidatedOrder['subtotal'] = subtotal;
+        consolidatedOrder['subtotalP'] = subtotalP;
+        consolidatedOrder['discountP'] = discountP;
+        consolidatedOrder['serviceChargeP'] = serviceChargeP;
+        consolidatedOrder['cgstP'] = cgstP;
+        consolidatedOrder['sgstP'] = sgstP;
+        consolidatedOrder['roundOffP'] = roundOffP;
+        consolidatedOrder['grandTotalP'] = grandTotalP;
+        if (customerName.isNotEmpty) consolidatedOrder['customerName'] = customerName;
+        if (customerPhone.isNotEmpty) consolidatedOrder['customerPhone'] = customerPhone;
+        if (waiterName.isNotEmpty) consolidatedOrder['waiterName'] = waiterName;
+
+        consolidated.add(consolidatedOrder);
+      }
+    });
+
+    consolidated.addAll(nonTableOrders);
+    return consolidated;
+  }
+
   bool _isPendingOrder(Map<String, dynamic> o) {
     final status = (o['status'] ?? '').toString().toUpperCase();
     final paymentStatus = (o['paymentStatus'] ?? '').toString().toUpperCase();
@@ -2338,10 +2525,20 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
     final orgId = _getEffectiveOrgId();
     final activeStaff = ref.read(restaurantAuthProvider).activeStaff?.name ?? 'Counter Cashier';
 
+    // Collect all round IDs for this table (multi-round consolidated settlement)
+    final List<String> targetRoundIds = [];
+    if (order['roundIds'] is List) {
+      targetRoundIds.addAll((order['roundIds'] as List).map((e) => e.toString()));
+    }
+    if (!targetRoundIds.contains(orderId) && orderId.isNotEmpty) {
+      targetRoundIds.add(orderId);
+    }
+    final tNum = tableName.replaceAll(RegExp(r'[^0-9]'), '');
+    final isDineIn = (order['orderType'] ?? '').toString().toLowerCase().contains('dine');
+
     try {
-      // 2. Free Dine-in table if table order
-      final tNum = tableName.replaceAll(RegExp(r'[^0-9]'), '');
-      if (tNum.isNotEmpty && (order['orderType'] ?? '').toString().toLowerCase().contains('dine')) {
+      // 1. Free Dine-in table if table order
+      if (tNum.isNotEmpty && isDineIn) {
         // Update Hive restaurant_tables_$orgId
         final box = Hive.isBoxOpen('configBox') ? Hive.box('configBox') : null;
         if (box != null) {
@@ -2357,12 +2554,35 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                 m['status'] = 'VACANT';
                 m['activeOrderCount'] = 0;
                 m['currentBillAmount'] = 0.0;
+                m['currentCustomerName'] = null;
+                m['activeSessionId'] = null;
                 return m;
               }
             }
             return t;
           }).toList();
           await box.put('restaurant_tables_$orgId', updatedTables);
+        }
+      }
+
+      // Also look up any other un-settled rounds in Hive for this table
+      if (tNum.isNotEmpty && isDineIn) {
+        final box = Hive.isBoxOpen('configBox') ? Hive.box('configBox') : null;
+        if (box != null) {
+          final rawOrders = box.get('kot_orders_$orgId') as List? ?? [];
+          for (final ro in rawOrders) {
+            if (ro is Map) {
+              final rTable = (ro['tableName'] ?? ro['tableNumber'] ?? '').toString().replaceAll(RegExp(r'[^0-9]'), '');
+              final rStatus = (ro['status'] ?? '').toString().toUpperCase();
+              final rPay = (ro['paymentStatus'] ?? '').toString().toUpperCase();
+              if (rTable == tNum && rStatus != 'PAID' && rPay != 'PAID') {
+                final rId = (ro['id'] ?? ro['bill_id'] ?? '').toString();
+                if (rId.isNotEmpty && !targetRoundIds.contains(rId)) {
+                  targetRoundIds.add(rId);
+                }
+              }
+            }
+          }
         }
       }
 
@@ -2379,31 +2599,40 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
       final taxableP = _numInt(order['taxableP'], (subtotalP - discountP + scP).clamp(0, 999999999));
       final roundOffP = _numInt(order['roundOffP'], 0);
 
-      // 3. Update Hive kot_orders_$orgId
+      // 2. Atomically update all rounds in Hive kot_orders_$orgId
       final box = Hive.isBoxOpen('configBox') ? Hive.box('configBox') : null;
       Map<String, dynamic> updatedOrderData = Map<String, dynamic>.from(order);
       if (box != null) {
         final rawOrders = box.get('kot_orders_$orgId') as List? ?? [];
         final updatedList = rawOrders.map((o) {
-          if (o is Map && (canonicalId(o) == canonicalId(orderId) || canonicalId(o) == canonicalId(order))) {
-            final m = Map<String, dynamic>.from(o);
-            final oldKitchen = (m['kitchenStatus'] ?? '').toString().toUpperCase();
-            m['paymentStatus'] = 'PAID';
-            m['paymentMode'] = paymentMode;
-            m['isPaid'] = true;
-            if (oldKitchen.isEmpty || oldKitchen == 'PENDING') {
-              m['status'] = 'PAID';
+          if (o is Map) {
+            final oId = (o['id'] ?? o['bill_id'] ?? '').toString();
+            final oTable = (o['tableName'] ?? o['tableNumber'] ?? '').toString().replaceAll(RegExp(r'[^0-9]'), '');
+            final matchesRound = targetRoundIds.contains(oId) || (isDineIn && tNum.isNotEmpty && oTable == tNum);
+            if (matchesRound) {
+              final m = Map<String, dynamic>.from(o);
+              final oldKitchen = (m['kitchenStatus'] ?? '').toString().toUpperCase();
+              m['paymentStatus'] = 'PAID';
+              m['paymentMode'] = paymentMode;
+              m['isPaid'] = true;
+              m['settledBy'] = activeStaff;
+              m['cashierName'] = activeStaff;
+              if (oldKitchen.isEmpty || oldKitchen == 'PENDING') {
+                m['status'] = 'PAID';
+              }
+              if (oId == orderId || targetRoundIds.length == 1) {
+                m['subtotalP'] = subtotalP;
+                m['discountP'] = discountP;
+                m['serviceChargeP'] = scP;
+                m['taxableP'] = taxableP;
+                m['cgstP'] = cgstP;
+                m['sgstP'] = sgstP;
+                m['roundOffP'] = roundOffP;
+                m['paidAmountP'] = paidPaise;
+                updatedOrderData = m;
+              }
+              return m;
             }
-            m['subtotalP'] = subtotalP;
-            m['discountP'] = discountP;
-            m['serviceChargeP'] = scP;
-            m['taxableP'] = taxableP;
-            m['cgstP'] = cgstP;
-            m['sgstP'] = sgstP;
-            m['roundOffP'] = roundOffP;
-            m['paidAmountP'] = paidPaise;
-            updatedOrderData = m;
-            return m;
           }
           return o;
         }).toList();
@@ -2413,6 +2642,11 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
       // Decrement local stock for settled items
       final settledItems = (order['items'] as List?) ?? [];
       _decrementLocalStock(settledItems);
+
+      // Remove from in-memory pending orders
+      setState(() {
+        _pendingOrders.removeWhere((o) => targetRoundIds.contains((o['id'] ?? o['bill_id'] ?? '').toString()));
+      });
 
       // 4. Sync Bill to Google Sheets and Webhook
       try {
@@ -2443,6 +2677,8 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
               'byStaffId': activeStaff,
               'staffId': activeStaff,
               'collectedBy': activeStaff,
+              'cashierName': activeStaff,
+              'waiterName': (order['waiterName'] ?? '').toString(),
               'at': DateTime.now().toIso8601String(),
             },
           );
@@ -2468,8 +2704,15 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
           updatedOrderData['total_amount'] = grandTotal;
           updatedOrderData['gst_rate'] = _num(order['gst_rate'], _gstRate);
           updatedOrderData['subtotal'] = subtotal;
+          updatedOrderData['settledBy'] = activeStaff;
+          updatedOrderData['cashierName'] = activeStaff;
+          if (order['waiterName'] != null) {
+            updatedOrderData['waiterName'] = order['waiterName'];
+          }
+          updatedOrderData['sessionRoundsCount'] = targetRoundIds.length;
+          updatedOrderData['roundIds'] = targetRoundIds;
+
           // Settling at the counter does not change where the order came from.
-          // This used to overwrite it, relabelling every settled QR order.
           if ((updatedOrderData['orderSource'] ?? '').toString().trim().isEmpty) {
             updatedOrderData['orderSource'] = 'POS_COUNTER';
             updatedOrderData['order_source'] = 'POS_COUNTER';
@@ -2477,10 +2720,6 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
           updatedOrderData['subtotalP'] = subtotalP;
           updatedOrderData['discountP'] = discountP;
           updatedOrderData['serviceChargeP'] = scP;
-          // X-05: this sent `taxP` (the GST amount) in the taxable-BASE field,
-          // so the server's taxableP+cgstP+sgstP+roundOffP == grandTotalP check
-          // failed on every settlement and it silently re-derived the split at
-          // 5% -- an 18% store recorded taxable 198.00 and a 1064.36 round-off.
           updatedOrderData['taxableP'] = taxableP;
           updatedOrderData['cgstP'] = cgstP;
           updatedOrderData['sgstP'] = sgstP;
@@ -2877,12 +3116,80 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                         const SizedBox(height: 16),
                       ],
 
+                      // Dynamic UPI QR Section (if UPI)
+                      if (selectedMode == 'UPI') ...[
+                        Builder(
+                          builder: (context) {
+                            final upiId = _getDefaultUpiId();
+                            final saasSession = ref.read(saasSessionProvider);
+                            final shopName = saasSession.currentOrganization?.name ?? 'Restaurant';
+                            final cleanTable = tableName.replaceAll(RegExp(r'[^0-9]'), '');
+                            final note = cleanTable.isNotEmpty ? 'Table $cleanTable Bill' : 'Bill $orderId';
+                            final upiUri = 'upi://pay?pa=$upiId&pn=${Uri.encodeComponent(shopName)}&am=${total.toStringAsFixed(2)}&cu=INR&tn=${Uri.encodeComponent(note)}';
+
+                            return Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(14),
+                              decoration: BoxDecoration(
+                                color: Colors.blue.withValues(alpha: 0.06),
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(color: Colors.blueAccent.withValues(alpha: 0.3)),
+                              ),
+                              child: Column(
+                                children: [
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      const Icon(Icons.qr_code_rounded, color: Colors.blueAccent, size: 20),
+                                      const SizedBox(width: 8),
+                                      Text(
+                                        'Dynamic UPI QR Code',
+                                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.blue.shade900),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 10),
+                                  Container(
+                                    padding: const EdgeInsets.all(12),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white,
+                                      borderRadius: BorderRadius.circular(12),
+                                      boxShadow: [
+                                        BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 8, offset: const Offset(0, 2)),
+                                      ],
+                                    ),
+                                    child: QrImageView(
+                                      data: upiUri,
+                                      version: QrVersions.auto,
+                                      size: 190,
+                                      gapless: true,
+                                      backgroundColor: Colors.white,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    upiId.isNotEmpty ? 'UPI ID: $upiId' : '⚠️ Please configure UPI ID in Store Settings',
+                                    style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: upiId.isNotEmpty ? const Color(0xFF3B82F6) : Colors.red),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  const Text(
+                                    'Customer can scan with GPay, PhonePe, Paytm or any UPI App',
+                                    style: TextStyle(fontSize: 11, color: Colors.black54),
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+                        const SizedBox(height: 16),
+                      ],
+
                       // Confirm & Mark Done Button
                       SizedBox(
                         width: double.infinity,
                         child: ElevatedButton.icon(
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF10B981),
+                            backgroundColor: selectedMode == 'UPI' ? Colors.blueAccent : const Color(0xFF10B981),
                             foregroundColor: Colors.white,
                             padding: const EdgeInsets.symmetric(vertical: 14),
                             elevation: 0,
@@ -2890,7 +3197,13 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                           ),
                           icon: const Icon(Icons.check_circle_rounded, size: 20),
                           label: Text(
-                            'Mark Payment Done & Settle (₹${total.toStringAsFixed(2)})',
+                            selectedMode == 'UPI'
+                                ? 'Confirm UPI Payment Received (₹${total.toStringAsFixed(2)})'
+                                : (selectedMode == 'CASH'
+                                    ? 'Confirm Cash Payment (₹${total.toStringAsFixed(2)})'
+                                    : (selectedMode == 'CARD'
+                                        ? 'Confirm Card Payment (₹${total.toStringAsFixed(2)})'
+                                        : 'Mark Payment Done & Settle (₹${total.toStringAsFixed(2)})')),
                             style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.bold),
                           ),
                           onPressed: () async {
@@ -2898,7 +3211,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                             HapticFeedback.heavyImpact();
                             await _settlePendingBill(
                               order: order,
-                              paymentMode: selectedMode,
+                              paymentMode: selectedMode == 'UPI' ? 'UPI' : selectedMode,
                               paidAmount: total,
                             );
                           },
@@ -3165,16 +3478,20 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
   }
 
   Widget _buildPendingBillsTab(List<Map<String, dynamic>> pendingOrders, String orgId) {
+    // Consolidate multi-round orders for the same table into single unified bills!
+    final consolidatedPendingOrders = _consolidatePendingOrders(pendingOrders);
+
     // 1. Filter by search text
     final query = _pendingSearchCtrl.text.trim().toLowerCase();
-    var filtered = pendingOrders.where((o) {
+    var filtered = consolidatedPendingOrders.where((o) {
       if (query.isEmpty) return true;
       final table = (o['tableName'] ?? o['tableNumber'] ?? '').toString().toLowerCase();
       final token = (o['kotNumber'] ?? o['tokenNumber'] ?? '').toString().toLowerCase();
       final cust = (o['customerName'] ?? '').toString().toLowerCase();
       final phone = (o['customerPhone'] ?? '').toString().toLowerCase();
       final id = (o['id'] ?? '').toString().toLowerCase();
-      return table.contains(query) || token.contains(query) || cust.contains(query) || phone.contains(query) || id.contains(query);
+      final waiter = (o['waiterName'] ?? '').toString().toLowerCase();
+      return table.contains(query) || token.contains(query) || cust.contains(query) || phone.contains(query) || id.contains(query) || waiter.contains(query);
     }).toList();
 
     // 2. Filter by Order Type chip
@@ -3339,6 +3656,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                     final timeAgo = _formatTimeAgo(dt);
                     final customerName = (order['customerName'] ?? '').toString();
                     final customerPhone = (order['customerPhone'] ?? '').toString();
+                    final waiterName = (order['waiterName'] ?? '').toString();
                     final items = _parseOrderItems(order['items']);
                     final itemsSummary = items.isNotEmpty
                         ? items.map((i) => '${i.name} x${i.qty.toInt()}').join(', ')
@@ -3412,6 +3730,21 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                                     style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: context.textSecondary),
                                   ),
                                 ),
+                                if (order['isConsolidated'] == true) ...[
+                                  const SizedBox(width: 6),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                                    decoration: BoxDecoration(
+                                      color: Colors.purple.withValues(alpha: 0.12),
+                                      borderRadius: BorderRadius.circular(6),
+                                      border: Border.all(color: Colors.purple.withValues(alpha: 0.3)),
+                                    ),
+                                    child: Text(
+                                      '${order['sessionRoundsCount'] ?? 2} Rounds',
+                                      style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: Colors.purple),
+                                    ),
+                                  ),
+                                ],
                                 if (token.isNotEmpty) ...[
                                   const SizedBox(width: 6),
                                   Text(
@@ -3448,17 +3781,29 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                if (customerName.isNotEmpty || customerPhone.isNotEmpty) ...[
+                                if (customerName.isNotEmpty || customerPhone.isNotEmpty || waiterName.isNotEmpty) ...[
                                   Row(
                                     children: [
-                                      Icon(Icons.person_rounded, size: 14, color: context.textSecondary),
-                                      const SizedBox(width: 4),
-                                      Text(
-                                        customerName.isNotEmpty ? customerName : 'Guest',
-                                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: context.textPrimary),
-                                      ),
-                                      if (customerPhone.isNotEmpty) ...[
-                                        Text(' • $customerPhone', style: TextStyle(fontSize: 11.5, color: context.textSecondary)),
+                                      if (customerName.isNotEmpty || customerPhone.isNotEmpty) ...[
+                                        Icon(Icons.person_rounded, size: 14, color: context.textSecondary),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          customerName.isNotEmpty ? customerName : 'Guest',
+                                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: context.textPrimary),
+                                        ),
+                                        if (customerPhone.isNotEmpty) ...[
+                                          Text(' • $customerPhone', style: TextStyle(fontSize: 11.5, color: context.textSecondary)),
+                                        ],
+                                      ],
+                                      if (waiterName.isNotEmpty) ...[
+                                        if (customerName.isNotEmpty || customerPhone.isNotEmpty)
+                                          const SizedBox(width: 10),
+                                        Icon(Icons.badge_outlined, size: 13, color: Colors.indigo.shade400),
+                                        const SizedBox(width: 3),
+                                        Text(
+                                          'Waiter: $waiterName',
+                                          style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Colors.indigo.shade600),
+                                        ),
                                       ],
                                     ],
                                   ),

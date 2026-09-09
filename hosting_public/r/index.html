@@ -155,8 +155,10 @@
       cart: {},             // { itemId: qty }
       checkoutOpen: false,
       deviceId: getOrCreateDeviceId(),
-      customerName: localStorage.getItem('sb_customer_name') || '',
+      customerName: localStorage.getItem('sb_customer_name') || localStorage.getItem('sb_guest_name') || '',
       customerPhone: localStorage.getItem('sb_customer_phone') || '',
+      includeServiceCharge: true, // Default ON
+      selectedTip: 0,
       specialInstructions: '',
       orderPlaced: null,    // { orderId, kotNumber, items, total }
       orderHistory: [],     // All KOT orders placed for this table session
@@ -973,15 +975,34 @@
                   <span class="font-semibold text-slate-800">₹${getCartSubtotal().toFixed(2)}</span>
                 </div>
                 ${(Number(state.serviceCharge) || 0) > 0 ? `
-                  <div class="flex justify-between items-center text-slate-500">
-                    <span>Service Charge (${state.serviceCharge}%)</span>
-                    <span>₹${getCartServiceCharge().toFixed(2)}</span>
+                  <div class="flex justify-between items-center text-slate-700 bg-amber-50/60 p-2 rounded-lg border border-amber-200/50">
+                    <label class="flex items-center gap-2 cursor-pointer text-xs font-semibold select-none">
+                      <input type="checkbox" ${state.includeServiceCharge !== false ? 'checked' : ''} onchange="toggleServiceCharge(this.checked)" class="w-4 h-4 text-blue-600 rounded focus:ring-blue-500 accent-blue-600 cursor-pointer">
+                      <span>Service Charge (${state.serviceCharge}%)</span>
+                    </label>
+                    <span class="font-bold ${state.includeServiceCharge !== false ? 'text-slate-800' : 'text-slate-400 line-through'}">₹${getCartServiceCharge().toFixed(2)}</span>
                   </div>
                 ` : ''}
                 <div class="flex justify-between items-center text-slate-500">
                   <span>GST (${state.gstRate || 5}%)</span>
                   <span>₹${getCartGst().toFixed(2)}</span>
                 </div>
+
+                <!-- Server Tip Selection Chips -->
+                <div class="pt-2 border-t border-slate-100">
+                  <div class="flex justify-between items-center mb-1.5">
+                    <span class="text-[11px] font-bold text-slate-700">Add Server Tip (Optional)</span>
+                    <span class="text-xs font-bold text-emerald-600">${state.selectedTip > 0 ? '₹' + state.selectedTip : 'None'}</span>
+                  </div>
+                  <div class="grid grid-cols-4 gap-1.5">
+                    ${[0, 20, 50, 100].map(tip => `
+                      <button type="button" onclick="setSelectedTip(${tip})" class="py-1 px-2 rounded-lg text-xs font-bold transition border ${state.selectedTip === tip ? 'bg-blue-600 text-white border-blue-600 shadow-sm' : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'}">
+                        ${tip === 0 ? 'No Tip' : '₹' + tip}
+                      </button>
+                    `).join('')}
+                  </div>
+                </div>
+
                 <div class="flex justify-between items-center pt-2 border-t border-slate-100 font-bold text-sm text-slate-900">
                   <span>Total Payable</span>
                   <span class="text-base text-blue-600 font-extrabold">₹${getCartGrandTotal().toFixed(2)}</span>
@@ -1387,6 +1408,9 @@
                 <div><span class="text-slate-400">Customer:</span> <span class="font-semibold text-slate-800">${esc(receipt.customerName || state.customerName || 'Guest')}</span></div>
                 <div><span class="text-slate-400">Payment:</span> <span class="font-semibold text-slate-800">${esc(receipt.paymentMode || 'UPI')}</span></div>
                 <div class="col-span-2"><span class="text-slate-400">Txn / UTR ID:</span> <span class="font-mono font-bold text-blue-700">${esc(receipt.transactionId || 'Confirmed')}</span></div>
+                ${(receipt.settledBy || receipt.cashierName || receipt.waiterName) ? `
+                  <div class="col-span-2 flex items-center gap-1"><span class="text-slate-400">Settled by:</span> <span class="font-semibold text-indigo-700">🧑‍💼 ${esc(receipt.settledBy || receipt.cashierName || receipt.waiterName)}</span></div>
+                ` : ''}
               </div>
 
               <div class="space-y-1.5 mb-3">
@@ -1994,6 +2018,7 @@
     }
 
     function getCartServiceCharge() {
+      if (state.includeServiceCharge === false) return 0;
       const sub = getCartSubtotal();
       return sub * ((Number(state.serviceCharge) || 0) / 100);
     }
@@ -2005,11 +2030,22 @@
     }
 
     function getCartGrandTotal() {
-      return getCartSubtotal() + getCartServiceCharge() + getCartGst();
+      const tip = Number(state.selectedTip) || 0;
+      return getCartSubtotal() + getCartServiceCharge() + getCartGst() + tip;
     }
 
     function getCartTotal() {
       return getCartGrandTotal();
+    }
+
+    function toggleServiceCharge(checked) {
+      state.includeServiceCharge = !!checked;
+      renderMenu();
+    }
+
+    function setSelectedTip(amt) {
+      state.selectedTip = Number(amt) || 0;
+      renderMenu();
     }
 
     function getNextDailyToken() {
@@ -2099,16 +2135,23 @@
     }
 
     function buildFallbackReceipt(orderHistory, grandTotal) {
+      const orders = (Array.isArray(orderHistory) && orderHistory.length > 0) ? orderHistory : (state.orderPlaced ? [state.orderPlaced] : []);
+      const settledOrder = orders.slice().reverse().find(o => o.settledBy || o.cashierName || o.waiterName) || (orders.length > 0 ? orders[orders.length - 1] : {});
+      const settledPerson = settledOrder.settledBy || settledOrder.cashierName || settledOrder.waiterName || state.settledBy || '';
       return {
         billId: 'BILL_T' + state.tableNumber + '_' + (state.orderPlaced?.kotNumber || Date.now().toString().slice(-4)),
         timestamp: new Date().toLocaleString(),
-        customerName: state.customerName || 'Guest',
-        customerPhone: state.customerPhone || '',
-        paymentMode: 'UPI',
-        transactionId: state.transactionId || 'PAID',
+        customerName: state.customerName || settledOrder.customerName || 'Guest',
+        customerPhone: state.customerPhone || settledOrder.customerPhone || '',
+        paymentMode: settledOrder.paymentMode || 'UPI',
+        transactionId: state.transactionId || settledOrder.transactionId || 'PAID',
         items: getAllItemsAcrossRounds(),
         totalAmount: grandTotal,
         tableNumber: state.tableNumber,
+        settledBy: settledPerson,
+        cashierName: settledOrder.cashierName || '',
+        waiterName: settledOrder.waiterName || '',
+        tip: Number(state.selectedTip) || 0,
         savedAt: Date.now()
       };
     }
@@ -2560,6 +2603,8 @@
       const timeStr = esc(String(receipt.timestamp || new Date().toLocaleString()));
       const mode = esc(String(receipt.paymentMode || 'Online'));
       const txn = esc(String(receipt.transactionId || ''));
+      const settledBy = esc(String(receipt.settledBy || receipt.cashierName || receipt.waiterName || ''));
+      const tip = Number(receipt.tip || 0);
 
       const items = Array.isArray(receipt.items) ? receipt.items : [];
       const subtotal = Number(receipt.subtotalAmount || receipt.subtotal || 0) || items.reduce((s, it) => s + (Number(it.price) * Number(it.qty)), 0);
@@ -2608,6 +2653,7 @@
     <div class="info-row"><span class="info-label">Date & Time:</span><span class="info-val">${timeStr}</span></div>
     <div class="info-row"><span class="info-label">Payment Mode:</span><span class="info-val">${mode}</span></div>
     ${txn ? `<div class="info-row"><span class="info-label">Transaction ID:</span><span class="info-val" style="font-family: monospace; color: #0284c7;">${txn}</span></div>` : ''}
+    ${settledBy ? `<div class="info-row"><span class="info-label">Settled by:</span><span class="info-val" style="color: #4f46e5;">🧑‍💼 ${settledBy}</span></div>` : ''}
 
     <table class="items-table">
       <thead>
@@ -2640,6 +2686,7 @@
         <div class="info-row"><span class="info-label">CGST (${(effGstRate / 2).toFixed(1)}%):</span><span class="info-val">₹${cgst}</span></div>
         <div class="info-row"><span class="info-label">SGST (${(effGstRate / 2).toFixed(1)}%):</span><span class="info-val">₹${sgst}</span></div>
       ` : ''}
+      ${tip > 0 ? `<div class="info-row"><span class="info-label">Server Tip:</span><span class="info-val">₹${tip.toFixed(2)}</span></div>` : ''}
     </div>
 
     <div class="total-row">
@@ -3035,7 +3082,10 @@
       const instrEl = document.getElementById('specialInstructionsInput');
       if (nameEl) {
         state.customerName = nameEl.value.trim();
-        try { localStorage.setItem('sb_customer_name', state.customerName); } catch (e) {}
+        try {
+          localStorage.setItem('sb_customer_name', state.customerName);
+          localStorage.setItem('sb_guest_name', state.customerName);
+        } catch (e) {}
       }
       if (phoneEl) {
         state.customerPhone = phoneEl.value.trim();
@@ -3298,6 +3348,11 @@
       try {
         const guestName = sanitizeFormulaPrefix(state.customerName.trim());
         const guestPhone = sanitizeFormulaPrefix(state.customerPhone.trim());
+        try {
+          localStorage.setItem('sb_customer_name', guestName);
+          localStorage.setItem('sb_guest_name', guestName);
+          if (guestPhone) localStorage.setItem('sb_customer_phone', guestPhone);
+        } catch (_) {}
         const specialInstr = sanitizeFormulaPrefix((state.specialInstructions || '').trim());
         let kotNumber = getNextDailyToken();
         let orderId = kotNumber;
@@ -3340,6 +3395,8 @@
               subtotal: subtotal,
               service_charge: serviceChargeAmt,
               service_charge_rate: Number(state.serviceCharge) || 0,
+              include_service_charge: state.includeServiceCharge !== false,
+              tip: Number(state.selectedTip) || 0,
               gst: gstAmt,
               gst_rate: Number(state.gstRate) || 5,
               total_amount: grandTotal,
@@ -3384,6 +3441,8 @@
           items: summaryItems,
           subtotal: subtotal,
           serviceCharge: serviceChargeAmt,
+          includeServiceCharge: state.includeServiceCharge !== false,
+          tip: Number(state.selectedTip) || 0,
           gst: gstAmt,
           total: grandTotal,
           customerName: guestName,
@@ -3485,14 +3544,17 @@
                 const orderObj = {
                   orderId: String(rawId),
                   kotNumber: canonicalId.startsWith('KOT-') ? canonicalId : ('KOT-' + canonicalId),
-                  customerName: String(o.customerName || 'Guest'),
-                  customerPhone: String(o.customerPhone || ''),
+                  customerName: String(o.customerName || o.customer_name || 'Guest'),
+                  customerPhone: String(o.customerPhone || o.customer_phone || ''),
                   items: items,
                   total: rawTotal,
                   status: rawStatus,
-                  paymentMode: String(o.paymentMode || ''),
+                  paymentMode: String(o.paymentMode || o.payment_mode || ''),
                   transactionId: rawTxn,
-                  timestamp: String(o.timestamp || 'Earlier')
+                  timestamp: String(o.timestamp || 'Earlier'),
+                  settledBy: String(o.settledBy || o.settled_by || o.cashierName || o.cashier_name || o.waiterName || o.waiter_name || ''),
+                  cashierName: String(o.cashierName || o.cashier_name || ''),
+                  waiterName: String(o.waiterName || o.waiter_name || '')
                 };
 
                 if (orderMap.has(canonicalId)) {
@@ -3517,6 +3579,16 @@
                 const tB = b.timestamp ? new Date(b.timestamp).getTime() || 0 : 0;
                 return tA - tB;
               });
+
+              // Persist customer name if table already has an active named session (e.g. entered by waiter)
+              const existingCust = remoteOrders.map(o => o.customerName).find(n => n && !/^(guest|dine-in|walk-in|table\s*\d+)$/i.test(n.trim()));
+              if (existingCust && (!state.customerName || /^(guest|dine-in|walk-in|table\s*\d+)$/i.test(state.customerName.trim()))) {
+                state.customerName = existingCust;
+                try {
+                  localStorage.setItem('sb_customer_name', existingCust);
+                  localStorage.setItem('sb_guest_name', existingCust);
+                } catch (_) {}
+              }
 
               if (remoteOrders.length > 0) {
                 // Table is ONLY paid if ALL orders on this table are settled/paid
@@ -4141,6 +4213,8 @@
     window.validateNameLive = validateNameLive;
     window.validatePhoneLive = validatePhoneLive;
     window.updateInstrCounter = updateInstrCounter;
+    window.toggleServiceCharge = toggleServiceCharge;
+    window.setSelectedTip = setSelectedTip;
     window.handlePlaceOrder = handlePlaceOrder;
     window.downloadReceiptDirectly = downloadReceiptDirectly;
     window.shareBillSplitWhatsApp = shareBillSplitWhatsApp;

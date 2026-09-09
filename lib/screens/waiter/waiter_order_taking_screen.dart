@@ -18,6 +18,7 @@ import '../../services/kitchen_ticket_formatter.dart';
 import '../../sync/outbox.dart';
 import 'package:esc_pos_utils_plus/esc_pos_utils_plus.dart';
 import 'package:print_bluetooth_thermal/print_bluetooth_thermal.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 
 class WaiterOrderTakingScreen extends ConsumerStatefulWidget {
   final RestaurantTable table;
@@ -102,6 +103,72 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
     return 0.0;
   }
 
+  bool _isGenericCustomerName(String? name) {
+    if (name == null) return true;
+    final clean = name.trim().toLowerCase();
+    if (clean.isEmpty) return true;
+    if (clean == 'guest' || clean == 'dine-in' || clean == 'dine-in guest' || clean == 'walk-in' || clean == 'customer') return true;
+    if (clean.startsWith('table') || clean.startsWith('takeaway')) return true;
+    if (clean.contains(' x') || clean.contains('{') || clean.contains('[') || clean.contains(',')) return true;
+    return false;
+  }
+
+  void _persistCustomerNameToTable(String guestName) {
+    if (guestName.trim().isEmpty) return;
+    try {
+      final orgId = _getEffectiveOrgId();
+      if (Hive.isBoxOpen('configBox')) {
+        final box = Hive.box('configBox');
+        final rawTables = box.get('restaurant_tables_$orgId') as List? ?? [];
+        final cleanWTable = cleanTableId(widget.table.tableNumber);
+        final cleanWName = cleanTableId(widget.table.name);
+        final updatedTables = rawTables.map((t) {
+          if (t is Map) {
+            final tm = Map<String, dynamic>.from(t);
+            final cleanTNum = cleanTableId(tm['tableNumber']?.toString() ?? '');
+            final cleanTName = cleanTableId(tm['name']?.toString() ?? '');
+            final matches = (cleanWTable.isNotEmpty && (cleanWTable == cleanTNum || cleanWTable == cleanTName)) ||
+                (cleanWName.isNotEmpty && (cleanWName == cleanTNum || cleanWName == cleanTName)) ||
+                tm['id'] == widget.table.id;
+            if (matches) {
+              tm['currentCustomerName'] = guestName.trim();
+              if (_customerPhoneCtrl.text.trim().isNotEmpty) {
+                tm['currentCustomerPhone'] = _customerPhoneCtrl.text.trim();
+              }
+            }
+            return tm;
+          }
+          return t;
+        }).toList();
+        box.put('restaurant_tables_$orgId', updatedTables);
+      }
+    } catch (_) {}
+  }
+
+  String _getDefaultUpiId() {
+    final saasSession = ref.read(saasSessionProvider);
+    final orgUpi = saasSession.currentOrganization?.upiId;
+    if (orgUpi != null && orgUpi.trim().isNotEmpty) return orgUpi.trim();
+
+    try {
+      if (Hive.isBoxOpen('restaurant_config_box')) {
+        final box = Hive.box('restaurant_config_box');
+        final upi = box.get('restaurant_upi_id');
+        if (upi != null && upi.toString().trim().isNotEmpty) {
+          return upi.toString().trim();
+        }
+      }
+      if (Hive.isBoxOpen('configBox')) {
+        final box = Hive.box('configBox');
+        final upi = box.get('restaurant_upi_id');
+        if (upi != null && upi.toString().trim().isNotEmpty) {
+          return upi.toString().trim();
+        }
+      }
+    } catch (_) {}
+    return '';
+  }
+
   @override
   void initState() {
     super.initState();
@@ -109,14 +176,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
       _tableOrders = [widget.existingOrder!];
     }
     final rawCust = (widget.table.currentCustomerName ?? '').trim();
-    // Sanitize: Do not prefill if it looks like a dish name, table name, takeaway, or item summary
-    if (rawCust.isNotEmpty &&
-        !rawCust.toLowerCase().startsWith('table') &&
-        !rawCust.toLowerCase().startsWith('takeaway') &&
-        !rawCust.contains(' x') &&
-        !rawCust.contains('{') &&
-        !rawCust.contains('[') &&
-        !rawCust.contains(',')) {
+    if (rawCust.isNotEmpty && !_isGenericCustomerName(rawCust)) {
       _customerNameCtrl.text = rawCust;
     } else {
       _customerNameCtrl.text = '';
@@ -324,17 +384,23 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
       setState(() {
         _tableOrders = matched;
         if (matched.isNotEmpty) {
-          final active = matched.first;
-          if (_customerNameCtrl.text.trim().isEmpty &&
-              active.customerName != null &&
-              active.customerName!.trim().isNotEmpty &&
-              active.customerName != 'Dine-In Guest') {
-            _customerNameCtrl.text = active.customerName!.trim();
+          if (_customerNameCtrl.text.trim().isEmpty) {
+            for (final o in matched) {
+              final cName = o.customerName?.trim();
+              if (cName != null && !_isGenericCustomerName(cName)) {
+                _customerNameCtrl.text = cName;
+                break;
+              }
+            }
           }
-          if (_customerPhoneCtrl.text.trim().isEmpty &&
-              active.customerPhone != null &&
-              active.customerPhone!.trim().isNotEmpty) {
-            _customerPhoneCtrl.text = active.customerPhone!.trim();
+          if (_customerPhoneCtrl.text.trim().isEmpty) {
+            for (final o in matched) {
+              final cPhone = o.customerPhone?.trim();
+              if (cPhone != null && cPhone.isNotEmpty) {
+                _customerPhoneCtrl.text = cPhone;
+                break;
+              }
+            }
           }
         }
       });
@@ -1422,7 +1488,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
     }
   }
 
-  // ── Settle Table Bill Dialog with Tip Option ──────────────────────────
+  // ── Settle Table Bill Dialog with Dynamic UPI QR & Toggleable Service Charge ──────────────────────────
   void _showSettleBillDialog() {
     // Calculate table totals across all active orders
     double tableSubtotal = 0.0;
@@ -1437,11 +1503,12 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
       tableSubtotal = _tableOrders.fold<double>(0.0, (prev, o) => prev + o.totalAmount);
     }
 
-    final double scAmt = tableSubtotal * (_storeServiceChargeRate / 100);
-    final double gstAmt = (tableSubtotal + scAmt) * (_storeGstRate / 100);
-
+    // Service Charge default: ON if store has a configured service charge rate
+    bool includeServiceCharge = _storeServiceChargeRate > 0;
+    String selectedPaymentMode = 'UPI / QR'; // Default to UPI for instant dynamic QR
     _selectedTip = 0.0;
     _customTipCtrl.clear();
+    final cashReceivedCtrl = TextEditingController();
 
     showModalBottomSheet(
       context: context,
@@ -1449,7 +1516,18 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
       backgroundColor: Colors.transparent,
       builder: (ctx) => StatefulBuilder(
         builder: (context, setModalState) {
-          final totalPayable = tableSubtotal + scAmt + gstAmt + _selectedTip;
+          final double scAmt = includeServiceCharge ? (tableSubtotal * (_storeServiceChargeRate / 100)) : 0.0;
+          final double gstAmt = (tableSubtotal + scAmt) * (_storeGstRate / 100);
+          final double totalPayable = tableSubtotal + scAmt + gstAmt + _selectedTip;
+
+          final saasSession = ref.read(saasSessionProvider);
+          final shopName = saasSession.currentOrganization?.name ?? 'SmartDine Restaurant';
+          final upiId = _getDefaultUpiId();
+          final cleanTableNum = widget.table.tableNumber.replaceAll(RegExp(r'^Table\s*', caseSensitive: false), '').trim();
+          final upiUri = 'upi://pay?pa=$upiId&pn=${Uri.encodeComponent(shopName)}&am=${totalPayable.toStringAsFixed(2)}&cu=INR&tn=${Uri.encodeComponent("Table $cleanTableNum Bill")}';
+
+          final double cashEntered = double.tryParse(cashReceivedCtrl.text.trim()) ?? totalPayable;
+          final double cashChange = (cashEntered - totalPayable).clamp(0.0, double.infinity);
 
           return Container(
             padding: EdgeInsets.only(
@@ -1482,11 +1560,11 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'Settle Bill • Table ${widget.table.tableNumber}',
+                            'Settle Table $cleanTableNum Bill',
                             style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
                           ),
                           Text(
-                            'Guest: ${_customerNameCtrl.text.isNotEmpty ? _customerNameCtrl.text : "Dine-In"} • ${_tableOrders.length} KOT rounds',
+                            'Guest: ${_customerNameCtrl.text.isNotEmpty ? _customerNameCtrl.text : "Dine-In"} • ${_tableOrders.length} rounds • ${allItems.length} items',
                             style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
                           ),
                         ],
@@ -1497,9 +1575,9 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                       ),
                     ],
                   ),
-                  const Divider(height: 24),
+                  const Divider(height: 20),
 
-                  // Itemized Bill Summary
+                  // Itemized Bill Summary with Service Charge Toggle
                   Container(
                     padding: const EdgeInsets.all(14),
                     decoration: BoxDecoration(
@@ -1521,8 +1599,36 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              Text('Service Charge (${_storeServiceChargeRate.toStringAsFixed(1)}%)', style: const TextStyle(fontSize: 13, color: Color(0xFF64748B))),
-                              Text('₹${scAmt.toStringAsFixed(2)}', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                              Row(
+                                children: [
+                                  Text(
+                                    'Service Charge (${_storeServiceChargeRate.toStringAsFixed(1)}%)',
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      color: includeServiceCharge ? const Color(0xFF0F172A) : const Color(0xFF94A3B8),
+                                      fontWeight: includeServiceCharge ? FontWeight.w600 : FontWeight.normal,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Transform.scale(
+                                    scale: 0.75,
+                                    child: Switch(
+                                      value: includeServiceCharge,
+                                      activeColor: const Color(0xFF2563EB),
+                                      onChanged: (val) => setModalState(() => includeServiceCharge = val),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              Text(
+                                includeServiceCharge ? '₹${scAmt.toStringAsFixed(2)}' : '₹0.00',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  color: includeServiceCharge ? const Color(0xFF0F172A) : const Color(0xFF94A3B8),
+                                  decoration: includeServiceCharge ? null : TextDecoration.lineThrough,
+                                ),
+                              ),
                             ],
                           ),
                         ],
@@ -1551,14 +1657,14 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                             const Text('Grand Total', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
                             Text(
                               '₹${totalPayable.toStringAsFixed(2)}',
-                              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+                              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
                             ),
                           ],
                         ),
                       ],
                     ),
                   ),
-                  const SizedBox(height: 18),
+                  const SizedBox(height: 16),
 
                   // ── EXCLUSIVE WAITER TIP SECTION ─────────────────────
                   Row(
@@ -1605,76 +1711,254 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                       ),
                     ],
                   ),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 18),
 
-                  // Payment Mode Buttons
+                  // Payment Mode Tabs
                   const Text('Select Payment Method', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF64748B))),
                   const SizedBox(height: 10),
                   Row(
                     children: [
-                      Expanded(
-                        child: ElevatedButton.icon(
-                          icon: const Icon(Icons.payments_rounded, size: 18),
-                          label: const Text('Cash'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF10B981),
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 14),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                          ),
-                          onPressed: () async {
-                            if (await _confirmUnservedVacate()) {
-                              if (ctx.mounted) Navigator.pop(ctx);
-                              _processSettlePayment('CASH', totalPayable, _selectedTip);
-                            }
-                          },
-                        ),
-                      ),
+                      _buildPayModeChip('UPI / QR', Icons.qr_code_2_rounded, selectedPaymentMode, (m) => setModalState(() => selectedPaymentMode = m)),
                       const SizedBox(width: 8),
-                      Expanded(
-                        child: ElevatedButton.icon(
-                          icon: const Icon(Icons.qr_code_2_rounded, size: 18),
-                          label: const Text('UPI / QR'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF2563EB),
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 14),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                          ),
-                          onPressed: () async {
-                            if (await _confirmUnservedVacate()) {
-                              if (ctx.mounted) Navigator.pop(ctx);
-                              _processSettlePayment('UPI', totalPayable, _selectedTip);
-                            }
-                          },
-                        ),
-                      ),
+                      _buildPayModeChip('CASH', Icons.payments_rounded, selectedPaymentMode, (m) => setModalState(() => selectedPaymentMode = m)),
                       const SizedBox(width: 8),
-                      Expanded(
-                        child: ElevatedButton.icon(
-                          icon: const Icon(Icons.credit_card_rounded, size: 18),
-                          label: const Text('Card'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF7C3AED),
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 14),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                          ),
-                          onPressed: () async {
-                            if (await _confirmUnservedVacate()) {
-                              if (ctx.mounted) Navigator.pop(ctx);
-                              _processSettlePayment('CARD', totalPayable, _selectedTip);
-                            }
-                          },
-                        ),
-                      ),
+                      _buildPayModeChip('CARD', Icons.credit_card_rounded, selectedPaymentMode, (m) => setModalState(() => selectedPaymentMode = m)),
                     ],
                   ),
+                  const SizedBox(height: 16),
+
+                  // Dynamic UPI QR Section
+                  if (selectedPaymentMode == 'UPI / QR') ...[
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFEFF6FF),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: const Color(0xFFBFDBFE)),
+                      ),
+                      child: Column(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(14),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.06),
+                                  blurRadius: 10,
+                                  offset: const Offset(0, 4),
+                                ),
+                              ],
+                            ),
+                            child: QrImageView(
+                              data: upiUri,
+                              version: QrVersions.auto,
+                              size: 190,
+                              backgroundColor: Colors.white,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            'Scan & Pay ₹${totalPayable.toStringAsFixed(2)}',
+                            style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Color(0xFF1E3A8A)),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            upiId.isNotEmpty ? 'UPI ID: $upiId' : 'Please configure UPI ID in Store Settings',
+                            style: TextStyle(fontSize: 11.5, color: upiId.isNotEmpty ? const Color(0xFF3B82F6) : Colors.red),
+                          ),
+                          const SizedBox(height: 6),
+                          const Text(
+                            'Scan with GPay, PhonePe, Paytm or any UPI App',
+                            style: TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        icon: const Icon(Icons.check_circle_rounded, size: 20),
+                        label: Text('Confirm UPI Payment Received (₹${totalPayable.toStringAsFixed(2)})'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF10B981),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                        onPressed: () async {
+                          if (await _confirmUnservedVacate()) {
+                            if (ctx.mounted) Navigator.pop(ctx);
+                            _processSettlePayment(
+                              'UPI',
+                              totalPayable,
+                              _selectedTip,
+                              subtotal: tableSubtotal,
+                              serviceCharge: scAmt,
+                              gst: gstAmt,
+                            );
+                          }
+                        },
+                      ),
+                    ),
+                  ] else if (selectedPaymentMode == 'CASH') ...[
+                    Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF0FDF4),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: const Color(0xFFBBF7D0)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              const Text('Cash Received (₹):', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: TextField(
+                                  controller: cashReceivedCtrl,
+                                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                                  decoration: InputDecoration(
+                                    isDense: true,
+                                    contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                    filled: true,
+                                    fillColor: Colors.white,
+                                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                                  ),
+                                  onChanged: (_) => setModalState(() {}),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 10),
+                          Wrap(
+                            spacing: 8,
+                            children: [
+                              ActionChip(
+                                label: const Text('Exact'),
+                                onPressed: () {
+                                  cashReceivedCtrl.text = totalPayable.toStringAsFixed(0);
+                                  setModalState(() {});
+                                },
+                              ),
+                              ActionChip(
+                                label: const Text('₹500'),
+                                onPressed: () {
+                                  cashReceivedCtrl.text = '500';
+                                  setModalState(() {});
+                                },
+                              ),
+                              ActionChip(
+                                label: const Text('₹1000'),
+                                onPressed: () {
+                                  cashReceivedCtrl.text = '1000';
+                                  setModalState(() {});
+                                },
+                              ),
+                            ],
+                          ),
+                          if (cashChange > 0) ...[
+                            const SizedBox(height: 10),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                const Text('Change to return:', style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+                                Text(
+                                  '₹${cashChange.toStringAsFixed(2)}',
+                                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF10B981)),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        icon: const Icon(Icons.check_circle_rounded, size: 20),
+                        label: Text('Confirm Cash Payment (₹${totalPayable.toStringAsFixed(2)})'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF10B981),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                        onPressed: () async {
+                          if (await _confirmUnservedVacate()) {
+                            if (ctx.mounted) Navigator.pop(ctx);
+                            _processSettlePayment(
+                              'CASH',
+                              totalPayable,
+                              _selectedTip,
+                              subtotal: tableSubtotal,
+                              serviceCharge: scAmt,
+                              gst: gstAmt,
+                            );
+                          }
+                        },
+                      ),
+                    ),
+                  ] else ...[
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        icon: const Icon(Icons.credit_card_rounded, size: 20),
+                        label: Text('Confirm Card Payment (₹${totalPayable.toStringAsFixed(2)})'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF7C3AED),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                        onPressed: () async {
+                          if (await _confirmUnservedVacate()) {
+                            if (ctx.mounted) Navigator.pop(ctx);
+                            _processSettlePayment(
+                              'CARD',
+                              totalPayable,
+                              _selectedTip,
+                              subtotal: tableSubtotal,
+                              serviceCharge: scAmt,
+                              gst: gstAmt,
+                            );
+                          }
+                        },
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
           );
         },
+      ),
+    );
+  }
+
+  Widget _buildPayModeChip(String label, IconData icon, String current, Function(String) onSelect) {
+    final isSel = current == label;
+    return Expanded(
+      child: ChoiceChip(
+        label: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 16, color: isSel ? Colors.white : const Color(0xFF334155)),
+            const SizedBox(width: 4),
+            Text(label, style: TextStyle(color: isSel ? Colors.white : const Color(0xFF334155), fontWeight: FontWeight.bold, fontSize: 12)),
+          ],
+        ),
+        selected: isSel,
+        onSelected: (_) => onSelect(label),
+        selectedColor: const Color(0xFF2563EB),
+        backgroundColor: const Color(0xFFF1F5F9),
       ),
     );
   }
@@ -1730,20 +2014,55 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
     );
   }
 
-  Future<void> _processSettlePayment(String paymentMode, double totalPaid, double tip) async {
+  Future<void> _processSettlePayment(
+    String paymentMode,
+    double totalPaid,
+    double tip, {
+    double subtotal = 0.0,
+    double serviceCharge = 0.0,
+    double gst = 0.0,
+  }) async {
     final orgId = _getEffectiveOrgId();
     final tNum = cleanTableId(widget.table.tableNumber);
     final tableName = widget.table.name.trim().isNotEmpty
         ? widget.table.name
         : 'Table ${widget.table.tableNumber}';
 
+    final activeStaff = ref.read(restaurantAuthProvider).activeStaff;
+    final currentUser = ref.read(saasSessionProvider).currentUser;
+    final staffName = activeStaff?.name ?? currentUser?.name ?? 'Floor Waiter';
+    final staffRole = activeStaff?.role ?? currentUser?.role ?? 'WAITER';
+
     try {
+      // 1. Consolidate all items across all rounds for this table into a single unified item list
+      final List<Map<String, dynamic>> consolidatedItems = [];
+      for (final ord in _tableOrders) {
+        for (final it in ord.items) {
+          consolidatedItems.add({
+            'productId': it.productId,
+            'name': it.name,
+            'qty': it.qty,
+            'price': it.price,
+            'notes': it.notes,
+            'isVeg': it.isVeg,
+            'courseNo': it.courseNo,
+            'station': it.station,
+          });
+        }
+      }
+
+      final primaryBillId = _tableOrders.isNotEmpty
+          ? _tableOrders.first.id
+          : 'BILL-$tNum-${DateTime.now().millisecondsSinceEpoch}';
+
+      final roundIds = _tableOrders.map((o) => o.id).toSet();
+
+      // 2. Mark ALL orders for this table as PAID in local Hive
       if (Hive.isBoxOpen('configBox')) {
         final box = Hive.box('configBox');
         final cleanWTable = cleanTableId(widget.table.tableNumber);
         final cleanWName = cleanTableId(widget.table.name);
 
-        // 1. Mark orders for this table as PAID in Hive
         final rawOrders = box.get('kot_orders_$orgId') as List? ?? [];
         final updatedOrders = rawOrders.map((item) {
           if (item is Map) {
@@ -1752,12 +2071,17 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
             final cleanOId = cleanTableId(m['tableId'] ?? m['tableNumber'] ?? '');
             final matches = (cleanWTable.isNotEmpty && (cleanWTable == cleanOTable || cleanWTable == cleanOId)) ||
                 (cleanWName.isNotEmpty && (cleanWName == cleanOTable || cleanWName == cleanOId)) ||
-                m['tableId'] == widget.table.id;
+                m['tableId'] == widget.table.id ||
+                roundIds.contains(m['id']?.toString());
             if (matches) {
               m['status'] = 'PAID';
               m['paymentStatus'] = 'PAID';
+              m['isPaid'] = true;
               m['paymentMode'] = paymentMode;
               m['tipAmount'] = tip;
+              m['waiterName'] = staffName;
+              m['settledBy'] = staffName;
+              m['settledByRole'] = staffRole;
             }
             return m;
           }
@@ -1765,7 +2089,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
         }).toList();
         await box.put('kot_orders_$orgId', updatedOrders);
 
-        // 2. Mark Table Vacant in Hive
+        // 3. Mark Table Vacant in Hive
         final rawTables = box.get('restaurant_tables_$orgId') as List? ?? [];
         final updatedTables = rawTables.map((t) {
           if (t is Map) {
@@ -1782,6 +2106,8 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
               tm['currentOrderSource'] = null;
               tm['currentBillAmount'] = 0.0;
               tm['activeItemCount'] = 0;
+              tm['activeBillId'] = null;
+              tm['activeSessionId'] = null;
             }
             return tm;
           }
@@ -1790,89 +2116,107 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
         await box.put('restaurant_tables_$orgId', updatedTables);
       }
 
-      // 3. Sync Settlement to Webhook
-      final primaryBillId = _tableOrders.isNotEmpty
-          ? _tableOrders.first.id
-          : 'BILL-$tNum-${DateTime.now().millisecondsSinceEpoch}';
+      // 4. Dispatch ONE SINGLE CONSOLIDATED BILL to Apps Script Webhook
+      final settleReqId = const Uuid().v4();
+      final guestName = _customerNameCtrl.text.trim().isNotEmpty
+          ? _customerNameCtrl.text.trim()
+          : (widget.table.currentCustomerName ?? 'Table $tNum Guest');
+      final guestPhone = _customerPhoneCtrl.text.trim().isNotEmpty
+          ? _customerPhoneCtrl.text.trim()
+          : (widget.table.currentCustomerPhone ?? '');
 
-      // These calls were fire-and-forget with their results discarded, while the
-      // snackbar below announced "bill settled - table is now vacant" either
-      // way. A failed settlement left the server holding an unpaid bill and
-      // every local surface showing it closed.
-      bool isPrimary = true;
-      int settleFailures = 0;
-      int settleQueued = 0;
-      for (final ord in _tableOrders) {
-        final settleReqId = const Uuid().v4();
-        final settlePayload = <String, dynamic>{
-          'id': ord.id,
-          'bill_id': ord.id,
-          'kotNumber': ord.kotNumber,
-          'clientRequestId': settleReqId,
-          'client_request_id': settleReqId,
-          'table_name': tableName,
-          'table': tableName,
-          'tableNumber': tNum,
-          'table_number': tNum,
-          'payment_mode': paymentMode,
-          'payment_status': 'PAID',
-          'status': 'PAID',
-          'total_amount': ord.totalAmount,
-          'subtotal': ord.subtotal ?? ord.totalAmount,
-          'gst_rate': _storeGstRate,
-          'tip_amount': isPrimary ? tip : 0.0,
-          'timestamp': DateTime.now().toIso8601String(),
-        };
-        final ok = await AppsScriptBackendService.saveBill(
-          outletId: orgId,
-          clientRequestId: settleReqId,
-          billData: settlePayload,
-        );
-        if (!ok) {
-          // X-18: hand the failed settlement to the durable Outbox rather than
-          // dropping it. The same clientRequestId goes with it, so when the
-          // retry lands the server's idempotency check collapses it to one
-          // settlement even if the original request did in fact arrive.
-          final queued = await _queueSettlement(orgId, settleReqId, settlePayload);
-          if (queued) {
-            settleQueued++;
-          } else {
-            settleFailures++;
-          }
-        }
-        isPrimary = false;
+      final singleUnifiedPayload = <String, dynamic>{
+        'id': primaryBillId,
+        'bill_id': primaryBillId,
+        'clientRequestId': settleReqId,
+        'client_request_id': settleReqId,
+        'table_name': tableName,
+        'table': tableName,
+        'tableNumber': tNum,
+        'table_number': tNum,
+        'customer_name': guestName,
+        'customer_phone': guestPhone,
+        'items': consolidatedItems.isNotEmpty ? consolidatedItems : null,
+        'subtotal': subtotal > 0 ? subtotal : totalPaid,
+        'service_charge': serviceCharge,
+        'service_charge_rate': serviceCharge > 0 ? _storeServiceChargeRate : 0.0,
+        'gst': gst,
+        'gst_rate': _storeGstRate,
+        'total_amount': totalPaid,
+        'total': totalPaid,
+        'tip_amount': tip,
+        'tip': tip,
+        'payment_mode': paymentMode,
+        'payment_status': 'PAID',
+        'status': 'PAID',
+        'order_source': 'WAITER_APP',
+        'orderSource': 'WAITER_APP',
+        'waiter_name': staffName,
+        'waiterName': staffName,
+        'byStaffId': staffName,
+        'staffId': staffName,
+        'settled_by': staffName,
+        'settledBy': staffName,
+        'settledByRole': staffRole,
+        'timestamp': DateTime.now().toIso8601String(),
+        'sessionRoundsCount': _tableOrders.length,
+      };
+
+      final ok = await AppsScriptBackendService.saveBill(
+        outletId: orgId,
+        clientRequestId: settleReqId,
+        billData: singleUnifiedPayload,
+      );
+      if (!ok) {
+        await _queueSettlement(orgId, settleReqId, singleUnifiedPayload);
       }
-      if (_tableOrders.isEmpty) {
-        final emptyReqId = const Uuid().v4();
-        final emptyPayload = <String, dynamic>{
-          'id': primaryBillId,
-          'bill_id': primaryBillId,
-          'clientRequestId': emptyReqId,
-          'client_request_id': emptyReqId,
-          'table_name': tableName,
-          'table': tableName,
-          'tableNumber': tNum,
-          'table_number': tNum,
-          'payment_mode': paymentMode,
-          'payment_status': 'PAID',
-          'status': 'PAID',
-          'total_amount': totalPaid,
-          'tip_amount': tip,
-          'timestamp': DateTime.now().toIso8601String(),
-        };
-        final okEmpty = await AppsScriptBackendService.saveBill(
-          outletId: orgId,
-          clientRequestId: emptyReqId,
-          billData: emptyPayload,
+
+      // 5. Record idempotent payment in Payments ledger with waiter attribution
+      try {
+        final saasSession = ref.read(saasSessionProvider);
+        final sheetId = AppsScriptBackendService.resolveSpreadsheetId(
+          orgId: orgId,
+          explicitId: saasSession.currentOrganization?.googleSheetId,
         );
-        if (!okEmpty) {
-          if (await _queueSettlement(orgId, emptyReqId, emptyPayload)) {
-            settleQueued++;
-          } else {
-            settleFailures++;
-          }
-        }
+        await AppsScriptBackendService.recordPayment(
+          outletId: orgId,
+          spreadsheetId: sheetId ?? '',
+          paymentData: {
+            'paymentId': 'PAY-${const Uuid().v4()}',
+            'orderId': primaryBillId,
+            'invoiceNo': primaryBillId,
+            'mode': paymentMode.toUpperCase(),
+            'amountP': (totalPaid * 100).round(),
+            'byStaffId': staffName,
+            'staffId': staffName,
+            'collectedBy': staffName,
+            'waiterName': staffName,
+            'at': DateTime.now().toIso8601String(),
+          },
+        );
+      } catch (pErr) {
+        debugPrint('Record payment error: $pErr');
       }
+
+      if (mounted) {
+        setState(() {
+          _tray.clear();
+          _tableOrders = [];
+        });
+        _clearTrayDraft();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('✅ Bill settled via $paymentMode by $staffName! Table $tNum is now VACANT.'),
+            backgroundColor: const Color(0xFF059669),
+            duration: const Duration(seconds: 3),
+          ),
+        );
+        Navigator.maybePop(context);
+      }
+    } catch (e) {
+      debugPrint('Error settling payment: $e');
+    }
+  }
 
       if (mounted) {
         setState(() {
@@ -2065,6 +2409,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                 Expanded(
                   child: TextField(
                     controller: _customerNameCtrl,
+                    onChanged: (val) => _persistCustomerNameToTable(val),
                     decoration: InputDecoration(
                       hintText: 'Customer / Guest Name (e.g. Shanmuk)',
                       hintStyle: TextStyle(fontSize: 12, color: Colors.grey.shade400),

@@ -310,6 +310,78 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
     return false;
   }
 
+  bool _isGenericCustomerName(String? name) {
+    if (name == null) return true;
+    final clean = name.trim().toLowerCase();
+    if (clean.isEmpty) return true;
+    if (clean == 'guest' ||
+        clean == 'dine-in guest' ||
+        clean == 'walk-in' ||
+        clean == 'walkin' ||
+        clean == 'customer' ||
+        clean.startsWith('table') ||
+        clean.startsWith('t-') ||
+        clean.startsWith('takeaway') ||
+        clean.contains(' x') ||
+        clean.contains('{') ||
+        clean.contains('[') ||
+        clean.contains(',')) {
+      return true;
+    }
+    return false;
+  }
+
+  String _getDefaultUpiId() {
+    final saasSession = ref.read(saasSessionProvider);
+    final orgUpi = saasSession.currentOrganization?.upiId;
+    if (orgUpi != null && orgUpi.trim().isNotEmpty) return orgUpi.trim();
+    try {
+      if (Hive.isBoxOpen('restaurant_config_box')) {
+        final box = Hive.box('restaurant_config_box');
+        final upi = box.get('restaurant_upi_id');
+        if (upi != null && upi.toString().trim().isNotEmpty) {
+          return upi.toString().trim();
+        }
+      }
+      if (Hive.isBoxOpen('configBox')) {
+        final box = Hive.box('configBox');
+        final upi = box.get('restaurant_upi_id');
+        if (upi != null && upi.toString().trim().isNotEmpty) {
+          return upi.toString().trim();
+        }
+      }
+    } catch (_) {}
+    return '';
+  }
+
+  double _getGstRate() {
+    try {
+      if (Hive.isBoxOpen('restaurant_config_box')) {
+        final val = Hive.box('restaurant_config_box').get('restaurant_gst_percentage');
+        if (val != null) return (val as num).toDouble();
+      }
+      if (Hive.isBoxOpen('configBox')) {
+        final val = Hive.box('configBox').get('restaurant_gst_percentage');
+        if (val != null) return (val as num).toDouble();
+      }
+    } catch (_) {}
+    return 5.0;
+  }
+
+  double _getServiceChargeRate() {
+    try {
+      if (Hive.isBoxOpen('restaurant_config_box')) {
+        final val = Hive.box('restaurant_config_box').get('restaurant_service_charge');
+        if (val != null) return (val as num).toDouble();
+      }
+      if (Hive.isBoxOpen('configBox')) {
+        final val = Hive.box('configBox').get('restaurant_service_charge');
+        if (val != null) return (val as num).toDouble();
+      }
+    } catch (_) {}
+    return 5.0;
+  }
+
   void _updateTableStateFromOrders() {
     final updatedTables = <RestaurantTable>[];
     for (final table in _tables) {
@@ -353,26 +425,36 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
             o.status == KotStatus.completed || o.status == KotStatus.paymentPending);
         final totalAmount = activeOrdersForTable.fold<double>(0.0, (prev, o) => prev + o.totalAmount);
         final totalItems = activeOrdersForTable.fold<int>(0, (prev, o) => prev + o.items.length);
-        final latestOrder = activeOrdersForTable.last;
 
-        String? custName = latestOrder.customerName?.trim();
-        if (custName != null &&
-            (custName.toLowerCase().startsWith('table') ||
-             custName.toLowerCase().startsWith('takeaway') ||
-             custName.contains(' x') ||
-             custName.contains('{') ||
-             custName.contains('[') ||
-             custName.contains(','))) {
-          custName = null;
+        // Scan all active orders for the first valid, non-generic customer name
+        String? custName;
+        String? custPhone;
+        String? orderSource;
+        for (final o in activeOrdersForTable) {
+          final n = o.customerName?.trim();
+          if (custName == null && n != null && n.isNotEmpty && !_isGenericCustomerName(n)) {
+            custName = n;
+          }
+          final p = o.customerPhone?.trim();
+          if (custPhone == null && p != null && p.isNotEmpty) {
+            custPhone = p;
+          }
+          if (orderSource == null && o.orderSource.trim().isNotEmpty) {
+            orderSource = o.orderSource;
+          }
         }
+        // Fallback to table's existing customer info
+        custName ??= table.currentCustomerName;
+        custPhone ??= table.currentCustomerPhone;
+        orderSource ??= table.currentOrderSource ?? 'POS_WAITER';
 
         updatedTables.add(table.copyWith(
           status: hasBilled ? TableStatus.billed : TableStatus.occupied,
           currentBillAmount: totalAmount,
           activeItemCount: totalItems,
           currentCustomerName: custName,
-          currentCustomerPhone: latestOrder.customerPhone,
-          currentOrderSource: latestOrder.orderSource,
+          currentCustomerPhone: custPhone,
+          currentOrderSource: orderSource,
         ));
       }
     }
@@ -2350,18 +2432,23 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
             if (table.status == TableStatus.seated || table.status == TableStatus.occupied || table.status == TableStatus.billed) ...[
               Builder(
                 builder: (context) {
-                  final matchingOrder = _kotOrders.cast<KotOrder?>().firstWhere(
-                    (o) => o != null && _matchesTable(o, table) && o.status != KotStatus.paid && o.status != KotStatus.cancelled,
-                    orElse: () => null,
-                  );
-                  if (matchingOrder != null) {
+                  final tableActiveOrders = _kotOrders.where(
+                    (o) => _matchesTable(o, table) && o.status != KotStatus.paid && o.status != KotStatus.cancelled,
+                  ).toList();
+                  if (tableActiveOrders.isNotEmpty || table.currentBillAmount > 0) {
+                    final firstOrder = tableActiveOrders.isNotEmpty ? tableActiveOrders.first : null;
+                    final totalAmount = tableActiveOrders.fold<double>(0.0, (sum, o) => sum + o.totalAmount);
+                    final effectiveTotal = totalAmount > 0 ? totalAmount : table.currentBillAmount;
+                    final totalItems = tableActiveOrders.fold<int>(0, (sum, o) => sum + o.items.length);
+                    final roundsText = tableActiveOrders.length > 1 ? ' • ${tableActiveOrders.length} rounds' : '';
+
                     return ListTile(
                       leading: const CircleAvatar(backgroundColor: Colors.green, child: Icon(Icons.payment_rounded, color: Colors.white, size: 20)),
-                      title: Text('Collect Payment (₹${matchingOrder.totalAmount.toStringAsFixed(0)})', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.green)),
-                      subtitle: Text('Settle bill via Cash / UPI / Card (${matchingOrder.items.length} items)', style: const TextStyle(fontSize: 11)),
+                      title: Text('Collect Payment (₹${effectiveTotal.toStringAsFixed(0)})', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.green)),
+                      subtitle: Text('Settle bill via Dynamic UPI / Cash / Card ($totalItems items$roundsText)', style: const TextStyle(fontSize: 11)),
                       onTap: () {
                         Navigator.pop(ctx);
-                        _showCollectPaymentDialog(matchingOrder);
+                        _showCollectPaymentDialog(firstOrder, table: table);
                       },
                     );
                   }
@@ -2835,90 +2922,582 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
     );
   }
 
-  void _showCollectPaymentDialog(KotOrder order) {
-    String selectedMode = 'CASH';
-    showDialog(
+  void _showCollectPaymentDialog(KotOrder? order, {RestaurantTable? table}) {
+    if (order == null && table == null) return;
+
+    final resolvedTable = table ?? _tables.firstWhereOrNull((t) => order != null && _matchesTable(order, t));
+    final activeOrders = _kotOrders.where((o) {
+      if (resolvedTable != null) {
+        return _matchesTable(o, resolvedTable) &&
+            o.status != KotStatus.cancelled &&
+            o.status != KotStatus.paid &&
+            (o.paymentStatus ?? '').toUpperCase() != 'PAID';
+      }
+      return (o.tableName == order?.tableName || o.tableId == order?.tableId) &&
+          o.status != KotStatus.cancelled &&
+          o.status != KotStatus.paid &&
+          (o.paymentStatus ?? '').toUpperCase() != 'PAID';
+    }).toList();
+
+    if (activeOrders.isEmpty && order != null) {
+      activeOrders.add(order);
+    }
+
+    final List<KotItem> allItems = [];
+    for (final ord in activeOrders) {
+      allItems.addAll(ord.items);
+    }
+
+    double dishesSubtotal = 0.0;
+    for (final it in allItems) {
+      dishesSubtotal += (it.price * it.qty);
+    }
+    if (dishesSubtotal <= 0) {
+      dishesSubtotal = activeOrders.fold<double>(0.0, (s, o) => s + o.totalAmount);
+      if (dishesSubtotal <= 0 && resolvedTable != null) {
+        dishesSubtotal = resolvedTable.currentBillAmount;
+      }
+    }
+
+    String custName = '';
+    String custPhone = '';
+    String waiterName = '';
+    for (final ord in activeOrders) {
+      if (custName.isEmpty && ord.customerName != null && ord.customerName!.trim().isNotEmpty && !_isGenericCustomerName(ord.customerName)) {
+        custName = ord.customerName!.trim();
+      }
+      if (custPhone.isEmpty && ord.customerPhone != null && ord.customerPhone!.trim().isNotEmpty) {
+        custPhone = ord.customerPhone!.trim();
+      }
+      if (waiterName.isEmpty && ord.paidBy != null && ord.paidBy!.isNotEmpty && ord.paidBy != 'Guest') {
+        waiterName = ord.paidBy!;
+      }
+    }
+    if (custName.isEmpty && resolvedTable != null && resolvedTable.currentCustomerName != null) {
+      custName = resolvedTable.currentCustomerName!;
+    }
+    final tName = resolvedTable?.name ?? order?.tableName ?? 'Table';
+    final cleanTableNum = (resolvedTable?.tableNumber ?? tName).replaceAll(RegExp(r'[^0-9]'), '');
+
+    bool includeServiceCharge = true;
+    double selectedTip = 0.0;
+    String selectedPaymentMode = 'UPI / QR';
+
+    final scRate = _getServiceChargeRate();
+    final gstRate = _getGstRate();
+    final saasSession = ref.read(saasSessionProvider);
+    final shopName = saasSession.currentOrganization?.name ?? 'SmartDine Restaurant';
+
+    showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
+      backgroundColor: context.surfaceColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
       builder: (ctx) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          backgroundColor: context.surfaceColor,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20), side: BorderSide(color: context.borderColor)),
-          title: Row(
-            children: [
-              const Icon(Icons.payment_rounded, color: Colors.green),
-              const SizedBox(width: 8),
-              Text('Collect Payment', style: TextStyle(fontWeight: FontWeight.bold, color: context.textPrimary, fontSize: 18)),
-            ],
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.green.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.green.withValues(alpha: 0.3)),
-                ),
+        builder: (context, setModalState) {
+          final scAmount = includeServiceCharge ? (dishesSubtotal * (scRate / 100.0)) : 0.0;
+          final gstAmount = (dishesSubtotal + scAmount) * (gstRate / 100.0);
+          final totalPayable = dishesSubtotal + scAmount + gstAmount + selectedTip;
+
+          final upiId = _getDefaultUpiId();
+          final note = cleanTableNum.isNotEmpty ? 'Table $cleanTableNum Bill' : '$tName Bill';
+          final upiUri = 'upi://pay?pa=$upiId&pn=${Uri.encodeComponent(shopName)}&am=${totalPayable.toStringAsFixed(2)}&cu=INR&tn=${Uri.encodeComponent(note)}';
+
+          return SafeArea(
+            child: Padding(
+              padding: EdgeInsets.only(
+                left: 20,
+                right: 20,
+                top: 20,
+                bottom: MediaQuery.of(ctx).viewInsets.bottom + 16,
+              ),
+              child: SingleChildScrollView(
                 child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(order.tableName, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: context.textPrimary)),
-                    const SizedBox(height: 4),
-                    Text(
-                      '₹${order.totalAmount.toStringAsFixed(2)}',
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 26, color: Colors.green),
+                    // Header
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                const Icon(Icons.receipt_long_rounded, color: Color(0xFF10B981), size: 22),
+                                const SizedBox(width: 8),
+                                Text(
+                                  'Collect Payment & Settle',
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                    color: context.textPrimary,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              '$tName • ${custName.isNotEmpty ? custName : "Guest"}${activeOrders.length > 1 ? " • ${activeOrders.length} Rounds" : ""}',
+                              style: TextStyle(fontSize: 12, color: context.textSecondary),
+                            ),
+                          ],
+                        ),
+                        IconButton(
+                          icon: Icon(Icons.close_rounded, color: context.textSecondary),
+                          onPressed: () => Navigator.pop(ctx),
+                        ),
+                      ],
                     ),
-                    Text('${order.items.length} items ordered', style: TextStyle(fontSize: 11, color: context.textSecondary)),
+                    const SizedBox(height: 14),
+
+                    // Grand Total Card
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            const Color(0xFF10B981).withValues(alpha: 0.14),
+                            const Color(0xFF059669).withValues(alpha: 0.08),
+                          ],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: const Color(0xFF10B981).withValues(alpha: 0.35)),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'TOTAL PAYABLE',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                  letterSpacing: 0.8,
+                                  color: Colors.green.shade800,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                '₹${totalPayable.toStringAsFixed(2)}',
+                                style: const TextStyle(
+                                  fontSize: 26,
+                                  fontWeight: FontWeight.w900,
+                                  color: Color(0xFF059669),
+                                ),
+                              ),
+                            ],
+                          ),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Text(
+                                'Subtotal: ₹${dishesSubtotal.toStringAsFixed(2)}',
+                                style: TextStyle(fontSize: 11, color: context.textSecondary),
+                              ),
+                              if (includeServiceCharge && scAmount > 0)
+                                Text(
+                                  'SC (${scRate.toStringAsFixed(0)}%): ₹${scAmount.toStringAsFixed(2)}',
+                                  style: TextStyle(fontSize: 11, color: context.textSecondary),
+                                ),
+                              Text(
+                                'GST (${gstRate.toStringAsFixed(0)}%): ₹${gstAmount.toStringAsFixed(2)}',
+                                style: TextStyle(fontSize: 11, color: context.textSecondary),
+                              ),
+                              if (selectedTip > 0)
+                                Text(
+                                  'Tip: ₹${selectedTip.toStringAsFixed(0)}',
+                                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.purple.shade700),
+                                ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+
+                    // Service Charge Toggle Card (Default: ON)
+                    if (scRate > 0)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: context.canvasColor,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: context.borderColor),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(Icons.room_service_outlined, size: 18, color: context.textSecondary),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Include Service Charge (${scRate.toStringAsFixed(0)}%)',
+                                    style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: context.textPrimary),
+                                  ),
+                                  Text(
+                                    includeServiceCharge ? '₹${(dishesSubtotal * (scRate / 100.0)).toStringAsFixed(2)} added to bill' : 'Waived upon request',
+                                    style: TextStyle(fontSize: 11, color: context.textSecondary),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Switch(
+                              value: includeServiceCharge,
+                              activeColor: const Color(0xFF10B981),
+                              onChanged: (val) => setModalState(() => includeServiceCharge = val),
+                            ),
+                          ],
+                        ),
+                      ),
+                    if (scRate > 0) const SizedBox(height: 12),
+
+                    // Optional Tip Selector
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Server Tip (Optional)',
+                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: context.textSecondary),
+                        ),
+                        const SizedBox(height: 6),
+                        Wrap(
+                          spacing: 8,
+                          children: [0.0, 20.0, 50.0, 100.0].map((t) {
+                            final isSel = selectedTip == t;
+                            return ChoiceChip(
+                              label: Text(t == 0.0 ? 'No Tip' : '₹${t.toStringAsFixed(0)}'),
+                              selected: isSel,
+                              selectedColor: Colors.purple.shade600,
+                              backgroundColor: context.canvasColor,
+                              side: BorderSide(color: isSel ? Colors.purple.shade600 : context.borderColor),
+                              labelStyle: TextStyle(
+                                color: isSel ? Colors.white : context.textPrimary,
+                                fontWeight: isSel ? FontWeight.bold : FontWeight.normal,
+                                fontSize: 11.5,
+                              ),
+                              onSelected: (_) => setModalState(() => selectedTip = t),
+                            );
+                          }).toList(),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+
+                    // Payment Method Options
+                    Text(
+                      'Select Payment Mode',
+                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: context.textPrimary),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        _buildTablePayModeOption(
+                          label: 'UPI / QR',
+                          icon: Icons.qr_code_2_rounded,
+                          isSelected: selectedPaymentMode == 'UPI / QR',
+                          color: Colors.blueAccent,
+                          onTap: () => setModalState(() => selectedPaymentMode = 'UPI / QR'),
+                        ),
+                        const SizedBox(width: 8),
+                        _buildTablePayModeOption(
+                          label: 'CASH',
+                          icon: Icons.money_rounded,
+                          isSelected: selectedPaymentMode == 'CASH',
+                          color: const Color(0xFF10B981),
+                          onTap: () => setModalState(() => selectedPaymentMode = 'CASH'),
+                        ),
+                        const SizedBox(width: 8),
+                        _buildTablePayModeOption(
+                          label: 'CARD',
+                          icon: Icons.credit_card_rounded,
+                          isSelected: selectedPaymentMode == 'CARD',
+                          color: Colors.deepPurpleAccent,
+                          onTap: () => setModalState(() => selectedPaymentMode = 'CARD'),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+
+                    // Dynamic UPI QR Code Section
+                    if (selectedPaymentMode == 'UPI / QR') ...[
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: Colors.blue.withValues(alpha: 0.06),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: Colors.blueAccent.withValues(alpha: 0.3)),
+                        ),
+                        child: Column(
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                const Icon(Icons.qr_code_rounded, color: Colors.blueAccent, size: 20),
+                                const SizedBox(width: 8),
+                                Text(
+                                  'Dynamic UPI QR Code',
+                                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.blue.shade900),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 10),
+                            Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(12),
+                                boxShadow: [
+                                  BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 8, offset: const Offset(0, 2)),
+                                ],
+                              ),
+                              child: QrImageView(
+                                data: upiUri,
+                                version: QrVersions.auto,
+                                size: 190,
+                                gapless: true,
+                                backgroundColor: Colors.white,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              upiId.isNotEmpty ? 'UPI ID: $upiId' : '⚠️ Please configure UPI ID in Store Settings',
+                              style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: upiId.isNotEmpty ? const Color(0xFF3B82F6) : Colors.red),
+                            ),
+                            const SizedBox(height: 2),
+                            const Text(
+                              'Customer can scan with GPay, PhonePe, Paytm or any UPI App',
+                              style: TextStyle(fontSize: 11, color: Colors.black54),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                    ],
+
+                    // Confirm Payment Button
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: selectedPaymentMode == 'UPI / QR' ? Colors.blueAccent : const Color(0xFF10B981),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                        icon: const Icon(Icons.check_circle_rounded, size: 20),
+                        label: Text(
+                          selectedPaymentMode == 'UPI / QR'
+                              ? 'Confirm UPI Payment Received (₹${totalPayable.toStringAsFixed(2)})'
+                              : (selectedPaymentMode == 'CASH'
+                                  ? 'Confirm Cash Payment (₹${totalPayable.toStringAsFixed(2)})'
+                                  : 'Confirm Card Payment (₹${totalPayable.toStringAsFixed(2)})'),
+                          style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.bold),
+                        ),
+                        onPressed: () async {
+                          Navigator.pop(ctx);
+                          HapticFeedback.heavyImpact();
+
+                          final activeStaff = ref.read(restaurantAuthProvider).activeStaff?.name ?? 'Restaurant Cashier';
+                          final orgId = _getEffectiveOrgId();
+                          final sheetId = _getGoogleSheetId(orgId);
+                          final primaryOrder = activeOrders.isNotEmpty ? activeOrders.first : order;
+                          final primaryOrderId = primaryOrder?.id ?? 'ORD-${DateTime.now().millisecondsSinceEpoch}';
+                          final roundIds = activeOrders.map((o) => o.id).toSet().toList();
+
+                          // 1. Vacate table in Hive
+                          if (resolvedTable != null || cleanTableNum.isNotEmpty) {
+                            final box = Hive.isBoxOpen('configBox') ? Hive.box('configBox') : null;
+                            if (box != null) {
+                              final rawTables = box.get('restaurant_tables_$orgId') as List? ?? [];
+                              final updatedTables = rawTables.map((t) {
+                                if (t is Map) {
+                                  final numStr = (t['tableNumber'] ?? '').toString().replaceAll(RegExp(r'[^0-9]'), '');
+                                  final nameStr = (t['name'] ?? '').toString().toLowerCase();
+                                  final matchesNum = cleanTableNum.isNotEmpty && numStr == cleanTableNum;
+                                  final matchesName = nameStr == tName.toLowerCase();
+                                  if (matchesNum || matchesName || (resolvedTable != null && t['id'] == resolvedTable.id)) {
+                                    final m = Map<String, dynamic>.from(t);
+                                    m['status'] = 'VACANT';
+                                    m['activeOrderCount'] = 0;
+                                    m['currentBillAmount'] = 0.0;
+                                    m['currentCustomerName'] = null;
+                                    m['activeSessionId'] = null;
+                                    return m;
+                                  }
+                                }
+                                return t;
+                              }).toList();
+                              await box.put('restaurant_tables_$orgId', updatedTables);
+                            }
+                          }
+
+                          // 2. Mark all orders as PAID in Hive
+                          final box = Hive.isBoxOpen('configBox') ? Hive.box('configBox') : null;
+                          if (box != null) {
+                            final rawOrders = box.get('kot_orders_$orgId') as List? ?? [];
+                            final updatedOrders = rawOrders.map((ro) {
+                              if (ro is Map) {
+                                final rId = (ro['id'] ?? ro['bill_id'] ?? '').toString();
+                                final rTable = (ro['tableName'] ?? ro['tableNumber'] ?? '').toString().replaceAll(RegExp(r'[^0-9]'), '');
+                                final matches = roundIds.contains(rId) || (cleanTableNum.isNotEmpty && rTable == cleanTableNum);
+                                if (matches) {
+                                  final m = Map<String, dynamic>.from(ro);
+                                  m['status'] = 'PAID';
+                                  m['paymentStatus'] = 'PAID';
+                                  m['isPaid'] = true;
+                                  m['paymentMode'] = selectedPaymentMode;
+                                  m['settledBy'] = activeStaff;
+                                  m['cashierName'] = activeStaff;
+                                  return m;
+                                }
+                              }
+                              return ro;
+                            }).toList();
+                            await box.put('kot_orders_$orgId', updatedOrders);
+                          }
+
+                          // 3. Record Payment Webhook
+                          try {
+                            await AppsScriptBackendService.recordPayment(
+                              outletId: orgId,
+                              spreadsheetId: sheetId.isNotEmpty && !sheetId.startsWith('sheet_ORG') ? sheetId : '',
+                              paymentData: {
+                                'paymentId': 'PAY-${const Uuid().v4()}',
+                                'orderId': primaryOrderId,
+                                'invoiceNo': primaryOrderId,
+                                'mode': selectedPaymentMode.toUpperCase(),
+                                'amountP': (totalPayable * 100).round(),
+                                'byStaffId': activeStaff,
+                                'staffId': activeStaff,
+                                'collectedBy': activeStaff,
+                                'cashierName': activeStaff,
+                                'waiterName': waiterName,
+                                'at': DateTime.now().toIso8601String(),
+                              },
+                            );
+                          } catch (e) {
+                            debugPrint('AppsScript recordPayment error: $e');
+                          }
+
+                          // 4. Save ONE single consolidated bill Webhook
+                          try {
+                            final billPayload = {
+                              'id': primaryOrderId,
+                              'bill_id': primaryOrderId,
+                              'tableName': tName,
+                              'table_name': tName,
+                              'tableNumber': cleanTableNum,
+                              'status': 'PAID',
+                              'paymentStatus': 'PAID',
+                              'paymentMode': selectedPaymentMode,
+                              'isPaid': true,
+                              'totalAmount': totalPayable,
+                              'total': totalPayable,
+                              'subtotal': dishesSubtotal,
+                              'service_charge': scAmount,
+                              'gst': gstAmount,
+                              'tip': selectedTip,
+                              'settledBy': activeStaff,
+                              'cashierName': activeStaff,
+                              'waiterName': waiterName,
+                              'customerName': custName.isNotEmpty ? custName : tName,
+                              'customerPhone': custPhone,
+                              'sessionRoundsCount': activeOrders.length,
+                              'roundIds': roundIds,
+                              'items': allItems.map((it) => {
+                                'id': it.productId,
+                                'productId': it.productId,
+                                'name': it.name,
+                                'price': it.price,
+                                'qty': it.qty,
+                                'subtotal': it.price * it.qty,
+                              }).toList(),
+                            };
+                            await AppsScriptBackendService.saveBill(
+                              outletId: orgId,
+                              spreadsheetId: sheetId.isNotEmpty && !sheetId.startsWith('sheet_ORG') ? sheetId : '',
+                              billData: billPayload,
+                            );
+                          } catch (e) {
+                            debugPrint('AppsScript saveBill error: $e');
+                          }
+
+                          // 5. Update local state
+                          setState(() {
+                            _kotOrders.removeWhere((o) => roundIds.contains(o.id) || (cleanTableNum.isNotEmpty && o.tableName.replaceAll(RegExp(r'[^0-9]'), '') == cleanTableNum));
+                            _updateTableStateFromOrders();
+                          });
+
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('✅ ₹${totalPayable.toStringAsFixed(2)} collected via $selectedPaymentMode. $tName is now Vacant!'),
+                                backgroundColor: const Color(0xFF10B981),
+                                duration: const Duration(seconds: 3),
+                              ),
+                            );
+                          }
+                        },
+                      ),
+                    ),
                   ],
                 ),
               ),
-              const SizedBox(height: 16),
-              Text('Select Payment Mode:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: context.textPrimary)),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: ['CASH', 'UPI', 'CARD', 'CREDIT'].map((mode) {
-                  final isSel = selectedMode == mode;
-                  return ChoiceChip(
-                    label: Text(mode),
-                    selected: isSel,
-                    selectedColor: Colors.green.shade600,
-                    labelStyle: TextStyle(color: isSel ? Colors.white : context.textPrimary, fontWeight: FontWeight.bold, fontSize: 12),
-                    onSelected: (_) => setDialogState(() => selectedMode = mode),
-                  );
-                }).toList(),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildTablePayModeOption({
+    required String label,
+    required IconData icon,
+    required bool isSelected,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          decoration: BoxDecoration(
+            color: isSelected ? color.withValues(alpha: 0.12) : context.canvasColor,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: isSelected ? color : context.borderColor,
+              width: isSelected ? 1.8 : 1.0,
+            ),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, color: isSelected ? color : context.textSecondary, size: 20),
+              const SizedBox(height: 4),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                  color: isSelected ? color : context.textPrimary,
+                ),
               ),
             ],
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: Text('Cancel', style: TextStyle(color: context.textSecondary)),
-            ),
-            FilledButton.icon(
-              style: FilledButton.styleFrom(backgroundColor: Colors.green.shade600),
-              icon: const Icon(Icons.check, size: 16),
-              label: const Text('Confirm Payment'),
-              onPressed: () async {
-                final messenger = ScaffoldMessenger.of(context);
-                Navigator.pop(ctx);
-                HapticFeedback.mediumImpact();
-                await _updateOrderStatus(order, KotStatus.paid, paymentMode: selectedMode);
-
-                if (mounted) {
-                  messenger.showSnackBar(
-                    SnackBar(
-                      content: Text('✅ ₹${order.totalAmount.toStringAsFixed(0)} collected via $selectedMode. Table is now Vacant!'),
-                      backgroundColor: Colors.green,
-                    ),
-                  );
-                }
-              },
-            ),
-          ],
         ),
       ),
     );
@@ -2978,7 +3557,7 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
           ElevatedButton.icon(
             onPressed: () {
               Navigator.pop(dlgCtx);
-              _showCollectPaymentDialog(unpaidOrder);
+              _showCollectPaymentDialog(unpaidOrder, table: table);
             },
             icon: const Icon(Icons.payment, size: 16),
             label: const Text('Collect Payment'),
