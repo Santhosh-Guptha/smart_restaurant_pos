@@ -1458,7 +1458,6 @@ function doGet(e) {
               ordersMap[cNormId] = co;
             }
           }
-        }
       } catch (eCache) {}
 
       // 2. Then retrieve from Google Sheet if sheetId is available
