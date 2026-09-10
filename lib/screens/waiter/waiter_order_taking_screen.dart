@@ -374,8 +374,13 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
 
     // 2. Fetch remote orders via Webhook (keeps waiter synced with QR & Counter orders)
     try {
-      final remoteList = await AppsScriptBackendService.fetchOrders(orgId: orgId, table: widget.table.tableNumber);
-      for (final m in remoteList) {
+      // PERF-1: null means nothing has changed server-side since the last
+      // poll, so the list already assembled from local state stands.
+      final remoteList = await AppsScriptBackendService.pollOrders(
+        orgId: orgId,
+        table: widget.table.tableNumber,
+      );
+      for (final m in remoteList ?? const <Map<String, dynamic>>[]) {
         final id = (m['id'] ?? m['orderId'] ?? m['kotNumber'] ?? '').toString();
         if (id.isEmpty || id.toUpperCase().contains('TEST')) continue;
         if (!matched.any((ex) => canonicalId(ex) == canonicalId(m))) {

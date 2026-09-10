@@ -15,6 +15,7 @@ import '../../services/thermal_printer_service.dart';
 import '../../utils/thermal_receipt_generator.dart';
 import '../../utils/ui_feedback.dart';
 import '../restaurant/store_configuration_screen.dart';
+import '../../services/backup_service.dart';
 
 class SettingsSidebarDialog extends ConsumerStatefulWidget {
   final int initialTab;
@@ -757,9 +758,199 @@ class _SettingsSidebarDialogState extends ConsumerState<SettingsSidebarDialog> {
                 );
               },
             ),
+          const SizedBox(height: 28),
+          _buildBackupSection(context),
         ],
       ),
     );
+  }
+
+  // ── Backup & Restore ───────────────────────────────────────────────────────
+  //
+  // BackupService was hardened in X-12 (AES-256-GCM under a passphrase, restore
+  // allowlist) but had no call sites: the feature existed only as code. This is
+  // the UI. The passphrase is asked for at the moment of use and never stored -
+  // without it a leaked .sbk is unreadable, and that is the whole point.
+
+  bool _backupBusy = false;
+
+  Widget _buildBackupSection(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildSectionHeading(
+          'Backup & Restore',
+          'Encrypted backup of bills, menu, customers and settings. Staff logins are not included - they are re-created by owner sign-in on a new device.',
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _backupBusy ? null : () => _runBackupExport(context),
+                icon: const Icon(Icons.lock_outline_rounded, size: 18),
+                label: const Text('Export encrypted backup'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: context.textPrimary,
+                  side: BorderSide(color: context.borderColor),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _backupBusy ? null : () => _runBackupImport(context),
+                icon: const Icon(Icons.restore_rounded, size: 18),
+                label: const Text('Restore from backup'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: context.textPrimary,
+                  side: BorderSide(color: context.borderColor),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'You choose a passphrase when exporting and must enter the same one to restore. '
+          'It is not stored anywhere - a lost passphrase means a lost backup.',
+          style: TextStyle(color: context.textSecondary, fontSize: 11.5),
+        ),
+      ],
+    );
+  }
+
+  /// Asks for a passphrase. [confirm] adds a second field, for export, so a typo
+  /// does not produce a backup nobody can ever open.
+  Future<String?> _askPassphrase(BuildContext context, {required bool confirm}) async {
+    final c1 = TextEditingController();
+    final c2 = TextEditingController();
+    bool obscure = true;
+    String? error;
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setD) => AlertDialog(
+          backgroundColor: ctx.surfaceColor,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          title: Text(confirm ? 'Set a backup passphrase' : 'Enter the backup passphrase',
+              style: TextStyle(color: ctx.textPrimary, fontSize: 16, fontWeight: FontWeight.bold)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: c1,
+                obscureText: obscure,
+                autofocus: true,
+                style: TextStyle(color: ctx.textPrimary),
+                decoration: ClassicTheme.inputDecorationFor(ctx,
+                    hintText: confirm ? 'At least 8 characters' : 'Passphrase',
+                    suffixIcon: IconButton(
+                      icon: Icon(obscure ? Icons.visibility_rounded : Icons.visibility_off_rounded, size: 18),
+                      onPressed: () => setD(() => obscure = !obscure),
+                    )),
+              ),
+              if (confirm) ...[
+                const SizedBox(height: 10),
+                TextField(
+                  controller: c2,
+                  obscureText: obscure,
+                  style: TextStyle(color: ctx.textPrimary),
+                  decoration: ClassicTheme.inputDecorationFor(ctx, hintText: 'Type it again'),
+                ),
+              ],
+              if (error != null) ...[
+                const SizedBox(height: 10),
+                Text(error!, style: TextStyle(color: ctx.dangerColor, fontSize: 12)),
+              ],
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: Text('Cancel', style: TextStyle(color: ctx.textSecondary))),
+            ElevatedButton(
+              onPressed: () {
+                final p = c1.text;
+                if (confirm && p.trim().length < 8) {
+                  setD(() => error = 'Use at least 8 characters.');
+                  return;
+                }
+                if (confirm && p != c2.text) {
+                  setD(() => error = 'The two entries do not match.');
+                  return;
+                }
+                if (p.trim().isEmpty) {
+                  setD(() => error = 'Enter the passphrase.');
+                  return;
+                }
+                Navigator.pop(ctx, p);
+              },
+              style: ElevatedButton.styleFrom(backgroundColor: ClassicTheme.primaryAccent, foregroundColor: Colors.white),
+              child: Text(confirm ? 'Export' : 'Restore'),
+            ),
+          ],
+        ),
+      ),
+    );
+    c1.dispose();
+    c2.dispose();
+    return result;
+  }
+
+  Future<void> _runBackupExport(BuildContext context) async {
+    final pass = await _askPassphrase(context, confirm: true);
+    if (pass == null || !mounted) return;
+    setState(() => _backupBusy = true);
+    final err = await BackupService.exportBackup(passphrase: pass);
+    if (!mounted) return;
+    setState(() => _backupBusy = false);
+    if (err == null) {
+      AppToast.showSuccess(context, 'Backup exported', subtitle: 'Keep the passphrase somewhere safe.');
+    } else {
+      AppToast.showError(context, err);
+    }
+  }
+
+  Future<void> _runBackupImport(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: ctx.surfaceColor,
+        title: Text('Restore a backup?', style: TextStyle(color: ctx.textPrimary)),
+        content: Text(
+          'Records in the backup overwrite records on this device with the same key. '
+          'Staff logins, sessions and unsent queued writes are never restored. Take a fresh export first if in doubt.',
+          style: TextStyle(color: ctx.textSecondary, fontSize: 13),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text('Cancel', style: TextStyle(color: ctx.textSecondary))),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(backgroundColor: ctx.warningColor, foregroundColor: Colors.white),
+            child: const Text('Choose file'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    // BackupService.importBackup opens the system file picker itself, so the
+    // passphrase has to be collected up front. A legacy V1 file needs none;
+    // the service ignores it in that case and reports what it did.
+    final pass = await _askPassphrase(context, confirm: false);
+    if (pass == null || !mounted) return;
+    setState(() => _backupBusy = true);
+    final err = await BackupService.importBackup(passphrase: pass);
+    if (!mounted) return;
+    setState(() => _backupBusy = false);
+    if (err == null) {
+      AppToast.showSuccess(context, 'Backup restored', subtitle: 'Restart the app to reload every screen from the restored data.');
+    } else {
+      AppToast.showError(context, err);
+    }
   }
 
   // ─────────────────────────────────────────────────────────────

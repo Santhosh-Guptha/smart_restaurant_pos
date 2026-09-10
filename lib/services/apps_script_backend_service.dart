@@ -452,18 +452,50 @@ class AppsScriptBackendService {
   }
 
   /// 8. Fetch Orders and Real-Time Waiter Calls from Outlet's Private Sheet via Apps Script Webhook
+  /// PERF-1: last server revision seen per outlet, so a poll can ask
+  /// "anything new since N?" instead of re-downloading every order.
+  ///
+  /// The KDS polls every 3s, the waiter screen every 4s and table management
+  /// every 5s. Each of those used to pull the whole order list and the server
+  /// read the whole Bills sheet to build it, even though most of those windows
+  /// contain no change whatsoever. Sending the rev lets the server answer
+  /// "unchanged" in a few bytes, and lets the caller skip parsing, rebuilding
+  /// and re-persisting a list it already has.
+  static final Map<String, int> _lastOrdersRev = {};
+
+  /// Forces the next poll for this outlet to fetch in full. Call after a local
+  /// mutation whose own response may not have carried a rev, so the screen
+  /// cannot sit on a stale "unchanged".
+  static void invalidateOrdersRev(String orgId) {
+    final prefix = '${orgId.trim()}|';
+    _lastOrdersRev.removeWhere((k, _) => k.startsWith(prefix));
+  }
+
+  static String _ordersRevKey(String orgId, String? table) =>
+      '${orgId.trim()}|${(table ?? '').trim().toLowerCase()}';
+
+  /// Returns `{'orders': [...], 'waiterCalls': [...], 'unchanged': bool}`.
+  ///
+  /// [useRevCache] is opt-in for exactly one reason: when it is on and the
+  /// server reports no change, both lists come back EMPTY. A caller that does
+  /// not check `unchanged` would read that as "there are no orders" and clear
+  /// its board on the first quiet poll. Only pass true where the `unchanged`
+  /// branch is handled.
   static Future<Map<String, dynamic>> fetchOrdersAndAlerts({
     required String orgId,
     String? spreadsheetId,
     String? table,
+    bool useRevCache = false,
   }) async {
     try {
       final url = getWebhookUrl();
       if (!_isValidUrl(url)) {
-        return {'orders': <Map<String, dynamic>>[], 'waiterCalls': <Map<String, dynamic>>[]};
+        return {'orders': <Map<String, dynamic>>[], 'waiterCalls': <Map<String, dynamic>>[], 'unchanged': false};
       }
 
       final resolvedSheetId = resolveSpreadsheetId(orgId: orgId, explicitId: spreadsheetId);
+      final revKey = _ordersRevKey(orgId, table);
+      final sinceRev = useRevCache ? _lastOrdersRev[revKey] : null;
 
       final uri = Uri.parse(url).replace(
         queryParameters: {
@@ -472,6 +504,7 @@ class AppsScriptBackendService {
           if (resolvedSheetId != null && resolvedSheetId.isNotEmpty && !resolvedSheetId.startsWith('sheet_ORG'))
             'sheet': resolvedSheetId.trim(),
           if (table != null && table.isNotEmpty) 'table': table.trim(),
+          if (sinceRev != null && sinceRev > 0) 'sinceRev': '$sinceRev',
         },
       );
 
@@ -479,6 +512,21 @@ class AppsScriptBackendService {
       if (res.statusCode >= 200 && res.statusCode < 300) {
         final decoded = jsonDecode(res.body);
         if (decoded is Map<String, dynamic> && decoded['success'] == true) {
+          final serverRev = (decoded['rev'] as num?)?.toInt();
+          if (serverRev != null && serverRev > 0) {
+            _lastOrdersRev[revKey] = serverRev;
+          }
+
+          // Nothing has been written on the server since our last poll. The
+          // caller keeps its current list untouched.
+          if (decoded['unchanged'] == true) {
+            return {
+              'orders': <Map<String, dynamic>>[],
+              'waiterCalls': <Map<String, dynamic>>[],
+              'unchanged': true,
+            };
+          }
+
           final orders = decoded['orders'] is List
               ? List<Map<String, dynamic>>.from(
                   (decoded['orders'] as List).whereType<Map>().map((m) => Map<String, dynamic>.from(m)),
@@ -489,13 +537,13 @@ class AppsScriptBackendService {
                   (decoded['waiterCalls'] as List).whereType<Map>().map((m) => Map<String, dynamic>.from(m)),
                 )
               : <Map<String, dynamic>>[];
-          return {'orders': orders, 'waiterCalls': waiterCalls};
+          return {'orders': orders, 'waiterCalls': waiterCalls, 'unchanged': false};
         }
       }
-      return {'orders': <Map<String, dynamic>>[], 'waiterCalls': <Map<String, dynamic>>[]};
+      return {'orders': <Map<String, dynamic>>[], 'waiterCalls': <Map<String, dynamic>>[], 'unchanged': false};
     } catch (e) {
       debugPrint("AppsScriptBackendService fetchOrdersAndAlerts error: $e");
-      return {'orders': <Map<String, dynamic>>[], 'waiterCalls': <Map<String, dynamic>>[]};
+      return {'orders': <Map<String, dynamic>>[], 'waiterCalls': <Map<String, dynamic>>[], 'unchanged': false};
     }
   }
 
@@ -505,7 +553,31 @@ class AppsScriptBackendService {
     String? spreadsheetId,
     String? table,
   }) async {
-    final res = await fetchOrdersAndAlerts(orgId: orgId, spreadsheetId: spreadsheetId, table: table);
+    // Unconditional full fetch, so existing callers behave exactly as before.
+    final res = await fetchOrdersAndAlerts(
+      orgId: orgId,
+      spreadsheetId: spreadsheetId,
+      table: table,
+    );
+    return res['orders'] as List<Map<String, dynamic>>;
+  }
+
+  /// PERF-1: polling variant. Returns `null` when the server reports nothing
+  /// has changed, so the caller can skip parsing, rebuilding and re-persisting
+  /// its list — the expensive part of a poll — instead of doing all of it to
+  /// arrive at the state it already had. An empty list still means "no orders".
+  static Future<List<Map<String, dynamic>>?> pollOrders({
+    required String orgId,
+    String? spreadsheetId,
+    String? table,
+  }) async {
+    final res = await fetchOrdersAndAlerts(
+      orgId: orgId,
+      spreadsheetId: spreadsheetId,
+      table: table,
+      useRevCache: true,
+    );
+    if (res['unchanged'] == true) return null;
     return res['orders'] as List<Map<String, dynamic>>;
   }
 

@@ -46,7 +46,12 @@ class BillLine {
   final String name;
   final double qty;
   final int unitPaise; // Price in integer paise
-  final int taxRateBps; // Basis points: 500 = 5.0%, 1200 = 12.0%, 1800 = 18.0%
+  /// Basis points: 500 = 5.0%, 1200 = 12.0%, 1800 = 18.0%.
+  /// `null` means "use the bill's defaultTaxRateBps". It used to default to
+  /// 500 and be ignored by the calculator anyway; now that it is honoured, a
+  /// silent 500 on a line the caller never set would under-tax an 18% item on
+  /// a store whose default is 18%. Absence has to be representable.
+  final int? taxRateBps;
 
   const BillLine({
     this.lineId,
@@ -54,7 +59,7 @@ class BillLine {
     required this.name,
     required this.qty,
     required this.unitPaise,
-    this.taxRateBps = 500,
+    this.taxRateBps,
   });
 
   int get lineTotalPaise => (qty * unitPaise).round();
@@ -121,6 +126,33 @@ class BillTotals {
 }
 
 class BillCalculator {
+  /// Splits [amount] across [weights] in proportion to each weight, in integer
+  /// paise, so that the parts sum to [amount] exactly. Rounding is done per
+  /// group and the residual (positive or negative, at most a few paise) is
+  /// placed on the group with the largest weight - the one where a paise
+  /// matters least proportionally. With one group this returns {rate: amount}.
+  static Map<int, int> _apportion(int amount, Map<int, int> weights, int totalWeight) {
+    final out = <int, int>{};
+    if (weights.isEmpty) return out;
+    if (amount == 0 || totalWeight <= 0) {
+      for (final k in weights.keys) {
+        out[k] = 0;
+      }
+      return out;
+    }
+    int assigned = 0;
+    int largestKey = weights.keys.first;
+    for (final entry in weights.entries) {
+      final share = ((amount * entry.value) / totalWeight).round();
+      out[entry.key] = share;
+      assigned += share;
+      if (entry.value > weights[largestKey]!) largestKey = entry.key;
+    }
+    final residual = amount - assigned;
+    if (residual != 0) out[largestKey] = (out[largestKey] ?? 0) + residual;
+    return out;
+  }
+
   /// Canonical tax and bill calculation.
   /// Order: subtotal -> discount -> serviceCharge -> taxable -> CGST/SGST -> roundOff -> grandTotal.
   static BillTotals compute({
@@ -162,10 +194,42 @@ class BillCalculator {
     int cgstPaise = 0;
     int sgstPaise = 0;
 
+    // Per-line tax rates. BillLine.taxRateBps was written to the OrderItems
+    // sheet per line but this method taxed the whole bill at defaultTaxRateBps
+    // and never read it - harmless while every caller passed one store-wide
+    // rate, but a menu with 5% food and 18% packaged beverages would have been
+    // billed entirely at one rate while the sheet claimed otherwise.
+    //
+    // Lines are grouped by their effective rate. The discount and the service
+    // charge are apportioned across the groups pro-rata by line value, with
+    // the rounding residual placed on the largest group so the parts always
+    // sum exactly to the whole. Each group is then taxed at its own rate, in
+    // whichever mode the bill is in. A single-rate bill collapses to one group
+    // and produces the same numbers as before.
+    final Map<int, int> groupSubtotal = {};
+    for (final line in lines) {
+      final rate = line.taxRateBps ?? defaultTaxRateBps;
+      groupSubtotal[rate] = (groupSubtotal[rate] ?? 0) + line.lineTotalPaise;
+    }
+    if (groupSubtotal.isEmpty) groupSubtotal[defaultTaxRateBps] = 0;
+
+    final Map<int, int> groupDiscount =
+        _apportion(discountPaise, groupSubtotal, subtotalPaise);
+    final Map<int, int> groupNet = {
+      for (final r in groupSubtotal.keys)
+        r: (groupSubtotal[r]! - (groupDiscount[r] ?? 0)).clamp(0, groupSubtotal[r]!),
+    };
+    final Map<int, int> groupSc =
+        _apportion(serviceChargePaise, groupNet, netAfterDiscount);
+
     if (taxMode == TaxMode.exclusive) {
       // Service charge is taxable
-      taxablePaise = netAfterDiscount + serviceChargePaise;
-      final int totalTaxPaise = ((taxablePaise * defaultTaxRateBps) / 10000).round();
+      int totalTaxPaise = 0;
+      for (final r in groupNet.keys) {
+        final gTaxable = groupNet[r]! + (groupSc[r] ?? 0);
+        taxablePaise += gTaxable;
+        totalTaxPaise += ((gTaxable * r) / 10000).round();
+      }
       cgstPaise = (totalTaxPaise / 2).round();
       sgstPaise = totalTaxPaise - cgstPaise;
     } else {
@@ -186,10 +250,13 @@ class BillCalculator {
       // paid", so the fix backs the tax out of the all-in amount INCLUDING the
       // service charge. The guest-facing total is unchanged; the split is now
       // internally consistent, and the service charge bears tax in both modes.
-      final int inclusiveTotalPaise = netAfterDiscount + serviceChargePaise;
-      taxablePaise =
-          ((inclusiveTotalPaise * 10000) / (10000 + defaultTaxRateBps)).round();
-      final int totalTaxPaise = inclusiveTotalPaise - taxablePaise;
+      int totalTaxPaise = 0;
+      for (final r in groupNet.keys) {
+        final gInclusive = groupNet[r]! + (groupSc[r] ?? 0);
+        final gTaxable = ((gInclusive * 10000) / (10000 + r)).round();
+        taxablePaise += gTaxable;
+        totalTaxPaise += gInclusive - gTaxable;
+      }
       cgstPaise = (totalTaxPaise / 2).round();
       sgstPaise = totalTaxPaise - cgstPaise;
     }

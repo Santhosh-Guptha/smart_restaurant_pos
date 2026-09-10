@@ -14,6 +14,7 @@ import '../../providers/saas_session_provider.dart';
 import '../../services/kitchen_ticket_formatter.dart';
 import '../../services/apps_script_backend_service.dart';
 import '../../sync/local_store.dart';
+import '../../sync/outbox.dart';
 
 class KitchenDisplayScreen extends ConsumerStatefulWidget {
   const KitchenDisplayScreen({super.key});
@@ -111,7 +112,12 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
   Future<void> _pollWebhookOrders() async {
     try {
       final orgId = _getEffectiveOrgId();
-      final orders = await AppsScriptBackendService.fetchOrders(orgId: orgId);
+      // PERF-1: null means the server has written nothing since our last poll.
+      // Returning here skips parsing every order, the setState rebuild, and the
+      // whole-blob Hive rewrite below - all of which used to run every 3
+      // seconds to arrive at the state we already had.
+      final orders = await AppsScriptBackendService.pollOrders(orgId: orgId);
+      if (orders == null) return;
       if (orders.isNotEmpty) {
         final parsedActive = <KotOrder>[];
         final parsedServed = <KotOrder>[];
@@ -179,13 +185,48 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
           }
         }
         _mergeAndSetOrders(parsedActive);
-        // Also update Hive cache
-        _updateHiveCache([...parsedActive, ...parsedServed], orgId);
+
+        // PERF-2: the Hive write below serialises every order and rewrites the
+        // whole list. At a 3-second poll that was a full JSON encode of the
+        // entire order history, on the UI isolate, twenty times a minute -
+        // which is what made the KDS feel sticky under load. Only write when
+        // the data actually differs from what is already cached, and never more
+        // than once every 15s.
+        final signature = _ordersSignature([...parsedActive, ...parsedServed]);
+        final now = DateTime.now();
+        final due = _lastHiveWrite == null ||
+            now.difference(_lastHiveWrite!) >= const Duration(seconds: 15);
+        if (signature != _lastHiveSignature && due) {
+          _lastHiveSignature = signature;
+          _lastHiveWrite = now;
+          _updateHiveCache([...parsedActive, ...parsedServed], orgId);
+        }
       }
     } catch (e) {
       debugPrint('KDS webhook poll error: $e');
     }
   }
+
+  /// PERF-2: cheap fingerprint of what the kitchen actually cares about.
+  /// Deliberately excludes timestamps and money - a bill total changing does
+  /// not alter the ticket on the pass, and including it would defeat the check.
+  String _ordersSignature(List<KotOrder> orders) {
+    if (orders.isEmpty) return '';
+    final parts = orders
+        .map((o) =>
+            '${o.canonicalKey}:${o.effectiveKitchenStatus}:${o.effectivePaymentStatus}:'
+            // Void state included for the same reason as _boardSignature: a
+            // void changes no order-level field, so without it a cancelled
+            // dish would persist in the Hive cache and come back on restart.
+            '${o.items.fold<double>(0, (sum, it) => sum + it.voidedQty)}:'
+            '${o.items.length}')
+        .toList()
+      ..sort();
+    return parts.join('|');
+  }
+
+  String? _lastHiveSignature;
+  DateTime? _lastHiveWrite;
 
   void _updateHiveCache(List<KotOrder> incomingOrders, String orgId) {
     if (Hive.isBoxOpen('configBox')) {
@@ -267,6 +308,36 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
       }
     } catch (e) {
       debugPrint('Error loading live KDS orders: $e');
+    }
+  }
+
+  /// X-18: queues a kitchen status transition the network refused. Payload
+  /// mirrors what Outbox.drain() reads for UPDATE_ORDER_STATUS.
+  Future<bool> _queueStatusPush(
+    String orgId,
+    KotOrder order,
+    String newStatus,
+    String clientRequestId,
+  ) async {
+    try {
+      await Outbox.enqueue(
+        outletId: orgId,
+        action: 'UPDATE_ORDER_STATUS',
+        clientRequestId: clientRequestId,
+        payload: {
+          'orderId': order.id,
+          'id': order.id,
+          'kotNumber': order.kotNumber,
+          'newStatus': newStatus,
+          'status': newStatus,
+          'tableName': order.tableName,
+          'table': order.tableName,
+        },
+      );
+      return true;
+    } catch (e) {
+      debugPrint('Outbox enqueue failed for status push ${order.kotNumber}: $e');
+      return false;
     }
   }
 
@@ -352,12 +423,69 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
       return a.createdAt.compareTo(b.createdAt);
     });
 
+    // PERF-3: skip the rebuild when the board is identical.
+    //
+    // _loadLiveOrders() and _pollWebhookOrders() both land here, so on a quiet
+    // service this ran twice every 3 seconds and each call rebuilt the whole
+    // ticket board - re-running every stage filter, every station filter and
+    // every card - to render pixels identical to the ones already on screen.
+    // On a ten-ticket board that is the difference between a KDS that responds
+    // to a tap immediately and one that feels like it is thinking.
+    final mergedSignature = _boardSignature(merged);
+    if (mergedSignature == _lastBoardSignature) {
+      _allOrders = merged; // keep the objects fresh; no repaint needed
+      return;
+    }
+    _lastBoardSignature = mergedSignature;
+
     if (mounted) {
       setState(() {
         _allOrders = merged;
       });
     }
   }
+
+  /// PERF-3: everything the rendered board depends on, and nothing else.
+  ///
+  /// Per-item void and kitchen state are in here deliberately. A void does not
+  /// remove the line or change the order's status - it sets voidedQty - so an
+  /// order-level signature alone would report "no change" and leave a cancelled
+  /// dish sitting on the pass. That is the exact defect X-11 fixed server-side,
+  /// and it would have been reintroduced here.
+  ///
+  /// Money and timestamps are excluded: the board does not draw from them, and
+  /// the elapsed-time clock repaints through its own ValueNotifier rather than
+  /// through setState.
+  String _boardSignature(List<KotOrder> orders) {
+    if (orders.isEmpty) return '';
+    final sb = StringBuffer();
+    for (final o in orders) {
+      sb
+        ..write(o.canonicalKey)
+        ..write(':')
+        ..write(o.effectiveKitchenStatus)
+        ..write(':')
+        ..write(o.courseNo ?? 0)
+        ..write('[');
+      for (final it in o.items) {
+        sb
+          ..write(it.lineId ?? it.productId)
+          ..write('~')
+          ..write(it.qty)
+          ..write('~')
+          ..write(it.voidedQty)
+          ..write('~')
+          ..write(it.kitchenStatus ?? '')
+          ..write('~')
+          ..write(it.station ?? '')
+          ..write(',');
+      }
+      sb.write('];');
+    }
+    return sb.toString();
+  }
+
+  String? _lastBoardSignature;
 
   List<KotOrder> _getOrdersForStage(String stage) {
     List<KotOrder> orders;
@@ -516,6 +644,7 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
 
       // Sync status via Webhook
       bool syncOk = true;
+      bool statusQueued = false;
       try {
         final fsStatus = isServedAction
             ? 'SERVED'
@@ -523,14 +652,24 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
                 ? 'PREPARING'
                 : (newStatus == KotStatus.ready ? 'READY' : 'PENDING'));
         
+        final statusReqId = const Uuid().v4();
         syncOk = await AppsScriptBackendService.updateOrderStatus(
           orgId: orgId,
           orderId: order.id,
           kotNumber: order.kotNumber,
           newStatus: fsStatus,
           tableName: order.tableName,
-          clientRequestId: const Uuid().v4(),
+          clientRequestId: statusReqId,
         );
+        if (!syncOk) {
+          // X-18 (KDS path): "sync pending" used to be a label with nothing
+          // behind it - the transition was never retried, so a READY tapped
+          // during a network blip stayed PENDING on the waiter's and cashier's
+          // screens until someone noticed. Hand it to the Outbox. The server's
+          // kitchen compare-and-set (X-17) makes a late-arriving retry safe: a
+          // stale rank is a no-op, never a regression.
+          statusQueued = await _queueStatusPush(orgId, order, fsStatus, statusReqId);
+        }
       } catch (e) {
         syncOk = false;
         debugPrint('Error updating KOT status via webhook: $e');
@@ -539,15 +678,18 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
       if (mounted) {
         String statusLabel = 'Updated';
         Color snackBg = const Color(0xFF2563EB);
+        final pendingLabel = statusQueued
+            ? 'queued - will sync when the network returns'
+            : 'did NOT sync - tell the pass';
         if (isServedAction) {
-          statusLabel = syncOk ? 'served and removed from active board ✅' : 'served locally (sync pending ⏳)';
-          snackBg = syncOk ? const Color(0xFF059669) : const Color(0xFFD97706);
+          statusLabel = syncOk ? 'served and removed from active board ✅' : 'served locally ($pendingLabel)';
+          snackBg = syncOk ? const Color(0xFF059669) : (statusQueued ? const Color(0xFFD97706) : const Color(0xFFDC2626));
         } else if (newStatus == KotStatus.preparing) {
-          statusLabel = syncOk ? 'started preparing 👨‍🍳' : 'preparing locally (sync pending ⏳)';
-          snackBg = syncOk ? const Color(0xFF2563EB) : const Color(0xFFD97706);
+          statusLabel = syncOk ? 'started preparing 👨‍🍳' : 'preparing locally ($pendingLabel)';
+          snackBg = syncOk ? const Color(0xFF2563EB) : (statusQueued ? const Color(0xFFD97706) : const Color(0xFFDC2626));
         } else if (newStatus == KotStatus.ready) {
-          statusLabel = syncOk ? 'marked READY for serving! 🍳' : 'READY locally (sync pending ⏳)';
-          snackBg = syncOk ? const Color(0xFF059669) : const Color(0xFFD97706);
+          statusLabel = syncOk ? 'marked READY for serving! 🍳' : 'READY locally ($pendingLabel)';
+          snackBg = syncOk ? const Color(0xFF059669) : (statusQueued ? const Color(0xFFD97706) : const Color(0xFFDC2626));
         }
 
         ScaffoldMessenger.of(context).showSnackBar(

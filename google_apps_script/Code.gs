@@ -111,6 +111,18 @@ function doPost(e) {
       case "VERIFY_PAYMENT":
         return handleVerifyPayment(json);
 
+      // Per-franchise Razorpay credentials. All three require
+      // json.__authenticated (they are absent from isPublicAction above), so a
+      // guest phone holding the /exec URL cannot read or change gateway keys.
+      case "SET_OUTLET_RAZORPAY":
+        return handleSetOutletRazorpay(json);
+
+      case "TEST_OUTLET_RAZORPAY":
+        return handleTestOutletRazorpay(json);
+
+      case "GET_OUTLET_RAZORPAY_STATUS":
+        return handleGetOutletRazorpayStatus(json);
+
       case "CLOSE_SESSION":
         return handleCloseSession(json);
 
@@ -231,6 +243,74 @@ function ensureInventoryRevColumn(sheet) {
   return sheet;
 }
 
+/**
+ * X-17: adds the "Kitchen Status" and "Payment Status" columns when a sheet
+ * predates the split. Idempotent, and appends at the end so existing rows and
+ * any external reader keep working.
+ *
+ * Why the split exists: ONE cell used to be the serialization target for two
+ * independent state machines. Settlement wrote PAID into it and a KDS status
+ * update wrote PREPARING/READY into the same cell, so a chef tapping Ready
+ * thirty seconds after a guest paid made the bill unpaid again on every
+ * surface, and a cashier settling mid-cook made the ticket vanish off the
+ * kitchen display. No ordering fixes that - they were two writers racing for
+ * one cell.
+ */
+function ensureBillStatusColumns(sheet) {
+  if (!sheet) return sheet;
+  try {
+    var lastCol = sheet.getLastColumn();
+    if (lastCol < 1) return sheet;
+    var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0]
+      .map(function (h) { return String(h || "").trim().toLowerCase().replace(/[^a-z0-9]/g, ""); });
+    var next = lastCol;
+    if (headers.indexOf("kitchenstatus") === -1) {
+      next += 1;
+      sheet.getRange(1, next).setValue("Kitchen Status").setFontWeight("bold");
+    }
+    if (headers.indexOf("paymentstatus") === -1) {
+      next += 1;
+      sheet.getRange(1, next).setValue("Payment Status").setFontWeight("bold");
+    }
+  } catch (eCols) {}
+  return sheet;
+}
+
+/**
+ * Kitchen-only progression rank. Separate from getStatusRank(), which mixes
+ * payment states into the same scale and so cannot express "this kitchen
+ * update is stale".
+ */
+function kitchenStatusRank(status) {
+  var s = String(status || "").toUpperCase().trim();
+  if (s === "CANCELLED" || s === "VOIDED") return 0;
+  if (s === "SERVED" || s === "COMPLETED" || s === "SETTLED") return 4;
+  if (s === "READY" || s === "FOOD_READY" || s === "DONE" || s === "KITCHEN_DONE") return 3;
+  if (s === "PREPARING" || s === "COOKING" || s === "ACCEPTED" || s === "IN_PROGRESS") return 2;
+  return 1; // PENDING / ORDER_RECEIVED / RECEIVED / NEW / anything unknown
+}
+
+/** Normalised payment state: UNPAID, PAID, REFUNDED or VOIDED. */
+function normalizePaymentStatus(status) {
+  var s = String(status || "").toUpperCase().trim();
+  if (s === "PAID" || s === "SUCCESS" || s === "COMPLETED" || s === "SETTLED") return "PAID";
+  if (s === "REFUNDED") return "REFUNDED";
+  if (s === "VOIDED" || s === "CANCELLED") return "VOIDED";
+  if (s === "PARTIAL" || s === "PARTIALLY_PAID") return "PARTIAL";
+  return "UNPAID";
+}
+
+/**
+ * The value written to the legacy single "Status" column, so anything still
+ * reading it keeps working. Payment wins when terminal, because that is what
+ * the money surfaces care about.
+ */
+function deriveLegacyStatus(kitchenStatus, paymentStatus) {
+  var p = normalizePaymentStatus(paymentStatus);
+  if (p === "PAID" || p === "REFUNDED" || p === "VOIDED") return p;
+  return String(kitchenStatus || "PENDING").toUpperCase().trim() || "PENDING";
+}
+
 // X-15/S-19: single exact-header column resolver for the Inventory sheet.
 // Substring matching (`h.indexOf("id")`, `h.indexOf("status")`) let a
 // Paid / Valid / Void column claim the id and a Status column claim
@@ -295,7 +375,7 @@ function getOrCreateBillsSheet(ss) {
     sheet = ss.insertSheet("Bills");
     sheet.appendRow([
       "Bill ID", "Date & Time", "Customer Name", "Customer Phone", 
-      "Payment Mode", "Subtotal", "Discount", "Total Amount", "Items Summary", "Status", "Table", "Transaction ID"
+      "Payment Mode", "Subtotal", "Discount", "Total Amount", "Items Summary", "Status", "Table", "Transaction ID", "Kitchen Status", "Payment Status"
     ]);
     sheet.getRange("A1:L1").setFontWeight("bold").setBackground("#E0F2FE");
     sheet.setFrozenRows(1);
@@ -309,7 +389,7 @@ function getOrCreateBillsSheet(ss) {
     if (headers.length < 12 || headers[7] !== "Total Amount" || headers[8] !== "Items Summary" || headers[10] !== "Table") {
       sheet.getRange(1, 1, 1, 12).setValues([[
         "Bill ID", "Date & Time", "Customer Name", "Customer Phone", 
-        "Payment Mode", "Subtotal", "Discount", "Total Amount", "Items Summary", "Status", "Table", "Transaction ID"
+        "Payment Mode", "Subtotal", "Discount", "Total Amount", "Items Summary", "Status", "Table", "Transaction ID", "Kitchen Status", "Payment Status"
       ]]);
       sheet.getRange("A1:L1").setFontWeight("bold").setBackground("#E0F2FE");
       sheet.setFrozenRows(1);
@@ -375,6 +455,11 @@ function allocateCounter(ss, outletId, kind, businessDate) {
 // ─────────────────────────────────────────────────────────────────────────────
 function resolveBillColumns(headers) {
   var idIdx = -1, dateIdx = -1, nameIdx = -1, phoneIdx = -1, modeIdx = -1, subtotalIdx = -1, totalIdx = -1, itemsIdx = -1, statusIdx = -1, tableIdx = -1, txnIdx = -1, orderSourceIdx = -1, orderTypeIdx = -1;
+  // X-17. These get NO positional fallback on purpose: -1 must mean "column
+  // absent" so a caller provisions it, rather than writing into whatever
+  // happens to sit at that index. A positional fallback is exactly how the
+  // inventory path (X-15) wrote the wrong column for months.
+  var kitchenStatusIdx = -1, paymentStatusIdx = -1;
   headers.forEach(function(rawH, idx) {
     var cleanH = String(rawH || "").toLowerCase().replace(/[^a-z0-9]/g, "");
     if (cleanH === "billid" || cleanH === "id" || cleanH === "kotid") idIdx = idx;
@@ -385,6 +470,11 @@ function resolveBillColumns(headers) {
     else if (cleanH === "subtotal" || cleanH === "subtotalamount") subtotalIdx = idx;
     else if (cleanH === "totalamount" || cleanH === "nettotal" || cleanH === "grandtotal" || cleanH === "total" || cleanH === "amount") totalIdx = idx;
     else if (cleanH === "itemssummary" || cleanH === "itemsjson" || cleanH === "items" || cleanH === "dishes") itemsIdx = idx;
+    // X-17: matched BEFORE the generic "status" arm below. "kitchenstatus" and
+    // "paymentstatus" do not equal "status", so ordering is not strictly
+    // required, but keeping them first makes the intent explicit.
+    else if (cleanH === "kitchenstatus" || cleanH === "kotstatus") kitchenStatusIdx = idx;
+    else if (cleanH === "paymentstatus" || cleanH === "paystatus") paymentStatusIdx = idx;
     else if (cleanH === "status" || cleanH === "orderstatus" || cleanH === "billstatus") statusIdx = idx;
     else if (cleanH === "table" || cleanH === "tablename" || cleanH === "tablelocation" || cleanH === "tabletakeaway") tableIdx = idx;
     else if (cleanH === "transactionid" || cleanH === "txnid" || cleanH === "utr" || cleanH === "ref") txnIdx = idx;
@@ -415,6 +505,8 @@ function resolveBillColumns(headers) {
     totalIdx: totalIdx,
     itemsIdx: itemsIdx,
     statusIdx: statusIdx,
+    kitchenStatusIdx: kitchenStatusIdx,
+    paymentStatusIdx: paymentStatusIdx,
     tableIdx: tableIdx,
     txnIdx: txnIdx,
     orderSourceIdx: orderSourceIdx,
@@ -837,15 +929,29 @@ function persistV2Order(ss, orgId, billId, cleanId, tokenNo, tableName, cTable, 
         }
       }
 
+      // X-16: close the session only when the party has paid in full.
+      //
+      // Settling ANY bill used to close the session outright. Since X-06 every
+      // round is its own bill, so a party with two rounds had its session
+      // closed by the first settlement while the second round was still owed;
+      // the next save for that table then opened a fresh session for the same
+      // guests, splitting one visit across two session records - and a table
+      // could read VACANT with money still on it. Settled-vs-owed is decided
+      // from the ledger, not from the request that happens to arrive first.
       var sSheet = ss.getSheetByName("Sessions");
       if (sSheet && sessionId) {
-        var sData = sSheet.getDataRange().getValues();
-        for (var si = sData.length - 1; si >= 1; si--) {
-          if (String(sData[si][0] || "").trim() === sessionId) {
-            sSheet.getRange(si + 1, 4).setValue("CLOSED");
-            sSheet.getRange(si + 1, 12).setValue(timeStr);
-            sSheet.getRange(si + 1, 14).setValue(rev);
-            break;
+        if (sessionFullyPaid(ss, sessionId)) {
+          var sData = sSheet.getDataRange().getValues();
+          for (var si = sData.length - 1; si >= 1; si--) {
+            if (String(sData[si][0] || "").trim() === sessionId) {
+              var curSes = String(sData[si][3] || "").trim().toUpperCase();
+              if (curSes !== "CLOSED" && curSes !== "CANCELLED") {
+                sSheet.getRange(si + 1, 4).setValue("CLOSED");
+                sSheet.getRange(si + 1, 12).setValue(timeStr);
+                sSheet.getRange(si + 1, 14).setValue(rev);
+              }
+              break;
+            }
           }
         }
       }
@@ -853,6 +959,58 @@ function persistV2Order(ss, orgId, billId, cleanId, tokenNo, tableName, cTable, 
   } catch (eV2) {
     console.warn("Error in persistV2Order: " + eV2);
   }
+}
+
+/**
+ * X-16: true when verified, un-voided payments for a session cover the grand
+ * total of its non-cancelled orders. Reads the two V2 ledgers, never the
+ * legacy Bills sheet. Unverified guest payments (X-01) do not count, so a
+ * table cannot be released on a payment the counter has not confirmed.
+ * Sessions with no recorded orders (legacy rows) are treated as paid, which
+ * preserves the previous behaviour for them.
+ */
+function sessionFullyPaid(ss, sessionId) {
+  if (!ss || !sessionId) return true;
+  var owedP = 0, paidP = 0;
+  try {
+    var oSheet = ss.getSheetByName("Orders");
+    if (oSheet && oSheet.getLastRow() > 1) {
+      var oVals = oSheet.getDataRange().getValues();
+      var oH = oVals[0].map(function (h) { return String(h || "").trim(); });
+      var oSes = oH.indexOf("sessionId"), oKs = oH.indexOf("kitchenStatus"), oTot = oH.indexOf("grandTotalP");
+      if (oSes === -1) oSes = 1;
+      if (oKs === -1) oKs = 9;
+      if (oTot === -1) oTot = 25;
+      for (var i = 1; i < oVals.length; i++) {
+        if (String(oVals[i][oSes] || "").trim() !== sessionId) continue;
+        var ks = String(oVals[i][oKs] || "").toUpperCase().trim();
+        if (ks === "CANCELLED" || ks === "VOIDED") continue;
+        owedP += parseInt(oVals[i][oTot], 10) || 0;
+      }
+    }
+    var pSheet = ss.getSheetByName("Payments");
+    if (pSheet && pSheet.getLastRow() > 1) {
+      var pVals = pSheet.getDataRange().getValues();
+      var pH = pVals[0].map(function (h) { return String(h || "").trim(); });
+      var pSes = pH.indexOf("sessionId"), pAmt = pH.indexOf("amountP"), pVer = pH.indexOf("verified"), pVoid = pH.indexOf("voidedBy");
+      if (pSes === -1) pSes = 1;
+      if (pAmt === -1) pAmt = 4;
+      if (pVer === -1) pVer = 8;
+      if (pVoid === -1) pVoid = 11;
+      for (var j = 1; j < pVals.length; j++) {
+        if (String(pVals[j][pSes] || "").trim() !== sessionId) continue;
+        if (String(pVals[j][pVoid] || "").trim() !== "") continue;
+        var v = pVals[j][pVer];
+        if (v === false || String(v).toLowerCase() === "false") continue;
+        paidP += parseInt(pVals[j][pAmt], 10) || 0;
+      }
+    }
+  } catch (eSp) {
+    // If the ledgers cannot be read, do not release the table on a guess.
+    return false;
+  }
+  if (owedP === 0) return true;
+  return paidP >= owedP;
 }
 
 function migrateDiningBillsToV2(ss, isDryRun) {
@@ -1417,6 +1575,45 @@ function doGet(e) {
     if (!orgId) {
       return responseJson({ success: false, error: "org parameter is required for multi-tenant isolation." });
     }
+
+    // PERF-1: not-modified short circuit.
+    //
+    // Every live screen polls this action on a timer - the KDS every 3s, the
+    // waiter screen every 4s, table management every 5s - and each call read the
+    // whole Bills sheet with getDataRange().getValues(), rebuilt every order as
+    // JSON, and shipped the lot back. In a real service most of those windows
+    // contain no change at all, so the great majority of that work produced a
+    // payload byte-identical to the one before it.
+    //
+    // Every mutating handler already bumps a per-outlet revision counter
+    // (getAndBumpRev). If the caller tells us the rev it last saw and nothing
+    // has been written since, we can answer in a few bytes without opening the
+    // spreadsheet. A client that sends no sinceRev gets the full response
+    // exactly as before, so older builds keep working.
+    var currentOutletRev = 0;
+    try {
+      currentOutletRev = parseInt(
+        PropertiesService.getScriptProperties().getProperty("rev_" + orgId.trim()), 10
+      ) || 0;
+    } catch (eRev) { currentOutletRev = 0; }
+
+    var sinceRevParam = params.sinceRev || params.since_rev;
+    if (sinceRevParam !== undefined && sinceRevParam !== null && String(sinceRevParam) !== "") {
+      var sinceRevNum = parseInt(sinceRevParam, 10);
+      // Only short-circuit on an exact match. A client ahead of the server
+      // (restored backup, clock-skewed cache) must get the real data, not a
+      // "nothing changed" it would trust forever.
+      if (!isNaN(sinceRevNum) && sinceRevNum > 0 && sinceRevNum === currentOutletRev) {
+        return responseJson({
+          ok: true,
+          success: true,
+          unchanged: true,
+          rev: currentOutletRev,
+          orders: []
+        });
+      }
+    }
+
     try {
       var ordersMap = {};
       var reqTable = (params.table || "").toLowerCase().trim();
@@ -1472,7 +1669,8 @@ function doGet(e) {
               var cols = resolveBillColumns(headers);
               var idIdx = cols.idIdx, dateIdx = cols.dateIdx, nameIdx = cols.nameIdx, phoneIdx = cols.phoneIdx,
                   modeIdx = cols.modeIdx, subtotalIdx = cols.subtotalIdx, totalIdx = cols.totalIdx,
-                  itemsIdx = cols.itemsIdx, statusIdx = cols.statusIdx, tableIdx = cols.tableIdx, txnIdx = cols.txnIdx;
+                  itemsIdx = cols.itemsIdx, statusIdx = cols.statusIdx, tableIdx = cols.tableIdx, txnIdx = cols.txnIdx,
+                  kitchenStatusIdx = cols.kitchenStatusIdx, paymentStatusIdx = cols.paymentStatusIdx;
 
               for (var r = 1; r < data.length; r++) {
                 var row = data[r];
@@ -1484,15 +1682,36 @@ function doGet(e) {
                 var rawStatus = statusIdx !== -1 ? String(row[statusIdx] || "").trim() : "";
                 var rowItemsStr = "";
                 if (rawStatus.indexOf("[") === 0 || rawStatus.indexOf("{") === 0) {
+                  // Columns are shifted: the status cell holds the items JSON.
+                  //
+                  // X-17: this used to fall back to `row[statusIdx + 1]`, which
+                  // now lands on "Kitchen Status" and would report a kitchen
+                  // stage as the order's whole status - exactly the corruption
+                  // the peek was written to avoid. The split columns are the
+                  // reliable source, so read them and only then fall back.
                   rowItemsStr = rawStatus;
-                  if (row[statusIdx + 1] !== undefined && String(row[statusIdx + 1]).indexOf("[") === -1 && String(row[statusIdx + 1]).indexOf("{") === -1 && String(row[statusIdx + 1]).trim() !== "") {
-                    rawStatus = String(row[statusIdx + 1]).trim();
-                  } else if (row[9] !== undefined && String(row[9]).indexOf("[") === -1 && String(row[9]).indexOf("{") === -1 && String(row[9]).trim() !== "") {
-                    rawStatus = String(row[9]).trim();
+                  rawStatus = "";
+                }
+
+                // X-17: the two machines have their own columns. Read them
+                // directly instead of making the client guess from one value.
+                var rowKitchenStatus = (kitchenStatusIdx !== -1)
+                  ? String(row[kitchenStatusIdx] || "").trim() : "";
+                var rowPaymentStatus = (paymentStatusIdx !== -1)
+                  ? String(row[paymentStatusIdx] || "").trim() : "";
+
+                // Pre-migration rows carry both machines in the legacy cell.
+                if (!rowKitchenStatus && !rowPaymentStatus && rawStatus) {
+                  var legacyPay = normalizePaymentStatus(rawStatus);
+                  if (legacyPay !== "UNPAID") {
+                    rowPaymentStatus = legacyPay;
                   } else {
-                    rawStatus = "ORDER_RECEIVED";
+                    rowKitchenStatus = rawStatus;
                   }
                 }
+                if (!rowKitchenStatus) rowKitchenStatus = "PENDING";
+                if (!rowPaymentStatus) rowPaymentStatus = "UNPAID";
+                if (!rawStatus) rawStatus = deriveLegacyStatus(rowKitchenStatus, rowPaymentStatus);
                 if (!rawStatus) rawStatus = "ORDER_RECEIVED";
 
                 // If this order is settled, NEVER return to active table session!
@@ -1606,6 +1825,10 @@ function doGet(e) {
                   // GET_ORDERS silently never returned anything from the Bills sheet.
                   itemsSummary: cellItems,
                   status: rawStatus,
+                  // X-17: sent explicitly so KotOrder.fromMap stops inferring
+                  // both machines from one string.
+                  kitchenStatus: rowKitchenStatus,
+                  paymentStatus: rowPaymentStatus,
                   paymentMode: rawMode,
                   table: canonicalTable,
                   tableName: canonicalTable,
@@ -1624,6 +1847,17 @@ function doGet(e) {
                   } else {
                     orderObj.status = prev.status;
                     ordersMap[rawId] = orderObj;
+                  }
+                  // X-17: keep the furthest-along value of EACH machine. Ranking
+                  // the combined status alone let a duplicate row carrying an
+                  // earlier kitchen stage overwrite a later one, or drop a PAID.
+                  var keptOrder = ordersMap[rawId];
+                  if (kitchenStatusRank(prev.kitchenStatus) > kitchenStatusRank(keptOrder.kitchenStatus)) {
+                    keptOrder.kitchenStatus = prev.kitchenStatus;
+                  }
+                  if (normalizePaymentStatus(prev.paymentStatus) === "PAID" &&
+                      normalizePaymentStatus(keptOrder.paymentStatus) !== "PAID") {
+                    keptOrder.paymentStatus = "PAID";
                   }
                 } else {
                   ordersMap[rawId] = orderObj;
@@ -1649,7 +1883,16 @@ function doGet(e) {
         });
       }
 
-      return responseJson({ success: true, orders: finalOrders, waiterCalls: activeAlerts });
+      // PERF-1: the rev the client should echo back as sinceRev on its next
+      // poll. Without it the short circuit above can never engage.
+      return responseJson({
+        success: true,
+        ok: true,
+        unchanged: false,
+        rev: currentOutletRev,
+        orders: finalOrders,
+        waiterCalls: activeAlerts
+      });
     } catch (err) {
       return responseJson({ success: false, error: err.toString() });
     }
@@ -1685,7 +1928,7 @@ function handleCreateOutlet(data) {
   }
   billsSheet.appendRow([
     "Bill ID", "Date & Time", "Customer Name", "Customer Phone", 
-    "Payment Mode", "Subtotal", "Discount", "Total Amount", "Items Summary", "Status", "Table", "Transaction ID"
+    "Payment Mode", "Subtotal", "Discount", "Total Amount", "Items Summary", "Status", "Table", "Transaction ID", "Kitchen Status", "Payment Status"
   ]);
   billsSheet.getRange("A1:L1").setFontWeight("bold").setBackground("#E0F2FE");
   billsSheet.setFrozenRows(1);
@@ -2035,7 +2278,11 @@ function handleSaveBill(data) {
       let existingRow = -1;
 
       let idIdx = 0, statusIdx = 9, modeIdx = 4, tableIdx = 10, txnIdx = 11;
+      var kStatusIdx = -1, pStatusIdx = -1;
       if (lastRow > 1) {
+        // X-17: provision the split columns before reading the header, so an
+        // outlet upgrading mid-service gets them on its next write.
+        ensureBillStatusColumns(sheet);
         const data = sheet.getDataRange().getValues();
         var headers = data[0].map(function(h) { return String(h || "").trim().toLowerCase(); });
         var cols = resolveBillColumns(headers);
@@ -2044,6 +2291,8 @@ function handleSaveBill(data) {
         modeIdx = cols.modeIdx;
         tableIdx = cols.tableIdx;
         txnIdx = cols.txnIdx;
+        kStatusIdx = cols.kitchenStatusIdx;
+        pStatusIdx = cols.paymentStatusIdx;
 
         // Find matching row by clean ID
         for (let i = 1; i < data.length; i++) {
@@ -2054,20 +2303,78 @@ function handleSaveBill(data) {
           }
         }
 
-        // Only update status for THIS specific bill row if settled
+        // The row's current split state, so neither machine has to guess at the
+        // other's value when it writes the legacy column.
+        var rowKitchen = (existingRow !== -1 && kStatusIdx !== -1)
+          ? String(data[existingRow - 1][kStatusIdx] || "").trim() : "";
+        var rowPayment = (existingRow !== -1 && pStatusIdx !== -1)
+          ? String(data[existingRow - 1][pStatusIdx] || "").trim() : "";
+        // A row written before the split carries both machines in one cell.
+        if (existingRow !== -1 && !rowKitchen && !rowPayment) {
+          var legacy = statusIdx !== -1 ? String(data[existingRow - 1][statusIdx] || "").trim() : "";
+          var legacyPay = normalizePaymentStatus(legacy);
+          if (legacyPay !== "UNPAID") {
+            rowPayment = legacyPay;
+          } else if (legacy) {
+            rowKitchen = legacy;
+          }
+        }
+
+        // X-17: SETTLEMENT touches the payment machine only. It used to write
+        // "PAID" into the single Status cell, which erased whatever the kitchen
+        // had put there - the ticket disappeared off the KDS mid-cook.
         if (isSettled && existingRow !== -1) {
-          sheet.getRange(existingRow, statusIdx + 1).setValue("PAID");
+          rowPayment = "PAID";
+          if (pStatusIdx !== -1) sheet.getRange(existingRow, pStatusIdx + 1).setValue("PAID");
+          if (statusIdx !== -1) {
+            sheet.getRange(existingRow, statusIdx + 1)
+              .setValue(deriveLegacyStatus(rowKitchen, rowPayment));
+          }
           if (paymentMode) sheet.getRange(existingRow, modeIdx + 1).setValue(paymentMode);
           if (txnId) sheet.getRange(existingRow, txnIdx + 1).setValue(txnId);
         }
 
         // If updating an existing row for status update with no items provided, only update status & txn
         if (existingRow !== -1 && (isStatusUpdate || b.update_type === "STATUS_UPDATE" || (!rawItems || rawItems.length === 0))) {
-          sheet.getRange(existingRow, statusIdx + 1).setValue(isSettled ? "PAID" : status);
+          if (isSettled) {
+            // Already applied above; nothing further to write.
+            return buildResult({ row: existingRow, cleared: true, paymentStatus: "PAID", kitchenStatus: rowKitchen });
+          }
+
+          // X-17: a KDS update touches the KITCHEN machine only. It used to
+          // write into the same Status cell settlement used, so a chef tapping
+          // Ready after a guest paid made the bill unpaid again everywhere.
+          var incomingKitchen = String(status || "").toUpperCase().trim() || "PENDING";
+
+          // Compare-and-set: a stale or replayed update must not walk the
+          // kitchen backwards. Two KDS devices, or an Outbox retry, will both
+          // send the same transition more than once.
+          var currentRank = kitchenStatusRank(rowKitchen || "PENDING");
+          var incomingRank = kitchenStatusRank(incomingKitchen);
+          if (rowKitchen && incomingRank <= currentRank && incomingRank !== 0) {
+            return buildResult({
+              row: existingRow,
+              cleared: false,
+              applied: false,
+              kitchenStatus: rowKitchen,
+              paymentStatus: normalizePaymentStatus(rowPayment),
+              message: "Kitchen status is already at or past " + incomingKitchen + "."
+            });
+          }
+
+          rowKitchen = incomingKitchen;
+          if (kStatusIdx !== -1) sheet.getRange(existingRow, kStatusIdx + 1).setValue(rowKitchen);
+          if (statusIdx !== -1) {
+            sheet.getRange(existingRow, statusIdx + 1)
+              .setValue(deriveLegacyStatus(rowKitchen, rowPayment));
+          }
           if (txnId) sheet.getRange(existingRow, txnIdx + 1).setValue(txnId);
           return buildResult({
             row: existingRow,
-            cleared: isSettled
+            cleared: false,
+            applied: true,
+            kitchenStatus: rowKitchen,
+            paymentStatus: normalizePaymentStatus(rowPayment)
           });
         }
       }
@@ -2097,7 +2404,13 @@ function handleSaveBill(data) {
         typeof rawItems === "string" ? rawItems : JSON.stringify(rawItems),
         isSettled ? "PAID" : status,
         tableName,
-        txnId
+        txnId,
+        // X-17: the two split columns, appended in the same order as the header
+        // literals. A new bill starts with its kitchen and payment machines in
+        // their own cells, so the first KDS tap and the first settlement no
+        // longer contend for one.
+        isSettled ? "SERVED" : String(b.kitchenStatus || b.kitchen_status || status || "PENDING").toUpperCase().trim(),
+        isSettled ? "PAID" : normalizePaymentStatus(b.payment_status || b.paymentStatus)
       ];
 
       if (existingRow !== -1) {
@@ -2249,7 +2562,9 @@ function handlePurgeTestOrders(data) {
       props.setProperty(cacheKey, JSON.stringify(filtered));
     } catch(e) {}
   }
-  return responseJson({ success: true, removedCount: removed, message: "Purged " + removed + " test orders from cache." });
+  // PERF-1: purging removes rows GET_ORDERS returns, so clients must be told
+  // to refetch rather than being answered "unchanged".
+  return responseJson({ success: true, removedCount: removed, rev: getAndBumpRev(orgId), message: "Purged " + removed + " test orders from cache." });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2307,7 +2622,9 @@ function handleSyncInventory(data) {
     if (rows.length > 0) {
       sheet.getRange(2, 1, rows.length, rows[0].length).setValues(rows);
     }
-    return responseJson({ success: true, count: rows.length, mode: "REPLACE_ALL" });
+    // PERF-1 / X-15: a menu replacement changes availability and pricing that
+    // both GET_DELTA and the guest app read.
+    return responseJson({ success: true, count: rows.length, mode: "REPLACE_ALL", rev: getAndBumpRev(orgId) });
   } else {
     // Upsert items by ID or Name
     const lastRow = sheet.getLastRow();
@@ -2426,13 +2743,49 @@ function handleServiceRequest(data) {
       var ss = SpreadsheetApp.openById(spreadsheetId);
       var sheet = getOrCreateAlertsSheet(ss);
       sheet.appendRow([alertId, timeStr, table, reqType, guestName, "PENDING"]);
+
+      // X-16: the guest app has sent type "BILL_REQUEST" through this action
+      // all along, and the Sessions sheet has had a BILL_REQUESTED state all
+      // along - and nothing ever connected the two. The state was dead: read
+      // in two places, written nowhere. A bill request is a session
+      // transition (OPEN -> BILL_REQUESTED), not just a bell, because the
+      // floor plan needs to show "wants to pay" distinctly from "occupied",
+      // and settlement needs to be able to close from it (handleCloseSession
+      // now accepts BILL_REQUESTED). Only OPEN moves; anything else is left
+      // alone - a compare-and-set, so a late or duplicate request cannot
+      // reopen a closed session.
+      if (reqType.indexOf("BILL") !== -1) {
+        try {
+          var sesSheet = ss.getSheetByName("Sessions");
+          if (sesSheet && sesSheet.getLastRow() > 1) {
+            var cTbl = cleanTableId(table);
+            var sv = sesSheet.getDataRange().getValues();
+            for (var sri = sv.length - 1; sri >= 1; sri--) {
+              var sOut = String(sv[sri][1] || "").trim();
+              var sTables = String(sv[sri][2] || "").trim().split(",").map(function (t) { return cleanTableId(t); });
+              var sStat = String(sv[sri][3] || "").trim().toUpperCase();
+              if (sOut === String(orgId).trim() && sTables.indexOf(cTbl) !== -1 && sStat === "OPEN") {
+                sesSheet.getRange(sri + 1, 4).setValue("BILL_REQUESTED");
+                sesSheet.getRange(sri + 1, 14).setValue(getAndBumpRev(orgId));
+                break;
+              }
+            }
+          }
+        } catch (eSes) {}
+      }
     }
   } catch(e) {}
 
-  return responseJson({ success: true, alert_id: alertId, message: "Alert dispatched to staff." });
+  // PERF-1: GET_ORDERS returns waiterCalls alongside orders, and its
+  // not-modified short circuit keys off this rev. Without the bump a guest
+  // pressing the bell would never reach the floor plan - the poll would keep
+  // answering "unchanged".
+  var alertRev = getAndBumpRev(orgId);
+  return responseJson({ success: true, alert_id: alertId, message: "Alert dispatched to staff.", rev: alertRev });
 }
 
 function handleDismissServiceRequest(data) {
+  // PERF-1: resolving a call changes the waiterCalls GET_ORDERS returns.
   var orgId = data.org_id || data.org || data.outlet_id || "";
   var spreadsheetId = data.spreadsheet_id || getSheetIdForOrg(orgId);
   var payload = data.data || data;
@@ -2473,7 +2826,7 @@ function handleDismissServiceRequest(data) {
     }
   } catch(e) {}
 
-  return responseJson({ success: true, message: "Alert dismissed." });
+  return responseJson({ success: true, message: "Alert dismissed.", rev: getAndBumpRev(orgId) });
 }
 
 function getActiveWaiterAlerts(orgId, ss) {
@@ -2766,6 +3119,207 @@ function razorpaySignatureValid(orgId, orderId, paymentId, signature) {
   }
 }
 
+/**
+ * Script Property keys for one outlet's gateway credentials. The secret lives
+ * ONLY in Script Properties - server-side, never returned by any action, and
+ * deliberately not in Firestore, where `system_config/razorpay` was readable by
+ * anyone with access to that document.
+ */
+function razorpayPropKeys(orgId) {
+  var id = String(orgId || "").trim();
+  return {
+    keyId: "razorpay_key_id_" + id,
+    keySecret: "razorpay_key_secret_" + id,
+    webhookSecret: "razorpay_webhook_secret_" + id,
+    updatedAt: "razorpay_updated_at_" + id,
+    updatedBy: "razorpay_updated_by_" + id
+  };
+}
+
+/**
+ * Validates a key pair against Razorpay itself. A key that merely looks
+ * well-formed is worthless - the only proof is a call Razorpay accepts.
+ * Returns { ok: true } or { ok: false, reason: <operator-readable> }.
+ */
+function razorpayCredentialsValid(keyId, keySecret) {
+  if (!keyId || !keySecret) {
+    return { ok: false, reason: "Key ID and Key Secret are both required." };
+  }
+  if (String(keyId).indexOf("rzp_") !== 0) {
+    return { ok: false, reason: "Key ID should start with rzp_live_ or rzp_test_." };
+  }
+  try {
+    // The cheapest authenticated read Razorpay offers. 200 proves the pair is
+    // valid and active; 401 proves it is not.
+    var res = UrlFetchApp.fetch("https://api.razorpay.com/v1/payments?count=1", {
+      method: "get",
+      muteHttpExceptions: true,
+      headers: {
+        Authorization: "Basic " + Utilities.base64Encode(keyId + ":" + keySecret)
+      }
+    });
+    var code = res.getResponseCode();
+    if (code === 200) return { ok: true };
+    if (code === 401) {
+      return { ok: false, reason: "Razorpay rejected these credentials (401). Check the Key ID and Key Secret, and that the key is active." };
+    }
+    if (code === 400) {
+      // A malformed query still authenticates, so 400 means the pair was accepted.
+      return { ok: true };
+    }
+    return { ok: false, reason: "Razorpay returned HTTP " + code + ". Try again, or check the key's status in the Razorpay dashboard." };
+  } catch (e) {
+    return { ok: false, reason: "Could not reach Razorpay: " + e };
+  }
+}
+
+/**
+ * Stores one outlet's Razorpay credentials. Refuses to store a pair Razorpay
+ * will not accept, so a typo cannot sit in the configuration until the first
+ * real guest payment fails.
+ */
+function handleSetOutletRazorpay(json) {
+  var data = json.data || json;
+  var outletId = String(json.outletId || json.org_id || json.organizationId || data.outletId || "").trim();
+  if (!outletId) {
+    return responseJson({ ok: false, success: false, error_code: "OUTLET_REQUIRED", error: "outletId is required." });
+  }
+
+  var keyId = String(data.keyId || data.razorpay_key_id || "").trim();
+  var keySecret = String(data.keySecret || data.razorpay_key_secret || "").trim();
+  var webhookSecret = String(data.webhookSecret || data.razorpay_webhook_secret || "").trim();
+  var actor = String(data.updatedBy || json.staffId || "master-admin").trim();
+  var props = PropertiesService.getScriptProperties();
+  var keys = razorpayPropKeys(outletId);
+
+  // Clearing is explicit and must not be reachable by omission.
+  if (data.clear === true) {
+    props.deleteProperty(keys.keyId);
+    props.deleteProperty(keys.keySecret);
+    props.deleteProperty(keys.webhookSecret);
+    props.setProperty(keys.updatedAt, new Date().toISOString());
+    props.setProperty(keys.updatedBy, actor);
+    return responseJson({
+      ok: true, success: true, outletId: outletId, configured: false,
+      message: "Razorpay credentials removed for this outlet. It will fall back to the platform keys."
+    });
+  }
+
+  // An empty secret means "leave the stored one alone", so the console can
+  // re-save a key id or webhook secret without the admin re-typing a secret it
+  // is never allowed to display back to them.
+  if (!keySecret) {
+    keySecret = props.getProperty(keys.keySecret) || "";
+    if (!keySecret) {
+      return responseJson({ ok: false, success: false, error_code: "SECRET_REQUIRED", error: "Key Secret is required the first time this outlet is configured." });
+    }
+  }
+
+  var check = razorpayCredentialsValid(keyId, keySecret);
+  if (!check.ok) {
+    return responseJson({ ok: false, success: false, error_code: "RAZORPAY_REJECTED", error: check.reason });
+  }
+
+  props.setProperty(keys.keyId, keyId);
+  props.setProperty(keys.keySecret, keySecret);
+  if (webhookSecret) props.setProperty(keys.webhookSecret, webhookSecret);
+  props.setProperty(keys.updatedAt, new Date().toISOString());
+  props.setProperty(keys.updatedBy, actor);
+
+  try {
+    var ss = null;
+    var sId = json.spreadsheet_id || json.spreadsheetId || getSheetIdForOrg(outletId);
+    if (sId) ss = SpreadsheetApp.openById(sId);
+    if (ss) {
+      logAuditRecord(ss, outletId, actor, "SET_RAZORPAY", "Outlet", outletId, "", keyId, "Gateway credentials updated");
+    }
+  } catch (eAudit) {}
+
+  return responseJson({
+    ok: true, success: true, outletId: outletId,
+    configured: true, keyId: keyId,
+    webhookSecretSet: !!props.getProperty(keys.webhookSecret),
+    message: "Razorpay credentials verified with Razorpay and saved for this outlet."
+  });
+}
+
+/**
+ * Tests either a supplied pair (before saving) or the stored one (after).
+ * Never returns a secret.
+ */
+function handleTestOutletRazorpay(json) {
+  var data = json.data || json;
+  var outletId = String(json.outletId || json.org_id || json.organizationId || data.outletId || "").trim();
+  if (!outletId) {
+    return responseJson({ ok: false, success: false, error_code: "OUTLET_REQUIRED", error: "outletId is required." });
+  }
+
+  var props = PropertiesService.getScriptProperties();
+  var keys = razorpayPropKeys(outletId);
+  var keyId = String(data.keyId || data.razorpay_key_id || "").trim();
+  var keySecret = String(data.keySecret || data.razorpay_key_secret || "").trim();
+  var source = "supplied";
+
+  if (!keyId || !keySecret) {
+    keyId = keyId || props.getProperty(keys.keyId) || "";
+    keySecret = keySecret || props.getProperty(keys.keySecret) || "";
+    source = "stored";
+  }
+
+  if (!keyId || !keySecret) {
+    // Say which fallback would be used, so an operator is not left guessing why
+    // a "working" outlet has no keys of its own.
+    var platformKeyId = props.getProperty("RAZORPAY_KEY_ID") || "";
+    return responseJson({
+      ok: false, success: false, error_code: "NOT_CONFIGURED",
+      error: platformKeyId
+        ? "This outlet has no Razorpay keys of its own; it is falling back to the platform gateway."
+        : "No Razorpay keys are configured for this outlet, and no platform fallback exists. Guest payments cannot be verified.",
+      configured: false,
+      usingPlatformFallback: !!platformKeyId
+    });
+  }
+
+  var check = razorpayCredentialsValid(keyId, keySecret);
+  return responseJson({
+    ok: check.ok, success: check.ok,
+    outletId: outletId, keyId: keyId, testedSource: source,
+    error_code: check.ok ? undefined : "RAZORPAY_REJECTED",
+    error: check.ok ? undefined : check.reason,
+    message: check.ok ? "Razorpay accepted these credentials." : check.reason
+  });
+}
+
+/**
+ * Reports whether an outlet is configured, WITHOUT returning the secret.
+ * `keySecretSet` is a boolean on purpose: a console that can display a gateway
+ * secret is a console that can leak one.
+ */
+function handleGetOutletRazorpayStatus(json) {
+  var data = json.data || json;
+  var outletId = String(json.outletId || json.org_id || json.organizationId || data.outletId || "").trim();
+  if (!outletId) {
+    return responseJson({ ok: false, success: false, error_code: "OUTLET_REQUIRED", error: "outletId is required." });
+  }
+  var props = PropertiesService.getScriptProperties();
+  var keys = razorpayPropKeys(outletId);
+  var keyId = props.getProperty(keys.keyId) || "";
+  var hasSecret = !!props.getProperty(keys.keySecret);
+
+  return responseJson({
+    ok: true, success: true,
+    outletId: outletId,
+    configured: !!(keyId && hasSecret),
+    keyId: keyId,
+    keySecretSet: hasSecret,
+    webhookSecretSet: !!props.getProperty(keys.webhookSecret),
+    updatedAt: props.getProperty(keys.updatedAt) || "",
+    updatedBy: props.getProperty(keys.updatedBy) || "",
+    usingPlatformFallback: !(keyId && hasSecret) && !!props.getProperty("RAZORPAY_KEY_ID"),
+    mode: keyId.indexOf("rzp_live_") === 0 ? "LIVE" : (keyId.indexOf("rzp_test_") === 0 ? "TEST" : "")
+  });
+}
+
 function handleVerifyPayment(json) {
   var p = json.data || json;
   var paymentId = String(p.payment_id || p.razorpay_payment_id || p.paymentId || "").trim();
@@ -2815,7 +3369,10 @@ function handleCloseSession(json) {
       var sHeaders = sData[0].map(function(h) { return String(h || "").trim(); });
       var idCol = sHeaders.indexOf("sessionId");
       if (idCol === -1) idCol = 0;
-      var statusCol = sHeaders.indexOf("status");
+      // X-16: the header is "sessionStatus"; indexOf("status") never matched
+      // and the code was landing on column 3 by luck.
+      var statusCol = sHeaders.indexOf("sessionStatus");
+      if (statusCol === -1) statusCol = sHeaders.indexOf("status");
       if (statusCol === -1) statusCol = 3;
       var closedCol = sHeaders.indexOf("closedAt");
       if (closedCol === -1) closedCol = 11;
@@ -2830,7 +3387,11 @@ function handleCloseSession(json) {
         var rowTable = cleanTableId(sData[i][2]);
         var rowStatus = String(sData[i][statusCol] || "").toUpperCase().trim();
 
-        if (rowStatus === "OPEN" && (sessionId ? (rowId === sessionId) : (cTable && rowTable === cTable))) {
+        // X-16: a session the guest had asked the bill for (BILL_REQUESTED)
+        // could never be closed - only OPEN matched - so after "request bill"
+        // the table stayed occupied through settlement.
+        var closable = (rowStatus === "OPEN" || rowStatus === "BILL_REQUESTED");
+        if (closable && (sessionId ? (rowId === sessionId) : (cTable && rowTable === cTable))) {
           sheet.getRange(i + 1, statusCol + 1).setValue("CLOSED");
           if (closedCol !== -1) sheet.getRange(i + 1, closedCol + 1).setValue(nowStr);
           if (revCol !== -1) sheet.getRange(i + 1, revCol + 1).setValue(rev);
@@ -3254,8 +3815,14 @@ function handleMoveTable(json) {
           var bCols = resolveBillColumns(bData[0]);
           var bTableIdx = bCols.tableIdx;
           var bStatusIdx = bCols.statusIdx;
+          var bPayIdx = bCols.paymentStatusIdx;
           for (var bi = 1; bi < bData.length; bi++) {
-            var bStatus = bStatusIdx !== -1 ? String(bData[bi][bStatusIdx] || "").trim() : "";
+            // X-17: the payment column is authoritative for "is this settled".
+            // A row damaged by the old single-cell race reads a kitchen stage in
+            // the legacy column while its payment column correctly says PAID.
+            var bStatus = bPayIdx !== -1 && String(bData[bi][bPayIdx] || "").trim() !== ""
+              ? String(bData[bi][bPayIdx]).trim()
+              : (bStatusIdx !== -1 ? String(bData[bi][bStatusIdx] || "").trim() : "");
             if (!isStatusSettled(bStatus)) {
               var curTable = cleanTableId(bData[bi][bTableIdx]);
               if (curTable === cFrom) {
@@ -3360,8 +3927,14 @@ function handleMergeTables(json) {
           var bCols = resolveBillColumns(bData[0]);
           var bTableIdx = bCols.tableIdx;
           var bStatusIdx = bCols.statusIdx;
+          var bPayIdx = bCols.paymentStatusIdx;
           for (var bi = 1; bi < bData.length; bi++) {
-            var bStatus = bStatusIdx !== -1 ? String(bData[bi][bStatusIdx] || "").trim() : "";
+            // X-17: the payment column is authoritative for "is this settled".
+            // A row damaged by the old single-cell race reads a kitchen stage in
+            // the legacy column while its payment column correctly says PAID.
+            var bStatus = bPayIdx !== -1 && String(bData[bi][bPayIdx] || "").trim() !== ""
+              ? String(bData[bi][bPayIdx]).trim()
+              : (bStatusIdx !== -1 ? String(bData[bi][bStatusIdx] || "").trim() : "");
             if (!isStatusSettled(bStatus)) {
               var curTable = cleanTableId(bData[bi][bTableIdx]);
               if (cSources.indexOf(curTable) !== -1) {
@@ -3744,13 +4317,24 @@ function handleVoidOrder(json) {
     // Also update legacy Dining Bills sheet if present
     var legacySheet = ss.getSheetByName("Dining Bills") || ss.getSheetByName("Bills");
     if (legacySheet && legacySheet.getLastRow() >= 2) {
+      ensureBillStatusColumns(legacySheet);
       var lData = legacySheet.getDataRange().getValues();
       for (var li = 1; li < lData.length; li++) {
         var lId = cleanOrderId(lData[li][0]);
         if (lId === orderId) {
-          var lCols = resolveBillColumns(lData[0]);
-          var statusCol = lCols.statusIdx + 1;
-          legacySheet.getRange(li + 1, statusCol).setValue("CANCELLED");
+          var lCols = resolveBillColumns(lData[0].map(function(h) { return String(h || "").trim().toLowerCase(); }));
+          // X-17: a void ends BOTH machines - the kitchen must stop cooking it
+          // and it must stop being payable. This is the one writer that
+          // legitimately touches both.
+          if (lCols.kitchenStatusIdx !== -1) {
+            legacySheet.getRange(li + 1, lCols.kitchenStatusIdx + 1).setValue("CANCELLED");
+          }
+          if (lCols.paymentStatusIdx !== -1) {
+            legacySheet.getRange(li + 1, lCols.paymentStatusIdx + 1).setValue("VOIDED");
+          }
+          if (lCols.statusIdx !== -1) {
+            legacySheet.getRange(li + 1, lCols.statusIdx + 1).setValue("CANCELLED");
+          }
           break;
         }
       }
@@ -4122,11 +4706,23 @@ function handleRefundPayment(json) {
     // 4. Update legacy Bills sheet if present
     var bSheet = getOrCreateBillsSheet(ss);
     if (bSheet && bSheet.getLastRow() >= 2 && cleanId) {
+      ensureBillStatusColumns(bSheet);
       var bData = bSheet.getDataRange().getValues();
       var cols = resolveBillColumns(bData[0].map(function(h) { return String(h || "").trim().toLowerCase(); }));
       for (var bi = 1; bi < bData.length; bi++) {
         if (cleanOrderId(bData[bi][cols.idIdx]) === cleanId) {
-          bSheet.getRange(bi + 1, cols.statusIdx + 1).setValue("REFUNDED");
+          // X-17: a refund is a PAYMENT event. Writing REFUNDED into the single
+          // Status cell also erased the kitchen's progress, so a refunded-and-
+          // reordered table lost its cooking state.
+          var rfKitchen = cols.kitchenStatusIdx !== -1
+            ? String(bData[bi][cols.kitchenStatusIdx] || "").trim() : "";
+          if (cols.paymentStatusIdx !== -1) {
+            bSheet.getRange(bi + 1, cols.paymentStatusIdx + 1).setValue("REFUNDED");
+          }
+          if (cols.statusIdx !== -1) {
+            bSheet.getRange(bi + 1, cols.statusIdx + 1)
+              .setValue(deriveLegacyStatus(rfKitchen, "REFUNDED"));
+          }
           break;
         }
       }

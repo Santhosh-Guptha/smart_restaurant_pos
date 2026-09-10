@@ -21,6 +21,7 @@ import '../../services/kitchen_ticket_formatter.dart';
 import '../../services/apps_script_backend_service.dart';
 import '../../widgets/digital_pos_bill_dialog.dart';
 import '../../billing/bill_calculator.dart';
+import '../../sync/outbox.dart';
 import '../../sync/local_store.dart';
 
 class FastQsrBillingScreen extends ConsumerStatefulWidget {
@@ -2292,50 +2293,141 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
         'items': orderItemsList,
       };
 
-      await AppsScriptBackendService.saveBill(
-        outletId: orgId,
-        billData: billPayload,
-        clientRequestId: clientRequestId,
-      );
+      // X-18 (counter path). This sync is fire-and-forget by design - the
+      // "zero POS freeze" refactor moved it off the tap - which makes it MORE
+      // important, not less, that a failure is caught: nothing is waiting on
+      // the result, so a dropped write here is invisible unless we make it
+      // visible. The bill and every payment go to the durable Outbox on
+      // failure with their original request ids, and the operator gets a
+      // floating notice once the background work settles.
+      int queued = 0;
+      int lost = 0;
+
+      bool billOk = false;
+      try {
+        billOk = await AppsScriptBackendService.saveBill(
+          outletId: orgId,
+          billData: billPayload,
+          clientRequestId: clientRequestId,
+        );
+      } catch (e) {
+        debugPrint('saveBill error for $targetBillId: $e');
+      }
+      if (!billOk) {
+        if (await _queueCounterWrite(orgId, 'SAVE_BILL', clientRequestId, billPayload)) {
+          queued++;
+        } else {
+          lost++;
+        }
+      }
 
       if (isPaid) {
+        // Payment payload fields the server actually reads
+        // (handleRecordPayment): invoiceNo, amountP, mode, byStaffId, at,
+        // paymentId. The previous payload sent billId/amount instead, so
+        // every counter payment landed with an EMPTY invoiceNo - unlinkable
+        // to its bill, which also defeats the duplicate-payment guard in
+        // persistV2Order (it matches on invoiceNo) and the session-settled
+        // check (which sums by session).
+        final auth = ref.read(restaurantAuthProvider);
+        final staffId = auth.activeStaff?.id ?? 'staff_01';
+        final staffName = auth.activeStaff?.name ?? 'Counter Staff';
+        Map<String, dynamic> payment(String mode, int amountP) => {
+              'paymentId': 'PAY-${const Uuid().v4()}',
+              'orderId': targetBillId,
+              'invoiceNo': targetBillId,
+              'billId': targetBillId,
+              'mode': mode.toUpperCase(),
+              'amountP': amountP,
+              'byStaffId': staffId,
+              'staffId': staffId,
+              'collectedBy': staffName,
+              'tableName': tableName,
+              'at': DateTime.now().toIso8601String(),
+            };
+
         if (splitPayments != null && splitPayments.isNotEmpty) {
           for (final sp in splitPayments) {
             final amt = (sp['amount'] as num?)?.toDouble() ?? 0.0;
             final mode = (sp['mode'] ?? 'CASH').toString();
             if (amt > 0) {
-              await AppsScriptBackendService.recordPayment(
-                outletId: orgId,
-                paymentData: {
-                  'billId': targetBillId,
-                  'billNumber': targetBillId,
-                  'amount': amt,
-                  'mode': mode,
-                  'paymentMode': mode,
-                  'tableName': tableName,
-                  'recordedAt': DateTime.now().toIso8601String(),
-                },
-              );
+              final r = await _sendOrQueuePayment(orgId, payment(mode, (amt * 100).round()));
+              if (r == _CloudOutcome.queued) queued++;
+              if (r == _CloudOutcome.lost) lost++;
             }
           }
         } else {
-          await AppsScriptBackendService.recordPayment(
-            outletId: orgId,
-            paymentData: {
-              'billId': targetBillId,
-              'billNumber': targetBillId,
-              'amount': orderTotals.grandTotal,
-              'mode': paymentMode,
-              'paymentMode': paymentMode,
-              'tableName': tableName,
-              'recordedAt': DateTime.now().toIso8601String(),
-            },
+          final r = await _sendOrQueuePayment(
+            orgId,
+            payment(paymentMode, orderTotals.grandTotalPaise),
           );
+          if (r == _CloudOutcome.queued) queued++;
+          if (r == _CloudOutcome.lost) lost++;
         }
+      }
+
+      if ((queued > 0 || lost > 0) && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              lost > 0
+                  ? 'Bill $targetBillId: $lost record(s) did NOT reach the cloud and could not '
+                      'be queued. Keep the printed bill and reconcile before day close.'
+                  : 'Bill $targetBillId: $queued record(s) queued - network is down. '
+                      'They will sync automatically when it returns.',
+            ),
+            backgroundColor: lost > 0 ? const Color(0xFFDC2626) : const Color(0xFFD97706),
+            duration: Duration(seconds: lost > 0 ? 10 : 5),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
       }
     } catch (e) {
       debugPrint('Background cloud sync error for bill $targetBillId: $e');
     }
+  }
+
+  // ── Cloud write safety net (X-18, counter path) ───────────────────────────
+
+  Future<bool> _queueCounterWrite(
+    String orgId,
+    String action,
+    String clientRequestId,
+    Map<String, dynamic> payload,
+  ) async {
+    try {
+      await Outbox.enqueue(
+        outletId: orgId,
+        action: action,
+        clientRequestId: clientRequestId,
+        payload: payload,
+      );
+      return true;
+    } catch (e) {
+      debugPrint('Outbox enqueue failed ($action / $clientRequestId): $e');
+      return false;
+    }
+  }
+
+  /// A payment the guest has already made is the one write that must never be
+  /// dropped: lose the ledger row and the day-close total is short by exactly
+  /// what is in the drawer.
+  Future<_CloudOutcome> _sendOrQueuePayment(String orgId, Map<String, dynamic> paymentData) async {
+    final reqId = paymentData['paymentId']?.toString() ?? const Uuid().v4();
+    bool ok = false;
+    try {
+      ok = await AppsScriptBackendService.recordPayment(
+        outletId: orgId,
+        paymentData: paymentData,
+        clientRequestId: reqId,
+      );
+    } catch (e) {
+      debugPrint('recordPayment error: $e');
+    }
+    if (ok) return _CloudOutcome.sent;
+    return (await _queueCounterWrite(orgId, 'RECORD_PAYMENT', reqId, paymentData))
+        ? _CloudOutcome.queued
+        : _CloudOutcome.lost;
   }
 
   // =========================================================================
@@ -4770,3 +4862,5 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
     );
   }
 }
+
+enum _CloudOutcome { sent, queued, lost }

@@ -485,7 +485,18 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
       final syncResult = await AppsScriptBackendService.fetchOrdersAndAlerts(
         orgId: orgId,
         spreadsheetId: sheetId.isNotEmpty && !sheetId.startsWith('sheet_ORG') ? sheetId : null,
+        // PERF-1: the floor plan polls every 5s. Most of those polls happen
+        // while nothing is being ordered or paid, and each one used to pull
+        // every order and rebuild every table card.
+        useRevCache: true,
       );
+      // Nothing written on the server since the last poll: the board is already
+      // correct. Returning here is what makes the difference - `orders` is
+      // EMPTY on an unchanged response, so falling through would clear the
+      // floor plan and show every occupied table as vacant.
+      if (syncResult['unchanged'] == true) {
+        return;
+      }
       final remoteOrders = syncResult['orders'] as List<Map<String, dynamic>>? ?? [];
       final waiterCalls = syncResult['waiterCalls'] as List<Map<String, dynamic>>? ?? [];
 

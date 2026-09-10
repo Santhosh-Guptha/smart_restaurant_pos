@@ -211,21 +211,11 @@ void main() {
       expectSelfConsistent(t);
     });
 
-    test('KNOWN LIMITATION: per-line tax rates are ignored', () {
-      // Documented, not fixed. BillLine carries `taxRateBps` and it is written
-      // to the OrderItems sheet per line, but BillCalculator.compute() taxes
-      // the whole bill at `defaultTaxRateBps` and never reads it. Today every
-      // caller sets both from the same store-wide GST rate, so nothing is
-      // mis-taxed - but a menu with mixed rates (5% food, 18% packaged
-      // beverages, 0% exempt) would be billed entirely at whichever single
-      // rate the caller passed, and the per-line rates in the sheet would
-      // contradict the tax actually collected.
-      //
-      // This test pins the current behaviour so the day someone adds a second
-      // rate to the menu, it fails here rather than in a GST return. The fix
-      // is to group lines by rate and apportion the discount and service
-      // charge pro-rata across the groups by line value, fixing the rounding
-      // residual on the largest group so the parts sum to the whole.
+    test('per-line tax rates are honoured: 5% food + 18% beverage', () {
+      // Previously pinned as a KNOWN LIMITATION: BillLine.taxRateBps was
+      // written to the OrderItems sheet per line but compute() taxed the whole
+      // bill at defaultTaxRateBps, so a mixed-rate menu was billed at one rate
+      // while the sheet claimed otherwise. Lines are now grouped by rate.
       final t = BillCalculator.compute(
         lines: [
           line(price: 100, taxBps: 500),
@@ -236,15 +226,51 @@ void main() {
         roundOffEnabled: false,
         defaultTaxRateBps: 500,
       );
+      expect(t.cgstPaise + t.sgstPaise, equals(p(5) + p(18)));
+      expect(t.grandTotalPaise,
+          equals(t.taxablePaise + t.cgstPaise + t.sgstPaise + t.roundOffPaise));
+    });
 
-      // Both lines are taxed at 5%, including the one declared at 18%.
-      expect(t.cgstPaise + t.sgstPaise, equals(p(10)));
-      expect(
-        t.cgstPaise + t.sgstPaise,
-        isNot(equals(p(5) + p(18))),
-        reason: 'when per-line rates are honoured this becomes ₹23 and this '
-            'assertion should be inverted along with the one above',
+    test('mixed rates with discount and service charge: parts sum to the whole', () {
+      // 5% group ₹100, 18% group ₹300. 10% discount (₹40) apportions 10/30;
+      // 10% service charge on the ₹360 net (₹36) apportions 9/27. Each group
+      // is then taxed at its own rate. The point of the assertion is exactness:
+      // an apportionment that loses a paise shows up as taxable != net + SC.
+      final t = BillCalculator.compute(
+        lines: [
+          line(price: 100, taxBps: 500),
+          line(price: 300, taxBps: 1800),
+        ],
+        discount: const Discount(type: DiscountType.percentage, value: 10),
+        serviceChargeBps: 1000,
+        taxMode: TaxMode.exclusive,
+        roundOffEnabled: false,
+        defaultTaxRateBps: 500,
       );
+      expect(t.discountPaise, equals(p(40)));
+      expect(t.serviceChargePaise, equals(p(36)));
+      expect(t.taxablePaise, equals(p(360) + p(36)),
+          reason: 'apportioned discount and service charge must sum exactly');
+      final expectedTax = ((9000 + 900) * 500 / 10000).round() +
+          ((27000 + 2700) * 1800 / 10000).round();
+      expect(t.cgstPaise + t.sgstPaise, equals(expectedTax));
+      expect(t.grandTotalPaise,
+          equals(t.taxablePaise + t.cgstPaise + t.sgstPaise + t.roundOffPaise));
+    });
+
+    test('a line with no rate set uses the bill default, not a silent 5%', () {
+      // taxRateBps is now nullable. If it defaulted to 500 while being
+      // honoured, a caller who omits it on an 18%-default store would under-tax.
+      final t = BillCalculator.compute(
+        lines: [
+          BillLine(productId: 'x', name: 'x', qty: 1, unitPaise: p(100)),
+        ],
+        serviceChargeBps: 0,
+        taxMode: TaxMode.exclusive,
+        roundOffEnabled: false,
+        defaultTaxRateBps: 1800,
+      );
+      expect(t.cgstPaise + t.sgstPaise, equals(p(18)));
     });
 
     test('fractional quantities do not drift through floating point', () {
