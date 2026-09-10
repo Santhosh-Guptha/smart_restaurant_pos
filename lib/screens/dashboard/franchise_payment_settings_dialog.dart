@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -191,6 +192,24 @@ class _FranchisePaymentSettingsDialogState
 
     final ok = res['ok'] == true || res['success'] == true;
     if (ok) {
+      try {
+        await FirebaseFirestore.instance.collection('organizations').doc(outletId).set({
+          'razorpay': {
+            'enabled': true,
+            'keyId': _keyIdCtrl.text.trim(),
+            'updatedAt': FieldValue.serverTimestamp(),
+          }
+        }, SetOptions(merge: true));
+
+        await FirebaseFirestore.instance.collection('public_stores').doc(outletId).set({
+          'isRazorpayEnabled': true,
+          'razorpayKeyId': _keyIdCtrl.text.trim(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      } catch (e) {
+        debugPrint("Franchise Razorpay firestore sync note: $e");
+      }
+
       AppToast.showSuccess(
         context,
         'Razorpay verified and saved for $_selectedOutletName.',
@@ -227,10 +246,10 @@ class _FranchisePaymentSettingsDialogState
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx, true),
             style: ElevatedButton.styleFrom(
-              backgroundColor: context.dangerColor,
+              backgroundColor: const Color(0xFFF59E0B),
               foregroundColor: Colors.white,
             ),
-            child: const Text('Save live key'),
+            child: const Text('Confirm LIVE Key'),
           ),
         ],
       ),
@@ -245,12 +264,10 @@ class _FranchisePaymentSettingsDialogState
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: context.surfaceColor,
-        title: Text('Remove this franchise\'s keys?',
-            style: TextStyle(color: context.textPrimary)),
+        title: Text('Remove credentials?', style: TextStyle(color: context.textPrimary)),
         content: Text(
-          '$_selectedOutletName will fall back to the platform gateway. '
-          'If no platform keys are configured, guest payments here cannot be '
-          'verified at all.',
+          'This will remove custom credentials for $_selectedOutletName. '
+          'Guest payments will fall back to the platform gateway, if configured.',
           style: TextStyle(color: context.textSecondary, fontSize: 13),
         ),
         actions: [
@@ -277,6 +294,23 @@ class _FranchisePaymentSettingsDialogState
     setState(() => _saving = false);
 
     if (res['ok'] == true || res['success'] == true) {
+      try {
+        await FirebaseFirestore.instance.collection('organizations').doc(outletId).set({
+          'razorpay': {
+            'enabled': false,
+            'keyId': '',
+            'updatedAt': FieldValue.serverTimestamp(),
+          }
+        }, SetOptions(merge: true));
+
+        await FirebaseFirestore.instance.collection('public_stores').doc(outletId).set({
+          'isRazorpayEnabled': false,
+          'razorpayKeyId': '',
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      } catch (e) {
+        debugPrint("Franchise Razorpay firestore clear note: $e");
+      }
       AppToast.showSuccess(context, 'Removed. $_selectedOutletName now uses the platform gateway.');
       await _selectOutlet(outletId, _selectedOutletName);
     } else {
@@ -286,24 +320,39 @@ class _FranchisePaymentSettingsDialogState
 
   @override
   Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final screenHeight = MediaQuery.of(context).size.height;
+    final isCompact = screenWidth < 720;
+
     return Dialog(
       backgroundColor: context.surfaceColor,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 900, maxHeight: 640),
+        constraints: BoxConstraints(
+          maxWidth: min(900.0, screenWidth * 0.95),
+          maxHeight: min(660.0, screenHeight * 0.92),
+        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _header(context),
             Divider(height: 1, color: context.borderColor),
             Expanded(
-              child: Row(
-                children: [
-                  SizedBox(width: 280, child: _franchiseList(context)),
-                  VerticalDivider(width: 1, color: context.borderColor),
-                  Expanded(child: _configPane(context)),
-                ],
-              ),
+              child: isCompact
+                  ? Column(
+                      children: [
+                        SizedBox(height: 160, child: _franchiseList(context)),
+                        Divider(height: 1, color: context.borderColor),
+                        Expanded(child: _configPane(context)),
+                      ],
+                    )
+                  : Row(
+                      children: [
+                        SizedBox(width: 280, child: _franchiseList(context)),
+                        VerticalDivider(width: 1, color: context.borderColor),
+                        Expanded(child: _configPane(context)),
+                      ],
+                    ),
             ),
           ],
         ),
@@ -454,7 +503,11 @@ class _FranchisePaymentSettingsDialogState
             _testResult(context),
           ],
           const SizedBox(height: 22),
-          Row(
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               if (_status.configured)
                 TextButton.icon(
@@ -462,30 +515,36 @@ class _FranchisePaymentSettingsDialogState
                   icon: Icon(Icons.delete_outline_rounded, size: 16, color: context.dangerColor),
                   label: Text('Remove keys',
                       style: TextStyle(color: context.dangerColor, fontSize: 12)),
-                ),
-              const Spacer(),
-              OutlinedButton.icon(
-                onPressed: _testing || _saving ? null : _runTest,
-                icon: _testing
-                    ? const SizedBox(
-                        width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
-                    : const Icon(Icons.wifi_tethering_rounded, size: 16),
-                label: const Text('Test with Razorpay', style: TextStyle(fontSize: 12)),
-              ),
-              const SizedBox(width: 10),
-              ElevatedButton.icon(
-                onPressed: _testing || _saving ? null : _save,
-                icon: _saving
-                    ? const SizedBox(
-                        width: 14,
-                        height: 14,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                    : const Icon(Icons.save_rounded, size: 16),
-                label: const Text('Verify & Save', style: TextStyle(fontSize: 12)),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: context.primaryAccent,
-                  foregroundColor: Colors.white,
-                ),
+                )
+              else
+                const SizedBox.shrink(),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: _testing || _saving ? null : _runTest,
+                    icon: _testing
+                        ? const SizedBox(
+                            width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
+                        : const Icon(Icons.wifi_tethering_rounded, size: 16),
+                    label: const Text('Test with Razorpay', style: TextStyle(fontSize: 12)),
+                  ),
+                  ElevatedButton.icon(
+                    onPressed: _testing || _saving ? null : _save,
+                    icon: _saving
+                        ? const SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                        : const Icon(Icons.save_rounded, size: 16),
+                    label: const Text('Verify & Save', style: TextStyle(fontSize: 12)),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: context.primaryAccent,
+                      foregroundColor: Colors.white,
+                    ),
+                  ),
+                ],
               ),
             ],
           ),

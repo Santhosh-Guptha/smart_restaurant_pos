@@ -300,22 +300,13 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
         ),
         actions: [
           IconButton(
-            tooltip: 'Store & Hardware Settings',
+            tooltip: 'User & Terminal Settings',
             icon: Icon(Icons.settings_outlined, color: context.textPrimary, size: 22),
             onPressed: () {
-              if (canStoreConfig) {
-                showDialog(
-                  context: context,
-                  builder: (_) => const SettingsSidebarDialog(initialTab: 0),
-                );
-              } else {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Access Denied: Settings require Owner or Manager role.'),
-                    backgroundColor: Colors.redAccent,
-                  ),
-                );
-              }
+              showDialog(
+                context: context,
+                builder: (_) => const SettingsSidebarDialog(initialTab: 0),
+              );
             },
           ),
           IconButton(

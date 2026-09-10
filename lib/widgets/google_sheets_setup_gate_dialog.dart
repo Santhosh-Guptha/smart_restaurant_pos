@@ -102,21 +102,6 @@ class _GoogleSheetsSetupGateDialogState extends ConsumerState<GoogleSheetsSetupG
       final sheetId = provisionRes['spreadsheetId']?.toString() ?? '';
       final sheetUrl = provisionRes['sheetUrl']?.toString() ?? 'https://docs.google.com/spreadsheets/d/$sheetId/edit';
 
-      setState(() => _statusText = 'Granting platform sync permissions...');
-
-      // 2. Grant Editor/Writer permissions to platform and admin emails
-      for (final adminEmail in kAdminEmails) {
-        try {
-          await RestaurantSheetsService.shareSpreadsheetWithStaff(
-            authenticatedClient: client,
-            spreadsheetId: sheetId,
-            staffEmail: adminEmail,
-          );
-        } catch (e) {
-          debugPrint('Platform permission grant note: $e');
-        }
-      }
-
       setState(() => _statusText = 'Registering cloud webhook & web menu sync...');
 
       // 3. Register tenant in Apps Script Webhook so web QR menu works immediately
@@ -310,13 +295,6 @@ class _GoogleSheetsSetupGateDialogState extends ConsumerState<GoogleSheetsSetupG
               authenticatedClient: authClient,
               sheetId: sheetId,
             );
-            for (final admin in kAdminEmails) {
-              await RestaurantSheetsService.shareSpreadsheetWithStaff(
-                authenticatedClient: authClient,
-                spreadsheetId: sheetId,
-                staffEmail: admin,
-              );
-            }
           } catch (pe) {
             debugPrint('Tab/permission setup notice on sheet paste: $pe');
           }

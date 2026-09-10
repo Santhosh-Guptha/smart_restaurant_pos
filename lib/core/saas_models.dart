@@ -244,6 +244,8 @@ class SaasOrganization {
   final bool isGoogleConnected;
   final String? address;
   final String? upiId;
+  final String? phone;
+  final String? gstin;
 
   SaasOrganization({
     required this.id,
@@ -260,6 +262,8 @@ class SaasOrganization {
     this.isGoogleConnected = false,
     this.address,
     this.upiId,
+    this.phone,
+    this.gstin,
   });
 
   bool get isManagedCloud => storageMode == 'CLOUD_SYNC';
@@ -283,6 +287,8 @@ class SaasOrganization {
       isGoogleConnected: json['isGoogleConnected'] == true,
       address: json['address'],
       upiId: json['upiId'] ?? json['defaultUpiId'] ?? json['upiVpa'],
+      phone: json['phone'] ?? json['ownerPhone'],
+      gstin: json['gstin'],
     );
   }
 
@@ -303,6 +309,8 @@ class SaasOrganization {
       'isGoogleConnected': isGoogleConnected,
       'address': address,
       'upiId': upiId,
+      'phone': phone,
+      'gstin': gstin,
     };
   }
 
@@ -322,6 +330,8 @@ class SaasOrganization {
       isGoogleConnected: data['isGoogleConnected'] == true || (data['googleSheetId'] != null && data['googleSheetId'].toString().isNotEmpty),
       address: data['address'],
       upiId: data['upiId'] ?? data['defaultUpiId'] ?? data['upiVpa'],
+      phone: data['phone'] ?? data['ownerPhone'],
+      gstin: data['gstin'],
     );
   }
 
@@ -341,6 +351,8 @@ class SaasOrganization {
       'isGoogleConnected': isGoogleConnected,
       'address': address,
       'upiId': upiId,
+      'phone': phone,
+      'gstin': gstin,
     };
   }
 }

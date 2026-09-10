@@ -1,9 +1,15 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'dart:math';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../core/classic_theme.dart';
+import '../../core/restaurant_models.dart';
 import '../../providers/saas_session_provider.dart';
+import '../../sync/local_store.dart';
+
+enum StoreScopeMode { all, individual, selected }
 
 class RestaurantAnalyticsScreen extends ConsumerStatefulWidget {
   const RestaurantAnalyticsScreen({super.key});
@@ -22,6 +28,16 @@ class _RestaurantAnalyticsScreenState
   static const coralAccent = Color(0xFFFF6B35);
   static const emeraldAccent = Color(0xFF10B981);
 
+  // Multi-Store Scope Configuration
+  StoreScopeMode _scopeMode = StoreScopeMode.all;
+  String? _singleSelectedOutletId;
+  final Set<String> _multiSelectedOutletIds = {};
+  List<Map<String, String>> _availableOutlets = [];
+  List<Map<String, dynamic>> _perStoreData = [];
+
+  Timer? _liveRefreshTimer;
+  StreamSubscription? _hiveBoxSub;
+
   // Live calculated datasets (Zero hardcoded mock data)
   Map<int, Map<String, dynamic>> _hourlyData = {};
   List<Map<String, dynamic>> _shiftsData = [];
@@ -32,10 +48,88 @@ class _RestaurantAnalyticsScreenState
   @override
   void initState() {
     super.initState();
-    _computeLiveAnalytics();
+    _initTenantOutlets();
+
+    // Live periodic refresh every 10 seconds
+    _liveRefreshTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+      if (mounted) _computeLiveAnalytics();
+    });
+
+    // Instant update on local Hive order events
+    if (Hive.isBoxOpen('configBox')) {
+      _hiveBoxSub = Hive.box('configBox').watch().listen((event) {
+        final keyStr = event.key.toString();
+        if (keyStr.startsWith('kot_orders_') || keyStr.startsWith('bills_')) {
+          if (mounted) _computeLiveAnalytics();
+        }
+      });
+    }
   }
 
-  void _computeLiveAnalytics() {
+  @override
+  void dispose() {
+    _liveRefreshTimer?.cancel();
+    _hiveBoxSub?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _initTenantOutlets() async {
+    final saasSession = ref.read(saasSessionProvider);
+    final org = saasSession.currentOrganization;
+    final orgId = org?.id ?? 'default';
+    final orgName = org?.name ?? 'Main Store';
+
+    final outlets = <Map<String, String>>[
+      {'id': orgId, 'name': orgName},
+    ];
+
+    try {
+      if (orgId.isNotEmpty && orgId != 'default') {
+        final snap = await FirebaseFirestore.instance
+            .collection('outlets')
+            .where('organizationId', isEqualTo: orgId)
+            .get();
+        for (final doc in snap.docs) {
+          final data = doc.data();
+          final id = doc.id;
+          final name = (data['name'] ?? id).toString();
+          if (!outlets.any((o) => o['id'] == id)) {
+            outlets.add({'id': id, 'name': name});
+          }
+        }
+      }
+    } catch (_) {}
+
+    if (mounted) {
+      setState(() {
+        _availableOutlets = outlets;
+        _singleSelectedOutletId ??= outlets.first['id'];
+        _multiSelectedOutletIds.addAll(outlets.map((o) => o['id']!));
+      });
+      _computeLiveAnalytics();
+    }
+  }
+
+  DateTime? _parseDt(dynamic raw) {
+    if (raw == null) return null;
+    if (raw is DateTime) return raw;
+    if (raw is int) return DateTime.fromMillisecondsSinceEpoch(raw);
+    if (raw is String) {
+      final parsed = DateTime.tryParse(raw);
+      if (parsed != null) return parsed;
+      final asInt = int.tryParse(raw);
+      if (asInt != null) {
+        if (asInt > 100000000000) {
+          return DateTime.fromMillisecondsSinceEpoch(asInt);
+        } else if (asInt > 1000000000) {
+          return DateTime.fromMillisecondsSinceEpoch(asInt * 1000);
+        }
+      }
+    }
+    return null;
+  }
+
+  Future<void> _computeLiveAnalytics() async {
     try {
       final saasSession = ref.read(saasSessionProvider);
       final orgId = saasSession.currentOrganization?.id ?? 'default';
@@ -43,36 +137,80 @@ class _RestaurantAnalyticsScreenState
       if (!Hive.isBoxOpen(boxName)) return;
       final box = Hive.box(boxName);
 
-      // 1. Gather all live transactions from KOTs & Bills
-      final rawOrders = box.get('kot_orders_$orgId');
-      final rawBills = box.get('bills_$orgId');
-
-      final List<Map<String, dynamic>> allTransactions = [];
-      if (rawOrders is List) {
-        for (final it in rawOrders) {
-          if (it is Map) allTransactions.add(Map<String, dynamic>.from(it));
+      // Determine active outlets for selected scope
+      final List<String> activeOutletIds = [];
+      if (_scopeMode == StoreScopeMode.all) {
+        if (_availableOutlets.isNotEmpty) {
+          activeOutletIds.addAll(_availableOutlets.map((o) => o['id']!));
+        } else {
+          activeOutletIds.add(orgId);
+        }
+      } else if (_scopeMode == StoreScopeMode.individual) {
+        activeOutletIds.add(_singleSelectedOutletId ?? orgId);
+      } else if (_scopeMode == StoreScopeMode.selected) {
+        if (_multiSelectedOutletIds.isNotEmpty) {
+          activeOutletIds.addAll(_multiSelectedOutletIds);
+        } else {
+          activeOutletIds.add(orgId);
         }
       }
-      if (rawBills is List) {
-        for (final it in rawBills) {
-          if (it is Map) {
-            final m = Map<String, dynamic>.from(it);
-            final kot = m['kotNumber'] ?? m['kot_number'];
-            if (kot != null && allTransactions.any((o) => (o['kotNumber'] ?? o['kot_number']) == kot)) {
-              continue;
+
+      // 1. Gather all live transactions from KOTs, Bills & LocalStore across active outlets
+      final List<Map<String, dynamic>> allTransactions = [];
+      final Map<String, List<Map<String, dynamic>>> storeTransactions = {};
+
+      for (final oId in activeOutletIds) {
+        final Map<String, Map<String, dynamic>> outletOrdersMap = {};
+
+        final rawOrders = box.get('kot_orders_$oId');
+        if (rawOrders is List) {
+          for (final it in rawOrders) {
+            if (it is Map) {
+              final m = Map<String, dynamic>.from(it);
+              final k = canonicalId(m);
+              if (k.isNotEmpty) {
+                m['outletId'] = oId;
+                outletOrdersMap[k] = m;
+              }
             }
-            allTransactions.add(m);
           }
         }
+
+        final rawBills = box.get('bills_$oId');
+        if (rawBills is List) {
+          for (final it in rawBills) {
+            if (it is Map) {
+              final m = Map<String, dynamic>.from(it);
+              final k = canonicalId(m);
+              if (k.isNotEmpty && !outletOrdersMap.containsKey(k)) {
+                m['outletId'] = oId;
+                outletOrdersMap[k] = m;
+              }
+            }
+          }
+        }
+
+        try {
+          final lsOrders = await LocalStore.getOrders(oId);
+          for (final lo in lsOrders) {
+            final k = lo.canonicalKey;
+            if (k.isNotEmpty && !outletOrdersMap.containsKey(k)) {
+              final m = lo.toMap();
+              m['outletId'] = oId;
+              outletOrdersMap[k] = m;
+            }
+          }
+        } catch (_) {}
+
+        final list = outletOrdersMap.values.toList();
+        storeTransactions[oId] = list;
+        allTransactions.addAll(list);
       }
 
       // 2. Filter transactions by _selectedPeriod
       final now = DateTime.now();
       final filtered = allTransactions.where((t) {
-        DateTime? dt;
-        final rawDt = t['createdAt'] ?? t['timestamp'] ?? t['paidAt'];
-        if (rawDt is String) dt = DateTime.tryParse(rawDt);
-        else if (rawDt is int) dt = DateTime.fromMillisecondsSinceEpoch(rawDt);
+        final dt = _parseDt(t['createdAt'] ?? t['timestamp'] ?? t['paidAt']);
         if (dt == null) return false;
 
         switch (_selectedPeriod) {
@@ -97,10 +235,7 @@ class _RestaurantAnalyticsScreenState
       }
 
       for (final t in filtered) {
-        DateTime? dt;
-        final rawDt = t['createdAt'] ?? t['timestamp'] ?? t['paidAt'];
-        if (rawDt is String) dt = DateTime.tryParse(rawDt);
-        else if (rawDt is int) dt = DateTime.fromMillisecondsSinceEpoch(rawDt);
+        final dt = _parseDt(t['createdAt'] ?? t['timestamp'] ?? t['paidAt']);
         if (dt != null) {
           final h = dt.hour;
           final amt = (t['grandTotal'] ?? t['totalAmount'] ?? t['subtotal'] ?? 0.0) as num;
@@ -151,7 +286,7 @@ class _RestaurantAnalyticsScreenState
           'sales': bSales,
           'orders': bOrders,
           'aov': bOrders > 0 ? (bSales / bOrders) : 0.0,
-          'topSubcategory': 'Idly / Dosa',
+          'topSubcategory': 'Breakfast & Snacks',
           'turnaround': '22 mins',
           'color': amberAccent,
           'icon': Icons.wb_sunny_outlined,
@@ -162,7 +297,7 @@ class _RestaurantAnalyticsScreenState
           'sales': lSales,
           'orders': lOrders,
           'aov': lOrders > 0 ? (lSales / lOrders) : 0.0,
-          'topSubcategory': 'Biryani & Thali',
+          'topSubcategory': 'Main Meals & Combos',
           'turnaround': '38 mins',
           'color': coralAccent,
           'icon': Icons.lunch_dining_rounded,
@@ -173,7 +308,7 @@ class _RestaurantAnalyticsScreenState
           'sales': dSales,
           'orders': dOrders,
           'aov': dOrders > 0 ? (dSales / dOrders) : 0.0,
-          'topSubcategory': 'Starters & Curries',
+          'topSubcategory': 'Starters & Special',
           'turnaround': '45 mins',
           'color': const Color(0xFF8B5CF6),
           'icon': Icons.dinner_dining_rounded,
@@ -195,10 +330,7 @@ class _RestaurantAnalyticsScreenState
       final daysMap = {1: 'Mon', 2: 'Tue', 3: 'Wed', 4: 'Thu', 5: 'Fri', 6: 'Sat', 7: 'Sun'};
       final Map<int, double> dowSales = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0};
       for (final t in allTransactions) {
-        DateTime? dt;
-        final rawDt = t['createdAt'] ?? t['timestamp'] ?? t['paidAt'];
-        if (rawDt is String) dt = DateTime.tryParse(rawDt);
-        else if (rawDt is int) dt = DateTime.fromMillisecondsSinceEpoch(rawDt);
+        final dt = _parseDt(t['createdAt'] ?? t['timestamp'] ?? t['paidAt']);
         if (dt != null) {
           final amt = (t['grandTotal'] ?? t['totalAmount'] ?? t['subtotal'] ?? 0.0) as num;
           dowSales[dt.weekday] = (dowSales[dt.weekday] ?? 0.0) + amt.toDouble();
@@ -239,13 +371,79 @@ class _RestaurantAnalyticsScreenState
       final sortedSubcats = subcatMap.values.toList()
         ..sort((a, b) => (b['sales'] as double).compareTo(a['sales'] as double));
 
-      setState(() {
-        _hourlyData = hourly;
-        _shiftsData = shifts;
-        _dayOfWeekData = dayOfWeek;
-        _topSubcategories = sortedSubcats.take(6).toList();
-        _totalTransactionsCount = filtered.length;
-      });
+      // 7. Per-Store Performance Breakdown Calculation
+      final List<Map<String, dynamic>> perStoreList = [];
+      for (final oId in activeOutletIds) {
+        final storeName = _availableOutlets.firstWhere(
+          (o) => o['id'] == oId,
+          orElse: () => {'name': oId},
+        )['name'] ?? oId;
+
+        final rawList = storeTransactions[oId] ?? [];
+        final storeFiltered = rawList.where((t) {
+          final dt = _parseDt(t['createdAt'] ?? t['timestamp'] ?? t['paidAt']);
+          if (dt == null) return false;
+          switch (_selectedPeriod) {
+            case 'Today':
+              return dt.year == now.year && dt.month == now.month && dt.day == now.day;
+            case 'Yesterday':
+              final yest = now.subtract(const Duration(days: 1));
+              return dt.year == yest.year && dt.month == yest.month && dt.day == yest.day;
+            case 'Last 7 Days':
+              return dt.isAfter(now.subtract(const Duration(days: 7)));
+            case 'This Month':
+              return dt.year == now.year && dt.month == now.month;
+            default:
+              return true;
+          }
+        }).toList();
+
+        double sRevenue = 0.0;
+        final Map<int, int> sHours = {};
+        for (final t in storeFiltered) {
+          final amt = (t['grandTotal'] ?? t['totalAmount'] ?? t['subtotal'] ?? 0.0) as num;
+          sRevenue += amt.toDouble();
+          final dt = _parseDt(t['createdAt'] ?? t['timestamp'] ?? t['paidAt']);
+          if (dt != null) {
+            sHours[dt.hour] = (sHours[dt.hour] ?? 0) + 1;
+          }
+        }
+
+        int peakHour = 13;
+        int maxHCount = 0;
+        sHours.forEach((h, c) {
+          if (c > maxHCount) {
+            maxHCount = c;
+            peakHour = h;
+          }
+        });
+
+        final sOrders = storeFiltered.length;
+        final sAov = sOrders > 0 ? (sRevenue / sOrders) : 0.0;
+        final peakStr = '${peakHour % 12 == 0 ? 12 : peakHour % 12} ${peakHour >= 12 ? 'PM' : 'AM'}';
+
+        perStoreList.add({
+          'id': oId,
+          'name': storeName,
+          'orders': sOrders,
+          'revenue': sRevenue,
+          'aov': sAov,
+          'peakHour': peakStr,
+        });
+      }
+
+      perStoreList.sort((a, b) => (b['revenue'] as double).compareTo(a['revenue'] as double));
+
+      if (mounted) {
+        setState(() {
+          _hourlyData = hourly;
+          _shiftsData = shifts;
+          _dayOfWeekData = dayOfWeek;
+          _topSubcategories = sortedSubcats.take(6).toList();
+          _perStoreData = perStoreList;
+          _totalTransactionsCount = filtered.length;
+        });
+      }
     } catch (e) {
       debugPrint('Live analytics calculation note: $e');
     }
@@ -283,25 +481,93 @@ class _RestaurantAnalyticsScreenState
             ),
             const SizedBox(width: 10),
             Expanded(
-              child: Text(
-                'Live Analytics & Rush Heatmaps',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: context.textPrimary,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Live Analytics & Rush Heatmaps',
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.bold,
+                      color: context.textPrimary,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  Text(
+                    _scopeMode == StoreScopeMode.all
+                        ? 'All Stores (${_availableOutlets.length} Outlets Consolidated)'
+                        : (_scopeMode == StoreScopeMode.individual
+                            ? 'Single Store Focus'
+                            : '${_multiSelectedOutletIds.length} Selected Stores Aggregated'),
+                    style: TextStyle(fontSize: 10.5, color: context.textSecondary),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
               ),
             ),
           ],
         ),
+        actions: [
+          Center(
+            child: Container(
+              margin: const EdgeInsets.only(right: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: emeraldAccent.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: emeraldAccent.withValues(alpha: 0.4)),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 6,
+                    height: 6,
+                    decoration: const BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: emeraldAccent,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  const Text(
+                    'LIVE',
+                    style: TextStyle(
+                      color: emeraldAccent,
+                      fontSize: 9.5,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          IconButton(
+            icon: Icon(Icons.refresh_rounded, color: context.textSecondary),
+            tooltip: 'Refresh Live Analytics',
+            onPressed: () {
+              _computeLiveAnalytics();
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('⚡ Live multi-store analytics updated!'),
+                  duration: Duration(seconds: 2),
+                ),
+              );
+            },
+          ),
+          const SizedBox(width: 4),
+        ],
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Multi-Store Scope Selector
+            _buildStoreScopeSelector(),
+
             // Period Selector Pill Bar
             SingleChildScrollView(
               scrollDirection: Axis.horizontal,
@@ -498,6 +764,9 @@ class _RestaurantAnalyticsScreenState
               },
             ),
             const SizedBox(height: 20),
+
+            // ── STORE PERFORMANCE COMPARISON (Live Multi-Store Breakdown) ──
+            _buildStorePerformanceCard(),
 
             // ── HOURLY RUSH-HOUR HEATMAP (24 Hours) ────────────────────────
             Container(
@@ -1087,6 +1356,285 @@ class _RestaurantAnalyticsScreenState
                 ),
               );
             }),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStoreScopeSelector() {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: context.surfaceColor,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: context.borderColor),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.store_mall_directory_rounded, size: 18, color: amberAccent),
+              const SizedBox(width: 8),
+              Text(
+                'Store Scope',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold,
+                  color: context.textPrimary,
+                ),
+              ),
+              const Spacer(),
+              SegmentedButton<StoreScopeMode>(
+                segments: const [
+                  ButtonSegment(
+                    value: StoreScopeMode.all,
+                    label: Text('All Stores', style: TextStyle(fontSize: 11)),
+                    icon: Icon(Icons.domain_rounded, size: 14),
+                  ),
+                  ButtonSegment(
+                    value: StoreScopeMode.individual,
+                    label: Text('Individual', style: TextStyle(fontSize: 11)),
+                    icon: Icon(Icons.storefront_rounded, size: 14),
+                  ),
+                  ButtonSegment(
+                    value: StoreScopeMode.selected,
+                    label: Text('Selected', style: TextStyle(fontSize: 11)),
+                    icon: Icon(Icons.checklist_rounded, size: 14),
+                  ),
+                ],
+                selected: {_scopeMode},
+                onSelectionChanged: (set) {
+                  setState(() => _scopeMode = set.first);
+                  _computeLiveAnalytics();
+                },
+                style: const ButtonStyle(
+                  visualDensity: VisualDensity.compact,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+              ),
+            ],
+          ),
+          if (_scopeMode == StoreScopeMode.individual && _availableOutlets.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: _availableOutlets.map((outlet) {
+                  final isSel = _singleSelectedOutletId == outlet['id'];
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: ChoiceChip(
+                      label: Text(outlet['name'] ?? 'Store'),
+                      selected: isSel,
+                      selectedColor: amberAccent,
+                      labelStyle: TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: isSel ? FontWeight.bold : FontWeight.normal,
+                        color: isSel ? Colors.black : context.textPrimary,
+                      ),
+                      onSelected: (val) {
+                        if (val) {
+                          setState(() => _singleSelectedOutletId = outlet['id']);
+                          _computeLiveAnalytics();
+                        }
+                      },
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+          ],
+          if (_scopeMode == StoreScopeMode.selected && _availableOutlets.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 6,
+              children: _availableOutlets.map((outlet) {
+                final isSel = _multiSelectedOutletIds.contains(outlet['id']);
+                return FilterChip(
+                  label: Text(outlet['name'] ?? 'Store'),
+                  selected: isSel,
+                  selectedColor: amberAccent.withValues(alpha: 0.3),
+                  checkmarkColor: amberAccent,
+                  labelStyle: TextStyle(
+                    fontSize: 11.5,
+                    fontWeight: isSel ? FontWeight.bold : FontWeight.normal,
+                    color: isSel ? amberAccent : context.textSecondary,
+                  ),
+                  onSelected: (val) {
+                    setState(() {
+                      if (val) {
+                        _multiSelectedOutletIds.add(outlet['id']!);
+                      } else {
+                        if (_multiSelectedOutletIds.length > 1) {
+                          _multiSelectedOutletIds.remove(outlet['id']!);
+                        }
+                      }
+                    });
+                    _computeLiveAnalytics();
+                  },
+                );
+              }).toList(),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStorePerformanceCard() {
+    if (_perStoreData.isEmpty) return const SizedBox.shrink();
+
+    final maxRevenue = _perStoreData.fold<double>(
+      1.0,
+      (prev, s) => max(prev, (s['revenue'] as double)),
+    );
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 20),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: context.surfaceColor,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: context.borderColor),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: amberAccent.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(Icons.leaderboard_rounded, color: amberAccent, size: 18),
+                  ),
+                  const SizedBox(width: 10),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Store Performance Comparison',
+                        style: TextStyle(
+                          color: context.textPrimary,
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      Text(
+                        'Live revenue and order throughput across selected outlets',
+                        style: TextStyle(color: context.textSecondary, fontSize: 11),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: amberAccent.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  '${_perStoreData.length} Outlets',
+                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: amberAccent),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          ListView.separated(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: _perStoreData.length,
+            separatorBuilder: (_, __) => const Divider(height: 20),
+            itemBuilder: (context, idx) {
+              final store = _perStoreData[idx];
+              final rev = store['revenue'] as double;
+              final orders = store['orders'] as int;
+              final aov = store['aov'] as double;
+              final peak = store['peakHour'] as String;
+              final progress = maxRevenue > 0 ? (rev / maxRevenue).clamp(0.0, 1.0) : 0.0;
+
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      CircleAvatar(
+                        radius: 12,
+                        backgroundColor: idx == 0 ? amberAccent : context.borderColor,
+                        child: Text(
+                          '${idx + 1}',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: idx == 0 ? Colors.black : context.textSecondary,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          store['name'] as String,
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                            color: context.textPrimary,
+                          ),
+                        ),
+                      ),
+                      Text(
+                        '₹ ${rev.toStringAsFixed(0)}',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                          color: emeraldAccent,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(4),
+                    child: LinearProgressIndicator(
+                      value: progress,
+                      minHeight: 6,
+                      backgroundColor: context.borderColor.withValues(alpha: 0.3),
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                        idx == 0 ? amberAccent : const Color(0xFF0284C7),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        '📦 $orders Orders',
+                        style: TextStyle(fontSize: 11, color: context.textSecondary),
+                      ),
+                      Text(
+                        '🎯 AOV: ₹${aov.toStringAsFixed(0)}',
+                        style: TextStyle(fontSize: 11, color: context.textSecondary),
+                      ),
+                      Text(
+                        '🔥 Peak: $peak',
+                        style: TextStyle(fontSize: 11, color: context.textSecondary),
+                      ),
+                    ],
+                  ),
+                ],
+              );
+            },
+          ),
         ],
       ),
     );

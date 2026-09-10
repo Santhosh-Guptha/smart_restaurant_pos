@@ -30,6 +30,7 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
   late final PageController _pageController;
   Timer? _tickerTimer;
   Timer? _pollTimer;
+  StreamSubscription? _hiveBoxSub;
   final ValueNotifier<DateTime> _clockNotifier = ValueNotifier<DateTime>(DateTime.now());
   Set<String> _terminalKeys = {};
 
@@ -60,6 +61,14 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
     _pageController = PageController(initialPage: 0);
     _loadLiveOrders();
     _loadTerminalKeys();
+
+    final orgId = _getEffectiveOrgId();
+    if (Hive.isBoxOpen('configBox')) {
+      _hiveBoxSub = Hive.box('configBox').watch(key: 'kot_orders_$orgId').listen((_) {
+        if (mounted) _loadLiveOrders();
+      });
+    }
+
     // Refresh scoped elapsed timers every second via clock notifier (O-28)
     _tickerTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       _clockNotifier.value = DateTime.now();
@@ -84,6 +93,7 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
 
   @override
   void dispose() {
+    _hiveBoxSub?.cancel();
     _tickerTimer?.cancel();
     _pollTimer?.cancel();
     _clockNotifier.dispose();

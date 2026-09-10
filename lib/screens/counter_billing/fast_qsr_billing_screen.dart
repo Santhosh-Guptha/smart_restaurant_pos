@@ -19,7 +19,9 @@ import '../../providers/saas_session_provider.dart';
 import '../../services/customer_bill_formatter.dart';
 import '../../services/kitchen_ticket_formatter.dart';
 import '../../services/apps_script_backend_service.dart';
+import '../../widgets/digital_pos_bill_dialog.dart';
 import '../../billing/bill_calculator.dart';
+import '../../sync/local_store.dart';
 
 class FastQsrBillingScreen extends ConsumerStatefulWidget {
   final String? initialTableNumber;
@@ -52,10 +54,13 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
   final TextEditingController _pendingSearchCtrl = TextEditingController();
   final TextEditingController _customerNameCtrl = TextEditingController();
   final TextEditingController _customerPhoneCtrl = TextEditingController();
+  final TextEditingController _customerEmailCtrl = TextEditingController();
   String _pendingFilterType = 'All'; // 'All', 'Dine-In', 'Takeaway', 'QR Web'
   
   List<Map<String, dynamic>> _pendingOrders = [];
   Timer? _pendingPollTimer;
+  StreamSubscription? _hiveOrderSub;
+  bool _isFetchingPendingOrders = false;
 
   double _gstRate = 5.0;
   double _serviceChargeRate = 0.0;
@@ -83,7 +88,12 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
     _tabController.addListener(() {
-      if (mounted) setState(() {});
+      if (mounted) {
+        if (_tabController.index == 1) {
+          _loadPendingFromHive();
+        }
+        setState(() {});
+      }
     });
 
     final activeStaff = ref.read(restaurantAuthProvider).activeStaff;
@@ -121,9 +131,25 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
     _loadStoreConfig();
     _loadMenuDishes();
     _loadTables();
-    
-    // Start polling every 3 seconds
-    _pendingPollTimer = Timer.periodic(const Duration(seconds: 3), (_) {
+
+    // 1. Instant local read (<1ms)
+    _loadPendingFromHive();
+
+    // 2. Real-time Hive box watcher for instant UI updates when KOTs/orders arrive
+    try {
+      if (Hive.isBoxOpen('configBox')) {
+        final box = Hive.box('configBox');
+        final orgId = _getEffectiveOrgId();
+        _hiveOrderSub = box.watch(key: 'kot_orders_$orgId').listen((_) {
+          if (mounted) {
+            _loadPendingFromHive();
+          }
+        });
+      }
+    } catch (_) {}
+
+    // 3. Periodic cloud background sync with concurrency guard
+    _pendingPollTimer = Timer.periodic(const Duration(seconds: 4), (_) {
       _fetchPendingOrders();
     });
     _fetchPendingOrders(); // Initial fetch
@@ -147,11 +173,9 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
     } catch (_) {}
   }
 
-  Future<void> _fetchPendingOrders() async {
+  void _loadPendingFromHive() {
     final orgId = _getEffectiveOrgId();
     final Map<String, Map<String, dynamic>> orderMap = {};
-    
-    // 1. Read from local Hive cache
     try {
       final box = Hive.isBoxOpen('configBox') ? Hive.box('configBox') : null;
       final raw = box?.get('kot_orders_$orgId');
@@ -168,9 +192,31 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
       }
     } catch (_) {}
 
-    // 2. Fetch from Webhook
+    if (mounted) {
+      setState(() {
+        _pendingOrders = orderMap.values.toList();
+      });
+    }
+  }
+
+  Future<void> _fetchPendingOrders() async {
+    if (_isFetchingPendingOrders) return;
+    _isFetchingPendingOrders = true;
+
+    // Load from local Hive cache first (instant 0ms response)
+    _loadPendingFromHive();
+
+    final orgId = _getEffectiveOrgId();
+    final Map<String, Map<String, dynamic>> orderMap = {};
+    for (final o in _pendingOrders) {
+      final id = canonicalId(o);
+      if (id.isNotEmpty) orderMap[id] = o;
+    }
+
+    // Background fetch from Webhook
     try {
       final webhookOrders = await AppsScriptBackendService.fetchOrders(orgId: orgId);
+      bool hadChanges = false;
       for (final doc in webhookOrders) {
         try {
           final d = Map<String, dynamic>.from(doc);
@@ -178,18 +224,24 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
           if (id.isNotEmpty) {
             if (_isPendingOrder(d)) {
               orderMap[id] = d;
-            } else {
+              hadChanges = true;
+            } else if (orderMap.containsKey(id)) {
               orderMap.remove(id); // Overwrite if it's no longer pending
+              hadChanges = true;
             }
           }
         } catch (_) {}
       }
-    } catch (_) {}
 
-    if (mounted) {
-      setState(() {
-        _pendingOrders = orderMap.values.toList();
-      });
+      if (mounted && hadChanges) {
+        setState(() {
+          _pendingOrders = orderMap.values.toList();
+        });
+      }
+    } catch (e) {
+      debugPrint('Background pending orders fetch error: $e');
+    } finally {
+      _isFetchingPendingOrders = false;
     }
   }
 
@@ -202,7 +254,6 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
     );
   }
 
-
   @override
   void dispose() {
     _tabController.dispose();
@@ -210,7 +261,9 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
     _pendingSearchCtrl.dispose();
     _customerNameCtrl.dispose();
     _customerPhoneCtrl.dispose();
+    _customerEmailCtrl.dispose();
     _pendingPollTimer?.cancel();
+    _hiveOrderSub?.cancel();
     super.dispose();
   }
 
@@ -994,7 +1047,20 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                   'Total Payable: ₹${_payableTotal(existingOrderToAppend).toStringAsFixed(2)}',
                   style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: ClassicTheme.primaryAccent),
                 ),
-                const SizedBox(height: 18),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _customerEmailCtrl,
+                  keyboardType: TextInputType.emailAddress,
+                  style: TextStyle(fontSize: 12.5, color: context.textPrimary),
+                  decoration: InputDecoration(
+                    prefixIcon: const Icon(Icons.email_outlined, size: 18, color: Color(0xFF2563EB)),
+                    hintText: 'Customer email for invoice (optional)',
+                    isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                ),
+                const SizedBox(height: 14),
 
                 Row(
                   children: [
@@ -1788,9 +1854,10 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
             .map((e) => Map<String, dynamic>.from(e as Map))
             .toList();
 
+        int existingIndex = -1;
         if (existingOrderToAppend != null) {
           // Append newly selected items to existing table bill
-          final existingIndex = updatedList.indexWhere((o) => canonicalId(o) == canonicalId(existingOrderToAppend));
+          existingIndex = updatedList.indexWhere((o) => canonicalId(o) == canonicalId(existingOrderToAppend));
 
           if (existingIndex >= 0) {
             final oldOrder = Map<String, dynamic>.from(updatedList[existingIndex]);
@@ -1884,6 +1951,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
             'orderSource': 'POS_COUNTER',
             'customerName': _customerNameCtrl.text.trim().isNotEmpty ? _customerNameCtrl.text.trim() : 'Dine-In Guest',
             'customerPhone': _customerPhoneCtrl.text.trim(),
+            'customerEmail': _customerEmailCtrl.text.trim(),
             'orderType': _orderType,
             'paymentMode': paymentMode,
             'createdAt': DateTime.now().toIso8601String(),
@@ -1916,6 +1984,15 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
           _decrementLocalStock(orderItemsList);
         }
 
+        // LocalStore single-writer keyed upsert for zero-loss offline KDS and billing sync
+        try {
+          final targetMap = existingOrderToAppend != null ? updatedList[existingIndex] : updatedList.last;
+          final kotOrder = KotOrder.fromMap(targetMap, targetBillId);
+          await LocalStore.upsertOrder(orgId, kotOrder);
+        } catch (lsErr) {
+          debugPrint('LocalStore order upsert note: $lsErr');
+        }
+
         // Update table status in Hive to 'OCCUPIED' if Dine-In
         if (_orderType == 'Dine-In') {
           final rawTables = box.get('restaurant_tables_$orgId') as List? ?? [];
@@ -1939,126 +2016,21 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
         }
       }
 
-      // 2. Live Sync to connected Google Sheet and Webhook
-      try {
-        final saasSession = ref.read(saasSessionProvider);
-        final sheetId = AppsScriptBackendService.resolveSpreadsheetId(
-          orgId: orgId,
-          explicitId: saasSession.currentOrganization?.googleSheetId,
-        );
-
-        // Sync full order data to webhook for Zero-Firebase architecture (Single Writer)
-        try {
-          await AppsScriptBackendService.saveBill(
-            outletId: orgId,
-            spreadsheetId: sheetId ?? '',
-            clientRequestId: clientRequestId,
-            billData: {
-              'id': targetBillId,
-              'bill_id': targetBillId,
-              'clientRequestId': clientRequestId,
-              'client_request_id': clientRequestId,
-              'kotNumber': token,
-              'tableName': tableName,
-              'table_name': tableName,
-              'tableId': tNum,
-              'tableNumber': tNum,
-              'table_number': tNum,
-              'status': isPaid ? 'PAID' : 'PENDING',
-              'kitchenStatus': 'PENDING',
-              'kitchen_status': 'PENDING',
-              'paymentStatus': isPaid ? 'PAID' : 'PENDING',
-              'payment_status': isPaid ? 'PAID' : 'PENDING',
-              'isPaid': isPaid,
-              'orderSource': 'POS_COUNTER',
-              'order_source': 'POS_COUNTER',
-              'orderType': _orderType,
-              'order_type': _orderType,
-              'customer_name': (existingOrderToAppend?['customerName'] ?? existingOrderToAppend?['customer_name'] ?? _customerNameCtrl.text.trim()).toString().isNotEmpty ? (existingOrderToAppend?['customerName'] ?? existingOrderToAppend?['customer_name'] ?? _customerNameCtrl.text.trim()) : 'Dine-In Guest',
-              'customerName': (existingOrderToAppend?['customerName'] ?? existingOrderToAppend?['customer_name'] ?? _customerNameCtrl.text.trim()).toString().isNotEmpty ? (existingOrderToAppend?['customerName'] ?? existingOrderToAppend?['customer_name'] ?? _customerNameCtrl.text.trim()) : 'Dine-In Guest',
-              'customer_phone': (existingOrderToAppend?['customerPhone'] ?? existingOrderToAppend?['customer_phone'] ?? _customerPhoneCtrl.text.trim()).toString(),
-              'customerPhone': (existingOrderToAppend?['customerPhone'] ?? existingOrderToAppend?['customer_phone'] ?? _customerPhoneCtrl.text.trim()).toString(),
-              'paymentMode': paymentMode,
-              'payment_mode': paymentMode,
-              'createdAt': DateTime.now().toIso8601String(),
-              'created_at': DateTime.now().toIso8601String(),
-              'subtotal': orderTotals.subtotal,
-              'discount': orderTotals.discount,
-              'service_charge': orderTotals.serviceCharge,
-              'gst': orderTotals.cgst + orderTotals.sgst,
-              'round_off': orderTotals.roundOff,
-              'totalAmount': orderTotals.grandTotal,
-              'total_amount': orderTotals.grandTotal,
-              'subtotalP': orderTotals.subtotalPaise,
-              'discountP': orderTotals.discountPaise,
-              'serviceChargeP': orderTotals.serviceChargePaise,
-              'taxableP': orderTotals.taxablePaise,
-              'cgstP': orderTotals.cgstPaise,
-              'sgstP': orderTotals.sgstPaise,
-              'roundOffP': orderTotals.roundOffPaise,
-              'grandTotalP': orderTotals.grandTotalPaise,
-              'discount_reason': _appliedDiscount?.reason ?? '',
-              'discountReason': _appliedDiscount?.reason ?? '',
-              'discount_authorized_by': _appliedDiscount?.authorizedBy ?? '',
-              'discountAuthorizedBy': _appliedDiscount?.authorizedBy ?? '',
-              'items': orderItemsList,
-            },
-          );
-        } catch (asErr) {
-          debugPrint('AppsScript saveBill error: $asErr');
-        }
-
-        // 3. Record in Payments ledger if Paid
-        if (isPaid) {
-          final staffName = ref.read(restaurantAuthProvider).activeStaff?.name ?? 'Counter Staff';
-          final staffId = ref.read(restaurantAuthProvider).activeStaff?.id ?? 'staff_01';
-          try {
-            if (splitPayments != null && splitPayments.isNotEmpty) {
-              for (final sp in splitPayments) {
-                final spMode = (sp['mode'] ?? 'CASH').toString().toUpperCase();
-                final spAmt = (sp['amount'] as num?)?.toDouble() ?? 0.0;
-                if (spAmt > 0) {
-                  await AppsScriptBackendService.recordPayment(
-                    outletId: orgId,
-                    spreadsheetId: sheetId ?? '',
-                    paymentData: {
-                      'paymentId': 'PAY-${const Uuid().v4()}',
-                      'orderId': targetBillId,
-                      'invoiceNo': targetBillId,
-                      'mode': spMode,
-                      'amountP': (spAmt * 100).round(),
-                      'byStaffId': staffId,
-                      'staffId': staffId,
-                      'collectedBy': staffName,
-                      'at': DateTime.now().toIso8601String(),
-                    },
-                  );
-                }
-              }
-            } else {
-              await AppsScriptBackendService.recordPayment(
-                outletId: orgId,
-                spreadsheetId: sheetId ?? '',
-                paymentData: {
-                  'paymentId': 'PAY-${const Uuid().v4()}',
-                  'orderId': targetBillId,
-                  'invoiceNo': targetBillId,
-                  'mode': paymentMode.toUpperCase(),
-                  'amountP': orderTotals.grandTotalPaise,
-                  'byStaffId': staffId,
-                  'staffId': staffId,
-                  'collectedBy': staffName,
-                  'at': DateTime.now().toIso8601String(),
-                },
-              );
-            }
-          } catch (payErr) {
-            debugPrint('AppsScript recordPayment error: $payErr');
-          }
-        }
-      } catch (sheetsErr) {
-        debugPrint('Google Sheets order sync notice: $sheetsErr');
-      }
+      // 2. High-speed asynchronous cloud synchronization (Zero POS freeze)
+      unawaited(_dispatchOrderCloudSync(
+        orgId: orgId,
+        targetBillId: targetBillId,
+        clientRequestId: clientRequestId,
+        token: token,
+        tableName: tableName,
+        tNum: tNum,
+        isPaid: isPaid,
+        paymentMode: paymentMode,
+        orderTotals: orderTotals,
+        orderItemsList: orderItemsList,
+        existingOrderToAppend: existingOrderToAppend,
+        splitPayments: splitPayments,
+      ));
     } catch (e) {
       debugPrint('Error updating orders/tables: $e');
     }
@@ -2120,76 +2092,233 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
       }
     }
 
-    // Show Success Modal & Reset Cart
+    // Show Success Modal / Digital POS Bill & Reset Cart
     if (mounted) {
-      showDialog(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          backgroundColor: context.surfaceColor,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20), side: BorderSide(color: context.borderColor)),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                isPaid ? Icons.check_circle_rounded : Icons.outdoor_grill_rounded,
-                color: const Color(0xFF10B981),
-                size: 56,
-              ),
-              const SizedBox(height: 16),
-              Text(
-                isPaid ? 'ORDER & PAYMENT CONFIRMED!' : 'KOT SENT TO KITCHEN!',
-                style: TextStyle(
-                  color: context.textPrimary,
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
+      if (isPaid) {
+        final saasSession = ref.read(saasSessionProvider);
+        final org = saasSession.currentOrganization;
+        final cashierStaff = ref.read(restaurantAuthProvider).activeStaff?.name ?? 'Counter Staff';
+        final itemsToBill = existingOrderToAppend != null
+            ? orderItemsList.map((m) => KotItem.fromMap(m)).toList()
+            : List<KotItem>.from(_cart);
+
+        DigitalPosBillDialog.show(
+          context,
+          billNumber: targetBillId,
+          tokenNumber: token,
+          tableName: tableName,
+          items: itemsToBill,
+          subtotal: orderTotals.subtotal,
+          discount: orderTotals.discount,
+          taxPercent: _gstRate,
+          cgstAmount: orderTotals.cgst,
+          sgstAmount: orderTotals.sgst,
+          serviceCharge: orderTotals.serviceCharge,
+          serviceChargeRate: _serviceChargeRate,
+          roundOff: orderTotals.roundOff,
+          totalAmount: orderTotals.grandTotal,
+          paymentMode: paymentMode,
+          cashierName: cashierStaff,
+          customerName: _customerNameCtrl.text.trim().isNotEmpty ? _customerNameCtrl.text.trim() : 'Dine-In Guest',
+          customerPhone: _customerPhoneCtrl.text.trim(),
+          customerEmail: _customerEmailCtrl.text.trim(),
+          organizationId: orgId,
+          organizationName: org?.name,
+          organizationPhone: org?.phone,
+          organizationAddress: org?.address,
+          gstin: org?.gstin,
+          onDismiss: () {
+            if (mounted) {
+              setState(() {
+                _cart.clear();
+                _appliedDiscount = null;
+                _customerNameCtrl.clear();
+                _customerPhoneCtrl.clear();
+                _customerEmailCtrl.clear();
+              });
+              _loadPendingFromHive();
+            }
+          },
+        );
+      } else {
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            backgroundColor: context.surfaceColor,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20), side: BorderSide(color: context.borderColor)),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(
+                  Icons.outdoor_grill_rounded,
+                  color: Color(0xFF10B981),
+                  size: 56,
                 ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                decoration: BoxDecoration(
-                  color: ClassicTheme.primaryAccent.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(10),
+                const SizedBox(height: 16),
+                Text(
+                  'KOT SENT TO KITCHEN!',
+                  style: TextStyle(
+                    color: context.textPrimary,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  textAlign: TextAlign.center,
                 ),
-                child: Text(
-                  'TOKEN: $token',
-                  style: const TextStyle(
-                    color: ClassicTheme.primaryAccent,
-                    fontSize: 26,
-                    fontWeight: FontWeight.w900,
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: ClassicTheme.primaryAccent.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    'TOKEN: $token',
+                    style: const TextStyle(
+                      color: ClassicTheme.primaryAccent,
+                      fontSize: 26,
+                      fontWeight: FontWeight.w900,
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(height: 10),
-              Text(
-                '$tableName • ${isPaid ? "Paid via $paymentMode" : "Bill running (Postpaid)"}',
-                style: TextStyle(color: context.textSecondary, fontSize: 13),
-              ),
-              const SizedBox(height: 20),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: () {
-                    Navigator.pop(ctx);
-                    setState(() {
-                      _cart.clear();
-                      _appliedDiscount = null;
-                    });
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: ClassicTheme.primaryAccent,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                  ),
-                  child: const Text('Next Customer', style: TextStyle(fontWeight: FontWeight.bold)),
+                const SizedBox(height: 10),
+                Text(
+                  '$tableName • Bill running (Postpaid)',
+                  style: TextStyle(color: context.textSecondary, fontSize: 13),
                 ),
-              ),
-            ],
+                const SizedBox(height: 20),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: () {
+                      Navigator.pop(ctx);
+                      setState(() {
+                        _cart.clear();
+                        _appliedDiscount = null;
+                        _customerNameCtrl.clear();
+                        _customerPhoneCtrl.clear();
+                        _customerEmailCtrl.clear();
+                      });
+                      _loadPendingFromHive();
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: ClassicTheme.primaryAccent,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                    child: const Text('Next Customer', style: TextStyle(fontWeight: FontWeight.bold)),
+                  ),
+                ),
+              ],
+            ),
           ),
-        ),
+        );
+      }
+    }
+  }
+
+  Future<void> _dispatchOrderCloudSync({
+    required String orgId,
+    required String targetBillId,
+    required String clientRequestId,
+    required dynamic token,
+    required String tableName,
+    required String tNum,
+    required bool isPaid,
+    required String paymentMode,
+    required BillTotals orderTotals,
+    required List<Map<String, dynamic>> orderItemsList,
+    Map<String, dynamic>? existingOrderToAppend,
+    List<Map<String, dynamic>>? splitPayments,
+  }) async {
+    try {
+      final billPayload = {
+        'id': targetBillId,
+        'bill_id': targetBillId,
+        'kotNumber': token,
+        'token': token,
+        'tokenNumber': token,
+        'clientRequestId': clientRequestId,
+        'tableName': tableName,
+        'tableId': tNum,
+        'tableNumber': tNum,
+        'status': isPaid ? 'PAID' : 'PENDING',
+        'kitchenStatus': 'PENDING',
+        'paymentStatus': isPaid ? 'PAID' : 'PENDING',
+        'isPaid': isPaid,
+        'orderSource': 'POS_COUNTER',
+        'order_source': 'POS_COUNTER',
+        'customerName': _customerNameCtrl.text.trim().isNotEmpty ? _customerNameCtrl.text.trim() : 'Dine-In Guest',
+        'customerPhone': _customerPhoneCtrl.text.trim(),
+        'customerEmail': _customerEmailCtrl.text.trim(),
+        'orderType': _orderType,
+        'paymentMode': paymentMode,
+        'createdAt': DateTime.now().toIso8601String(),
+        'subtotal': orderTotals.subtotal,
+        'discount': orderTotals.discount,
+        'service_charge': orderTotals.serviceCharge,
+        'service_charge_rate': _serviceChargeRate,
+        'gst': orderTotals.cgst + orderTotals.sgst,
+        'cgst': orderTotals.cgst,
+        'sgst': orderTotals.sgst,
+        'gst_rate': _gstRate,
+        'round_off': orderTotals.roundOff,
+        'totalAmount': orderTotals.grandTotal,
+        'total_amount': orderTotals.grandTotal,
+        'subtotalP': orderTotals.subtotalPaise,
+        'discountP': orderTotals.discountPaise,
+        'serviceChargeP': orderTotals.serviceChargePaise,
+        'taxableP': orderTotals.taxablePaise,
+        'cgstP': orderTotals.cgstPaise,
+        'sgstP': orderTotals.sgstPaise,
+        'roundOffP': orderTotals.roundOffPaise,
+        'grandTotalP': orderTotals.grandTotalPaise,
+        'items': orderItemsList,
+      };
+
+      await AppsScriptBackendService.saveBill(
+        outletId: orgId,
+        billData: billPayload,
+        clientRequestId: clientRequestId,
       );
+
+      if (isPaid) {
+        if (splitPayments != null && splitPayments.isNotEmpty) {
+          for (final sp in splitPayments) {
+            final amt = (sp['amount'] as num?)?.toDouble() ?? 0.0;
+            final mode = (sp['mode'] ?? 'CASH').toString();
+            if (amt > 0) {
+              await AppsScriptBackendService.recordPayment(
+                outletId: orgId,
+                paymentData: {
+                  'billId': targetBillId,
+                  'billNumber': targetBillId,
+                  'amount': amt,
+                  'mode': mode,
+                  'paymentMode': mode,
+                  'tableName': tableName,
+                  'recordedAt': DateTime.now().toIso8601String(),
+                },
+              );
+            }
+          }
+        } else {
+          await AppsScriptBackendService.recordPayment(
+            outletId: orgId,
+            paymentData: {
+              'billId': targetBillId,
+              'billNumber': targetBillId,
+              'amount': orderTotals.grandTotal,
+              'mode': paymentMode,
+              'paymentMode': paymentMode,
+              'tableName': tableName,
+              'recordedAt': DateTime.now().toIso8601String(),
+            },
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint('Background cloud sync error for bill $targetBillId: $e');
     }
   }
 
@@ -2513,6 +2642,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
     required Map<String, dynamic> order,
     required String paymentMode,
     required double paidAmount,
+    String? customerEmail,
   }) async {
     if (!LicenseGuard.checkAndShowLockout(context, ref, actionName: 'settle pending bills')) {
       return;
@@ -2710,6 +2840,10 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
           }
           updatedOrderData['sessionRoundsCount'] = targetRoundIds.length;
           updatedOrderData['roundIds'] = targetRoundIds;
+          if (customerEmail != null && customerEmail.isNotEmpty) {
+            updatedOrderData['customerEmail'] = customerEmail;
+            updatedOrderData['customer_email'] = customerEmail;
+          }
 
           // Settling at the counter does not change where the order came from.
           if ((updatedOrderData['orderSource'] ?? '').toString().trim().isEmpty) {
@@ -2774,12 +2908,40 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
       }
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('✅ ₹${paidAmount.toStringAsFixed(2)} collected via $paymentMode. Bill $orderId settled!'),
-            backgroundColor: const Color(0xFF10B981),
-            duration: const Duration(seconds: 3),
-          ),
+        final custEmail = (customerEmail != null && customerEmail.isNotEmpty)
+            ? customerEmail
+            : (order['customerEmail'] ?? order['customer_email'] ?? '').toString();
+        final items = _parseOrderItems(order['items']);
+
+        DigitalPosBillDialog.show(
+          context,
+          billNumber: orderId,
+          tokenNumber: tokenNumber,
+          tableName: tableName,
+          items: items,
+          subtotal: subtotal,
+          discount: (order['discount'] as num?)?.toDouble() ?? (discountP / 100.0),
+          taxPercent: (order['gst_rate'] as num?)?.toDouble() ?? _gstRate,
+          cgstAmount: (order['cgst'] as num?)?.toDouble() ?? (cgstP / 100.0),
+          sgstAmount: (order['sgst'] as num?)?.toDouble() ?? (sgstP / 100.0),
+          serviceCharge: (order['service_charge'] as num?)?.toDouble() ?? (scP / 100.0),
+          serviceChargeRate: _serviceChargeRate,
+          roundOff: (order['round_off'] as num?)?.toDouble() ?? (roundOffP / 100.0),
+          totalAmount: paidAmount,
+          paymentMode: paymentMode,
+          cashierName: activeStaff,
+          waiterName: (order['waiterName'] ?? '').toString(),
+          customerName: (order['customerName'] ?? order['customer_name'] ?? 'Dine-In Guest').toString(),
+          customerPhone: (order['customerPhone'] ?? order['customer_phone'] ?? '').toString(),
+          customerEmail: custEmail,
+          organizationId: orgId,
+          organizationName: saasSession.currentOrganization?.name,
+          organizationPhone: saasSession.currentOrganization?.phone,
+          organizationAddress: saasSession.currentOrganization?.address,
+          gstin: saasSession.currentOrganization?.gstin,
+          onDismiss: () {
+            _fetchPendingOrders();
+          },
         );
       }
     } catch (e) {
@@ -2811,6 +2973,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
     final items = _parseOrderItems(order['items']);
 
     final cashReceivedCtrl = TextEditingController(text: total.toStringAsFixed(0));
+    final emailCtrl = TextEditingController(text: (order['customerEmail'] ?? order['customer_email'] ?? '').toString());
 
     showModalBottomSheet(
       context: context,
@@ -3183,6 +3346,22 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                         const SizedBox(height: 16),
                       ],
 
+                      // Customer Email for POS Bill
+                      TextField(
+                        controller: emailCtrl,
+                        keyboardType: TextInputType.emailAddress,
+                        style: TextStyle(fontSize: 13, color: context.textPrimary),
+                        decoration: InputDecoration(
+                          prefixIcon: const Icon(Icons.email_outlined, size: 18, color: Color(0xFF2563EB)),
+                          labelText: 'Customer Email for POS Bill (Optional)',
+                          labelStyle: TextStyle(fontSize: 12, color: context.textSecondary),
+                          isDense: true,
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+
                       // Confirm & Mark Done Button
                       SizedBox(
                         width: double.infinity,
@@ -3212,6 +3391,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                               order: order,
                               paymentMode: selectedMode == 'UPI' ? 'UPI' : selectedMode,
                               paidAmount: total,
+                              customerEmail: emailCtrl.text.trim(),
                             );
                           },
                         ),

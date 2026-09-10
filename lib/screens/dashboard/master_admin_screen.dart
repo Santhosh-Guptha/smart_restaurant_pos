@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:bcrypt/bcrypt.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 import 'package:http/http.dart' as http;
 import '../../providers/saas_session_provider.dart';
 import '../../providers/auth_provider.dart';
@@ -126,162 +127,6 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
     );
   }
 
-  void _showRazorpaySettingsDialog() {
-    final keyIdController = TextEditingController();
-    final keySecretController = TextEditingController();
-    final webhookSecretController = TextEditingController();
-    bool isEnabled = true;
-    bool isLoading = true;
-    bool isSaving = false;
-
-    showDialog(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) {
-          if (isLoading) {
-            FirebaseFirestore.instance.collection('system_config').doc('razorpay').get().then((doc) {
-              if (doc.exists && doc.data() != null) {
-                final d = doc.data()!;
-                keyIdController.text = d['keyId'] ?? '';
-                keySecretController.text = d['keySecret'] ?? '';
-                webhookSecretController.text = d['webhookSecret'] ?? '';
-                isEnabled = d['enabled'] ?? true;
-              }
-              if (ctx.mounted) setDialogState(() => isLoading = false);
-            }).catchError((_) {
-              if (ctx.mounted) setDialogState(() => isLoading = false);
-            });
-          }
-
-          return AlertDialog(
-            backgroundColor: context.surfaceColor,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-              side: BorderSide(color: context.borderColor),
-            ),
-            title: Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(color: const Color(0xFFF59E0B).withOpacity(0.15), shape: BoxShape.circle),
-                  child: const Icon(Icons.payment_rounded, color: Color(0xFFF59E0B), size: 22),
-                ),
-                const SizedBox(width: 10),
-                const Expanded(
-                  child: Text(
-                    "Master Razorpay Gateway Setup",
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                  ),
-                ),
-              ],
-            ),
-            content: SizedBox(
-              width: 500,
-              child: isLoading
-                  ? const Center(child: Padding(padding: EdgeInsets.all(24), child: CircularProgressIndicator()))
-                  : SingleChildScrollView(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            "Configure the central platform Razorpay gateway. All customer table QR orders across restaurants will be captured and routed to restaurant settlement accounts.",
-                            style: TextStyle(color: context.textSecondary, fontSize: 12, height: 1.4),
-                          ),
-                          const SizedBox(height: 16),
-                          Text("Razorpay Key ID *", style: TextStyle(color: context.textSecondary, fontSize: 12, fontWeight: FontWeight.bold)),
-                          const SizedBox(height: 6),
-                          TextField(
-                            controller: keyIdController,
-                            style: TextStyle(color: context.textPrimary, fontSize: 13, fontFamily: 'monospace'),
-                            decoration: ClassicTheme.inputDecorationFor(context, hintText: "rzp_test_... or rzp_live_..."),
-                          ),
-                          const SizedBox(height: 14),
-                          Text("Razorpay Key Secret *", style: TextStyle(color: context.textSecondary, fontSize: 12, fontWeight: FontWeight.bold)),
-                          const SizedBox(height: 6),
-                          TextField(
-                            controller: keySecretController,
-                            obscureText: true,
-                            style: TextStyle(color: context.textPrimary, fontSize: 13, fontFamily: 'monospace'),
-                            decoration: ClassicTheme.inputDecorationFor(context, hintText: "Enter secret key"),
-                          ),
-                          const SizedBox(height: 14),
-                          Text("Webhook Secret (for cryptographic verification)", style: TextStyle(color: context.textSecondary, fontSize: 12, fontWeight: FontWeight.bold)),
-                          const SizedBox(height: 6),
-                          TextField(
-                            controller: webhookSecretController,
-                            obscureText: true,
-                            style: TextStyle(color: context.textPrimary, fontSize: 13, fontFamily: 'monospace'),
-                            decoration: ClassicTheme.inputDecorationFor(context, hintText: "Webhook Secret from Razorpay Dashboard"),
-                          ),
-                          const SizedBox(height: 14),
-                          SwitchListTile(
-                            contentPadding: EdgeInsets.zero,
-                            title: Text("Enable Platform Razorpay Dynamic UPI", style: TextStyle(color: context.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
-                            subtitle: Text("Allows customer QR self-checkout at tables", style: TextStyle(color: context.textSecondary, fontSize: 11)),
-                            value: isEnabled,
-                            activeColor: const Color(0xFFF59E0B),
-                            onChanged: (v) => setDialogState(() => isEnabled = v),
-                          ),
-                        ],
-                      ),
-                    ),
-            ),
-            actions: [
-              OutlinedButton.icon(
-                onPressed: () {
-                  Navigator.pop(ctx);
-                  _showFranchisePaymentSettingsDialog();
-                },
-                icon: const Icon(Icons.storefront_rounded, size: 16),
-                label: const Text("Franchise Gateways"),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: const Color(0xFFF59E0B),
-                  side: const BorderSide(color: Color(0xFFF59E0B)),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                ),
-              ),
-              const Spacer(),
-              TextButton(
-                onPressed: () => Navigator.pop(ctx),
-                child: Text("Cancel", style: TextStyle(color: context.textSecondary)),
-              ),
-              ElevatedButton(
-                onPressed: isSaving ? null : () async {
-                  setDialogState(() => isSaving = true);
-                  try {
-                    await FirebaseFirestore.instance.collection('system_config').doc('razorpay').set({
-                      'keyId': keyIdController.text.trim(),
-                      'keySecret': keySecretController.text.trim(),
-                      'webhookSecret': webhookSecretController.text.trim(),
-                      'enabled': isEnabled,
-                      'updatedAt': FieldValue.serverTimestamp(),
-                    }, SetOptions(merge: true));
-                    if (ctx.mounted) {
-                      Navigator.pop(ctx);
-                      AppToast.showSuccess(context, "Razorpay Gateway Config Saved");
-                    }
-                  } catch (e) {
-                    setDialogState(() => isSaving = false);
-                    if (ctx.mounted) AppToast.showError(context, e.toString());
-                  }
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFF59E0B),
-                  foregroundColor: Colors.black,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                ),
-                child: isSaving
-                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black))
-                    : const Text("Save Gateway Config", style: TextStyle(fontWeight: FontWeight.bold)),
-              ),
-            ],
-          );
-        },
-      ),
-    );
-  }
-
   void _showFranchisePaymentSettingsDialog() {
     showDialog(
       context: context,
@@ -301,12 +146,14 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
     bool isSaving = false;
     bool isTesting = false;
     bool obscurePassword = true;
+    bool hasFetched = false;
 
     showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) {
-          if (isLoading) {
+          if (!hasFetched) {
+            hasFetched = true;
             SmtpEmailService.getSmtpConfig().then((cfg) {
               hostController.text = cfg.host;
               portController.text = cfg.port.toString();
@@ -340,10 +187,30 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
                     style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                   ),
                 ),
+                if (!isLoading)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: (usernameController.text.isNotEmpty && passwordController.text.isNotEmpty)
+                          ? Colors.green.withValues(alpha: 0.15)
+                          : Colors.amber.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      (usernameController.text.isNotEmpty && passwordController.text.isNotEmpty) ? "CONFIGURED" : "PENDING SETUP",
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        color: (usernameController.text.isNotEmpty && passwordController.text.isNotEmpty) ? Colors.green : Colors.amber.shade800,
+                      ),
+                    ),
+                  ),
               ],
             ),
-            content: SizedBox(
-              width: 520,
+            content: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth: min(520, MediaQuery.of(ctx).size.width * 0.92),
+              ),
               child: isLoading
                   ? const Center(child: Padding(padding: EdgeInsets.all(24), child: CircularProgressIndicator()))
                   : SingleChildScrollView(
@@ -495,6 +362,7 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
                       ),
                     ),
             ),
+            actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(ctx),
@@ -739,14 +607,9 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
             },
           ),
           IconButton(
-            icon: const Icon(Icons.storefront_rounded, color: Color(0xFF10B981)),
-            onPressed: _showFranchisePaymentSettingsDialog,
-            tooltip: "Franchise Razorpay Gateways",
-          ),
-          IconButton(
             icon: const Icon(Icons.payment_rounded, color: Color(0xFFF59E0B)),
-            onPressed: _showRazorpaySettingsDialog,
-            tooltip: "Master Razorpay Gateway",
+            onPressed: _showFranchisePaymentSettingsDialog,
+            tooltip: "Apply Store Razorpay Gateways",
           ),
           IconButton(
             icon: const Icon(Icons.logout_rounded, color: ClassicTheme.dangerRed),
@@ -1605,8 +1468,10 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                 ),
               ],
             ),
-            content: SizedBox(
-              width: 540,
+            content: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth: min(560, MediaQuery.of(ctx).size.width * 0.92),
+              ),
               child: isLoading
                   ? SizedBox(
                       height: 240,
@@ -1873,6 +1738,7 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                       ),
                     ),
             ),
+            actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
             actions: [
               TextButton(
                 onPressed: isSaving ? null : () => Navigator.pop(ctx),
@@ -2011,30 +1877,35 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
     final ownerEmailController = TextEditingController();
     final ownerPasswordController = TextEditingController();
 
-    // Plan & Limits
-    String planTier = 'YEARLY';
-    String licStatus = 'ACTIVE';
+    // Storage Mode & Database
     String storageMode = 'CLOUD_SYNC';
     String initialStorageMode = 'CLOUD_SYNC';
     String existingSheetId = '';
     String existingSheetUrl = '';
     bool isProvisioningSheet = false;
     bool mustChangePassword = false;
-    int validityDays = 365;
-    int maxOutlets = 5;
-    int maxDevices = 3;
 
-    // Feature Toggles
-    bool featBilling = false;
-    bool featCrm = false;
-    bool featMultiOutlet = false;
-    bool featInventory = false;
-    bool featSuppliers = false;
-    bool featExpenses = false;
-    bool featLoyalty = false;
-    bool featOnlineOrdering = false;
-    bool featReports = false;
-    bool featWhiteLabel = false;
+    // Tenant Razorpay Gateway Configuration
+    bool isRazorpayEnabled = false;
+    final rzpKeyIdController = TextEditingController();
+    final rzpKeySecretController = TextEditingController();
+    final rzpWebhookSecretController = TextEditingController();
+    bool obscureRzpSecret = true;
+    bool isTestingRzp = false;
+    String? rzpTestMessage;
+    bool rzpTestPassed = false;
+
+    // Tenant SMTP Configuration
+    bool inheritPlatformSmtp = true;
+    final smtpHostController = TextEditingController(text: 'smtp.gmail.com');
+    final smtpPortController = TextEditingController(text: '587');
+    final smtpUsernameController = TextEditingController();
+    final smtpPasswordController = TextEditingController();
+    final smtpFromNameController = TextEditingController(text: orgName);
+    final smtpTestEmailController = TextEditingController(text: kAdminEmail);
+    bool smtpIsSsl = false;
+    bool obscureSmtpPassword = true;
+    bool isTestingSmtp = false;
 
     bool isLoading = true;
     bool isSaving = false;
@@ -2067,11 +1938,33 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                     gstController.text = data['gst'] ?? '';
                     addressController.text = data['address'] ?? '';
                     ownerUserId = data['ownerUserId']?.toString();
-                    licStatus = data['status'] ?? 'ACTIVE';
                     storageMode = data['storageMode'] ?? 'CLOUD_SYNC';
                     initialStorageMode = storageMode;
                     existingSheetId = (data['googleSheetId'] ?? '').toString();
                     existingSheetUrl = (data['googleSheetUrl'] ?? '').toString();
+
+                    // Razorpay
+                    if (data['razorpay'] is Map) {
+                      final rzp = Map<String, dynamic>.from(data['razorpay'] as Map);
+                      isRazorpayEnabled = rzp['enabled'] == true;
+                      rzpKeyIdController.text = (rzp['keyId'] ?? '').toString();
+                      rzpKeySecretController.text = (rzp['keySecret'] ?? '').toString();
+                      rzpWebhookSecretController.text = (rzp['webhookSecret'] ?? '').toString();
+                    }
+
+                    // SMTP
+                    if (data['smtpConfig'] is Map) {
+                      final smtp = Map<String, dynamic>.from(data['smtpConfig'] as Map);
+                      inheritPlatformSmtp = smtp['inheritPlatform'] != false;
+                      smtpHostController.text = (smtp['host'] ?? 'smtp.gmail.com').toString();
+                      smtpPortController.text = (smtp['port'] ?? 587).toString();
+                      smtpUsernameController.text = (smtp['username'] ?? '').toString();
+                      smtpPasswordController.text = (smtp['password'] ?? '').toString();
+                      smtpFromNameController.text = (smtp['fromName'] ?? nameController.text).toString();
+                      smtpIsSsl = smtp['isSsl'] == true;
+                    } else {
+                      smtpFromNameController.text = nameController.text;
+                    }
                   }
 
                   // 2. Owner User details
@@ -2109,47 +2002,6 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                       }
                     }
                   }
-
-                  // 3. License details
-                  final licDoc = await _firestore.collection('licenses').doc(orgId).get();
-                  if (licDoc.exists) {
-                    final lData = licDoc.data()!;
-                    final String loadedTier = lData['planTier'] ?? 'YEARLY';
-                    const allowedTiers = ['TRIAL', 'BASIC', 'PRO', 'MONTHLY', 'YEARLY', 'LIFETIME', 'ENTERPRISE'];
-                    planTier = allowedTiers.contains(loadedTier) ? loadedTier : 'YEARLY';
-                    licStatus = lData['status'] ?? licStatus;
-                    maxOutlets = lData['maxFranchises'] ?? 5;
-                    maxDevices = lData['maxDevices'] ?? 3;
-                    if (lData['endDate'] is Timestamp) {
-                      final end = (lData['endDate'] as Timestamp).toDate();
-                      final diff = end.difference(DateTime.now()).inDays;
-                      validityDays = diff > 0 ? diff : 30;
-                    }
-                  }
-
-                  // 4. Features
-                  final featDoc = await _firestore.collection('features').doc(orgId).get();
-                  if (featDoc.exists) {
-                    final fData = Map<String, dynamic>.from(featDoc.data()?['features'] ?? {});
-                    featBilling = fData['billing'] == true;
-                    featCrm = fData['crm'] == true;
-                    featMultiOutlet = fData['multiOutlet'] == true;
-                    featInventory = fData['inventoryEnabled'] == true;
-                    featSuppliers = fData['supplierManagement'] == true;
-                    featExpenses = fData['expenseManagement'] == true;
-                    featReports = fData['reportsEnabled'] == true;
-                    featLoyalty = fData['loyaltyEnabled'] == true;
-                    featOnlineOrdering = fData['onlineOrderingEnabled'] == true;
-                    featWhiteLabel = fData['whiteLabelEnabled'] == true;
-                  }
-
-                  // 5. Limits fallback
-                  final limitsDoc = await _firestore.collection('limits').doc(orgId).get();
-                  if (limitsDoc.exists) {
-                    final lm = limitsDoc.data()!;
-                    maxOutlets = lm['maxFranchises'] ?? maxOutlets;
-                    maxDevices = lm['maxDevices'] ?? maxDevices;
-                  }
                 } catch (e) {
                   debugPrint("Error loading tenant configs for edit: $e");
                 } finally {
@@ -2172,7 +2024,7 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
-                      "Edit Client Tenant",
+                      "Edit Tenant Profile & Gateways",
                       style: TextStyle(color: context.textPrimary, fontWeight: FontWeight.bold, fontSize: 17),
                     ),
                   ),
@@ -2189,8 +2041,10 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                   ),
                 ],
               ),
-              content: SizedBox(
-                width: 600,
+              content: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxWidth: min(650.0, MediaQuery.of(context).size.width * 0.94),
+                ),
                 child: isLoading
                     ? SizedBox(
                         height: 300,
@@ -2294,7 +2148,6 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                                       items: const [
                                         DropdownMenuItem(value: 'Restaurant & Cafe', child: Text('Restaurant & Cafe')),
                                         DropdownMenuItem(value: 'Supermarket / Retail', child: Text('Supermarket / Retail')),
-                                        DropdownMenuItem(value: 'Restaurant & Cafe', child: Text('Restaurant & Cafe')),
                                         DropdownMenuItem(value: 'Bakery & Sweets', child: Text('Bakery & Sweets')),
                                         DropdownMenuItem(value: 'Clothing & Apparel', child: Text('Clothing & Apparel')),
                                         DropdownMenuItem(value: 'Electronics & Mobile', child: Text('Electronics & Mobile')),
@@ -2422,24 +2275,18 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                               ),
                               const SizedBox(height: 10),
 
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: TextFormField(
-                                      controller: gstController,
-                                      style: TextStyle(color: context.textPrimary),
-                                      textCapitalization: TextCapitalization.characters,
-                                      decoration: InputDecoration(
-                                        labelText: "GST No (Optional)",
-                                        hintText: "15-digit GSTIN",
-                                        labelStyle: TextStyle(color: context.textSecondary, fontSize: 13),
-                                        prefixIcon: const Icon(Icons.receipt_long_outlined, size: 18),
-                                        enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: context.borderColor)),
-                                        focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: primaryAccent, width: 2)),
-                                      ),
-                                    ),
-                                  ),
-                                ],
+                              TextFormField(
+                                controller: gstController,
+                                style: TextStyle(color: context.textPrimary),
+                                textCapitalization: TextCapitalization.characters,
+                                decoration: InputDecoration(
+                                  labelText: "GSTIN (Optional)",
+                                  hintText: "15-digit GSTIN",
+                                  labelStyle: TextStyle(color: context.textSecondary, fontSize: 13),
+                                  prefixIcon: const Icon(Icons.receipt_long_outlined, size: 18),
+                                  enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: context.borderColor)),
+                                  focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: primaryAccent, width: 2)),
+                                ),
                               ),
                               const SizedBox(height: 10),
 
@@ -2456,105 +2303,8 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                                   focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: primaryAccent, width: 2)),
                                 ),
                               ),
-
-                              const SizedBox(height: 18),
-
-                              // ── SECTION 2: SUBSCRIPTION PLAN & QUOTAS ────────────
-                              Container(
-                                padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 10),
-                                decoration: BoxDecoration(
-                                  color: primaryAccent.withOpacity(0.12),
-                                  borderRadius: BorderRadius.circular(6),
-                                ),
-                                child: Row(
-                                  children: [
-                                    Icon(Icons.workspace_premium_rounded, color: primaryAccent, size: 16),
-                                    const SizedBox(width: 6),
-                                    Text("2. Plan & Allocations", style: TextStyle(color: primaryAccent, fontWeight: FontWeight.bold, fontSize: 13)),
-                                  ],
-                                ),
-                              ),
                               const SizedBox(height: 10),
-                              Row(
-                                children: [
-                                  Expanded(
-                                    flex: 2,
-                                    child: DropdownButtonFormField<String>(
-                                      value: planTier,
-                                      dropdownColor: context.surfaceColor,
-                                      style: TextStyle(color: context.textPrimary, fontSize: 13),
-                                      decoration: InputDecoration(
-                                        labelText: "Plan Tier",
-                                        labelStyle: TextStyle(color: context.textSecondary, fontSize: 13),
-                                        enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: context.borderColor)),
-                                        focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: primaryAccent, width: 2)),
-                                      ),
-                                      items: const [
-                                        DropdownMenuItem(value: 'TRIAL', child: Text('TRIAL (14 Days)')),
-                                        DropdownMenuItem(value: 'MONTHLY', child: Text('MONTHLY (30 Days)')),
-                                        DropdownMenuItem(value: 'YEARLY', child: Text('YEARLY (365 Days)')),
-                                        DropdownMenuItem(value: 'LIFETIME', child: Text('LIFETIME (100 Years)')),
-                                        DropdownMenuItem(value: 'PRO', child: Text('PRO')),
-                                        DropdownMenuItem(value: 'ENTERPRISE', child: Text('ENTERPRISE')),
-                                      ],
-                                      onChanged: (v) {
-                                        if (v != null) {
-                                          setDialogState(() {
-                                            planTier = v;
-                                            if (v == 'TRIAL') validityDays = 14;
-                                            if (v == 'MONTHLY') validityDays = 30;
-                                            if (v == 'YEARLY') validityDays = 365;
-                                            if (v == 'LIFETIME') validityDays = 36500;
-                                          });
-                                        }
-                                      },
-                                    ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    flex: 1,
-                                    child: TextFormField(
-                                      initialValue: validityDays.toString(),
-                                      key: ValueKey(validityDays),
-                                      style: TextStyle(color: context.textPrimary),
-                                      keyboardType: TextInputType.number,
-                                      decoration: InputDecoration(
-                                        labelText: "Validity (Days)",
-                                        labelStyle: TextStyle(color: context.textSecondary, fontSize: 13),
-                                        enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: context.borderColor)),
-                                        focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: primaryAccent, width: 2)),
-                                      ),
-                                      onChanged: (v) => validityDays = int.tryParse(v) ?? validityDays,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    flex: 1,
-                                    child: DropdownButtonFormField<String>(
-                                      value: licStatus,
-                                      dropdownColor: context.surfaceColor,
-                                      style: TextStyle(color: context.textPrimary, fontSize: 13),
-                                      decoration: InputDecoration(
-                                        labelText: "Status",
-                                        labelStyle: TextStyle(color: context.textSecondary, fontSize: 13),
-                                        enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: context.borderColor)),
-                                        focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: primaryAccent, width: 2)),
-                                      ),
-                                      items: const [
-                                        DropdownMenuItem(value: 'ACTIVE', child: Text('ACTIVE')),
-                                        DropdownMenuItem(value: 'SUSPENDED', child: Text('SUSPENDED')),
-                                        DropdownMenuItem(value: 'EXPIRED', child: Text('EXPIRED')),
-                                      ],
-                                      onChanged: (v) {
-                                        if (v != null) {
-                                          setDialogState(() => licStatus = v);
-                                        }
-                                      },
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 10),
+
                               DropdownButtonFormField<String>(
                                 value: storageMode,
                                 dropdownColor: context.surfaceColor,
@@ -2693,113 +2443,73 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                                         style: TextStyle(fontSize: 11, color: context.textSecondary),
                                       ),
                                       const SizedBox(height: 8),
-                                      Row(
-                                        children: [
-                                          ElevatedButton.icon(
-                                            onPressed: isProvisioningSheet
-                                                ? null
-                                                : () async {
-                                                    setDialogState(() => isProvisioningSheet = true);
-                                                    try {
-                                                      final authClient = await ClientLedgerCloudRouterService.getAuthenticatedClientIfAvailable();
-                                                      http.Client clientToUse;
-                                                      String ownerEmail = 'santhoshbukka5@gmail.com';
-                                                      if (authClient == null) {
-                                                        final authRes = await ClientLedgerCloudRouterService.authorizeGoogleAccount();
-                                                        if (authRes['success'] != true || authRes['client'] == null) {
-                                                          throw Exception(authRes['error'] ?? "Authorization failed.");
-                                                        }
-                                                        clientToUse = authRes['client'] as http.Client;
-                                                        ownerEmail = authRes['email'] ?? ownerEmail;
-                                                      } else {
-                                                        clientToUse = authClient;
-                                                      }
-                                                      final prov = await ClientLedgerCloudRouterService.provisionStoreLedgerSheet(
-                                                        authenticatedClient: clientToUse,
-                                                        storeName: nameController.text.trim().isNotEmpty ? nameController.text.trim() : orgName,
-                                                        storeId: orgId,
-                                                      );
-                                                      if (prov['success'] == true) {
-                                                        existingSheetId = prov['spreadsheetId'];
-                                                        existingSheetUrl = prov['sheetUrl'];
-                                                        await ClientLedgerCloudRouterService.linkGoogleLedgerToStore(
-                                                          firestore: _firestore,
-                                                          storeId: orgId,
-                                                          sheetId: existingSheetId,
-                                                          sheetUrl: existingSheetUrl,
-                                                          ownerGoogleEmail: ownerEmail,
-                                                        );
-                                                        setDialogState(() {});
-                                                        if (context.mounted) {
-                                                          AppToast.showSuccess(context, "Cloud Database Provisioned & Linked!", subtitle: existingSheetUrl);
-                                                        }
-                                                      } else {
-                                                        throw Exception(prov['error'] ?? "Provisioning failed.");
-                                                      }
-                                                    } catch (e) {
-                                                      if (context.mounted) {
-                                                        AppToast.showError(context, e.toString(), title: "Provisioning Failed");
-                                                      }
-                                                    } finally {
-                                                      setDialogState(() => isProvisioningSheet = false);
+                                      ElevatedButton.icon(
+                                        onPressed: isProvisioningSheet
+                                            ? null
+                                            : () async {
+                                                setDialogState(() => isProvisioningSheet = true);
+                                                try {
+                                                  final authClient = await ClientLedgerCloudRouterService.getAuthenticatedClientIfAvailable();
+                                                  http.Client clientToUse;
+                                                  String ownerEmail = 'santhoshbukka5@gmail.com';
+                                                  if (authClient == null) {
+                                                    final authRes = await ClientLedgerCloudRouterService.authorizeGoogleAccount();
+                                                    if (authRes['success'] != true || authRes['client'] == null) {
+                                                      throw Exception(authRes['error'] ?? "Authorization failed.");
                                                     }
-                                                  },
-                                            icon: isProvisioningSheet
-                                                ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                                                : const Icon(Icons.add_to_drive_rounded, size: 16),
-                                            label: Text(
-                                              existingSheetId.isNotEmpty ? "Re-connect / Repair Database" : "Provision Cloud Database Now",
-                                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11),
-                                            ),
-                                            style: ElevatedButton.styleFrom(
-                                              backgroundColor: const Color(0xFF10B981),
-                                              foregroundColor: Colors.white,
-                                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                            ),
-                                          ),
-                                        ],
+                                                    clientToUse = authRes['client'] as http.Client;
+                                                    ownerEmail = authRes['email'] ?? ownerEmail;
+                                                  } else {
+                                                    clientToUse = authClient;
+                                                  }
+                                                  final prov = await ClientLedgerCloudRouterService.provisionStoreLedgerSheet(
+                                                    authenticatedClient: clientToUse,
+                                                    storeName: nameController.text.trim().isNotEmpty ? nameController.text.trim() : orgName,
+                                                    storeId: orgId,
+                                                  );
+                                                  if (prov['success'] == true) {
+                                                    existingSheetId = prov['spreadsheetId'];
+                                                    existingSheetUrl = prov['sheetUrl'];
+                                                    await ClientLedgerCloudRouterService.linkGoogleLedgerToStore(
+                                                      firestore: _firestore,
+                                                      storeId: orgId,
+                                                      sheetId: existingSheetId,
+                                                      sheetUrl: existingSheetUrl,
+                                                      ownerGoogleEmail: ownerEmail,
+                                                    );
+                                                    setDialogState(() {});
+                                                    if (context.mounted) {
+                                                      AppToast.showSuccess(context, "Cloud Database Provisioned & Linked!", subtitle: existingSheetUrl);
+                                                    }
+                                                  } else {
+                                                    throw Exception(prov['error'] ?? "Provisioning failed.");
+                                                  }
+                                                } catch (e) {
+                                                  if (context.mounted) {
+                                                    AppToast.showError(context, e.toString(), title: "Provisioning Failed");
+                                                  }
+                                                } finally {
+                                                  setDialogState(() => isProvisioningSheet = false);
+                                                }
+                                              },
+                                        icon: isProvisioningSheet
+                                            ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                                            : const Icon(Icons.add_to_drive_rounded, size: 16),
+                                        label: Text(
+                                          existingSheetId.isNotEmpty ? "Re-connect / Repair Database" : "Provision Cloud Database Now",
+                                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11),
+                                        ),
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: const Color(0xFF10B981),
+                                          foregroundColor: Colors.white,
+                                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                        ),
                                       ),
                                     ],
                                   ),
                                 ),
                               ],
-                              const SizedBox(height: 10),
-                              Row(
-                                children: [
-                                  Expanded(
-                                    flex: 1,
-                                    child: TextFormField(
-                                      initialValue: maxOutlets.toString(),
-                                      style: TextStyle(color: context.textPrimary),
-                                      keyboardType: TextInputType.number,
-                                      decoration: InputDecoration(
-                                        labelText: "Max Outlets / Stores",
-                                        labelStyle: TextStyle(color: context.textSecondary, fontSize: 13),
-                                        enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: context.borderColor)),
-                                        focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: primaryAccent, width: 2)),
-                                      ),
-                                      onChanged: (v) => maxOutlets = int.tryParse(v) ?? 5,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    flex: 1,
-                                    child: TextFormField(
-                                      initialValue: maxDevices.toString(),
-                                      style: TextStyle(color: context.textPrimary),
-                                      keyboardType: TextInputType.number,
-                                      decoration: InputDecoration(
-                                        labelText: "Max Cashier Devices",
-                                        labelStyle: TextStyle(color: context.textSecondary, fontSize: 13),
-                                        enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: context.borderColor)),
-                                        focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: primaryAccent, width: 2)),
-                                      ),
-                                      onChanged: (v) => maxDevices = int.tryParse(v) ?? 3,
-                                    ),
-                                  ),
-                                ],
-                              ),
                               const SizedBox(height: 8),
                               SwitchListTile.adaptive(
                                 dense: true,
@@ -2811,161 +2521,357 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                                 onChanged: (v) => setDialogState(() => mustChangePassword = v),
                               ),
 
-                              const SizedBox(height: 16),
+                              const SizedBox(height: 18),
 
-                              // ── SECTION 3: FEATURE ENTITLEMENTS ─────────────────
+                              // ── SECTION 2: TENANT RAZORPAY GATEWAY SETUP ─────────────
                               Container(
                                 padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 10),
                                 decoration: BoxDecoration(
-                                  color: primaryAccent.withOpacity(0.12),
+                                  color: const Color(0xFFF59E0B).withOpacity(0.12),
                                   borderRadius: BorderRadius.circular(6),
                                 ),
-                                child: Row(
+                                child: const Row(
                                   children: [
-                                    Icon(Icons.tune_rounded, color: primaryAccent, size: 16),
-                                    const SizedBox(width: 6),
-                                    Text("3. Feature Entitlements (Categorized & Interlinked)", style: TextStyle(color: primaryAccent, fontWeight: FontWeight.bold, fontSize: 13)),
+                                    Icon(Icons.payment_rounded, color: Color(0xFFF59E0B), size: 16),
+                                    SizedBox(width: 6),
+                                    Text("2. Tenant Razorpay Gateway Setup", style: TextStyle(color: Color(0xFFF59E0B), fontWeight: FontWeight.bold, fontSize: 13)),
                                   ],
                                 ),
                               ),
-                              const SizedBox(height: 10),
-
-                              // Group 1: Core Operations
-                              _buildFeatureGroup(
-                                context: context,
-                                title: "Core POS & Daily Operations",
-                                subtitle: "Essential counter checkout, inventory tracking & cash closure.",
-                                icon: Icons.point_of_sale_rounded,
-                                accentColor: const Color(0xFF2563EB),
-                                children: [
-                                  _featureChipWidget(
-                                    label: "Billing",
-                                    subtitle: "Barcode POS & receipts",
-                                    selected: featBilling,
-                                    color: const Color(0xFF2563EB),
-                                    onSelected: (v) => setDialogState(() => featBilling = v),
-                                  ),
-                                  _featureChipWidget(
-                                    label: "Inventory Stock",
-                                    subtitle: "Batch & low stock alerts",
-                                    selected: featInventory,
-                                    color: const Color(0xFF2563EB),
-                                    onSelected: (v) => setDialogState(() => featInventory = v),
-                                  ),
-                                  _featureChipWidget(
-                                    label: "Day-End Z-Report",
-                                    subtitle: "Daily cash & register closure",
-                                    selected: featReports,
-                                    color: const Color(0xFF2563EB),
-                                    onSelected: (v) => setDialogState(() => featReports = v),
-                                  ),
-                                  _featureChipWidget(
-                                    label: "Expense Tracker",
-                                    subtitle: "Petty cash & payouts",
-                                    selected: featExpenses,
-                                    color: const Color(0xFF2563EB),
-                                    onSelected: (v) => setDialogState(() => featExpenses = v),
-                                  ),
-                                ],
+                              const SizedBox(height: 8),
+                              Text(
+                                "Configure dedicated Razorpay gateway credentials for this restaurant. Table QR and online customer payments will be routed directly to this restaurant's Razorpay account.",
+                                style: TextStyle(color: context.textSecondary, fontSize: 11.5, height: 1.3),
                               ),
-                              const SizedBox(height: 10),
-
-                              // Group 2: Customer CRM & Growth (Interlinked)
-                              _buildFeatureGroup(
-                                context: context,
-                                title: "Customer CRM & Growth (Interlinked)",
-                                subtitle: "Customer ledger khata, loyalty points & online storefront.",
-                                icon: Icons.people_alt_rounded,
-                                accentColor: const Color(0xFF10B981),
-                                children: [
-                                  _featureChipWidget(
-                                    label: "CRM / Customer Khata",
-                                    subtitle: "Customer credit & balance",
-                                    selected: featCrm,
-                                    color: const Color(0xFF10B981),
-                                    onSelected: (v) => setDialogState(() => featCrm = v),
-                                  ),
-                                  _featureChipWidget(
-                                    label: "Loyalty & Rewards",
-                                    subtitle: "Points & discounts (Enables CRM)",
-                                    dependencyTag: "Requires CRM",
-                                    selected: featLoyalty,
-                                    color: const Color(0xFF10B981),
-                                    onSelected: (v) => setDialogState(() {
-                                      featLoyalty = v;
-                                      if (v) featCrm = true; // Interlink
-                                    }),
-                                  ),
-                                  _featureChipWidget(
-                                    label: "Online Ordering",
-                                    subtitle: "Web catalog (Enables CRM + Billing)",
-                                    dependencyTag: "Requires Billing & CRM",
-                                    selected: featOnlineOrdering,
-                                    color: const Color(0xFF10B981),
-                                    onSelected: (v) => setDialogState(() {
-                                      featOnlineOrdering = v;
-                                      if (v) {
-                                        featCrm = true;
-                                        featBilling = true; // Interlink
-                                      }
-                                    }),
-                                  ),
-                                ],
+                              const SizedBox(height: 6),
+                              SwitchListTile.adaptive(
+                                dense: true,
+                                contentPadding: EdgeInsets.zero,
+                                title: Text("Enable Custom Tenant Razorpay Gateway", style: TextStyle(color: context.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
+                                subtitle: Text("When enabled, QR & counter dynamic UPI settle directly into this tenant's account", style: TextStyle(color: context.textSecondary, fontSize: 11)),
+                                value: isRazorpayEnabled,
+                                activeColor: const Color(0xFFF59E0B),
+                                onChanged: (v) => setDialogState(() => isRazorpayEnabled = v),
                               ),
-                              const SizedBox(height: 10),
+                              if (isRazorpayEnabled) ...[
+                                const SizedBox(height: 8),
+                                TextFormField(
+                                  controller: rzpKeyIdController,
+                                  style: TextStyle(color: context.textPrimary, fontSize: 13, fontFamily: 'monospace'),
+                                  decoration: InputDecoration(
+                                    labelText: "Razorpay Key ID *",
+                                    hintText: "rzp_test_... or rzp_live_...",
+                                    labelStyle: TextStyle(color: context.textSecondary, fontSize: 13),
+                                    prefixIcon: const Icon(Icons.key_rounded, size: 18),
+                                    enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: context.borderColor)),
+                                    focusedBorder: const UnderlineInputBorder(borderSide: BorderSide(color: Color(0xFFF59E0B), width: 2)),
+                                  ),
+                                  validator: isRazorpayEnabled ? (v) => v == null || v.trim().isEmpty ? "Key ID required" : null : null,
+                                ),
+                                const SizedBox(height: 10),
+                                TextFormField(
+                                  controller: rzpKeySecretController,
+                                  obscureText: obscureRzpSecret,
+                                  style: TextStyle(color: context.textPrimary, fontSize: 13, fontFamily: 'monospace'),
+                                  decoration: InputDecoration(
+                                    labelText: "Razorpay Key Secret *",
+                                    hintText: "Enter secret key",
+                                    labelStyle: TextStyle(color: context.textSecondary, fontSize: 13),
+                                    prefixIcon: const Icon(Icons.password_rounded, size: 18),
+                                    enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: context.borderColor)),
+                                    focusedBorder: const UnderlineInputBorder(borderSide: BorderSide(color: Color(0xFFF59E0B), width: 2)),
+                                    suffixIcon: IconButton(
+                                      icon: Icon(obscureRzpSecret ? Icons.visibility_outlined : Icons.visibility_off_outlined, size: 18, color: context.textSecondary),
+                                      onPressed: () => setDialogState(() => obscureRzpSecret = !obscureRzpSecret),
+                                    ),
+                                  ),
+                                  validator: isRazorpayEnabled ? (v) => v == null || v.trim().isEmpty ? "Key secret required" : null : null,
+                                ),
+                                const SizedBox(height: 10),
+                                TextFormField(
+                                  controller: rzpWebhookSecretController,
+                                  obscureText: true,
+                                  style: TextStyle(color: context.textPrimary, fontSize: 13, fontFamily: 'monospace'),
+                                  decoration: InputDecoration(
+                                    labelText: "Webhook Secret (Optional)",
+                                    hintText: "Webhook Secret from Razorpay Dashboard",
+                                    labelStyle: TextStyle(color: context.textSecondary, fontSize: 13),
+                                    prefixIcon: const Icon(Icons.webhook_rounded, size: 18),
+                                    enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: context.borderColor)),
+                                    focusedBorder: const UnderlineInputBorder(borderSide: BorderSide(color: Color(0xFFF59E0B), width: 2)),
+                                  ),
+                                ),
+                                const SizedBox(height: 12),
+                                Row(
+                                  children: [
+                                    ElevatedButton.icon(
+                                      onPressed: isTestingRzp
+                                          ? null
+                                          : () async {
+                                              final keyId = rzpKeyIdController.text.trim();
+                                              final keySecret = rzpKeySecretController.text.trim();
+                                              if (keyId.isEmpty) {
+                                                AppToast.showError(context, "Enter Key ID first");
+                                                return;
+                                              }
+                                              setDialogState(() {
+                                                isTestingRzp = true;
+                                                rzpTestMessage = null;
+                                              });
+                                              try {
+                                                final res = await AppsScriptBackendService.testOutletRazorpay(
+                                                  outletId: orgId,
+                                                  keyId: keyId,
+                                                  keySecret: keySecret,
+                                                );
+                                                final ok = res['ok'] == true || res['success'] == true;
+                                                setDialogState(() {
+                                                  isTestingRzp = false;
+                                                  rzpTestPassed = ok;
+                                                  rzpTestMessage = (res['message'] ?? res['error'] ?? (ok ? "Accepted" : "Failed")).toString();
+                                                });
+                                                if (ok) {
+                                                  AppToast.showSuccess(context, "Razorpay verified for this store!");
+                                                } else {
+                                                  AppToast.showError(context, rzpTestMessage ?? "Verification failed");
+                                                }
+                                              } catch (e) {
+                                                setDialogState(() {
+                                                  isTestingRzp = false;
+                                                  rzpTestPassed = false;
+                                                  rzpTestMessage = "Error: $e";
+                                                });
+                                                AppToast.showError(context, "Test failed: $e");
+                                              }
+                                            },
+                                      icon: isTestingRzp
+                                          ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                                          : const Icon(Icons.verified_user_rounded, size: 16),
+                                      label: Text(isTestingRzp ? "Testing..." : "Test Connection", style: const TextStyle(fontSize: 12)),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: const Color(0xFFF59E0B),
+                                        foregroundColor: Colors.white,
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                                      ),
+                                    ),
+                                    if (rzpTestMessage != null) ...[
+                                      const SizedBox(width: 10),
+                                      Expanded(
+                                        child: Text(
+                                          rzpTestMessage!,
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w600,
+                                            color: rzpTestPassed ? Colors.green : Colors.redAccent,
+                                          ),
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              ],
 
-                              // Group 3: Multi-Branch & Supply Chain (Interlinked)
-                              _buildFeatureGroup(
-                                context: context,
-                                title: "Multi-Branch & Supply Chain (Interlinked)",
-                                subtitle: "Franchise outlets, cashier mapping & vendor purchase orders.",
-                                icon: Icons.account_tree_rounded,
-                                accentColor: const Color(0xFF8B5CF6),
-                                children: [
-                                  _featureChipWidget(
-                                    label: "Multi-Outlet Branches",
-                                    subtitle: "Outlet & staff mapping",
-                                    selected: featMultiOutlet,
-                                    color: const Color(0xFF8B5CF6),
-                                    onSelected: (v) => setDialogState(() => featMultiOutlet = v),
-                                  ),
-                                  _featureChipWidget(
-                                    label: "Supplier Management",
-                                    subtitle: "Vendor POs (Enables Inventory)",
-                                    dependencyTag: "Requires Inventory",
-                                    selected: featSuppliers,
-                                    color: const Color(0xFF8B5CF6),
-                                    onSelected: (v) => setDialogState(() {
-                                      featSuppliers = v;
-                                      if (v) featInventory = true; // Interlink
-                                    }),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 10),
+                              const SizedBox(height: 18),
 
-                              // Group 4: Enterprise & Branding
-                              _buildFeatureGroup(
-                                context: context,
-                                title: "Enterprise & White-Label",
-                                subtitle: "Custom business branding, themes & personalized invoices.",
-                                icon: Icons.palette_rounded,
-                                accentColor: const Color(0xFFF59E0B),
-                                children: [
-                                  _featureChipWidget(
-                                    label: "Custom White-Label",
-                                    subtitle: "Custom theme & logo",
-                                    selected: featWhiteLabel,
-                                    color: const Color(0xFFF59E0B),
-                                    onSelected: (v) => setDialogState(() => featWhiteLabel = v),
-                                  ),
-                                ],
+                              // ── SECTION 3: EMAIL & SMTP CONFIGURATION ─────────────
+                              Container(
+                                padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 10),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF0284C7).withOpacity(0.12),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: const Row(
+                                  children: [
+                                    Icon(Icons.mark_email_read_rounded, color: Color(0xFF0284C7), size: 16),
+                                    SizedBox(width: 6),
+                                    Text("3. Email & SMTP Configuration", style: TextStyle(color: Color(0xFF0284C7), fontWeight: FontWeight.bold, fontSize: 13)),
+                                  ],
+                                ),
                               ),
+                              const SizedBox(height: 8),
+                              Text(
+                                "Configure outgoing email server for sending digital POS tax invoices to customers upon bill settlement and administrative alerts.",
+                                style: TextStyle(color: context.textSecondary, fontSize: 11.5, height: 1.3),
+                              ),
+                              const SizedBox(height: 6),
+                              SwitchListTile.adaptive(
+                                dense: true,
+                                contentPadding: EdgeInsets.zero,
+                                title: Text("Inherit Platform Master Admin SMTP Server", style: TextStyle(color: context.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
+                                subtitle: Text(
+                                  inheritPlatformSmtp
+                                      ? "Uses the central system SMTP server configured by master admin"
+                                      : "Using dedicated custom SMTP credentials for this tenant",
+                                  style: TextStyle(color: context.textSecondary, fontSize: 11),
+                                ),
+                                value: inheritPlatformSmtp,
+                                activeColor: const Color(0xFF0284C7),
+                                onChanged: (v) => setDialogState(() => inheritPlatformSmtp = v),
+                              ),
+                              if (!inheritPlatformSmtp) ...[
+                                const SizedBox(height: 8),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      flex: 3,
+                                      child: TextFormField(
+                                        controller: smtpHostController,
+                                        style: TextStyle(color: context.textPrimary, fontSize: 13),
+                                        decoration: InputDecoration(
+                                          labelText: "SMTP Host *",
+                                          hintText: "smtp.gmail.com",
+                                          labelStyle: TextStyle(color: context.textSecondary, fontSize: 13),
+                                          enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: context.borderColor)),
+                                          focusedBorder: const UnderlineInputBorder(borderSide: BorderSide(color: Color(0xFF0284C7), width: 2)),
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      flex: 1,
+                                      child: TextFormField(
+                                        controller: smtpPortController,
+                                        keyboardType: TextInputType.number,
+                                        style: TextStyle(color: context.textPrimary, fontSize: 13),
+                                        decoration: InputDecoration(
+                                          labelText: "Port *",
+                                          hintText: "587",
+                                          labelStyle: TextStyle(color: context.textSecondary, fontSize: 13),
+                                          enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: context.borderColor)),
+                                          focusedBorder: const UnderlineInputBorder(borderSide: BorderSide(color: Color(0xFF0284C7), width: 2)),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 10),
+                                TextFormField(
+                                  controller: smtpUsernameController,
+                                  style: TextStyle(color: context.textPrimary, fontSize: 13),
+                                  decoration: InputDecoration(
+                                    labelText: "Sender Email / Username *",
+                                    hintText: "restaurant@gmail.com",
+                                    labelStyle: TextStyle(color: context.textSecondary, fontSize: 13),
+                                    prefixIcon: const Icon(Icons.account_circle_outlined, size: 18),
+                                    enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: context.borderColor)),
+                                    focusedBorder: const UnderlineInputBorder(borderSide: BorderSide(color: Color(0xFF0284C7), width: 2)),
+                                  ),
+                                ),
+                                const SizedBox(height: 10),
+                                TextFormField(
+                                  controller: smtpPasswordController,
+                                  obscureText: obscureSmtpPassword,
+                                  style: TextStyle(color: context.textPrimary, fontSize: 13, fontFamily: 'monospace'),
+                                  decoration: InputDecoration(
+                                    labelText: "SMTP App Password *",
+                                    hintText: "16-character Google App Password",
+                                    labelStyle: TextStyle(color: context.textSecondary, fontSize: 13),
+                                    prefixIcon: const Icon(Icons.lock_outline, size: 18),
+                                    enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: context.borderColor)),
+                                    focusedBorder: const UnderlineInputBorder(borderSide: BorderSide(color: Color(0xFF0284C7), width: 2)),
+                                    suffixIcon: IconButton(
+                                      icon: Icon(obscureSmtpPassword ? Icons.visibility_outlined : Icons.visibility_off_outlined, size: 18, color: context.textSecondary),
+                                      onPressed: () => setDialogState(() => obscureSmtpPassword = !obscureSmtpPassword),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 10),
+                                TextFormField(
+                                  controller: smtpFromNameController,
+                                  style: TextStyle(color: context.textPrimary, fontSize: 13),
+                                  decoration: InputDecoration(
+                                    labelText: "Sender Display Name",
+                                    hintText: "$orgName POS",
+                                    labelStyle: TextStyle(color: context.textSecondary, fontSize: 13),
+                                    prefixIcon: const Icon(Icons.badge_outlined, size: 18),
+                                    enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: context.borderColor)),
+                                    focusedBorder: const UnderlineInputBorder(borderSide: BorderSide(color: Color(0xFF0284C7), width: 2)),
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                SwitchListTile.adaptive(
+                                  dense: true,
+                                  contentPadding: EdgeInsets.zero,
+                                  title: Text("Use SSL / TLS Direct Connection", style: TextStyle(color: context.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
+                                  subtitle: Text("Enable if Port 465 (Port 587 uses STARTTLS by default)", style: TextStyle(color: context.textSecondary, fontSize: 11)),
+                                  value: smtpIsSsl,
+                                  activeColor: const Color(0xFF0284C7),
+                                  onChanged: (v) => setDialogState(() => smtpIsSsl = v),
+                                ),
+                                const Divider(height: 20),
+                                Text("Test SMTP Mail Server", style: TextStyle(color: context.textPrimary, fontSize: 12, fontWeight: FontWeight.bold)),
+                                const SizedBox(height: 6),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: TextField(
+                                        controller: smtpTestEmailController,
+                                        style: TextStyle(color: context.textPrimary, fontSize: 12),
+                                        decoration: InputDecoration(
+                                          hintText: "recipient@domain.com",
+                                          isDense: true,
+                                          contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    ElevatedButton.icon(
+                                      onPressed: isTestingSmtp
+                                          ? null
+                                          : () async {
+                                              if (smtpTestEmailController.text.trim().isEmpty) {
+                                                AppToast.showError(context, "Enter a test recipient email.");
+                                                return;
+                                              }
+                                              setDialogState(() => isTestingSmtp = true);
+                                              try {
+                                                final cfg = SmtpConfig(
+                                                  host: smtpHostController.text.trim().isNotEmpty ? smtpHostController.text.trim() : 'smtp.gmail.com',
+                                                  port: int.tryParse(smtpPortController.text.trim()) ?? 587,
+                                                  isSsl: smtpIsSsl,
+                                                  username: smtpUsernameController.text.trim(),
+                                                  password: smtpPasswordController.text.trim(),
+                                                  fromName: smtpFromNameController.text.trim().isNotEmpty ? smtpFromNameController.text.trim() : nameController.text.trim(),
+                                                  inheritPlatform: false,
+                                                );
+                                                await SmtpEmailService.sendTestEmail(
+                                                  toEmail: smtpTestEmailController.text.trim(),
+                                                  config: cfg,
+                                                );
+                                                if (context.mounted) {
+                                                  AppToast.showSuccess(context, "Test email sent successfully to ${smtpTestEmailController.text.trim()}!");
+                                                }
+                                              } catch (e) {
+                                                if (context.mounted) {
+                                                  AppToast.showError(context, "Test email failed: $e");
+                                                }
+                                              } finally {
+                                                if (context.mounted) setDialogState(() => isTestingSmtp = false);
+                                              }
+                                            },
+                                      icon: isTestingSmtp
+                                          ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                                          : const Icon(Icons.send_rounded, size: 14),
+                                      label: const Text("Send Test", style: TextStyle(fontSize: 11)),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: const Color(0xFF0284C7),
+                                        foregroundColor: Colors.white,
+                                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
                             ],
                           ),
                         ),
                       ),
               ),
+              actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
               actions: [
                 TextButton(
                   onPressed: isSaving ? null : () => Navigator.pop(context),
@@ -2988,6 +2894,17 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                             final address = addressController.text.trim();
                             final rawPassword = ownerPasswordController.text.trim();
 
+                            final smtpMap = {
+                              'inheritPlatform': inheritPlatformSmtp,
+                              'host': smtpHostController.text.trim().isNotEmpty ? smtpHostController.text.trim() : 'smtp.gmail.com',
+                              'port': int.tryParse(smtpPortController.text.trim()) ?? 587,
+                              'isSsl': smtpIsSsl,
+                              'username': smtpUsernameController.text.trim(),
+                              'password': smtpPasswordController.text.trim(),
+                              'fromName': smtpFromNameController.text.trim().isNotEmpty ? smtpFromNameController.text.trim() : orgName,
+                              'updatedAt': FieldValue.serverTimestamp(),
+                            };
+
                             // 1. Update Organization Doc
                             await _firestore.collection('organizations').doc(orgId).set({
                               'name': orgName,
@@ -3000,17 +2917,64 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                               'pan': pan,
                               'gst': gst,
                               'address': address,
-                              'status': licStatus,
                               'storageMode': storageMode,
                               if (storageMode == 'CLIENTS_OWN_SHEETS' && existingSheetId.isNotEmpty) ...{
                                 'googleSheetId': existingSheetId,
                                 'googleSheetUrl': existingSheetUrl,
                                 'isGoogleConnected': true,
                               },
+                              'razorpay': {
+                                'enabled': isRazorpayEnabled,
+                                'keyId': rzpKeyIdController.text.trim(),
+                                'keySecret': rzpKeySecretController.text.trim(),
+                                'webhookSecret': rzpWebhookSecretController.text.trim(),
+                                'updatedAt': FieldValue.serverTimestamp(),
+                              },
+                              'smtpConfig': smtpMap,
                               'updatedAt': FieldValue.serverTimestamp(),
                             }, SetOptions(merge: true));
 
-                            // 2. Update Owner User Doc
+                            // Sync Razorpay to Apps Script backend & public_stores
+                            if (isRazorpayEnabled && rzpKeyIdController.text.trim().isNotEmpty) {
+                              try {
+                                await AppsScriptBackendService.setOutletRazorpay(
+                                  outletId: orgId,
+                                  keyId: rzpKeyIdController.text.trim(),
+                                  keySecret: rzpKeySecretController.text.trim(),
+                                  webhookSecret: rzpWebhookSecretController.text.trim(),
+                                );
+                              } catch (e) {
+                                debugPrint("AppsScript razorpay sync error: $e");
+                              }
+
+                              FirebaseFirestore.instance.collection('public_stores').doc(orgId).set({
+                                'isRazorpayEnabled': true,
+                                'razorpayKeyId': rzpKeyIdController.text.trim(),
+                                'updatedAt': FieldValue.serverTimestamp(),
+                              }, SetOptions(merge: true)).catchError((e) => debugPrint("public_stores razorpay sync error: $e"));
+                            } else {
+                              FirebaseFirestore.instance.collection('public_stores').doc(orgId).set({
+                                'isRazorpayEnabled': false,
+                                'razorpayKeyId': '',
+                                'updatedAt': FieldValue.serverTimestamp(),
+                              }, SetOptions(merge: true)).catchError((e) => debugPrint("public_stores razorpay clear error: $e"));
+                            }
+
+                            // 2. Cache SMTP Config to Hive for instant offline billing invoice dispatch
+                            try {
+                              final box = Hive.isBoxOpen('configBox') ? Hive.box('configBox') : null;
+                              await box?.put('smtp_config_$orgId', {
+                                'inheritPlatform': inheritPlatformSmtp,
+                                'host': smtpHostController.text.trim().isNotEmpty ? smtpHostController.text.trim() : 'smtp.gmail.com',
+                                'port': int.tryParse(smtpPortController.text.trim()) ?? 587,
+                                'isSsl': smtpIsSsl,
+                                'username': smtpUsernameController.text.trim(),
+                                'password': smtpPasswordController.text.trim(),
+                                'fromName': smtpFromNameController.text.trim().isNotEmpty ? smtpFromNameController.text.trim() : orgName,
+                              });
+                            } catch (_) {}
+
+                            // 3. Update Owner User Doc
                             if (ownerUserId != null && ownerUserId!.isNotEmpty) {
                               final userUpdates = <String, dynamic>{
                                 'fullName': ownerName,
@@ -3025,61 +2989,16 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                               await _firestore.collection('users').doc(ownerUserId).update(userUpdates);
                             }
 
-                            // 3. Update License Doc
-                            final endDate = DateTime.now().add(Duration(days: validityDays));
-                            final featuresMap = {
-                              'billing': featBilling,
-                              'crm': featCrm,
-                              'multiOutlet': featMultiOutlet,
-                              'inventoryEnabled': featInventory,
-                              'supplierManagement': featSuppliers,
-                              'expenseManagement': featExpenses,
-                              'reportsEnabled': featReports,
-                              'loyaltyEnabled': featLoyalty,
-                              'onlineOrderingEnabled': featOnlineOrdering,
-                              'whiteLabelEnabled': featWhiteLabel,
-                            };
-
-                            await _firestore.collection('licenses').doc(orgId).set({
-                              'planTier': planTier,
-                              'status': licStatus,
-                              'storageMode': storageMode,
-                              'endDate': Timestamp.fromDate(endDate),
-                              'maxFranchises': maxOutlets,
-                              'maxUsers': 50,
-                              'maxDevices': maxDevices,
-                              'features': featuresMap,
-                              if (storageMode == 'CLIENTS_OWN_SHEETS' && existingSheetId.isNotEmpty) ...{
-                                'googleSheetId': existingSheetId,
-                                'googleSheetUrl': existingSheetUrl,
-                              },
-                              'updatedAt': FieldValue.serverTimestamp(),
-                            }, SetOptions(merge: true));
-
-                            // 4. Update Features Doc
-                            await _firestore.collection('features').doc(orgId).set({
-                              'features': featuresMap,
-                              'updatedAt': FieldValue.serverTimestamp(),
-                            }, SetOptions(merge: true));
-
-                            // 5. Update Limits Doc
-                            await _firestore.collection('limits').doc(orgId).set({
-                              'maxFranchises': maxOutlets,
-                              'maxUsers': 50,
-                              'maxDevices': maxDevices,
-                              'updatedAt': FieldValue.serverTimestamp(),
-                            }, SetOptions(merge: true));
-
-                            // 6. Write Master Admin Audit Log
+                            // 4. Write Master Admin Audit Log
                             final masterSession = ref.read(saasSessionProvider);
                             await ref.read(saasSessionProvider.notifier).logAudit(
                                   orgId: orgId,
                                   userId: masterSession.currentUser?.id ?? 'master_admin',
                                   actionType: 'CLIENT_UPDATED',
-                                  details: 'Tenant $orgName ($orgId) settings and features updated.',
+                                  details: 'Tenant $orgName ($orgId) settings, Razorpay and SMTP updated.',
                                 );
 
-                            // 7. Reload active context if master admin is currently impersonating this client
+                            // 5. Reload active context if master admin is currently impersonating this client
                             if (masterSession.currentOrganization?.id == orgId) {
                               await ref.read(saasSessionProvider.notifier).enterOrganizationConsole(orgId);
                             }
@@ -3088,7 +3007,7 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                               Navigator.pop(context);
                               AppToast.showSuccess(
                                 context,
-                                "Client Updated Successfully",
+                                "Tenant Updated Successfully",
                                 subtitle: "$orgName ($orgId) configuration updated.",
                               );
                             }
@@ -3111,7 +3030,7 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                           height: 18,
                           child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                         )
-                      : const Text("Save Changes", style: TextStyle(fontWeight: FontWeight.bold)),
+                      : const Text("Save Tenant Info", style: TextStyle(fontWeight: FontWeight.bold)),
                 ),
               ],
             );
@@ -3429,12 +3348,12 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                                 const SizedBox(width: 6),
                                 IconButton(
                                   icon: const Icon(Icons.card_membership_rounded, color: Colors.green),
-                                  tooltip: "Renew / Configure License",
+                                  tooltip: "Edit License & Plan Entitlements",
                                   onPressed: () => _showRenewLicenseDialog(docId, name),
                                 ),
                                 IconButton(
                                   icon: Icon(Icons.edit_outlined, color: primaryAccent),
-                                  tooltip: "Edit Tenant",
+                                  tooltip: "Edit Tenant Profile, Razorpay & SMTP",
                                   onPressed: () => _showEditOrganizationDialog(docId, name),
                                 ),
                               ],

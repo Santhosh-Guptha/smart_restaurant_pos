@@ -331,15 +331,6 @@ class RestaurantSheetsService {
           final existingId = existing.files!.first.id;
           if (existingId != null && existingId.isNotEmpty) {
             debugPrint('Found existing Restaurant Sheet on Drive: $existingId');
-            for (final admin in kAdminEmails) {
-              try {
-                await shareSpreadsheetWithStaff(
-                  authenticatedClient: authenticatedClient,
-                  spreadsheetId: existingId,
-                  staffEmail: admin,
-                );
-              } catch (_) {}
-            }
             return {
               'success': true,
               'spreadsheetId': existingId,
@@ -521,21 +512,7 @@ class RestaurantSheetsService {
         sheetId,
       );
 
-      // 4. Grant Master App Admins writer access for centralized enterprise governance
-      for (final admin in kAdminEmails) {
-        try {
-          await shareSpreadsheetWithStaff(
-            authenticatedClient: authenticatedClient,
-            spreadsheetId: sheetId,
-            staffEmail: admin,
-          );
-          debugPrint('Master App Admin ($admin) co-ownership granted.');
-        } catch (adminErr) {
-          debugPrint('Master App Admin auto-share notice: $adminErr');
-        }
-      }
-
-      // 5. Save sheetId to local Hive config
+      // 4. Save sheetId to local Hive config
       final box = await Hive.openBox(boxName);
       await box.put(keySheetId, sheetId);
       await box.put(keySheetUrl, sheetUrl);

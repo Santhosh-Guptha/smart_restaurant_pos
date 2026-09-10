@@ -11,6 +11,7 @@ class SmtpConfig {
   final String username;
   final String password;
   final String fromName;
+  final bool inheritPlatform;
 
   SmtpConfig({
     required this.host,
@@ -19,6 +20,7 @@ class SmtpConfig {
     required this.username,
     required this.password,
     required this.fromName,
+    this.inheritPlatform = true,
   });
 
   factory SmtpConfig.fromMap(Map<String, dynamic> map) {
@@ -29,6 +31,7 @@ class SmtpConfig {
       username: map['username'] ?? '',
       password: map['password'] ?? '',
       fromName: map['fromName'] ?? 'SmartDine POS',
+      inheritPlatform: map['inheritPlatform'] != false,
     );
   }
 
@@ -40,6 +43,7 @@ class SmtpConfig {
       'username': username,
       'password': password,
       'fromName': fromName,
+      'inheritPlatform': inheritPlatform,
     };
   }
 
@@ -49,6 +53,43 @@ class SmtpConfig {
 
 class SmtpEmailService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+
+  /// Retrieves the effective SMTP configuration for a tenant.
+  /// If the tenant specifies custom SMTP (inheritPlatform == false) and it is configured,
+  /// returns the tenant's configuration. Otherwise falls back to platform SMTP.
+  static Future<SmtpConfig> getEffectiveSmtpConfig({String? organizationId}) async {
+    if (organizationId != null && organizationId.trim().isNotEmpty) {
+      final cleanOrgId = organizationId.trim();
+      try {
+        final doc = await _firestore.collection('organizations').doc(cleanOrgId).get();
+        if (doc.exists && doc.data() != null) {
+          final data = doc.data()!;
+          final smtpData = data['smtpConfig'];
+          if (smtpData is Map) {
+            final tenantConfig = SmtpConfig.fromMap(Map<String, dynamic>.from(smtpData));
+            if (!tenantConfig.inheritPlatform && tenantConfig.isConfigured) {
+              return tenantConfig;
+            }
+          }
+        }
+      } catch (e) {
+        debugPrint("getEffectiveSmtpConfig tenant read error: $e");
+      }
+
+      try {
+        final box = Hive.isBoxOpen('configBox') ? Hive.box('configBox') : null;
+        final cached = box?.get('smtp_config_$cleanOrgId');
+        if (cached is Map) {
+          final tenantConfig = SmtpConfig.fromMap(Map<String, dynamic>.from(cached));
+          if (!tenantConfig.inheritPlatform && tenantConfig.isConfigured) {
+            return tenantConfig;
+          }
+        }
+      } catch (_) {}
+    }
+
+    return getSmtpConfig();
+  }
 
   /// Retrieves SMTP Configuration from Firestore or Hive fallback
   static Future<SmtpConfig> getSmtpConfig() async {
@@ -766,6 +807,112 @@ class SmtpEmailService {
       return {'success': true, 'message': 'Client renewal confirmation delivered.'};
     } catch (e) {
       debugPrint("SmtpEmailService error sending renewal confirmation email: $e");
+      return {'success': false, 'error': e.toString()};
+    }
+  }
+
+  // =========================================================================
+  // 7. TEMPLATE 7: DIGITAL POS BILL TAX INVOICE EMAIL (WITH PDF ATTACHMENT)
+  // =========================================================================
+  static Future<Map<String, dynamic>> sendBillInvoiceEmail({
+    required String recipientEmail,
+    required String customerName,
+    required String billNumber,
+    required String tableName,
+    required String restaurantName,
+    required double totalAmount,
+    required String paymentMode,
+    required Uint8List pdfBytes,
+    String? organizationId,
+  }) async {
+    final cleanEmail = recipientEmail.trim().toLowerCase();
+    if (cleanEmail.isEmpty || !cleanEmail.contains('@')) {
+      return {'success': false, 'error': 'Invalid recipient email address.'};
+    }
+
+    try {
+      final config = await getEffectiveSmtpConfig(organizationId: organizationId);
+      if (!config.isConfigured) {
+        return {'success': false, 'error': 'SMTP Gateway not configured.'};
+      }
+
+      final smtpServer = _buildSmtpServer(config);
+      final headerHtml = _buildHeaderHtml(
+        badgeText: "Tax Invoice • Paid",
+        badgeBg: "#dcfce7",
+        badgeColor: "#15803d",
+        title: restaurantName,
+        subtitle: "Official Digital POS Bill Receipt",
+      );
+      final footerHtml = _buildFooterHtml();
+
+      final cleanBillId = billNumber.replaceAll(RegExp(r'[^a-zA-Z0-9_\-]'), '_');
+      final cleanCust = customerName.trim().isNotEmpty && customerName != 'Guest' && customerName != 'Dine-In Guest'
+          ? customerName.trim()
+          : 'Valued Guest';
+
+      final message = Message()
+        ..from = Address(config.username.trim(), config.fromName.isNotEmpty ? config.fromName : restaurantName)
+        ..recipients.add(cleanEmail)
+        ..subject = 'Your Tax Invoice #$billNumber from $restaurantName'
+        ..text = 'Hello $cleanCust,\n\nThank you for dining at $restaurantName!\n\nInvoice Number: $billNumber\nTable: $tableName\nTotal Amount: Rs. ${totalAmount.toStringAsFixed(2)}\nPayment Mode: $paymentMode\nStatus: PAID IN FULL\n\nPlease find your official digital POS bill Tax Invoice attached as a PDF.\n\nBest regards,\n$restaurantName'
+        ..html = '''
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { font-family: 'Segoe UI', Arial, sans-serif; background-color: #f1f5f9; margin: 0; padding: 24px; }
+    .card { max-width: 540px; margin: 0 auto; background: #ffffff; border-radius: 16px; border: 1px solid #e2e8f0; padding: 32px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }
+    .greeting { color: #1e293b; font-size: 15px; margin-bottom: 14px; }
+    .bill-box { background: #f0fdf4; border: 1.5px solid #86efac; border-radius: 12px; padding: 18px; margin: 18px 0; }
+    .bill-row { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 13px; }
+    .bill-label { color: #166534; font-weight: 600; }
+    .bill-val { color: #14532d; font-weight: bold; }
+    .total-row { border-top: 1.5px dashed #86efac; padding-top: 8px; margin-top: 8px; font-size: 15px; }
+    .attach-notice { background: #eff6ff; border-left: 4px solid #3b82f6; border-radius: 6px; padding: 12px 14px; font-size: 12px; color: #1e40af; margin-top: 16px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    $headerHtml
+    <p class="greeting">Hello <strong>$cleanCust</strong>,</p>
+    <p style="color: #475569; font-size: 13px; line-height: 1.5;">
+      Thank you for dining with us at <strong>$restaurantName</strong>. Your bill has been settled in full.
+    </p>
+
+    <div class="bill-box">
+      <div class="bill-row"><span class="bill-label">Invoice Number:</span> <span class="bill-val">$billNumber</span></div>
+      <div class="bill-row"><span class="bill-label">Table / Order:</span> <span class="bill-val">$tableName</span></div>
+      <div class="bill-row"><span class="bill-label">Payment Mode:</span> <span class="bill-val">${paymentMode.toUpperCase()}</span></div>
+      <div class="bill-row total-row">
+        <span class="bill-label" style="font-size: 14px;">Total Amount Paid:</span>
+        <span class="bill-val" style="font-size: 16px; color: #047857;">Rs. ${totalAmount.toStringAsFixed(2)}</span>
+      </div>
+    </div>
+
+    <div class="attach-notice">
+      &#128206; <strong>Attached Document:</strong> Your official print-ready Tax Invoice PDF (<code>Invoice_$cleanBillId.pdf</code>) is attached with complete itemized breakdown and tax details.
+    </div>
+
+    $footerHtml
+  </div>
+</body>
+</html>
+'''
+        ..attachments.add(
+          StreamAttachment(
+            Stream.fromIterable([pdfBytes]),
+            'application/pdf',
+            fileName: 'Invoice_$cleanBillId.pdf',
+          ),
+        );
+
+      await send(message, smtpServer).timeout(const Duration(seconds: 15));
+      debugPrint("SmtpEmailService: Bill invoice sent successfully to $cleanEmail");
+      return {'success': true, 'message': 'Bill invoice emailed successfully.'};
+    } catch (e) {
+      debugPrint("SmtpEmailService error sending bill invoice email: $e");
       return {'success': false, 'error': e.toString()};
     }
   }

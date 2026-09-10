@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:bcrypt/bcrypt.dart';
 import '../../core/classic_theme.dart';
+import '../../core/constants.dart';
 import '../../core/rbac_permissions.dart';
 import '../../providers/restaurant_auth_provider.dart';
 import '../../providers/saas_session_provider.dart';
@@ -17,6 +18,25 @@ class StaffManagementScreen extends ConsumerStatefulWidget {
 }
 
 class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
+  bool _isExcludedStaff(StaffMember s) {
+    if (isMasterAdminEmail(s.email)) return true;
+    final email = s.email.toLowerCase().trim();
+    if (email == 'admin' ||
+        email == 'admin@smartdine.com' ||
+        email.contains('smartdine.platform')) {
+      return true;
+    }
+    final username = (s.username ?? '').toLowerCase().trim();
+    if (username == 'admin' || username == 'masteradmin' || username == 'master_admin') {
+      return true;
+    }
+    final name = s.name.toLowerCase().trim();
+    if (name == 'master admin' || name == 'system admin' || name == 'super admin') {
+      return true;
+    }
+    return false;
+  }
+
   void _showAddEditStaffModal([StaffMember? existing]) {
     final saasSession = ref.read(saasSessionProvider);
     final license = saasSession.currentLicense;
@@ -24,7 +44,8 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
     final allowedRoles = license?.allowedRoles ??
         ['OWNER', 'MANAGER', 'BILLING', 'KITCHEN', 'WAITER'];
 
-    final staffList = ref.read(restaurantAuthProvider).staffList;
+    final allStaff = ref.read(restaurantAuthProvider).staffList;
+    final staffList = allStaff.where((s) => !_isExcludedStaff(s)).toList();
 
     // Check user seat limit before creating new staff
     if (existing == null && staffList.length >= maxUsers) {
@@ -497,6 +518,20 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
                   debugPrint('Notice: username uniqueness remote check: $e');
                 }
 
+                if (isMasterAdminEmail(newEmail) ||
+                    cleanUsername == 'admin' ||
+                    newEmail.toLowerCase().contains('smartdine.platform')) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Cannot create or manage platform administrator accounts from tenant staff settings.'),
+                        backgroundColor: Colors.redAccent,
+                      ),
+                    );
+                  }
+                  return;
+                }
+
                 // Uniqueness check in local staff roster
                 final duplicateLocal = staffList.any((s) =>
                     s.id != existing?.id &&
@@ -768,7 +803,8 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final staffList = ref.watch(restaurantAuthProvider).staffList;
+    final allStaff = ref.watch(restaurantAuthProvider).staffList;
+    final staffList = allStaff.where((s) => !_isExcludedStaff(s)).toList();
     final saasSession = ref.watch(saasSessionProvider);
     final license = saasSession.currentLicense;
     final maxUsers = license?.maxUsers ?? 10;

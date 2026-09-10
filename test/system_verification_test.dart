@@ -1,9 +1,13 @@
 import 'dart:convert';
 import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:smart_restaurant_pos/core/constants.dart';
 import 'package:smart_restaurant_pos/core/rbac_permissions.dart';
 import 'package:smart_restaurant_pos/core/restaurant_models.dart';
+import 'package:smart_restaurant_pos/core/saas_models.dart';
 import 'package:smart_restaurant_pos/services/apps_script_backend_service.dart';
+import 'package:smart_restaurant_pos/services/pos_bill_pdf_service.dart';
+import 'package:smart_restaurant_pos/services/smtp_email_service.dart';
 
 int compareVersions(String v1, String v2) {
   final cleanV1 = v1.split('+').first.trim();
@@ -218,4 +222,86 @@ void main() {
     // check run deliberately against a staging deployment, not in the unit
     // suite. The deployment health check in DEPLOYMENT_RUNBOOK.md covers it.
   });
+
+  group('6. Digital POS Bill & SMTP Service Verification Tests', () {
+    test('SmtpConfig defaults to inheritPlatform: true and serializes correctly', () {
+      final defaultCfg = SmtpConfig(
+        host: 'smtp.gmail.com',
+        port: 587,
+        isSsl: false,
+        username: 'test@example.com',
+        password: 'password123',
+        fromName: 'Test Restaurant',
+      );
+      expect(defaultCfg.inheritPlatform, isTrue);
+
+      final map = defaultCfg.toMap();
+      expect(map['inheritPlatform'], isTrue);
+      expect(map['host'], equals('smtp.gmail.com'));
+      expect(map['port'], equals(587));
+
+      final customCfg = SmtpConfig.fromMap({
+        'host': 'mail.customrestaurant.com',
+        'port': 465,
+        'isSsl': true,
+        'username': 'billing@customrestaurant.com',
+        'password': 'customPassword',
+        'fromName': 'Custom Bistro',
+        'inheritPlatform': false,
+      });
+      expect(customCfg.inheritPlatform, isFalse);
+      expect(customCfg.isConfigured, isTrue);
+      expect(customCfg.isSsl, isTrue);
+      expect(customCfg.port, equals(465));
+    });
+
+    test('PosBillPdfService produces valid PDF byte stream with tax and service charges', () async {
+      final pdfBytes = await PosBillPdfService.generateInvoicePdfBytes(
+        billNumber: 'INV-2026-001',
+        tokenNumber: '42',
+        shopName: 'The Grand Cafe',
+        shopAddress: '123 MG Road, Bengaluru',
+        shopPhone: '+91 9876543210',
+        gstin: '29ABCDE1234F1Z5',
+        tableName: 'Table 4',
+        waiterName: 'John Waiter',
+        customerName: 'Rahul Sharma',
+        customerPhone: '9876543210',
+        customerEmail: 'rahul@example.com',
+        items: [
+          KotItem(productId: 'item-1', name: 'Paneer Butter Masala', qty: 2, price: 240.0),
+          KotItem(productId: 'item-2', name: 'Butter Naan', qty: 4, price: 45.0),
+        ],
+        subtotal: 660.0,
+        discount: 60.0,
+        serviceCharge: 30.0,
+        serviceChargeRate: 5.0,
+        cgstAmount: 15.0,
+        sgstAmount: 15.0,
+        tipAmount: 20.0,
+        totalAmount: 665.0,
+        paymentMode: 'PAID - UPI',
+      );
+
+      expect(pdfBytes, isNotNull);
+      expect(pdfBytes.isNotEmpty, isTrue);
+      // Valid PDF documents always start with '%PDF-'
+      final headerString = String.fromCharCodes(pdfBytes.take(5));
+      expect(headerString, equals('%PDF-'));
+    });
+  });
+
+  group('7. Staff Privacy & Master Admin Isolation Tests', () {
+    test('isMasterAdminEmail correctly identifies platform admin emails and rejects tenant staff', () {
+      expect(isMasterAdminEmail('smartdine.platform@gmail.com'), isTrue);
+      expect(isMasterAdminEmail('santhoshbukka5@gmail.com'), isTrue);
+      expect(isMasterAdminEmail('SMARTDINE.PLATFORM@GMAIL.COM'), isTrue);
+      expect(isMasterAdminEmail('SANTHOSHBUKKA5@GMAIL.COM'), isTrue);
+      expect(isMasterAdminEmail('owner@mumbaicafe.com'), isFalse);
+      expect(isMasterAdminEmail('waiter1@restaurant.com'), isFalse);
+      expect(isMasterAdminEmail(''), isFalse);
+      expect(isMasterAdminEmail(null), isFalse);
+    });
+  });
 }
+

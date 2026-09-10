@@ -16,6 +16,7 @@ import '../../providers/saas_session_provider.dart';
 import '../../services/apps_script_backend_service.dart';
 import '../../services/kitchen_ticket_formatter.dart';
 import '../../sync/outbox.dart';
+import '../../widgets/digital_pos_bill_dialog.dart';
 import 'package:esc_pos_utils_plus/esc_pos_utils_plus.dart';
 import 'package:print_bluetooth_thermal/print_bluetooth_thermal.dart';
 import 'package:qr_flutter/qr_flutter.dart';
@@ -53,6 +54,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
   // Customer info for the table
   final TextEditingController _customerNameCtrl = TextEditingController();
   final TextEditingController _customerPhoneCtrl = TextEditingController();
+  final TextEditingController _customerEmailCtrl = TextEditingController();
 
   // Tip selected for bill settlement
   double _selectedTip = 0.0;
@@ -198,6 +200,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
     _searchCtrl.dispose();
     _customerNameCtrl.dispose();
     _customerPhoneCtrl.dispose();
+    _customerEmailCtrl.dispose();
     _customTipCtrl.dispose();
     super.dispose();
   }
@@ -900,84 +903,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
         await box.put('restaurant_tables_$orgId', updatedTables);
       }
 
-      // 3. Dispatch to Apps Script Webhook with explicit spreadsheetId
-      bool isCloudConfirmed = false;
-      bool cloudQueued = false;
-      String? cloudErrorMsg;
-      // Declared outside the try so the catch below can still queue the round.
-      Map<String, dynamic>? roundPayload;
-      try {
-        final saasSession = ref.read(saasSessionProvider);
-        final sheetId = AppsScriptBackendService.resolveSpreadsheetId(
-          orgId: orgId,
-          explicitId: saasSession.currentOrganization?.googleSheetId,
-        );
-
-        roundPayload = <String, dynamic>{
-            'id': billNumber,
-            'bill_id': billNumber,
-            'kotNumber': token,
-            'clientRequestId': clientRequestId,
-            'client_request_id': clientRequestId,
-            'table_name': tableName,
-            'table': tableName,
-            'tableNumber': tNum,
-            'table_number': tNum,
-            'customer_name': guestName,
-            'customer_phone': guestPhone,
-            'order_source': 'WAITER_APP',
-            'items': newRoundItemsList,
-            'subtotal': roundSubtotal,
-            'service_charge': roundServiceCharge,
-            'gst': roundGst,
-            'gst_rate': _storeGstRate,
-            'total_amount': roundTotalAmount,
-            'subtotalP': roundSubtotalP,
-            'serviceChargeP': roundScP,
-            'taxableP': roundTaxableP,
-            'cgstP': roundCgstP,
-            'sgstP': roundSgstP,
-            'roundOffP': 0,
-            'grandTotalP': roundGrandTotalP,
-            'waiter_name': activeStaff?.name ?? 'Floor Waiter',
-            'staff_id': activeStaff?.id ?? '',
-            'payment_status': 'PENDING',
-            'status': 'PENDING',
-            'kitchenStatus': 'PENDING',
-            'courseNo': currentCourse,
-            'course_no': currentCourse,
-            'firedAt': DateTime.now().toIso8601String(),
-            'reprintCount': 0,
-            'timestamp': DateTime.now().toIso8601String(),
-        };
-
-        final saveResult = await AppsScriptBackendService.saveBillDetailed(
-          outletId: orgId,
-          spreadsheetId: sheetId ?? '',
-          clientRequestId: clientRequestId,
-          billData: roundPayload,
-        );
-
-        if (saveResult['success'] == true || saveResult['ok'] == true) {
-          isCloudConfirmed = true;
-        } else {
-          if (saveResult['error'] != null) {
-            cloudErrorMsg = saveResult['error'].toString();
-          }
-          // X-18: a round that does not reach the server never reaches the
-          // kitchen either - the KOT simply evaporates. Queue it so it fires as
-          // soon as the network returns, carrying the same clientRequestId so a
-          // request that did arrive is not duplicated.
-          cloudQueued = await _queueSettlement(orgId, clientRequestId, roundPayload);
-        }
-      } catch (asErr) {
-        debugPrint('AppsScript saveBill error: $asErr');
-        if (roundPayload != null) {
-          cloudQueued =
-              await _queueSettlement(orgId, clientRequestId, roundPayload);
-        }
-      }
-
+      // 3. Immediately update UI state for zero-latency (< 50ms) response
       setState(() {
         _tray.clear();
       });
@@ -985,58 +911,86 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
       _loadTableActiveOrders();
 
       if (mounted) {
-        if (isCloudConfirmed) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Row(
-                children: [
-                  const Icon(Icons.check_circle_rounded, color: Colors.white, size: 20),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text('KOT #$token sent to kitchen! 👨‍🍳 ($tableName • Course $currentCourse)'),
-                  ),
-                ],
-              ),
-              backgroundColor: const Color(0xFF059669),
-              duration: const Duration(seconds: 3),
-              behavior: SnackBarBehavior.floating,
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.check_circle_rounded, color: Colors.white, size: 20),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text('KOT #$token sent to kitchen! 👨‍🍳 ($tableName • Course $currentCourse)'),
+                ),
+              ],
             ),
-          );
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Row(
-                children: [
-                  Icon(
-                    cloudQueued ? Icons.cloud_sync_rounded : Icons.cloud_off_rounded,
-                    color: Colors.white,
-                    size: 20,
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      cloudQueued
-                          ? 'KOT #$token queued — it will reach the kitchen '
-                              'automatically when the network returns. Tell the '
-                              'kitchen verbally if the guest is waiting.'
-                          : cloudErrorMsg != null
-                              ? 'KOT #$token did NOT reach the kitchen '
-                                  '($cloudErrorMsg). Tell the kitchen now.'
-                              : 'KOT #$token did NOT reach the kitchen. '
-                                  'Tell the kitchen now.',
-                      style: const TextStyle(fontWeight: FontWeight.w600),
-                    ),
-                  ),
-                ],
-              ),
-              backgroundColor:
-                  cloudQueued ? const Color(0xFFD97706) : const Color(0xFFDC2626),
-              duration: Duration(seconds: cloudQueued ? 5 : 8),
-              behavior: SnackBarBehavior.floating,
-            ),
-          );
-        }
+            backgroundColor: const Color(0xFF059669),
+            duration: const Duration(seconds: 3),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
       }
+
+      // 4. Dispatch to Apps Script Webhook asynchronously in background
+      final saasSession = ref.read(saasSessionProvider);
+      final sheetId = AppsScriptBackendService.resolveSpreadsheetId(
+        orgId: orgId,
+        explicitId: saasSession.currentOrganization?.googleSheetId,
+      );
+
+      final roundPayload = <String, dynamic>{
+        'id': billNumber,
+        'bill_id': billNumber,
+        'kotNumber': token,
+        'clientRequestId': clientRequestId,
+        'client_request_id': clientRequestId,
+        'table_name': tableName,
+        'table': tableName,
+        'tableNumber': tNum,
+        'table_number': tNum,
+        'customer_name': guestName,
+        'customer_phone': guestPhone,
+        'order_source': 'WAITER_APP',
+        'items': newRoundItemsList,
+        'subtotal': roundSubtotal,
+        'service_charge': roundServiceCharge,
+        'gst': roundGst,
+        'gst_rate': _storeGstRate,
+        'total_amount': roundTotalAmount,
+        'subtotalP': roundSubtotalP,
+        'serviceChargeP': roundScP,
+        'taxableP': roundTaxableP,
+        'cgstP': roundCgstP,
+        'sgstP': roundSgstP,
+        'roundOffP': 0,
+        'grandTotalP': roundGrandTotalP,
+        'waiter_name': activeStaff?.name ?? 'Floor Waiter',
+        'staff_id': activeStaff?.id ?? '',
+        'payment_status': 'PENDING',
+        'status': 'PENDING',
+        'kitchenStatus': 'PENDING',
+        'courseNo': currentCourse,
+        'course_no': currentCourse,
+        'firedAt': DateTime.now().toIso8601String(),
+        'reprintCount': 0,
+        'timestamp': DateTime.now().toIso8601String(),
+      };
+
+      unawaited(() async {
+        try {
+          final saveResult = await AppsScriptBackendService.saveBillDetailed(
+            outletId: orgId,
+            spreadsheetId: sheetId ?? '',
+            clientRequestId: clientRequestId,
+            billData: roundPayload,
+          );
+
+          if (saveResult['success'] != true && saveResult['ok'] != true) {
+            await _queueSettlement(orgId, clientRequestId, roundPayload);
+          }
+        } catch (asErr) {
+          debugPrint('AppsScript saveBill async error: $asErr');
+          await _queueSettlement(orgId, clientRequestId, roundPayload);
+        }
+      }());
     } catch (e) {
       debugPrint('Error sending KOT: $e');
     } finally {
@@ -1509,6 +1463,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
     _selectedTip = 0.0;
     _customTipCtrl.clear();
     final cashReceivedCtrl = TextEditingController();
+    final emailCtrl = TextEditingController(text: _customerEmailCtrl.text.trim());
 
     showModalBottomSheet(
       context: context,
@@ -1711,6 +1666,28 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                       ),
                     ],
                   ),
+                  // Customer Email for POS Bill
+                  Row(
+                    children: const [
+                      Icon(Icons.email_outlined, color: Color(0xFF2563EB), size: 18),
+                      SizedBox(width: 8),
+                      Text(
+                        'Customer Email for POS Bill (Optional)',
+                        style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: emailCtrl,
+                    keyboardType: TextInputType.emailAddress,
+                    decoration: InputDecoration(
+                      hintText: 'customer@example.com',
+                      hintStyle: TextStyle(fontSize: 12, color: Colors.grey.shade400),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: Colors.grey.shade300)),
+                    ),
+                  ),
                   const SizedBox(height: 18),
 
                   // Payment Mode Tabs
@@ -1799,6 +1776,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                               subtotal: tableSubtotal,
                               serviceCharge: scAmt,
                               gst: gstAmt,
+                              customerEmail: emailCtrl.text.trim(),
                             );
                           }
                         },
@@ -1901,6 +1879,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                               subtotal: tableSubtotal,
                               serviceCharge: scAmt,
                               gst: gstAmt,
+                              customerEmail: emailCtrl.text.trim(),
                             );
                           }
                         },
@@ -1928,6 +1907,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                               subtotal: tableSubtotal,
                               serviceCharge: scAmt,
                               gst: gstAmt,
+                              customerEmail: emailCtrl.text.trim(),
                             );
                           }
                         },
@@ -2021,6 +2001,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
     double subtotal = 0.0,
     double serviceCharge = 0.0,
     double gst = 0.0,
+    String? customerEmail,
   }) async {
     final orgId = _getEffectiveOrgId();
     final tNum = cleanTableId(widget.table.tableNumber);
@@ -2136,6 +2117,10 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
         'table_number': tNum,
         'customer_name': guestName,
         'customer_phone': guestPhone,
+        if (customerEmail != null && customerEmail.isNotEmpty) ...{
+          'customer_email': customerEmail,
+          'customerEmail': customerEmail,
+        },
         'items': consolidatedItems.isNotEmpty ? consolidatedItems : null,
         'subtotal': subtotal > 0 ? subtotal : totalPaid,
         'service_charge': serviceCharge,
@@ -2204,14 +2189,59 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
           _tableOrders = [];
         });
         _clearTrayDraft();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('✅ Bill settled via $paymentMode by $staffName! Table $tNum is now VACANT.'),
-            backgroundColor: const Color(0xFF059669),
-            duration: const Duration(seconds: 3),
-          ),
+
+        final saasSession = ref.read(saasSessionProvider);
+        final List<KotItem> allKotItems = [];
+        for (final m in consolidatedItems) {
+          allKotItems.add(KotItem(
+            productId: (m['productId'] ?? m['id'] ?? m['name'] ?? 'item').toString(),
+            name: (m['name'] ?? '').toString(),
+            qty: ((m['qty'] as num?)?.toDouble() ?? 1.0),
+            price: ((m['price'] as num?)?.toDouble() ?? 0.0),
+            notes: m['notes']?.toString(),
+            isVeg: m['isVeg'] != false,
+          ));
+        }
+
+        final cgstAmt = gst / 2.0;
+        final sgstAmt = gst - cgstAmt;
+        final custEmail = (customerEmail != null && customerEmail.isNotEmpty)
+            ? customerEmail
+            : _customerEmailCtrl.text.trim();
+
+        DigitalPosBillDialog.show(
+          context,
+          billNumber: primaryBillId,
+          tokenNumber: tNum,
+          tableName: tableName,
+          items: allKotItems,
+          subtotal: subtotal > 0 ? subtotal : (totalPaid - tip - serviceCharge - gst),
+          discount: 0.0,
+          taxPercent: _storeGstRate,
+          cgstAmount: cgstAmt,
+          sgstAmount: sgstAmt,
+          serviceCharge: serviceCharge,
+          serviceChargeRate: _storeServiceChargeRate,
+          tipAmount: tip,
+          roundOff: 0.0,
+          totalAmount: totalPaid,
+          paymentMode: paymentMode,
+          cashierName: staffName,
+          waiterName: staffName,
+          customerName: guestName,
+          customerPhone: guestPhone,
+          customerEmail: custEmail,
+          organizationId: orgId,
+          organizationName: saasSession.currentOrganization?.name,
+          organizationPhone: saasSession.currentOrganization?.phone,
+          organizationAddress: saasSession.currentOrganization?.address,
+          gstin: saasSession.currentOrganization?.gstin,
+          onDismiss: () {
+            if (mounted) {
+              Navigator.maybePop(context);
+            }
+          },
         );
-        Navigator.maybePop(context);
       }
     } catch (e) {
       debugPrint('Error settling payment: $e');

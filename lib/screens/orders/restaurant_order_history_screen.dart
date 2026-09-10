@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../core/classic_theme.dart';
 import '../../core/constants.dart';
 import '../../core/restaurant_models.dart';
@@ -13,6 +14,7 @@ import '../../providers/restaurant_auth_provider.dart';
 import '../../services/apps_script_backend_service.dart';
 import '../../services/thermal_printer_service.dart';
 import '../../utils/thermal_receipt_generator.dart';
+import '../../sync/local_store.dart';
 
 class RestaurantOrderHistoryScreen extends ConsumerStatefulWidget {
   final String? initialOrderType;
@@ -26,8 +28,11 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
   late String _selectedOrderType; // 'ALL', 'Dine-In', 'Takeaway', 'QR Self-Order'
   String _selectedStatus = 'ALL'; // 'ALL', 'PAID', 'PENDING', 'CANCELLED'
   String _selectedDateFilter = 'Today'; // 'Today', 'Yesterday', 'Last 7 Days', 'All Time'
+  String _selectedOutlet = 'ALL'; // 'ALL' or specific outlet ID
+  List<Map<String, String>> _availableOutlets = [];
   String _searchQuery = '';
   final TextEditingController _searchCtrl = TextEditingController();
+  StreamSubscription? _boxSubscription;
 
   List<Map<String, dynamic>> _cachedHiveOrders = [];
 
@@ -35,12 +40,23 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
   void initState() {
     super.initState();
     _selectedOrderType = widget.initialOrderType ?? 'ALL';
+    _initOutlets();
     _loadHiveCachedOrders();
     _fetchLatestWebhookOrders();
+
+    if (Hive.isBoxOpen('configBox')) {
+      _boxSubscription = Hive.box('configBox').watch().listen((event) {
+        final keyStr = event.key.toString();
+        if (keyStr.startsWith('kot_orders_') || keyStr.startsWith('bills_')) {
+          _loadHiveCachedOrders();
+        }
+      });
+    }
   }
 
   @override
   void dispose() {
+    _boxSubscription?.cancel();
     _searchCtrl.dispose();
     super.dispose();
   }
@@ -54,51 +70,152 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
     );
   }
 
+  Future<void> _initOutlets() async {
+    final saasSession = ref.read(saasSessionProvider);
+    final currentOrgId = _getEffectiveOrgId();
+    final orgName = saasSession.currentOrganization?.name ?? 'Main Store';
+
+    final outlets = <Map<String, String>>[
+      {'id': 'ALL', 'name': 'All Stores'},
+      if (currentOrgId.isNotEmpty) {'id': currentOrgId, 'name': orgName},
+    ];
+
+    try {
+      if (currentOrgId.isNotEmpty) {
+        final snap = await FirebaseFirestore.instance
+            .collection('outlets')
+            .where('organizationId', isEqualTo: currentOrgId)
+            .get();
+        for (final doc in snap.docs) {
+          final data = doc.data();
+          final id = doc.id;
+          final name = (data['name'] ?? id).toString();
+          if (!outlets.any((o) => o['id'] == id)) {
+            outlets.add({'id': id, 'name': name});
+          }
+        }
+      }
+    } catch (_) {}
+
+    if (mounted) {
+      setState(() {
+        _availableOutlets = outlets;
+      });
+    }
+  }
 
   Future<void> _fetchLatestWebhookOrders() async {
     try {
-      final orgId = _getEffectiveOrgId();
-      final webhookOrders = await AppsScriptBackendService.fetchOrders(orgId: orgId);
-      if (webhookOrders.isNotEmpty && Hive.isBoxOpen('configBox')) {
-        final box = Hive.box('configBox');
-        final raw = box.get('kot_orders_$orgId') as List? ?? [];
-        final Map<String, Map<String, dynamic>> orderMap = {};
-        for (final item in raw) {
-          if (item is Map) {
-            final m = Map<String, dynamic>.from(item);
-            final k = canonicalId(m);
-            if (k.isNotEmpty) orderMap[k] = m;
+      final currentOrgId = _getEffectiveOrgId();
+      final targetOutletIds = <String>[];
+      if (_selectedOutlet == 'ALL') {
+        if (_availableOutlets.isNotEmpty) {
+          for (final o in _availableOutlets) {
+            final id = o['id'];
+            if (id != null && id != 'ALL' && id.isNotEmpty) targetOutletIds.add(id);
           }
         }
-        for (final wo in webhookOrders) {
-          final k = canonicalId(wo);
-          if (k.isNotEmpty) orderMap[k] = wo;
-        }
-        await box.put('kot_orders_$orgId', orderMap.values.toList());
-        _loadHiveCachedOrders();
+        if (targetOutletIds.isEmpty && currentOrgId.isNotEmpty) targetOutletIds.add(currentOrgId);
+      } else {
+        targetOutletIds.add(_selectedOutlet);
       }
+
+      for (final oId in targetOutletIds) {
+        final webhookOrders = await AppsScriptBackendService.fetchOrders(orgId: oId);
+        if (webhookOrders.isNotEmpty && Hive.isBoxOpen('configBox')) {
+          final box = Hive.box('configBox');
+          final raw = box.get('kot_orders_$oId') as List? ?? [];
+          final Map<String, Map<String, dynamic>> orderMap = {};
+          for (final item in raw) {
+            if (item is Map) {
+              final m = Map<String, dynamic>.from(item);
+              final k = canonicalId(m);
+              if (k.isNotEmpty) orderMap[k] = m;
+            }
+          }
+          for (final wo in webhookOrders) {
+            final k = canonicalId(wo);
+            if (k.isNotEmpty) orderMap[k] = wo;
+          }
+          await box.put('kot_orders_$oId', orderMap.values.toList());
+        }
+      }
+      await _loadHiveCachedOrders();
     } catch (_) {}
   }
 
-  void _loadHiveCachedOrders() {
+  Future<void> _loadHiveCachedOrders() async {
     try {
-      final orgId = _getEffectiveOrgId();
-      final box = Hive.box('configBox');
-      final raw = box.get('kot_orders_$orgId');
-      if (raw is List && raw.isNotEmpty) {
-        final List<Map<String, dynamic>> list = [];
-        for (final item in raw) {
-          if (item is Map) {
-            list.add(Map<String, dynamic>.from(item));
+      final currentOrgId = _getEffectiveOrgId();
+      final targetOutletIds = <String>[];
+
+      if (_selectedOutlet == 'ALL') {
+        if (_availableOutlets.isNotEmpty) {
+          for (final o in _availableOutlets) {
+            final id = o['id'];
+            if (id != null && id != 'ALL' && id.isNotEmpty) {
+              targetOutletIds.add(id);
+            }
           }
         }
-        if (mounted) {
-          setState(() {
-            _cachedHiveOrders = list;
-          });
+        if (targetOutletIds.isEmpty && currentOrgId.isNotEmpty) {
+          targetOutletIds.add(currentOrgId);
         }
+      } else {
+        targetOutletIds.add(_selectedOutlet);
       }
-    } catch (_) {}
+
+      final Map<String, Map<String, dynamic>> consolidated = {};
+
+      for (final oId in targetOutletIds) {
+        // 1. Check configBox kot_orders_$oId
+        if (Hive.isBoxOpen('configBox')) {
+          final box = Hive.box('configBox');
+          final raw = box.get('kot_orders_$oId');
+          if (raw is List) {
+            for (final item in raw) {
+              if (item is Map) {
+                final m = Map<String, dynamic>.from(item);
+                final k = canonicalId(m);
+                if (k.isNotEmpty) consolidated[k] = m;
+              }
+            }
+          }
+
+          // 2. Check bills_$oId
+          final rawBills = box.get('bills_$oId');
+          if (rawBills is List) {
+            for (final item in rawBills) {
+              if (item is Map) {
+                final m = Map<String, dynamic>.from(item);
+                final k = canonicalId(m);
+                if (k.isNotEmpty && !consolidated.containsKey(k)) consolidated[k] = m;
+              }
+            }
+          }
+        }
+
+        // 3. Check LocalStore v2_orders_$oId
+        try {
+          final lsOrders = await LocalStore.getOrders(oId);
+          for (final lo in lsOrders) {
+            final k = lo.canonicalKey;
+            if (k.isNotEmpty && !consolidated.containsKey(k)) {
+              consolidated[k] = lo.toMap();
+            }
+          }
+        } catch (_) {}
+      }
+
+      final list = consolidated.values.toList();
+      if (mounted) {
+        setState(() {
+          _cachedHiveOrders = list;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading cached orders: $e');
+    }
   }
 
   String _formatDateTime(DateTime dt) {
@@ -115,12 +232,55 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
   }
 
   DateTime _parseTimestamp(dynamic raw) {
-    if (raw is String) {
-      final parsed = DateTime.tryParse(raw);
-      if (parsed != null) return parsed;
-    }
+    if (raw == null) return DateTime.now();
+    if (raw is DateTime) return raw;
     if (raw is int) {
-      return DateTime.fromMillisecondsSinceEpoch(raw);
+      return raw > 100000000000
+          ? DateTime.fromMillisecondsSinceEpoch(raw)
+          : DateTime.fromMillisecondsSinceEpoch(raw * 1000);
+    }
+    if (raw is Map) {
+      if (raw['_seconds'] is int) {
+        return DateTime.fromMillisecondsSinceEpoch(raw['_seconds'] * 1000);
+      }
+      if (raw['seconds'] is int) {
+        return DateTime.fromMillisecondsSinceEpoch(raw['seconds'] * 1000);
+      }
+    }
+    if (raw is String) {
+      final str = raw.trim();
+      if (str.isEmpty) return DateTime.now();
+      final parsedIso = DateTime.tryParse(str);
+      if (parsedIso != null) return parsedIso;
+
+      // Try dd/MM/yyyy or dd-MM-yyyy format
+      try {
+        final parts = str.split(RegExp(r'[ T]'));
+        final datePart = parts[0];
+        final timePart = parts.length > 1 ? parts[1] : '00:00:00';
+
+        final dateTokens = datePart.split(RegExp(r'[\/\-]'));
+        if (dateTokens.length == 3) {
+          int d, m, y;
+          if (dateTokens[0].length == 4) {
+            // yyyy-MM-dd
+            y = int.parse(dateTokens[0]);
+            m = int.parse(dateTokens[1]);
+            d = int.parse(dateTokens[2]);
+          } else {
+            // dd-MM-yyyy
+            d = int.parse(dateTokens[0]);
+            m = int.parse(dateTokens[1]);
+            y = int.parse(dateTokens[2]);
+          }
+
+          final timeTokens = timePart.split(':');
+          final hr = timeTokens.isNotEmpty ? int.tryParse(timeTokens[0]) ?? 0 : 0;
+          final mn = timeTokens.length > 1 ? int.tryParse(timeTokens[1]) ?? 0 : 0;
+          final sc = timeTokens.length > 2 ? int.tryParse(timeTokens[2]) ?? 0 : 0;
+          return DateTime(y, m, d, hr, mn, sc);
+        }
+      } catch (_) {}
     }
     return DateTime.now();
   }
@@ -627,16 +787,12 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
               ),
             )
           : ValueListenableBuilder<Box>(
-              valueListenable: Hive.box('configBox').listenable(keys: ['kot_orders_$orgId']),
+              valueListenable: Hive.box('configBox').listenable(),
         builder: (context, box, _) {
           final raw = box.get('kot_orders_$orgId') as List? ?? [];
-          List<Map<String, dynamic>> allOrders = [];
-
-          if (raw.isNotEmpty) {
-            allOrders = raw.whereType<Map>().map((m) => Map<String, dynamic>.from(m)).toList();
-          } else if (_cachedHiveOrders.isNotEmpty) {
-            allOrders = List.from(_cachedHiveOrders);
-          }
+          final List<Map<String, dynamic>> allOrders = _cachedHiveOrders.isNotEmpty
+              ? List.from(_cachedHiveOrders)
+              : (raw.isNotEmpty ? raw.whereType<Map>().map((m) => Map<String, dynamic>.from(m)).toList() : []);
 
           // Sort by timestamp descending
           allOrders.sort((a, b) {
@@ -743,15 +899,20 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
 
               // Orders List
               Expanded(
-                child: filtered.isEmpty
-                    ? _buildEmptyState()
-                    : ListView.builder(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                        itemCount: filtered.length,
-                        itemBuilder: (context, idx) {
-                          return _buildOrderCard(filtered[idx]);
-                        },
-                      ),
+                child: RefreshIndicator(
+                  onRefresh: _fetchLatestWebhookOrders,
+                  color: ClassicTheme.primaryAccent,
+                  child: filtered.isEmpty
+                      ? _buildEmptyState()
+                      : ListView.builder(
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                          itemCount: filtered.length,
+                          itemBuilder: (context, idx) {
+                            return _buildOrderCard(filtered[idx]);
+                          },
+                        ),
+                ),
               ),
             ],
           );
@@ -902,6 +1063,57 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
             scrollDirection: Axis.horizontal,
             child: Row(
               children: [
+                // Outlet Selector dropdown chip
+                if (_availableOutlets.length > 1) ...[
+                  PopupMenuButton<String>(
+                    initialValue: _selectedOutlet,
+                    onSelected: (val) {
+                      setState(() => _selectedOutlet = val);
+                      _loadHiveCachedOrders();
+                      _fetchLatestWebhookOrders();
+                    },
+                    itemBuilder: (_) => _availableOutlets.map((o) {
+                      return PopupMenuItem(
+                        value: o['id'] ?? 'ALL',
+                        child: Row(
+                          children: [
+                            Icon(
+                              o['id'] == 'ALL' ? Icons.domain_rounded : Icons.storefront_rounded,
+                              size: 16,
+                              color: ClassicTheme.primaryAccent,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(o['name'] ?? 'Store', style: const TextStyle(fontSize: 12)),
+                          ],
+                        ),
+                      );
+                    }).toList(),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                      margin: const EdgeInsets.only(right: 8),
+                      decoration: BoxDecoration(
+                        color: Colors.amber.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.amber.withValues(alpha: 0.4)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.storefront_rounded, size: 14, color: Colors.amber),
+                          const SizedBox(width: 4),
+                          Text(
+                            _availableOutlets.firstWhere(
+                              (o) => o['id'] == _selectedOutlet,
+                              orElse: () => {'name': 'All Stores'},
+                            )['name'] ?? 'All Stores',
+                            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.amber),
+                          ),
+                          const Icon(Icons.arrow_drop_down, size: 16, color: Colors.amber),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+
                 // Date filter dropdown chip
                 PopupMenuButton<String>(
                   initialValue: _selectedDateFilter,

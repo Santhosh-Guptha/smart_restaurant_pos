@@ -1438,11 +1438,12 @@ function doGet(e) {
         var rawCached = props.getProperty(key);
         if (rawCached) {
           var cachedList = JSON.parse(rawCached);
-          if (Array.isArray(cachedList)) {
             for (var cIdx = 0; cIdx < cachedList.length; cIdx++) {
               var co = cachedList[cIdx];
               var cNormId = cleanOrderId(co.id || co.orderId || "");
-              if (!cNormId || isStatusSettled(co.status) || settledIds.indexOf(cNormId) !== -1) {
+              var coKitchen = String(co.kitchenStatus || co.kitchen_status || "").toUpperCase().trim();
+              var coKitchenServed = (coKitchen === "SERVED" || coKitchen === "COMPLETED");
+              if (!cNormId || (isStatusSettled(co.status) && (coKitchenServed || !coKitchen)) || (settledIds.indexOf(cNormId) !== -1 && coKitchenServed)) {
                 continue;
               }
               // Filter out test orders!
@@ -1841,8 +1842,11 @@ function handleSaveBill(data) {
       try {
         var props = PropertiesService.getScriptProperties();
 
-        if (isSettled) {
-          // === PAYMENT SETTLED / CONFIRMED ===
+        var isKitchenDone = String(b.kitchenStatus || b.kitchen_status || "").toUpperCase() === "SERVED" ||
+                            String(b.kitchenStatus || b.kitchen_status || "").toUpperCase() === "COMPLETED";
+
+        if (isSettled && (isKitchenDone || b.is_settle_only || b.settle_pending || b.isSettlePending)) {
+          // === PAYMENT SETTLED & KITCHEN COMPLETED ===
           // 1. Record individual settled order ID (NO table-wide cutoff)
           if (cleanId) {
             var settledKey = "settled_orders_" + orgId.trim();
