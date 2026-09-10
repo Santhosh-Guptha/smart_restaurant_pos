@@ -207,6 +207,11 @@ class RestaurantAuthNotifier extends StateNotifier<RestaurantAuthState> {
     );
   }
 
+  /// Manually reload staff members and settings from Hive
+  Future<void> reloadStaffAndSettings() async {
+    await _loadStaffAndSettings();
+  }
+
   int _failedPinAttempts = 0;
   DateTime? _lockoutUntil;
 

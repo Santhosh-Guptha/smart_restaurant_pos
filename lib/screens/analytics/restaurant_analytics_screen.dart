@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'dart:math';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
@@ -449,6 +450,12 @@ class _RestaurantAnalyticsScreenState
     }
   }
 
+  Future<void> _handleRefresh() async {
+    HapticFeedback.lightImpact();
+    await _computeLiveAnalytics();
+    if (mounted) setState(() {});
+  }
+
   @override
   Widget build(BuildContext context) {
     double totalRevenue = 0;
@@ -560,9 +567,13 @@ class _RestaurantAnalyticsScreenState
           const SizedBox(width: 4),
         ],
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-        child: Column(
+      body: RefreshIndicator(
+        onRefresh: _handleRefresh,
+        color: amberAccent,
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+          child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // Multi-Store Scope Selector
@@ -1021,7 +1032,8 @@ class _RestaurantAnalyticsScreenState
           ],
         ),
       ),
-    );
+    ),
+  );
   }
 
   Widget _buildKpiCard({

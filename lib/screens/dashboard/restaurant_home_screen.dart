@@ -6,6 +6,7 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:http/http.dart' as http;
 
+import 'package:flutter/services.dart';
 import '../../core/classic_theme.dart';
 import '../../core/license_guard.dart';
 import '../../providers/auth_provider.dart';
@@ -13,6 +14,7 @@ import '../../providers/restaurant_auth_provider.dart';
 import '../../providers/saas_session_provider.dart';
 import '../../services/restaurant_sheets_service.dart';
 import '../../services/client_ledger_cloud_router_service.dart';
+import '../../services/apps_script_backend_service.dart';
 import '../../widgets/google_sheets_setup_gate_dialog.dart';
 
 import '../counter_billing/fast_qsr_billing_screen.dart';
@@ -125,6 +127,19 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
         });
       }
     }
+  }
+
+  Future<void> _handleRefresh() async {
+    HapticFeedback.lightImpact();
+    await _checkGoogleSheetsAccess();
+    try {
+      final saasSession = ref.read(saasSessionProvider);
+      final user = saasSession.currentUser;
+      final org = saasSession.currentOrganization;
+      final orgId = user?.organizationId ?? org?.id ?? 'ORG_DEFAULT';
+      await AppsScriptBackendService.fetchOrders(orgId: orgId);
+    } catch (_) {}
+    if (mounted) setState(() {});
   }
 
   Future<void> _authorizeGoogleAccount() async {
@@ -318,9 +333,13 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
         ],
       ),
       body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-          child: Column(
+        child: RefreshIndicator(
+          onRefresh: _handleRefresh,
+          color: ClassicTheme.primaryAccent,
+          child: SingleChildScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+            child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // Google Sheets Authorization Banner (if not verified)
@@ -592,7 +611,8 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
           ),
         ),
       ),
-    );
+    ),
+  );
   }
 
 

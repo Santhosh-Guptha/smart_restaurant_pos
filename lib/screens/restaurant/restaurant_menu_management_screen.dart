@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -142,6 +143,17 @@ class _RestaurantMenuManagementScreenState
     } catch (e) {
       debugPrint('Error loading dishes from Hive: $e');
     }
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _handleRefresh() async {
+    HapticFeedback.lightImpact();
+    _loadCategoriesFromHive();
+    _loadStationsFromHive();
+    _loadDishesFromHive();
+    try {
+      await _pullCatalogFromSheets();
+    } catch (_) {}
     if (mounted) setState(() {});
   }
 
@@ -1857,10 +1869,14 @@ class _RestaurantMenuManagementScreenState
           ),
         ),
       ),
-      body: _dishes.isEmpty
-          ? Center(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 30),
+      body: RefreshIndicator(
+        onRefresh: _handleRefresh,
+        color: const Color(0xFF2563EB),
+        child: _dishes.isEmpty
+            ? Center(
+                child: SingleChildScrollView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 30),
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
@@ -2020,10 +2036,19 @@ class _RestaurantMenuManagementScreenState
                   // Dishes List
                   Expanded(
                     child: filtered.isEmpty
-                        ? Center(
-                            child: Text('No dishes match your search or filter.', style: TextStyle(color: context.textSecondary, fontSize: 13)),
+                        ? LayoutBuilder(
+                            builder: (context, constraints) => SingleChildScrollView(
+                              physics: const AlwaysScrollableScrollPhysics(),
+                              child: ConstrainedBox(
+                                constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                                child: Center(
+                                  child: Text('No dishes match your search or filter.', style: TextStyle(color: context.textSecondary, fontSize: 13)),
+                                ),
+                              ),
+                            ),
                           )
                         : ListView.builder(
+                            physics: const AlwaysScrollableScrollPhysics(),
                             padding: const EdgeInsets.only(bottom: 24),
                             itemCount: filtered.length,
                             itemBuilder: (ctx, index) {
@@ -2248,6 +2273,7 @@ class _RestaurantMenuManagementScreenState
                 ],
               ),
             ),
+      ),
     );
   }
 }

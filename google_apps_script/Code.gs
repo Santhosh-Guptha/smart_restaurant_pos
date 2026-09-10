@@ -1842,8 +1842,24 @@ function handleSaveBill(data) {
       try {
         var props = PropertiesService.getScriptProperties();
 
-        var isKitchenDone = String(b.kitchenStatus || b.kitchen_status || "").toUpperCase() === "SERVED" ||
-                            String(b.kitchenStatus || b.kitchen_status || "").toUpperCase() === "COMPLETED";
+        var hasNewItems = (b.hasNewItems === true || b.isUpdate === true || b.is_update === true);
+        var isKitchenDone = !hasNewItems && (String(b.kitchenStatus || b.kitchen_status || "").toUpperCase() === "SERVED" ||
+                            String(b.kitchenStatus || b.kitchen_status || "").toUpperCase() === "COMPLETED");
+
+        if (hasNewItems && cleanId) {
+          var settledKey = "settled_orders_" + orgId.trim();
+          var rawSettled = props.getProperty(settledKey);
+          if (rawSettled) {
+            try {
+              var settledList = JSON.parse(rawSettled);
+              var sIdx = settledList.indexOf(cleanId);
+              if (sIdx !== -1) {
+                settledList.splice(sIdx, 1);
+                props.setProperty(settledKey, JSON.stringify(settledList));
+              }
+            } catch(e) {}
+          }
+        }
 
         if (isSettled && (isKitchenDone || b.is_settle_only || b.settle_pending || b.isSettlePending)) {
           // === PAYMENT SETTLED & KITCHEN COMPLETED ===
@@ -1912,7 +1928,7 @@ function handleSaveBill(data) {
             var prev = cachedOrders[foundIdx];
             var prevRank = getStatusRank(prev.kitchenStatus || prev.status);
             var newRank = getStatusRank(b.kitchenStatus || b.status || status);
-            var effectiveKitchenStatus = newRank >= prevRank ? (b.kitchenStatus || b.status || status) : (prev.kitchenStatus || prev.status);
+            var effectiveKitchenStatus = hasNewItems ? "PENDING" : (newRank >= prevRank ? (b.kitchenStatus || b.status || status) : (prev.kitchenStatus || prev.status));
 
             var mergedItems = (rawItems && rawItems.length > 0) ? rawItems : (prev.items || []);
             var mergedItemsSummary = (typeof rawItems === "string" && rawItems) ? rawItems : 

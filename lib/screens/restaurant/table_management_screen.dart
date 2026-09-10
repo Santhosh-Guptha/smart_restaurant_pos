@@ -107,6 +107,17 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
     });
   }
 
+  Future<void> _handleRefresh() async {
+    HapticFeedback.lightImpact();
+    final orgId = _getEffectiveOrgId();
+    final saasSession = ref.read(saasSessionProvider);
+    final shopName = saasSession.currentOrganization?.name ?? 'My Restaurant';
+    _loadTablesFromHive(orgId, shopName);
+    _loadCachedOrdersFromHive(orgId);
+    await _syncOrdersFromGoogleSheet(orgId);
+    if (mounted) setState(() {});
+  }
+
   // =========================================================================
   //  Google Sheet & Store Configuration
   // =========================================================================
@@ -1452,7 +1463,11 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
               ),
             ),
           Expanded(
-            child: _buildFloorLayoutTab(orgId, shopName, shopPhone, shopAddress),
+            child: RefreshIndicator(
+              onRefresh: _handleRefresh,
+              color: ClassicTheme.primaryAccent,
+              child: _buildFloorLayoutTab(orgId, shopName, shopPhone, shopAddress),
+            ),
           ),
         ],
       ),
@@ -1469,29 +1484,37 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
   // --- TAB 1: FLOOR LAYOUT ---
   Widget _buildFloorLayoutTab(String orgId, String shopName, String shopPhone, String shopAddress) {
     if (_tables.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(32),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.table_restaurant_outlined, size: 70, color: context.textSecondary.withValues(alpha: 0.3)),
-              const SizedBox(height: 16),
-              Text('No Dining Tables Configured', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: context.textPrimary)),
-              const SizedBox(height: 8),
-              Text(
-                'Add tables to generate live scannable QR standees for customers to order directly from their phone.',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 13, color: context.textSecondary),
+      return LayoutBuilder(
+        builder: (context, constraints) => SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: constraints.maxHeight),
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(32),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.table_restaurant_outlined, size: 70, color: context.textSecondary.withValues(alpha: 0.3)),
+                    const SizedBox(height: 16),
+                    Text('No Dining Tables Configured', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: context.textPrimary)),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Add tables to generate live scannable QR standees for customers to order directly from their phone.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 13, color: context.textSecondary),
+                    ),
+                    const SizedBox(height: 20),
+                    ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(backgroundColor: ClassicTheme.primaryAccent, foregroundColor: Colors.white),
+                      icon: const Icon(Icons.add),
+                      label: const Text('Create First Table'),
+                      onPressed: () => _showAddTableDialog(orgId, shopName),
+                    ),
+                  ],
+                ),
               ),
-              const SizedBox(height: 20),
-              ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(backgroundColor: ClassicTheme.primaryAccent, foregroundColor: Colors.white),
-                icon: const Icon(Icons.add),
-                label: const Text('Create First Table'),
-                onPressed: () => _showAddTableDialog(orgId, shopName),
-              ),
-            ],
+            ),
           ),
         ),
       );
@@ -1586,6 +1609,7 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
               final crossAxisCount = width >= 900 ? 4 : (width >= 600 ? 3 : 2);
               final aspectRatio = width >= 900 ? 1.05 : (width >= 600 ? 0.95 : 0.80);
               return GridView.builder(
+                physics: const AlwaysScrollableScrollPhysics(),
                 padding: const EdgeInsets.all(16),
                 gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: crossAxisCount,

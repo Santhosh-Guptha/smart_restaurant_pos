@@ -245,6 +245,13 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
     }
   }
 
+  Future<void> _handleRefresh() async {
+    HapticFeedback.lightImpact();
+    _loadMenuDishes();
+    await _fetchPendingOrders();
+    if (mounted) setState(() {});
+  }
+
   String _getEffectiveOrgId() {
     final saasSession = ref.read(saasSessionProvider);
     return resolveOutletId(
@@ -1920,15 +1927,22 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
             oldOrder['sgstP'] = appendedTotals.sgstPaise;
             oldOrder['roundOffP'] = appendedTotals.roundOffPaise;
             oldOrder['grandTotalP'] = appendedTotals.grandTotalPaise;
+            oldOrder['kitchenStatus'] = 'PENDING';
+            oldOrder['hasNewItems'] = true;
+            oldOrder['updatedAt'] = DateTime.now().toIso8601String();
+            if (oldOrder['status'] == 'SERVED' || oldOrder['status'] == 'COMPLETED') {
+              oldOrder['status'] = isPaid ? 'PAID' : 'PENDING';
+            }
 
             if (isPaid) {
-              final oldKitchen = (oldOrder['kitchenStatus'] ?? '').toString().toUpperCase();
               oldOrder['paymentStatus'] = 'PAID';
               oldOrder['paymentMode'] = paymentMode;
               oldOrder['isPaid'] = true;
-              if (oldKitchen.isEmpty || oldKitchen == 'PENDING') {
-                oldOrder['status'] = 'PAID';
-              }
+              oldOrder['status'] = 'PAID';
+            } else {
+              oldOrder['paymentStatus'] = 'PENDING';
+              oldOrder['isPaid'] = false;
+              oldOrder['status'] = 'PENDING';
             }
 
             updatedList[existingIndex] = oldOrder;
@@ -2244,6 +2258,8 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
         'tableNumber': tNum,
         'status': isPaid ? 'PAID' : 'PENDING',
         'kitchenStatus': 'PENDING',
+        'hasNewItems': true,
+        'isUpdate': existingOrderToAppend != null,
         'paymentStatus': isPaid ? 'PAID' : 'PENDING',
         'isPaid': isPaid,
         'orderSource': 'POS_COUNTER',
@@ -3782,50 +3798,62 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
 
         // Pending Bills List
         Expanded(
-          child: filtered.isEmpty
-              ? Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(20),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF10B981).withValues(alpha: 0.1),
-                          shape: BoxShape.circle,
+          child: RefreshIndicator(
+            onRefresh: _handleRefresh,
+            color: ClassicTheme.primaryAccent,
+            child: filtered.isEmpty
+                ? LayoutBuilder(
+                    builder: (context, constraints) => SingleChildScrollView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                        child: Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(20),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF10B981).withValues(alpha: 0.1),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(Icons.check_circle_rounded, size: 48, color: Color(0xFF10B981)),
+                              ),
+                              const SizedBox(height: 14),
+                              Text(
+                                'No pending bills!',
+                                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: context.textPrimary),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'All table & counter orders have been settled.',
+                                style: TextStyle(fontSize: 12, color: context.textSecondary),
+                              ),
+                              const SizedBox(height: 16),
+                              ElevatedButton.icon(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: ClassicTheme.primaryAccent,
+                                  foregroundColor: Colors.white,
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                ),
+                                icon: const Icon(Icons.add_rounded, size: 18),
+                                label: const Text('Create New Bill'),
+                                onPressed: () {
+                                  _tabController.animateTo(0);
+                                },
+                              ),
+                            ],
+                          ),
                         ),
-                        child: const Icon(Icons.check_circle_rounded, size: 48, color: Color(0xFF10B981)),
                       ),
-                      const SizedBox(height: 14),
-                      Text(
-                        'No pending bills!',
-                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: context.textPrimary),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'All table & counter orders have been settled.',
-                        style: TextStyle(fontSize: 12, color: context.textSecondary),
-                      ),
-                      const SizedBox(height: 16),
-                      ElevatedButton.icon(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: ClassicTheme.primaryAccent,
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                        ),
-                        icon: const Icon(Icons.add_rounded, size: 18),
-                        label: const Text('Create New Bill'),
-                        onPressed: () {
-                          _tabController.animateTo(0);
-                        },
-                      ),
-                    ],
-                  ),
-                )
-              : ListView.separated(
-                  padding: const EdgeInsets.all(12),
-                  itemCount: filtered.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 10),
-                  itemBuilder: (context, index) {
+                    ),
+                  )
+                : ListView.separated(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    padding: const EdgeInsets.all(12),
+                    itemCount: filtered.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 10),
+                    itemBuilder: (context, index) {
                     final order = filtered[index];
                     final tableName = (order['tableName'] ?? order['tableNumber'] ?? 'Table').toString();
                     final token = (order['kotNumber'] ?? order['tokenNumber'] ?? '').toString();
@@ -4081,6 +4109,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                     );
                   },
                 ),
+          ),
         ),
       ],
     );
@@ -4322,23 +4351,35 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
 
                   // Menu Items List with Categories Differentiated & Quantity Steppers
                   Expanded(
-                    child: filteredItems.isEmpty
-                        ? Center(
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(Icons.restaurant_rounded, size: 48, color: context.textSecondary.withValues(alpha: 0.4)),
-                                const SizedBox(height: 10),
-                                Text(
-                                  'No dishes found in $_selectedCategory',
-                                  style: TextStyle(color: context.textSecondary, fontSize: 13, fontWeight: FontWeight.bold),
+                    child: RefreshIndicator(
+                      onRefresh: _handleRefresh,
+                      color: ClassicTheme.primaryAccent,
+                      child: filteredItems.isEmpty
+                          ? LayoutBuilder(
+                              builder: (context, constraints) => SingleChildScrollView(
+                                physics: const AlwaysScrollableScrollPhysics(),
+                                child: ConstrainedBox(
+                                  constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                                  child: Center(
+                                    child: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(Icons.restaurant_rounded, size: 48, color: context.textSecondary.withValues(alpha: 0.4)),
+                                        const SizedBox(height: 10),
+                                        Text(
+                                          'No dishes found in $_selectedCategory',
+                                          style: TextStyle(color: context.textSecondary, fontSize: 13, fontWeight: FontWeight.bold),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
                                 ),
-                              ],
-                            ),
-                          )
-                        : ListView.builder(
-                            padding: const EdgeInsets.all(12),
-                            itemCount: hierarchy.keys.length,
+                              ),
+                            )
+                          : ListView.builder(
+                              physics: const AlwaysScrollableScrollPhysics(),
+                              padding: const EdgeInsets.all(12),
+                              itemCount: hierarchy.keys.length,
                             itemBuilder: (context, catIdx) {
                               final catName = hierarchy.keys.elementAt(catIdx);
                               final subMap = hierarchy[catName]!;
@@ -4598,6 +4639,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                               );
                             },
                           ),
+                    ),
                   ),
 
                   // Bottom Checkout Bar with "Next" Button

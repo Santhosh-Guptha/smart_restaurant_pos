@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:bcrypt/bcrypt.dart';
 import '../../core/classic_theme.dart';
@@ -801,6 +802,12 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
     );
   }
 
+  Future<void> _handleRefresh() async {
+    HapticFeedback.lightImpact();
+    await ref.read(restaurantAuthProvider.notifier).reloadStaffAndSettings();
+    if (mounted) setState(() {});
+  }
+
   @override
   Widget build(BuildContext context) {
     final allStaff = ref.watch(restaurantAuthProvider).staffList;
@@ -872,25 +879,37 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
           ),
         ],
       ),
-      body: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-        child: staffList.isEmpty
-            ? Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.people_outline_rounded, size: 48, color: context.textSecondary),
-                    const SizedBox(height: 12),
-                    Text('No staff members added yet', style: TextStyle(color: context.textPrimary, fontSize: 16, fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 6),
-                    Text('Tap "ADD STAFF" to onboard your team and grant sheet access', style: TextStyle(color: context.textSecondary, fontSize: 12)),
-                  ],
-                ),
-              )
-            : ListView.separated(
-                itemCount: staffList.length,
-                separatorBuilder: (_, __) => const SizedBox(height: 12),
-                itemBuilder: (context, index) {
+      body: RefreshIndicator(
+        onRefresh: _handleRefresh,
+        color: Colors.amber,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+          child: staffList.isEmpty
+              ? LayoutBuilder(
+                  builder: (context, constraints) => SingleChildScrollView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                      child: Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.people_outline_rounded, size: 48, color: context.textSecondary),
+                            const SizedBox(height: 12),
+                            Text('No staff members added yet', style: TextStyle(color: context.textPrimary, fontSize: 16, fontWeight: FontWeight.bold)),
+                            const SizedBox(height: 6),
+                            Text('Tap "ADD STAFF" to onboard your team and grant sheet access', style: TextStyle(color: context.textSecondary, fontSize: 12)),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                )
+              : ListView.separated(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  itemCount: staffList.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 12),
+                  itemBuilder: (context, index) {
                   final staff = staffList[index];
 
                   IconData iconData = Icons.person;
@@ -1170,6 +1189,7 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
                   );
                 },
               ),
+        ),
       ),
     );
   }

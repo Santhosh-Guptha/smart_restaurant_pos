@@ -958,6 +958,12 @@ class _BranchManagementScreenState
     );
   }
 
+  Future<void> _handleRefresh() async {
+    HapticFeedback.lightImpact();
+    setState(() {});
+    await Future.delayed(const Duration(milliseconds: 600));
+  }
+
   Widget _buildOutletsContent({
     required BuildContext context,
     required List<RestaurantOutlet> outlets,
@@ -970,11 +976,16 @@ class _BranchManagementScreenState
     final totalTables =
         outlets.fold<int>(0, (totalCount, o) => totalCount + o.tableCount);
 
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+    return RefreshIndicator(
+      color: Colors.amber,
+      backgroundColor: context.surfaceColor,
+      onRefresh: _handleRefresh,
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
           // ── Metrics & Quota Bar ───────────────────────────────────────────
           LayoutBuilder(
             builder: (context, constraints) {
@@ -1172,8 +1183,9 @@ class _BranchManagementScreenState
             ),
         ],
       ),
-    );
-  }
+    ),
+  );
+}
 
   Widget _buildMetricCard({
     required IconData icon,

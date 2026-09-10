@@ -101,6 +101,13 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
     super.dispose();
   }
 
+  Future<void> _handleManualRefresh() async {
+    HapticFeedback.lightImpact();
+    _loadLiveOrders();
+    await _pollWebhookOrders();
+    if (mounted) setState(() {});
+  }
+
   Future<void> _pollWebhookOrders() async {
     try {
       final orgId = _getEffectiveOrgId();
@@ -119,16 +126,25 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
             parsedActive.add(o);
           }
         }
-        final newlyArrived = parsedActive.where(
-          (n) =>
-              n.effectiveKitchenStatus == 'PENDING' &&
-              // A ticket this screen already cleared is not new. Without this the
-              // server kept returning it as PENDING (its status push may not have
-              // landed), the terminal-key guard kept it out of _allOrders, and the
-              // alarm fired on every 3-second poll indefinitely.
-              !_terminalKeys.contains(n.canonicalKey) &&
-              !_allOrders.any((o) => canonicalId(o) == canonicalId(n)),
-        ).toList();
+        final newlyArrived = <KotOrder>[];
+        for (final n in parsedActive) {
+          if (n.effectiveKitchenStatus != 'PENDING') continue;
+          final existingMatch = _allOrders.cast<KotOrder?>().firstWhere(
+            (o) => o != null && canonicalId(o) == canonicalId(n),
+            orElse: () => null,
+          );
+          if (existingMatch == null) {
+            if (!_terminalKeys.contains(n.canonicalKey)) {
+              newlyArrived.add(n);
+            }
+          } else {
+            final prevQty = existingMatch.items.fold<num>(0, (s, i) => s + i.qty);
+            final inQty = n.items.fold<num>(0, (s, i) => s + i.qty);
+            if (inQty > prevQty || n.items.length > existingMatch.items.length || n.totalAmount > existingMatch.totalAmount) {
+              newlyArrived.add(n);
+            }
+          }
+        }
 
         if (newlyArrived.isNotEmpty) {
           SystemSound.play(SystemSoundType.alert);
@@ -142,7 +158,7 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
                     const Icon(Icons.notifications_active_rounded, color: Colors.white, size: 20),
                     const SizedBox(width: 8),
                     Expanded(
-                      child: Text('🔔 New Kitchen Order: $kotTokens (${newlyArrived.first.tableName})'),
+                      child: Text('🔔 Kitchen Order Alert: $kotTokens (${newlyArrived.first.tableName})'),
                     ),
                   ],
                 ),
@@ -269,8 +285,22 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
       if (o.createdAt.isBefore(serviceWindowCutoff)) continue;
       if (o.id.startsWith('TEST-') || o.kotNumber.startsWith('TEST-')) continue;
       
-      // If incoming order has been marked served, purge from active board and archive to history
-      if (o.effectiveKitchenStatus == 'SERVED') {
+      final existing = orderMap[o.canonicalKey];
+      final servedMatch = _servedOrdersHistory.cast<KotOrder?>().firstWhere(
+        (x) => x != null && x.canonicalKey == o.canonicalKey,
+        orElse: () => null,
+      );
+      final prevOrder = existing ?? servedMatch;
+      final num prevQty = prevOrder?.items.fold<num>(0, (sum, i) => sum + i.qty) ?? 0;
+      final num incomingQty = o.items.fold<num>(0, (sum, i) => sum + i.qty);
+      final bool hasNewItems = prevOrder != null && (
+        incomingQty > prevQty ||
+        o.items.length > prevOrder.items.length ||
+        o.totalAmount > prevOrder.totalAmount
+      );
+
+      // If incoming order has been marked served (and NO new items were added), purge from active board and archive to history
+      if (o.effectiveKitchenStatus == 'SERVED' && !hasNewItems) {
         orderMap.remove(o.canonicalKey);
         if (!_servedOrdersHistory.any((x) => x.canonicalKey == o.canonicalKey)) {
           _servedOrdersHistory.add(o);
@@ -278,15 +308,27 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
         continue;
       }
 
-      // O-04: If this order was cleared/served on this device, skip incoming stale active states
+      // O-04: If this order was cleared/served on this device, skip incoming stale active states UNLESS new items were added!
       if (_terminalKeys.contains(o.canonicalKey)) {
-        continue;
+        if (hasNewItems || o.effectiveKitchenStatus != 'SERVED') {
+          _terminalKeys.remove(o.canonicalKey);
+          _servedOrdersHistory.removeWhere((x) => x.canonicalKey == o.canonicalKey);
+          LocalStore.removeTerminalKey(_getEffectiveOrgId(), o.canonicalKey);
+        } else {
+          continue;
+        }
       }
 
-      final existing = orderMap[o.canonicalKey];
       if (existing != null) {
-        // Monotonic progression: kitchen rank
-        if (o.kitchenRank >= existing.kitchenRank) {
+        if (hasNewItems) {
+          // New dishes appended at counter! Bypass monotonic progression, reset readyAt, and keep order active
+          _servedOrdersHistory.removeWhere((x) => x.canonicalKey == o.canonicalKey);
+          orderMap[o.canonicalKey] = o.copyWith(
+            createdAt: existing.createdAt,
+            readyAt: null,
+          );
+        } else if (o.kitchenRank >= existing.kitchenRank) {
+          // Monotonic progression: kitchen rank
           // CRITICAL: Preserve existing.createdAt and existing.readyAt so timer never resets!
           orderMap[o.canonicalKey] = o.copyWith(
             createdAt: existing.createdAt,
@@ -294,6 +336,7 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
           );
         }
       } else {
+        _servedOrdersHistory.removeWhere((x) => x.canonicalKey == o.canonicalKey);
         orderMap[o.canonicalKey] = o;
       }
     }
@@ -791,59 +834,70 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
                   final stageId = _kdsStages[idx]['id'] as String;
                   final stageOrders = _getOrdersForStage(stageId);
 
-                  if (stageOrders.isEmpty) {
-                    return _buildEmptyStageState(stageId);
-                  }
-
-                  return Column(
-                    children: [
-                      if (stageId == 'SERVED' && stageOrders.isNotEmpty)
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                          color: const Color(0xFFF1F5F9),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text(
-                                'Served Orders (${stageOrders.length}) • Dismiss or recall as needed',
-                                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF475569)),
+                  return RefreshIndicator(
+                    onRefresh: _handleManualRefresh,
+                    color: const Color(0xFF2563EB),
+                    child: stageOrders.isEmpty
+                        ? LayoutBuilder(
+                            builder: (context, constraints) => SingleChildScrollView(
+                              physics: const AlwaysScrollableScrollPhysics(),
+                              child: ConstrainedBox(
+                                constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                                child: _buildEmptyStageState(stageId),
                               ),
-                              TextButton.icon(
-                                onPressed: () {
-                                  setState(() {
-                                    _servedOrdersHistory.clear();
-                                  });
-                                },
-                                icon: const Icon(Icons.delete_sweep_rounded, size: 16, color: Color(0xFFDC2626)),
-                                label: const Text(
-                                  'Clear All',
-                                  style: TextStyle(color: Color(0xFFDC2626), fontWeight: FontWeight.bold, fontSize: 12),
+                            ),
+                          )
+                        : Column(
+                            children: [
+                              if (stageId == 'SERVED' && stageOrders.isNotEmpty)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                  color: const Color(0xFFF1F5F9),
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Text(
+                                        'Served Orders (${stageOrders.length}) • Dismiss or recall as needed',
+                                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF475569)),
+                                      ),
+                                      TextButton.icon(
+                                        onPressed: () {
+                                          setState(() {
+                                            _servedOrdersHistory.clear();
+                                          });
+                                        },
+                                        icon: const Icon(Icons.delete_sweep_rounded, size: 16, color: Color(0xFFDC2626)),
+                                        label: const Text(
+                                          'Clear All',
+                                          style: TextStyle(color: Color(0xFFDC2626), fontWeight: FontWeight.bold, fontSize: 12),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              Expanded(
+                                child: LayoutBuilder(
+                                  builder: (context, constraints) {
+                                    final crossAxisCount = (constraints.maxWidth / 360).floor().clamp(1, 4);
+                                    return GridView.builder(
+                                      physics: const AlwaysScrollableScrollPhysics(),
+                                      padding: const EdgeInsets.all(16),
+                                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                                        crossAxisCount: crossAxisCount,
+                                        mainAxisSpacing: 16,
+                                        crossAxisSpacing: 16,
+                                        childAspectRatio: 0.82,
+                                      ),
+                                      itemCount: stageOrders.length,
+                                      itemBuilder: (context, index) {
+                                        return _buildOrderCard(stageOrders[index]);
+                                      },
+                                    );
+                                  },
                                 ),
                               ),
                             ],
                           ),
-                        ),
-                      Expanded(
-                        child: LayoutBuilder(
-                          builder: (context, constraints) {
-                            final crossAxisCount = (constraints.maxWidth / 360).floor().clamp(1, 4);
-                            return GridView.builder(
-                              padding: const EdgeInsets.all(16),
-                              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                                crossAxisCount: crossAxisCount,
-                                mainAxisSpacing: 16,
-                                crossAxisSpacing: 16,
-                                childAspectRatio: 0.82,
-                              ),
-                              itemCount: stageOrders.length,
-                              itemBuilder: (context, index) {
-                                return _buildOrderCard(stageOrders[index]);
-                              },
-                            );
-                          },
-                        ),
-                      ),
-                    ],
                   );
                 },
               ),
@@ -968,51 +1022,64 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
                         ),
                         // Column Orders List
                         Expanded(
-                          child: stageOrders.isEmpty
-                              ? Center(
-                                  child: Column(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(Icons.inbox_outlined, size: 36, color: Colors.grey.shade300),
-                                      const SizedBox(height: 6),
-                                      Text(
-                                        'No orders',
-                                        style: TextStyle(color: Colors.grey.shade400, fontSize: 12, fontWeight: FontWeight.w500),
+                          child: RefreshIndicator(
+                            onRefresh: _handleManualRefresh,
+                            color: stageColor,
+                            child: stageOrders.isEmpty
+                                ? LayoutBuilder(
+                                    builder: (context, constraints) => SingleChildScrollView(
+                                      physics: const AlwaysScrollableScrollPhysics(),
+                                      child: ConstrainedBox(
+                                        constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                                        child: Center(
+                                          child: Column(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Icon(Icons.inbox_outlined, size: 36, color: Colors.grey.shade300),
+                                              const SizedBox(height: 6),
+                                              Text(
+                                                'No orders',
+                                                style: TextStyle(color: Colors.grey.shade400, fontSize: 12, fontWeight: FontWeight.w500),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
                                       ),
-                                    ],
+                                    ),
+                                  )
+                                : ListView.separated(
+                                    physics: const AlwaysScrollableScrollPhysics(),
+                                    padding: const EdgeInsets.all(10),
+                                    itemCount: stageOrders.length,
+                                    separatorBuilder: (_, __) => const SizedBox(height: 10),
+                                    itemBuilder: (context, i) {
+                                      final cardOrder = stageOrders[i];
+                                      return LongPressDraggable<KotOrder>(
+                                        data: cardOrder,
+                                        feedback: Material(
+                                          elevation: 8,
+                                          borderRadius: BorderRadius.circular(16),
+                                          child: SizedBox(
+                                            width: colWidth * 0.95,
+                                            height: 380,
+                                            child: _buildOrderCard(cardOrder),
+                                          ),
+                                        ),
+                                        childWhenDragging: Opacity(
+                                          opacity: 0.35,
+                                          child: SizedBox(
+                                            height: 380,
+                                            child: _buildOrderCard(cardOrder),
+                                          ),
+                                        ),
+                                        child: SizedBox(
+                                          height: 380,
+                                          child: _buildOrderCard(cardOrder),
+                                        ),
+                                      );
+                                    },
                                   ),
-                                )
-                              : ListView.separated(
-                                  padding: const EdgeInsets.all(10),
-                                  itemCount: stageOrders.length,
-                                  separatorBuilder: (_, __) => const SizedBox(height: 10),
-                                  itemBuilder: (context, i) {
-                                    final cardOrder = stageOrders[i];
-                                    return LongPressDraggable<KotOrder>(
-                                      data: cardOrder,
-                                      feedback: Material(
-                                        elevation: 8,
-                                        borderRadius: BorderRadius.circular(16),
-                                        child: SizedBox(
-                                          width: colWidth * 0.95,
-                                          height: 380,
-                                          child: _buildOrderCard(cardOrder),
-                                        ),
-                                      ),
-                                      childWhenDragging: Opacity(
-                                        opacity: 0.35,
-                                        child: SizedBox(
-                                          height: 380,
-                                          child: _buildOrderCard(cardOrder),
-                                        ),
-                                      ),
-                                      child: SizedBox(
-                                        height: 380,
-                                        child: _buildOrderCard(cardOrder),
-                                      ),
-                                    );
-                                  },
-                                ),
+                          ),
                         ),
                       ],
                     ),

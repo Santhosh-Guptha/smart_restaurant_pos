@@ -205,6 +205,13 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
     super.dispose();
   }
 
+  Future<void> _handleRefresh() async {
+    HapticFeedback.lightImpact();
+    _loadMenu();
+    await _loadTableActiveOrders();
+    if (mounted) setState(() {});
+  }
+
   void _loadMenu() {
     final orgId = _getEffectiveOrgId();
     List<Map<String, dynamic>> items = [];
@@ -2502,25 +2509,37 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
 
           // ── HIERARCHICAL DISH CATALOG: Category -> Subcategory -> Items ──
           Expanded(
-            child: _isLoadingMenu
-                ? const Center(child: CircularProgressIndicator())
-                : hierarchy.isEmpty
-                    ? Center(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.restaurant_menu_rounded, size: 48, color: Colors.grey.shade300),
-                            const SizedBox(height: 10),
-                            Text(
-                              'No dishes found in $_selectedCategory',
-                              style: TextStyle(color: Colors.grey.shade500, fontSize: 13, fontWeight: FontWeight.bold),
+            child: RefreshIndicator(
+              onRefresh: _handleRefresh,
+              color: const Color(0xFF2563EB),
+              child: _isLoadingMenu
+                  ? const Center(child: CircularProgressIndicator())
+                  : hierarchy.isEmpty
+                      ? LayoutBuilder(
+                          builder: (context, constraints) => SingleChildScrollView(
+                            physics: const AlwaysScrollableScrollPhysics(),
+                            child: ConstrainedBox(
+                              constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                              child: Center(
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.restaurant_menu_rounded, size: 48, color: Colors.grey.shade300),
+                                    const SizedBox(height: 10),
+                                    Text(
+                                      'No dishes found in $_selectedCategory',
+                                      style: TextStyle(color: Colors.grey.shade500, fontSize: 13, fontWeight: FontWeight.bold),
+                                    ),
+                                  ],
+                                ),
+                              ),
                             ),
-                          ],
-                        ),
-                      )
-                    : ListView.builder(
-                        padding: const EdgeInsets.all(12),
-                        itemCount: hierarchy.keys.length,
+                          ),
+                        )
+                      : ListView.builder(
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          padding: const EdgeInsets.all(12),
+                          itemCount: hierarchy.keys.length,
                         itemBuilder: (context, catIdx) {
                           final catName = hierarchy.keys.elementAt(catIdx);
                           final subMap = hierarchy[catName]!;
@@ -2746,6 +2765,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                           );
                         },
                       ),
+            ),
           ),
 
           // ── FLOATING TRAY ACTION BAR ───────────────────────────

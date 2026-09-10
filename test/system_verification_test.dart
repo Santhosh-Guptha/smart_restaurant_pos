@@ -303,5 +303,64 @@ void main() {
       expect(isMasterAdminEmail(null), isFalse);
     });
   });
+
+  group('8. Counter Updated Orders & KDS Progression Tests', () {
+    test('Appended counter orders with new items detect hasNewItems and bypass terminal/served suppression', () {
+      final initialOrder = KotOrder(
+        id: 'SB-1741234567-1111',
+        kotNumber: 'KOT-101',
+        organizationId: 'ORG_TEST',
+        tableId: 'T5',
+        tableName: 'Table 5',
+        items: [
+          KotItem(productId: 'item-1', name: 'Paneer Butter Masala', qty: 1, price: 240.0),
+        ],
+        kitchenStatus: 'READY',
+        status: KotStatus.ready,
+        totalAmount: 240.0,
+        createdAt: DateTime.now().subtract(const Duration(minutes: 10)),
+        readyAt: DateTime.now().subtract(const Duration(minutes: 2)),
+      );
+
+      // Counter appends 2 Butter Naans
+      final updatedOrder = KotOrder(
+        id: 'SB-1741234567-1111',
+        kotNumber: 'KOT-101',
+        organizationId: 'ORG_TEST',
+        tableId: 'T5',
+        tableName: 'Table 5',
+        items: [
+          KotItem(productId: 'item-1', name: 'Paneer Butter Masala', qty: 1, price: 240.0),
+          KotItem(productId: 'item-2', name: 'Butter Naan', qty: 2, price: 45.0),
+        ],
+        kitchenStatus: 'PENDING',
+        status: KotStatus.pending,
+        totalAmount: 330.0,
+        createdAt: initialOrder.createdAt,
+      );
+
+      final prevQty = initialOrder.items.fold<num>(0, (sum, i) => sum + i.qty);
+      final incomingQty = updatedOrder.items.fold<num>(0, (sum, i) => sum + i.qty);
+      final bool hasNewItems = incomingQty > prevQty ||
+          updatedOrder.items.length > initialOrder.items.length ||
+          updatedOrder.totalAmount > initialOrder.totalAmount;
+
+      expect(hasNewItems, isTrue);
+
+      // Verify canonical key match
+      expect(initialOrder.canonicalKey, equals(updatedOrder.canonicalKey));
+
+      // In KDS, when hasNewItems is true, readyAt is reset to null and order remains active in PENDING
+      final mergedOrder = updatedOrder.copyWith(
+        createdAt: initialOrder.createdAt,
+        readyAt: null,
+      );
+
+      expect(mergedOrder.readyAt, isNull);
+      expect(mergedOrder.effectiveKitchenStatus, equals('PENDING'));
+      expect(mergedOrder.items.length, equals(2));
+      expect(mergedOrder.items.fold<num>(0, (s, i) => s + i.qty), equals(3));
+    });
+  });
 }
 

@@ -1475,25 +1475,33 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
   }
 
   Widget _buildEmptyState() {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.receipt_long_outlined, size: 60, color: context.textSecondary.withValues(alpha: 0.3)),
-            const SizedBox(height: 12),
-            Text(
-              'No Orders Found',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: context.textPrimary),
+    return LayoutBuilder(
+      builder: (context, constraints) => SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(minHeight: constraints.maxHeight),
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(32),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.receipt_long_outlined, size: 60, color: context.textSecondary.withValues(alpha: 0.3)),
+                  const SizedBox(height: 12),
+                  Text(
+                    'No Orders Found',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: context.textPrimary),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'No orders match the selected filter ($_selectedOrderType, $_selectedDateFilter). When orders are taken at tables, takeaway, or website, they appear here instantly.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 12, color: context.textSecondary),
+                  ),
+                ],
+              ),
             ),
-            const SizedBox(height: 6),
-            Text(
-              'No orders match the selected filter ($_selectedOrderType, $_selectedDateFilter). When orders are taken at tables, takeaway, or website, they appear here instantly.',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 12, color: context.textSecondary),
-            ),
-          ],
+          ),
         ),
       ),
     );
