@@ -26,7 +26,10 @@ int p(num rupees) => (rupees * 100).round();
 BillLine line({
   required num price,
   double qty = 1,
-  int taxBps = 500,
+  // null = "use the bill's defaultTaxRateBps", exactly as BillLine does. A
+  // hardcoded 500 here was harmless while per-line rates were ignored; once
+  // they were honoured it silently overrode a test's defaultTaxRateBps: 0.
+  int? taxBps,
   String? lineId,
 }) =>
     BillLine(
