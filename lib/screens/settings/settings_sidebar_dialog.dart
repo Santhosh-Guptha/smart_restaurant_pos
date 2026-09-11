@@ -902,10 +902,10 @@ class _SettingsSidebarDialogState extends ConsumerState<SettingsSidebarDialog> {
 
   Future<void> _runBackupExport(BuildContext context) async {
     final pass = await _askPassphrase(context, confirm: true);
-    if (pass == null || !mounted) return;
+    if (pass == null || !mounted || !context.mounted) return;
     setState(() => _backupBusy = true);
     final err = await BackupService.exportBackup(passphrase: pass);
-    if (!mounted) return;
+    if (!mounted || !context.mounted) return;
     setState(() => _backupBusy = false);
     if (err == null) {
       AppToast.showSuccess(context, 'Backup exported', subtitle: 'Keep the passphrase somewhere safe.');
@@ -935,16 +935,16 @@ class _SettingsSidebarDialogState extends ConsumerState<SettingsSidebarDialog> {
         ],
       ),
     );
-    if (confirmed != true || !mounted) return;
+    if (confirmed != true || !mounted || !context.mounted) return;
 
     // BackupService.importBackup opens the system file picker itself, so the
     // passphrase has to be collected up front. A legacy V1 file needs none;
     // the service ignores it in that case and reports what it did.
     final pass = await _askPassphrase(context, confirm: false);
-    if (pass == null || !mounted) return;
+    if (pass == null || !mounted || !context.mounted) return;
     setState(() => _backupBusy = true);
     final err = await BackupService.importBackup(passphrase: pass);
-    if (!mounted) return;
+    if (!mounted || !context.mounted) return;
     setState(() => _backupBusy = false);
     if (err == null) {
       AppToast.showSuccess(context, 'Backup restored', subtitle: 'Restart the app to reload every screen from the restored data.');

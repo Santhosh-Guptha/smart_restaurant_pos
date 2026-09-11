@@ -607,7 +607,7 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
                               Text("Category *", style: TextStyle(color: context.textSecondary, fontSize: 13, fontWeight: FontWeight.w600)),
                               const SizedBox(height: 6),
                               DropdownButtonFormField<String>(
-                                value: _businessCategory,
+                                initialValue: _businessCategory,
                                 isExpanded: true,
                                 borderRadius: BorderRadius.circular(14),
                                 icon: Icon(Icons.keyboard_arrow_down_rounded, color: context.textSecondary, size: 20),
@@ -658,7 +658,12 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
                         borderRadius: BorderRadius.circular(16),
                         border: Border.all(color: context.borderColor),
                       ),
-                      child: Column(
+                      // Flutter 3.32+: a RadioGroup ancestor owns groupValue/onChanged
+                      // for every Radio beneath it; the per-Radio properties are deprecated.
+                      child: RadioGroup<bool>(
+                        groupValue: _isFreeTrial,
+                        onChanged: (v) => setState(() => _isFreeTrial = v ?? _isFreeTrial),
+                        child: Column(
                         children: [
                           // Option 1: Free Trial
                           InkWell(
@@ -675,9 +680,7 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
                                 children: [
                                   Radio<bool>(
                                     value: true,
-                                    groupValue: _isFreeTrial,
                                     activeColor: primaryAccent,
-                                    onChanged: (v) => setState(() => _isFreeTrial = v!),
                                   ),
                                   const SizedBox(width: 8),
                                   Expanded(
@@ -732,9 +735,7 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
                                 children: [
                                   Radio<bool>(
                                     value: false,
-                                    groupValue: _isFreeTrial,
                                     activeColor: primaryAccent,
-                                    onChanged: (v) => setState(() => _isFreeTrial = v!),
                                   ),
                                   const SizedBox(width: 8),
                                   Expanded(
@@ -758,6 +759,7 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
                             ),
                           ),
                         ],
+                        ),
                       ),
                     ),
                     const SizedBox(height: 20),

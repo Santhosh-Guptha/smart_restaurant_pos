@@ -1581,7 +1581,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                                     scale: 0.75,
                                     child: Switch(
                                       value: includeServiceCharge,
-                                      activeColor: const Color(0xFF2563EB),
+                                      activeThumbColor: const Color(0xFF2563EB),
                                       onChanged: (val) => setModalState(() => includeServiceCharge = val),
                                     ),
                                   ),

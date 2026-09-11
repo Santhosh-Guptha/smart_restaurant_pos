@@ -43,6 +43,7 @@ dependencies:
   flutter_screenutil: ^5.9.0
   animations: ^2.0.7
   mailer: ^6.1.4
+  web: ^1.1.0
 
 
 dev_dependencies:

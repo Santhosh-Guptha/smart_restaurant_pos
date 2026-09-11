@@ -141,6 +141,7 @@ class _PrinterSettingsScreenState extends ConsumerState<PrinterSettingsScreen> {
     }
 
     // Share JSON file
+    if (!mounted) return;
     final box = context.findRenderObject() as RenderBox?;
     await SharePlus.instance.share(ShareParams(
       files: [XFile(filePath)],
@@ -284,7 +285,7 @@ class _PrinterSettingsScreenState extends ConsumerState<PrinterSettingsScreen> {
     );
 
     final success = await notifier.printBytes(bytes);
-    if (mounted) {
+    if (mounted && context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(success ? '✅ Test page printed successfully!' : '❌ Test print failed.'),
@@ -330,7 +331,7 @@ class _PrinterSettingsScreenState extends ConsumerState<PrinterSettingsScreen> {
                     ),
                     const Divider(height: 24),
                     SwitchListTile(
-                      activeColor: primaryColor,
+                      activeThumbColor: primaryColor,
                       contentPadding: EdgeInsets.zero,
                       title: const Text('Auto-Print on Checkout', style: TextStyle(fontWeight: FontWeight.w600)),
                       subtitle: const Text('Instantly print a receipt when billing completes', style: TextStyle(fontSize: 12)),
@@ -502,28 +503,28 @@ class _PrinterSettingsScreenState extends ConsumerState<PrinterSettingsScreen> {
 
                     // Show options
                     SwitchListTile(
-                      activeColor: primaryColor,
+                      activeThumbColor: primaryColor,
                       contentPadding: EdgeInsets.zero,
                       title: const Text('Show Tax / GST Details', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
                       value: _showGst,
                       onChanged: (val) => setState(() => _showGst = val),
                     ),
                     SwitchListTile(
-                      activeColor: primaryColor,
+                      activeThumbColor: primaryColor,
                       contentPadding: EdgeInsets.zero,
                       title: const Text('Show Savings / Discount Details', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
                       value: _showDiscount,
                       onChanged: (val) => setState(() => _showDiscount = val),
                     ),
                     SwitchListTile(
-                      activeColor: primaryColor,
+                      activeThumbColor: primaryColor,
                       contentPadding: EdgeInsets.zero,
                       title: const Text('Show Customer Info', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
                       value: _showCustomer,
                       onChanged: (val) => setState(() => _showCustomer = val),
                     ),
                     SwitchListTile(
-                      activeColor: primaryColor,
+                      activeThumbColor: primaryColor,
                       contentPadding: EdgeInsets.zero,
                       title: const Text('Bold Item List Rows', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
                       value: _boldItems,
@@ -870,7 +871,7 @@ class _PrinterSettingsScreenState extends ConsumerState<PrinterSettingsScreen> {
                               if (granted) {
                                 printerNotifier.scanDevices();
                               } else {
-                                ScaffoldMessenger.of(context).showSnackBar(
+                                if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(
                                   const SnackBar(content: Text('⚠️ Bluetooth permissions are required to scan.')),
                                 );
                               }
@@ -932,7 +933,7 @@ class _PrinterSettingsScreenState extends ConsumerState<PrinterSettingsScreen> {
                               onTap: () async {
                                 HapticFeedback.lightImpact();
                                 final success = await printerNotifier.connect(dev.macAdress, dev.name);
-                                if (mounted) {
+                                if (mounted && context.mounted) {
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     SnackBar(
                                       content: Text(success

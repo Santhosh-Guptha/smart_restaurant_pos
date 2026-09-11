@@ -1191,7 +1191,7 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
                   ),
                   Switch.adaptive(
                     value: _enableRazorpay,
-                    activeColor: const Color(0xFFF59E0B),
+                    activeThumbColor: const Color(0xFFF59E0B),
                     onChanged: (v) => setState(() => _enableRazorpay = v),
                   ),
                 ],

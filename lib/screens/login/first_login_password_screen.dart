@@ -5,7 +5,6 @@ import 'package:bcrypt/bcrypt.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import '../../core/classic_theme.dart';
 import '../../providers/saas_session_provider.dart';
-import '../../providers/theme_provider.dart';
 import '../../utils/ui_feedback.dart';
 
 class FirstLoginPasswordScreen extends ConsumerStatefulWidget {

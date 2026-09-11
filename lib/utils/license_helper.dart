@@ -259,7 +259,7 @@ class LicenseHelper {
   /// Hashes a password locally using a salted polynomial checksum (offline safe)
   static String hashMasterPassword(String password) {
     int hash = 5381;
-    final String salted = password + "SmartBillingMasterAdminSalt2026";
+    final String salted = "${password}SmartBillingMasterAdminSalt2026";
     for (int i = 0; i < salted.length; i++) {
       hash = ((hash << 5) + hash) + salted.codeUnitAt(i);
       hash = hash & 0xFFFFFFFF;

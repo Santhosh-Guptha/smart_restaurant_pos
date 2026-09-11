@@ -1,10 +1,21 @@
-import 'dart:html' as html;
+import 'dart:js_interop';
+import 'dart:typed_data';
 
+import 'package:web/web.dart' as web;
+
+/// Web-only PDF download. `dart:html` is deprecated; this is the
+/// `package:web` + `dart:js_interop` equivalent and is only reached through
+/// the conditional import in pdf_helper_stub.dart.
 Future<void> saveAndOpenPdf(String orderId, List<int> bytes, {String? phone, String? text}) async {
-  final blob = html.Blob([bytes], 'application/pdf');
-  final url = html.Url.createObjectUrlFromBlob(blob);
-  final anchor = html.AnchorElement(href: url)
-    ..setAttribute("download", "invoice_$orderId.pdf")
+  final data = Uint8List.fromList(bytes);
+  final blob = web.Blob(
+    [data.toJS].toJS,
+    web.BlobPropertyBag(type: 'application/pdf'),
+  );
+  final url = web.URL.createObjectURL(blob);
+  web.HTMLAnchorElement()
+    ..href = url
+    ..setAttribute('download', 'invoice_$orderId.pdf')
     ..click();
-  html.Url.revokeObjectUrl(url);
+  web.URL.revokeObjectURL(url);
 }

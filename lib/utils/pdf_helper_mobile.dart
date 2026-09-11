@@ -19,7 +19,7 @@ Future<void> saveAndOpenPdf(String orderId, List<int> bytes, {String? phone, Str
         cleanPhone = cleanPhone.substring(1);
       }
       if (cleanPhone.startsWith('910') && cleanPhone.length == 13) {
-        cleanPhone = '91' + cleanPhone.substring(3);
+        cleanPhone = '91${cleanPhone.substring(3)}';
       }
       if (cleanPhone.length == 10) {
         cleanPhone = '91$cleanPhone';

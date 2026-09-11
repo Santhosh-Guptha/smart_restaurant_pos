@@ -105,9 +105,9 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
                         if (ctx.mounted) {
                           Navigator.pop(ctx);
                           if (res['success'] == true) {
-                            AppToast.showSuccess(context, res['message']);
+                            if (mounted) AppToast.showSuccess(context, res['message']);
                           } else {
-                            AppToast.showError(context, res['message']);
+                            if (mounted) AppToast.showError(context, res['message']);
                           }
                         }
                       },
@@ -297,7 +297,7 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
                             title: Text("Use SSL / TLS Direct Connection", style: TextStyle(color: context.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
                             subtitle: Text("Enable if connecting directly via Port 465 (Gmail Port 587 uses STARTTLS by default)", style: TextStyle(color: context.textSecondary, fontSize: 11)),
                             value: isSsl,
-                            activeColor: const Color(0xFF0284C7),
+                            activeThumbColor: const Color(0xFF0284C7),
                             onChanged: (v) => setDialogState(() => isSsl = v),
                           ),
                           const Divider(height: 28),
@@ -335,11 +335,11 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
                                             toEmail: testEmailController.text.trim(),
                                             config: cfg,
                                           );
-                                          if (ctx.mounted) {
+                                          if (ctx.mounted && mounted) {
                                             AppToast.showSuccess(context, "Test email sent successfully to ${testEmailController.text.trim()}!");
                                           }
                                         } catch (e) {
-                                          if (ctx.mounted) {
+                                          if (ctx.mounted && mounted) {
                                             AppToast.showError(context, "Test email failed: $e");
                                           }
                                         } finally {
@@ -381,13 +381,13 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
                       fromName: fromNameController.text.trim().isNotEmpty ? fromNameController.text.trim() : 'SmartDine POS',
                     );
                     await SmtpEmailService.saveSmtpConfig(cfg);
-                    if (ctx.mounted) {
+                    if (ctx.mounted && mounted) {
                       Navigator.pop(ctx);
                       AppToast.showSuccess(context, "SMTP Mail Server Configuration Saved!");
                     }
                   } catch (e) {
                     setDialogState(() => isSaving = false);
-                    if (ctx.mounted) AppToast.showError(context, e.toString());
+                    if (ctx.mounted && mounted) AppToast.showError(context, e.toString());
                   }
                 },
                 style: ElevatedButton.styleFrom(
@@ -553,7 +553,7 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
                   await AppsScriptBackendService.setWebhookUrl(url);
                   if (ctx.mounted) {
                     Navigator.pop(ctx);
-                    AppToast.showSuccess(
+                    if (mounted) AppToast.showSuccess(
                       context,
                       "Google Apps Script Webhook Saved!",
                       subtitle: "New client stores will automatically create Google Spreadsheets in your Drive.",
@@ -1070,7 +1070,7 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                         ),
                         const SizedBox(height: 10),
                         DropdownButtonFormField<SubscriptionPlan>(
-                          value: availablePlans.any((p) => p.id == selectedPlan.id)
+                          initialValue: availablePlans.any((p) => p.id == selectedPlan.id)
                               ? availablePlans.firstWhere((p) => p.id == selectedPlan.id)
                               : selectedPlan,
                           dropdownColor: context.surfaceColor,
@@ -1204,7 +1204,7 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                             const SizedBox(width: 12),
                             Expanded(
                               child: DropdownButtonFormField<String>(
-                                value: operatingMode,
+                                initialValue: operatingMode,
                                 dropdownColor: context.surfaceColor,
                                 style: TextStyle(color: context.textPrimary, fontSize: 13),
                                 decoration: InputDecoration(
@@ -1488,7 +1488,7 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                               Expanded(
                                 flex: 2,
                                 child: DropdownButtonFormField<String>(
-                                  value: planTier,
+                                  initialValue: planTier,
                                   dropdownColor: context.surfaceColor,
                                   style: TextStyle(color: context.textPrimary, fontSize: 13, fontWeight: FontWeight.bold),
                                   decoration: ClassicTheme.inputDecorationFor(context, labelText: "Plan Tier"),
@@ -1588,7 +1588,7 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                           ),
                           const SizedBox(height: 8),
                           DropdownButtonFormField<int>(
-                            value: expiryWarningDays,
+                            initialValue: expiryWarningDays,
                             dropdownColor: context.surfaceColor,
                             style: TextStyle(color: context.textPrimary, fontSize: 13, fontWeight: FontWeight.bold),
                             decoration: ClassicTheme.inputDecorationFor(context, labelText: "Alert Ahead of Expiry"),
@@ -1610,7 +1610,7 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                             children: [
                               Expanded(
                                 child: DropdownButtonFormField<int>(
-                                  value: maxUsers,
+                                  initialValue: maxUsers,
                                   dropdownColor: context.surfaceColor,
                                   style: TextStyle(color: context.textPrimary, fontSize: 13, fontWeight: FontWeight.bold),
                                   decoration: ClassicTheme.inputDecorationFor(context, labelText: "Max Staff Users"),
@@ -1630,7 +1630,7 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                               const SizedBox(width: 12),
                               Expanded(
                                 child: DropdownButtonFormField<int>(
-                                  value: maxFranchises,
+                                  initialValue: maxFranchises,
                                   dropdownColor: context.surfaceColor,
                                   style: TextStyle(color: context.textPrimary, fontSize: 13, fontWeight: FontWeight.bold),
                                   decoration: ClassicTheme.inputDecorationFor(context, labelText: "Max Outlets"),
@@ -1831,7 +1831,7 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
 
                           if (ctx.mounted) {
                             Navigator.pop(ctx);
-                            AppToast.showSuccess(
+                            if (mounted) AppToast.showSuccess(
                               context,
                               "License Updated Successfully!",
                               subtitle: "Client POS terminals will reflect the renewed subscription in real-time.",
@@ -1839,7 +1839,7 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                           }
                         } catch (e) {
                           setDialogState(() => isSaving = false);
-                          if (ctx.mounted) {
+                          if (ctx.mounted && mounted) {
                             AppToast.showError(context, "Failed to update license: $e");
                           }
                         }
@@ -2135,7 +2135,7 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                                 children: [
                                   Expanded(
                                     child: DropdownButtonFormField<String>(
-                                      value: businessCategory,
+                                      initialValue: businessCategory,
                                       dropdownColor: context.surfaceColor,
                                       style: TextStyle(color: context.textPrimary, fontSize: 13),
                                       decoration: InputDecoration(
@@ -2306,7 +2306,7 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                               const SizedBox(height: 10),
 
                               DropdownButtonFormField<String>(
-                                value: storageMode,
+                                initialValue: storageMode,
                                 dropdownColor: context.surfaceColor,
                                 style: TextStyle(color: context.textPrimary, fontSize: 13),
                                 decoration: InputDecoration(
@@ -2517,7 +2517,7 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                                 title: Text("Require Password Reset on Next Login", style: TextStyle(color: context.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
                                 subtitle: Text("Prompt user to change their temporary password upon login", style: TextStyle(color: context.textSecondary, fontSize: 11)),
                                 value: mustChangePassword,
-                                activeColor: primaryAccent,
+                                activeThumbColor: primaryAccent,
                                 onChanged: (v) => setDialogState(() => mustChangePassword = v),
                               ),
 
@@ -2550,7 +2550,7 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                                 title: Text("Enable Custom Tenant Razorpay Gateway", style: TextStyle(color: context.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
                                 subtitle: Text("When enabled, QR & counter dynamic UPI settle directly into this tenant's account", style: TextStyle(color: context.textSecondary, fontSize: 11)),
                                 value: isRazorpayEnabled,
-                                activeColor: const Color(0xFFF59E0B),
+                                activeThumbColor: const Color(0xFFF59E0B),
                                 onChanged: (v) => setDialogState(() => isRazorpayEnabled = v),
                               ),
                               if (isRazorpayEnabled) ...[
@@ -2631,9 +2631,9 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                                                   rzpTestMessage = (res['message'] ?? res['error'] ?? (ok ? "Accepted" : "Failed")).toString();
                                                 });
                                                 if (ok) {
-                                                  AppToast.showSuccess(context, "Razorpay verified for this store!");
+                                                  if (context.mounted) AppToast.showSuccess(context, "Razorpay verified for this store!");
                                                 } else {
-                                                  AppToast.showError(context, rzpTestMessage ?? "Verification failed");
+                                                  if (context.mounted) AppToast.showError(context, rzpTestMessage ?? "Verification failed");
                                                 }
                                               } catch (e) {
                                                 setDialogState(() {
@@ -2641,7 +2641,7 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                                                   rzpTestPassed = false;
                                                   rzpTestMessage = "Error: $e";
                                                 });
-                                                AppToast.showError(context, "Test failed: $e");
+                                                if (context.mounted) AppToast.showError(context, "Test failed: $e");
                                               }
                                             },
                                       icon: isTestingRzp
@@ -2707,7 +2707,7 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                                   style: TextStyle(color: context.textSecondary, fontSize: 11),
                                 ),
                                 value: inheritPlatformSmtp,
-                                activeColor: const Color(0xFF0284C7),
+                                activeThumbColor: const Color(0xFF0284C7),
                                 onChanged: (v) => setDialogState(() => inheritPlatformSmtp = v),
                               ),
                               if (!inheritPlatformSmtp) ...[
@@ -2797,7 +2797,7 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                                   title: Text("Use SSL / TLS Direct Connection", style: TextStyle(color: context.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
                                   subtitle: Text("Enable if Port 465 (Port 587 uses STARTTLS by default)", style: TextStyle(color: context.textSecondary, fontSize: 11)),
                                   value: smtpIsSsl,
-                                  activeColor: const Color(0xFF0284C7),
+                                  activeThumbColor: const Color(0xFF0284C7),
                                   onChanged: (v) => setDialogState(() => smtpIsSsl = v),
                                 ),
                                 const Divider(height: 20),
@@ -3622,7 +3622,7 @@ class _AppUpdatesTabState extends State<AppUpdatesTab> {
             SwitchListTile(
               title: Text("Mandatory Update (Locks app until updated)", style: TextStyle(color: context.textPrimary, fontWeight: FontWeight.w500)),
               value: _mandatory,
-              activeColor: primaryAccent,
+              activeThumbColor: primaryAccent,
               onChanged: (val) => setState(() => _mandatory = val),
             ),
             const Spacer(),
@@ -3755,6 +3755,7 @@ class _RegistrationRequestsTabState extends ConsumerState<RegistrationRequestsTa
     bool isCreating = false;
     bool obscurePassword = true;
 
+    if (!mounted) return;
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -3949,7 +3950,7 @@ class _RegistrationRequestsTabState extends ConsumerState<RegistrationRequestsTa
                         ),
                         const SizedBox(height: 10),
                         DropdownButtonFormField<SubscriptionPlan>(
-                          value: availablePlans.any((p) => p.id == selectedPlan.id)
+                          initialValue: availablePlans.any((p) => p.id == selectedPlan.id)
                               ? availablePlans.firstWhere((p) => p.id == selectedPlan.id)
                               : selectedPlan,
                           dropdownColor: context.surfaceColor,
@@ -4649,7 +4650,7 @@ class _PlansAndFeaturesTabState extends ConsumerState<PlansAndFeaturesTab> {
                           Expanded(
                             flex: 2,
                             child: DropdownButtonFormField<String>(
-                              value: billingCycle,
+                              initialValue: billingCycle,
                               isExpanded: true,
                               dropdownColor: context.surfaceColor,
                               style: TextStyle(color: context.textPrimary, fontSize: 13),
@@ -4697,7 +4698,7 @@ class _PlansAndFeaturesTabState extends ConsumerState<PlansAndFeaturesTab> {
                           const SizedBox(width: 12),
                           Expanded(
                             child: DropdownButtonFormField<String>(
-                              value: operatingMode,
+                              initialValue: operatingMode,
                               isExpanded: true,
                               dropdownColor: context.surfaceColor,
                               style: TextStyle(color: context.textPrimary, fontSize: 13),
@@ -4771,7 +4772,7 @@ class _PlansAndFeaturesTabState extends ConsumerState<PlansAndFeaturesTab> {
                           title: const Text("Use as Default Free Trial for New Signups", style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
                           subtitle: const Text("New restaurants selecting 'Start Free Trial' will immediately receive this plan.", style: TextStyle(fontSize: 11)),
                           value: isDefaultTrial,
-                          activeColor: const Color(0xFF10B981),
+                          activeThumbColor: const Color(0xFF10B981),
                           onChanged: (v) => setDialogState(() => isDefaultTrial = v),
                         ),
                       ),

@@ -210,6 +210,7 @@ class _FranchisePaymentSettingsDialogState
         debugPrint("Franchise Razorpay firestore sync note: $e");
       }
 
+      if (!mounted) return;
       AppToast.showSuccess(
         context,
         'Razorpay verified and saved for $_selectedOutletName.',
@@ -311,7 +312,7 @@ class _FranchisePaymentSettingsDialogState
       } catch (e) {
         debugPrint("Franchise Razorpay firestore clear note: $e");
       }
-      AppToast.showSuccess(context, 'Removed. $_selectedOutletName now uses the platform gateway.');
+      if (mounted) AppToast.showSuccess(context, 'Removed. $_selectedOutletName now uses the platform gateway.');
       await _selectOutlet(outletId, _selectedOutletName);
     } else {
       AppToast.showError(context, (res['error'] ?? 'Could not remove.').toString());

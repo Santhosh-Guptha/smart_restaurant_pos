@@ -4,7 +4,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:smart_restaurant_pos/core/constants.dart';
 import 'package:smart_restaurant_pos/core/rbac_permissions.dart';
 import 'package:smart_restaurant_pos/core/restaurant_models.dart';
-import 'package:smart_restaurant_pos/core/saas_models.dart';
 import 'package:smart_restaurant_pos/services/apps_script_backend_service.dart';
 import 'package:smart_restaurant_pos/services/pos_bill_pdf_service.dart';
 import 'package:smart_restaurant_pos/services/smtp_email_service.dart';

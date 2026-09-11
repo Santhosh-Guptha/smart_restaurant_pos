@@ -52,7 +52,6 @@ class ReceiptPreviewDialog extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final activePrinterState = ref.watch(thermalPrinterProvider);
-    final primaryColor = Theme.of(context).primaryColor;
 
     // Format receipt date
     final String timestampStr = billPayload['timestamp'] ?? DateTime.now().toIso8601String();

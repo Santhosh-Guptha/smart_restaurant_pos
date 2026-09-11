@@ -1181,192 +1181,6 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
   }
 
   // =========================================================================
-  //  Order Status Lifecycle & Google Sheet Syncing
-  // =========================================================================
-  Future<void> _updateOrderStatus(
-    KotOrder order,
-    KotStatus newStatus, {
-    String? paymentMode,
-    String? transactionId,
-  }) async {
-    final orgId = _getEffectiveOrgId();
-    final sheetId = _getGoogleSheetId(orgId);
-
-    final updatedOrder = KotOrder(
-      id: order.id,
-      kotNumber: order.kotNumber,
-      organizationId: order.organizationId,
-      tableId: order.tableId,
-      tableName: order.tableName,
-      items: order.items,
-      status: newStatus,
-      orderSource: order.orderSource,
-      customerName: order.customerName,
-      customerPhone: order.customerPhone,
-      deviceId: order.deviceId,
-      generalNotes: order.generalNotes,
-      totalAmount: order.totalAmount,
-      createdAt: order.createdAt,
-      acceptedAt: newStatus == KotStatus.preparing ? DateTime.now() : order.acceptedAt,
-      paymentMode: paymentMode ?? order.paymentMode,
-      paymentApp: order.paymentApp,
-      transactionId: transactionId ?? order.transactionId,
-      paidBy: newStatus == KotStatus.paid ? (order.customerName ?? 'Guest') : order.paidBy,
-      paidAt: newStatus == KotStatus.paid ? DateTime.now() : order.paidAt,
-    );
-
-    // Lifecycle Separation:
-    // If PAID or COMPLETED: Move order to billsProvider (Order History) and remove from active KOT list!
-    // If UNPAID: Order stays in KOT list (Order Received -> Preparing -> Done -> Placed on Table -> Bill Ready)
-    if (newStatus == KotStatus.paid || newStatus == KotStatus.completed) {
-      setState(() {
-        _kotOrders.removeWhere((o) => o.id == order.id || o.kotNumber == order.kotNumber);
-        _updateTableStateFromOrders();
-      });
-
-      // Update Order Status via Webhook
-
-
-      try {
-
-
-        await AppsScriptBackendService.updateOrderStatus(
-
-
-          orgId: orgId,
-
-
-          orderId: order.id,
-
-
-          kotNumber: order.kotNumber,
-
-
-          newStatus: newStatus.name.toUpperCase(),
-
-
-        );
-
-
-      } catch (e) {
-
-
-        debugPrint('Webhook update order status error: $e');
-
-
-      }
-
-      // Save to Orders History (billsProvider)
-      try {
-        final bId = 'BILL_${order.kotNumber}';
-        final billPayload = {
-          'bill_id': bId,
-          'id': bId,
-          'invoice_number': bId,
-          'customer': {
-            'id': 'walk-in',
-            'name': (order.customerName?.isNotEmpty == true) ? order.customerName! : order.tableName,
-            'phone': order.customerPhone ?? '',
-          },
-          'customer_name': (order.customerName?.isNotEmpty == true) ? order.customerName! : order.tableName,
-          'customer_phone': order.customerPhone ?? '',
-          'items': order.items.map((it) => {
-            'id': it.productId,
-            'productId': it.productId,
-            'name': it.name,
-            'qty': it.qty,
-            'price': it.price,
-            'subtotal': it.price * it.qty,
-            'total': it.price * it.qty,
-            'orderedBy': it.orderedBy ?? order.customerName,
-            'deviceId': it.deviceId ?? order.deviceId,
-          }).toList(),
-          'subtotal': order.totalAmount,
-          'subtotal_amount': order.totalAmount,
-          'total': order.totalAmount,
-          'total_amount': order.totalAmount,
-          'payment_mode': paymentMode ?? (order.paymentMode ?? 'CASH'),
-          'payment_status': 'SUCCESS',
-          'order_source': 'DINE_IN_QR',
-          'table_name': order.tableName,
-          'transaction_id': transactionId ?? order.transactionId ?? '',
-          'timestamp': DateTime.now().toIso8601String(),
-        };
-        _settledBills.insert(0, billPayload);
-      } catch (e) {
-        debugPrint('Error saving settled bill: $e');
-      }
-    } else {
-      // Order is still active in kitchen/table lifecycle
-      setState(() {
-        final idx = _kotOrders.indexWhere((o) => o.id == order.id || o.kotNumber == order.kotNumber);
-        if (idx != -1) {
-          _kotOrders[idx] = updatedOrder;
-        } else {
-          _kotOrders.insert(0, updatedOrder);
-        }
-        _updateTableStateFromOrders();
-      });
-    }
-
-    // 1. Save active KOT orders to local Hive
-    final box = Hive.box('configBox');
-    await box.put('kot_orders_$orgId', _kotOrders.map((o) => o.toMap()).toList());
-    await _saveTablesToHive(orgId);
-
-    // 2. Sync updated status to Cloud Backend Webhook
-    String sheetStatus = 'ORDER_RECEIVED';
-    switch (newStatus) {
-      case KotStatus.pending:
-        sheetStatus = 'ORDER_RECEIVED';
-        break;
-      case KotStatus.accepted:
-      case KotStatus.preparing:
-        sheetStatus = 'PREPARING';
-        break;
-      case KotStatus.ready:
-        sheetStatus = 'READY';
-        break;
-      case KotStatus.served:
-        sheetStatus = 'SERVED';
-        break;
-      case KotStatus.paymentPending:
-        sheetStatus = 'PAYMENT_PENDING';
-        break;
-      case KotStatus.completed:
-      case KotStatus.paid:
-        sheetStatus = 'SUCCESS';
-        break;
-      case KotStatus.cancelled:
-        sheetStatus = 'CANCELLED';
-        break;
-    }
-
-    try {
-      await AppsScriptBackendService.saveBill(
-        outletId: orgId,
-        spreadsheetId: sheetId,
-        billData: {
-          'id': order.id,
-          'bill_id': order.id,
-          'table_name': order.tableName,
-          'customer_name': order.customerName ?? 'Guest',
-          'customer_phone': order.customerPhone ?? '',
-          'items': order.items.map((i) => i.toMap()).toList(),
-          'subtotal_amount': order.totalAmount,
-          'total_amount': order.totalAmount,
-          'payment_mode': paymentMode ?? order.paymentMode ?? 'DINE_IN (${order.tableName})',
-          'payment_status': sheetStatus,
-          'transaction_id': transactionId ?? order.transactionId ?? '',
-          'timestamp': DateTime.now().toIso8601String(),
-        },
-      );
-    } catch (e) {
-      debugPrint('Error updating order status in Cloud Backend: $e');
-    }
-  }
-
-  // =========================================================================
   //  UI Layout & Screens
   // =========================================================================
   @override
@@ -3187,7 +3001,7 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
                             ),
                             Switch(
                               value: includeServiceCharge,
-                              activeColor: const Color(0xFF10B981),
+                              activeThumbColor: const Color(0xFF10B981),
                               onChanged: (val) => setModalState(() => includeServiceCharge = val),
                             ),
                           ],
@@ -3474,7 +3288,7 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
                             _updateTableStateFromOrders();
                           });
 
-                          if (mounted) {
+                          if (mounted && context.mounted) {
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
                                 content: Text('✅ ₹${totalPayable.toStringAsFixed(2)} collected via $selectedPaymentMode. $tName is now Vacant!'),
