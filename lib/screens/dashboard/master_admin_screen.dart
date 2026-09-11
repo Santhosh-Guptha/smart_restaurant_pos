@@ -60,7 +60,7 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
       for (var change in snap.docChanges) {
         if (change.type == DocumentChangeType.added && !_knownRequestIds.contains(change.doc.id)) {
           _knownRequestIds.add(change.doc.id);
-          final data = change.doc.data() as Map<String, dynamic>? ?? {};
+          final data = change.doc.data() ?? {};
           final name = data['clientName'] ?? 'New Client';
           final shop = data['shopName'] ?? '';
           _triggerNewRequestAlert(
@@ -86,7 +86,7 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
       for (var change in snap.docChanges) {
         if (change.type == DocumentChangeType.added && !_knownInquiryIds.contains(change.doc.id)) {
           _knownInquiryIds.add(change.doc.id);
-          final data = change.doc.data() as Map<String, dynamic>? ?? {};
+          final data = change.doc.data() ?? {};
           final name = data['clientName'] ?? 'New Lead';
           final brand = data['brandName'] ?? '';
           final plan = data['selectedPlan'] ?? 'Commercial';
