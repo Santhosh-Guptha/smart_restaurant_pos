@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Account & Data Deletion — SmartDine POS</title>
+<meta name="description" content="Official Account and Data Deletion Request Page for SmartDine POS in compliance with Google Play Store User Data and Account Deletion Policy.">
+<meta name="theme-color" content="#0f1219">
+<link rel="icon" href="/assets/logo.png">
+<link rel="apple-touch-icon" href="/assets/logo.png">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=Sora:wght@300;400;500;600;700&display=swap">
+<style>
+  :root {
+    --night:   #0f1219;
+    --night-2: #171b26;
+    --night-3: #1f2432;
+    --paper:   #f6f1e8;
+    --paper-2: #ece5d8;
+    --ink:     #16161c;
+    --ink-2:   #5a5a66;
+    --cream:   #f3ede4;
+    --cream-2: #b9b3a8;
+    --lamp:    #f2a93b;
+    --lamp-2:  #ffc46b;
+    --mint:    #5fd3a3;
+    --flame:   #ff6a3d;
+    --line:    #2a3040;
+
+    --bg: var(--night); --bg-2: var(--night-2); --bg-3: var(--night-3);
+    --fg: var(--cream); --fg-2: var(--cream-2); --rule: var(--line);
+
+    --display: 'Fraunces', Georgia, 'Times New Roman', serif;
+    --body: 'Sora', -apple-system, 'Segoe UI', Roboto, sans-serif;
+  }
+  @media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) {
+    --bg:#f1ebe0; --bg-2:#faf6ee; --bg-3:#e6dfd2; --fg:#16161c; --fg-2:#5a5a66; --rule:#d9d1c2; } }
+  :root[data-theme="light"] { --bg:#f1ebe0; --bg-2:#faf6ee; --bg-3:#e6dfd2; --fg:#16161c; --fg-2:#5a5a66; --rule:#d9d1c2; }
+
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--body);font-size:16px;line-height:1.7;-webkit-font-smoothing:antialiased}
+  a{color:var(--lamp);text-decoration:none;transition:color .2s}
+  a:hover{color:var(--lamp-2);text-decoration:underline}
+  .wrap{max-width:960px;margin:0 auto;padding:0 24px}
+  h1,h2,h3,h4{font-family:var(--display);font-weight:600;letter-spacing:-.02em;margin:0 0 16px;color:var(--fg)}
+  h1{font-size:clamp(34px,5vw,54px);line-height:1.05}
+  h2{font-size:clamp(22px,3vw,30px);line-height:1.2;margin-top:48px;padding-top:24px;border-top:1px solid var(--rule)}
+  h3{font-size:19px;margin-top:26px}
+  p, li{color:var(--fg-2);margin:0 0 16px}
+  ul{padding-left:24px;margin-bottom:20px}
+  li{margin-bottom:8px}
+  strong{color:var(--fg);font-weight:600}
+
+  nav{position:sticky;top:0;z-index:50;backdrop-filter:blur(14px);background:color-mix(in srgb,var(--bg) 78%,transparent);border-bottom:1px solid var(--rule)}
+  nav .wrap{display:flex;align-items:center;justify-content:space-between;height:66px}
+  .logo{font-family:var(--display);font-weight:700;font-size:22px;letter-spacing:-.02em;display:flex;align-items:center;gap:10px;color:var(--fg)}
+  .logo img{width:32px;height:32px;border-radius:8px;box-shadow:0 0 18px 2px color-mix(in srgb,var(--lamp) 45%,transparent)}
+  nav ul{display:flex;gap:22px;list-style:none;margin:0;padding:0;font-size:14px;color:var(--fg-2)}
+  nav ul a{color:var(--fg-2)}
+  nav ul a:hover{color:var(--fg);text-decoration:none}
+  .btn{display:inline-flex;align-items:center;padding:10px 18px;border-radius:999px;font-weight:600;font-size:13.5px;white-space:nowrap}
+  .btn.lamp{background:linear-gradient(100deg,var(--lamp-2),var(--lamp) 55%,var(--flame));color:#1a1207;box-shadow:0 8px 20px -8px color-mix(in srgb,var(--lamp) 70%,transparent)}
+  .btn.lamp:hover{text-decoration:none;transform:translateY(-1px)}
+
+  .hero-sec{padding:60px 0 30px}
+  .badge{display:inline-block;font-size:11.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--lamp);background:color-mix(in srgb,var(--lamp) 14%,transparent);padding:4px 12px;border-radius:999px;border:1px solid color-mix(in srgb,var(--lamp) 30%,transparent);margin-bottom:16px}
+  .card{background:var(--bg-2);border:1px solid var(--rule);border-radius:16px;padding:26px;margin:24px 0}
+  .highlight-card{background:color-mix(in srgb,var(--lamp) 8%,var(--bg-2));border-color:color-mix(in srgb,var(--lamp) 30%,transparent)}
+  .alert-card{background:color-mix(in srgb,var(--mint) 8%,var(--bg-2));border-color:color-mix(in srgb,var(--mint) 30%,transparent)}
+  .danger-card{background:color-mix(in srgb,var(--flame) 8%,var(--bg-2));border-color:color-mix(in srgb,var(--flame) 30%,transparent)}
+
+  table{width:100%;border-collapse:collapse;margin:24px 0;font-size:14.5px}
+  th, td{padding:14px 16px;border:1px solid var(--rule);text-align:left}
+  th{background:var(--bg-3);color:var(--fg);font-weight:600}
+  td{color:var(--fg-2)}
+
+  footer{border-top:1px solid var(--rule);padding:40px 0 50px;margin-top:80px;font-size:14px;color:var(--fg-2)}
+  footer .wrap{display:flex;justify-content:space-between;flex-wrap:wrap;gap:20px;align-items:center}
+  footer ul{display:flex;gap:20px;list-style:none;margin:0;padding:0}
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="wrap">
+    <a class="logo" href="/"><img src="/assets/logo.png" alt="SmartDine Logo">SmartDine</a>
+    <ul>
+      <li><a href="/">Home</a></li>
+      <li><a href="/privacy.html">Privacy</a></li>
+      <li><a href="/terms.html">Terms</a></li>
+      <li><a href="/deletion.html">Data Deletion</a></li>
+      <li><a href="/support.html">Support</a></li>
+    </ul>
+    <a class="btn lamp" href="/r/?org=DEMO&table=1">Live Demo</a>
+  </div>
+</nav>
+
+<main class="wrap">
+  <div class="hero-sec">
+    <span class="badge">Google Play Compliance</span>
+    <h1>Account &amp; Data Deletion Request</h1>
+    <p style="font-size:17px;color:var(--fg-2)">Transparent instructions to delete your store profile, device records, and account metadata.</p>
+  </div>
+
+  <div class="card alert-card">
+    <h3 style="margin-top:0;color:var(--mint)">✓ Full Control Over Your Data</h3>
+    <p>In accordance with <strong>Google Play Developer Data Safety &amp; Account Deletion Policies</strong>, SmartDine provides users and restaurant owners with direct mechanisms to delete their account and associated cloud data without requiring access to the physical till.</p>
+  </div>
+
+  <h2>1. What Data Can Be Deleted</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Data Category</th>
+        <th>What It Includes</th>
+        <th>Deletion Procedure</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Cloud Licensing Profile</strong></td>
+        <td>Store Organization ID, Owner Email, License Tier, and Registered Device IDs.</td>
+        <td>Permanently deleted from Firebase within 48 hours of request.</td>
+      </tr>
+      <tr>
+        <td><strong>Google Drive Spreadsheets</strong></td>
+        <td>Bills, Inventory items, KOT order logs, Customer ledgers, and Staff PINs.</td>
+        <td>Stored entirely in <em>your own</em> Google Drive. You can delete the spreadsheet instantly with 1 click in Google Drive.</td>
+      </tr>
+      <tr>
+        <td><strong>Local Device Cache</strong></td>
+        <td>Offline Hive database, cached print vouchers, and local preferences.</td>
+        <td>Cleared instantly by selecting <em>App Info &rarr; Storage &rarr; Clear Data</em> on Android.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>2. How to Submit a Deletion Request</h2>
+  <p>To request the permanent deletion of your organization account and cloud licensing records, follow either method below:</p>
+
+  <h3>Method A: Submit via Direct Email (Recommended)</h3>
+  <div class="card">
+    <p>Send an email from your <strong>registered store owner email address</strong> to:</p>
+    <p style="font-size:18px"><a href="mailto:smartdine.platform@gmail.com?subject=SmartDine%20Account%20and%20Data%20Deletion%20Request&body=Hello%20DevMonks%20Team,%0A%0APlease%20permanently%20delete%20my%20SmartDine%20POS%20organization%20account%20and%20all%20associated%20cloud%20licensing%20records.%0A%0AOrganization%20ID:%20%0ARegistered%20Owner%20Email:%20%0AReason%20(optional):%20%0A%0AThank%20you."><strong>smartdine.platform@gmail.com</strong></a></p>
+    <p><strong>Required Information in Email:</strong></p>
+    <ul>
+      <li>Subject: <code>SmartDine Account and Data Deletion Request</code></li>
+      <li>Your Organization ID (e.g. <code>CAFE_ROYALE</code>)</li>
+      <li>Registered Store Owner Email</li>
+    </ul>
+    <p style="margin-bottom:0"><a class="btn lamp" href="mailto:smartdine.platform@gmail.com?subject=SmartDine%20Account%20and%20Data%20Deletion%20Request&body=Hello%20DevMonks%20Team,%0A%0APlease%20permanently%20delete%20my%20SmartDine%20POS%20organization%20account%20and%20all%20associated%20cloud%20licensing%20records.%0A%0AOrganization%20ID:%20%0ARegistered%20Owner%20Email:%20%0AReason%20(optional):%20%0A%0AThank%20you.">Launch Pre-filled Email Request &rarr;</a></p>
+  </div>
+
+  <h3>Method B: In-App Self-Service Reset</h3>
+  <p>If you have access to the Master Admin console on your physical till:</p>
+  <ol style="color:var(--fg-2);padding-left:24px;margin-bottom:24px">
+    <li style="margin-bottom:8px">Sign in as Master Administrator (<code>santhoshbukka5@gmail.com</code>).</li>
+    <li style="margin-bottom:8px">In the top navigation bar, tap the <strong>Clean Database / Trash Can</strong> icon.</li>
+    <li style="margin-bottom:8px">Type <code>RESET_DATA</code> to permanently erase all client registrations and licenses.</li>
+  </ol>
+
+  <h2>3. Retention &amp; Processing Window</h2>
+  <ul>
+    <li>Account deletion requests submitted via email are verified and executed within <strong>48 hours</strong>.</li>
+    <li>Once processed, all hardware device bindings, active session tokens, and license records are purged permanently and cannot be restored.</li>
+  </ul>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span class="logo" style="font-size:18px"><img src="/assets/logo.png" alt="SmartDine">SmartDine</span>
+    <ul>
+      <li><a href="/privacy.html">Privacy Policy</a></li>
+      <li><a href="/terms.html">Terms of Service</a></li>
+      <li><a href="/deletion.html">Data Deletion</a></li>
+      <li><a href="/support.html">Support</a></li>
+    </ul>
+    <span>&copy; 2026 DevMonks Studio. All rights reserved.</span>
+  </div>
+</footer>
+
+</body>
+</html>

@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Customer Support & Help Center — SmartDine POS</title>
+<meta name="description" content="Technical support, setup guides, thermal printer troubleshooting, and contact channels for SmartDine POS and Digital Dining.">
+<meta name="theme-color" content="#0f1219">
+<link rel="icon" href="/assets/logo.png">
+<link rel="apple-touch-icon" href="/assets/logo.png">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=Sora:wght@300;400;500;600;700&display=swap">
+<style>
+  :root {
+    --night:   #0f1219;
+    --night-2: #171b26;
+    --night-3: #1f2432;
+    --paper:   #f6f1e8;
+    --paper-2: #ece5d8;
+    --ink:     #16161c;
+    --ink-2:   #5a5a66;
+    --cream:   #f3ede4;
+    --cream-2: #b9b3a8;
+    --lamp:    #f2a93b;
+    --lamp-2:  #ffc46b;
+    --mint:    #5fd3a3;
+    --flame:   #ff6a3d;
+    --line:    #2a3040;
+
+    --bg: var(--night); --bg-2: var(--night-2); --bg-3: var(--night-3);
+    --fg: var(--cream); --fg-2: var(--cream-2); --rule: var(--line);
+
+    --display: 'Fraunces', Georgia, 'Times New Roman', serif;
+    --body: 'Sora', -apple-system, 'Segoe UI', Roboto, sans-serif;
+  }
+  @media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) {
+    --bg:#f1ebe0; --bg-2:#faf6ee; --bg-3:#e6dfd2; --fg:#16161c; --fg-2:#5a5a66; --rule:#d9d1c2; } }
+  :root[data-theme="light"] { --bg:#f1ebe0; --bg-2:#faf6ee; --bg-3:#e6dfd2; --fg:#16161c; --fg-2:#5a5a66; --rule:#d9d1c2; }
+
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--body);font-size:16px;line-height:1.7;-webkit-font-smoothing:antialiased}
+  a{color:var(--lamp);text-decoration:none;transition:color .2s}
+  a:hover{color:var(--lamp-2);text-decoration:underline}
+  .wrap{max-width:960px;margin:0 auto;padding:0 24px}
+  h1,h2,h3,h4{font-family:var(--display);font-weight:600;letter-spacing:-.02em;margin:0 0 16px;color:var(--fg)}
+  h1{font-size:clamp(34px,5vw,54px);line-height:1.05}
+  h2{font-size:clamp(22px,3vw,30px);line-height:1.2;margin-top:48px;padding-top:24px;border-top:1px solid var(--rule)}
+  h3{font-size:19px;margin-top:26px}
+  p, li{color:var(--fg-2);margin:0 0 16px}
+  ul{padding-left:24px;margin-bottom:20px}
+  li{margin-bottom:8px}
+  strong{color:var(--fg);font-weight:600}
+
+  nav{position:sticky;top:0;z-index:50;backdrop-filter:blur(14px);background:color-mix(in srgb,var(--bg) 78%,transparent);border-bottom:1px solid var(--rule)}
+  nav .wrap{display:flex;align-items:center;justify-content:space-between;height:66px}
+  .logo{font-family:var(--display);font-weight:700;font-size:22px;letter-spacing:-.02em;display:flex;align-items:center;gap:10px;color:var(--fg)}
+  .logo img{width:32px;height:32px;border-radius:8px;box-shadow:0 0 18px 2px color-mix(in srgb,var(--lamp) 45%,transparent)}
+  nav ul{display:flex;gap:22px;list-style:none;margin:0;padding:0;font-size:14px;color:var(--fg-2)}
+  nav ul a{color:var(--fg-2)}
+  nav ul a:hover{color:var(--fg);text-decoration:none}
+  .btn{display:inline-flex;align-items:center;padding:10px 18px;border-radius:999px;font-weight:600;font-size:13.5px;white-space:nowrap}
+  .btn.lamp{background:linear-gradient(100deg,var(--lamp-2),var(--lamp) 55%,var(--flame));color:#1a1207;box-shadow:0 8px 20px -8px color-mix(in srgb,var(--lamp) 70%,transparent)}
+  .btn.lamp:hover{text-decoration:none;transform:translateY(-1px)}
+
+  .hero-sec{padding:60px 0 30px}
+  .badge{display:inline-block;font-size:11.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--lamp);background:color-mix(in srgb,var(--lamp) 14%,transparent);padding:4px 12px;border-radius:999px;border:1px solid color-mix(in srgb,var(--lamp) 30%,transparent);margin-bottom:16px}
+  .card{background:var(--bg-2);border:1px solid var(--rule);border-radius:16px;padding:26px;margin:24px 0}
+  .highlight-card{background:color-mix(in srgb,var(--lamp) 8%,var(--bg-2));border-color:color-mix(in srgb,var(--lamp) 30%,transparent)}
+  .alert-card{background:color-mix(in srgb,var(--mint) 8%,var(--bg-2));border-color:color-mix(in srgb,var(--mint) 30%,transparent)}
+  .danger-card{background:color-mix(in srgb,var(--flame) 8%,var(--bg-2));border-color:color-mix(in srgb,var(--flame) 30%,transparent)}
+
+  table{width:100%;border-collapse:collapse;margin:24px 0;font-size:14.5px}
+  th, td{padding:14px 16px;border:1px solid var(--rule);text-align:left}
+  th{background:var(--bg-3);color:var(--fg);font-weight:600}
+  td{color:var(--fg-2)}
+
+  footer{border-top:1px solid var(--rule);padding:40px 0 50px;margin-top:80px;font-size:14px;color:var(--fg-2)}
+  footer .wrap{display:flex;justify-content:space-between;flex-wrap:wrap;gap:20px;align-items:center}
+  footer ul{display:flex;gap:20px;list-style:none;margin:0;padding:0}
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="wrap">
+    <a class="logo" href="/"><img src="/assets/logo.png" alt="SmartDine Logo">SmartDine</a>
+    <ul>
+      <li><a href="/">Home</a></li>
+      <li><a href="/privacy.html">Privacy</a></li>
+      <li><a href="/terms.html">Terms</a></li>
+      <li><a href="/deletion.html">Data Deletion</a></li>
+      <li><a href="/support.html">Support</a></li>
+    </ul>
+    <a class="btn lamp" href="/r/?org=DEMO&table=1">Live Demo</a>
+  </div>
+</nav>
+
+<main class="wrap">
+  <div class="hero-sec">
+    <span class="badge">Help Center &amp; Operations</span>
+    <h1>Customer Support &amp; Help Desk</h1>
+    <p style="font-size:17px;color:var(--fg-2)">Fast assistance, printer guides, and direct engineering contact channels.</p>
+  </div>
+
+  <div class="card highlight-card">
+    <h3 style="margin-top:0;color:var(--lamp)">📞 Need Immediate Assistance During Service?</h3>
+    <p>If your restaurant is currently mid-shift and you need rapid assistance with hardware pairing, printer connection, or table standees, reach our operations team directly:</p>
+    <p style="margin-bottom:0"><strong>Email:</strong> <a href="mailto:smartdine.platform@gmail.com">smartdine.platform@gmail.com</a> · <a href="mailto:santhoshbukka5@gmail.com">santhoshbukka5@gmail.com</a></p>
+  </div>
+
+  <h2>Frequently Asked Questions &amp; Quick Guides</h2>
+
+  <h3>1. How do I pair my Bluetooth thermal receipt printer?</h3>
+  <p>SmartDine works with all standard 58mm (2-inch) and 80mm (3-inch) ESC/POS Bluetooth printers:</p>
+  <ul>
+    <li>Turn on the thermal printer and ensure paper is inserted (feeding from the bottom of the roll).</li>
+    <li>Open Android <strong>Settings &rarr; Bluetooth</strong> and pair with the printer (default PIN is usually <code>0000</code> or <code>1234</code>).</li>
+    <li>Open SmartDine &rarr; <strong>Settings &rarr; Thermal Printer Configuration</strong>.</li>
+    <li>Tap <strong>Scan Devices</strong> &rarr; select your paired printer &rarr; tap <strong>Print Test Receipt</strong>.</li>
+  </ul>
+
+  <h3>2. How do customers order from Table QR codes?</h3>
+  <p>SmartDine does not require diners to install any apps or enter phone numbers:</p>
+  <ul>
+    <li>In the POS app, open <strong>Table Management &rarr; Print Standees (PDF)</strong>.</li>
+    <li>Print the A5 acrylic standee cards and place them on tables.</li>
+    <li>Customers open their standard phone camera, scan the QR, and the digital photo menu loads in under a second.</li>
+    <li>Orders go straight to the kitchen display screen wirelessly.</li>
+  </ul>
+
+  <h3>3. Does SmartDine work when the internet goes down?</h3>
+  <p><strong>Yes, 100%.</strong> SmartDine runs on local Hive databases embedded inside your physical tablet. Even during a complete broadband outage, your staff can punch KOTs, print thermal bills, open the cash drawer, and run service uninterrupted. When internet returns, all bills sync automatically to Google Sheets.</p>
+
+  <h2>Direct Developer Contact</h2>
+  <div class="card">
+    <p><strong>DevMonks Software Studio</strong><br>
+    SmartDine Platform Team<br>
+    Support Desk: <a href="mailto:smartdine.platform@gmail.com">smartdine.platform@gmail.com</a><br>
+    Lead Engineer: <a href="mailto:santhoshbukka5@gmail.com">santhoshbukka5@gmail.com</a><br>
+    Live Portal: <a href="https://smartdine-pos.web.app">https://smartdine-pos.web.app</a><br>
+    Branded Domain: <a href="https://smartbizz.devmonks.space">https://smartbizz.devmonks.space</a></p>
+  </div>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span class="logo" style="font-size:18px"><img src="/assets/logo.png" alt="SmartDine">SmartDine</span>
+    <ul>
+      <li><a href="/privacy.html">Privacy Policy</a></li>
+      <li><a href="/terms.html">Terms of Service</a></li>
+      <li><a href="/deletion.html">Data Deletion</a></li>
+      <li><a href="/support.html">Support</a></li>
+    </ul>
+    <span>&copy; 2026 DevMonks Studio. All rights reserved.</span>
+  </div>
+</footer>
+
+</body>
+</html>

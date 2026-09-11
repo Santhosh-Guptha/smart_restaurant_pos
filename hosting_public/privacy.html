@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Privacy Policy — SmartDine POS & Digital Dining</title>
+<meta name="description" content="Official Privacy Policy for SmartDine POS and Digital Table Ordering, developed by DevMonks. Transparent data safety, permission disclosures, and Google API compliance.">
+<meta name="theme-color" content="#0f1219">
+<link rel="icon" href="/assets/logo.png">
+<link rel="apple-touch-icon" href="/assets/logo.png">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=Sora:wght@300;400;500;600;700&display=swap">
+<style>
+  :root {
+    --night:   #0f1219;
+    --night-2: #171b26;
+    --night-3: #1f2432;
+    --paper:   #f6f1e8;
+    --paper-2: #ece5d8;
+    --ink:     #16161c;
+    --ink-2:   #5a5a66;
+    --cream:   #f3ede4;
+    --cream-2: #b9b3a8;
+    --lamp:    #f2a93b;
+    --lamp-2:  #ffc46b;
+    --mint:    #5fd3a3;
+    --flame:   #ff6a3d;
+    --line:    #2a3040;
+
+    --bg: var(--night); --bg-2: var(--night-2); --bg-3: var(--night-3);
+    --fg: var(--cream); --fg-2: var(--cream-2); --rule: var(--line);
+
+    --display: 'Fraunces', Georgia, 'Times New Roman', serif;
+    --body: 'Sora', -apple-system, 'Segoe UI', Roboto, sans-serif;
+  }
+  @media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) {
+    --bg:#f1ebe0; --bg-2:#faf6ee; --bg-3:#e6dfd2; --fg:#16161c; --fg-2:#5a5a66; --rule:#d9d1c2; } }
+  :root[data-theme="light"] { --bg:#f1ebe0; --bg-2:#faf6ee; --bg-3:#e6dfd2; --fg:#16161c; --fg-2:#5a5a66; --rule:#d9d1c2; }
+
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--body);font-size:16px;line-height:1.7;-webkit-font-smoothing:antialiased}
+  a{color:var(--lamp);text-decoration:none;transition:color .2s}
+  a:hover{color:var(--lamp-2);text-decoration:underline}
+  .wrap{max-width:960px;margin:0 auto;padding:0 24px}
+  h1,h2,h3,h4{font-family:var(--display);font-weight:600;letter-spacing:-.02em;margin:0 0 16px;color:var(--fg)}
+  h1{font-size:clamp(34px,5vw,54px);line-height:1.05}
+  h2{font-size:clamp(22px,3vw,30px);line-height:1.2;margin-top:48px;padding-top:24px;border-top:1px solid var(--rule)}
+  h3{font-size:19px;margin-top:26px}
+  p, li{color:var(--fg-2);margin:0 0 16px}
+  ul{padding-left:24px;margin-bottom:20px}
+  li{margin-bottom:8px}
+  strong{color:var(--fg);font-weight:600}
+
+  nav{position:sticky;top:0;z-index:50;backdrop-filter:blur(14px);background:color-mix(in srgb,var(--bg) 78%,transparent);border-bottom:1px solid var(--rule)}
+  nav .wrap{display:flex;align-items:center;justify-content:space-between;height:66px}
+  .logo{font-family:var(--display);font-weight:700;font-size:22px;letter-spacing:-.02em;display:flex;align-items:center;gap:10px;color:var(--fg)}
+  .logo img{width:32px;height:32px;border-radius:8px;box-shadow:0 0 18px 2px color-mix(in srgb,var(--lamp) 45%,transparent)}
+  nav ul{display:flex;gap:22px;list-style:none;margin:0;padding:0;font-size:14px;color:var(--fg-2)}
+  nav ul a{color:var(--fg-2)}
+  nav ul a:hover{color:var(--fg);text-decoration:none}
+  .btn{display:inline-flex;align-items:center;padding:10px 18px;border-radius:999px;font-weight:600;font-size:13.5px;white-space:nowrap}
+  .btn.lamp{background:linear-gradient(100deg,var(--lamp-2),var(--lamp) 55%,var(--flame));color:#1a1207;box-shadow:0 8px 20px -8px color-mix(in srgb,var(--lamp) 70%,transparent)}
+  .btn.lamp:hover{text-decoration:none;transform:translateY(-1px)}
+
+  .hero-sec{padding:60px 0 30px}
+  .badge{display:inline-block;font-size:11.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--lamp);background:color-mix(in srgb,var(--lamp) 14%,transparent);padding:4px 12px;border-radius:999px;border:1px solid color-mix(in srgb,var(--lamp) 30%,transparent);margin-bottom:16px}
+  .card{background:var(--bg-2);border:1px solid var(--rule);border-radius:16px;padding:26px;margin:24px 0}
+  .highlight-card{background:color-mix(in srgb,var(--lamp) 8%,var(--bg-2));border-color:color-mix(in srgb,var(--lamp) 30%,transparent)}
+  .alert-card{background:color-mix(in srgb,var(--mint) 8%,var(--bg-2));border-color:color-mix(in srgb,var(--mint) 30%,transparent)}
+  .danger-card{background:color-mix(in srgb,var(--flame) 8%,var(--bg-2));border-color:color-mix(in srgb,var(--flame) 30%,transparent)}
+
+  table{width:100%;border-collapse:collapse;margin:24px 0;font-size:14.5px}
+  th, td{padding:14px 16px;border:1px solid var(--rule);text-align:left}
+  th{background:var(--bg-3);color:var(--fg);font-weight:600}
+  td{color:var(--fg-2)}
+
+  footer{border-top:1px solid var(--rule);padding:40px 0 50px;margin-top:80px;font-size:14px;color:var(--fg-2)}
+  footer .wrap{display:flex;justify-content:space-between;flex-wrap:wrap;gap:20px;align-items:center}
+  footer ul{display:flex;gap:20px;list-style:none;margin:0;padding:0}
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="wrap">
+    <a class="logo" href="/"><img src="/assets/logo.png" alt="SmartDine Logo">SmartDine</a>
+    <ul>
+      <li><a href="/">Home</a></li>
+      <li><a href="/privacy.html">Privacy</a></li>
+      <li><a href="/terms.html">Terms</a></li>
+      <li><a href="/deletion.html">Data Deletion</a></li>
+      <li><a href="/support.html">Support</a></li>
+    </ul>
+    <a class="btn lamp" href="/r/?org=DEMO&table=1">Live Demo</a>
+  </div>
+</nav>
+
+<main class="wrap">
+  <div class="hero-sec">
+    <span class="badge">Google Play Data Safety & Compliance</span>
+    <h1>Privacy Policy</h1>
+    <p style="font-size:17px;color:var(--fg-2)">Last updated: <strong>September 11, 2026</strong> · Effective Date: September 1, 2026</p>
+  </div>
+
+  <div class="card highlight-card">
+    <h3 style="margin-top:0;color:var(--lamp)">🛡️ Our Core Commitment to Privacy</h3>
+    <p><strong>SmartDine POS</strong> (also operating under <strong>SmartBizz</strong>), engineered by <strong>DevMonks</strong> (<a href="https://devmonks.space">devmonks.space</a>), is designed with a <strong>Local-First, Zero-Cloud-Cost architecture</strong>. We believe your restaurant sales records, customer invoices, and menu pricing belong entirely to you.</p>
+    <p style="margin-bottom:0">We do <strong>not</strong> sell personal or business data, we do <strong>not</strong> track user location, and dine-in guest table QR ordering requires <strong>zero</strong> customer phone number or account registration.</p>
+  </div>
+
+  <h2>1. Scope & Applicability</h2>
+  <p>This Privacy Policy applies to the <strong>SmartDine POS Android Application</strong> distributed via the Google Play Store, the <strong>SmartDine Digital Table QR Ordering Web Portal</strong> (located at <code>/r/</code>), and related web services hosted on <code>smartdine-pos.web.app</code> and <code>smartbizz.devmonks.space</code>.</p>
+
+  <h2>2. Information We Handle & Where It Is Stored</h2>
+  <p>Unlike conventional cloud POS platforms that ingest your operational data into external advertising or telemetry networks, SmartDine keeps your records strictly isolated:</p>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Category of Data</th>
+        <th>What Is Handled</th>
+        <th>Where It Is Stored</th>
+        <th>Purpose</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Store Profile Data</strong></td>
+        <td>Restaurant Name, GSTIN / Tax Identification, Address, Contact Phone, and Merchant UPI ID.</td>
+        <td>Locally on device (Hive key-value store) & in your private Google Drive Spreadsheet.</td>
+        <td>Generating GST-compliant thermal tax invoices and displaying restaurant branding on digital table menus.</td>
+      </tr>
+      <tr>
+        <td><strong>Sales & Dining Receipts</strong></td>
+        <td>Items ordered, table number, timestamps, bill totals, payment method (Cash, UPI QR, Card Swipe).</td>
+        <td>Locally on till tablet; synced directly to the restaurant owner's connected Google Sheet.</td>
+        <td>Kitchen preparation, till settlement, shift closure (Z-Report), and accounting reconciliation.</td>
+      </tr>
+      <tr>
+        <td><strong>Hardware Device Identity</strong></td>
+        <td>Anonymized Hardware Device ID / Android ID.</td>
+        <td>Central licensing database (<code>smartdine-restaurant-pos</code>).</td>
+        <td>Enforcing physical device limits authorized under your restaurant's subscription tier.</td>
+      </tr>
+      <tr>
+        <td><strong>Staff Credentials</strong></td>
+        <td>Staff Member Name, Assigned Role (Manager, Waiter, Cashier, Chef), and bcrypt-hashed 4-digit PIN.</td>
+        <td>Encrypted in local device cache & in your private Google Sheet.</td>
+        <td>Role-based access control, void audit logging, and shift attribution.</td>
+      </tr>
+      <tr>
+        <td><strong>Dine-in Guests (QR Ordering)</strong></td>
+        <td>Temporary session cart items and table number.</td>
+        <td>Encrypted payload routed via webhook to your kitchen display.</td>
+        <td>Placing orders without requiring diners to install apps, disclose phone numbers, or create accounts.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>3. Android Device Permissions Required by the App</h2>
+  <p>To operate seamlessly on restaurant floors, the SmartDine Android app requests the following specific operating system permissions in full compliance with Google Play Developer Policies:</p>
+  <ul>
+    <li><strong>Bluetooth (<code>BLUETOOTH</code>, <code>BLUETOOTH_CONNECT</code>, <code>BLUETOOTH_SCAN</code>):</strong> Used exclusively to discover, pair with, and transmit ESC/POS raw print commands to 58mm (2-inch) and 80mm (3-inch) wireless Bluetooth thermal receipt printers.</li>
+    <li><strong>Internet & Network State (<code>INTERNET</code>, <code>ACCESS_NETWORK_STATE</code>):</strong> Used to verify subscription license validity, synchronize KOT orders with your Google Spreadsheet, and communicate with the Kitchen Display System (KDS).</li>
+    <li><strong>Camera (<code>CAMERA</code> - Optional):</strong> Used solely when a staff member uses the in-app barcode/QR camera scanner to look up inventory items or read customer table standees.</li>
+    <li><strong>Storage & USB Access:</strong> Used to interface with USB thermal receipt printers, trigger RJ11 cash drawer kicks, and export passphrase-protected local database backups (<code>.backup</code> files).</li>
+  </ul>
+
+  <h2>4. Google API Services & Google Drive Limited Use Disclosure</h2>
+  <p>SmartDine integrates with Google Sheets and Google Drive to give store owners full ownership of their financial database. SmartDine's use and transfer of information received from Google APIs adheres to the <a href="https://developers.google.com/terms/api-services-user-data-policy" target="_blank" rel="noopener">Google API Services User Data Policy</a>, including the <strong>Limited Use</strong> requirements:</p>
+  <ul>
+    <li>We only request scopes strictly necessary to read and write your restaurant's dedicated spreadsheets (<code>https://www.googleapis.com/auth/spreadsheets</code>, <code>drive.file</code>).</li>
+    <li>We never access, read, or inspect personal emails, photos, contacts, or unrelated Google Drive files.</li>
+    <li>Your Google Drive data is never transferred, sold, or shared with external advertising networks, data brokers, or AI model trainers.</li>
+  </ul>
+
+  <h2>5. Data Security & Cryptographic Safeguards</h2>
+  <p>We implement industry-standard technical measures to safeguard operations:</p>
+  <ul>
+    <li><strong>Encrypted Payload Transmission:</strong> Web ordering communication utilizes TLS 1.3 / HTTPS encryption and HMAC-SHA256 authenticated signatures.</li>
+    <li><strong>Offline Resilience:</strong> Even during total broadband outages, all sales are secured in encrypted Hive storage on the local device.</li>
+    <li><strong>Passphrase-Protected Archives:</strong> Manual data backups are encrypted using AES-256 with a security passphrase chosen by the store owner.</li>
+  </ul>
+
+  <h2>6. Children's Online Privacy Protection (COPPA)</h2>
+  <p>SmartDine POS is a commercial enterprise point-of-sale and business operations software application designed for commercial venues. We do not direct our services to children under the age of 13, nor do we knowingly collect personal data from children.</p>
+
+  <h2>7. Account & Data Deletion Requests</h2>
+  <p>Because SmartDine stores business records in your own Google Drive, you have unconditional control to delete or archive your spreadsheets at any time.</p>
+  <p>To request the permanent removal of your organization account, license profile, or device registration records from our cloud licensing directory, please submit a request on our dedicated <a href="/deletion.html"><strong>Data Deletion Request Page</strong></a> or email <a href="mailto:smartdine.platform@gmail.com">smartdine.platform@gmail.com</a>. Requests are completed within 48 business hours.</p>
+
+  <h2>8. Contact Information</h2>
+  <div class="card">
+    <p><strong>DevMonks Software Studio</strong><br>
+    Platform Engineering: SmartDine POS & SmartBizz<br>
+    Primary Production Email: <a href="mailto:smartdine.platform@gmail.com">smartdine.platform@gmail.com</a><br>
+    Administrator: <a href="mailto:santhoshbukka5@gmail.com">santhoshbukka5@gmail.com</a><br>
+    Websites: <a href="https://smartdine-pos.web.app">https://smartdine-pos.web.app</a> · <a href="https://smartbizz.devmonks.space">https://smartbizz.devmonks.space</a> · <a href="https://devmonks.space">devmonks.space</a></p>
+  </div>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span class="logo" style="font-size:18px"><img src="/assets/logo.png" alt="SmartDine">SmartDine</span>
+    <ul>
+      <li><a href="/privacy.html">Privacy Policy</a></li>
+      <li><a href="/terms.html">Terms of Service</a></li>
+      <li><a href="/deletion.html">Data Deletion</a></li>
+      <li><a href="/support.html">Support</a></li>
+    </ul>
+    <span>&copy; 2026 DevMonks Studio. All rights reserved.</span>
+  </div>
+</footer>
+
+</body>
+</html>

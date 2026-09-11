@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Terms of Service — SmartDine POS & Digital Dining</title>
+<meta name="description" content="Terms of Service for SmartDine POS and Digital Dining, developed by DevMonks. Clear commercial licensing, offline operation terms, and responsibilities.">
+<meta name="theme-color" content="#0f1219">
+<link rel="icon" href="/assets/logo.png">
+<link rel="apple-touch-icon" href="/assets/logo.png">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=Sora:wght@300;400;500;600;700&display=swap">
+<style>
+  :root {
+    --night:   #0f1219;
+    --night-2: #171b26;
+    --night-3: #1f2432;
+    --paper:   #f6f1e8;
+    --paper-2: #ece5d8;
+    --ink:     #16161c;
+    --ink-2:   #5a5a66;
+    --cream:   #f3ede4;
+    --cream-2: #b9b3a8;
+    --lamp:    #f2a93b;
+    --lamp-2:  #ffc46b;
+    --mint:    #5fd3a3;
+    --flame:   #ff6a3d;
+    --line:    #2a3040;
+
+    --bg: var(--night); --bg-2: var(--night-2); --bg-3: var(--night-3);
+    --fg: var(--cream); --fg-2: var(--cream-2); --rule: var(--line);
+
+    --display: 'Fraunces', Georgia, 'Times New Roman', serif;
+    --body: 'Sora', -apple-system, 'Segoe UI', Roboto, sans-serif;
+  }
+  @media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) {
+    --bg:#f1ebe0; --bg-2:#faf6ee; --bg-3:#e6dfd2; --fg:#16161c; --fg-2:#5a5a66; --rule:#d9d1c2; } }
+  :root[data-theme="light"] { --bg:#f1ebe0; --bg-2:#faf6ee; --bg-3:#e6dfd2; --fg:#16161c; --fg-2:#5a5a66; --rule:#d9d1c2; }
+
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--body);font-size:16px;line-height:1.7;-webkit-font-smoothing:antialiased}
+  a{color:var(--lamp);text-decoration:none;transition:color .2s}
+  a:hover{color:var(--lamp-2);text-decoration:underline}
+  .wrap{max-width:960px;margin:0 auto;padding:0 24px}
+  h1,h2,h3,h4{font-family:var(--display);font-weight:600;letter-spacing:-.02em;margin:0 0 16px;color:var(--fg)}
+  h1{font-size:clamp(34px,5vw,54px);line-height:1.05}
+  h2{font-size:clamp(22px,3vw,30px);line-height:1.2;margin-top:48px;padding-top:24px;border-top:1px solid var(--rule)}
+  h3{font-size:19px;margin-top:26px}
+  p, li{color:var(--fg-2);margin:0 0 16px}
+  ul{padding-left:24px;margin-bottom:20px}
+  li{margin-bottom:8px}
+  strong{color:var(--fg);font-weight:600}
+
+  nav{position:sticky;top:0;z-index:50;backdrop-filter:blur(14px);background:color-mix(in srgb,var(--bg) 78%,transparent);border-bottom:1px solid var(--rule)}
+  nav .wrap{display:flex;align-items:center;justify-content:space-between;height:66px}
+  .logo{font-family:var(--display);font-weight:700;font-size:22px;letter-spacing:-.02em;display:flex;align-items:center;gap:10px;color:var(--fg)}
+  .logo img{width:32px;height:32px;border-radius:8px;box-shadow:0 0 18px 2px color-mix(in srgb,var(--lamp) 45%,transparent)}
+  nav ul{display:flex;gap:22px;list-style:none;margin:0;padding:0;font-size:14px;color:var(--fg-2)}
+  nav ul a{color:var(--fg-2)}
+  nav ul a:hover{color:var(--fg);text-decoration:none}
+  .btn{display:inline-flex;align-items:center;padding:10px 18px;border-radius:999px;font-weight:600;font-size:13.5px;white-space:nowrap}
+  .btn.lamp{background:linear-gradient(100deg,var(--lamp-2),var(--lamp) 55%,var(--flame));color:#1a1207;box-shadow:0 8px 20px -8px color-mix(in srgb,var(--lamp) 70%,transparent)}
+  .btn.lamp:hover{text-decoration:none;transform:translateY(-1px)}
+
+  .hero-sec{padding:60px 0 30px}
+  .badge{display:inline-block;font-size:11.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--lamp);background:color-mix(in srgb,var(--lamp) 14%,transparent);padding:4px 12px;border-radius:999px;border:1px solid color-mix(in srgb,var(--lamp) 30%,transparent);margin-bottom:16px}
+  .card{background:var(--bg-2);border:1px solid var(--rule);border-radius:16px;padding:26px;margin:24px 0}
+  .highlight-card{background:color-mix(in srgb,var(--lamp) 8%,var(--bg-2));border-color:color-mix(in srgb,var(--lamp) 30%,transparent)}
+  .alert-card{background:color-mix(in srgb,var(--mint) 8%,var(--bg-2));border-color:color-mix(in srgb,var(--mint) 30%,transparent)}
+  .danger-card{background:color-mix(in srgb,var(--flame) 8%,var(--bg-2));border-color:color-mix(in srgb,var(--flame) 30%,transparent)}
+
+  table{width:100%;border-collapse:collapse;margin:24px 0;font-size:14.5px}
+  th, td{padding:14px 16px;border:1px solid var(--rule);text-align:left}
+  th{background:var(--bg-3);color:var(--fg);font-weight:600}
+  td{color:var(--fg-2)}
+
+  footer{border-top:1px solid var(--rule);padding:40px 0 50px;margin-top:80px;font-size:14px;color:var(--fg-2)}
+  footer .wrap{display:flex;justify-content:space-between;flex-wrap:wrap;gap:20px;align-items:center}
+  footer ul{display:flex;gap:20px;list-style:none;margin:0;padding:0}
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="wrap">
+    <a class="logo" href="/"><img src="/assets/logo.png" alt="SmartDine Logo">SmartDine</a>
+    <ul>
+      <li><a href="/">Home</a></li>
+      <li><a href="/privacy.html">Privacy</a></li>
+      <li><a href="/terms.html">Terms</a></li>
+      <li><a href="/deletion.html">Data Deletion</a></li>
+      <li><a href="/support.html">Support</a></li>
+    </ul>
+    <a class="btn lamp" href="/r/?org=DEMO&table=1">Live Demo</a>
+  </div>
+</nav>
+
+<main class="wrap">
+  <div class="hero-sec">
+    <span class="badge">Commercial Agreement</span>
+    <h1>Terms of Service</h1>
+    <p style="font-size:17px;color:var(--fg-2)">Last updated: <strong>September 11, 2026</strong> · Effective Date: September 1, 2026</p>
+  </div>
+
+  <div class="card highlight-card">
+    <h3 style="margin-top:0;color:var(--lamp)">📋 Summary of Terms</h3>
+    <p>By downloading, installing, or using <strong>SmartDine POS</strong> (or accessing the digital table ordering portal), you enter into a binding agreement with <strong>DevMonks</strong> (<a href="https://devmonks.space">devmonks.space</a>).</p>
+    <p style="margin-bottom:0">Key highlights: You retain 100% ownership of your business data, you are responsible for maintaining the physical security of your till hardware, and the application is licensed on an active outlet basis.</p>
+  </div>
+
+  <h2>1. Grant of License</h2>
+  <p>Subject to your compliance with these Terms, DevMonks grants you a non-exclusive, non-transferable, revocable license to install and execute the SmartDine POS application on the authorized number of physical Android tablets, phones, and workstations registered under your organization's subscription plan.</p>
+
+  <h2>2. Business Data Ownership & Google Drive Storage</h2>
+  <p>You own all sales receipts, menu catalogs, pricing rules, tax configurations, and customer ledger entries generated within your store. SmartDine stores these records locally on your device and inside your own connected Google Drive account via Google Sheets.</p>
+  <p>DevMonks does not claim any intellectual property rights or ownership over your operational transaction data.</p>
+
+  <h2>3. Merchant Responsibilities for Tax & Compliance</h2>
+  <p>The restaurant owner is solely responsible for:</p>
+  <ul>
+    <li>Configuring accurate Goods & Services Tax (GST), Value Added Tax (VAT), service charges, and cess percentages applicable to their jurisdiction.</li>
+    <li>Verifying the accuracy of printed customer tax invoices before handing them to guests.</li>
+    <li>Complying with local food safety, liquor licensing, labor laws, and commercial hospitality regulations.</li>
+  </ul>
+
+  <h2>4. Payment Settlements & External UPI Gateways</h2>
+  <p>SmartDine facilitates direct on-table and counter payments by encoding standard NPCI-compliant UPI links (such as <code>upi://pay?pa=...</code>) and integrating with payment hardware or Razorpay web checkout.</p>
+  <p>All funds transfer directly from the customer's bank account to your merchant bank account. DevMonks does not hold your funds in escrow, does not charge intermediary transaction surcharges, and is not liable for customer chargebacks or banking network downtimes.</p>
+
+  <h2>5. Offline Operation & System Clock Integrity</h2>
+  <p>SmartDine incorporates offline resilience to ensure shifts continue during broadband outages. To prevent cashier fraud and maintain sequential invoice auditing, the application requires your physical tablet to maintain a valid network-synchronized system clock. Deliberately rolling back system time to backdate sales triggers tamper safeguards.</p>
+
+  <h2>6. Subscription Tiers & Device Limits</h2>
+  <p>Your subscription tier determines the maximum number of concurrent physical devices (counter billing tills, kitchen display screens, captain waiter phones) permitted to operate for an outlet. Connecting excess unregistered devices will prompt the till to request authorization in the Master Admin console.</p>
+
+  <h2>7. Disclaimer of Warranties & Limitation of Liability</h2>
+  <p>The application is provided "AS IS" and "AS AVAILABLE". To the maximum extent permitted by applicable law, DevMonks disclaims all warranties, express or implied. In no event shall DevMonks be liable for any lost profits, business interruption, or indirect damages arising out of hardware failures, printer jams, or third-party telecommunication outages.</p>
+
+  <h2>8. Termination</h2>
+  <p>You may terminate your subscription at any time. Upon termination, your local application access ceases, but your operational data remains permanently intact and exportable inside your own Google Drive.</p>
+
+  <h2>9. Contact & Legal Inquiries</h2>
+  <div class="card">
+    <p><strong>DevMonks Software Studio</strong><br>
+    Legal & Licensing Department<br>
+    Email: <a href="mailto:smartdine.platform@gmail.com">smartdine.platform@gmail.com</a><br>
+    Administrator: <a href="mailto:santhoshbukka5@gmail.com">santhoshbukka5@gmail.com</a><br>
+    Website: <a href="https://smartdine-pos.web.app">https://smartdine-pos.web.app</a> · <a href="https://smartbizz.devmonks.space">https://smartbizz.devmonks.space</a></p>
+  </div>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span class="logo" style="font-size:18px"><img src="/assets/logo.png" alt="SmartDine">SmartDine</span>
+    <ul>
+      <li><a href="/privacy.html">Privacy Policy</a></li>
+      <li><a href="/terms.html">Terms of Service</a></li>
+      <li><a href="/deletion.html">Data Deletion</a></li>
+      <li><a href="/support.html">Support</a></li>
+    </ul>
+    <span>&copy; 2026 DevMonks Studio. All rights reserved.</span>
+  </div>
+</footer>
+
+</body>
+</html>
