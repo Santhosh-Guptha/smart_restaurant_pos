@@ -189,14 +189,24 @@ class TenantProvisioningService {
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
-      // 10. If this stemmed from a registration request, mark it as APPROVED
+      // 10. If this stemmed from a registration request or business inquiry, mark it accordingly
       if (requestId != null && requestId.isNotEmpty) {
-        await _firestore.collection('registration_requests').doc(requestId).update({
-          'status': 'APPROVED',
-          'organizationId': orgId,
-          'approvedAt': FieldValue.serverTimestamp(),
-          'updatedAt': FieldValue.serverTimestamp(),
-        });
+        try {
+          await _firestore.collection('registration_requests').doc(requestId).update({
+            'status': 'APPROVED',
+            'organizationId': orgId,
+            'approvedAt': FieldValue.serverTimestamp(),
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+        } catch (_) {}
+        try {
+          await _firestore.collection('business_inquiries').doc(requestId).update({
+            'status': 'CONVERTED',
+            'organizationId': orgId,
+            'convertedAt': FieldValue.serverTimestamp(),
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+        } catch (_) {}
       }
 
       // 11. Asynchronously provision Google Sheet in the background

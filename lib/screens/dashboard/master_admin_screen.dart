@@ -1,8 +1,10 @@
 import 'dart:math';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:bcrypt/bcrypt.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:http/http.dart' as http;
@@ -30,15 +32,96 @@ class MasterAdminScreen extends ConsumerStatefulWidget {
 
 class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with SingleTickerProviderStateMixin {
   late TabController _tabController;
+  StreamSubscription<QuerySnapshot>? _regRequestsSub;
+  StreamSubscription<QuerySnapshot>? _inquiriesSub;
+  final Set<String> _knownRequestIds = {};
+  final Set<String> _knownInquiryIds = {};
+  bool _initialLoadDone = false;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 5, vsync: this);
+    _listenForIncomingRequests();
+  }
+
+  void _listenForIncomingRequests() {
+    // 1. Listen for new Free Trial registrations
+    _regRequestsSub = FirebaseFirestore.instance
+        .collection('registration_requests')
+        .snapshots()
+        .listen((snap) {
+      if (!_initialLoadDone) {
+        for (var doc in snap.docs) {
+          _knownRequestIds.add(doc.id);
+        }
+        return;
+      }
+      for (var change in snap.docChanges) {
+        if (change.type == DocumentChangeType.added && !_knownRequestIds.contains(change.doc.id)) {
+          _knownRequestIds.add(change.doc.id);
+          final data = change.doc.data() as Map<String, dynamic>? ?? {};
+          final name = data['clientName'] ?? 'New Client';
+          final shop = data['shopName'] ?? '';
+          _triggerNewRequestAlert(
+            title: "🔔 New Free Trial Registration!",
+            message: "$name${shop.isNotEmpty ? ' ($shop)' : ''} registered for a 14-day Free Trial.",
+          );
+        }
+      }
+    });
+
+    // 2. Listen for new Commercial Plan Inquiries
+    _inquiriesSub = FirebaseFirestore.instance
+        .collection('business_inquiries')
+        .snapshots()
+        .listen((snap) {
+      if (!_initialLoadDone) {
+        for (var doc in snap.docs) {
+          _knownInquiryIds.add(doc.id);
+        }
+        _initialLoadDone = true;
+        return;
+      }
+      for (var change in snap.docChanges) {
+        if (change.type == DocumentChangeType.added && !_knownInquiryIds.contains(change.doc.id)) {
+          _knownInquiryIds.add(change.doc.id);
+          final data = change.doc.data() as Map<String, dynamic>? ?? {};
+          final name = data['clientName'] ?? 'New Lead';
+          final brand = data['brandName'] ?? '';
+          final plan = data['selectedPlan'] ?? 'Commercial';
+          _triggerNewRequestAlert(
+            title: "💼 New $plan Inquiry!",
+            message: "$name${brand.isNotEmpty ? ' ($brand)' : ''} submitted a $plan inquiry.",
+          );
+        }
+      }
+    });
+
+    // Mark initial load done after 2 seconds
+    Future.delayed(const Duration(seconds: 2), () {
+      if (mounted) {
+        _initialLoadDone = true;
+      }
+    });
+  }
+
+  void _triggerNewRequestAlert({required String title, required String message}) {
+    HapticFeedback.heavyImpact();
+    SystemSound.play(SystemSoundType.alert);
+    if (mounted) {
+      AppToast.showSuccess(
+        context,
+        title,
+        subtitle: "$message\nTap 'Requests' tab to review.",
+      );
+    }
   }
 
   @override
   void dispose() {
+    _regRequestsSub?.cancel();
+    _inquiriesSub?.cancel();
     _tabController.dispose();
     super.dispose();
   }
@@ -648,15 +731,31 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
                   .collection('registration_requests')
                   .where('status', isEqualTo: 'PENDING')
                   .snapshots(),
-              builder: (context, snapshot) {
-                final pendingCount = snapshot.hasData ? snapshot.data!.docs.length : 0;
-                return Tab(
-                  icon: Badge(
-                    isLabelVisible: pendingCount > 0,
-                    label: Text('$pendingCount', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
-                    child: const Icon(Icons.assignment_ind_rounded),
-                  ),
-                  text: "Requests",
+              builder: (context, regSnap) {
+                return StreamBuilder<QuerySnapshot>(
+                  stream: FirebaseFirestore.instance
+                      .collection('business_inquiries')
+                      .snapshots(),
+                  builder: (context, inqSnap) {
+                    final regCount = regSnap.hasData ? regSnap.data!.docs.length : 0;
+                    int inqCount = 0;
+                    if (inqSnap.hasData) {
+                      inqCount = inqSnap.data!.docs.where((d) {
+                        final st = (d.data() as Map<String, dynamic>)['status'];
+                        return st == 'NEW_INQUIRY' || st == 'PENDING';
+                      }).length;
+                    }
+                    final totalCount = regCount + inqCount;
+                    return Tab(
+                      icon: Badge(
+                        isLabelVisible: totalCount > 0,
+                        backgroundColor: Colors.orange.shade800,
+                        label: Text('$totalCount', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white)),
+                        child: const Icon(Icons.assignment_ind_rounded),
+                      ),
+                      text: "Requests",
+                    );
+                  },
                 );
               },
             ),
@@ -3678,6 +3777,47 @@ class _AppUpdatesTabState extends State<AppUpdatesTab> {
   }
 }
 
+class UnifiedClientRequest {
+  final String id;
+  final String requestType; // 'FREE_TRIAL' or 'PLAN_INQUIRY'
+  final String clientName;
+  final String shopName;
+  final String businessCategory;
+  final String email;
+  final String mobile;
+  final String cityOrAddress;
+  final String referralSource;
+  final String selectedPlan;
+  final String outlets;
+  final String stations;
+  final String notes;
+  final String status;
+  final DateTime? createdAt;
+  final Map<String, dynamic> rawData;
+
+  UnifiedClientRequest({
+    required this.id,
+    required this.requestType,
+    required this.clientName,
+    required this.shopName,
+    required this.businessCategory,
+    required this.email,
+    required this.mobile,
+    required this.cityOrAddress,
+    required this.referralSource,
+    required this.selectedPlan,
+    required this.outlets,
+    required this.stations,
+    required this.notes,
+    required this.status,
+    this.createdAt,
+    required this.rawData,
+  });
+
+  bool get isTrial => requestType == 'FREE_TRIAL';
+  bool get isPending => status == 'PENDING' || status == 'NEW_INQUIRY';
+}
+
 // --- TAB: REGISTRATION REQUESTS TAB ---
 class RegistrationRequestsTab extends ConsumerStatefulWidget {
   const RegistrationRequestsTab({super.key});
@@ -3688,7 +3828,15 @@ class RegistrationRequestsTab extends ConsumerStatefulWidget {
 
 class _RegistrationRequestsTabState extends ConsumerState<RegistrationRequestsTab> {
   final _firestore = FirebaseFirestore.instance;
-  String _selectedFilter = 'PENDING'; // 'ALL', 'PENDING', 'APPROVED', 'REJECTED'
+  final TextEditingController _searchController = TextEditingController();
+  String _selectedFilter = 'PENDING'; // 'ALL', 'PENDING', 'TRIALS', 'INQUIRIES', 'APPROVED', 'REJECTED'
+  String _searchQuery = '';
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
 
   String _generateUniqueOrgId() {
     final now = DateTime.now();
@@ -4261,6 +4409,540 @@ class _RegistrationRequestsTabState extends ConsumerState<RegistrationRequestsTa
     );
   }
 
+  Future<void> _makePhoneCall(String phone) async {
+    final clean = phone.replaceAll(RegExp(r'[^0-9+]'), '');
+    if (clean.isEmpty) return;
+    final uri = Uri.parse('tel:$clean');
+    try {
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri);
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _openWhatsApp(String phone, String clientName) async {
+    var clean = phone.replaceAll(RegExp(r'[^0-9]'), '');
+    if (clean.length == 10) clean = '91$clean';
+    if (clean.isEmpty) return;
+    final msg = Uri.encodeComponent("Hello $clientName, this is from SmartDine POS! We received your request.");
+    final uri = Uri.parse('https://wa.me/$clean?text=$msg');
+    try {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (_) {}
+  }
+
+  Future<void> _sendEmail(String email, String clientName) async {
+    if (email.isEmpty) return;
+    final uri = Uri.parse('mailto:$email?subject=${Uri.encodeComponent("SmartDine POS Setup & Onboarding")}');
+    try {
+      await launchUrl(uri);
+    } catch (_) {}
+  }
+
+  void _showRequestDetailsDialog(UnifiedClientRequest request) {
+    final primaryAccent = context.isDark ? const Color(0xFF60A5FA) : const Color(0xFF2563EB);
+    final isTrial = request.isTrial;
+    final cleanPhone = request.mobile.replaceAll(RegExp(r'[^0-9+]'), '');
+
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          backgroundColor: context.surfaceColor,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: BorderSide(color: context.borderColor),
+          ),
+          titlePadding: const EdgeInsets.fromLTRB(20, 16, 12, 12),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+          actionsPadding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
+          title: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: (isTrial ? const Color(0xFF10B981) : const Color(0xFF8B5CF6)).withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(
+                  isTrial ? Icons.storefront_rounded : Icons.business_center_rounded,
+                  color: isTrial ? const Color(0xFF10B981) : const Color(0xFF8B5CF6),
+                  size: 22,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      request.clientName,
+                      style: TextStyle(
+                        color: context.textPrimary,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 17,
+                      ),
+                    ),
+                    if (request.shopName.isNotEmpty)
+                      Text(
+                        request.shopName,
+                        style: TextStyle(
+                          color: primaryAccent,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 13,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: _getStatusColor(request.status).withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  request.status,
+                  style: TextStyle(
+                    color: _getStatusColor(request.status),
+                    fontWeight: FontWeight.bold,
+                    fontSize: 11,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 4),
+              IconButton(
+                icon: const Icon(Icons.close_rounded, size: 20),
+                color: context.textSecondary,
+                onPressed: () => Navigator.pop(ctx),
+                tooltip: "Close",
+              ),
+            ],
+          ),
+          content: SizedBox(
+            width: ClassicTheme.dialogWidth(context, 580),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Type & Plan Banner
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: (isTrial ? const Color(0xFF10B981) : const Color(0xFF8B5CF6)).withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: (isTrial ? const Color(0xFF10B981) : const Color(0xFF8B5CF6)).withValues(alpha: 0.25),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          isTrial ? Icons.verified_rounded : Icons.star_rounded,
+                          size: 18,
+                          color: isTrial ? const Color(0xFF10B981) : const Color(0xFF8B5CF6),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            isTrial ? "14-Day Full Access Free Trial Request" : "Commercial Plan: ${request.selectedPlan}",
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                              color: isTrial ? const Color(0xFF10B981) : const Color(0xFF8B5CF6),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Section 1: Contact Information & Quick Actions
+                  Text(
+                    "Contact Information",
+                    style: TextStyle(
+                      color: context.textPrimary,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: context.surfaceColor,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: context.borderColor),
+                    ),
+                    child: Column(
+                      children: [
+                        // Phone Row with Quick Call & WhatsApp
+                        Row(
+                          children: [
+                            Icon(Icons.phone_android_rounded, size: 16, color: primaryAccent),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                request.mobile.isNotEmpty ? request.mobile : "No mobile provided",
+                                style: TextStyle(
+                                  color: context.textPrimary,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ),
+                            if (cleanPhone.isNotEmpty) ...[
+                              InkWell(
+                                onTap: () => _makePhoneCall(request.mobile),
+                                borderRadius: BorderRadius.circular(6),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: Colors.blue.withValues(alpha: 0.12),
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: const Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.call_rounded, size: 13, color: Colors.blue),
+                                      SizedBox(width: 4),
+                                      Text("Call", style: TextStyle(color: Colors.blue, fontSize: 11, fontWeight: FontWeight.bold)),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              InkWell(
+                                onTap: () => _openWhatsApp(request.mobile, request.clientName),
+                                borderRadius: BorderRadius.circular(6),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF25D366).withValues(alpha: 0.12),
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: const Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.chat_bubble_outline_rounded, size: 13, color: Color(0xFF25D366)),
+                                      SizedBox(width: 4),
+                                      Text("WhatsApp", style: TextStyle(color: Color(0xFF25D366), fontSize: 11, fontWeight: FontWeight.bold)),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        Divider(height: 1, color: context.borderColor),
+                        const SizedBox(height: 10),
+
+                        // Email Row with Send Email
+                        Row(
+                          children: [
+                            Icon(Icons.mail_outline_rounded, size: 16, color: primaryAccent),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                request.email.isNotEmpty ? request.email : "No email provided",
+                                style: TextStyle(
+                                  color: context.textPrimary,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ),
+                            if (request.email.isNotEmpty)
+                              InkWell(
+                                onTap: () => _sendEmail(request.email, request.clientName),
+                                borderRadius: BorderRadius.circular(6),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: Colors.purple.withValues(alpha: 0.12),
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: const Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.send_rounded, size: 13, color: Colors.purple),
+                                      SizedBox(width: 4),
+                                      Text("Email", style: TextStyle(color: Colors.purple, fontSize: 11, fontWeight: FontWeight.bold)),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                        if (request.cityOrAddress.isNotEmpty) ...[
+                          const SizedBox(height: 10),
+                          Divider(height: 1, color: context.borderColor),
+                          const SizedBox(height: 10),
+                          Row(
+                            children: [
+                              Icon(Icons.location_on_outlined, size: 16, color: primaryAccent),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  request.cityOrAddress,
+                                  style: TextStyle(
+                                    color: context.textSecondary,
+                                    fontSize: 12.5,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Section 2: Business & Operational Scope
+                  Text(
+                    "Business & Store Specifications",
+                    style: TextStyle(
+                      color: context.textPrimary,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 6,
+                    children: [
+                      _infoBadge(Icons.category_rounded, request.businessCategory),
+                      _infoBadge(Icons.store_mall_directory_rounded, request.outlets),
+                      _infoBadge(Icons.devices_rounded, request.stations),
+                      if (isTrial && request.rawData['tableCount'] != null)
+                        _infoBadge(Icons.table_restaurant_rounded, "${request.rawData['tableCount']} Tables"),
+                      if (request.rawData['preferredOperatingMode'] != null)
+                        _infoBadge(
+                          Icons.sync_alt_rounded,
+                          request.rawData['preferredOperatingMode'] == 'payFirstQSR' ? 'Pay First (QSR)' : 'Dine First (Table)',
+                        ),
+                      if (request.referralSource.isNotEmpty)
+                        _infoBadge(Icons.share_outlined, "Source: ${request.referralSource}"),
+                      if (request.rawData['gstNo'] != null || request.rawData['gst'] != null)
+                        _infoBadge(Icons.receipt_long_rounded, "GST: ${request.rawData['gstNo'] ?? request.rawData['gst']}"),
+                      if (request.createdAt != null)
+                        _infoBadge(Icons.calendar_today_rounded, "${request.createdAt!.day}/${request.createdAt!.month}/${request.createdAt!.year} ${request.createdAt!.hour.toString().padLeft(2, '0')}:${request.createdAt!.minute.toString().padLeft(2, '0')}"),
+                      if (request.rawData['organizationId'] != null)
+                        _infoBadge(Icons.check_circle_outline_rounded, "Org: ${request.rawData['organizationId']}", isAccent: true),
+                    ],
+                  ),
+
+                  // Section 3: Notes / Special Requirements
+                  if (request.notes.isNotEmpty) ...[
+                    const SizedBox(height: 16),
+                    Text(
+                      "Client Special Requirements / Notes",
+                      style: TextStyle(
+                        color: context.textPrimary,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: context.canvasColor,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: context.borderColor),
+                      ),
+                      child: Text(
+                        request.notes,
+                        style: TextStyle(
+                          color: context.textPrimary,
+                          fontSize: 12.5,
+                          height: 1.4,
+                          fontStyle: FontStyle.italic,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: Text("Close", style: TextStyle(color: context.textSecondary)),
+            ),
+
+            // Actions for Free Trial Request
+            if (isTrial && request.status == 'PENDING') ...[
+              OutlinedButton.icon(
+                onPressed: () async {
+                  Navigator.pop(ctx);
+                  await _firestore.collection('registration_requests').doc(request.id).update({
+                    'status': 'REJECTED',
+                    'rejectedAt': FieldValue.serverTimestamp(),
+                    'updatedAt': FieldValue.serverTimestamp(),
+                  });
+                  SmtpEmailService.sendRegistrationRejectedEmail(
+                    recipientEmail: request.email,
+                    clientName: request.clientName,
+                    shopName: request.shopName,
+                    reason: "Information verification could not be completed.",
+                  ).catchError((_) => <String, dynamic>{});
+                  if (mounted) {
+                    AppToast.showSuccess(context, "Trial Request Rejected.");
+                  }
+                },
+                icon: const Icon(Icons.close_rounded, size: 16, color: Colors.redAccent),
+                label: const Text("Reject", style: TextStyle(color: Colors.redAccent, fontSize: 12)),
+                style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: Colors.redAccent),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+              ),
+              const SizedBox(width: 8),
+              ElevatedButton.icon(
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  _showOnboardDialogFromRequest(
+                    requestId: request.id,
+                    clientName: request.clientName,
+                    shopName: request.shopName,
+                    category: request.businessCategory,
+                    email: request.email,
+                    mobile: request.mobile,
+                    initialAadhaar: request.rawData['aadhaar']?.toString() ?? '',
+                    initialPan: request.rawData['pan']?.toString() ?? '',
+                    initialGst: (request.rawData['gstNo'] ?? request.rawData['gst'])?.toString() ?? '',
+                    initialAddress: request.cityOrAddress,
+                    initialTrialDays: (request.rawData['requestedTrialDays'] ?? 14) as int,
+                    initialMaxUsers: (request.rawData['requestedMaxUsers'] ?? 5) as int,
+                    initialMaxOutlets: (request.rawData['requestedStoreCount'] ?? 1) as int,
+                    initialTableCount: (request.rawData['tableCount'] ?? 10) as int,
+                    initialOperatingMode: request.rawData['preferredOperatingMode']?.toString() ?? 'dineFirstPostpaid',
+                    initialRoles: (request.rawData['requestedRoles'] is List)
+                        ? List<String>.from(request.rawData['requestedRoles'])
+                        : null,
+                    initialFeatures: (request.rawData['requestedFeatures'] is Map)
+                        ? Map<String, bool>.from((request.rawData['requestedFeatures'] as Map).map((k, v) => MapEntry(k.toString(), v == true)))
+                        : null,
+                  );
+                },
+                icon: const Icon(Icons.rocket_launch_rounded, size: 16),
+                label: const Text("Approve & Onboard Store", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF10B981),
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+              ),
+            ],
+
+            // Actions for Commercial Plan Inquiry
+            if (!isTrial && (request.status == 'NEW_INQUIRY' || request.status == 'PENDING')) ...[
+              OutlinedButton.icon(
+                onPressed: () async {
+                  Navigator.pop(ctx);
+                  await _firestore.collection('business_inquiries').doc(request.id).update({
+                    'status': 'ARCHIVED',
+                    'archivedAt': FieldValue.serverTimestamp(),
+                  });
+                  if (mounted) {
+                    AppToast.showSuccess(context, "Inquiry archived.");
+                  }
+                },
+                icon: const Icon(Icons.archive_outlined, size: 16, color: Colors.grey),
+                label: const Text("Archive", style: TextStyle(color: Colors.grey, fontSize: 12)),
+                style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: Colors.grey),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+              ),
+              const SizedBox(width: 8),
+              OutlinedButton.icon(
+                onPressed: () async {
+                  Navigator.pop(ctx);
+                  await _firestore.collection('business_inquiries').doc(request.id).update({
+                    'status': 'CONTACTED',
+                    'contactedAt': FieldValue.serverTimestamp(),
+                  });
+                  if (mounted) {
+                    AppToast.showSuccess(context, "Marked as Contacted.");
+                  }
+                },
+                icon: const Icon(Icons.check_rounded, size: 16, color: Color(0xFF2563EB)),
+                label: const Text("Mark as Contacted", style: TextStyle(color: Color(0xFF2563EB), fontSize: 12, fontWeight: FontWeight.bold)),
+                style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: Color(0xFF2563EB)),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+              ),
+              const SizedBox(width: 8),
+              ElevatedButton.icon(
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  _showOnboardDialogFromRequest(
+                    requestId: request.id,
+                    clientName: request.clientName,
+                    shopName: request.shopName,
+                    category: request.businessCategory,
+                    email: request.email,
+                    mobile: request.mobile,
+                    initialAddress: request.cityOrAddress,
+                    initialTrialDays: 365,
+                    initialMaxUsers: 10,
+                    initialMaxOutlets: request.outlets.contains('5') ? 5 : (request.outlets.contains('6') ? 10 : 1),
+                    initialTableCount: 20,
+                  );
+                },
+                icon: const Icon(Icons.rocket_launch_rounded, size: 16),
+                label: const Text("Onboard Store Directly", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF8B5CF6),
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+              ),
+            ],
+
+            if (!isTrial && request.status == 'CONTACTED') ...[
+              ElevatedButton.icon(
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  _showOnboardDialogFromRequest(
+                    requestId: request.id,
+                    clientName: request.clientName,
+                    shopName: request.shopName,
+                    category: request.businessCategory,
+                    email: request.email,
+                    mobile: request.mobile,
+                    initialAddress: request.cityOrAddress,
+                    initialTrialDays: 365,
+                    initialMaxUsers: 10,
+                    initialMaxOutlets: request.outlets.contains('5') ? 5 : (request.outlets.contains('6') ? 10 : 1),
+                    initialTableCount: 20,
+                  );
+                },
+                icon: const Icon(Icons.rocket_launch_rounded, size: 16),
+                label: const Text("Convert & Onboard Store", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF10B981),
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+              ),
+            ],
+          ],
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final primaryAccent = context.isDark ? const Color(0xFF60A5FA) : const Color(0xFF2563EB);
@@ -4270,238 +4952,406 @@ class _RegistrationRequestsTabState extends ConsumerState<RegistrationRequestsTa
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header & Filter Bar
+          // Header & Search Bar
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                "Client Sign-Up Requests",
-                style: TextStyle(
-                  color: context.textPrimary,
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _filterChip("Pending", 'PENDING', Colors.orangeAccent),
-                    const SizedBox(width: 6),
-                    _filterChip("Approved", 'APPROVED', const Color(0xFF10B981)),
-                    const SizedBox(width: 6),
-                    _filterChip("Rejected", 'REJECTED', Colors.redAccent),
-                    const SizedBox(width: 6),
-                    _filterChip("All", 'ALL', primaryAccent),
+                    Text(
+                      "Client Requests & Inquiries",
+                      style: TextStyle(
+                        color: context.textPrimary,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      "Real-time incoming Free Trial signups & commercial plan leads",
+                      style: TextStyle(
+                        color: context.textSecondary,
+                        fontSize: 12,
+                      ),
+                    ),
                   ],
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 12),
 
-          // Requests Stream
+          // Search Field
+          TextField(
+            controller: _searchController,
+            style: TextStyle(color: context.textPrimary, fontSize: 13),
+            decoration: InputDecoration(
+              hintText: "Search by client name, restaurant, mobile, email, city...",
+              hintStyle: TextStyle(color: context.textSecondary, fontSize: 12.5),
+              prefixIcon: const Icon(Icons.search_rounded, size: 18),
+              suffixIcon: _searchQuery.isNotEmpty
+                  ? IconButton(
+                      icon: const Icon(Icons.clear_rounded, size: 16),
+                      onPressed: () {
+                        setState(() {
+                          _searchController.clear();
+                          _searchQuery = '';
+                        });
+                      },
+                    )
+                  : null,
+              filled: true,
+              fillColor: context.surfaceColor,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: BorderSide(color: context.borderColor),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: BorderSide(color: context.borderColor),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: BorderSide(color: primaryAccent, width: 1.5),
+              ),
+            ),
+            onChanged: (v) => setState(() => _searchQuery = v.trim().toLowerCase()),
+          ),
+          const SizedBox(height: 10),
+
+          // Filter Chips Bar
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                _filterChip("Pending", 'PENDING', Colors.orangeAccent),
+                const SizedBox(width: 6),
+                _filterChip("Free Trials", 'TRIALS', const Color(0xFF10B981)),
+                const SizedBox(width: 6),
+                _filterChip("Plan Inquiries", 'INQUIRIES', const Color(0xFF8B5CF6)),
+                const SizedBox(width: 6),
+                _filterChip("Approved / Done", 'APPROVED', const Color(0xFF10B981)),
+                const SizedBox(width: 6),
+                _filterChip("All", 'ALL', primaryAccent),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          // Dual Stream Builder (registration_requests + business_inquiries)
           Expanded(
             child: StreamBuilder<QuerySnapshot>(
               stream: _firestore
                   .collection('registration_requests')
-                  .orderBy('createdAt', descending: true)
                   .snapshots(),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return Center(child: CircularProgressIndicator(color: primaryAccent));
-                }
-                if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                  return Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.inbox_rounded, size: 48, color: context.textSecondary.withValues(alpha: 0.5)),
-                        const SizedBox(height: 10),
-                        Text("No registration requests received yet.", style: TextStyle(color: context.textSecondary)),
-                      ],
-                    ),
-                  );
-                }
+              builder: (context, regSnapshot) {
+                return StreamBuilder<QuerySnapshot>(
+                  stream: _firestore
+                      .collection('business_inquiries')
+                      .snapshots(),
+                  builder: (context, inqSnapshot) {
+                    if (regSnapshot.connectionState == ConnectionState.waiting &&
+                        inqSnapshot.connectionState == ConnectionState.waiting) {
+                      return Center(child: CircularProgressIndicator(color: primaryAccent));
+                    }
 
-                var docs = snapshot.data!.docs;
-                if (_selectedFilter != 'ALL') {
-                  docs = docs.where((d) => (d.data() as Map<String, dynamic>)['status'] == _selectedFilter).toList();
-                }
+                    // Parse Free Trials
+                    final List<UnifiedClientRequest> trialList = [];
+                    if (regSnapshot.hasData) {
+                      for (var doc in regSnapshot.data!.docs) {
+                        final d = doc.data() as Map<String, dynamic>;
+                        final created = (d['createdAt'] as Timestamp?)?.toDate();
+                        trialList.add(UnifiedClientRequest(
+                          id: doc.id,
+                          requestType: 'FREE_TRIAL',
+                          clientName: d['clientName'] ?? 'Unknown Client',
+                          shopName: d['shopName'] ?? '',
+                          businessCategory: d['businessCategory'] ?? 'Restaurant & Cafe',
+                          email: d['email'] ?? '',
+                          mobile: d['mobile'] ?? d['phone'] ?? '',
+                          cityOrAddress: d['address'] ?? d['city'] ?? '',
+                          referralSource: d['referralSource'] ?? 'Direct',
+                          selectedPlan: '14-Day Free Trial',
+                          outlets: "${d['requestedStoreCount'] ?? 1} Outlet",
+                          stations: "${d['requestedMaxUsers'] ?? 5} Staff / Terminals",
+                          notes: d['notes'] ?? d['requirements'] ?? '',
+                          status: (d['status'] ?? 'PENDING').toString().toUpperCase(),
+                          createdAt: created,
+                          rawData: d,
+                        ));
+                      }
+                    }
 
-                if (docs.isEmpty) {
-                  return Center(
-                    child: Text("No requests match the selected '$_selectedFilter' filter.", style: TextStyle(color: context.textSecondary)),
-                  );
-                }
+                    // Parse Business Inquiries
+                    final List<UnifiedClientRequest> inquiryList = [];
+                    if (inqSnapshot.hasData) {
+                      for (var doc in inqSnapshot.data!.docs) {
+                        final d = doc.data() as Map<String, dynamic>;
+                        final created = (d['createdAt'] as Timestamp?)?.toDate();
+                        inquiryList.add(UnifiedClientRequest(
+                          id: doc.id,
+                          requestType: 'PLAN_INQUIRY',
+                          clientName: d['clientName'] ?? d['name'] ?? 'Commercial Lead',
+                          shopName: d['brandName'] ?? d['shopName'] ?? '',
+                          businessCategory: d['businessModel'] ?? d['category'] ?? 'Restaurant',
+                          email: d['email'] ?? '',
+                          mobile: d['phone'] ?? d['mobile'] ?? '',
+                          cityOrAddress: d['city'] ?? d['address'] ?? '',
+                          referralSource: d['referralSource'] ?? 'Website Inquiry',
+                          selectedPlan: d['selectedPlan'] ?? d['plan'] ?? 'Commercial Plan',
+                          outlets: d['outletsCount']?.toString() ?? '1 Outlet',
+                          stations: d['stationsCount']?.toString() ?? 'Standard Setup',
+                          notes: d['requirements'] ?? d['notes'] ?? '',
+                          status: (d['status'] ?? 'NEW_INQUIRY').toString().toUpperCase(),
+                          createdAt: created,
+                          rawData: d,
+                        ));
+                      }
+                    }
 
-                return ListView.builder(
-                  itemCount: docs.length,
-                  itemBuilder: (context, index) {
-                    final doc = docs[index];
-                    final data = doc.data() as Map<String, dynamic>;
-                    final requestId = doc.id;
-                    final clientName = data['clientName'] ?? 'Unknown Client';
-                    final shopName = data['shopName'] ?? '';
-                    final category = data['businessCategory'] ?? 'General';
-                    final referral = data['referralSource'] ?? 'Not specified';
-                    final email = data['email'] ?? '';
-                    final mobile = data['mobile'] ?? '';
-                    final status = data['status'] ?? 'PENDING';
-                    final orgId = data['organizationId'] as String?;
-                    final createdAt = (data['createdAt'] as Timestamp?)?.toDate();
+                    // Merge & Sort
+                    List<UnifiedClientRequest> allRequests = [...trialList, ...inquiryList];
+                    allRequests.sort((a, b) {
+                      if (a.createdAt == null && b.createdAt == null) return 0;
+                      if (a.createdAt == null) return 1;
+                      if (b.createdAt == null) return -1;
+                      return b.createdAt!.compareTo(a.createdAt!);
+                    });
 
-                    return Card(
-                      color: context.surfaceColor,
-                      elevation: 0,
-                      margin: const EdgeInsets.only(bottom: 12),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        side: BorderSide(color: context.borderColor),
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.all(16.0),
+                    // Filter by selected tab chip
+                    if (_selectedFilter == 'PENDING') {
+                      allRequests = allRequests.where((r) => r.isPending).toList();
+                    } else if (_selectedFilter == 'TRIALS') {
+                      allRequests = allRequests.where((r) => r.isTrial).toList();
+                    } else if (_selectedFilter == 'INQUIRIES') {
+                      allRequests = allRequests.where((r) => !r.isTrial).toList();
+                    } else if (_selectedFilter == 'APPROVED') {
+                      allRequests = allRequests.where((r) =>
+                        r.status == 'APPROVED' || r.status == 'CONTACTED' || r.status == 'CONVERTED'
+                      ).toList();
+                    }
+
+                    // Filter by search query
+                    if (_searchQuery.isNotEmpty) {
+                      allRequests = allRequests.where((r) =>
+                        r.clientName.toLowerCase().contains(_searchQuery) ||
+                        r.shopName.toLowerCase().contains(_searchQuery) ||
+                        r.mobile.toLowerCase().contains(_searchQuery) ||
+                        r.email.toLowerCase().contains(_searchQuery) ||
+                        r.cityOrAddress.toLowerCase().contains(_searchQuery) ||
+                        r.selectedPlan.toLowerCase().contains(_searchQuery)
+                      ).toList();
+                    }
+
+                    if (allRequests.isEmpty) {
+                      return Center(
                         child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
                           children: [
-                            // Header Row
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Expanded(
-                                  child: Column(
+                            Icon(Icons.inbox_rounded, size: 48, color: context.textSecondary.withValues(alpha: 0.5)),
+                            const SizedBox(height: 10),
+                            Text(
+                              "No requests match the current criteria.",
+                              style: TextStyle(color: context.textSecondary),
+                            ),
+                          ],
+                        ),
+                      );
+                    }
+
+                    return ListView.builder(
+                      itemCount: allRequests.length,
+                      itemBuilder: (context, index) {
+                        final req = allRequests[index];
+                        final isTrial = req.isTrial;
+                        final cleanPhone = req.mobile.replaceAll(RegExp(r'[^0-9+]'), '');
+
+                        return Card(
+                          color: context.surfaceColor,
+                          elevation: 0,
+                          margin: const EdgeInsets.only(bottom: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            side: BorderSide(
+                              color: req.isPending
+                                  ? Colors.orangeAccent.withValues(alpha: 0.4)
+                                  : context.borderColor,
+                            ),
+                          ),
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(12),
+                            onTap: () => _showRequestDetailsDialog(req),
+                            child: Padding(
+                              padding: const EdgeInsets.all(16.0),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  // Header Row
+                                  Row(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
-                                      Text(
-                                        clientName,
-                                        style: TextStyle(color: context.textPrimary, fontWeight: FontWeight.bold, fontSize: 16),
-                                      ),
-                                      if (shopName.isNotEmpty)
-                                        Text(
-                                          shopName,
-                                          style: TextStyle(color: primaryAccent, fontWeight: FontWeight.w600, fontSize: 13),
+                                      // Type Avatar Icon
+                                      Container(
+                                        padding: const EdgeInsets.all(8),
+                                        decoration: BoxDecoration(
+                                          color: (isTrial ? const Color(0xFF10B981) : const Color(0xFF8B5CF6)).withValues(alpha: 0.12),
+                                          borderRadius: BorderRadius.circular(8),
                                         ),
+                                        child: Icon(
+                                          isTrial ? Icons.storefront_rounded : Icons.business_center_rounded,
+                                          color: isTrial ? const Color(0xFF10B981) : const Color(0xFF8B5CF6),
+                                          size: 20,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 12),
+
+                                      // Client & Shop Name
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Row(
+                                              children: [
+                                                Expanded(
+                                                  child: Text(
+                                                    req.clientName,
+                                                    style: TextStyle(
+                                                      color: context.textPrimary,
+                                                      fontWeight: FontWeight.bold,
+                                                      fontSize: 15,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                            if (req.shopName.isNotEmpty)
+                                              Text(
+                                                req.shopName,
+                                                style: TextStyle(
+                                                  color: primaryAccent,
+                                                  fontWeight: FontWeight.w600,
+                                                  fontSize: 13,
+                                                ),
+                                              ),
+                                          ],
+                                        ),
+                                      ),
+
+                                      // Badges Column
+                                      Column(
+                                        crossAxisAlignment: CrossAxisAlignment.end,
+                                        children: [
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                            decoration: BoxDecoration(
+                                              color: _getStatusColor(req.status).withValues(alpha: 0.15),
+                                              borderRadius: BorderRadius.circular(6),
+                                            ),
+                                            child: Text(
+                                              req.status,
+                                              style: TextStyle(
+                                                color: _getStatusColor(req.status),
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 11,
+                                              ),
+                                            ),
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                            decoration: BoxDecoration(
+                                              color: (isTrial ? const Color(0xFF10B981) : const Color(0xFF8B5CF6)).withValues(alpha: 0.1),
+                                              borderRadius: BorderRadius.circular(4),
+                                            ),
+                                            child: Text(
+                                              isTrial ? "Trial" : req.selectedPlan,
+                                              style: TextStyle(
+                                                color: isTrial ? const Color(0xFF10B981) : const Color(0xFF8B5CF6),
+                                                fontSize: 10,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
                                     ],
                                   ),
-                                ),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                  decoration: BoxDecoration(
-                                    color: _getStatusColor(status).withValues(alpha: 0.15),
-                                    borderRadius: BorderRadius.circular(6),
-                                  ),
-                                  child: Text(
-                                    status,
-                                    style: TextStyle(
-                                      color: _getStatusColor(status),
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 11,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 10),
+                                  const SizedBox(height: 12),
 
-                            // Detail chips & contact info
-                            Wrap(
-                              spacing: 8,
-                              runSpacing: 6,
-                              children: [
-                                _infoBadge(Icons.category_outlined, category),
-                                _infoBadge(Icons.mail_outline, email, isVerified: data['emailVerified'] == true),
-                                _infoBadge(Icons.phone_android_outlined, mobile),
-                                _infoBadge(Icons.timer_outlined, "${data['requestedTrialDays'] ?? 14}-Day Free Trial", isAccent: true),
-                                _infoBadge(Icons.group_outlined, "${data['requestedMaxUsers'] ?? 5} Staff Users"),
-                                _infoBadge(Icons.store_mall_directory_outlined, "${data['requestedStoreCount'] ?? 1} Outlets"),
-                                _infoBadge(Icons.table_restaurant_outlined, "${data['tableCount'] ?? 10} Tables"),
-                                if (data['preferredOperatingMode'] != null)
-                                  _infoBadge(Icons.sync_alt_rounded, data['preferredOperatingMode'] == 'payFirstQSR' ? 'Pay First (QSR)' : 'Dine First'),
-                                _infoBadge(Icons.share_outlined, "Via: $referral"),
-                                if (createdAt != null)
-                                  _infoBadge(Icons.calendar_today_outlined, "${createdAt.day}/${createdAt.month}/${createdAt.year}"),
-                                if (orgId != null)
-                                  _infoBadge(Icons.verified_user_rounded, "Org: $orgId", isAccent: true),
-                              ],
-                            ),
-
-                            // Actions Row for PENDING
-                            if (status == 'PENDING') ...[
-                              const SizedBox(height: 14),
-                              Divider(height: 1, color: context.borderColor),
-                              const SizedBox(height: 12),
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.end,
-                                children: [
-                                  OutlinedButton.icon(
-                                    onPressed: () async {
-                                      await _firestore.collection('registration_requests').doc(requestId).update({
-                                        'status': 'REJECTED',
-                                        'rejectedAt': FieldValue.serverTimestamp(),
-                                        'updatedAt': FieldValue.serverTimestamp(),
-                                      });
-                                      // Dispatch rejection email via SMTP
-                                      SmtpEmailService.sendRegistrationRejectedEmail(
-                                        recipientEmail: email,
-                                        clientName: clientName,
-                                        shopName: shopName,
-                                        reason: "Information verification could not be completed.",
-                                      ).catchError((e) {
-                                        debugPrint("Background rejection email error: $e");
-                                        return <String, dynamic>{};
-                                      });
-                                      if (context.mounted) {
-                                        AppToast.showSuccess(context, "Request marked as Rejected and notification sent.");
-                                      }
-                                    },
-                                    icon: const Icon(Icons.close_rounded, size: 16, color: Colors.redAccent),
-                                    label: const Text("Reject", style: TextStyle(color: Colors.redAccent, fontSize: 12)),
-                                    style: OutlinedButton.styleFrom(
-                                      side: const BorderSide(color: Colors.redAccent),
-                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                    ),
+                                  // Detail chips & contact info
+                                  Wrap(
+                                    spacing: 8,
+                                    runSpacing: 6,
+                                    children: [
+                                      _infoBadge(Icons.phone_android_outlined, req.mobile),
+                                      _infoBadge(Icons.mail_outline, req.email),
+                                      _infoBadge(Icons.category_outlined, req.businessCategory),
+                                      _infoBadge(Icons.store_outlined, req.outlets),
+                                      if (req.cityOrAddress.isNotEmpty)
+                                        _infoBadge(Icons.location_on_outlined, req.cityOrAddress),
+                                      if (req.referralSource.isNotEmpty)
+                                        _infoBadge(Icons.share_outlined, req.referralSource),
+                                      if (req.createdAt != null)
+                                        _infoBadge(Icons.calendar_today_outlined, "${req.createdAt!.day}/${req.createdAt!.month}/${req.createdAt!.year}"),
+                                    ],
                                   ),
-                                  const SizedBox(width: 10),
-                                  ElevatedButton.icon(
-                                    onPressed: () {
-                                      _showOnboardDialogFromRequest(
-                                        requestId: requestId,
-                                        clientName: clientName,
-                                        shopName: shopName,
-                                        category: category,
-                                        email: email,
-                                        mobile: mobile,
-                                        initialAadhaar: data['aadhaar']?.toString() ?? '',
-                                        initialPan: data['pan']?.toString() ?? '',
-                                        initialGst: (data['gstNo'] ?? data['gst'])?.toString() ?? '',
-                                        initialAddress: data['address']?.toString() ?? '',
-                                        initialTrialDays: (data['requestedTrialDays'] ?? 14) as int,
-                                        initialMaxUsers: (data['requestedMaxUsers'] ?? 5) as int,
-                                        initialMaxOutlets: (data['requestedStoreCount'] ?? 1) as int,
-                                        initialTableCount: (data['tableCount'] ?? 10) as int,
-                                        initialOperatingMode: data['preferredOperatingMode']?.toString() ?? 'dineFirstPostpaid',
-                                        initialRoles: (data['requestedRoles'] is List)
-                                            ? List<String>.from(data['requestedRoles'])
-                                            : null,
-                                        initialFeatures: (data['requestedFeatures'] is Map)
-                                            ? Map<String, bool>.from((data['requestedFeatures'] as Map).map((k, v) => MapEntry(k.toString(), v == true)))
-                                            : null,
-                                      );
-                                    },
-                                    icon: const Icon(Icons.rocket_launch_rounded, size: 16),
-                                    label: const Text("Approve & Onboard", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: const Color(0xFF10B981),
-                                      foregroundColor: Colors.white,
-                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                    ),
+
+                                  const SizedBox(height: 12),
+                                  Divider(height: 1, color: context.borderColor),
+                                  const SizedBox(height: 8),
+
+                                  // Card Quick Actions Row
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      // Quick Call & WhatsApp
+                                      Row(
+                                        children: [
+                                          if (cleanPhone.isNotEmpty) ...[
+                                            IconButton(
+                                              icon: const Icon(Icons.call_rounded, size: 18, color: Colors.blue),
+                                              tooltip: "Call ${req.mobile}",
+                                              onPressed: () => _makePhoneCall(req.mobile),
+                                              padding: EdgeInsets.zero,
+                                              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                                            ),
+                                            const SizedBox(width: 4),
+                                            IconButton(
+                                              icon: const Icon(Icons.chat_bubble_outline_rounded, size: 18, color: Color(0xFF25D366)),
+                                              tooltip: "WhatsApp ${req.clientName}",
+                                              onPressed: () => _openWhatsApp(req.mobile, req.clientName),
+                                              padding: EdgeInsets.zero,
+                                              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                                            ),
+                                            const SizedBox(width: 4),
+                                          ],
+                                          if (req.email.isNotEmpty)
+                                            IconButton(
+                                              icon: const Icon(Icons.mail_outline_rounded, size: 18, color: Colors.purple),
+                                              tooltip: "Email ${req.email}",
+                                              onPressed: () => _sendEmail(req.email, req.clientName),
+                                              padding: EdgeInsets.zero,
+                                              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                                            ),
+                                        ],
+                                      ),
+
+                                      // On-click details trigger button
+                                      TextButton.icon(
+                                        onPressed: () => _showRequestDetailsDialog(req),
+                                        icon: const Icon(Icons.visibility_outlined, size: 15),
+                                        label: const Text("View Details & Actions", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                                      ),
+                                    ],
                                   ),
                                 ],
                               ),
-                            ],
-                          ],
-                        ),
-                      ),
+                            ),
+                          ),
+                        );
+                      },
                     );
                   },
                 );
@@ -4524,11 +5374,17 @@ class _RegistrationRequestsTabState extends ConsumerState<RegistrationRequestsTa
   }
 
   Color _getStatusColor(String status) {
-    switch (status) {
+    switch (status.toUpperCase()) {
       case 'APPROVED':
+      case 'CONVERTED':
         return const Color(0xFF10B981);
+      case 'CONTACTED':
+        return const Color(0xFF2563EB);
       case 'REJECTED':
+      case 'ARCHIVED':
         return Colors.redAccent;
+      case 'NEW_INQUIRY':
+      case 'PENDING':
       default:
         return Colors.orangeAccent;
     }
