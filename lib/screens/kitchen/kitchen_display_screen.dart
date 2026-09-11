@@ -193,7 +193,7 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
         // the data actually differs from what is already cached, and never more
         // than once every 15s.
         final signature = _ordersSignature([...parsedActive, ...parsedServed]);
-        final now = DateTime.now();
+        // `now` is already in scope from the served-history cutoff above.
         final due = _lastHiveWrite == null ||
             now.difference(_lastHiveWrite!) >= const Duration(seconds: 15);
         if (signature != _lastHiveSignature && due) {

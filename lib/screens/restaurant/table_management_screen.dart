@@ -2157,11 +2157,10 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
                         side: BorderSide(color: context.borderColor),
                       ),
                       onPressed: () {
-                        // ignore: deprecated_member_use
-                        Share.share(
-                          'Order food at $shopName from Table ${table.tableNumber}: ${table.qrMenuUrl}',
+                        SharePlus.instance.share(ShareParams(
+                          text: 'Order food at $shopName from Table ${table.tableNumber}: ${table.qrMenuUrl}',
                           subject: '$shopName Table ${table.tableNumber} Menu',
-                        );
+                        ));
                       },
                     ),
                   ),

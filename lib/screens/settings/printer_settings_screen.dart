@@ -142,12 +142,12 @@ class _PrinterSettingsScreenState extends ConsumerState<PrinterSettingsScreen> {
 
     // Share JSON file
     final box = context.findRenderObject() as RenderBox?;
-    await Share.shareXFiles(
-      [XFile(filePath)],
+    await SharePlus.instance.share(ShareParams(
+      files: [XFile(filePath)],
       text: 'Smart Billing POS Printer Config Backup',
       subject: 'Printer Settings Backup',
       sharePositionOrigin: box != null ? box.localToGlobal(Offset.zero) & box.size : null,
-    );
+    ));
   }
 
   Future<void> _importBackup() async {
@@ -908,7 +908,7 @@ class _PrinterSettingsScreenState extends ConsumerState<PrinterSettingsScreen> {
                           return Container(
                             margin: const EdgeInsets.only(bottom: 8),
                             decoration: BoxDecoration(
-                              color: isCurrentlySelected ? primaryColor.withOpacity(0.05) : Colors.grey.shade50,
+                              color: isCurrentlySelected ? primaryColor.withValues(alpha: 0.05) : Colors.grey.shade50,
                               borderRadius: BorderRadius.circular(12),
                               border: Border.all(
                                 color: isCurrentlySelected ? primaryColor : Colors.transparent,

@@ -426,7 +426,7 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
               children: [
                 Container(
                   padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(color: Colors.green.withOpacity(0.15), shape: BoxShape.circle),
+                  decoration: BoxDecoration(color: Colors.green.withValues(alpha: 0.15), shape: BoxShape.circle),
                   child: const Icon(Icons.cloud_sync_rounded, color: Colors.green, size: 22),
                 ),
                 const SizedBox(width: 10),
@@ -469,7 +469,7 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
                       padding: const EdgeInsets.all(10),
                       margin: const EdgeInsets.only(bottom: 10),
                       decoration: BoxDecoration(
-                        color: testSuccess ? Colors.green.withOpacity(0.1) : Colors.red.withOpacity(0.1),
+                        color: testSuccess ? Colors.green.withValues(alpha: 0.1) : Colors.red.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(8),
                         border: Border.all(color: testSuccess ? Colors.green : Colors.red),
                       ),
@@ -712,9 +712,9 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: accentColor.withOpacity(0.04),
+        color: accentColor.withValues(alpha: 0.04),
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: accentColor.withOpacity(0.2)),
+        border: Border.all(color: accentColor.withValues(alpha: 0.2)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -764,7 +764,7 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
               decoration: BoxDecoration(
-                color: color.withOpacity(0.15),
+                color: color.withValues(alpha: 0.15),
                 borderRadius: BorderRadius.circular(4),
               ),
               child: Text(
@@ -776,7 +776,7 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
         ],
       ),
       selected: selected,
-      selectedColor: color.withOpacity(0.2),
+      selectedColor: color.withValues(alpha: 0.2),
       checkmarkColor: color,
       onSelected: onSelected,
     );
@@ -2031,7 +2031,7 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                     decoration: BoxDecoration(
-                      color: primaryAccent.withOpacity(0.12),
+                      color: primaryAccent.withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(6),
                     ),
                     child: Text(
@@ -2063,7 +2063,7 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                               Container(
                                 padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 10),
                                 decoration: BoxDecoration(
-                                  color: primaryAccent.withOpacity(0.12),
+                                  color: primaryAccent.withValues(alpha: 0.12),
                                   borderRadius: BorderRadius.circular(6),
                                 ),
                                 child: Row(
@@ -2383,13 +2383,13 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                                   padding: const EdgeInsets.all(12),
                                   decoration: BoxDecoration(
                                     color: existingSheetId.isNotEmpty
-                                        ? const Color(0xFF10B981).withOpacity(0.08)
-                                        : Colors.amber.withOpacity(0.08),
+                                        ? const Color(0xFF10B981).withValues(alpha: 0.08)
+                                        : Colors.amber.withValues(alpha: 0.08),
                                     borderRadius: BorderRadius.circular(10),
                                     border: Border.all(
                                       color: existingSheetId.isNotEmpty
-                                          ? const Color(0xFF10B981).withOpacity(0.3)
-                                          : Colors.amber.withOpacity(0.3),
+                                          ? const Color(0xFF10B981).withValues(alpha: 0.3)
+                                          : Colors.amber.withValues(alpha: 0.3),
                                     ),
                                   ),
                                   child: Column(
@@ -2527,7 +2527,7 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                               Container(
                                 padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 10),
                                 decoration: BoxDecoration(
-                                  color: const Color(0xFFF59E0B).withOpacity(0.12),
+                                  color: const Color(0xFFF59E0B).withValues(alpha: 0.12),
                                   borderRadius: BorderRadius.circular(6),
                                 ),
                                 child: const Row(
@@ -2679,7 +2679,7 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                               Container(
                                 padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 10),
                                 decoration: BoxDecoration(
-                                  color: const Color(0xFF0284C7).withOpacity(0.12),
+                                  color: const Color(0xFF0284C7).withValues(alpha: 0.12),
                                   borderRadius: BorderRadius.circular(6),
                                 ),
                                 child: const Row(
@@ -3392,7 +3392,7 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: isAccent ? const Color(0xFF2563EB).withOpacity(0.12) : Colors.grey.withOpacity(0.1),
+        color: isAccent ? const Color(0xFF2563EB).withValues(alpha: 0.12) : Colors.grey.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(6),
       ),
       child: Row(
@@ -4191,9 +4191,9 @@ class _RegistrationRequestsTabState extends ConsumerState<RegistrationRequestsTa
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: accentColor.withOpacity(0.04),
+        color: accentColor.withValues(alpha: 0.04),
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: accentColor.withOpacity(0.2)),
+        border: Border.all(color: accentColor.withValues(alpha: 0.2)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -4242,7 +4242,7 @@ class _RegistrationRequestsTabState extends ConsumerState<RegistrationRequestsTa
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
               decoration: BoxDecoration(
-                color: color.withOpacity(0.15),
+                color: color.withValues(alpha: 0.15),
                 borderRadius: BorderRadius.circular(4),
               ),
               child: Text(
@@ -4254,7 +4254,7 @@ class _RegistrationRequestsTabState extends ConsumerState<RegistrationRequestsTa
         ],
       ),
       selected: selected,
-      selectedColor: color.withOpacity(0.2),
+      selectedColor: color.withValues(alpha: 0.2),
       checkmarkColor: color,
       onSelected: onSelected,
     );
@@ -4315,7 +4315,7 @@ class _RegistrationRequestsTabState extends ConsumerState<RegistrationRequestsTa
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.inbox_rounded, size: 48, color: context.textSecondary.withOpacity(0.5)),
+                        Icon(Icons.inbox_rounded, size: 48, color: context.textSecondary.withValues(alpha: 0.5)),
                         const SizedBox(height: 10),
                         Text("No registration requests received yet.", style: TextStyle(color: context.textSecondary)),
                       ],
@@ -4386,7 +4386,7 @@ class _RegistrationRequestsTabState extends ConsumerState<RegistrationRequestsTa
                                 Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                                   decoration: BoxDecoration(
-                                    color: _getStatusColor(status).withOpacity(0.15),
+                                    color: _getStatusColor(status).withValues(alpha: 0.15),
                                     borderRadius: BorderRadius.circular(6),
                                   ),
                                   child: Text(
@@ -4517,7 +4517,7 @@ class _RegistrationRequestsTabState extends ConsumerState<RegistrationRequestsTa
     return ChoiceChip(
       label: Text(label, style: TextStyle(fontSize: 11.5, fontWeight: isSelected ? FontWeight.bold : FontWeight.normal)),
       selected: isSelected,
-      selectedColor: color.withOpacity(0.2),
+      selectedColor: color.withValues(alpha: 0.2),
       onSelected: (_) => setState(() => _selectedFilter = value),
     );
   }
@@ -4537,7 +4537,7 @@ class _RegistrationRequestsTabState extends ConsumerState<RegistrationRequestsTa
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: isAccent ? const Color(0xFF2563EB).withOpacity(0.1) : Colors.grey.withOpacity(0.1),
+        color: isAccent ? const Color(0xFF2563EB).withValues(alpha: 0.1) : Colors.grey.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(6),
       ),
       child: Row(
@@ -4610,7 +4610,7 @@ class _PlansAndFeaturesTabState extends ConsumerState<PlansAndFeaturesTab> {
               children: [
                 Container(
                   padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(color: primaryAccent.withOpacity(0.15), shape: BoxShape.circle),
+                  decoration: BoxDecoration(color: primaryAccent.withValues(alpha: 0.15), shape: BoxShape.circle),
                   child: Icon(existing == null ? Icons.add_box_rounded : Icons.edit_note_rounded, color: primaryAccent, size: 22),
                 ),
                 const SizedBox(width: 10),
@@ -4762,9 +4762,9 @@ class _PlansAndFeaturesTabState extends ConsumerState<PlansAndFeaturesTab> {
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                         decoration: BoxDecoration(
-                          color: isDefaultTrial ? const Color(0xFF10B981).withOpacity(0.1) : context.surfaceColor,
+                          color: isDefaultTrial ? const Color(0xFF10B981).withValues(alpha: 0.1) : context.surfaceColor,
                           borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: isDefaultTrial ? const Color(0xFF10B981).withOpacity(0.3) : context.borderColor),
+                          border: Border.all(color: isDefaultTrial ? const Color(0xFF10B981).withValues(alpha: 0.3) : context.borderColor),
                         ),
                         child: SwitchListTile(
                           contentPadding: EdgeInsets.zero,
@@ -4802,7 +4802,7 @@ class _PlansAndFeaturesTabState extends ConsumerState<PlansAndFeaturesTab> {
                                   return FilterChip(
                                     label: Text(feat.label),
                                     selected: isChecked,
-                                    selectedColor: primaryAccent.withOpacity(0.2),
+                                    selectedColor: primaryAccent.withValues(alpha: 0.2),
                                     backgroundColor: context.canvasColor,
                                     labelStyle: TextStyle(
                                       color: isChecked ? primaryAccent : context.textSecondary,
@@ -4951,12 +4951,12 @@ class _PlansAndFeaturesTabState extends ConsumerState<PlansAndFeaturesTab> {
                           color: context.surfaceColor,
                           borderRadius: BorderRadius.circular(16),
                           border: Border.all(
-                            color: isTrial ? primaryAccent.withOpacity(0.5) : context.borderColor,
+                            color: isTrial ? primaryAccent.withValues(alpha: 0.5) : context.borderColor,
                             width: isTrial ? 1.5 : 1,
                           ),
                           boxShadow: [
                             BoxShadow(
-                              color: Colors.black.withOpacity(0.04),
+                              color: Colors.black.withValues(alpha: 0.04),
                               blurRadius: 10,
                               offset: const Offset(0, 4),
                             ),
@@ -4985,7 +4985,7 @@ class _PlansAndFeaturesTabState extends ConsumerState<PlansAndFeaturesTab> {
                                       Container(
                                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                                         decoration: BoxDecoration(
-                                          color: primaryAccent.withOpacity(0.15),
+                                          color: primaryAccent.withValues(alpha: 0.15),
                                           borderRadius: BorderRadius.circular(6),
                                         ),
                                         child: Text(
@@ -5043,9 +5043,9 @@ class _PlansAndFeaturesTabState extends ConsumerState<PlansAndFeaturesTab> {
                                 return Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                                   decoration: BoxDecoration(
-                                    color: primaryAccent.withOpacity(0.08),
+                                    color: primaryAccent.withValues(alpha: 0.08),
                                     borderRadius: BorderRadius.circular(6),
-                                    border: Border.all(color: primaryAccent.withOpacity(0.2)),
+                                    border: Border.all(color: primaryAccent.withValues(alpha: 0.2)),
                                   ),
                                   child: Text(
                                     featDef.label,

@@ -66,8 +66,8 @@ class ClassicTheme {
   static List<BoxShadow> cardShadow([bool isDarkTheme = true]) => [
         BoxShadow(
           color: isDarkTheme
-              ? Colors.black.withOpacity(0.35)
-              : Colors.black.withOpacity(0.04),
+              ? Colors.black.withValues(alpha: 0.35)
+              : Colors.black.withValues(alpha: 0.04),
           blurRadius: 16,
           offset: const Offset(0, 4),
         ),
@@ -83,7 +83,7 @@ class ClassicTheme {
       color: color ?? cardSurfaceDark,
       borderRadius: BorderRadius.circular(borderRadius),
       border: Border.all(
-        color: borderColor ?? cardBorderDark.withOpacity(0.6),
+        color: borderColor ?? cardBorderDark.withValues(alpha: 0.6),
         width: 1,
       ),
       boxShadow: cardShadow(true),
@@ -101,7 +101,7 @@ class ClassicTheme {
       color: color ?? (dark ? cardSurfaceDark : cardSurfaceLight),
       borderRadius: BorderRadius.circular(borderRadius),
       border: Border.all(
-        color: borderColor ?? (dark ? cardBorderDark.withOpacity(0.6) : cardBorderLight),
+        color: borderColor ?? (dark ? cardBorderDark.withValues(alpha: 0.6) : cardBorderLight),
         width: 1,
       ),
       boxShadow: cardShadow(dark),

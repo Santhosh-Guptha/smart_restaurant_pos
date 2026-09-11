@@ -24,7 +24,7 @@ class AppUpdateRequiredScreen extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
-                  color: Colors.amberAccent.withOpacity(0.1),
+                  color: Colors.amberAccent.withValues(alpha: 0.1),
                   shape: BoxShape.circle,
                 ),
                 child: const Icon(

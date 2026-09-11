@@ -73,12 +73,12 @@ class AppToast {
         duration: duration,
         content: Container(
           decoration: BoxDecoration(
-            color: bgColor.withOpacity(0.95),
+            color: bgColor.withValues(alpha: 0.95),
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: borderColor.withOpacity(0.6), width: 1.2),
+            border: Border.all(color: borderColor.withValues(alpha: 0.6), width: 1.2),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.4),
+                color: Colors.black.withValues(alpha: 0.4),
                 blurRadius: 16,
                 offset: const Offset(0, 6),
               ),
@@ -91,7 +91,7 @@ class AppToast {
               Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: iconColor.withOpacity(0.15),
+                  color: iconColor.withValues(alpha: 0.15),
                   shape: BoxShape.circle,
                 ),
                 child: Icon(icon, color: iconColor, size: 22),
@@ -116,7 +116,7 @@ class AppToast {
                       Text(
                         subtitle,
                         style: TextStyle(
-                          color: Colors.white.withOpacity(0.85),
+                          color: Colors.white.withValues(alpha: 0.85),
                           fontSize: 12,
                           height: 1.3,
                         ),
@@ -189,7 +189,7 @@ class AppLoadingDialog {
               border: Border.all(color: const Color(0xFF334155)),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.6),
+                  color: Colors.black.withValues(alpha: 0.6),
                   blurRadius: 24,
                   offset: const Offset(0, 8),
                 ),

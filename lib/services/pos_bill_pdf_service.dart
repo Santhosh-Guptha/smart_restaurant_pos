@@ -382,11 +382,11 @@ class PosBillPdfService {
   }) async {
     try {
       final file = await savePdfFile(bytes: bytes, billNumber: billNumber);
-      await Share.shareXFiles(
-        [XFile(file.path, mimeType: 'application/pdf', name: 'Invoice_$billNumber.pdf')],
+      await SharePlus.instance.share(ShareParams(
+        files: [XFile(file.path, mimeType: 'application/pdf', name: 'Invoice_$billNumber.pdf')],
         text: 'Tax Invoice #$billNumber${customerName != null ? " for $customerName" : ""} - SmartDine POS',
         subject: 'Tax Invoice #$billNumber',
-      );
+      ));
     } catch (e) {
       debugPrint('Error sharing invoice PDF: $e');
     }

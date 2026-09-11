@@ -40,9 +40,9 @@ Future<void> saveAndOpenPdf(String orderId, List<int> bytes, {String? phone, Str
   }
 
   // Open native system share dialog (WhatsApp, print, email, etc.)
-  await Share.shareXFiles(
-    [XFile(filePath)],
+  await SharePlus.instance.share(ShareParams(
+    files: [XFile(filePath)],
     text: text ?? 'Invoice for Order #$orderId from Smart Billing',
     subject: 'Invoice #$orderId',
-  );
+  ));
 }

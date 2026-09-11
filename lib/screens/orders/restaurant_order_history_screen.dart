@@ -641,11 +641,10 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
     text += '\n*Grand Total: ₹$total*\n';
     text += 'Thank you for dining with us! 🙏';
 
-    // ignore: deprecated_member_use
-    Share.share(
-      text,
+    SharePlus.instance.share(ShareParams(
+      text: text,
       subject: 'Bill #$billId from $shopName',
-    );
+    ));
   }
 
   void _showCollectPaymentDialog(Map<String, dynamic> orderData) {

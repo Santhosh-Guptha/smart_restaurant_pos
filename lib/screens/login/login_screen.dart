@@ -44,12 +44,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               padding: const EdgeInsets.all(40),
               constraints: const BoxConstraints(maxWidth: 450),
               decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.09),
+                color: Colors.white.withValues(alpha: 0.09),
                 borderRadius: BorderRadius.circular(24),
-                border: Border.all(color: Colors.white.withOpacity(0.15), width: 1.5),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.15), width: 1.5),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.3),
+                    color: Colors.black.withValues(alpha: 0.3),
                     blurRadius: 25,
                     offset: const Offset(0, 10),
                   ),
@@ -62,9 +62,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   Container(
                     padding: const EdgeInsets.all(20),
                     decoration: BoxDecoration(
-                      color: Colors.orange.withOpacity(0.12),
+                      color: Colors.orange.withValues(alpha: 0.12),
                       shape: BoxShape.circle,
-                      border: Border.all(color: Colors.orange.withOpacity(0.4), width: 1.5),
+                      border: Border.all(color: Colors.orange.withValues(alpha: 0.4), width: 1.5),
                     ),
                     child: const Icon(
                       Icons.storefront,
@@ -91,7 +91,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     'Unified store ledger, offline inventory & real-time cloud synchronization',
                     textAlign: TextAlign.center,
                     style: TextStyle(
-                      color: Colors.white.withOpacity(0.7),
+                      color: Colors.white.withValues(alpha: 0.7),
                       fontSize: 13,
                       height: 1.4,
                     ),
@@ -125,7 +125,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         minimumSize: const Size(double.infinity, 52),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                         elevation: 4,
-                        shadowColor: Colors.orange.withOpacity(0.4),
+                        shadowColor: Colors.orange.withValues(alpha: 0.4),
                         textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                       ),
                     ),
@@ -141,26 +141,26 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         foregroundColor: Colors.white70,
                         minimumSize: const Size(double.infinity, 50),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                        side: BorderSide(color: Colors.white.withOpacity(0.25)),
+                        side: BorderSide(color: Colors.white.withValues(alpha: 0.25)),
                         textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
                       ),
                     ),
                   ],
 
                   const SizedBox(height: 24),
-                  Divider(color: Colors.white.withOpacity(0.1)),
+                  Divider(color: Colors.white.withValues(alpha: 0.1)),
                   const SizedBox(height: 12),
 
                   // Bottom info notice
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.shield_outlined, color: Colors.white.withOpacity(0.4), size: 16),
+                      Icon(Icons.shield_outlined, color: Colors.white.withValues(alpha: 0.4), size: 16),
                       const SizedBox(width: 8),
                       Text(
                         'Secure local sandbox protection',
                         style: TextStyle(
-                          color: Colors.white.withOpacity(0.4),
+                          color: Colors.white.withValues(alpha: 0.4),
                           fontSize: 11,
                         ),
                       ),
@@ -219,9 +219,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.amber.withOpacity(0.1),
+                color: Colors.amber.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.amber.withOpacity(0.3)),
+                border: Border.all(color: Colors.amber.withValues(alpha: 0.3)),
               ),
               child: const Column(
                 crossAxisAlignment: CrossAxisAlignment.start,

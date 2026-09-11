@@ -177,7 +177,10 @@ class TableQrPdfService {
   /// Opens or shares the generated PDF
   static Future<void> openOrSharePdf(File file, {bool share = false}) async {
     if (share) {
-      await Share.shareXFiles([XFile(file.path)], text: 'Restaurant Table QR Standees');
+      await SharePlus.instance.share(ShareParams(
+        files: [XFile(file.path)],
+        text: 'Restaurant Table QR Standees',
+      ));
     } else {
       await OpenFile.open(file.path);
     }

@@ -347,9 +347,9 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: const Color(0xFF10B981).withOpacity(0.12),
+                color: const Color(0xFF10B981).withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFF10B981).withOpacity(0.3)),
+                border: Border.all(color: const Color(0xFF10B981).withValues(alpha: 0.3)),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -522,9 +522,9 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
                     Container(
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        color: primaryAccent.withOpacity(0.08),
+                        color: primaryAccent.withValues(alpha: 0.08),
                         borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: primaryAccent.withOpacity(0.25)),
+                        border: Border.all(color: primaryAccent.withValues(alpha: 0.25)),
                       ),
                       child: Row(
                         children: [
@@ -539,7 +539,7 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
                                 width: 48,
                                 height: 48,
                                 decoration: BoxDecoration(
-                                  color: primaryAccent.withOpacity(0.2),
+                                  color: primaryAccent.withValues(alpha: 0.2),
                                   borderRadius: BorderRadius.circular(12),
                                 ),
                                 child: Icon(Icons.restaurant_rounded, color: primaryAccent, size: 28),
@@ -667,7 +667,7 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
                             child: Container(
                               padding: const EdgeInsets.all(14),
                               decoration: BoxDecoration(
-                                color: _isFreeTrial ? primaryAccent.withOpacity(0.12) : Colors.transparent,
+                                color: _isFreeTrial ? primaryAccent.withValues(alpha: 0.12) : Colors.transparent,
                                 borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
                                 border: _isFreeTrial ? Border.all(color: primaryAccent, width: 1.5) : null,
                               ),
@@ -694,7 +694,7 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
                                             Container(
                                               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                               decoration: BoxDecoration(
-                                                color: const Color(0xFF10B981).withOpacity(0.15),
+                                                color: const Color(0xFF10B981).withValues(alpha: 0.15),
                                                 borderRadius: BorderRadius.circular(4),
                                               ),
                                               child: const Text(
@@ -724,7 +724,7 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
                             child: Container(
                               padding: const EdgeInsets.all(14),
                               decoration: BoxDecoration(
-                                color: !_isFreeTrial ? primaryAccent.withOpacity(0.12) : Colors.transparent,
+                                color: !_isFreeTrial ? primaryAccent.withValues(alpha: 0.12) : Colors.transparent,
                                 borderRadius: const BorderRadius.vertical(bottom: Radius.circular(16)),
                                 border: !_isFreeTrial ? Border.all(color: primaryAccent, width: 1.5) : null,
                               ),
@@ -771,7 +771,7 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                             decoration: BoxDecoration(
-                              color: const Color(0xFF10B981).withOpacity(0.15),
+                              color: const Color(0xFF10B981).withValues(alpha: 0.15),
                               borderRadius: BorderRadius.circular(4),
                             ),
                             child: const Row(
@@ -834,7 +834,7 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
                         decoration: BoxDecoration(
                           color: context.surfaceColor,
                           borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: primaryAccent.withOpacity(0.4)),
+                          border: Border.all(color: primaryAccent.withValues(alpha: 0.4)),
                         ),
                         child: Row(
                           children: [
