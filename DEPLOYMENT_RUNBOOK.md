@@ -110,7 +110,7 @@ flowchart TD
 | **Android App ID** | `1:486476143616:android:ce2cd4881dc37bdf928ce5` | Android package `com.devmonks.smartdine` |
 | **Web App ID** | `1:486476143616:web:8bee0b3b52aa403b928ce5` | Table ordering browser client |
 | **Customer Web Ordering URL** | `https://smartdine-restaurant-pos.web.app/r/` | Live table ordering application |
-| **Serverless Webhook URL** | `https://script.google.com/macros/s/AKfycbxIAGxL_Chf3xMKfpqMyJ8fHkYq990x-WHSH6coCWpxQaWCH7zRV599esQ604oEVtrF/exec` | Production serverless API |
+| **Serverless Webhook URL** | `https://script.google.com/macros/s/AKfycbwmwGpu3ZKMiDJjGnZAXGCrMBr0s5bootdPpjtWdh5HeWIiU4uGu9BMPV8EBhte9F9Elg/exec` | Production serverless API |
 | **Local Working Directory** | `c:\Users\santhosh\Downloads\smart_restaurant_pos` | Restaurant POS codebase |
 | **Protected Codebase** | `c:\Users\santhosh\Downloads\smart_kirana_shop` | **100% UNTOUCHED** original project |
 
@@ -240,7 +240,7 @@ Follow these steps in sequence when deploying a new instance or updating an exis
     - Click **Go to SmartDine Production Webhook (unsafe)**.
     - Click **Allow**.
 15. Copy the generated **Web app URL**:
-    `https://script.google.com/macros/s/AKfycbxIAGxL_Chf3xMKfpqMyJ8fHkYq990x-WHSH6coCWpxQaWCH7zRV599esQ604oEVtrF/exec`
+    `https://script.google.com/macros/s/AKfycbwmwGpu3ZKMiDJjGnZAXGCrMBr0s5bootdPpjtWdh5HeWIiU4uGu9BMPV8EBhte9F9Elg/exec`
 
 ---
 
@@ -250,14 +250,14 @@ The Webhook URL must be configured in two critical locations:
 1. **Customer Web Ordering Application**:
    File: `c:\Users\santhosh\Downloads\smart_restaurant_pos\hosting_public\r\index.html` (around Line 83):
    ```javascript
-   const DEFAULT_APPS_SCRIPT_WEBHOOK = 'https://script.google.com/macros/s/AKfycbxIAGxL_Chf3xMKfpqMyJ8fHkYq990x-WHSH6coCWpxQaWCH7zRV599esQ604oEVtrF/exec';
+   const DEFAULT_APPS_SCRIPT_WEBHOOK = 'https://script.google.com/macros/s/AKfycbwmwGpu3ZKMiDJjGnZAXGCrMBr0s5bootdPpjtWdh5HeWIiU4uGu9BMPV8EBhte9F9Elg/exec';
    ```
 
 2. **Flutter POS Backend Service**:
    File: `c:\Users\santhosh\Downloads\smart_restaurant_pos\lib\services\apps_script_backend_service.dart` (around Line 10):
    ```dart
    static const String _defaultWebhookUrl =
-       'https://script.google.com/macros/s/AKfycbxIAGxL_Chf3xMKfpqMyJ8fHkYq990x-WHSH6coCWpxQaWCH7zRV599esQ604oEVtrF/exec';
+       'https://script.google.com/macros/s/AKfycbwmwGpu3ZKMiDJjGnZAXGCrMBr0s5bootdPpjtWdh5HeWIiU4uGu9BMPV8EBhte9F9Elg/exec';
    ```
 
 ---
@@ -393,7 +393,7 @@ This section contains real-world incidents, root cause analyses, and immediate r
 - **Diagnostic Protocol**:
   1. Run direct health check via curl:
      ```powershell
-     curl.exe -L "https://script.google.com/macros/s/AKfycbxIAGxL_Chf3xMKfpqMyJ8fHkYq990x-WHSH6coCWpxQaWCH7zRV599esQ604oEVtrF/exec"
+     curl.exe -L "https://script.google.com/macros/s/AKfycbwmwGpu3ZKMiDJjGnZAXGCrMBr0s5bootdPpjtWdh5HeWIiU4uGu9BMPV8EBhte9F9Elg/exec"
      ```
   2. Check the Apps Script execution log:
      - Open [script.google.com](https://script.google.com) -> Select project -> Click **Executions** icon on the left navigation bar.
@@ -540,7 +540,7 @@ Run these commands from any terminal to verify system integrity:
 
 ```powershell
 # 1. Test Serverless Webhook Health
-curl.exe -L "https://script.google.com/macros/s/AKfycbxIAGxL_Chf3xMKfpqMyJ8fHkYq990x-WHSH6coCWpxQaWCH7zRV599esQ604oEVtrF/exec"
+curl.exe -L "https://script.google.com/macros/s/AKfycbwmwGpu3ZKMiDJjGnZAXGCrMBr0s5bootdPpjtWdh5HeWIiU4uGu9BMPV8EBhte9F9Elg/exec"
 
 # Expected: HTTP 200 and a JSON body. The webhook does not serve a fixed
 # health banner - the previously documented

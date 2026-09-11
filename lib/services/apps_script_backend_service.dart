@@ -8,7 +8,7 @@ import 'package:uuid/uuid.dart';
 /// for automated Multi-Tenant Organization, Outlet, and Spreadsheet management.
 class AppsScriptBackendService {
   static const String _defaultWebhookUrl =
-      'https://script.google.com/macros/s/AKfycbxIAGxL_Chf3xMKfpqMyJ8fHkYq990x-WHSH6coCWpxQaWCH7zRV599esQ604oEVtrF/exec';
+      'https://script.google.com/macros/s/AKfycbwmwGpu3ZKMiDJjGnZAXGCrMBr0s5bootdPpjtWdh5HeWIiU4uGu9BMPV8EBhte9F9Elg/exec';
   static const String _secretToken = "SMART_POS_SECURE_TOKEN_2026";
 
 

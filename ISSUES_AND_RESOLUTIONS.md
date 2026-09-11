@@ -285,7 +285,7 @@ When transitioning from local development to the brand-new production environmen
   - **Execute as**: `Me (smartdine.platform@gmail.com)`
   - **Who has access**: `Anyone`
 - [x] Generated Web App URL:
-  `https://script.google.com/macros/s/AKfycbxIAGxL_Chf3xMKfpqMyJ8fHkYq990x-WHSH6coCWpxQaWCH7zRV599esQ604oEVtrF/exec`
+  `https://script.google.com/macros/s/AKfycbwmwGpu3ZKMiDJjGnZAXGCrMBr0s5bootdPpjtWdh5HeWIiU4uGu9BMPV8EBhte9F9Elg/exec`
 - [x] Tested and verified live (`{"status":"online","service":"SmartDine Restaurant POS Serverless Gateway"}`).
 - [x] Configured as default in `hosting_public/r/index.html` and `lib/services/apps_script_backend_service.dart`.
 

@@ -86,6 +86,10 @@ service cloud.firestore {
       allow read, write: if true;
     }
 
+    match /business_inquiries/{inquiryId} {
+      allow read, write: if true;
+    }
+
     match /renewal_requests/{requestId} {
       allow read, write: if true;
     }
