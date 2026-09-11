@@ -668,7 +668,7 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
               Text('Collect Payment', style: TextStyle(fontWeight: FontWeight.bold, color: context.textPrimary, fontSize: 18)),
             ],
           ),
-          content: Column(
+          content: SingleChildScrollView(child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -715,7 +715,7 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
                 }).toList(),
               ),
             ],
-          ),
+          )),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx),
@@ -772,15 +772,15 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
         ],
       ),
       body: !Hive.isBoxOpen('configBox')
-          ? const Center(
+          ? Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.storage_rounded, size: 48, color: Color(0xFF94A3B8)),
+                  Icon(Icons.storage_rounded, size: 48, color: context.textSecondary),
                   SizedBox(height: 12),
                   Text(
                     'Local storage initializing...',
-                    style: TextStyle(fontSize: 16, color: Color(0xFF64748B), fontWeight: FontWeight.w500),
+                    style: TextStyle(fontSize: 16, color: context.textSecondary, fontWeight: FontWeight.w500),
                   ),
                 ],
               ),

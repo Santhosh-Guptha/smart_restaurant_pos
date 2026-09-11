@@ -109,6 +109,16 @@ class ClassicTheme {
   }
 
   // Dynamic Input Field Style
+  /// Width for a dialog body: the design width on tablets, and the screen
+  /// width minus the dialog's own inset on phones. Sixteen dialogs across the
+  /// app used a hard `width: 400..860` on their content SizedBox; AlertDialog
+  /// clamps itself to the screen but not its child, so on a 360-412dp phone
+  /// those bodies were clipped and their right-hand text simply cut off.
+  static double dialogWidth(BuildContext context, double design) {
+    final available = MediaQuery.sizeOf(context).width - 48;
+    return available < design ? (available < 280 ? 280 : available) : design;
+  }
+
   static InputDecoration inputDecoration({
     required String hintText,
     String? labelText,
@@ -189,10 +199,8 @@ class ClassicTheme {
           primary: primaryAccent,
           secondary: primaryAccentIndigo,
           surface: cardSurfaceDark,
-          surface: canvasDark,
           error: dangerRed,
           onPrimary: Colors.white,
-          onSurface: textPrimaryDark,
           onSurface: textPrimaryDark,
         ),
         appBarTheme: const AppBarTheme(
@@ -323,10 +331,8 @@ class ClassicTheme {
           primary: primaryAccent,
           secondary: primaryAccentIndigo,
           surface: cardSurfaceLight,
-          surface: canvasLight,
           error: dangerRed,
           onPrimary: Colors.white,
-          onSurface: textPrimaryLight,
           onSurface: textPrimaryLight,
         ),
         appBarTheme: const AppBarTheme(

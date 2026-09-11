@@ -1373,7 +1373,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
               Text('Manager Authorization', style: TextStyle(color: context.textPrimary, fontSize: 16, fontWeight: FontWeight.bold)),
             ],
           ),
-          content: Column(
+          content: SingleChildScrollView(child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -1391,7 +1391,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                 ),
               ),
             ],
-          ),
+          )),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx),
@@ -2161,7 +2161,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
           builder: (ctx) => AlertDialog(
             backgroundColor: context.surfaceColor,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20), side: BorderSide(color: context.borderColor)),
-            content: Column(
+            content: SingleChildScrollView(child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 const Icon(
@@ -2225,7 +2225,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                   ),
                 ),
               ],
-            ),
+            )),
           ),
         );
       }
@@ -3442,9 +3442,9 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                                     style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: upiId.isNotEmpty ? const Color(0xFF3B82F6) : Colors.red),
                                   ),
                                   const SizedBox(height: 2),
-                                  const Text(
+                                  Text(
                                     'Customer can scan with GPay, PhonePe, Paytm or any UPI App',
-                                    style: TextStyle(fontSize: 11, color: Colors.black54),
+                                    style: TextStyle(fontSize: 11, color: context.textSecondary),
                                   ),
                                 ],
                               ),
@@ -4486,7 +4486,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                                     margin: EdgeInsets.only(top: catIdx > 0 ? 16 : 0, bottom: 8),
                                     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                                     decoration: BoxDecoration(
-                                      color: const Color(0xFF1E293B),
+                                      color: context.textPrimary,
                                       borderRadius: BorderRadius.circular(10),
                                     ),
                                     child: Row(
@@ -4499,7 +4499,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                                         Container(
                                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                                           decoration: BoxDecoration(
-                                            color: Colors.white.withValues(alpha: 0.2),
+                                            color: context.surfaceColor.withValues(alpha: 0.2),
                                             borderRadius: BorderRadius.circular(8),
                                           ),
                                           child: Text(

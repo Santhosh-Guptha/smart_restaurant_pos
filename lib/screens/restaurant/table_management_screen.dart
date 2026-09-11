@@ -1536,7 +1536,7 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
       statusColor = const Color(0xFFD97706);
       statusText = 'Cleaning';
     } else if (table.status == TableStatus.blocked) {
-      statusColor = const Color(0xFF64748B);
+      statusColor = context.textSecondary;
       statusText = 'Blocked';
     } else if (isReservedCard) {
       statusColor = const Color(0xFF8B5CF6);
@@ -1929,7 +1929,7 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: context.surfaceColor,
                   borderRadius: BorderRadius.circular(16),
                   border: Border.all(color: Colors.grey.shade300),
                   boxShadow: [
@@ -1943,7 +1943,7 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
                       decoration: BoxDecoration(color: Colors.amber.shade400, borderRadius: BorderRadius.circular(12)),
-                      child: Text('TABLE ${table.tableNumber}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.black)),
+                      child: Text('TABLE ${table.tableNumber}', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: context.textPrimary)),
                     ),
                     const SizedBox(height: 12),
                     QrImageView(
@@ -2135,7 +2135,7 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
               ),
               ListTile(
                 leading: CircleAvatar(backgroundColor: Colors.grey.shade600, child: const Icon(Icons.block_rounded, color: Colors.white, size: 20)),
-                title: const Text('Block Table', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFF475569))),
+                title: Text('Block Table', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: context.textSecondary)),
                 subtitle: const Text('Mark table blocked for maintenance or private VIP booking', style: TextStyle(fontSize: 11)),
                 onTap: () async {
                   setState(() {
@@ -2574,7 +2574,7 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
           ),
           content: SingleChildScrollView(
             child: SizedBox(
-              width: 360,
+              width: ClassicTheme.dialogWidth(context, 360),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -3123,9 +3123,9 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
                               style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: upiId.isNotEmpty ? const Color(0xFF3B82F6) : Colors.red),
                             ),
                             const SizedBox(height: 2),
-                            const Text(
+                            Text(
                               'Customer can scan with GPay, PhonePe, Paytm or any UPI App',
-                              style: TextStyle(fontSize: 11, color: Colors.black54),
+                              style: TextStyle(fontSize: 11, color: context.textSecondary),
                             ),
                           ],
                         ),
@@ -3370,7 +3370,7 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
             Text('Unpaid Bill Detected!', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold, fontSize: 16)),
           ],
         ),
-        content: Column(
+        content: SingleChildScrollView(child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -3379,16 +3379,16 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
               style: const TextStyle(fontSize: 13, height: 1.4),
             ),
             const SizedBox(height: 8),
-            const Text(
+            Text(
               'Vacating the table without payment settlement will cause revenue discrepancy. Please collect payment or provide Manager authorization to override.',
-              style: TextStyle(fontSize: 12, color: Color(0xFF64748B), height: 1.3),
+              style: TextStyle(fontSize: 12, color: context.textSecondary, height: 1.3),
             ),
           ],
-        ),
+        )),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dlgCtx),
-            child: const Text('Dismiss', style: TextStyle(color: Color(0xFF64748B))),
+            child: Text('Dismiss', style: TextStyle(color: context.textSecondary)),
           ),
           OutlinedButton(
             onPressed: () {
@@ -3439,9 +3439,9 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
+                Text(
                   'Enter Manager PIN and reason to force vacate this table with an active unpaid balance:',
-                  style: TextStyle(fontSize: 12, color: Color(0xFF475569)),
+                  style: TextStyle(fontSize: 12, color: context.textSecondary),
                 ),
                 const SizedBox(height: 12),
                 TextField(
@@ -3577,12 +3577,12 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
           ],
         ),
         content: SizedBox(
-          width: 380,
+          width: ClassicTheme.dialogWidth(context, 380),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('Select target vacant table to transfer orders and bill:', style: TextStyle(fontSize: 12, color: Color(0xFF475569))),
+              Text('Select target vacant table to transfer orders and bill:', style: TextStyle(fontSize: 12, color: context.textSecondary)),
               const SizedBox(height: 12),
               SizedBox(
                 height: 220,
@@ -3599,7 +3599,7 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
                       ),
                       title: Text('Table ${target.tableNumber}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                       subtitle: Text('${target.section} • Capacity: ${target.capacity}', style: const TextStyle(fontSize: 11)),
-                      trailing: const Icon(Icons.arrow_forward_ios, size: 14, color: Color(0xFF94A3B8)),
+                      trailing: Icon(Icons.arrow_forward_ios, size: 14, color: context.textSecondary),
                       onTap: () async {
                         Navigator.pop(mCtx);
                         final orgId = _getEffectiveOrgId();
@@ -3698,12 +3698,12 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
             ],
           ),
           content: SizedBox(
-            width: 400,
+            width: ClassicTheme.dialogWidth(context, 400),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Select tables to merge into this table session:', style: TextStyle(fontSize: 12, color: Color(0xFF475569))),
+                Text('Select tables to merge into this table session:', style: TextStyle(fontSize: 12, color: context.textSecondary)),
                 const SizedBox(height: 12),
                 SizedBox(
                   height: 200,

@@ -109,7 +109,7 @@ class ReceiptPreviewDialog extends ConsumerWidget {
       ),
       contentPadding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
       content: SizedBox(
-        width: 360,
+        width: ClassicTheme.dialogWidth(context, 360),
         child: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,

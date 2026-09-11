@@ -15,6 +15,7 @@ import '../../services/kitchen_ticket_formatter.dart';
 import '../../services/apps_script_backend_service.dart';
 import '../../sync/local_store.dart';
 import '../../sync/outbox.dart';
+import '../../core/classic_theme.dart';
 
 class KitchenDisplayScreen extends ConsumerStatefulWidget {
   const KitchenDisplayScreen({super.key});
@@ -792,19 +793,19 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
     final activeStaff = ref.watch(restaurantAuthProvider).activeStaff;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFC),
+      backgroundColor: context.canvasColor,
       appBar: AppBar(
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Color(0xFF0F172A), size: 18),
+          icon: Icon(Icons.arrow_back_ios_new_rounded, color: context.textPrimary, size: 18),
           tooltip: 'Back to Home',
           onPressed: () => Navigator.pop(context),
         ),
-        backgroundColor: Colors.white,
+        backgroundColor: context.surfaceColor,
         elevation: 0,
         scrolledUnderElevation: 0,
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(1),
-          child: Container(color: const Color(0xFFE2E8F0), height: 1),
+          child: Container(color: context.borderColor, height: 1),
         ),
         title: Row(
           children: [
@@ -827,20 +828,20 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Text(
+                  Text(
                     'Kitchen Display System (KDS)',
                     style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
-                      color: Color(0xFF0F172A),
+                      color: context.textPrimary,
                     ),
                     overflow: TextOverflow.ellipsis,
                   ),
                   Text(
                     'Chef: ${activeStaff?.name ?? "Kitchen Staff"} • ${_allOrders.length} active orders',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 11,
-                      color: Color(0xFF64748B),
+                      color: context.textSecondary,
                       fontWeight: FontWeight.w500,
                     ),
                     overflow: TextOverflow.ellipsis,
@@ -907,9 +908,9 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
             Container(
               width: double.infinity,
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-              decoration: const BoxDecoration(
-                color: Colors.white,
-                border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
+              decoration: BoxDecoration(
+                color: context.surfaceColor,
+                border: Border(bottom: BorderSide(color: context.borderColor)),
               ),
               child: SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
@@ -946,15 +947,15 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
             Container(
               width: double.infinity,
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
-              color: const Color(0xFFF1F5F9),
+              color: context.inputFill,
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Icon(Icons.swipe_rounded, size: 13, color: Color(0xFF64748B)),
+                  Icon(Icons.swipe_rounded, size: 13, color: context.textSecondary),
                   const SizedBox(width: 6),
                   Text(
                     '👈 Swipe left/right to change stage • (${_kdsStages[_currentStageIndex]["label"]})',
-                    style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: Color(0xFF64748B)),
+                    style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: context.textSecondary),
                   ),
                 ],
               ),
@@ -994,13 +995,13 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
                               if (stageId == 'SERVED' && stageOrders.isNotEmpty)
                                 Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                                  color: const Color(0xFFF1F5F9),
+                                  color: context.inputFill,
                                   child: Row(
                                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                     children: [
                                       Text(
                                         'Served Orders (${stageOrders.length}) • Dismiss or recall as needed',
-                                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF475569)),
+                                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: context.textSecondary),
                                       ),
                                       TextButton.icon(
                                         onPressed: () {
@@ -1070,7 +1071,7 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
             : 320.0;
 
         return Container(
-          color: const Color(0xFFF8FAFC),
+          color: context.canvasColor,
           child: ListView.builder(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.all(12),
@@ -1106,7 +1107,7 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
                       color: isHovered ? stageBg.withValues(alpha: 0.6) : Colors.white,
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(
-                        color: isHovered ? stageColor : const Color(0xFFE2E8F0),
+                        color: isHovered ? stageColor : context.borderColor,
                         width: isHovered ? 2 : 1,
                       ),
                       boxShadow: [
@@ -1125,7 +1126,7 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
                           decoration: BoxDecoration(
                             color: stageBg,
                             borderRadius: const BorderRadius.vertical(top: Radius.circular(15)),
-                            border: const Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
+                            border: Border(bottom: BorderSide(color: context.borderColor)),
                           ),
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -1244,8 +1245,8 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
           children: [
             Container(
               padding: const EdgeInsets.all(20),
-              decoration: const BoxDecoration(
-                color: Color(0xFFF1F5F9),
+              decoration: BoxDecoration(
+                color: context.inputFill,
                 shape: BoxShape.circle,
               ),
               child: const Icon(
@@ -1255,10 +1256,10 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
               ),
             ),
             const SizedBox(height: 16),
-            const Text(
+            Text(
               'All Caught Up!',
               style: TextStyle(
-                color: Color(0xFF0F172A),
+                color: context.textPrimary,
                 fontSize: 18,
                 fontWeight: FontWeight.bold,
               ),
@@ -1269,8 +1270,8 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
                   ? 'No incoming new orders right now. When customers place orders via table QR or POS, they appear here instantly!'
                   : 'No tickets currently in $stageId stage.',
               textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: Color(0xFF64748B),
+              style: TextStyle(
+                color: context.textSecondary,
                 fontSize: 13,
               ),
             ),
@@ -1294,19 +1295,19 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      decoration: const BoxDecoration(
-        color: Color(0xFFF8FAFC),
-        border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
+      decoration: BoxDecoration(
+        color: context.canvasColor,
+        border: Border(bottom: BorderSide(color: context.borderColor)),
       ),
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
         child: Row(
           children: [
-            const Icon(Icons.room_service_outlined, size: 16, color: Color(0xFF64748B)),
+            Icon(Icons.room_service_outlined, size: 16, color: context.textSecondary),
             const SizedBox(width: 8),
-            const Text(
+            Text(
               'Station:',
-              style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF64748B)),
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: context.textSecondary),
             ),
             const SizedBox(width: 8),
             ...stations.map((station) {
@@ -1319,7 +1320,7 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
                     style: TextStyle(
                       fontSize: 11,
                       fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                      color: isSelected ? Colors.white : const Color(0xFF1E293B),
+                      color: isSelected ? Colors.white : context.textPrimary,
                     ),
                   ),
                   selected: isSelected,
@@ -1330,7 +1331,7 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(16),
                     side: BorderSide(
-                      color: isSelected ? const Color(0xFF2563EB) : const Color(0xFFCBD5E1),
+                      color: isSelected ? const Color(0xFF2563EB) : context.borderColor,
                     ),
                   ),
                   onSelected: (val) {
@@ -1356,10 +1357,10 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
         duration: const Duration(milliseconds: 150),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
         decoration: BoxDecoration(
-          color: isSelected ? color : const Color(0xFFF8FAFC),
+          color: isSelected ? color : context.canvasColor,
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
-            color: isSelected ? color : const Color(0xFFCBD5E1),
+            color: isSelected ? color : context.borderColor,
             width: 1,
           ),
         ),
@@ -1371,14 +1372,14 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-                color: isSelected ? Colors.white : const Color(0xFF334155),
+                color: isSelected ? Colors.white : context.textPrimary,
               ),
             ),
             const SizedBox(width: 6),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
               decoration: BoxDecoration(
-                color: isSelected ? Colors.white.withValues(alpha: 0.25) : const Color(0xFFE2E8F0),
+                color: isSelected ? Colors.white.withValues(alpha: 0.25) : context.borderColor,
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Text(
@@ -1386,7 +1387,7 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
                 style: TextStyle(
                   fontSize: 11,
                   fontWeight: FontWeight.bold,
-                  color: isSelected ? Colors.white : const Color(0xFF475569),
+                  color: isSelected ? Colors.white : context.textSecondary,
                 ),
               ),
             ),
@@ -1419,21 +1420,21 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
       statusBadgeColor = const Color(0xFF059669);
       statusText = 'READY';
     } else if (isCompleted) {
-      statusBadgeBg = const Color(0xFFF1F5F9);
-      statusBadgeColor = const Color(0xFF64748B);
+      statusBadgeBg = context.inputFill;
+      statusBadgeColor = context.textSecondary;
       statusText = 'SERVED';
     }
 
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: context.surfaceColor,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
           color: isReady
               ? const Color(0xFF059669)
               : isPreparing
                   ? const Color(0xFF2563EB)
-                  : const Color(0xFFE2E8F0),
+                  : context.borderColor,
           width: isReady || isPreparing ? 1.5 : 1,
         ),
         boxShadow: [
@@ -1455,9 +1456,9 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
                   ? const Color(0xFFECFDF5)
                   : isPreparing
                       ? const Color(0xFFEFF6FF)
-                      : const Color(0xFFF8FAFC),
+                      : context.canvasColor,
               borderRadius: const BorderRadius.vertical(top: Radius.circular(15)),
-              border: const Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
+              border: Border(bottom: BorderSide(color: context.borderColor)),
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -1471,8 +1472,8 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
                           Flexible(
                             child: Text(
                               order.kotNumber,
-                              style: const TextStyle(
-                                color: Color(0xFF0F172A),
+                              style: TextStyle(
+                                color: context.textPrimary,
                                 fontSize: 16,
                                 fontWeight: FontWeight.w900,
                               ),
@@ -1535,8 +1536,8 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
                       const SizedBox(height: 2),
                       Text(
                         order.tableName,
-                        style: const TextStyle(
-                          color: Color(0xFF475569),
+                        style: TextStyle(
+                          color: context.textSecondary,
                           fontSize: 13,
                           fontWeight: FontWeight.w600,
                         ),
@@ -1608,7 +1609,7 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
             child: ListView.separated(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               itemCount: order.items.length,
-              separatorBuilder: (_, __) => const Divider(color: Color(0xFFF1F5F9), height: 12),
+              separatorBuilder: (_, __) => Divider(color: context.inputFill, height: 12),
               itemBuilder: (context, iIdx) {
                 final item = order.items[iIdx];
                 return Row(
@@ -1617,14 +1618,14 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFF1F5F9),
+                        color: context.inputFill,
                         borderRadius: BorderRadius.circular(6),
-                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                        border: Border.all(color: context.borderColor),
                       ),
                       child: Text(
                         '${item.qty == item.qty.toInt() ? item.qty.toInt() : item.qty}x',
-                        style: const TextStyle(
-                          color: Color(0xFF0F172A),
+                        style: TextStyle(
+                          color: context.textPrimary,
                           fontWeight: FontWeight.bold,
                           fontSize: 12,
                         ),
@@ -1641,7 +1642,7 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
                                 child: Text(
                                   item.name,
                                   style: TextStyle(
-                                    color: item.sendsToKitchen ? const Color(0xFF1E293B) : const Color(0xFF64748B),
+                                    color: item.sendsToKitchen ? context.textPrimary : context.textSecondary,
                                     fontSize: 13,
                                     fontWeight: FontWeight.w600,
                                   ),
@@ -1692,9 +1693,9 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
           // ── Action Buttons ──────────────────────────────
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            decoration: const BoxDecoration(
-              border: Border(top: BorderSide(color: Color(0xFFE2E8F0))),
-              color: Colors.white,
+            decoration: BoxDecoration(
+              border: Border(top: BorderSide(color: context.borderColor)),
+              color: context.surfaceColor,
               borderRadius: BorderRadius.vertical(bottom: Radius.circular(15)),
             ),
             child: Row(
@@ -1703,9 +1704,9 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
                 IconButton(
                   tooltip: 'Print Kitchen KOT Slip',
                   onPressed: () => _printKitchenSlip(order),
-                  icon: const Icon(
+                  icon: Icon(
                     Icons.print_outlined,
-                    color: Color(0xFF64748B),
+                    color: context.textSecondary,
                     size: 20,
                   ),
                   constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
@@ -1804,8 +1805,8 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
                                         icon: const Icon(Icons.close_rounded, size: 14),
                                         label: const Text('DISMISS', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
                                         style: OutlinedButton.styleFrom(
-                                          foregroundColor: const Color(0xFF64748B),
-                                          side: const BorderSide(color: Color(0xFFCBD5E1)),
+                                          foregroundColor: context.textSecondary,
+                                          side: BorderSide(color: context.borderColor),
                                           padding: const EdgeInsets.symmetric(vertical: 10),
                                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                                         ),
@@ -1847,8 +1848,8 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
         builder: (context, setModalState) {
           return Container(
             height: MediaQuery.of(context).size.height * 0.85,
-            decoration: const BoxDecoration(
-              color: Colors.white,
+            decoration: BoxDecoration(
+              color: context.surfaceColor,
               borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
             ),
             child: Column(
@@ -1858,7 +1859,7 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
                   width: 40,
                   height: 4,
                   decoration: BoxDecoration(
-                    color: Colors.grey.shade300,
+                    color: context.borderColor,
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
@@ -1872,7 +1873,7 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
                           Container(
                             padding: const EdgeInsets.all(8),
                             decoration: BoxDecoration(
-                              color: const Color(0xFFF1F5F9),
+                              color: context.inputFill,
                               borderRadius: BorderRadius.circular(10),
                             ),
                             child: const Icon(Icons.room_service_rounded, color: Color(0xFF059669), size: 20),
@@ -1883,11 +1884,11 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
                             children: [
                               Text(
                                 'Served Orders (${_servedOrdersHistory.length})',
-                                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+                                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: context.textPrimary),
                               ),
-                              const Text(
+                              Text(
                                 'Orders cleared from active cooking board',
-                                style: TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                                style: TextStyle(fontSize: 11, color: context.textSecondary),
                               ),
                             ],
                           ),
@@ -1927,9 +1928,9 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
                             children: [
                               Icon(Icons.done_all_rounded, size: 48, color: Colors.grey.shade300),
                               const SizedBox(height: 12),
-                              const Text(
+                              Text(
                                 'No served orders in recent history',
-                                style: TextStyle(color: Color(0xFF64748B), fontWeight: FontWeight.w600, fontSize: 14),
+                                style: TextStyle(color: context.textSecondary, fontWeight: FontWeight.w600, fontSize: 14),
                               ),
                             ],
                           ),
@@ -2024,14 +2025,14 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
       backgroundColor: Colors.transparent,
       builder: (ctx) => Container(
         height: MediaQuery.of(ctx).size.height * 0.82,
-        decoration: const BoxDecoration(
-          color: Colors.white,
+        decoration: BoxDecoration(
+          color: context.surfaceColor,
           borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
         ),
         child: Column(
           children: [
             const SizedBox(height: 12),
-            Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
+            Container(width: 40, height: 4, decoration: BoxDecoration(color: context.borderColor, borderRadius: BorderRadius.circular(2))),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
               child: Row(
@@ -2048,7 +2049,7 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text('Kitchen Analytics & Performance', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
+                          Text('Kitchen Analytics & Performance', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: context.textPrimary)),
                           Text('Live real-time kitchen efficiency metrics', style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
                         ],
                       ),
@@ -2120,7 +2121,7 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Text('Top Cooked Dishes Today', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFF0F172A))),
+                      Text('Top Cooked Dishes Today', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: context.textPrimary)),
                       Text('${topDishes.length} items', style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
                     ],
                   ),
@@ -2128,7 +2129,7 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
                   if (topDishes.isEmpty)
                     Container(
                       padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(color: const Color(0xFFF8FAFC), borderRadius: BorderRadius.circular(12)),
+                      decoration: BoxDecoration(color: context.canvasColor, borderRadius: BorderRadius.circular(12)),
                       child: const Center(child: Text('No dish orders recorded yet today.', style: TextStyle(fontSize: 12, color: Colors.grey))),
                     )
                   else
@@ -2141,9 +2142,9 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
                         child: Container(
                           padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
-                            color: const Color(0xFFF8FAFC),
+                            color: context.canvasColor,
                             borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: const Color(0xFFE2E8F0)),
+                            border: Border.all(color: context.borderColor),
                           ),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -2172,7 +2173,7 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
                                         ),
                                       ),
                                       const SizedBox(width: 8),
-                                      Text(dish.key, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF0F172A))),
+                                      Text(dish.key, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: context.textPrimary)),
                                     ],
                                   ),
                                   Text('${dish.value} plates', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Color(0xFF2563EB))),
@@ -2183,7 +2184,7 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
                                 borderRadius: BorderRadius.circular(4),
                                 child: LinearProgressIndicator(
                                   value: ratio.clamp(0.05, 1.0),
-                                  backgroundColor: const Color(0xFFE2E8F0),
+                                  backgroundColor: context.borderColor,
                                   color: rank == 1 ? Colors.amber : const Color(0xFF2563EB),
                                   minHeight: 6,
                                 ),
@@ -2197,14 +2198,14 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
                   const SizedBox(height: 20),
 
                   // Order Sources Breakdown
-                  const Text('Order Sources Breakdown', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFF0F172A))),
+                  Text('Order Sources Breakdown', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: context.textPrimary)),
                   const SizedBox(height: 12),
                   Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFF8FAFC),
+                      color: context.canvasColor,
                       borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                      border: Border.all(color: context.borderColor),
                     ),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceAround,
@@ -2251,7 +2252,7 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
           const SizedBox(height: 6),
           Text(value, style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: color)),
           const SizedBox(height: 2),
-          Text(subtitle, style: const TextStyle(fontSize: 10, color: Color(0xFF64748B))),
+          Text(subtitle, style: TextStyle(fontSize: 10, color: context.textSecondary)),
         ],
       ),
     );
@@ -2260,7 +2261,7 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
   Widget _buildSourceCol(String title, String count, Color color) {
     return Column(
       children: [
-        Text(title, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF0F172A))),
+        Text(title, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: context.textPrimary)),
         const SizedBox(height: 4),
         Text(count, style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: color)),
       ],

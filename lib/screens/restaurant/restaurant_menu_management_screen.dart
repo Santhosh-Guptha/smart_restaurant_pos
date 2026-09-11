@@ -485,7 +485,7 @@ class _RestaurantMenuManagementScreenState
               ],
             ),
             content: SizedBox(
-              width: 520,
+              width: ClassicTheme.dialogWidth(context, 520),
               child: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -495,7 +495,7 @@ class _RestaurantMenuManagementScreenState
                     Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: context.isDark ? ClassicTheme.cardSurfaceDark : const Color(0xFFF8FAFC),
+                        color: context.isDark ? ClassicTheme.cardSurfaceDark : context.canvasColor,
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(color: context.borderColor),
                       ),
@@ -723,7 +723,7 @@ class _RestaurantMenuManagementScreenState
               ],
             ),
             content: SizedBox(
-              width: 480,
+              width: ClassicTheme.dialogWidth(context, 480),
               child: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -787,7 +787,7 @@ class _RestaurantMenuManagementScreenState
                         width: double.infinity,
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
-                          color: context.isDark ? ClassicTheme.cardSurfaceDark : const Color(0xFFF8FAFC),
+                          color: context.isDark ? ClassicTheme.cardSurfaceDark : context.canvasColor,
                           borderRadius: BorderRadius.circular(12),
                           border: Border.all(color: context.borderColor),
                         ),
@@ -816,7 +816,7 @@ class _RestaurantMenuManagementScreenState
                               decoration: BoxDecoration(
                                 color: isSel
                                     ? const Color(0xFF2563EB)
-                                    : (context.isDark ? ClassicTheme.cardSurfaceDark : const Color(0xFFF1F5F9)),
+                                    : (context.isDark ? ClassicTheme.cardSurfaceDark : context.inputFill),
                                 borderRadius: BorderRadius.circular(8),
                                 border: Border.all(color: isSel ? const Color(0xFF2563EB) : context.borderColor),
                               ),
@@ -916,7 +916,7 @@ class _RestaurantMenuManagementScreenState
                           runSpacing: 6,
                           children: (_categoriesWithSubs[activeSelectedCategory!] ?? []).map((sub) {
                             return Chip(
-                              backgroundColor: context.isDark ? ClassicTheme.cardSurfaceDark : const Color(0xFFF1F5F9),
+                              backgroundColor: context.isDark ? ClassicTheme.cardSurfaceDark : context.inputFill,
                               side: BorderSide(color: context.borderColor),
                               label: Text(sub, style: TextStyle(color: context.textPrimary, fontSize: 11)),
                               deleteIcon: Icon(Icons.close, size: 13, color: context.textSecondary),
@@ -994,7 +994,7 @@ class _RestaurantMenuManagementScreenState
               ],
             ),
             content: SizedBox(
-              width: 520,
+              width: ClassicTheme.dialogWidth(context, 520),
               child: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -1411,7 +1411,7 @@ class _RestaurantMenuManagementScreenState
                               decoration: BoxDecoration(
                                 color: isAvailable
                                     ? (context.isDark ? const Color(0xFF1E3A8A) : const Color(0xFFEFF6FF))
-                                    : (context.isDark ? ClassicTheme.cardSurfaceDark : const Color(0xFFF1F5F9)),
+                                    : (context.isDark ? ClassicTheme.cardSurfaceDark : context.inputFill),
                                 borderRadius: BorderRadius.circular(10),
                                 border: Border.all(color: isAvailable ? const Color(0xFF2563EB) : context.borderColor),
                               ),
@@ -1434,7 +1434,7 @@ class _RestaurantMenuManagementScreenState
                     Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: context.isDark ? ClassicTheme.cardSurfaceDark : const Color(0xFFF8FAFC),
+                        color: context.isDark ? ClassicTheme.cardSurfaceDark : context.canvasColor,
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(color: context.borderColor),
                       ),
@@ -1510,7 +1510,7 @@ class _RestaurantMenuManagementScreenState
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(ctx),
-                child: const Text('Cancel', style: TextStyle(color: Color(0xFF64748B))),
+                child: Text('Cancel', style: TextStyle(color: context.textSecondary)),
               ),
               ElevatedButton(
                 onPressed: () {
@@ -1609,7 +1609,7 @@ class _RestaurantMenuManagementScreenState
               ],
             ),
             content: SizedBox(
-              width: 520,
+              width: ClassicTheme.dialogWidth(context, 520),
               child: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,

@@ -209,7 +209,7 @@ class _GoogleSheetsSetupGateDialogState extends ConsumerState<GoogleSheetsSetupG
             ),
           ],
         ),
-        content: Column(
+        content: SingleChildScrollView(child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -231,7 +231,7 @@ class _GoogleSheetsSetupGateDialogState extends ConsumerState<GoogleSheetsSetupG
               ),
             ),
           ],
-        ),
+        )),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -352,7 +352,7 @@ class _GoogleSheetsSetupGateDialogState extends ConsumerState<GoogleSheetsSetupG
             ),
           ],
         ),
-        content: Column(
+        content: SingleChildScrollView(child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -361,13 +361,13 @@ class _GoogleSheetsSetupGateDialogState extends ConsumerState<GoogleSheetsSetupG
               style: TextStyle(color: context.textPrimary, fontWeight: FontWeight.w600, fontSize: 13),
             ),
             const SizedBox(height: 10),
-            const Text(
+            Text(
               'Google servers can take 5-10 minutes to propagate the newly registered OAuth client to your device.\n\n'
               'You can click Retry now, or paste an existing Google Sheet link to connect immediately:',
-              style: TextStyle(color: Colors.black54, fontSize: 12, height: 1.4),
+              style: TextStyle(color: context.textSecondary, fontSize: 12, height: 1.4),
             ),
           ],
-        ),
+        )),
         actions: [
           TextButton(
             onPressed: () {
@@ -547,13 +547,13 @@ class _GoogleSheetsSetupGateDialogState extends ConsumerState<GoogleSheetsSetupG
                       elevation: 0,
                     ),
                     onPressed: _isLoading ? null : _handleAuthorizeGoogle,
-                    icon: const Icon(Icons.cloud_upload_rounded, size: 20, color: Colors.black),
+                    icon: Icon(Icons.cloud_upload_rounded, size: 20, color: context.textPrimary),
                     label: Text(
                       _isLoading ? 'Connecting Database...' : 'Authorize Google Account',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.bold,
-                        color: Colors.black,
+                        color: context.textPrimary,
                       ),
                     ),
                   ),

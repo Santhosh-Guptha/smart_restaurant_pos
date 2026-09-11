@@ -20,6 +20,7 @@ import '../../widgets/digital_pos_bill_dialog.dart';
 import 'package:esc_pos_utils_plus/esc_pos_utils_plus.dart';
 import 'package:print_bluetooth_thermal/print_bluetooth_thermal.dart';
 import 'package:qr_flutter/qr_flutter.dart';
+import '../../core/classic_theme.dart';
 
 class WaiterOrderTakingScreen extends ConsumerStatefulWidget {
   final RestaurantTable table;
@@ -536,8 +537,8 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
               left: 20,
               right: 20,
             ),
-            decoration: const BoxDecoration(
-              color: Colors.white,
+            decoration: BoxDecoration(
+              color: context.surfaceColor,
               borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
             ),
             child: SingleChildScrollView(
@@ -549,7 +550,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                     child: Container(
                       width: 40,
                       height: 4,
-                      decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)),
+                      decoration: BoxDecoration(color: context.borderColor, borderRadius: BorderRadius.circular(2)),
                     ),
                   ),
                   const SizedBox(height: 12),
@@ -562,11 +563,11 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                           children: [
                             Text(
                               item['name']?.toString() ?? 'Special Instructions',
-                              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+                              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: context.textPrimary),
                             ),
-                            const Text(
+                            Text(
                               'Kitchen instructions & modifiers for this dish',
-                              style: TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                              style: TextStyle(fontSize: 11, color: context.textSecondary),
                             ),
                           ],
                         ),
@@ -578,9 +579,9 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                     ],
                   ),
                   const Divider(height: 20),
-                  const Text(
+                  Text(
                     'Quick Notes & Dietary Preferences',
-                    style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: Color(0xFF334155)),
+                    style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: context.textPrimary),
                   ),
                   const SizedBox(height: 8),
                   Wrap(
@@ -593,13 +594,13 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                         labelStyle: TextStyle(
                           fontSize: 11,
                           fontWeight: hasMod ? FontWeight.bold : FontWeight.normal,
-                          color: hasMod ? Colors.white : const Color(0xFF1E293B),
+                          color: hasMod ? Colors.white : context.textPrimary,
                         ),
-                        backgroundColor: hasMod ? const Color(0xFF2563EB) : const Color(0xFFF1F5F9),
+                        backgroundColor: hasMod ? const Color(0xFF2563EB) : context.inputFill,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(16),
                           side: BorderSide(
-                            color: hasMod ? const Color(0xFF2563EB) : const Color(0xFFCBD5E1),
+                            color: hasMod ? const Color(0xFF2563EB) : context.borderColor,
                           ),
                         ),
                         onPressed: () {
@@ -620,9 +621,9 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                     }).toList(),
                   ),
                   const SizedBox(height: 14),
-                  const Text(
+                  Text(
                     'Specific Chef Note / Custom Instructions',
-                    style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: Color(0xFF334155)),
+                    style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: context.textPrimary),
                   ),
                   const SizedBox(height: 6),
                   TextField(
@@ -1021,8 +1022,8 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
           builder: (context, setSheetState) {
             return Container(
               height: MediaQuery.of(context).size.height * 0.75,
-              decoration: const BoxDecoration(
-                color: Colors.white,
+              decoration: BoxDecoration(
+                color: context.surfaceColor,
                 borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
               ),
               child: Column(
@@ -1032,7 +1033,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                     width: 40,
                     height: 4,
                     decoration: BoxDecoration(
-                      color: const Color(0xFFCBD5E1),
+                      color: context.borderColor,
                       borderRadius: BorderRadius.circular(2),
                     ),
                   ),
@@ -1043,7 +1044,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                       children: [
                         Text(
                           'Active KOTs — ${widget.table.name}',
-                          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: context.textPrimary),
                         ),
                         IconButton(
                           icon: const Icon(Icons.close_rounded),
@@ -1066,9 +1067,9 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                               return Container(
                                 padding: const EdgeInsets.all(12),
                                 decoration: BoxDecoration(
-                                  color: const Color(0xFFF8FAFC),
+                                  color: context.canvasColor,
                                   borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                                  border: Border.all(color: context.borderColor),
                                 ),
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1078,7 +1079,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                                       children: [
                                         Text(
                                           'Round $courseNum • ${ord.kotNumber}',
-                                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFF0F172A)),
+                                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: context.textPrimary),
                                         ),
                                         Container(
                                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
@@ -1116,7 +1117,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                                            color: isVoided ? const Color(0xFFFEF2F2) : Colors.white,
                                            borderRadius: BorderRadius.circular(8),
                                            border: Border.all(
-                                             color: isVoided ? const Color(0xFFFECACA) : const Color(0xFFF1F5F9),
+                                             color: isVoided ? const Color(0xFFFECACA) : context.inputFill,
                                            ),
                                          ),
                                          child: Row(
@@ -1127,7 +1128,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                                                style: TextStyle(
                                                  fontWeight: FontWeight.bold,
                                                  fontSize: 12,
-                                                 color: isVoided ? const Color(0xFF94A3B8) : const Color(0xFF0F172A),
+                                                 color: isVoided ? context.textSecondary : context.textPrimary,
                                                ),
                                              ),
                                              Expanded(
@@ -1140,7 +1141,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                                                        fontSize: 12,
                                                        fontWeight: FontWeight.w600,
                                                        decoration: isVoided ? TextDecoration.lineThrough : null,
-                                                       color: isVoided ? const Color(0xFF94A3B8) : const Color(0xFF0F172A),
+                                                       color: isVoided ? context.textSecondary : context.textPrimary,
                                                      ),
                                                    ),
                                                    if (it.notes != null && it.notes!.trim().isNotEmpty) ...[
@@ -1201,7 +1202,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                                         if (ord.reprintCount > 0)
                                           Text(
                                             'Reprinted ${ord.reprintCount} time(s)',
-                                            style: const TextStyle(fontSize: 11, color: Color(0xFF64748B), fontStyle: FontStyle.italic),
+                                            style: TextStyle(fontSize: 11, color: context.textSecondary, fontStyle: FontStyle.italic),
                                           )
                                         else
                                           const SizedBox.shrink(),
@@ -1250,13 +1251,13 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
       builder: (ctx) => StatefulBuilder(
         builder: (context, setDlgState) => AlertDialog(
           title: Text('Void Dish: ${it.name}'),
-          content: Column(
+          content: SingleChildScrollView(child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
                 'Are you sure you want to cancel this line from KOT #${ord.kotNumber}? This will be logged in the audit trail.',
-                style: const TextStyle(fontSize: 12.5, color: Color(0xFF64748B)),
+                style: TextStyle(fontSize: 12.5, color: context.textSecondary),
               ),
               const SizedBox(height: 12),
               const Text('Select Reason:', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
@@ -1285,7 +1286,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                 ),
               ],
             ],
-          ),
+          )),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, false),
@@ -1503,8 +1504,8 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
               left: 20,
               right: 20,
             ),
-            decoration: const BoxDecoration(
-              color: Colors.white,
+            decoration: BoxDecoration(
+              color: context.surfaceColor,
               borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
             ),
             child: SingleChildScrollView(
@@ -1516,7 +1517,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                     child: Container(
                       width: 40,
                       height: 4,
-                      decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)),
+                      decoration: BoxDecoration(color: context.borderColor, borderRadius: BorderRadius.circular(2)),
                     ),
                   ),
                   const SizedBox(height: 14),
@@ -1528,11 +1529,11 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                         children: [
                           Text(
                             'Settle Table $cleanTableNum Bill',
-                            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+                            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: context.textPrimary),
                           ),
                           Text(
                             'Guest: ${_customerNameCtrl.text.isNotEmpty ? _customerNameCtrl.text : "Dine-In"} • ${_tableOrders.length} rounds • ${allItems.length} items',
-                            style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                            style: TextStyle(fontSize: 12, color: context.textSecondary),
                           ),
                         ],
                       ),
@@ -1548,16 +1549,16 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                   Container(
                     padding: const EdgeInsets.all(14),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFF8FAFC),
+                      color: context.canvasColor,
                       borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                      border: Border.all(color: context.borderColor),
                     ),
                     child: Column(
                       children: [
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            const Text('Dishes Subtotal', style: TextStyle(fontSize: 13, color: Color(0xFF64748B))),
+                            Text('Dishes Subtotal', style: TextStyle(fontSize: 13, color: context.textSecondary)),
                             Text('₹${tableSubtotal.toStringAsFixed(2)}', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
                           ],
                         ),
@@ -1572,7 +1573,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                                     'Service Charge (${_storeServiceChargeRate.toStringAsFixed(1)}%)',
                                     style: TextStyle(
                                       fontSize: 13,
-                                      color: includeServiceCharge ? const Color(0xFF0F172A) : const Color(0xFF94A3B8),
+                                      color: includeServiceCharge ? context.textPrimary : context.textSecondary,
                                       fontWeight: includeServiceCharge ? FontWeight.w600 : FontWeight.normal,
                                     ),
                                   ),
@@ -1592,7 +1593,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                                 style: TextStyle(
                                   fontSize: 13,
                                   fontWeight: FontWeight.w600,
-                                  color: includeServiceCharge ? const Color(0xFF0F172A) : const Color(0xFF94A3B8),
+                                  color: includeServiceCharge ? context.textPrimary : context.textSecondary,
                                   decoration: includeServiceCharge ? null : TextDecoration.lineThrough,
                                 ),
                               ),
@@ -1603,7 +1604,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Text('GST (${_storeGstRate.toStringAsFixed(1)}%)', style: const TextStyle(fontSize: 13, color: Color(0xFF64748B))),
+                            Text('GST (${_storeGstRate.toStringAsFixed(1)}%)', style: TextStyle(fontSize: 13, color: context.textSecondary)),
                             Text('₹${gstAmt.toStringAsFixed(2)}', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
                           ],
                         ),
@@ -1621,10 +1622,10 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            const Text('Grand Total', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
+                            Text('Grand Total', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: context.textPrimary)),
                             Text(
                               '₹${totalPayable.toStringAsFixed(2)}',
-                              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+                              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: context.textPrimary),
                             ),
                           ],
                         ),
@@ -1635,12 +1636,12 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
 
                   // ── EXCLUSIVE WAITER TIP SECTION ─────────────────────
                   Row(
-                    children: const [
+                    children: [
                       Icon(Icons.volunteer_activism_rounded, color: Color(0xFFE11D48), size: 18),
                       SizedBox(width: 8),
                       Text(
                         'Add Server Tip (Optional)',
-                        style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+                        style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold, color: context.textPrimary),
                       ),
                     ],
                   ),
@@ -1666,7 +1667,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                             hintText: 'Custom Tip (₹)',
                             hintStyle: TextStyle(fontSize: 12, color: Colors.grey.shade400),
                             contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: Colors.grey.shade300)),
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: context.borderColor)),
                           ),
                           onChanged: (val) {
                             final parsed = double.tryParse(val) ?? 0.0;
@@ -1680,12 +1681,12 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                   ),
                   // Customer Email for POS Bill
                   Row(
-                    children: const [
+                    children: [
                       Icon(Icons.email_outlined, color: Color(0xFF2563EB), size: 18),
                       SizedBox(width: 8),
                       Text(
                         'Customer Email for POS Bill (Optional)',
-                        style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+                        style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold, color: context.textPrimary),
                       ),
                     ],
                   ),
@@ -1697,13 +1698,13 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                       hintText: 'customer@example.com',
                       hintStyle: TextStyle(fontSize: 12, color: Colors.grey.shade400),
                       contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: Colors.grey.shade300)),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: context.borderColor)),
                     ),
                   ),
                   const SizedBox(height: 18),
 
                   // Payment Mode Tabs
-                  const Text('Select Payment Method', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF64748B))),
+                  Text('Select Payment Method', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: context.textSecondary)),
                   const SizedBox(height: 10),
                   Row(
                     children: [
@@ -1731,7 +1732,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                           Container(
                             padding: const EdgeInsets.all(12),
                             decoration: BoxDecoration(
-                              color: Colors.white,
+                              color: context.surfaceColor,
                               borderRadius: BorderRadius.circular(14),
                               boxShadow: [
                                 BoxShadow(
@@ -1759,9 +1760,9 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                             style: TextStyle(fontSize: 11.5, color: upiId.isNotEmpty ? const Color(0xFF3B82F6) : Colors.red),
                           ),
                           const SizedBox(height: 6),
-                          const Text(
+                          Text(
                             'Scan with GPay, PhonePe, Paytm or any UPI App',
-                            style: TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                            style: TextStyle(fontSize: 11, color: context.textSecondary),
                           ),
                         ],
                       ),
@@ -1818,7 +1819,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                                     isDense: true,
                                     contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                                     filled: true,
-                                    fillColor: Colors.white,
+                                    fillColor: context.inputFill,
                                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                                   ),
                                   onChanged: (_) => setModalState(() {}),
@@ -1858,7 +1859,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                             Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                const Text('Change to return:', style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+                                Text('Change to return:', style: TextStyle(fontSize: 12, color: context.textSecondary)),
                                 Text(
                                   '₹${cashChange.toStringAsFixed(2)}',
                                   style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF10B981)),
@@ -1942,15 +1943,15 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
         label: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, size: 16, color: isSel ? Colors.white : const Color(0xFF334155)),
+            Icon(icon, size: 16, color: isSel ? Colors.white : context.textPrimary),
             const SizedBox(width: 4),
-            Text(label, style: TextStyle(color: isSel ? Colors.white : const Color(0xFF334155), fontWeight: FontWeight.bold, fontSize: 12)),
+            Text(label, style: TextStyle(color: isSel ? Colors.white : context.textPrimary, fontWeight: FontWeight.bold, fontSize: 12)),
           ],
         ),
         selected: isSel,
         onSelected: (_) => onSelect(label),
         selectedColor: const Color(0xFF2563EB),
-        backgroundColor: const Color(0xFFF1F5F9),
+        backgroundColor: context.inputFill,
       ),
     );
   }
@@ -1997,9 +1998,9 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
       selected: isSelected,
       onSelected: (_) => onSelect(amount),
       selectedColor: const Color(0xFF2563EB),
-      backgroundColor: const Color(0xFFF1F5F9),
+      backgroundColor: context.inputFill,
       labelStyle: TextStyle(
-        color: isSelected ? Colors.white : const Color(0xFF1E293B),
+        color: isSelected ? Colors.white : context.textPrimary,
         fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
         fontSize: 12,
       ),
@@ -2348,12 +2349,12 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
         }
       },
       child: Scaffold(
-        backgroundColor: const Color(0xFFF8FAFC),
+        backgroundColor: context.canvasColor,
         appBar: AppBar(
-          backgroundColor: Colors.white,
+          backgroundColor: context.surfaceColor,
           elevation: 0,
           leading: IconButton(
-            icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Color(0xFF0F172A), size: 18),
+            icon: Icon(Icons.arrow_back_ios_new_rounded, color: context.textPrimary, size: 18),
             onPressed: () => Navigator.maybePop(context),
           ),
         title: Column(
@@ -2376,13 +2377,13 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                 const SizedBox(width: 8),
                 Text(
                   widget.table.section.isNotEmpty ? widget.table.section : 'Dine-In',
-                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: context.textPrimary),
                 ),
               ],
             ),
             Text(
               'Captain: ${activeStaff?.name ?? "Waiter"} • Service Order Pad',
-              style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+              style: TextStyle(fontSize: 11, color: context.textSecondary),
             ),
           ],
         ),
@@ -2408,7 +2409,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
         children: [
           // ── Guest Name Input & Active Orders Indicator Bar ─────
           Container(
-            color: Colors.white,
+            color: context.surfaceColor,
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
             child: Row(
               children: [
@@ -2419,10 +2420,10 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                     decoration: InputDecoration(
                       hintText: 'Customer / Guest Name (e.g. Shanmuk)',
                       hintStyle: TextStyle(fontSize: 12, color: Colors.grey.shade400),
-                      prefixIcon: const Icon(Icons.person_outline_rounded, size: 18, color: Color(0xFF64748B)),
+                      prefixIcon: Icon(Icons.person_outline_rounded, size: 18, color: context.textSecondary),
                       contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: Colors.grey.shade300)),
-                      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: Colors.grey.shade300)),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: context.borderColor)),
+                      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: context.borderColor)),
                     ),
                   ),
                 ),
@@ -2457,7 +2458,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
 
           // ── Search & Category Filter Chips ─────────────────────
           Container(
-            color: Colors.white,
+            color: context.surfaceColor,
             padding: const EdgeInsets.fromLTRB(14, 0, 14, 10),
             child: Column(
               children: [
@@ -2466,7 +2467,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                   decoration: InputDecoration(
                     hintText: 'Search dishes by name or category...',
                     hintStyle: TextStyle(fontSize: 12, color: Colors.grey.shade400),
-                    prefixIcon: const Icon(Icons.search_rounded, size: 18, color: Color(0xFF64748B)),
+                    prefixIcon: Icon(Icons.search_rounded, size: 18, color: context.textSecondary),
                     suffixIcon: _searchQuery.isNotEmpty
                         ? IconButton(
                             icon: const Icon(Icons.clear_rounded, size: 16),
@@ -2477,8 +2478,8 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                           )
                         : null,
                     contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: Colors.grey.shade300)),
-                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: Colors.grey.shade300)),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: context.borderColor)),
+                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: context.borderColor)),
                   ),
                   onChanged: (val) => setState(() => _searchQuery = val.trim()),
                 ),
@@ -2497,9 +2498,9 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                         selected: isSelected,
                         onSelected: (_) => setState(() => _selectedCategory = cat),
                         selectedColor: const Color(0xFF2563EB),
-                        backgroundColor: const Color(0xFFF1F5F9),
+                        backgroundColor: context.inputFill,
                         labelStyle: TextStyle(
-                          color: isSelected ? Colors.white : const Color(0xFF1E293B),
+                          color: isSelected ? Colors.white : context.textPrimary,
                           fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
                           fontSize: 11.5,
                         ),
@@ -2510,7 +2511,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
               ],
             ),
           ),
-          const Divider(height: 1, color: Color(0xFFE2E8F0)),
+          Divider(height: 1, color: context.borderColor),
 
           // ── HIERARCHICAL DISH CATALOG: Category -> Subcategory -> Items ──
           Expanded(
@@ -2559,7 +2560,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                                 margin: EdgeInsets.only(top: catIdx > 0 ? 16 : 0, bottom: 8),
                                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                                 decoration: BoxDecoration(
-                                  color: const Color(0xFF1E293B),
+                                  color: context.textPrimary,
                                   borderRadius: BorderRadius.circular(10),
                                 ),
                                 child: Row(
@@ -2572,7 +2573,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                                     Container(
                                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                                       decoration: BoxDecoration(
-                                        color: Colors.white.withValues(alpha: 0.2),
+                                        color: context.surfaceColor.withValues(alpha: 0.2),
                                         borderRadius: BorderRadius.circular(8),
                                       ),
                                       child: Text(
@@ -2608,10 +2609,10 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                                           const SizedBox(width: 8),
                                           Text(
                                             subName,
-                                            style: const TextStyle(
+                                            style: TextStyle(
                                               fontSize: 12.5,
                                               fontWeight: FontWeight.bold,
-                                              color: Color(0xFF475569),
+                                              color: context.textSecondary,
                                             ),
                                           ),
                                           const SizedBox(width: 6),
@@ -2640,9 +2641,9 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                                         return Container(
                                           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                                           decoration: BoxDecoration(
-                                            color: Colors.white,
+                                            color: context.surfaceColor,
                                             borderRadius: BorderRadius.circular(10),
-                                            border: Border.all(color: const Color(0xFFE2E8F0)),
+                                            border: Border.all(color: context.borderColor),
                                           ),
                                           child: Row(
                                             children: [
@@ -2678,7 +2679,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                                                       style: TextStyle(
                                                         fontSize: 13,
                                                         fontWeight: FontWeight.bold,
-                                                        color: isAvail ? const Color(0xFF0F172A) : const Color(0xFF94A3B8),
+                                                        color: isAvail ? context.textPrimary : context.textSecondary,
                                                         decoration: isAvail ? null : TextDecoration.lineThrough,
                                                       ),
                                                     ),
@@ -2687,7 +2688,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                                                       style: TextStyle(
                                                         fontSize: 12,
                                                         fontWeight: FontWeight.w600,
-                                                        color: isAvail ? const Color(0xFF2563EB) : const Color(0xFF94A3B8),
+                                                        color: isAvail ? const Color(0xFF2563EB) : context.textSecondary,
                                                       ),
                                                     ),
                                                     if (_tray[itemId]?['item']?['notes']?.toString().isNotEmpty == true) ...[
@@ -2735,7 +2736,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                                                             : Icons.note_alt_outlined,
                                                         color: _tray[itemId]?['item']?['notes']?.toString().isNotEmpty == true
                                                             ? const Color(0xFFD97706)
-                                                            : const Color(0xFF64748B),
+                                                            : context.textSecondary,
                                                         size: 18,
                                                       ),
                                                       tooltip: 'Add notes / modifiers',
@@ -2750,7 +2751,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                                                     ),
                                                     Text(
                                                       '$inTrayQty',
-                                                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+                                                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: context.textPrimary),
                                                     ),
                                                     IconButton(
                                                       icon: const Icon(Icons.add_circle_rounded, color: Color(0xFF2563EB), size: 22),
@@ -2778,7 +2779,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: context.surfaceColor,
                 boxShadow: [
                   BoxShadow(color: Colors.black.withValues(alpha: 0.08), blurRadius: 10, offset: const Offset(0, -3)),
                 ],
@@ -2792,11 +2793,11 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                       children: [
                         Text(
                           '$_trayItemCount items • ₹${_traySubtotal.toStringAsFixed(0)}',
-                          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+                          style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: context.textPrimary),
                         ),
                         Text(
                           '+ GST (${_storeGstRate.toStringAsFixed(0)}%) & SC',
-                          style: const TextStyle(fontSize: 10.5, color: Color(0xFF64748B)),
+                          style: TextStyle(fontSize: 10.5, color: context.textSecondary),
                         ),
                       ],
                     ),

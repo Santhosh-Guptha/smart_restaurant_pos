@@ -9,6 +9,7 @@ import '../../providers/auth_provider.dart';
 import '../../services/thermal_printer_service.dart';
 import '../../utils/thermal_receipt_generator.dart';
 import '../../widgets/receipt_preview_dialog.dart';
+import '../../core/classic_theme.dart';
 
 class PrinterSettingsScreen extends ConsumerStatefulWidget {
   const PrinterSettingsScreen({super.key});
@@ -317,17 +318,17 @@ class _PrinterSettingsScreenState extends ConsumerState<PrinterSettingsScreen> {
               elevation: 0,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(16),
-                side: BorderSide(color: Colors.grey.shade200),
+                side: BorderSide(color: context.borderColor),
               ),
-              color: Colors.white,
+              color: context.surfaceColor,
               child: Padding(
                 padding: const EdgeInsets.all(16),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
+                    Text(
                       'Preferences',
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Color(0xFF1E293B)),
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: context.textPrimary),
                     ),
                     const Divider(height: 24),
                     SwitchListTile(
@@ -370,17 +371,17 @@ class _PrinterSettingsScreenState extends ConsumerState<PrinterSettingsScreen> {
               elevation: 0,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(16),
-                side: BorderSide(color: Colors.grey.shade200),
+                side: BorderSide(color: context.borderColor),
               ),
-              color: Colors.white,
+              color: context.surfaceColor,
               child: Padding(
                 padding: const EdgeInsets.all(16),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
+                    Text(
                       'Receipt Customization',
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Color(0xFF1E293B)),
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: context.textPrimary),
                     ),
                     const Text(
                       'Change layout titles, footers, spacing and information format.',
@@ -682,17 +683,17 @@ class _PrinterSettingsScreenState extends ConsumerState<PrinterSettingsScreen> {
               elevation: 0,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(16),
-                side: BorderSide(color: Colors.grey.shade200),
+                side: BorderSide(color: context.borderColor),
               ),
-              color: Colors.white,
+              color: context.surfaceColor,
               child: Padding(
                 padding: const EdgeInsets.all(16),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
+                    Text(
                       'Layout Backup & Restore',
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Color(0xFF1E293B)),
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: context.textPrimary),
                     ),
                     const Text(
                       'Export your configuration as a file or restore it to reset preferences.',
@@ -737,9 +738,9 @@ class _PrinterSettingsScreenState extends ConsumerState<PrinterSettingsScreen> {
               elevation: 0,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(16),
-                side: BorderSide(color: Colors.grey.shade200),
+                side: BorderSide(color: context.borderColor),
               ),
-              color: Colors.white,
+              color: context.surfaceColor,
               child: Padding(
                 padding: const EdgeInsets.all(16),
                 child: Column(
@@ -748,9 +749,9 @@ class _PrinterSettingsScreenState extends ConsumerState<PrinterSettingsScreen> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Text(
+                        Text(
                           'Connection Status',
-                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Color(0xFF1E293B)),
+                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: context.textPrimary),
                         ),
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -841,9 +842,9 @@ class _PrinterSettingsScreenState extends ConsumerState<PrinterSettingsScreen> {
               elevation: 0,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(16),
-                side: BorderSide(color: Colors.grey.shade200),
+                side: BorderSide(color: context.borderColor),
               ),
-              color: Colors.white,
+              color: context.surfaceColor,
               child: Padding(
                 padding: const EdgeInsets.all(16),
                 child: Column(
@@ -852,9 +853,9 @@ class _PrinterSettingsScreenState extends ConsumerState<PrinterSettingsScreen> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Text(
+                        Text(
                           'Available Bluetooth Devices',
-                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Color(0xFF1E293B)),
+                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: context.textPrimary),
                         ),
                         if (printerState.isScanning)
                           const SizedBox(

@@ -51,7 +51,7 @@ class _BranchManagementScreenState
           content: Text(
             'Your current subscription allows up to $maxBranches restaurant branches.\n\n'
             'To expand your franchise scale and onboard additional outlets, please contact your account manager or platform administrator.',
-            style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 14),
+            style: TextStyle(color: context.textSecondary, fontSize: 14),
           ),
           actions: [
             ElevatedButton(
@@ -113,7 +113,7 @@ class _BranchManagementScreenState
             ],
           ),
           content: SizedBox(
-            width: 540,
+            width: ClassicTheme.dialogWidth(context, 540),
             child: SingleChildScrollView(
               child: Form(
                 key: formKey,
@@ -137,13 +137,13 @@ class _BranchManagementScreenState
                       style: const TextStyle(color: Colors.white),
                       decoration: InputDecoration(
                         labelText: 'Branch / Outlet Name *',
-                        labelStyle: const TextStyle(color: Color(0xFF94A3B8)),
+                        labelStyle: TextStyle(color: context.textSecondary),
                         hintText: 'e.g. $orgName - Downtown Branch',
                         hintStyle: const TextStyle(color: Colors.white24),
                         prefixIcon: const Icon(Icons.storefront_rounded,
                             color: Colors.amber, size: 20),
                         filled: true,
-                        fillColor: const Color(0xFF1E293B),
+                        fillColor: context.textPrimary,
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
                           borderSide: BorderSide.none,
@@ -165,13 +165,13 @@ class _BranchManagementScreenState
                             decoration: InputDecoration(
                               labelText: 'Dining Tables',
                               labelStyle:
-                                  const TextStyle(color: Color(0xFF94A3B8)),
+                                  TextStyle(color: context.textSecondary),
                               prefixIcon: const Icon(
                                   Icons.table_restaurant_rounded,
                                   color: Colors.amber,
                                   size: 20),
                               filled: true,
-                              fillColor: const Color(0xFF1E293B),
+                              fillColor: context.textPrimary,
                               border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(12),
                                 borderSide: BorderSide.none,
@@ -190,15 +190,15 @@ class _BranchManagementScreenState
                           flex: 2,
                           child: DropdownButtonFormField<String>(
                             initialValue: operatingMode,
-                            dropdownColor: const Color(0xFF1E293B),
+                            dropdownColor: context.textPrimary,
                             style: const TextStyle(
                                 color: Colors.white, fontSize: 13),
                             decoration: InputDecoration(
                               labelText: 'Operating Service Flow',
                               labelStyle:
-                                  const TextStyle(color: Color(0xFF94A3B8)),
+                                  TextStyle(color: context.textSecondary),
                               filled: true,
-                              fillColor: const Color(0xFF1E293B),
+                              fillColor: context.textPrimary,
                               border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(12),
                                 borderSide: BorderSide.none,
@@ -234,13 +234,13 @@ class _BranchManagementScreenState
                       style: const TextStyle(color: Colors.white),
                       decoration: InputDecoration(
                         labelText: 'Outlet Address',
-                        labelStyle: const TextStyle(color: Color(0xFF94A3B8)),
+                        labelStyle: TextStyle(color: context.textSecondary),
                         hintText: 'Street, Landmark, City',
                         hintStyle: const TextStyle(color: Colors.white24),
                         prefixIcon: const Icon(Icons.location_on_outlined,
                             color: Colors.amber, size: 20),
                         filled: true,
-                        fillColor: const Color(0xFF1E293B),
+                        fillColor: context.textPrimary,
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
                           borderSide: BorderSide.none,
@@ -259,11 +259,11 @@ class _BranchManagementScreenState
                             decoration: InputDecoration(
                               labelText: 'Branch Phone',
                               labelStyle:
-                                  const TextStyle(color: Color(0xFF94A3B8)),
+                                  TextStyle(color: context.textSecondary),
                               prefixIcon: const Icon(Icons.phone_outlined,
                                   color: Colors.amber, size: 20),
                               filled: true,
-                              fillColor: const Color(0xFF1E293B),
+                              fillColor: context.textPrimary,
                               border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(12),
                                 borderSide: BorderSide.none,
@@ -279,13 +279,13 @@ class _BranchManagementScreenState
                             decoration: InputDecoration(
                               labelText: 'Branch UPI ID (VPA)',
                               labelStyle:
-                                  const TextStyle(color: Color(0xFF94A3B8)),
+                                  TextStyle(color: context.textSecondary),
                               hintText: 'branch@upi',
                               hintStyle: const TextStyle(color: Colors.white24),
                               prefixIcon: const Icon(Icons.qr_code_rounded,
                                   color: Colors.amber, size: 20),
                               filled: true,
-                              fillColor: const Color(0xFF1E293B),
+                              fillColor: context.textPrimary,
                               border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(12),
                                 borderSide: BorderSide.none,
@@ -308,9 +308,9 @@ class _BranchManagementScreenState
                       ),
                     ),
                     const SizedBox(height: 4),
-                    const Text(
+                    Text(
                       'This user will have full managerial control of this outlet terminal and staff mapping.',
-                      style: TextStyle(color: Color(0xFF94A3B8), fontSize: 11),
+                      style: TextStyle(color: context.textSecondary, fontSize: 11),
                     ),
                     const SizedBox(height: 10),
 
@@ -319,13 +319,13 @@ class _BranchManagementScreenState
                       style: const TextStyle(color: Colors.white),
                       decoration: InputDecoration(
                         labelText: 'Store Admin Full Name *',
-                        labelStyle: const TextStyle(color: Color(0xFF94A3B8)),
+                        labelStyle: TextStyle(color: context.textSecondary),
                         hintText: 'e.g. Ramesh Chandra',
                         hintStyle: const TextStyle(color: Colors.white24),
                         prefixIcon: const Icon(Icons.person_outline_rounded,
                             color: Colors.amber, size: 20),
                         filled: true,
-                        fillColor: const Color(0xFF1E293B),
+                        fillColor: context.textPrimary,
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
                           borderSide: BorderSide.none,
@@ -342,13 +342,13 @@ class _BranchManagementScreenState
                       style: const TextStyle(color: Colors.white),
                       decoration: InputDecoration(
                         labelText: 'Store Admin Email *',
-                        labelStyle: const TextStyle(color: Color(0xFF94A3B8)),
+                        labelStyle: TextStyle(color: context.textSecondary),
                         hintText: 'admin.branch@restaurant.com',
                         hintStyle: const TextStyle(color: Colors.white24),
                         prefixIcon: const Icon(Icons.email_outlined,
                             color: Colors.amber, size: 20),
                         filled: true,
-                        fillColor: const Color(0xFF1E293B),
+                        fillColor: context.textPrimary,
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
                           borderSide: BorderSide.none,
@@ -367,11 +367,11 @@ class _BranchManagementScreenState
                       style: const TextStyle(color: Colors.white),
                       decoration: InputDecoration(
                         labelText: 'Initial Password',
-                        labelStyle: const TextStyle(color: Color(0xFF94A3B8)),
+                        labelStyle: TextStyle(color: context.textSecondary),
                         prefixIcon: const Icon(Icons.key_rounded,
                             color: Colors.amber, size: 20),
                         filled: true,
-                        fillColor: const Color(0xFF1E293B),
+                        fillColor: context.textPrimary,
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
                           borderSide: BorderSide.none,
@@ -389,8 +389,8 @@ class _BranchManagementScreenState
           actions: [
             TextButton(
               onPressed: isSaving ? null : () => Navigator.pop(dialogCtx),
-              child: const Text('Cancel',
-                  style: TextStyle(color: Color(0xFF94A3B8))),
+              child: Text('Cancel',
+                  style: TextStyle(color: context.textSecondary)),
             ),
             ElevatedButton(
               style: ElevatedButton.styleFrom(
@@ -598,7 +598,7 @@ class _BranchManagementScreenState
                 color: Colors.white, fontWeight: FontWeight.bold),
           ),
           content: SizedBox(
-            width: 500,
+            width: ClassicTheme.dialogWidth(context, 500),
             child: Form(
               key: formKey,
               child: Column(
@@ -609,9 +609,9 @@ class _BranchManagementScreenState
                     style: const TextStyle(color: Colors.white),
                     decoration: InputDecoration(
                       labelText: 'Branch Name',
-                      labelStyle: const TextStyle(color: Color(0xFF94A3B8)),
+                      labelStyle: TextStyle(color: context.textSecondary),
                       filled: true,
-                      fillColor: const Color(0xFF1E293B),
+                      fillColor: context.textPrimary,
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
                         borderSide: BorderSide.none,
@@ -631,9 +631,9 @@ class _BranchManagementScreenState
                           decoration: InputDecoration(
                             labelText: 'Dining Tables',
                             labelStyle:
-                                const TextStyle(color: Color(0xFF94A3B8)),
+                                TextStyle(color: context.textSecondary),
                             filled: true,
-                            fillColor: const Color(0xFF1E293B),
+                            fillColor: context.textPrimary,
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(12),
                               borderSide: BorderSide.none,
@@ -645,15 +645,15 @@ class _BranchManagementScreenState
                       Expanded(
                         child: DropdownButtonFormField<String>(
                           initialValue: operatingMode,
-                          dropdownColor: const Color(0xFF1E293B),
+                          dropdownColor: context.textPrimary,
                           style: const TextStyle(
                               color: Colors.white, fontSize: 13),
                           decoration: InputDecoration(
                             labelText: 'Service Flow',
                             labelStyle:
-                                const TextStyle(color: Color(0xFF94A3B8)),
+                                TextStyle(color: context.textSecondary),
                             filled: true,
-                            fillColor: const Color(0xFF1E293B),
+                            fillColor: context.textPrimary,
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(12),
                               borderSide: BorderSide.none,
@@ -688,9 +688,9 @@ class _BranchManagementScreenState
                     style: const TextStyle(color: Colors.white),
                     decoration: InputDecoration(
                       labelText: 'Address',
-                      labelStyle: const TextStyle(color: Color(0xFF94A3B8)),
+                      labelStyle: TextStyle(color: context.textSecondary),
                       filled: true,
-                      fillColor: const Color(0xFF1E293B),
+                      fillColor: context.textPrimary,
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
                         borderSide: BorderSide.none,
@@ -708,9 +708,9 @@ class _BranchManagementScreenState
                           decoration: InputDecoration(
                             labelText: 'Phone',
                             labelStyle:
-                                const TextStyle(color: Color(0xFF94A3B8)),
+                                TextStyle(color: context.textSecondary),
                             filled: true,
-                            fillColor: const Color(0xFF1E293B),
+                            fillColor: context.textPrimary,
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(12),
                               borderSide: BorderSide.none,
@@ -726,9 +726,9 @@ class _BranchManagementScreenState
                           decoration: InputDecoration(
                             labelText: 'UPI VPA',
                             labelStyle:
-                                const TextStyle(color: Color(0xFF94A3B8)),
+                                TextStyle(color: context.textSecondary),
                             filled: true,
-                            fillColor: const Color(0xFF1E293B),
+                            fillColor: context.textPrimary,
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(12),
                               borderSide: BorderSide.none,
@@ -745,8 +745,8 @@ class _BranchManagementScreenState
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(dialogCtx),
-              child: const Text('Cancel',
-                  style: TextStyle(color: Color(0xFF94A3B8))),
+              child: Text('Cancel',
+                  style: TextStyle(color: context.textSecondary)),
             ),
             ElevatedButton(
               style: ElevatedButton.styleFrom(
@@ -1123,7 +1123,7 @@ class _BranchManagementScreenState
               decoration: BoxDecoration(
                 color: const Color(0xFF131927),
                 borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: const Color(0xFF1E293B)),
+                border: Border.all(color: context.textPrimary),
               ),
               child: Column(
                 children: [
@@ -1138,10 +1138,10 @@ class _BranchManagementScreenState
                         fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 6),
-                  const Text(
+                  Text(
                     'Add your main dining hall, express cafe, or franchise branches to manage orders and table QR codes.',
                     textAlign: TextAlign.center,
-                    style: TextStyle(color: Color(0xFF94A3B8), fontSize: 13),
+                    style: TextStyle(color: context.textSecondary, fontSize: 13),
                   ),
                   const SizedBox(height: 20),
                   ElevatedButton.icon(
@@ -1329,15 +1329,15 @@ class _BranchManagementScreenState
                               color: Colors.amber,
                               borderRadius: BorderRadius.circular(8),
                             ),
-                            child: const Row(
+                            child: Row(
                               children: [
                                 Icon(Icons.check_circle_rounded,
-                                    size: 12, color: Colors.black),
+                                    size: 12, color: context.textPrimary),
                                 SizedBox(width: 4),
                                 Text(
                                   'ACTIVE CONTEXT',
                                   style: TextStyle(
-                                    color: Colors.black,
+                                    color: context.textPrimary,
                                     fontSize: 10,
                                     fontWeight: FontWeight.w900,
                                   ),
@@ -1399,8 +1399,8 @@ class _BranchManagementScreenState
             const SizedBox(height: 10),
             Row(
               children: [
-                const Icon(Icons.location_on_outlined,
-                    size: 14, color: Color(0xFF94A3B8)),
+                Icon(Icons.location_on_outlined,
+                    size: 14, color: context.textSecondary),
                 const SizedBox(width: 6),
                 Text(
                   outlet.address!,
@@ -1409,8 +1409,8 @@ class _BranchManagementScreenState
                 ),
                 if (outlet.phone != null && outlet.phone!.isNotEmpty) ...[
                   const SizedBox(width: 16),
-                  const Icon(Icons.phone_outlined,
-                      size: 14, color: Color(0xFF94A3B8)),
+                  Icon(Icons.phone_outlined,
+                      size: 14, color: context.textSecondary),
                   const SizedBox(width: 6),
                   Text(
                     outlet.phone!,
@@ -1442,8 +1442,8 @@ class _BranchManagementScreenState
                         SnackBar(
                           content: Text(
                             'Switched active restaurant branch to "${outlet.name}".',
-                            style: const TextStyle(
-                              color: Colors.black,
+                            style: TextStyle(
+                              color: context.textPrimary,
                               fontWeight: FontWeight.bold,
                             ),
                           ),

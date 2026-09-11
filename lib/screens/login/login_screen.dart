@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../core/classic_theme.dart';
 
 import '../../providers/auth_provider.dart';
 
@@ -30,9 +31,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       ),
       extendBodyBehindAppBar: true,
       body: Container(
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           gradient: LinearGradient(
-            colors: [Color(0xFF0F172A), Color(0xFF1E3A8A), Color(0xFF1E1B4B)],
+            colors: [context.textPrimary, Color(0xFF1E3A8A), Color(0xFF1E1B4B)],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
           ),
@@ -44,7 +45,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               padding: const EdgeInsets.all(40),
               constraints: const BoxConstraints(maxWidth: 450),
               decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.09),
+                color: context.surfaceColor.withValues(alpha: 0.09),
                 borderRadius: BorderRadius.circular(24),
                 border: Border.all(color: Colors.white.withValues(alpha: 0.15), width: 1.5),
                 boxShadow: [
@@ -194,7 +195,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       context: context,
       barrierDismissible: false,
       builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF1E293B),
+        backgroundColor: context.textPrimary,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Row(
           children: [
@@ -212,7 +213,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             ),
           ],
         ),
-        content: Column(
+        content: SingleChildScrollView(child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -256,7 +257,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             const SizedBox(height: 6),
             _buildDisclaimerPoint(Icons.restore, 'There is no recovery or backup mechanism.'),
           ],
-        ),
+        )),
         actions: [
           TextButton(
             key: const Key('btn_offline_cancel'),

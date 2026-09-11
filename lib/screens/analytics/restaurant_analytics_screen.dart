@@ -835,7 +835,7 @@ class _RestaurantAnalyticsScreenState
                         spacing: 10,
                         runSpacing: 4,
                         children: [
-                          _heatmapLegend('Quiet', context.isDark ? const Color(0xFF1E293B) : const Color(0xFFE2E8F0)),
+                          _heatmapLegend('Quiet', context.isDark ? context.textPrimary : context.borderColor),
                           _heatmapLegend('Moderate', amberAccent.withValues(alpha: 0.4)),
                           _heatmapLegend('Rush', amberAccent),
                           _heatmapLegend('Peak', coralAccent),
@@ -866,7 +866,7 @@ class _RestaurantAnalyticsScreenState
                               final barHeight = orders > 0 ? (orders / 60.0) * 100.0 + 10.0 : 6.0;
                               final isSelected = _selectedHour == hour;
 
-                              Color barColor = context.isDark ? const Color(0xFF1E293B) : const Color(0xFFE2E8F0);
+                              Color barColor = context.isDark ? context.textPrimary : context.borderColor;
                               if (isPeak) {
                                 barColor = coralAccent;
                               } else if (isHigh) {
@@ -1245,7 +1245,7 @@ class _RestaurantAnalyticsScreenState
                       child: LinearProgressIndicator(
                         value: fraction,
                         minHeight: 10,
-                        backgroundColor: context.isDark ? const Color(0xFF1E293B) : const Color(0xFFE2E8F0),
+                        backgroundColor: context.isDark ? context.textPrimary : context.borderColor,
                         valueColor: AlwaysStoppedAnimation<Color>(
                           isWeekend ? coralAccent : amberAccent,
                         ),

@@ -335,7 +335,7 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
             Text("Free Trial Activated!", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
           ],
         ),
-        content: Column(
+        content: SingleChildScrollView(child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -374,7 +374,7 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
               style: TextStyle(color: context.textSecondary, fontSize: 12),
             ),
           ],
-        ),
+        )),
         actions: [
           ElevatedButton(
             onPressed: () {

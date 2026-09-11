@@ -88,7 +88,7 @@ class _SettingsSidebarDialogState extends ConsumerState<SettingsSidebarDialog> {
       backgroundColor: Colors.transparent,
       insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
       child: Container(
-        width: 860,
+        width: ClassicTheme.dialogWidth(context, 860),
         height: 640,
         decoration: BoxDecoration(
           color: context.surfaceColor,
@@ -839,7 +839,7 @@ class _SettingsSidebarDialogState extends ConsumerState<SettingsSidebarDialog> {
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
           title: Text(confirm ? 'Set a backup passphrase' : 'Enter the backup passphrase',
               style: TextStyle(color: ctx.textPrimary, fontSize: 16, fontWeight: FontWeight.bold)),
-          content: Column(
+          content: SingleChildScrollView(child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               TextField(
@@ -868,7 +868,7 @@ class _SettingsSidebarDialogState extends ConsumerState<SettingsSidebarDialog> {
                 Text(error!, style: TextStyle(color: ctx.dangerColor, fontSize: 12)),
               ],
             ],
-          ),
+          )),
           actions: [
             TextButton(onPressed: () => Navigator.pop(ctx), child: Text('Cancel', style: TextStyle(color: ctx.textSecondary))),
             ElevatedButton(
@@ -1125,7 +1125,7 @@ class _SettingsSidebarDialogState extends ConsumerState<SettingsSidebarDialog> {
                     style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: context.textPrimary)),
               ],
             ),
-            content: Column(
+            content: SingleChildScrollView(child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 TextField(
@@ -1150,7 +1150,7 @@ class _SettingsSidebarDialogState extends ConsumerState<SettingsSidebarDialog> {
                   ),
                 ),
               ],
-            ),
+            )),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(ctx),

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../../core/classic_theme.dart';
 
 class AppUpdateRequiredScreen extends StatelessWidget {
   final String latestVersion;
@@ -14,7 +15,7 @@ class AppUpdateRequiredScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0F172A),
+      backgroundColor: context.textPrimary,
       body: Center(
         child: Padding(
           padding: const EdgeInsets.all(32.0),
@@ -68,7 +69,7 @@ class AppUpdateRequiredScreen extends StatelessWidget {
                   label: const Text("Download APK Directly"),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.amberAccent,
-                    foregroundColor: const Color(0xFF0F172A),
+                    foregroundColor: context.textPrimary,
                     padding: const EdgeInsets.symmetric(vertical: 16),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),

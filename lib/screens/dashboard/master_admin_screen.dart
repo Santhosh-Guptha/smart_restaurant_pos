@@ -65,7 +65,7 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
               ],
             ),
             content: SizedBox(
-              width: 460,
+              width: ClassicTheme.dialogWidth(context, 460),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -439,7 +439,7 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
               ],
             ),
             content: SizedBox(
-              width: 480,
+              width: ClassicTheme.dialogWidth(context, 480),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -636,7 +636,7 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
                   icon: Badge(
                     isLabelVisible: pendingRenewals > 0,
                     backgroundColor: Colors.amber.shade700,
-                    label: Text('$pendingRenewals', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.black)),
+                    label: Text('$pendingRenewals', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: context.textPrimary)),
                     child: const Icon(Icons.business_rounded),
                   ),
                   text: "Organizations",
@@ -875,7 +875,7 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                 ],
               ),
               content: SizedBox(
-                width: 650,
+                width: ClassicTheme.dialogWidth(context, 650),
                 child: SingleChildScrollView(
                   child: Form(
                     key: formKey,
@@ -3485,7 +3485,7 @@ class AuditLogsTab extends StatelessWidget {
                                 Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                                   decoration: BoxDecoration(
-                                    color: context.isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+                                    color: context.isDark ? context.textPrimary : context.inputFill,
                                     borderRadius: BorderRadius.circular(4),
                                     border: Border.all(color: context.borderColor),
                                   ),
@@ -3494,7 +3494,7 @@ class AuditLogsTab extends StatelessWidget {
                                 Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                                   decoration: BoxDecoration(
-                                    color: context.isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+                                    color: context.isDark ? context.textPrimary : context.inputFill,
                                     borderRadius: BorderRadius.circular(4),
                                     border: Border.all(color: context.borderColor),
                                   ),
@@ -3511,7 +3511,7 @@ class AuditLogsTab extends StatelessWidget {
                                   Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                                     decoration: BoxDecoration(
-                                      color: context.isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+                                      color: context.isDark ? context.textPrimary : context.inputFill,
                                       borderRadius: BorderRadius.circular(4),
                                       border: Border.all(color: context.borderColor),
                                     ),
@@ -3793,7 +3793,7 @@ class _RegistrationRequestsTabState extends ConsumerState<RegistrationRequestsTa
                 ],
               ),
               content: SizedBox(
-                width: 650,
+                width: ClassicTheme.dialogWidth(context, 650),
                 child: SingleChildScrollView(
                   child: Form(
                     key: formKey,
@@ -4624,7 +4624,7 @@ class _PlansAndFeaturesTabState extends ConsumerState<PlansAndFeaturesTab> {
               ],
             ),
             content: SizedBox(
-              width: 650,
+              width: ClassicTheme.dialogWidth(context, 650),
               height: 540,
               child: Form(
                 key: formKey,

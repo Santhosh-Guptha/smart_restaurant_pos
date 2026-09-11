@@ -6,6 +6,7 @@ import '../../providers/auth_provider.dart';
 import '../../core/constants.dart';
 import '../../utils/ui_feedback.dart';
 import '../../services/smtp_email_service.dart';
+import '../../core/classic_theme.dart';
 
 class SaaSExpiredScreen extends ConsumerStatefulWidget {
   const SaaSExpiredScreen({super.key});
@@ -92,14 +93,14 @@ class _SaaSExpiredScreenState extends ConsumerState<SaaSExpiredScreen> {
             : "Your organization's subscription license has expired. Please renew your plan to continue point-of-sale and kitchen operations.");
 
     return Scaffold(
-      backgroundColor: const Color(0xFF0F172A),
+      backgroundColor: context.textPrimary,
       body: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24.0),
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 440),
             child: Card(
-              color: const Color(0xFF1E293B),
+              color: context.textPrimary,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
               elevation: 16,
               child: Padding(
@@ -135,7 +136,7 @@ class _SaaSExpiredScreenState extends ConsumerState<SaaSExpiredScreen> {
                       width: double.infinity,
                       padding: const EdgeInsets.all(14),
                       decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.04),
+                        color: context.surfaceColor.withValues(alpha: 0.04),
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(color: Colors.white10),
                       ),

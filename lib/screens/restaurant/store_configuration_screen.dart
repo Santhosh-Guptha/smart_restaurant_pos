@@ -650,7 +650,7 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
                 Text('Add UPI VPA Account', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: context.textPrimary)),
               ],
             ),
-            content: Column(
+            content: SingleChildScrollView(child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 TextField(
@@ -694,7 +694,7 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
                   },
                 ),
               ],
-            ),
+            )),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(ctx),
