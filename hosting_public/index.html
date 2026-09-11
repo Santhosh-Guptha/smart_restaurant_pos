@@ -236,6 +236,57 @@
     .ticket{position:static;margin-bottom:10px;transform:none}.rail{min-height:0}
     .tk1,.tk2,.tk3{opacity:1}
   }
+
+  /* ── pricing section ─────────────────────────────────── */
+  .pricing{padding:100px 0}
+  .pricing-head{text-align:center;max-width:680px;margin:0 auto 56px}
+  .pricing-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:24px;align-items:stretch}
+  @media(max-width:960px){.pricing-grid{grid-template-columns:1fr;max-width:500px;margin:0 auto}}
+  .plan-card{background:var(--bg-2);border:1px solid var(--rule);border-radius:22px;padding:32px 26px;display:flex;flex-direction:column;justify-content:space-between;position:relative;transition:transform .3s cubic-bezier(.2,.8,.2,1),border-color .3s}
+  .plan-card:hover{transform:translateY(-4px);border-color:color-mix(in srgb,var(--lamp) 50%,transparent)}
+  .plan-card.featured{background:linear-gradient(175deg,color-mix(in srgb,var(--lamp) 9%,var(--bg-2)),var(--bg-2));border:2px solid color-mix(in srgb,var(--lamp) 60%,transparent);box-shadow:0 24px 48px -20px color-mix(in srgb,var(--lamp) 25%,transparent)}
+  .plan-badge{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--lamp);background:color-mix(in srgb,var(--lamp) 14%,transparent);border:1px solid color-mix(in srgb,var(--lamp) 30%,transparent);padding:4px 12px;border-radius:999px;margin-bottom:14px}
+  .plan-title{font-family:var(--display);font-size:26px;font-weight:600;margin:0 0 8px;color:var(--fg)}
+  .plan-price{display:flex;align-items:baseline;gap:6px;margin:16px 0 10px}
+  .plan-price .curr{font-family:var(--display);font-size:24px;color:var(--fg)}
+  .plan-price .amount{font-family:var(--display);font-size:46px;font-weight:700;line-height:1;color:var(--fg)}
+  .plan-price .period{font-size:14px;color:var(--fg-2)}
+  .plan-desc{font-size:14px;color:var(--fg-2);min-height:42px;margin-bottom:20px;line-height:1.5}
+  .plan-features{list-style:none;margin:0 0 28px;padding:0;display:grid;gap:11px;font-size:13.5px;color:var(--fg-2);border-top:1px solid var(--rule);padding-top:18px}
+  .plan-features li{display:flex;align-items:flex-start;gap:10px;line-height:1.4}
+  .plan-features li .chk{color:var(--mint);font-weight:700;flex-shrink:0}
+  .plan-cta-note{text-align:center;font-size:12px;color:var(--fg-2);margin-top:10px}
+
+  /* ── modals ─────────────────────────────────────────── */
+  .modal-overlay{position:fixed;inset:0;z-index:1000;background:rgba(8,10,15,.78);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);display:none;align-items:center;justify-content:center;padding:20px;opacity:0;transition:opacity .25s ease}
+  .modal-overlay.active{display:flex;opacity:1}
+  .modal-box{background:var(--bg-2);border:1px solid var(--rule);border-radius:24px;width:100%;max-width:620px;max-height:90vh;overflow-y:auto;padding:32px 28px;position:relative;box-shadow:0 30px 80px -20px rgba(0,0,0,.9);transform:scale(.95);transition:transform .25s cubic-bezier(.2,.8,.2,1)}
+  .modal-overlay.active .modal-box{transform:scale(1)}
+  .modal-close{position:absolute;top:18px;right:18px;width:34px;height:34px;border-radius:50%;background:var(--bg-3);border:1px solid var(--rule);color:var(--fg);cursor:pointer;display:grid;place-items:center;font-size:16px;line-height:1;transition:background .2s,color .2s}
+  .modal-close:hover{background:var(--rule);color:var(--lamp)}
+  .modal-head{margin-bottom:20px}
+  .modal-head h3{font-family:var(--display);font-size:26px;margin:0 0 6px;color:var(--fg)}
+  .modal-head p{margin:0;color:var(--fg-2);font-size:14px;line-height:1.5}
+  .plan-pill{background:color-mix(in srgb,var(--lamp) 10%,var(--bg-3));border:1px solid color-mix(in srgb,var(--lamp) 35%,transparent);border-radius:12px;padding:10px 14px;font-size:13.5px;color:var(--lamp);display:flex;align-items:center;justify-content:space-between;margin-bottom:18px}
+  .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:13px;margin-bottom:18px}
+  @media(max-width:600px){.form-grid{grid-template-columns:1fr}.modal-box{padding:24px 18px}}
+  .form-col-2{grid-column:1 / -1}
+  .form-field label{display:block;font-size:11.5px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--fg-2);margin-bottom:5px}
+  .form-input,.form-select,.form-textarea{width:100%;background:var(--bg-3);border:1px solid var(--rule);border-radius:12px;padding:11px 13px;color:var(--fg);font-family:var(--body);font-size:14px;outline:none;transition:border-color .2s,box-shadow .2s;box-sizing:border-box}
+  .form-input:focus,.form-select:focus,.form-textarea:focus{border-color:var(--lamp);box-shadow:0 0 0 3px color-mix(in srgb,var(--lamp) 25%,transparent)}
+  .form-select option{background:var(--night-2);color:var(--cream)}
+  .form-submit-btn{width:100%;justify-content:center;padding:13px 20px;font-size:15px;cursor:pointer}
+  .form-note{font-size:11.5px;color:var(--fg-2);text-align:center;margin-top:10px}
+
+  /* success view */
+  .success-view{text-align:center;padding:16px 8px}
+  .success-ring{width:64px;height:64px;border-radius:50%;background:color-mix(in srgb,var(--mint) 14%,transparent);border:2px solid var(--mint);color:var(--mint);font-size:30px;display:grid;place-items:center;margin:0 auto 16px;box-shadow:0 0 28px 2px color-mix(in srgb,var(--mint) 30%,transparent)}
+  .success-view h3{font-family:var(--display);font-size:24px;color:var(--fg);margin:0 0 8px}
+  .success-view p{color:var(--fg-2);font-size:14px;line-height:1.6;margin:0 0 18px}
+  .success-box{background:var(--bg-3);border:1px solid var(--rule);border-radius:14px;padding:14px 16px;text-align:left;font-size:13px;color:var(--fg-2);margin-bottom:20px}
+  .success-box strong{color:var(--fg)}
+  .success-actions{display:flex;flex-direction:column;gap:9px}
+
 </style>
 </head>
 <body>
@@ -248,8 +299,9 @@
       <li><a href="#features">Features</a></li>
       <li><a href="#guests">Guests</a></li>
       <li><a href="#group">Groups &amp; franchises</a></li>
+      <li><a href="#pricing">Pricing &amp; Plans</a></li>
     </ul>
-    <a class="btn lamp sm" href="#start">Start free</a>
+    <a class="btn lamp sm" href="javascript:void(0)" onclick="openTrialModal()">Start free trial</a>
   </div>
 </nav>
 
@@ -262,8 +314,8 @@
       <h1>Every order,<br>every screen,<br><em class="grad" style="font-style:italic;font-weight:500">in step.</em></h1>
       <p class="lede">The table orders. The kitchen sees it before the waiter has turned around. The counter settles it in two taps. <strong>One system for the whole floor</strong> — and it keeps working when the Wi‑Fi doesn't.</p>
       <div class="hero-cta">
-        <a class="btn lamp" href="#start">Start free →</a>
-        <a class="btn ghost" href="#stations">See it by role</a>
+        <a class="btn lamp" href="javascript:void(0)" onclick="openTrialModal()">Start 14-Day Free Trial →</a>
+        <a class="btn ghost" href="#pricing">View Plans &amp; Pricing</a>
       </div>
       <p class="hero-note"><b>Free to start.</b> Runs on the phones and tablets you already own. Nothing to install in the kitchen but a screen.</p>
     </div>
@@ -415,6 +467,103 @@
   </div>
 </section>
 
+
+<!-- ═══════════════ PRICING & PLANS ═══════════════ -->
+<section class="band pricing" id="pricing">
+  <div class="wrap">
+    <div class="pricing-head rv">
+      <p class="kicker">Simple, transparent plans</p>
+      <h2>Fair pricing for independent venues<br>and growing chains.</h2>
+      <p class="lede" style="margin:16px auto 0">Start with an unrestricted 14-day trial on the phones and tablets you already have. Expand to custom multi-outlet operations with dedicated support.</p>
+    </div>
+
+    <div class="pricing-grid">
+      <!-- Plan 1: 14-Day Free Trial -->
+      <div class="plan-card rv d1">
+        <div>
+          <span class="plan-badge">Full Feature Trial</span>
+          <h3 class="plan-title">14-Day Free Trial</h3>
+          <p class="plan-desc">Experience every floor station with zero commitment and no credit card required.</p>
+          <div class="plan-price">
+            <span class="curr">₹</span>
+            <span class="amount">0</span>
+            <span class="period">/ 14 Days</span>
+          </div>
+          <ul class="plan-features">
+            <li><span class="chk">✓</span><span><strong>1 Counter Billing Station</strong> (Fast QSR &amp; Dine-In)</span></li>
+            <li><span class="chk">✓</span><span><strong>1 Kitchen Display (KDS)</strong> with live ticket bell</span></li>
+            <li><span class="chk">✓</span><span><strong>1 Waiter Mobile Station</strong> with course firing</span></li>
+            <li><span class="chk">✓</span><span><strong>Table QR Menus</strong> for unlimited dine-in guests</span></li>
+            <li><span class="chk">✓</span><span><strong>Google Sheets Sync</strong> in your private Drive</span></li>
+            <li><span class="chk">✓</span><span><strong>Thermal Receipt Printing</strong> (58mm/80mm ESC/POS)</span></li>
+            <li><span class="chk">✓</span><span><strong>Works Offline</strong> when broadband drops</span></li>
+          </ul>
+        </div>
+        <div>
+          <button type="button" class="btn lamp" style="width:100%;justify-content:center" onclick="openTrialModal()">Start 14-Day Free Trial →</button>
+          <p class="plan-cta-note">Instant registration · No credit card required</p>
+        </div>
+      </div>
+
+      <!-- Plan 2: Growth Plan -->
+      <div class="plan-card featured rv d2">
+        <div>
+          <span class="plan-badge" style="background:color-mix(in srgb,var(--lamp) 22%,transparent)">Most Popular · Cafés &amp; Bars</span>
+          <h3 class="plan-title">Growth Plan</h3>
+          <p class="plan-desc">For busy independent venues handling high lunch &amp; dinner dining volume.</p>
+          <div class="plan-price">
+            <span class="curr">₹</span>
+            <span class="amount">999</span>
+            <span class="period">/ month</span>
+          </div>
+          <ul class="plan-features">
+            <li><span class="chk">✓</span><span><strong>Everything in Free Trial</strong>, plus:</span></li>
+            <li><span class="chk">✓</span><span><strong>Up to 5 Concurrent Stations</strong> (Billing + Waiters)</span></li>
+            <li><span class="chk">✓</span><span><strong>Multi-Station KDS</strong> (Tandoor, Grill, Bar passes)</span></li>
+            <li><span class="chk">✓</span><span><strong>Guest Table QR Ordering</strong> with UPI &amp; Cards</span></li>
+            <li><span class="chk">✓</span><span><strong>Table Status Map</strong> with reservations timeline</span></li>
+            <li><span class="chk">✓</span><span><strong>Split Billing</strong> by item, seat, or share</span></li>
+            <li><span class="chk">✓</span><span><strong>Shift Cash Tracking</strong> &amp; End-of-Day Z-Reports</span></li>
+            <li><span class="chk">✓</span><span><strong>Priority WhatsApp &amp; Phone Support</strong></span></li>
+          </ul>
+        </div>
+        <div>
+          <button type="button" class="btn ghost" style="width:100%;justify-content:center;border-color:var(--lamp);color:var(--lamp);font-weight:700" onclick="openContactModal('Growth Plan (₹999/mo)')">For More Details Contact →</button>
+          <p class="plan-cta-note">Tailored floor setup &amp; hardware advice</p>
+        </div>
+      </div>
+
+      <!-- Plan 3: Enterprise & Multi-Outlet -->
+      <div class="plan-card rv d3">
+        <div>
+          <span class="plan-badge">Groups &amp; Franchises</span>
+          <h3 class="plan-title">Enterprise Suite</h3>
+          <p class="plan-desc">Central management for multi-branch brands, cloud kitchens &amp; food courts.</p>
+          <div class="plan-price">
+            <span class="amount" style="font-size:36px">Custom</span>
+            <span class="period">/ volume</span>
+          </div>
+          <ul class="plan-features">
+            <li><span class="chk">✓</span><span><strong>Everything in Growth Plan</strong>, plus:</span></li>
+            <li><span class="chk">✓</span><span><strong>Central Head-Office Live Dashboard</strong> (All Outlets)</span></li>
+            <li><span class="chk">✓</span><span><strong>Master Brand Menu</strong> with branch price overrides</span></li>
+            <li><span class="chk">✓</span><span><strong>Branch-Specific Bank Accounts</strong> &amp; UPI IDs</span></li>
+            <li><span class="chk">✓</span><span><strong>Role-Based Access Control</strong> (Manager, Waiter, Chef)</span></li>
+            <li><span class="chk">✓</span><span><strong>Custom Weighing Scales</strong> &amp; dual-screen tills</span></li>
+            <li><span class="chk">✓</span><span><strong>Custom ERP / Accounting Export</strong> &amp; SLA</span></li>
+            <li><span class="chk">✓</span><span><strong>Dedicated Account Manager</strong> &amp; staff onboarding</span></li>
+          </ul>
+        </div>
+        <div>
+          <button type="button" class="btn ghost" style="width:100%;justify-content:center" onclick="openContactModal('Enterprise & Multi-Outlet Franchise')">For More Details Contact →</button>
+          <p class="plan-cta-note">Custom proposal tailored to your outlet count</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+
 <!-- ═══════════════ FINAL CTA ═══════════════ -->
 <section class="final" id="start">
   <div class="lamp-glow"></div>
@@ -423,8 +572,8 @@
     <h2 class="rv d1">Start free.<br>Be set up before the dinner rush.</h2>
     <p class="lede rv d2">Bring the phones and tablets you already have. Add your menu, print a QR for each table, hand the kitchen a screen. That's the whole setup.</p>
     <div class="hero-cta rv d3">
-      <a class="btn lamp" href="#">Create your restaurant →</a>
-      <a class="btn ghost" href="#">Talk to us about a group rollout</a>
+      <a class="btn lamp" href="javascript:void(0)" onclick="openTrialModal()">Start 14-Day Free Trial →</a>
+      <a class="btn ghost" href="javascript:void(0)" onclick="openContactModal('Enterprise &amp; Multi-Outlet')">For More Details Contact →</a>
     </div>
   </div>
 </section>
@@ -475,5 +624,435 @@
   }
 })();
 </script>
+
+<!-- ═══════════════ MODAL 1: FREE TRIAL REGISTRATION (MATCHES MOBILE APP) ═══════════════ -->
+<div class="modal-overlay" id="trialModal" role="dialog" aria-modal="true" aria-labelledby="trialModalTitle">
+  <div class="modal-box">
+    <button class="modal-close" onclick="closeModals()" aria-label="Close modal">✕</button>
+    <div id="trialFormContainer">
+      <div class="modal-head">
+        <span class="badge" style="display:inline-block;margin-bottom:8px">14-Day Free Access</span>
+        <h3 id="trialModalTitle">Register Your Free Trial</h3>
+        <p>Matches your SmartDine mobile app onboarding. Experience live table QR ordering, kitchen display, and counter billing.</p>
+      </div>
+
+      <div class="plan-pill">
+        <span><strong>Selected:</strong> 14-Day Free Trial (All 5 Stations Included)</span>
+        <span style="font-weight:700">₹0</span>
+      </div>
+
+      <form id="trialForm" onsubmit="handleTrialSubmit(event)">
+        <div class="form-grid">
+          <div class="form-field">
+            <label for="trial_clientName">Your Full Name *</label>
+            <input type="text" id="trial_clientName" class="form-input" placeholder="e.g. Rahul Sharma" required>
+          </div>
+          <div class="form-field">
+            <label for="trial_shopName">Restaurant / Shop Name *</label>
+            <input type="text" id="trial_shopName" class="form-input" placeholder="e.g. The Royal Bistro" required>
+          </div>
+          <div class="form-field">
+            <label for="trial_businessCategory">Business Category *</label>
+            <select id="trial_businessCategory" class="form-select" required>
+              <option value="Restaurant &amp; Cafe" selected>Restaurant &amp; Cafe</option>
+              <option value="QSR &amp; Fast Food">QSR &amp; Fast Food</option>
+              <option value="Bakery &amp; Sweets">Bakery &amp; Sweets</option>
+              <option value="Bar &amp; Brewery">Bar &amp; Brewery</option>
+              <option value="Cloud Kitchen">Cloud Kitchen / Delivery</option>
+              <option value="Supermarket / Retail">Supermarket / Retail</option>
+              <option value="Kirana &amp; Grocery">Kirana &amp; Grocery Store</option>
+              <option value="Other Business">Other F&amp;B Venue</option>
+            </select>
+          </div>
+          <div class="form-field">
+            <label for="trial_mobile">Mobile / WhatsApp (10 digits) *</label>
+            <input type="tel" id="trial_mobile" class="form-input" placeholder="e.g. 9876543210" pattern="[0-9]{10}" maxlength="10" required>
+          </div>
+          <div class="form-field form-col-2">
+            <label for="trial_email">Email Address *</label>
+            <input type="email" id="trial_email" class="form-input" placeholder="e.g. rahul@royalbistro.com" required>
+          </div>
+          <div class="form-field">
+            <label for="trial_address">City / Location *</label>
+            <input type="text" id="trial_address" class="form-input" placeholder="e.g. Indiranagar, Bengaluru" required>
+          </div>
+          <div class="form-field">
+            <label for="trial_referralSource">How Did You Hear About Us? *</label>
+            <select id="trial_referralSource" class="form-select">
+              <option value="Friend / Retailer Referral" selected>Friend / Retailer Referral</option>
+              <option value="Google / Web Search">Google / Web Search</option>
+              <option value="Social Media / Instagram">Social Media / Instagram</option>
+              <option value="Field Representative">Field Representative / Poster</option>
+              <option value="Other Channel">Other Channel</option>
+            </select>
+          </div>
+          <div class="form-field form-col-2">
+            <label for="trial_gstNo">GSTIN / Tax ID (Optional)</label>
+            <input type="text" id="trial_gstNo" class="form-input" placeholder="e.g. 29AAAAA0000A1Z5 (Optional)" uppercase>
+          </div>
+        </div>
+
+        <button type="submit" id="trialSubmitBtn" class="btn lamp form-submit-btn">
+          <span>Activate 14-Day Free Trial →</span>
+        </button>
+        <p class="form-note">🔒 No credit card required. Your data is stored privately in your own connected Google Drive.</p>
+      </form>
+    </div>
+
+    <!-- Success View for Trial -->
+    <div id="trialSuccessView" class="success-view" style="display:none">
+      <div class="success-ring">✓</div>
+      <h3>Trial Registered Successfully!</h3>
+      <p id="trialSuccessMsg">Thank you! Your 14-day free trial request has been submitted.</p>
+      <div class="success-box">
+        <div><strong>📧 Notification Sent:</strong> smartdine.platform@gmail.com</div>
+        <div style="margin-top:4px"><strong>✉️ Confirmation Sent:</strong> <span id="trialClientEmailDisp"></span></div>
+        <div style="margin-top:4px"><strong>⏱️ Next Steps:</strong> Our onboarding team will connect with you via WhatsApp to assist with hardware pairing &amp; menu setup.</div>
+      </div>
+      <div class="success-actions">
+        <a id="trialWhatsAppBtn" class="btn lamp" style="width:100%;justify-content:center" href="#" target="_blank" rel="noopener">Chat on WhatsApp for Instant Setup →</a>
+        <a class="btn ghost" style="width:100%;justify-content:center" href="/r/?org=DEMO&table=1">Explore Live QR Dining Demo</a>
+        <button type="button" class="btn sm ghost" style="width:100%;justify-content:center;margin-top:6px" onclick="closeModals()">Close Window</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ MODAL 2: FOR MORE DETAILS CONTACT (BASIC + BUSINESS DETAILS) ═══════════════ -->
+<div class="modal-overlay" id="contactModal" role="dialog" aria-modal="true" aria-labelledby="contactModalTitle">
+  <div class="modal-box">
+    <button class="modal-close" onclick="closeModals()" aria-label="Close modal">✕</button>
+    <div id="contactFormContainer">
+      <div class="modal-head">
+        <span class="badge" style="display:inline-block;margin-bottom:8px">Commercial Rollout</span>
+        <h3 id="contactModalTitle">Request Commercial Plan Details</h3>
+        <p>Provide your basic and business details, and our solutions team will prepare tailored pricing and an operations walkthrough.</p>
+      </div>
+
+      <div class="plan-pill">
+        <span><strong>Inquiring About:</strong> <span id="contactPlanLabel">Growth Plan (₹999/mo)</span></span>
+        <span style="font-weight:700">Custom Quote</span>
+      </div>
+
+      <form id="contactForm" onsubmit="handleContactSubmit(event)">
+        <input type="hidden" id="contact_selectedPlan" value="Growth Plan (₹999/mo)">
+        
+        <!-- Section A: Basic Details -->
+        <p style="font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--lamp);margin:0 0 10px">1. Basic Contact Details</p>
+        <div class="form-grid" style="margin-top:0">
+          <div class="form-field">
+            <label for="contact_name">Contact Person Name *</label>
+            <input type="text" id="contact_name" class="form-input" placeholder="e.g. Vikram Verma" required>
+          </div>
+          <div class="form-field">
+            <label for="contact_email">Business Email Address *</label>
+            <input type="email" id="contact_email" class="form-input" placeholder="e.g. vikram@brewhouse.in" required>
+          </div>
+          <div class="form-field">
+            <label for="contact_phone">Phone / WhatsApp Number *</label>
+            <input type="tel" id="contact_phone" class="form-input" placeholder="e.g. 9845012345" required>
+          </div>
+          <div class="form-field">
+            <label for="contact_city">City &amp; State *</label>
+            <input type="text" id="contact_city" class="form-input" placeholder="e.g. Mumbai, Maharashtra" required>
+          </div>
+        </div>
+
+        <!-- Section B: Business Details -->
+        <p style="font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--lamp);margin:16px 0 10px">2. Business &amp; Operations Details</p>
+        <div class="form-grid" style="margin-top:0">
+          <div class="form-field">
+            <label for="contact_brandName">Restaurant / Brand Name *</label>
+            <input type="text" id="contact_brandName" class="form-input" placeholder="e.g. Toit Brewpub &amp; Kitchen" required>
+          </div>
+          <div class="form-field">
+            <label for="contact_businessModel">Venue Type / Format *</label>
+            <select id="contact_businessModel" class="form-select">
+              <option value="Casual Dining &amp; Cafe" selected>Casual Dining &amp; Cafe</option>
+              <option value="Fine Dining &amp; Bar">Fine Dining &amp; Bar / Lounge</option>
+              <option value="Quick Service (QSR) Chain">Quick Service (QSR) Chain</option>
+              <option value="Multi-Location Franchise">Multi-Location Franchise</option>
+              <option value="Cloud Kitchen Network">Cloud Kitchen Network</option>
+              <option value="Food Court Dining">Food Court / Multiple Counters</option>
+            </select>
+          </div>
+          <div class="form-field">
+            <label for="contact_outletsCount">Number of Outlets *</label>
+            <select id="contact_outletsCount" class="form-select">
+              <option value="1 Outlet (High Volume)" selected>1 Outlet (High Volume)</option>
+              <option value="2 to 5 Outlets">2 to 5 Outlets</option>
+              <option value="6 to 15 Outlets">6 to 15 Outlets</option>
+              <option value="15+ Outlets (National Chain)">15+ Outlets (National Chain)</option>
+            </select>
+          </div>
+          <div class="form-field">
+            <label for="contact_stationsCount">Stations Needed per Outlet *</label>
+            <select id="contact_stationsCount" class="form-select">
+              <option value="1-2 Billing Tills + 1 KDS" selected>1-2 Billing Tills + 1 Kitchen Screen</option>
+              <option value="3-5 Tills + 2 Kitchen Screens">3-5 Tills + 2 Kitchen Screens</option>
+              <option value="6+ Tills + Multi-Pass KDS + Waiters">6+ Tills + Multi-Pass KDS + Waiters</option>
+            </select>
+          </div>
+          <div class="form-field form-col-2">
+            <label for="contact_requirements">Specific Requirements / Hardware Needs</label>
+            <textarea id="contact_requirements" class="form-textarea" rows="2" placeholder="e.g. Need wireless Bluetooth printer recommendations, dual till screens, or Excel menu migration."></textarea>
+          </div>
+        </div>
+
+        <button type="submit" id="contactSubmitBtn" class="btn lamp form-submit-btn">
+          <span>Submit Inquiry &amp; Request Pricing →</span>
+        </button>
+        <p class="form-note">⚡ Dedicated solutions architect connects within 2–4 business hours.</p>
+      </form>
+    </div>
+
+    <!-- Success View for Contact -->
+    <div id="contactSuccessView" class="success-view" style="display:none">
+      <div class="success-ring" style="border-color:var(--lamp);color:var(--lamp);background:color-mix(in srgb,var(--lamp) 14%,transparent)">💼</div>
+      <h3>Business Inquiry Received!</h3>
+      <p id="contactSuccessMsg">Thank you! Your requirements have been received by our commercial team.</p>
+      <div class="success-box">
+        <div><strong>📧 Sent to Sales Desk:</strong> smartdine.platform@gmail.com</div>
+        <div style="margin-top:4px"><strong>✉️ Confirmation Sent to You:</strong> <span id="contactClientEmailDisp"></span></div>
+        <div style="margin-top:4px"><strong>⏱️ Response Window:</strong> An enterprise solution architect will connect within <strong>2 to 4 business hours</strong> with custom pricing.</div>
+      </div>
+      <div class="success-actions">
+        <a id="contactWhatsAppBtn" class="btn lamp" style="width:100%;justify-content:center" href="#" target="_blank" rel="noopener">Connect Directly on WhatsApp →</a>
+        <a id="contactEmailDirectBtn" class="btn ghost" style="width:100%;justify-content:center" href="#">Email Platform Team Direct</a>
+        <button type="button" class="btn sm ghost" style="width:100%;justify-content:center;margin-top:6px" onclick="closeModals()">Close Window</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// =========================================================================
+//  Modal Management & Lead/Trial Automation
+// =========================================================================
+const DEFAULT_APPS_SCRIPT_WEBHOOK = 'https://script.google.com/macros/s/AKfycbxxT8zHqcp1YJ0unaovmmjjnaftokfYVmTQ9AHjuzR9DDU3AVt6BfTSgsVUBwgI8fryiQ/exec';
+const FIRESTORE_BASE = 'https://firestore.googleapis.com/v1/projects/smartdine-restaurant-pos/databases/(default)/documents';
+
+function openTrialModal() {
+  document.getElementById('trialFormContainer').style.display = 'block';
+  document.getElementById('trialSuccessView').style.display = 'none';
+  const overlay = document.getElementById('trialModal');
+  overlay.style.display = 'flex';
+  setTimeout(() => overlay.classList.add('active'), 10);
+  document.body.style.overflow = 'hidden';
+}
+
+function openContactModal(planName) {
+  if (!planName) planName = 'Commercial Plan';
+  document.getElementById('contactPlanLabel').textContent = planName;
+  document.getElementById('contact_selectedPlan').value = planName;
+  document.getElementById('contactFormContainer').style.display = 'block';
+  document.getElementById('contactSuccessView').style.display = 'none';
+  const overlay = document.getElementById('contactModal');
+  overlay.style.display = 'flex';
+  setTimeout(() => overlay.classList.add('active'), 10);
+  document.body.style.overflow = 'hidden';
+}
+
+function closeModals() {
+  document.querySelectorAll('.modal-overlay').forEach(el => {
+    el.classList.remove('active');
+    setTimeout(() => el.style.display = 'none', 250);
+  });
+  document.body.style.overflow = '';
+}
+
+// Close on backdrop click or Escape key
+document.querySelectorAll('.modal-overlay').forEach(overlay => {
+  overlay.addEventListener('click', e => {
+    if (e.target === overlay) closeModals();
+  });
+});
+window.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeModals();
+});
+
+// ── Submit Free Trial Registration ──────────────────────────────────────────
+async function handleTrialSubmit(e) {
+  e.preventDefault();
+  const btn = document.getElementById('trialSubmitBtn');
+  const originalText = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<span>Registering trial...</span>';
+
+  const clientName = document.getElementById('trial_clientName').value.trim();
+  const shopName = document.getElementById('trial_shopName').value.trim();
+  const businessCategory = document.getElementById('trial_businessCategory').value;
+  const mobile = document.getElementById('trial_mobile').value.trim();
+  const email = document.getElementById('trial_email').value.trim().toLowerCase();
+  const address = document.getElementById('trial_address').value.trim();
+  const referralSource = document.getElementById('trial_referralSource').value;
+  const gstNo = document.getElementById('trial_gstNo').value.trim().toUpperCase();
+
+  const nowIso = new Date().toISOString();
+
+  // 1. Direct Firestore REST Save to registration_requests
+  try {
+    await fetch(`${FIRESTORE_BASE}/registration_requests`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        fields: {
+          clientName: { stringValue: clientName },
+          shopName: { stringValue: shopName },
+          businessCategory: { stringValue: businessCategory },
+          mobile: { stringValue: mobile },
+          email: { stringValue: email },
+          address: { stringValue: address },
+          referralSource: { stringValue: referralSource },
+          gstNo: { stringValue: gstNo },
+          planTier: { stringValue: 'FREE_TRIAL_14_DAYS' },
+          status: { stringValue: 'PENDING' },
+          source: { stringValue: 'WEBSITE_PORTAL' },
+          createdAt: { stringValue: nowIso }
+        }
+      })
+    });
+  } catch(err) {
+    console.warn('Firestore write warning:', err);
+  }
+
+  // 2. Dispatch to Apps Script Webhook (Sends Email to smartdine.platform & Client)
+  try {
+    fetch(DEFAULT_APPS_SCRIPT_WEBHOOK, {
+      method: 'POST',
+      mode: 'no-cors',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'REGISTER_TRIAL',
+        client_name: clientName,
+        shop_name: shopName,
+        business_category: businessCategory,
+        mobile: mobile,
+        email: email,
+        address: address,
+        referral_source: referralSource,
+        gst_no: gstNo,
+        plan: '14-Day Free Trial'
+      })
+    });
+  } catch(err) {
+    console.warn('Apps script webhook warning:', err);
+  }
+
+  // 3. Transition to Success View
+  btn.disabled = false;
+  btn.innerHTML = originalText;
+
+  document.getElementById('trialSuccessMsg').innerHTML = `Hello <strong>${clientName}</strong>, your 14-day free trial request for <strong>${shopName}</strong> has been logged!`;
+  document.getElementById('trialClientEmailDisp').textContent = email;
+
+  const waMsg = encodeURIComponent(`Hi SmartDine Team, I just registered for a 14-Day Free Trial for my restaurant "${shopName}" (${businessCategory}) in ${address}. My email is ${email}. Please help me get onboarded!`);
+  document.getElementById('trialWhatsAppBtn').href = `https://wa.me/917997970420?text=${waMsg}`;
+
+  document.getElementById('trialFormContainer').style.display = 'none';
+  document.getElementById('trialSuccessView').style.display = 'block';
+}
+
+// ── Submit Commercial Plan Contact Inquiry ──────────────────────────────────
+async function handleContactSubmit(e) {
+  e.preventDefault();
+  const btn = document.getElementById('contactSubmitBtn');
+  const originalText = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<span>Submitting inquiry...</span>';
+
+  const name = document.getElementById('contact_name').value.trim();
+  const email = document.getElementById('contact_email').value.trim().toLowerCase();
+  const phone = document.getElementById('contact_phone').value.trim();
+  const city = document.getElementById('contact_city').value.trim();
+  const brandName = document.getElementById('contact_brandName').value.trim();
+  const businessModel = document.getElementById('contact_businessModel').value;
+  const outletsCount = document.getElementById('contact_outletsCount').value;
+  const stationsCount = document.getElementById('contact_stationsCount').value;
+  const selectedPlan = document.getElementById('contact_selectedPlan').value;
+  const requirements = document.getElementById('contact_requirements').value.trim();
+
+  const nowIso = new Date().toISOString();
+
+  // 1. Direct Firestore REST Save to business_inquiries
+  try {
+    await fetch(`${FIRESTORE_BASE}/business_inquiries`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        fields: {
+          clientName: { stringValue: name },
+          email: { stringValue: email },
+          phone: { stringValue: phone },
+          city: { stringValue: city },
+          brandName: { stringValue: brandName },
+          businessModel: { stringValue: businessModel },
+          outletsCount: { stringValue: outletsCount },
+          stationsCount: { stringValue: stationsCount },
+          selectedPlan: { stringValue: selectedPlan },
+          requirements: { stringValue: requirements },
+          status: { stringValue: 'NEW_INQUIRY' },
+          createdAt: { stringValue: nowIso }
+        }
+      })
+    });
+  } catch(err) {
+    console.warn('Firestore inquiry write warning:', err);
+  }
+
+  // 2. Dispatch to Apps Script Webhook (Sends Email to smartdine.platform & Client)
+  try {
+    fetch(DEFAULT_APPS_SCRIPT_WEBHOOK, {
+      method: 'POST',
+      mode: 'no-cors',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'SUBMIT_INQUIRY',
+        name: name,
+        email: email,
+        phone: phone,
+        city: city,
+        brand_name: brandName,
+        business_model: businessModel,
+        outlets_count: outletsCount,
+        stations_count: stationsCount,
+        selected_plan: selectedPlan,
+        requirements: requirements
+      })
+    });
+  } catch(err) {
+    console.warn('Apps script inquiry webhook warning:', err);
+  }
+
+  // 3. Transition to Success View
+  btn.disabled = false;
+  btn.innerHTML = originalText;
+
+  document.getElementById('contactSuccessMsg').innerHTML = `Hello <strong>${name}</strong>, thank you for inquiring about <strong>${selectedPlan}</strong> for <strong>${brandName}</strong> (${outletsCount})!`;
+  document.getElementById('contactClientEmailDisp').textContent = email;
+
+  const waMsg = encodeURIComponent(`Hi SmartDine Enterprise Sales, I submitted an inquiry for ${brandName} (${outletsCount}, ${selectedPlan}). My contact is ${name}, phone ${phone}, email ${email}. Please share commercial proposal!`);
+  document.getElementById('contactWhatsAppBtn').href = `https://wa.me/917997970420?text=${waMsg}`;
+
+  const mailSubject = encodeURIComponent(`SmartDine Commercial Inquiry: ${brandName} (${selectedPlan})`);
+  const mailBody = encodeURIComponent(`Hello SmartDine Team,
+
+I have submitted a commercial inquiry:
+Name: ${name}
+Brand: ${brandName}
+Outlets: ${outletsCount}
+Plan: ${selectedPlan}
+Phone: ${phone}
+Email: ${email}
+Requirements: ${requirements}
+
+Please share commercial details.`);
+  document.getElementById('contactEmailDirectBtn').href = `mailto:smartdine.platform@gmail.com?subject=${mailSubject}&body=${mailBody}`;
+
+  document.getElementById('contactFormContainer').style.display = 'none';
+  document.getElementById('contactSuccessView').style.display = 'block';
+}
+</script>
+
 </body>
 </html>
