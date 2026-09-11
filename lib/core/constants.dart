@@ -11,6 +11,9 @@ final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 const String kDefaultMerchantVpa = ""; // Configured per-outlet by merchant in Store Settings
 
+const String kRestaurantWebOrderingBaseUrl =
+    'https://smartbizz.devmonks.space/r/'; // Production ordering URL (fallback to smartdine-pos.web.app)
+
 const String kGoogleClientId =
     '486476143616-1e1pmj004p87b0h2pk09b00ejeepsfi8.apps.googleusercontent.com';
 

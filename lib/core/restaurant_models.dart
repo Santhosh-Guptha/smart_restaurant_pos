@@ -1,5 +1,6 @@
 import 'dart:convert';
 import '../services/saas_crypto_service.dart';
+import '../services/ordering_platform_config_service.dart';
 
 DateTime _parseDateTime(dynamic value, {DateTime? fallback}) {
   if (value == null) return fallback ?? DateTime.now();
@@ -258,7 +259,8 @@ class RestaurantTable {
       tableNumber: tableNumber,
       storeId: storeId,
     );
-    return 'https://smartdine-restaurant-pos.web.app/r/?org=$organizationId$storeParam&table=$tableNumber&sig=$sig';
+    final baseUrl = OrderingPlatformConfigService.getOrderingBaseUrl();
+    return '$baseUrl?org=$organizationId$storeParam&table=$tableNumber&sig=$sig';
   }
 
   RestaurantTable copyWith({

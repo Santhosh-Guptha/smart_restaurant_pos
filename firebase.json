@@ -12,6 +12,7 @@
     "rules": "database.rules.json"
   },
   "hosting": {
+    "site": "smartdine-pos",
     "public": "hosting_public",
     "ignore": [
       "firebase.json",
