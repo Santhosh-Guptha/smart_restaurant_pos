@@ -161,122 +161,195 @@ class _AdminInquiriesViewState extends ConsumerState<AdminInquiriesView> {
                   l.selectedPlan.toLowerCase().contains(q)).toList();
             }
 
-            return Padding(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // KPI Cards Header
-                  Row(
-                    children: [
-                      _buildMetricCard(
-                        title: 'Total Leads',
-                        count: totalCount,
-                        icon: Icons.mark_email_unread_rounded,
-                        color: const Color(0xFF6366F1),
-                      ),
-                      const SizedBox(width: 12),
-                      _buildMetricCard(
-                        title: 'Needs Action',
-                        count: pendingCount,
-                        icon: Icons.hourglass_top_rounded,
-                        color: Colors.amber.shade700,
-                      ),
-                      const SizedBox(width: 12),
-                      _buildMetricCard(
-                        title: 'Pricing Queries',
-                        count: commercialCount,
-                        icon: Icons.business_center_rounded,
-                        color: const Color(0xFF0284C7),
-                      ),
-                      const SizedBox(width: 12),
-                      _buildMetricCard(
-                        title: 'Free Trials',
-                        count: trialCount,
-                        icon: Icons.verified_user_rounded,
-                        color: ClassicTheme.successEmerald,
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 18),
+            return LayoutBuilder(
+              builder: (context, constraints) {
+                final width = constraints.maxWidth;
+                final isMobile = width < 650;
+                final isTablet = width >= 650 && width < 1050;
+                final isDesktop = width >= 1050;
 
-                  // Search & Filter Bar
-                  Row(
+                final m1 = _buildMetricCard(
+                  title: 'Total Leads',
+                  count: totalCount,
+                  icon: Icons.mark_email_unread_rounded,
+                  color: const Color(0xFF6366F1),
+                );
+                final m2 = _buildMetricCard(
+                  title: 'Needs Action',
+                  count: pendingCount,
+                  icon: Icons.hourglass_top_rounded,
+                  color: Colors.amber.shade700,
+                );
+                final m3 = _buildMetricCard(
+                  title: 'Pricing Queries',
+                  count: commercialCount,
+                  icon: Icons.business_center_rounded,
+                  color: const Color(0xFF0284C7),
+                );
+                final m4 = _buildMetricCard(
+                  title: 'Free Trials',
+                  count: trialCount,
+                  icon: Icons.verified_user_rounded,
+                  color: ClassicTheme.successEmerald,
+                );
+
+                Widget metricSection;
+                if (isDesktop) {
+                  metricSection = Row(
                     children: [
-                      Expanded(
-                        child: TextField(
-                          controller: _searchCtrl,
-                          style: TextStyle(color: context.textPrimary, fontSize: 13),
-                          decoration: InputDecoration(
-                            hintText: 'Search leads by restaurant name, contact, phone, city, or plan...',
-                            hintStyle: TextStyle(color: context.textSecondary, fontSize: 13),
-                            prefixIcon: Icon(Icons.search_rounded, size: 18, color: context.textSecondary),
-                            suffixIcon: _searchQuery.isNotEmpty
-                                ? IconButton(
-                                    icon: const Icon(Icons.clear, size: 16),
-                                    onPressed: () {
-                                      _searchCtrl.clear();
-                                      setState(() => _searchQuery = '');
-                                    },
-                                  )
-                                : null,
-                            filled: true,
-                            fillColor: context.inputFill,
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(10),
-                              borderSide: BorderSide(color: context.borderColor),
-                            ),
-                            enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(10),
-                              borderSide: BorderSide(color: context.borderColor),
-                            ),
-                          ),
-                          onChanged: (v) => setState(() => _searchQuery = v.trim()),
-                        ),
-                      ),
+                      Expanded(child: m1),
                       const SizedBox(width: 12),
-                      Wrap(
-                        spacing: 8,
+                      Expanded(child: m2),
+                      const SizedBox(width: 12),
+                      Expanded(child: m3),
+                      const SizedBox(width: 12),
+                      Expanded(child: m4),
+                    ],
+                  );
+                } else if (isTablet) {
+                  metricSection = Column(
+                    children: [
+                      Row(
                         children: [
-                          _filterChip('PENDING', 'Pending ($pendingCount)'),
-                          _filterChip('COMMERCIAL', 'Pricing Queries'),
-                          _filterChip('TRIALS', 'Free Trials'),
-                          _filterChip('CONVERTED', 'Converted'),
-                          _filterChip('ALL', 'All Leads'),
+                          Expanded(child: m1),
+                          const SizedBox(width: 12),
+                          Expanded(child: m2),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(child: m3),
+                          const SizedBox(width: 12),
+                          Expanded(child: m4),
                         ],
                       ),
                     ],
-                  ),
-                  const SizedBox(height: 16),
+                  );
+                } else {
+                  metricSection = Column(
+                    children: [
+                      m1,
+                      const SizedBox(height: 8),
+                      m2,
+                      const SizedBox(height: 8),
+                      m3,
+                      const SizedBox(height: 8),
+                      m4,
+                    ],
+                  );
+                }
 
-                  // Leads List View
-                  Expanded(
-                    child: filtered.isEmpty
-                        ? Center(
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(Icons.inbox_outlined, size: 48, color: context.textSecondary.withValues(alpha: 0.5)),
-                                const SizedBox(height: 10),
-                                Text(
-                                  'No requests found matching your filter criteria.',
-                                  style: TextStyle(color: context.textSecondary, fontSize: 13),
-                                ),
-                              ],
-                            ),
-                          )
-                        : ListView.separated(
-                            itemCount: filtered.length,
-                            separatorBuilder: (_, __) => const SizedBox(height: 14),
-                            itemBuilder: (context, index) {
-                              final lead = filtered[index];
-                              return _buildLeadCard(lead);
+                final searchField = TextField(
+                  controller: _searchCtrl,
+                  style: TextStyle(color: context.textPrimary, fontSize: 13),
+                  decoration: InputDecoration(
+                    hintText: 'Search leads by restaurant name, contact, phone, city, or plan...',
+                    hintStyle: TextStyle(color: context.textSecondary, fontSize: 13),
+                    prefixIcon: Icon(Icons.search_rounded, size: 18, color: context.textSecondary),
+                    suffixIcon: _searchQuery.isNotEmpty
+                        ? IconButton(
+                            icon: const Icon(Icons.clear, size: 16),
+                            onPressed: () {
+                              _searchCtrl.clear();
+                              setState(() => _searchQuery = '');
                             },
-                          ),
+                          )
+                        : null,
+                    filled: true,
+                    fillColor: context.inputFill,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: BorderSide(color: context.borderColor),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: BorderSide(color: context.borderColor),
+                    ),
                   ),
-                ],
-              ),
+                  onChanged: (v) => setState(() => _searchQuery = v.trim()),
+                );
+
+                final filterChipsList = [
+                  _filterChip('PENDING', 'Pending ($pendingCount)'),
+                  _filterChip('COMMERCIAL', 'Pricing Queries'),
+                  _filterChip('TRIALS', 'Free Trials'),
+                  _filterChip('CONVERTED', 'Converted'),
+                  _filterChip('ALL', 'All Leads'),
+                ];
+
+                return Padding(
+                  padding: EdgeInsets.all(isMobile ? 14 : 20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Responsive Metric Cards
+                      metricSection,
+                      const SizedBox(height: 16),
+
+                      // Responsive Search & Filter Bar
+                      if (width >= 900)
+                        Row(
+                          children: [
+                            Expanded(child: searchField),
+                            const SizedBox(width: 12),
+                            Wrap(
+                              spacing: 8,
+                              children: filterChipsList,
+                            ),
+                          ],
+                        )
+                      else
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            searchField,
+                            const SizedBox(height: 10),
+                            SingleChildScrollView(
+                              scrollDirection: Axis.horizontal,
+                              child: Row(
+                                children: filterChipsList
+                                    .map((chip) => Padding(
+                                          padding: const EdgeInsets.only(right: 8),
+                                          child: chip,
+                                        ))
+                                    .toList(),
+                              ),
+                            ),
+                          ],
+                        ),
+                      const SizedBox(height: 16),
+
+                      // Leads List View
+                      Expanded(
+                        child: filtered.isEmpty
+                            ? Center(
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.inbox_outlined, size: 48, color: context.textSecondary.withValues(alpha: 0.5)),
+                                    const SizedBox(height: 10),
+                                    Text(
+                                      'No requests found matching your filter criteria.',
+                                      style: TextStyle(color: context.textSecondary, fontSize: 13),
+                                    ),
+                                  ],
+                                ),
+                              )
+                            : ListView.separated(
+                                itemCount: filtered.length,
+                                separatorBuilder: (_, __) => const SizedBox(height: 14),
+                                itemBuilder: (context, index) {
+                                  final lead = filtered[index];
+                                  return _buildLeadCard(lead);
+                                },
+                              ),
+                      ),
+                    ],
+                  ),
+                );
+              },
             );
           },
         );
@@ -309,50 +382,48 @@ class _AdminInquiriesViewState extends ConsumerState<AdminInquiriesView> {
     required IconData icon,
     required Color color,
   }) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        decoration: BoxDecoration(
-          color: context.surfaceColor,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: context.borderColor),
-        ),
-        child: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: color.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Icon(icon, color: color, size: 22),
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        color: context.surfaceColor,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: context.borderColor),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(10),
             ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    count.toString(),
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                      color: context.textPrimary,
-                    ),
+            child: Icon(icon, color: color, size: 22),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  count.toString(),
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: context.textPrimary,
                   ),
-                  Text(
-                    title,
-                    style: TextStyle(
-                      fontSize: 11.5,
-                      color: context.textSecondary,
-                      fontWeight: FontWeight.w500,
-                    ),
+                ),
+                Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    color: context.textSecondary,
+                    fontWeight: FontWeight.w500,
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -399,29 +470,40 @@ class _AdminInquiriesViewState extends ConsumerState<AdminInquiriesView> {
                   children: [
                     Row(
                       children: [
-                        Text(
-                          lead.brandName.isNotEmpty ? lead.brandName : lead.clientName,
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            color: context.textPrimary,
+                        Flexible(
+                          child: Text(
+                            lead.brandName.isNotEmpty ? lead.brandName : lead.clientName,
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: context.textPrimary,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
                         if (lead.brandName.isNotEmpty) ...[
                           const SizedBox(width: 8),
-                          Text(
-                            '• ${lead.clientName}',
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                              color: context.textSecondary,
+                          Flexible(
+                            child: Text(
+                              '• ${lead.clientName}',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: context.textSecondary,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                             ),
                           ),
                         ],
                       ],
                     ),
-                    const SizedBox(height: 3),
-                    Row(
+                    const SizedBox(height: 5),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 4,
+                      crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
@@ -438,24 +520,20 @@ class _AdminInquiriesViewState extends ConsumerState<AdminInquiriesView> {
                             ),
                           ),
                         ),
-                        const SizedBox(width: 8),
                         Text(
                           lead.businessCategory,
                           style: TextStyle(fontSize: 11.5, color: context.textSecondary),
                         ),
-                        if (lead.outlets.isNotEmpty) ...[
-                          const SizedBox(width: 6),
+                        if (lead.outlets.isNotEmpty)
                           Text('• ${lead.outlets}', style: TextStyle(fontSize: 11.5, color: context.textSecondary)),
-                        ],
-                        if (lead.stations.isNotEmpty) ...[
-                          const SizedBox(width: 6),
+                        if (lead.stations.isNotEmpty)
                           Text('• ${lead.stations}', style: TextStyle(fontSize: 11.5, color: context.textSecondary)),
-                        ],
                       ],
                     ),
                   ],
                 ),
               ),
+              const SizedBox(width: 10),
 
               // Status Badge & Date
               Column(
@@ -541,11 +619,17 @@ class _AdminInquiriesViewState extends ConsumerState<AdminInquiriesView> {
           const SizedBox(height: 14),
 
           // Action Buttons Bar
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               // Contact Channels
-              Row(
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
                   if (lead.phone.isNotEmpty) ...[
                     OutlinedButton.icon(
@@ -557,7 +641,6 @@ class _AdminInquiriesViewState extends ConsumerState<AdminInquiriesView> {
                       label: const Text('Call', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
                       onPressed: () => _makeCall(lead.phone),
                     ),
-                    const SizedBox(width: 8),
                     ElevatedButton.icon(
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF25D366),
@@ -568,7 +651,6 @@ class _AdminInquiriesViewState extends ConsumerState<AdminInquiriesView> {
                       label: const Text('WhatsApp', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
                       onPressed: () => _openWhatsApp(lead.phone, lead.clientName, lead.brandName),
                     ),
-                    const SizedBox(width: 8),
                   ],
                   if (lead.email.isNotEmpty)
                     OutlinedButton.icon(
@@ -584,7 +666,10 @@ class _AdminInquiriesViewState extends ConsumerState<AdminInquiriesView> {
               ),
 
               // Onboard & Status Management
-              Row(
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
                   if (lead.isPending)
                     TextButton(
@@ -595,7 +680,6 @@ class _AdminInquiriesViewState extends ConsumerState<AdminInquiriesView> {
                       child: const Text('Mark Contacted', style: TextStyle(fontSize: 11.5)),
                       onPressed: () => _updateLeadStatus(lead, 'CONTACTED'),
                     ),
-                  const SizedBox(width: 8),
                   ElevatedButton.icon(
                     style: ElevatedButton.styleFrom(
                       backgroundColor: ClassicTheme.successEmerald,

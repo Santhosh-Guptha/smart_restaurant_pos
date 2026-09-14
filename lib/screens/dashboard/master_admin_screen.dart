@@ -721,6 +721,10 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
   }
 
   Widget _buildTopBar(BuildContext context, {required bool isMobile}) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isCompact = screenWidth < 950;
+    final isVeryCompact = screenWidth < 650;
+
     final sectionTitles = [
       ("Dashboard & SaaS Analytics", "Live platform metrics, active tenants & pending alerts"),
       ("Inquiries & Pricing Desk", "Dual-feed commercial proposals and trial requests"),
@@ -737,7 +741,7 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
 
     return Container(
       height: 64,
-      padding: const EdgeInsets.symmetric(horizontal: 16),
+      padding: EdgeInsets.symmetric(horizontal: isVeryCompact ? 10 : 16),
       decoration: BoxDecoration(
         color: context.surfaceColor,
         border: Border(
@@ -751,10 +755,11 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
               builder: (ctx) => IconButton(
                 icon: const Icon(Icons.menu_rounded),
                 color: context.textPrimary,
+                tooltip: "Open Menu",
                 onPressed: () => Scaffold.of(ctx).openDrawer(),
               ),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: 4),
           ],
           Expanded(
             child: Column(
@@ -764,61 +769,133 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
                 Text(
                   currentTitle.$1,
                   style: TextStyle(
-                    fontSize: 15,
+                    fontSize: isVeryCompact ? 13.5 : 15.5,
                     fontWeight: FontWeight.bold,
                     color: context.textPrimary,
                   ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
-                Text(
-                  currentTitle.$2,
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: context.textSecondary,
+                if (!isVeryCompact)
+                  Text(
+                    currentTitle.$2,
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: context.textSecondary,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
               ],
             ),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 8),
           ElevatedButton.icon(
             onPressed: () => OrganizationsTab.showOnboardOrganizationDialog(context),
-            icon: const Icon(Icons.add_business_rounded, size: 16),
+            icon: const Icon(Icons.add_business_rounded, size: 15),
             label: Text(
-              isMobile ? "Onboard" : "Onboard Tenant",
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+              isVeryCompact ? "Onboard" : "Onboard Tenant",
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11.5),
             ),
             style: ElevatedButton.styleFrom(
               backgroundColor: ClassicTheme.primaryAccentIndigo,
               foregroundColor: Colors.white,
-              padding: EdgeInsets.symmetric(horizontal: isMobile ? 12 : 16, vertical: 10),
+              padding: EdgeInsets.symmetric(horizontal: isVeryCompact ? 10 : 14, vertical: 8),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
             ),
           ),
           const SizedBox(width: 6),
-          IconButton(
-            icon: const Icon(Icons.cloud_sync_rounded, color: Colors.green, size: 20),
-            tooltip: "Cloud Database Webhook",
-            onPressed: _showWebhookSettingsDialog,
-          ),
-          IconButton(
-            icon: const Icon(Icons.email_outlined, color: Color(0xFF38BDF8), size: 20),
-            tooltip: "Platform SMTP Email",
-            onPressed: _showSmtpSettingsDialog,
-          ),
-          IconButton(
-            icon: const Icon(Icons.payment_rounded, color: Color(0xFFF59E0B), size: 20),
-            tooltip: "Apply Store Razorpay Gateways",
-            onPressed: _showFranchisePaymentSettingsDialog,
-          ),
-          IconButton(
-            icon: const Icon(Icons.cleaning_services_rounded, color: Colors.orangeAccent, size: 20),
-            tooltip: "Clean Database (Keep Admin)",
-            onPressed: _showClearDatabaseDialog,
-          ),
+          if (!isCompact) ...[
+            IconButton(
+              icon: const Icon(Icons.cloud_sync_rounded, color: Colors.green, size: 20),
+              tooltip: "Cloud Database Webhook",
+              onPressed: _showWebhookSettingsDialog,
+            ),
+            IconButton(
+              icon: const Icon(Icons.email_outlined, color: Color(0xFF38BDF8), size: 20),
+              tooltip: "Platform SMTP Email",
+              onPressed: _showSmtpSettingsDialog,
+            ),
+            IconButton(
+              icon: const Icon(Icons.payment_rounded, color: Color(0xFFF59E0B), size: 20),
+              tooltip: "Apply Store Razorpay Gateways",
+              onPressed: _showFranchisePaymentSettingsDialog,
+            ),
+            IconButton(
+              icon: const Icon(Icons.cleaning_services_rounded, color: Colors.orangeAccent, size: 20),
+              tooltip: "Clean Database (Keep Admin)",
+              onPressed: _showClearDatabaseDialog,
+            ),
+          ] else ...[
+            PopupMenuButton<String>(
+              icon: Icon(Icons.more_vert_rounded, color: context.textPrimary, size: 22),
+              tooltip: "System Settings",
+              color: context.surfaceColor,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+                side: BorderSide(color: context.borderColor),
+              ),
+              onSelected: (val) {
+                switch (val) {
+                  case 'webhook':
+                    _showWebhookSettingsDialog();
+                    break;
+                  case 'smtp':
+                    _showSmtpSettingsDialog();
+                    break;
+                  case 'razorpay':
+                    _showFranchisePaymentSettingsDialog();
+                    break;
+                  case 'cleanup':
+                    _showClearDatabaseDialog();
+                    break;
+                }
+              },
+              itemBuilder: (context) => [
+                const PopupMenuItem(
+                  value: 'webhook',
+                  child: Row(
+                    children: [
+                      Icon(Icons.cloud_sync_rounded, color: Colors.green, size: 18),
+                      SizedBox(width: 10),
+                      Text('Cloud Webhook URL', style: TextStyle(fontSize: 13)),
+                    ],
+                  ),
+                ),
+                const PopupMenuItem(
+                  value: 'smtp',
+                  child: Row(
+                    children: [
+                      Icon(Icons.email_outlined, color: Color(0xFF38BDF8), size: 18),
+                      SizedBox(width: 10),
+                      Text('Platform SMTP Email', style: TextStyle(fontSize: 13)),
+                    ],
+                  ),
+                ),
+                const PopupMenuItem(
+                  value: 'razorpay',
+                  child: Row(
+                    children: [
+                      Icon(Icons.payment_rounded, color: Color(0xFFF59E0B), size: 18),
+                      SizedBox(width: 10),
+                      Text('Store Razorpay Gateways', style: TextStyle(fontSize: 13)),
+                    ],
+                  ),
+                ),
+                const PopupMenuDivider(),
+                const PopupMenuItem(
+                  value: 'cleanup',
+                  child: Row(
+                    children: [
+                      Icon(Icons.cleaning_services_rounded, color: Colors.redAccent, size: 18),
+                      SizedBox(width: 10),
+                      Text('Clean Database (Keep Admin)', style: TextStyle(fontSize: 13, color: Colors.redAccent)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ],
         ],
       ),
     );
@@ -3649,10 +3726,14 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                                   Text(
                                     rOrgName,
                                     style: TextStyle(color: context.textPrimary, fontSize: 13, fontWeight: FontWeight.bold),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
                                   ),
                                   Text(
                                     "Tenant: $rOrgId  •  Previous: $rTier",
                                     style: TextStyle(color: context.textSecondary, fontSize: 11),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
                                   ),
                                 ],
                               ),
@@ -3723,23 +3804,66 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Expanded(
                                   child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
-                                      Text(
-                                        name,
-                                        style: TextStyle(color: context.textPrimary, fontWeight: FontWeight.bold, fontSize: 16),
+                                      Row(
+                                        children: [
+                                          Flexible(
+                                            child: Text(
+                                              name,
+                                              style: TextStyle(
+                                                color: context.textPrimary,
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 16,
+                                              ),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          _infoBadge(Icons.fingerprint, docId, isAccent: true),
+                                        ],
                                       ),
-                                      if (ownerName.isNotEmpty)
+                                      if (ownerName.isNotEmpty) ...[
+                                        const SizedBox(height: 3),
                                         Text(
                                           "Owner: $ownerName ${phone.isNotEmpty ? '($phone)' : ''}",
-                                          style: TextStyle(color: context.textSecondary, fontSize: 13),
+                                          style: TextStyle(color: context.textSecondary, fontSize: 12.5),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
                                         ),
+                                      ],
                                     ],
                                   ),
                                 ),
+                                const SizedBox(width: 8),
+                                Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    IconButton(
+                                      icon: const Icon(Icons.card_membership_rounded, color: Colors.green, size: 20),
+                                      tooltip: "Edit License & Plan Entitlements",
+                                      onPressed: () => _showRenewLicenseDialog(docId, name),
+                                    ),
+                                    IconButton(
+                                      icon: Icon(Icons.edit_outlined, color: primaryAccent, size: 20),
+                                      tooltip: "Edit Tenant Profile, Razorpay & SMTP",
+                                      onPressed: () => _showEditOrganizationDialog(docId, name),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Wrap(
+                              spacing: 6,
+                              runSpacing: 6,
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              children: [
                                 StreamBuilder<DocumentSnapshot>(
                                   stream: _firestore.collection('licenses').doc(docId).snapshots(),
                                   builder: (context, licSnap) {
@@ -3828,7 +3952,6 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                                       final rData = renSnap.data!.data() as Map<String, dynamic>? ?? {};
                                       if (rData['status'] == 'PENDING') {
                                         return Container(
-                                          margin: const EdgeInsets.only(left: 6),
                                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                                           decoration: BoxDecoration(
                                             color: Colors.redAccent.withValues(alpha: 0.15),
@@ -3852,25 +3975,6 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                                     return const SizedBox.shrink();
                                   },
                                 ),
-                                const SizedBox(width: 6),
-                                IconButton(
-                                  icon: const Icon(Icons.card_membership_rounded, color: Colors.green),
-                                  tooltip: "Edit License & Plan Entitlements",
-                                  onPressed: () => _showRenewLicenseDialog(docId, name),
-                                ),
-                                IconButton(
-                                  icon: Icon(Icons.edit_outlined, color: primaryAccent),
-                                  tooltip: "Edit Tenant Profile, Razorpay & SMTP",
-                                  onPressed: () => _showEditOrganizationDialog(docId, name),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 8),
-                            Wrap(
-                              spacing: 6,
-                              runSpacing: 4,
-                              children: [
-                                _infoBadge(Icons.fingerprint, "ID: $docId", isAccent: true),
                                 _infoBadge(Icons.category_outlined, category),
                                 _infoBadge(Icons.cloud_sync_outlined, storageMode == 'CLIENTS_OWN_SHEETS' ? "Cloud Database" : storageMode),
                                 if (aadhaar.isNotEmpty)

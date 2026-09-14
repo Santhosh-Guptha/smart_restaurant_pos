@@ -119,212 +119,263 @@ class _AdminFeaturesViewState extends ConsumerState<AdminFeaturesView> {
           });
         }
 
-        return Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Header Card
-              Container(
-                padding: const EdgeInsets.all(18),
-                decoration: BoxDecoration(
-                  color: context.surfaceColor,
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: context.borderColor),
-                  boxShadow: ClassicTheme.cardShadow(context.isDark),
-                ),
-                child: Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: ClassicTheme.primaryAccent.withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: const Icon(Icons.tune_rounded, color: ClassicTheme.primaryAccent, size: 24),
-                    ),
-                    const SizedBox(width: 14),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Tenant Plan Presets & Dynamic Feature Gating',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                              color: context.textPrimary,
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            'Assign operating profiles (Pure Offline POS vs Omnichannel Cloud) or fine-tune features individually.',
-                            style: TextStyle(fontSize: 12, color: context.textSecondary),
-                          ),
-                        ],
-                      ),
-                    ),
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            final width = constraints.maxWidth;
+            final isMobile = width < 650;
+            final isTablet = width >= 650 && width < 1050;
 
-                    // Organization Selector Dropdown
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      decoration: BoxDecoration(
-                        color: context.inputFill,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: context.borderColor),
-                      ),
-                      child: DropdownButtonHideUnderline(
-                        child: DropdownButton<String>(
-                          value: _selectedOrgId,
-                          dropdownColor: context.surfaceColor,
-                          hint: Text('Select Store...', style: TextStyle(color: context.textSecondary, fontSize: 13)),
-                          items: orgDocs.map((doc) {
-                            final d = doc.data() as Map<String, dynamic>;
-                            final name = d['name'] ?? doc.id;
-                            return DropdownMenuItem<String>(
-                              value: doc.id,
-                              child: Text(
-                                '$name (${doc.id})',
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.bold,
-                                  color: context.textPrimary,
-                                ),
-                              ),
-                            );
-                          }).toList(),
-                          onChanged: (newId) {
-                            if (newId != null) {
-                              final doc = orgDocs.firstWhere((d) => d.id == newId);
-                              final d = doc.data() as Map<String, dynamic>;
-                              _loadTenantFeatures(newId, d['name'] ?? newId);
-                            }
-                          },
+            final int gridCols = isMobile ? 1 : (isTablet ? 2 : 3);
+            final double gridAspect = isMobile ? 3.8 : (isTablet ? 2.8 : 2.4);
+
+            final orgDropdown = Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              decoration: BoxDecoration(
+                color: context.inputFill,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: context.borderColor),
+              ),
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<String>(
+                  value: _selectedOrgId,
+                  dropdownColor: context.surfaceColor,
+                  isExpanded: isMobile,
+                  hint: Text('Select Store...', style: TextStyle(color: context.textSecondary, fontSize: 13)),
+                  items: orgDocs.map((doc) {
+                    final d = doc.data() as Map<String, dynamic>;
+                    final name = d['name'] ?? doc.id;
+                    return DropdownMenuItem<String>(
+                      value: doc.id,
+                      child: Text(
+                        '$name (${doc.id})',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                          color: context.textPrimary,
                         ),
+                        overflow: TextOverflow.ellipsis,
                       ),
-                    ),
-                  ],
+                    );
+                  }).toList(),
+                  onChanged: (newId) {
+                    if (newId != null) {
+                      final doc = orgDocs.firstWhere((d) => d.id == newId);
+                      final d = doc.data() as Map<String, dynamic>;
+                      _loadTenantFeatures(newId, d['name'] ?? newId);
+                    }
+                  },
                 ),
               ),
-              const SizedBox(height: 18),
+            );
 
-              // 1-Click Operational Presets Row
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: context.surfaceColor,
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: context.borderColor),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '1-Click Plan & Operational Presets',
-                      style: TextStyle(
-                        fontSize: 13.5,
-                        fontWeight: FontWeight.bold,
-                        color: context.textPrimary,
-                      ),
+            return Padding(
+              padding: EdgeInsets.all(isMobile ? 14 : 20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Header Card
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: context.surfaceColor,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: context.borderColor),
+                      boxShadow: ClassicTheme.cardShadow(context.isDark),
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Instantly configure all toggles for the selected store using verified operational blueprints:',
-                      style: TextStyle(fontSize: 11.5, color: context.textSecondary),
+                    child: width >= 800
+                        ? Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                  color: ClassicTheme.primaryAccent.withValues(alpha: 0.15),
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: const Icon(Icons.tune_rounded, color: ClassicTheme.primaryAccent, size: 24),
+                              ),
+                              const SizedBox(width: 14),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Tenant Plan Presets & Dynamic Feature Gating',
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.bold,
+                                        color: context.textPrimary,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      'Assign operating profiles (Pure Offline POS vs Omnichannel Cloud) or fine-tune features individually.',
+                                      style: TextStyle(fontSize: 12, color: context.textSecondary),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 16),
+                              orgDropdown,
+                            ],
+                          )
+                        : Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.all(8),
+                                    decoration: BoxDecoration(
+                                      color: ClassicTheme.primaryAccent.withValues(alpha: 0.15),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: const Icon(Icons.tune_rounded, color: ClassicTheme.primaryAccent, size: 20),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Text(
+                                      'Tenant Plan Presets & Dynamic Feature Gating',
+                                      style: TextStyle(
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.bold,
+                                        color: context.textPrimary,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                'Assign operating profiles (Pure Offline POS vs Omnichannel Cloud) or fine-tune features individually.',
+                                style: TextStyle(fontSize: 12, color: context.textSecondary),
+                              ),
+                              const SizedBox(height: 12),
+                              SizedBox(width: double.infinity, child: orgDropdown),
+                            ],
+                          ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // 1-Click Operational Presets Row
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: context.surfaceColor,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: context.borderColor),
                     ),
-                    const SizedBox(height: 12),
-                    Wrap(
-                      spacing: 10,
-                      runSpacing: 8,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        _presetButton(
-                          title: 'Pure Offline Counter (Single POS)',
-                          subtitle: 'Zero cloud freeze · Direct thermal printer only',
-                          icon: Icons.wifi_off_rounded,
-                          color: Colors.amber.shade800,
-                          onTap: () => _applyPreset(RestaurantFeatureCatalog.presetPureOfflineCounter),
+                        Text(
+                          '1-Click Plan & Operational Presets',
+                          style: TextStyle(
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.bold,
+                            color: context.textPrimary,
+                          ),
                         ),
-                        _presetButton(
-                          title: 'Pure Offline Dine-In & Tables',
-                          subtitle: 'Single-device manual tables & reservations',
-                          icon: Icons.table_restaurant_rounded,
-                          color: ClassicTheme.successEmerald,
-                          onTap: () => _applyPreset(RestaurantFeatureCatalog.presetPureOfflineDineIn),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Instantly configure all toggles for the selected store using verified operational blueprints:',
+                          style: TextStyle(fontSize: 11.5, color: context.textSecondary),
                         ),
-                        _presetButton(
-                          title: 'Cloud Standard POS',
-                          subtitle: 'Counter billing + Google Sheets live sync',
-                          icon: Icons.cloud_done_rounded,
-                          color: const Color(0xFF0284C7),
-                          onTap: () => _applyPreset(RestaurantFeatureCatalog.presetCloudStandard),
-                        ),
-                        _presetButton(
-                          title: 'Omnichannel Enterprise',
-                          subtitle: 'All features (QR Ordering, KDS, Waiter App, Chain)',
-                          icon: Icons.stars_rounded,
-                          color: const Color(0xFF6366F1),
-                          onTap: () => _applyPreset(RestaurantFeatureCatalog.presetOmnichannelEnterprise),
+                        const SizedBox(height: 12),
+                        Wrap(
+                          spacing: 10,
+                          runSpacing: 8,
+                          children: [
+                            _presetButton(
+                              title: 'Pure Offline Counter (Single POS)',
+                              subtitle: 'Zero cloud freeze · Direct thermal printer only',
+                              icon: Icons.wifi_off_rounded,
+                              color: Colors.amber.shade800,
+                              onTap: () => _applyPreset(RestaurantFeatureCatalog.presetPureOfflineCounter),
+                            ),
+                            _presetButton(
+                              title: 'Pure Offline Dine-In & Tables',
+                              subtitle: 'Single-device manual tables & reservations',
+                              icon: Icons.table_restaurant_rounded,
+                              color: ClassicTheme.successEmerald,
+                              onTap: () => _applyPreset(RestaurantFeatureCatalog.presetPureOfflineDineIn),
+                            ),
+                            _presetButton(
+                              title: 'Cloud Standard POS',
+                              subtitle: 'Counter billing + Google Sheets live sync',
+                              icon: Icons.cloud_done_rounded,
+                              color: const Color(0xFF0284C7),
+                              onTap: () => _applyPreset(RestaurantFeatureCatalog.presetCloudStandard),
+                            ),
+                            _presetButton(
+                              title: 'Omnichannel Enterprise',
+                              subtitle: 'All features (QR Ordering, KDS, Waiter App, Chain)',
+                              icon: Icons.stars_rounded,
+                              color: const Color(0xFF6366F1),
+                              onTap: () => _applyPreset(RestaurantFeatureCatalog.presetOmnichannelEnterprise),
+                            ),
+                          ],
                         ),
                       ],
                     ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 18),
+                  ),
+                  const SizedBox(height: 16),
 
-              // Feature Switches Matrix
-              Expanded(
-                child: _isLoadingOrg
-                    ? const Center(child: CircularProgressIndicator())
-                    : Container(
-                        padding: const EdgeInsets.all(20),
-                        decoration: BoxDecoration(
-                          color: context.surfaceColor,
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(color: context.borderColor),
-                          boxShadow: ClassicTheme.cardShadow(context.isDark),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text(
-                                  'Feature Allocation for: $_selectedOrgName (${_selectedOrgId ?? ""})',
-                                  style: TextStyle(
-                                    fontSize: 14.5,
-                                    fontWeight: FontWeight.bold,
-                                    color: context.textPrimary,
-                                  ),
-                                ),
-                                ElevatedButton.icon(
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: ClassicTheme.successEmerald,
-                                    foregroundColor: Colors.white,
-                                    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                  ),
-                                  icon: _isSaving
-                                      ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                                      : const Icon(Icons.save_rounded, size: 16),
-                                  label: const Text('Save Changes', style: TextStyle(fontWeight: FontWeight.bold)),
-                                  onPressed: _isSaving ? null : _saveTenantFeatures,
-                                ),
-                              ],
+                  // Feature Switches Matrix
+                  Expanded(
+                    child: _isLoadingOrg
+                        ? const Center(child: CircularProgressIndicator())
+                        : Container(
+                            padding: const EdgeInsets.all(18),
+                            decoration: BoxDecoration(
+                              color: context.surfaceColor,
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(color: context.borderColor),
+                              boxShadow: ClassicTheme.cardShadow(context.isDark),
                             ),
-                            const SizedBox(height: 14),
-                            Divider(color: context.borderColor, height: 1),
-                            const SizedBox(height: 12),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Wrap(
+                                  spacing: 10,
+                                  runSpacing: 10,
+                                  alignment: WrapAlignment.spaceBetween,
+                                  crossAxisAlignment: WrapCrossAlignment.center,
+                                  children: [
+                                    Text(
+                                      'Feature Allocation for: $_selectedOrgName (${_selectedOrgId ?? ""})',
+                                      style: TextStyle(
+                                        fontSize: 14.5,
+                                        fontWeight: FontWeight.bold,
+                                        color: context.textPrimary,
+                                      ),
+                                    ),
+                                    ElevatedButton.icon(
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: ClassicTheme.successEmerald,
+                                        foregroundColor: Colors.white,
+                                        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                      ),
+                                      icon: _isSaving
+                                          ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                                          : const Icon(Icons.save_rounded, size: 16),
+                                      label: const Text('Save Changes', style: TextStyle(fontWeight: FontWeight.bold)),
+                                      onPressed: _isSaving ? null : _saveTenantFeatures,
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 14),
+                                Divider(color: context.borderColor, height: 1),
+                                const SizedBox(height: 12),
 
-                            // Grid of individual feature toggles
-                            Expanded(
-                              child: GridView.count(
-                                crossAxisCount: 3,
-                                crossAxisSpacing: 14,
-                                mainAxisSpacing: 14,
-                                childAspectRatio: 2.2,
-                                children: [
+                                // Grid of individual feature toggles
+                                Expanded(
+                                  child: GridView.count(
+                                    crossAxisCount: gridCols,
+                                    crossAxisSpacing: 12,
+                                    mainAxisSpacing: 12,
+                                    childAspectRatio: gridAspect,
+                                    children: [
                                   _featureToggleTile(
                                     keyName: 'pureOfflineMode',
                                     title: 'Pure Offline Mode',
@@ -421,6 +472,8 @@ class _AdminFeaturesViewState extends ConsumerState<AdminFeaturesView> {
         );
       },
     );
+      },
+    );
   }
 
   Widget _presetButton({
@@ -445,13 +498,25 @@ class _AdminFeaturesViewState extends ConsumerState<AdminFeaturesView> {
           children: [
             Icon(icon, color: color, size: 18),
             const SizedBox(width: 10),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(title, style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: context.textPrimary)),
-                Text(subtitle, style: TextStyle(fontSize: 10, color: context.textSecondary)),
-              ],
+            Flexible(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: context.textPrimary),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  Text(
+                    subtitle,
+                    style: TextStyle(fontSize: 10, color: context.textSecondary),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
             ),
           ],
         ),
