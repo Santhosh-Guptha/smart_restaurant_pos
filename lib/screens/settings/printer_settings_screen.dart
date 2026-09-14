@@ -872,9 +872,11 @@ class _PrinterSettingsScreenState extends ConsumerState<PrinterSettingsScreen> {
                               if (granted) {
                                 printerNotifier.scanDevices();
                               } else {
-                                if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('⚠️ Bluetooth permissions are required to scan.')),
-                                );
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(content: Text('⚠️ Bluetooth permissions are required to scan.')),
+                                  );
+                                }
                               }
                             },
                           ),

@@ -641,11 +641,13 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
                   await AppsScriptBackendService.setWebhookUrl(url);
                   if (ctx.mounted) {
                     Navigator.pop(ctx);
-                    if (mounted) AppToast.showSuccess(
-                      context,
-                      "Google Apps Script Webhook Saved!",
-                      subtitle: "New client stores will automatically create Google Spreadsheets in your Drive.",
-                    );
+                    if (mounted) {
+                      AppToast.showSuccess(
+                        context,
+                        "Google Apps Script Webhook Saved!",
+                        subtitle: "New client stores will automatically create Google Spreadsheets in your Drive.",
+                      );
+                    }
                   }
                 },
                 child: const Text("Save URL", style: TextStyle(fontWeight: FontWeight.bold)),
@@ -2334,11 +2336,13 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
 
                           if (ctx.mounted) {
                             Navigator.pop(ctx);
-                            if (mounted) AppToast.showSuccess(
-                              context,
-                              "License Updated Successfully!",
-                              subtitle: "Client POS terminals will reflect the renewed subscription in real-time.",
-                            );
+                            if (mounted) {
+                              AppToast.showSuccess(
+                                context,
+                                "License Updated Successfully!",
+                                subtitle: "Client POS terminals will reflect the renewed subscription in real-time.",
+                              );
+                            }
                           }
                         } catch (e) {
                           setDialogState(() => isSaving = false);
