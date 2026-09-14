@@ -252,7 +252,7 @@ class RestaurantTable {
 
   /// Returns the secure clean QR menu URL with tamper-proof HMAC table signature
   String get qrMenuUrl {
-    if (qrUrl != null && qrUrl!.isNotEmpty) return qrUrl!;
+    if (qrUrl != null && qrUrl!.isNotEmpty && qrUrl!.contains('smartdine-pos.web.app')) return qrUrl!;
     final storeParam = (storeId != null && storeId!.isNotEmpty) ? '&store=$storeId' : '';
     final sig = SaasCryptoService.generateTableSignature(
       orgId: organizationId,

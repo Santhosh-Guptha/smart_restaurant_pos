@@ -19,6 +19,11 @@ class OrderingPlatformConfigService {
         final stored = box.get(_hiveKey);
         if (stored != null && stored.toString().trim().isNotEmpty) {
           final url = stored.toString().trim();
+          // Ensure URL points to permanent smartdine-pos.web.app
+          if (!url.contains('smartdine-pos.web.app')) {
+            box.put(_hiveKey, kRestaurantWebOrderingBaseUrl);
+            return kRestaurantWebOrderingBaseUrl;
+          }
           return url.endsWith('/') ? url : '$url/';
         }
       }

@@ -17,6 +17,8 @@ import '../../core/restaurant_models.dart';
 import '../../providers/saas_session_provider.dart';
 import '../../services/table_qr_pdf_service.dart';
 import '../../services/apps_script_backend_service.dart';
+import '../../services/ordering_platform_config_service.dart';
+import '../../services/saas_crypto_service.dart';
 import '../waiter/waiter_order_taking_screen.dart';
 
 import '../../services/thermal_printer_service.dart';
@@ -195,13 +197,21 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
     final saasSession = ref.read(saasSessionProvider);
     final activeStoreId = saasSession.activeFranchiseId;
 
-    final uri = Uri.parse('https://smartdine-restaurant-pos.web.app/r/').replace(
+    final baseUrl = OrderingPlatformConfigService.getOrderingBaseUrl();
+    final sig = SaasCryptoService.generateTableSignature(
+      orgId: orgId,
+      tableNumber: cleanTable,
+      storeId: activeStoreId,
+    );
+
+    final uri = Uri.parse(baseUrl).replace(
       queryParameters: {
         'table': cleanTable,
         'name': shopName,
         if (upiId.isNotEmpty) 'upi': upiId,
         if (orgId.isNotEmpty) 'org': orgId,
         if (activeStoreId != null && activeStoreId.isNotEmpty) 'store': activeStoreId,
+        'sig': sig,
       },
     );
     return uri.toString();

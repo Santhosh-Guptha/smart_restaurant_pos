@@ -10,6 +10,7 @@ import 'package:bcrypt/bcrypt.dart';
 import '../../core/saas_models.dart';
 import '../../providers/saas_session_provider.dart';
 import '../../services/table_qr_pdf_service.dart';
+import '../../services/ordering_platform_config_service.dart';
 
 class BranchManagementScreen extends ConsumerStatefulWidget {
   const BranchManagementScreen({super.key});
@@ -1276,7 +1277,7 @@ class _BranchManagementScreenState
     }
 
     final qrOrderingUrl =
-        'https://smartdine-restaurant-pos.web.app/r/?org=$orgId&store=${outlet.id}&table=1';
+        '${OrderingPlatformConfigService.getOrderingBaseUrl()}?org=$orgId&store=${outlet.id}&table=1';
 
     return Container(
       padding: const EdgeInsets.all(20),
