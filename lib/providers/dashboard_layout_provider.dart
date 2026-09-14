@@ -25,7 +25,7 @@ class DashboardCardMeta {
     this.allowedRoles,
   });
 
-  bool isAllowedFor({SaasLicense? license, String? role}) {
+  bool isAllowedFor({SaasLicense? license, String? role, bool checkFeature = true}) {
     final normRole = role?.toUpperCase() ?? 'UNASSIGNED';
     // Fail-closed for unknown or unassigned roles
     if (normRole == 'UNASSIGNED') {
@@ -45,7 +45,7 @@ class DashboardCardMeta {
     }
 
     // Feature check: backward compatible (defaults to true if license is null or features map is empty)
-    if (requiredFeature != null && license != null) {
+    if (checkFeature && requiredFeature != null && license != null) {
       if (license.features.isEmpty) return true;
       final defaultVal = requiredFeature == 'multiOutlet' ? false : true;
       return license.hasFeature(requiredFeature!, defaultValue: defaultVal);

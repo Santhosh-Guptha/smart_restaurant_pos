@@ -16,6 +16,7 @@ import '../../services/restaurant_sheets_service.dart';
 import '../../services/client_ledger_cloud_router_service.dart';
 import '../../services/apps_script_backend_service.dart';
 import '../../widgets/google_sheets_setup_gate_dialog.dart';
+import '../../widgets/feature_gated_widget.dart';
 
 import '../counter_billing/fast_qsr_billing_screen.dart';
 import '../restaurant/table_management_screen.dart';
@@ -45,7 +46,10 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      await GoogleSheetsSetupGateDialog.showIfRequired(context, ref);
+      final isPureOffline = ref.read(saasSessionProvider).currentLicense?.isPureOffline == true;
+      if (!isPureOffline) {
+        await GoogleSheetsSetupGateDialog.showIfRequired(context, ref);
+      }
       if (mounted) {
         _checkGoogleSheetsAccess();
       }
@@ -54,6 +58,15 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
 
   Future<void> _checkGoogleSheetsAccess() async {
     final saasSession = ref.read(saasSessionProvider);
+    if (saasSession.currentLicense?.isPureOffline == true) {
+      if (mounted) {
+        setState(() {
+          _sheetAccessVerified = true;
+          _sheetCheckMessage = 'Pure Offline Station · Direct Local POS';
+        });
+      }
+      return;
+    }
     final user = saasSession.currentUser;
     final org = saasSession.currentOrganization;
     final orgId = user?.organizationId ?? org?.id ?? 'ORG_DEFAULT';
@@ -226,16 +239,18 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
     final bool featStoreConfig = LicenseGuard.hasFeature(ref, 'storeConfiguration', defaultValue: true);
     final bool featAnalytics = LicenseGuard.hasFeature(ref, 'dayEndReports', defaultValue: true);
 
-    // Permission flags for each card: Role requirement AND License Feature
-    final bool canBilling = (isOwner || isManager || isBilling) && featBilling;
-    final bool canTables = (isOwner || isManager || isBilling || isWaiter) && featTables;
-    final bool canKds = (isOwner || isManager || isKitchen) && featKds;
-    final bool canMenu = (isOwner || isManager) && featMenu;
-    final bool canOutlets = isOwner && featOutlets;
-    final bool canStaff = (isOwner || isManager) && featStaff;
-    final bool canStoreConfig = (isOwner || isManager) && featStoreConfig;
-    final bool canAnalytics = (isOwner || isManager) && featAnalytics;
-    final bool canOrders = isOwner || isManager || isBilling;
+    // Role permission flags for each card
+    final bool roleBilling = isOwner || isManager || isBilling;
+    final bool roleTables = isOwner || isManager || isBilling || isWaiter;
+    final bool roleKds = isOwner || isManager || isKitchen;
+    final bool roleMenu = isOwner || isManager;
+    final bool roleOutlets = isOwner;
+    final bool roleStaff = isOwner || isManager;
+    final bool roleStoreConfig = isOwner || isManager;
+    final bool roleAnalytics = isOwner || isManager;
+    final bool roleOrders = isOwner || isManager || isBilling;
+
+    final bool isPureOffline = saasSession.currentLicense?.isPureOffline == true;
 
     final String roleDisplayName = activeStaff != null
         ? '${activeStaff.name} (${activeStaff.role.displayName})'
@@ -301,11 +316,32 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
                         ),
                       ),
                       const SizedBox(width: 6),
-                      Icon(
-                        _sheetAccessVerified == true ? Icons.cloud_done_rounded : Icons.cloud_sync_rounded,
-                        size: 13,
-                        color: _sheetAccessVerified == true ? const Color(0xFF10B981) : Colors.orangeAccent,
-                      ),
+                      if (isPureOffline)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF10B981).withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(color: const Color(0xFF10B981).withValues(alpha: 0.3)),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.offline_pin_rounded, size: 11, color: Color(0xFF10B981)),
+                              SizedBox(width: 4),
+                              Text(
+                                'Pure Offline Station',
+                                style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFF10B981)),
+                              ),
+                            ],
+                          ),
+                        )
+                      else
+                        Icon(
+                          _sheetAccessVerified == true ? Icons.cloud_done_rounded : Icons.cloud_sync_rounded,
+                          size: 13,
+                          color: _sheetAccessVerified == true ? const Color(0xFF10B981) : Colors.orangeAccent,
+                        ),
                     ],
                   ),
                 ],
@@ -342,8 +378,8 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
             child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Google Sheets Authorization Banner (if not verified)
-              if (_sheetAccessVerified != true && !isOwner)
+              // Google Sheets Authorization Banner (if not verified and not pure offline)
+              if (_sheetAccessVerified != true && !isOwner && !isPureOffline)
                 _buildSheetAuthBanner(),
 
               // Welcome Shift Banner
@@ -400,7 +436,7 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
                   final saasSession = ref.watch(saasSessionProvider);
 
                   final allowedCards = kAllDashboardCards.where((c) {
-                    return c.isAllowedFor(license: saasSession.currentLicense, role: roleStr);
+                    return c.isAllowedFor(license: saasSession.currentLicense, role: roleStr, checkFeature: false);
                   }).toList();
                   final allowedCardIds = allowedCards.map((c) => c.id).toSet();
 
@@ -408,7 +444,20 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
                   final primaryCards = <Widget>[];
                   for (final cardId in layoutState.primaryCardIds) {
                     if (!allowedCardIds.contains(cardId)) continue;
-                    final w = _buildCardById(cardId, context, isOwner, canBilling, canTables, canKds, canMenu, canOutlets, canStaff, canStoreConfig, canAnalytics, canOrders);
+                    final w = _buildCardById(
+                      cardId,
+                      context,
+                      isOwner,
+                      roleBilling,
+                      roleTables,
+                      roleKds,
+                      roleMenu,
+                      roleOutlets,
+                      roleStaff,
+                      roleStoreConfig,
+                      roleAnalytics,
+                      roleOrders,
+                    );
                     if (w != null) primaryCards.add(w);
                   }
 
@@ -546,106 +595,145 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
                                       ),
                                     );
                                   }).toList(),
-                                  onChanged: (cardId) {
-                                    if (cardId == null) return;
-                                    switch (cardId) {
-                                      case 'counter_billing':
-                                        if (canBilling) {
-                                          Navigator.push(context, MaterialPageRoute(builder: (_) => const FastQsrBillingScreen()));
-                                        }
-                                        break;
-                                      case 'tables':
-                                        if (canTables) {
-                                          Navigator.push(context, MaterialPageRoute(builder: (_) => const TableManagementScreen()));
-                                        }
-                                        break;
-                                      case 'orders_history':
-                                        if (canOrders) {
-                                          Navigator.push(context, MaterialPageRoute(builder: (_) => const RestaurantOrderHistoryScreen()));
-                                        }
-                                        break;
-                                      case 'kds':
-                                        if (canKds) {
-                                          Navigator.push(context, MaterialPageRoute(builder: (_) => const KitchenDisplayScreen()));
-                                        }
-                                        break;
-                                      case 'menu':
-                                        if (canMenu) {
-                                          Navigator.push(context, MaterialPageRoute(builder: (_) => const RestaurantMenuManagementScreen()));
-                                        }
-                                        break;
-                                      case 'outlets':
-                                        if (canOutlets) {
-                                          Navigator.push(context, MaterialPageRoute(builder: (_) => const BranchManagementScreen()));
-                                        }
-                                        break;
-                                      case 'staff':
-                                        if (canStaff) {
-                                          Navigator.push(context, MaterialPageRoute(builder: (_) => const StaffManagementScreen()));
-                                        }
-                                        break;
-                                      case 'store_config':
-                                        if (canStoreConfig) {
-                                          Navigator.push(context, MaterialPageRoute(builder: (_) => const StoreConfigurationScreen()));
-                                        }
-                                        break;
-                                      case 'analytics':
-                                        if (canAnalytics) {
-                                          Navigator.push(context, MaterialPageRoute(builder: (_) => const RestaurantAnalyticsScreen()));
-                                        }
-                                        break;
-                                    }
-                                  },
-                                ),
-                              ),
-                            ),
-                          ],
-                        ],
-                      );
-                    },
-                  );
-                },
-              ),
-              const SizedBox(height: 24),
-            ],
-          ),
-        ),
-      ),
-    ),
-  );
-  }
+                                   onChanged: (cardId) {
+                                     if (cardId == null) return;
+                                     switch (cardId) {
+                                       case 'counter_billing':
+                                         if (!featBilling) {
+                                           FeatureGatedButton.showUpgradeNotice(context, featureLabel: 'Counter POS Billing');
+                                         } else if (roleBilling) {
+                                           Navigator.push(context, MaterialPageRoute(builder: (_) => const FastQsrBillingScreen()));
+                                         }
+                                         break;
+                                       case 'tables':
+                                         if (!featTables) {
+                                           FeatureGatedButton.showUpgradeNotice(context, featureLabel: 'Tables & Floor Plan');
+                                         } else if (roleTables) {
+                                           Navigator.push(context, MaterialPageRoute(builder: (_) => const TableManagementScreen()));
+                                         }
+                                         break;
+                                       case 'orders_history':
+                                         if (roleOrders) {
+                                           Navigator.push(context, MaterialPageRoute(builder: (_) => const RestaurantOrderHistoryScreen()));
+                                         }
+                                         break;
+                                       case 'kds':
+                                         if (!featKds) {
+                                           FeatureGatedButton.showUpgradeNotice(context, featureLabel: 'Kitchen Display Screen (KDS)');
+                                         } else if (roleKds) {
+                                           Navigator.push(context, MaterialPageRoute(builder: (_) => const KitchenDisplayScreen()));
+                                         }
+                                         break;
+                                       case 'menu':
+                                         if (!featMenu) {
+                                           FeatureGatedButton.showUpgradeNotice(context, featureLabel: 'Menu Configuration');
+                                         } else if (roleMenu) {
+                                           Navigator.push(context, MaterialPageRoute(builder: (_) => const RestaurantMenuManagementScreen()));
+                                         }
+                                         break;
+                                       case 'outlets':
+                                         if (!featOutlets) {
+                                           FeatureGatedButton.showUpgradeNotice(context, featureLabel: 'Multi-Store Outlets');
+                                         } else if (roleOutlets) {
+                                           Navigator.push(context, MaterialPageRoute(builder: (_) => const BranchManagementScreen()));
+                                         }
+                                         break;
+                                       case 'staff':
+                                         if (!featStaff) {
+                                           FeatureGatedButton.showUpgradeNotice(context, featureLabel: 'Staff Management & RBAC');
+                                         } else if (roleStaff) {
+                                           Navigator.push(context, MaterialPageRoute(builder: (_) => const StaffManagementScreen()));
+                                         }
+                                         break;
+                                       case 'store_config':
+                                         if (!featStoreConfig) {
+                                           FeatureGatedButton.showUpgradeNotice(context, featureLabel: 'Store Settings');
+                                         } else if (roleStoreConfig) {
+                                           Navigator.push(context, MaterialPageRoute(builder: (_) => const StoreConfigurationScreen()));
+                                         }
+                                         break;
+                                       case 'analytics':
+                                         if (!featAnalytics) {
+                                           FeatureGatedButton.showUpgradeNotice(context, featureLabel: 'Analytics & Rush Reports');
+                                         } else if (roleAnalytics) {
+                                           Navigator.push(context, MaterialPageRoute(builder: (_) => const RestaurantAnalyticsScreen()));
+                                         }
+                                         break;
+                                     }
+                                   },
+                                 ),
+                               ),
+                             ),
+                           ],
+                         ],
+                       );
+                     },
+                   );
+                 },
+               ),
+               const SizedBox(height: 24),
+             ],
+           ),
+         ),
+       ),
+     ),
+   );
+   }
 
 
-  Widget? _buildCardById(String id, BuildContext context, bool isOwner, bool canBilling, bool canTables, bool canKds, bool canMenu, bool canOutlets, bool canStaff, bool canStoreConfig, bool canAnalytics, [bool canOrders = true]) {
+  Widget? _buildCardById(
+    String id,
+    BuildContext context,
+    bool isOwner,
+    bool roleBilling,
+    bool roleTables,
+    bool roleKds,
+    bool roleMenu,
+    bool roleOutlets,
+    bool roleStaff,
+    bool roleStoreConfig,
+    bool roleAnalytics,
+    [bool roleOrders = true]
+  ) {
     switch (id) {
       case 'counter_billing':
-        if (!canBilling) return null;
-        return _buildFeatureCard(
-          title: 'Counter Billing',
-          subtitle: 'Fast QSR & instant tokens',
-          badge: 'POS Desk',
-          icon: Icons.point_of_sale_rounded,
-          accentColor: Colors.amber,
-          onTap: () => Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => const FastQsrBillingScreen()),
+        if (!roleBilling) return null;
+        return FeatureGatedCard(
+          featureKey: 'qsrBilling',
+          featureLabel: 'Counter POS Billing',
+          onTap: null,
+          child: _buildFeatureCard(
+            title: 'Counter Billing',
+            subtitle: 'Fast QSR & instant tokens',
+            badge: 'POS Desk',
+            icon: Icons.point_of_sale_rounded,
+            accentColor: Colors.amber,
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const FastQsrBillingScreen()),
+            ),
           ),
         );
       case 'tables':
-        if (!canTables) return null;
-        return _buildFeatureCard(
-          title: 'Tables & Floor',
-          subtitle: 'Dine-in layout & live KOT',
-          badge: 'Captain',
-          icon: Icons.table_restaurant_rounded,
-          accentColor: const Color(0xFF10B981),
-          onTap: () => Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => const TableManagementScreen()),
+        if (!roleTables) return null;
+        return FeatureGatedCard(
+          featureKey: 'tableManagement',
+          featureLabel: 'Tables & Floor Plan',
+          onTap: null,
+          child: _buildFeatureCard(
+            title: 'Tables & Floor',
+            subtitle: 'Dine-in layout & live KOT',
+            badge: 'Captain',
+            icon: Icons.table_restaurant_rounded,
+            accentColor: const Color(0xFF10B981),
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const TableManagementScreen()),
+            ),
           ),
         );
       case 'orders_history':
-        if (!canOrders) return null;
+        if (!roleOrders) return null;
         return _buildFeatureCard(
           title: 'Order History',
           subtitle: 'All bills, modes & online orders',
@@ -658,87 +746,118 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
           ),
         );
       case 'kds':
-        if (!canKds) return null;
-        return _buildFeatureCard(
-          title: 'Kitchen (KDS)',
-          subtitle: 'Live kitchen orders & tickets',
-          badge: 'Chef Desk',
-          icon: Icons.outdoor_grill_rounded,
-          accentColor: const Color(0xFFFF6B35),
-          onTap: () => Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => const KitchenDisplayScreen()),
+        if (!roleKds) return null;
+        return FeatureGatedCard(
+          featureKey: 'kdsEnabled',
+          featureLabel: 'Kitchen Display Screen (KDS)',
+          onTap: null,
+          child: _buildFeatureCard(
+            title: 'Kitchen (KDS)',
+            subtitle: 'Live kitchen orders & tickets',
+            badge: 'Chef Desk',
+            icon: Icons.outdoor_grill_rounded,
+            accentColor: const Color(0xFFFF6B35),
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const KitchenDisplayScreen()),
+            ),
           ),
         );
       case 'menu':
-        if (!canMenu) return null;
-        return _buildFeatureCard(
-          title: 'Menu Config',
-          subtitle: 'Dishes, prices & categories',
-          badge: 'Dynamic',
-          icon: Icons.restaurant_menu_rounded,
-          accentColor: Colors.teal,
-          onTap: () => Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => const RestaurantMenuManagementScreen()),
+        if (!roleMenu) return null;
+        return FeatureGatedCard(
+          featureKey: 'menuManagement',
+          featureLabel: 'Menu Configuration',
+          onTap: null,
+          child: _buildFeatureCard(
+            title: 'Menu Config',
+            subtitle: 'Dishes, prices & categories',
+            badge: 'Dynamic',
+            icon: Icons.restaurant_menu_rounded,
+            accentColor: Colors.teal,
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const RestaurantMenuManagementScreen()),
+            ),
           ),
         );
       case 'outlets':
-        if (!canOutlets) return null;
-        return _buildFeatureCard(
-          title: 'Outlets / Stores',
-          subtitle: 'Create branch & auto-sheets',
-          badge: 'Multi-Store',
-          icon: Icons.storefront_rounded,
-          accentColor: Colors.blueAccent,
-          onTap: () => Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => const BranchManagementScreen()),
+        if (!roleOutlets) return null;
+        return FeatureGatedCard(
+          featureKey: 'multiOutlet',
+          featureLabel: 'Multi-Store Outlets',
+          onTap: null,
+          child: _buildFeatureCard(
+            title: 'Outlets / Stores',
+            subtitle: 'Create branch & auto-sheets',
+            badge: 'Multi-Store',
+            icon: Icons.storefront_rounded,
+            accentColor: Colors.blueAccent,
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const BranchManagementScreen()),
+            ),
           ),
         );
       case 'staff':
-        if (!canStaff) return null;
-        return _buildFeatureCard(
-          title: 'Staff Mapping',
-          subtitle: 'Roles, logins & sheet access',
-          badge: 'RBAC Security',
-          icon: Icons.people_alt_rounded,
-          accentColor: Colors.deepPurpleAccent,
-          onTap: () => Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => const StaffManagementScreen()),
+        if (!roleStaff) return null;
+        return FeatureGatedCard(
+          featureKey: 'staffManagement',
+          featureLabel: 'Staff Management & RBAC',
+          onTap: null,
+          child: _buildFeatureCard(
+            title: 'Staff Mapping',
+            subtitle: 'Roles, logins & sheet access',
+            badge: 'RBAC Security',
+            icon: Icons.people_alt_rounded,
+            accentColor: Colors.deepPurpleAccent,
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const StaffManagementScreen()),
+            ),
           ),
         );
       case 'store_config':
-        if (!canStoreConfig) return null;
-        return _buildFeatureCard(
-          title: 'Store Settings',
-          subtitle: 'Shifts, taxes, UPI & printer',
-          badge: 'Operations',
-          icon: Icons.tune_rounded,
-          accentColor: Colors.deepOrangeAccent,
-          onTap: () => Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => const StoreConfigurationScreen()),
+        if (!roleStoreConfig) return null;
+        return FeatureGatedCard(
+          featureKey: 'storeConfiguration',
+          featureLabel: 'Store Settings',
+          onTap: null,
+          child: _buildFeatureCard(
+            title: 'Store Settings',
+            subtitle: 'Shifts, taxes, UPI & printer',
+            badge: 'Operations',
+            icon: Icons.tune_rounded,
+            accentColor: Colors.deepOrangeAccent,
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const StoreConfigurationScreen()),
+            ),
           ),
         );
       case 'analytics':
-        if (!canAnalytics) return null;
-        return _buildFeatureCard(
-          title: 'Analytics & Rush',
-          subtitle: 'Heatmaps, dayparts & AOV',
-          badge: 'Real-Time',
-          icon: Icons.analytics_rounded,
-          accentColor: Colors.pinkAccent,
-          onTap: () => Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => const RestaurantAnalyticsScreen()),
+        if (!roleAnalytics) return null;
+        return FeatureGatedCard(
+          featureKey: 'dayEndReports',
+          featureLabel: 'Analytics & Rush Reports',
+          onTap: null,
+          child: _buildFeatureCard(
+            title: 'Analytics & Rush',
+            subtitle: 'Heatmaps, dayparts & AOV',
+            badge: 'Real-Time',
+            icon: Icons.analytics_rounded,
+            accentColor: Colors.pinkAccent,
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const RestaurantAnalyticsScreen()),
+            ),
           ),
         );
       default:
         return null;
     }
   }
+
 
   void _showCustomizeDashboardSheet(BuildContext context, WidgetRef ref) {
     showModalBottomSheet(

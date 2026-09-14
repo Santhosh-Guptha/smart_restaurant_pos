@@ -19,6 +19,7 @@ import '../../services/table_qr_pdf_service.dart';
 import '../../services/apps_script_backend_service.dart';
 import '../../services/ordering_platform_config_service.dart';
 import '../../services/saas_crypto_service.dart';
+import '../../widgets/feature_gated_widget.dart';
 import '../waiter/waiter_order_taking_screen.dart';
 
 import '../../services/thermal_printer_service.dart';
@@ -97,16 +98,20 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
     // 2. Load cached KOT orders from Hive
     _loadCachedOrdersFromHive(orgId);
 
-    // 3. Initial sync from Google Sheet
-    _syncOrdersFromGoogleSheet(orgId);
+    final isPureOffline = saasSession.currentLicense?.isPureOffline == true;
 
-    // 4. Periodic background polling from Google Sheet every 5 seconds
-    _pollingTimer?.cancel();
-    _pollingTimer = Timer.periodic(const Duration(seconds: 5), (_) {
-      if (mounted) {
-        _syncOrdersFromGoogleSheet(orgId);
-      }
-    });
+    // 3. Initial sync from Google Sheet (only when not pure offline)
+    if (!isPureOffline) {
+      _syncOrdersFromGoogleSheet(orgId);
+
+      // 4. Periodic background polling from Google Sheet every 5 seconds
+      _pollingTimer?.cancel();
+      _pollingTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+        if (mounted) {
+          _syncOrdersFromGoogleSheet(orgId);
+        }
+      });
+    }
   }
 
   Future<void> _handleRefresh() async {
@@ -114,9 +119,12 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
     final orgId = _getEffectiveOrgId();
     final saasSession = ref.read(saasSessionProvider);
     final shopName = saasSession.currentOrganization?.name ?? 'My Restaurant';
+    final isPureOffline = saasSession.currentLicense?.isPureOffline == true;
     _loadTablesFromHive(orgId, shopName);
     _loadCachedOrdersFromHive(orgId);
-    await _syncOrdersFromGoogleSheet(orgId);
+    if (!isPureOffline) {
+      await _syncOrdersFromGoogleSheet(orgId);
+    }
     if (mounted) setState(() {});
   }
 
@@ -1607,12 +1615,17 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
                       ],
                     ),
                   ),
-                  IconButton(
-                    visualDensity: VisualDensity.compact,
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(),
-                    icon: Icon(Icons.qr_code_2_rounded, size: 22, color: ClassicTheme.primaryAccent),
+                  FeatureGatedButton(
+                    featureKey: 'qrOrdering',
+                    featureLabel: 'Table QR Ordering',
                     onPressed: () => _showQrStandeeModal(table, shopName, shopPhone, shopAddress),
+                    child: IconButton(
+                      visualDensity: VisualDensity.compact,
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                      icon: Icon(Icons.qr_code_2_rounded, size: 22, color: ClassicTheme.primaryAccent),
+                      onPressed: () => _showQrStandeeModal(table, shopName, shopPhone, shopAddress),
+                    ),
                   ),
                 ],
               ),
@@ -2052,21 +2065,28 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
                     Text('${table.section} • Capacity: ${table.capacity} guests', style: TextStyle(fontSize: 12, color: context.textSecondary)),
                   ],
                 ),
-                IconButton(
-                  icon: const Icon(Icons.qr_code_rounded),
+                FeatureGatedButton(
+                  featureKey: 'qrOrdering',
+                  featureLabel: 'Table QR Standee',
                   onPressed: () {
                     Navigator.pop(ctx);
                     _showQrStandeeModal(table, shopName, shopPhone, shopAddress);
                   },
+                  child: IconButton(
+                    icon: const Icon(Icons.qr_code_rounded),
+                    onPressed: () {
+                      Navigator.pop(ctx);
+                      _showQrStandeeModal(table, shopName, shopPhone, shopAddress);
+                    },
+                  ),
                 ),
               ],
             ),
             const Divider(height: 24),
-            ListTile(
-              leading: const CircleAvatar(backgroundColor: Color(0xFF2563EB), child: Icon(Icons.point_of_sale, color: Colors.white, size: 20)),
-              title: const Text('Place Order for Customers (Waiter)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-              subtitle: Text('Take waiter order for Table ${table.tableNumber} & send to kitchen', style: const TextStyle(fontSize: 11)),
-              onTap: () async {
+            FeatureGatedButton(
+              featureKey: 'waiterOrdering',
+              featureLabel: 'Waiter Floor Order Taking',
+              onPressed: () async {
                 if (!LicenseGuard.checkAndShowLockout(context, ref, actionName: 'take waiter table orders')) {
                   return;
                 }
@@ -2079,19 +2099,45 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
                   ),
                 );
               },
+              child: ListTile(
+                leading: const CircleAvatar(backgroundColor: Color(0xFF2563EB), child: Icon(Icons.point_of_sale, color: Colors.white, size: 20)),
+                title: const Text('Place Order for Customers (Waiter)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                subtitle: Text('Take waiter order for Table ${table.tableNumber} & send to kitchen', style: const TextStyle(fontSize: 11)),
+                onTap: () async {
+                  if (!LicenseGuard.checkAndShowLockout(context, ref, actionName: 'take waiter table orders')) {
+                    return;
+                  }
+                  Navigator.pop(ctx);
+                  if (!mounted) return;
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => WaiterOrderTakingScreen(table: table),
+                    ),
+                  );
+                },
+              ),
             ),
             if (table.status == TableStatus.vacant) ...[
-              ListTile(
-                leading: const CircleAvatar(
-                  backgroundColor: Color(0xFF8B5CF6),
-                  child: Icon(Icons.bookmark_add_rounded, color: Colors.white, size: 20),
-                ),
-                title: const Text('Reserve Table (Call Booking)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                subtitle: const Text('Book caller reservation for a specific time slot & guest', style: TextStyle(fontSize: 11)),
-                onTap: () {
+              FeatureGatedButton(
+                featureKey: 'reservations',
+                featureLabel: 'Table Reservations',
+                onPressed: () {
                   Navigator.pop(ctx);
                   _showReserveTableDialog(table, orgId);
                 },
+                child: ListTile(
+                  leading: const CircleAvatar(
+                    backgroundColor: Color(0xFF8B5CF6),
+                    child: Icon(Icons.bookmark_add_rounded, color: Colors.white, size: 20),
+                  ),
+                  title: const Text('Reserve Table (Call Booking)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                  subtitle: const Text('Book caller reservation for a specific time slot & guest', style: TextStyle(fontSize: 11)),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _showReserveTableDialog(table, orgId);
+                  },
+                ),
               ),
               ListTile(
                 leading: const CircleAvatar(backgroundColor: Color(0xFF3B82F6), child: Icon(Icons.person_pin_rounded, color: Colors.white, size: 20)),

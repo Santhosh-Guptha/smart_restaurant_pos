@@ -207,6 +207,12 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
     // Load from local Hive cache first (instant 0ms response)
     _loadPendingFromHive();
 
+    final isPureOffline = ref.read(saasSessionProvider).currentLicense?.isPureOffline == true;
+    if (isPureOffline) {
+      _isFetchingPendingOrders = false;
+      return;
+    }
+
     final orgId = _getEffectiveOrgId();
     final Map<String, Map<String, dynamic>> orderMap = {};
     for (final o in _pendingOrders) {
@@ -2300,6 +2306,9 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
       // visible. The bill and every payment go to the durable Outbox on
       // failure with their original request ids, and the operator gets a
       // floating notice once the background work settles.
+      final isPureOffline = ref.read(saasSessionProvider).currentLicense?.isPureOffline == true;
+      if (isPureOffline) return;
+
       int queued = 0;
       int lost = 0;
 
@@ -2886,12 +2895,12 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
       });
 
       // 4. Sync Bill to Google Sheets and Webhook
-      try {
-        final saasSession = ref.read(saasSessionProvider);
-        final sheetId = AppsScriptBackendService.resolveSpreadsheetId(
-          orgId: orgId,
-          explicitId: saasSession.currentOrganization?.googleSheetId,
-        );
+      if (saasSession.currentLicense?.isPureOffline != true) {
+        try {
+          final sheetId = AppsScriptBackendService.resolveSpreadsheetId(
+            orgId: orgId,
+            explicitId: saasSession.currentOrganization?.googleSheetId,
+          );
 
         // X-05/N-10: the BILL's own total, never the tender. Assigning
         // `paidAmount` here (and grandTotalP = paidPaise below) let a short
@@ -2980,8 +2989,9 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
         } catch (asErr) {
           debugPrint('AppsScript saveBill error: $asErr');
         }
-      } catch (sheetErr) {
-        debugPrint('Google Sheets pending bill settlement error: $sheetErr');
+        } catch (sheetErr) {
+          debugPrint('Google Sheets pending bill settlement error: $sheetErr');
+        }
       }
 
       // 5. Auto-Print Tax Invoice if Printer is Connected

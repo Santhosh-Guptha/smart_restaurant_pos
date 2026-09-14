@@ -104,13 +104,104 @@ class RestaurantFeatureCatalog {
       iconCode: 'store',
     ),
     RestaurantFeatureItem(
-      key: 'crm',
-      label: 'Customer Directory & Order History',
-      description: 'Customer contact book, past order logs, and guest recognition.',
+      key: 'pureOfflineMode',
+      label: 'Pure Offline Mode (Single Device)',
+      description: 'Zero cloud prompts. Ultra-fast local POS machine billing with direct thermal printing.',
+      category: 'core',
+      iconCode: 'wifi_off',
+    ),
+    RestaurantFeatureItem(
+      key: 'reservations',
+      label: 'Table Reservation System',
+      description: 'Book guest tables, assign arrival times, and manage seatings.',
+      category: 'core',
+      iconCode: 'event_seat',
+    ),
+    RestaurantFeatureItem(
+      key: 'cloudSync',
+      label: 'Google Sheets & Cloud Webhook Sync',
+      description: 'Automatic two-way cloud ledger and Google Sheets database synchronization.',
       category: 'analytics',
-      iconCode: 'people',
+      iconCode: 'cloud_sync',
     ),
   ];
+
+  /// Standard Operational Presets for 1-Click Plan Allocation
+  static const Map<String, bool> presetPureOfflineCounter = {
+    'pureOfflineMode': true,
+    'qsrBilling': true,
+    'billing': true,
+    'menuManagement': true,
+    'thermalPrinting': true,
+    'tableManagement': false,
+    'reservations': false,
+    'dualPrinting': false,
+    'kdsEnabled': false,
+    'qrOrdering': false,
+    'onlineOrderingEnabled': false,
+    'waiterOrdering': false,
+    'cloudSync': false,
+    'multiOutlet': false,
+    'dayEndReports': true,
+    'expenseManagement': true,
+  };
+
+  static const Map<String, bool> presetPureOfflineDineIn = {
+    'pureOfflineMode': true,
+    'qsrBilling': true,
+    'billing': true,
+    'menuManagement': true,
+    'thermalPrinting': true,
+    'tableManagement': true,
+    'reservations': true,
+    'dualPrinting': true,
+    'kdsEnabled': false,
+    'qrOrdering': false,
+    'onlineOrderingEnabled': false,
+    'waiterOrdering': false,
+    'cloudSync': false,
+    'multiOutlet': false,
+    'dayEndReports': true,
+    'expenseManagement': true,
+  };
+
+  static const Map<String, bool> presetCloudStandard = {
+    'pureOfflineMode': false,
+    'qsrBilling': true,
+    'billing': true,
+    'menuManagement': true,
+    'thermalPrinting': true,
+    'tableManagement': true,
+    'reservations': true,
+    'dualPrinting': true,
+    'kdsEnabled': true,
+    'qrOrdering': false,
+    'onlineOrderingEnabled': false,
+    'waiterOrdering': false,
+    'cloudSync': true,
+    'multiOutlet': false,
+    'dayEndReports': true,
+    'expenseManagement': true,
+  };
+
+  static const Map<String, bool> presetOmnichannelEnterprise = {
+    'pureOfflineMode': false,
+    'qsrBilling': true,
+    'billing': true,
+    'menuManagement': true,
+    'thermalPrinting': true,
+    'tableManagement': true,
+    'reservations': true,
+    'dualPrinting': true,
+    'kdsEnabled': true,
+    'qrOrdering': true,
+    'onlineOrderingEnabled': true,
+    'waiterOrdering': true,
+    'cloudSync': true,
+    'multiOutlet': true,
+    'dayEndReports': true,
+    'expenseManagement': true,
+  };
 
   static Map<String, List<RestaurantFeatureItem>> get groupedFeatures {
     final Map<String, List<RestaurantFeatureItem>> map = {

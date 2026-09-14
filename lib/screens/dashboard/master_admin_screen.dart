@@ -22,6 +22,9 @@ import '../../core/subscription_plan_model.dart';
 import '../../services/subscription_plan_service.dart';
 import '../../services/tenant_provisioning_service.dart';
 import 'franchise_payment_settings_dialog.dart';
+import '../admin/views/admin_dashboard_view.dart';
+import '../admin/views/admin_inquiries_view.dart';
+import '../admin/views/admin_features_view.dart';
 
 class MasterAdminScreen extends ConsumerStatefulWidget {
   const MasterAdminScreen({super.key});
@@ -32,6 +35,8 @@ class MasterAdminScreen extends ConsumerStatefulWidget {
 
 class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with SingleTickerProviderStateMixin {
   late TabController _tabController;
+  int _selectedNavIndex = 0;
+  bool _isSidebarExpanded = true;
   StreamSubscription<QuerySnapshot>? _regRequestsSub;
   StreamSubscription<QuerySnapshot>? _inquiriesSub;
   final Set<String> _knownRequestIds = {};
@@ -654,128 +659,528 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
 
   @override
   Widget build(BuildContext context) {
+    final isMobile = MediaQuery.of(context).size.width < 850;
+    final sidebarContent = _buildSidebarContent(context, isMobile: isMobile);
+
     return Scaffold(
       backgroundColor: context.canvasColor,
-      appBar: AppBar(
-        title: Text("SmartBiz Control Panel", style: TextStyle(fontWeight: FontWeight.bold, color: context.textPrimary, fontSize: 16)),
-        backgroundColor: context.canvasColor,
-        actions: [
+      drawer: isMobile ? Drawer(backgroundColor: context.surfaceColor, child: sidebarContent) : null,
+      body: Row(
+        children: [
+          if (!isMobile)
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              curve: Curves.easeInOut,
+              width: _isSidebarExpanded ? 240 : 72,
+              child: sidebarContent,
+            ),
+          Expanded(
+            child: Column(
+              children: [
+                _buildTopBar(context, isMobile: isMobile),
+                Expanded(
+                  child: Material(
+                    color: context.canvasColor,
+                    child: IndexedStack(
+                      index: _selectedNavIndex,
+                      children: [
+                        AdminDashboardView(
+                          onNavigateToInquiries: () => setState(() => _selectedNavIndex = 1),
+                          onNavigateToTenants: () => setState(() => _selectedNavIndex = 2),
+                        ),
+                        AdminInquiriesView(
+                          onOnboardLead: (lead) {
+                            OrganizationsTab.showOnboardOrganizationDialog(
+                              context,
+                              initialName: lead.clientName,
+                              initialShopName: lead.brandName,
+                              initialEmail: lead.email,
+                              initialMobile: lead.phone,
+                              initialAddress: lead.city,
+                              requestId: lead.id,
+                            );
+                          },
+                        ),
+                        const OrganizationsTab(),
+                        const AdminFeaturesView(),
+                        const PlansAndFeaturesTab(),
+                        const AuditLogsTab(),
+                        const AppUpdatesTab(),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTopBar(BuildContext context, {required bool isMobile}) {
+    final sectionTitles = [
+      ("Dashboard & SaaS Analytics", "Live platform metrics, active tenants & pending alerts"),
+      ("Inquiries & Pricing Desk", "Dual-feed commercial proposals and trial requests"),
+      ("Tenant & Store Governance", "Manage client organizations, licenses, and branches"),
+      ("Plan & Feature Allocation", "1-Click plan presets and interactive feature toggle matrix"),
+      ("Subscription Plan Templates", "Platform tiers, limits, and public pricing definitions"),
+      ("Platform Audit Logs", "Comprehensive chronological security and admin audit trail"),
+      ("App Updates & Maintenance", "Version management, release channels, and updates"),
+    ];
+
+    final currentTitle = _selectedNavIndex < sectionTitles.length
+        ? sectionTitles[_selectedNavIndex]
+        : ("Control Panel", "Platform Administration");
+
+    return Container(
+      height: 64,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      decoration: BoxDecoration(
+        color: context.surfaceColor,
+        border: Border(
+          bottom: BorderSide(color: context.borderColor),
+        ),
+      ),
+      child: Row(
+        children: [
+          if (isMobile) ...[
+            Builder(
+              builder: (ctx) => IconButton(
+                icon: const Icon(Icons.menu_rounded),
+                color: context.textPrimary,
+                onPressed: () => Scaffold.of(ctx).openDrawer(),
+              ),
+            ),
+            const SizedBox(width: 8),
+          ],
+          Expanded(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  currentTitle.$1,
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.bold,
+                    color: context.textPrimary,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                Text(
+                  currentTitle.$2,
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: context.textSecondary,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          ElevatedButton.icon(
+            onPressed: () => OrganizationsTab.showOnboardOrganizationDialog(context),
+            icon: const Icon(Icons.add_business_rounded, size: 16),
+            label: Text(
+              isMobile ? "Onboard" : "Onboard Tenant",
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+            ),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: ClassicTheme.primaryAccentIndigo,
+              foregroundColor: Colors.white,
+              padding: EdgeInsets.symmetric(horizontal: isMobile ? 12 : 16, vertical: 10),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+          ),
+          const SizedBox(width: 6),
           IconButton(
-            icon: const Icon(Icons.cloud_sync_rounded, color: Colors.green),
-            tooltip: "Cloud Database Webhook Settings",
+            icon: const Icon(Icons.cloud_sync_rounded, color: Colors.green, size: 20),
+            tooltip: "Cloud Database Webhook",
             onPressed: _showWebhookSettingsDialog,
           ),
           IconButton(
-            icon: const Icon(Icons.email_outlined, color: Color(0xFF38BDF8)),
-            tooltip: "Platform SMTP Email Settings",
+            icon: const Icon(Icons.email_outlined, color: Color(0xFF38BDF8), size: 20),
+            tooltip: "Platform SMTP Email",
             onPressed: _showSmtpSettingsDialog,
           ),
           IconButton(
-            icon: const Icon(Icons.cleaning_services_rounded, color: Colors.orangeAccent),
+            icon: const Icon(Icons.payment_rounded, color: Color(0xFFF59E0B), size: 20),
+            tooltip: "Apply Store Razorpay Gateways",
+            onPressed: _showFranchisePaymentSettingsDialog,
+          ),
+          IconButton(
+            icon: const Icon(Icons.cleaning_services_rounded, color: Colors.orangeAccent, size: 20),
             tooltip: "Clean Database (Keep Admin)",
             onPressed: _showClearDatabaseDialog,
           ),
-          Consumer(
-            builder: (context, ref, _) {
-              final mode = ref.watch(themeModeProvider);
-              final isDark = mode == ThemeMode.dark;
-              return IconButton(
-                icon: Icon(isDark ? Icons.light_mode_outlined : Icons.dark_mode_outlined, color: context.textPrimary),
-                tooltip: isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode',
-                onPressed: () {
-                  ref.read(themeModeProvider.notifier).toggleTheme();
-                  HapticFeedback.lightImpact();
-                },
-              );
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.payment_rounded, color: Color(0xFFF59E0B)),
-            onPressed: _showFranchisePaymentSettingsDialog,
-            tooltip: "Apply Store Razorpay Gateways",
-          ),
-          IconButton(
-            icon: const Icon(Icons.logout_rounded, color: ClassicTheme.dangerRed),
-            onPressed: () => ref.read(authProvider.notifier).signOut(),
-            tooltip: "Log Out",
-          ),
         ],
-        bottom: TabBar(
-          controller: _tabController,
-          labelColor: context.isDark ? const Color(0xFF60A5FA) : const Color(0xFF2563EB),
-          unselectedLabelColor: context.textSecondary,
-          indicatorColor: context.isDark ? const Color(0xFF60A5FA) : const Color(0xFF2563EB),
-          indicatorWeight: 3,
-          labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5),
-          tabs: [
-            StreamBuilder<QuerySnapshot>(
-              stream: FirebaseFirestore.instance
-                  .collection('renewal_requests')
-                  .where('status', isEqualTo: 'PENDING')
-                  .snapshots(),
-              builder: (context, snapshot) {
-                final pendingRenewals = snapshot.hasData ? snapshot.data!.docs.length : 0;
-                return Tab(
-                  icon: Badge(
-                    isLabelVisible: pendingRenewals > 0,
-                    backgroundColor: Colors.amber.shade700,
-                    label: Text('$pendingRenewals', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: context.textPrimary)),
-                    child: const Icon(Icons.business_rounded),
-                  ),
-                  text: "Organizations",
-                );
-              },
-            ),
-            StreamBuilder<QuerySnapshot>(
-              stream: FirebaseFirestore.instance
-                  .collection('registration_requests')
-                  .where('status', isEqualTo: 'PENDING')
-                  .snapshots(),
-              builder: (context, regSnap) {
-                return StreamBuilder<QuerySnapshot>(
-                  stream: FirebaseFirestore.instance
-                      .collection('business_inquiries')
-                      .snapshots(),
-                  builder: (context, inqSnap) {
-                    final regCount = regSnap.hasData ? regSnap.data!.docs.length : 0;
-                    int inqCount = 0;
-                    if (inqSnap.hasData) {
-                      inqCount = inqSnap.data!.docs.where((d) {
-                        final st = (d.data() as Map<String, dynamic>)['status'];
-                        return st == 'NEW_INQUIRY' || st == 'PENDING';
-                      }).length;
-                    }
-                    final totalCount = regCount + inqCount;
-                    return Tab(
-                      icon: Badge(
-                        isLabelVisible: totalCount > 0,
-                        backgroundColor: Colors.orange.shade800,
-                        label: Text('$totalCount', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white)),
-                        child: const Icon(Icons.assignment_ind_rounded),
-                      ),
-                      text: "Requests",
-                    );
-                  },
-                );
-              },
-            ),
-            const Tab(icon: Icon(Icons.layers_rounded), text: "Plans & Features"),
-            const Tab(icon: Icon(Icons.history_rounded), text: "Audit Logs"),
-            const Tab(icon: Icon(Icons.system_update_alt_rounded), text: "App Updates"),
-          ],
+      ),
+    );
+  }
+
+  Widget _buildSidebarContent(BuildContext context, {required bool isMobile}) {
+    final showExpanded = isMobile || _isSidebarExpanded;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: context.surfaceColor,
+        border: Border(
+          right: BorderSide(color: context.borderColor),
         ),
       ),
-      body: Material(
-        color: context.canvasColor,
-        child: TabBarView(
-          controller: _tabController,
-          children: const [
-            OrganizationsTab(),
-            RegistrationRequestsTab(),
-            PlansAndFeaturesTab(),
-            AuditLogsTab(),
-            AppUpdatesTab(),
-          ],
+      child: Column(
+        children: [
+          Container(
+            height: 64,
+            padding: EdgeInsets.symmetric(horizontal: showExpanded ? 16 : 8),
+            decoration: BoxDecoration(
+              border: Border(
+                bottom: BorderSide(color: context.borderColor),
+              ),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(7),
+                  decoration: BoxDecoration(
+                    color: ClassicTheme.primaryAccentIndigo.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(
+                    Icons.restaurant_rounded,
+                    color: ClassicTheme.primaryAccentIndigo,
+                    size: 20,
+                  ),
+                ),
+                if (showExpanded) ...[
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          "SmartDine",
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                            color: context.textPrimary,
+                          ),
+                        ),
+                        Text(
+                          "Super Admin Console",
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: context.textSecondary,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+                if (!isMobile)
+                  IconButton(
+                    icon: Icon(
+                      _isSidebarExpanded ? Icons.menu_open_rounded : Icons.menu_rounded,
+                      size: 20,
+                      color: context.textSecondary,
+                    ),
+                    tooltip: _isSidebarExpanded ? "Collapse Sidebar" : "Expand Sidebar",
+                    onPressed: () => setState(() => _isSidebarExpanded = !_isSidebarExpanded),
+                  ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+              children: [
+                _buildNavItem(
+                  context,
+                  index: 0,
+                  title: "Dashboard",
+                  icon: Icons.dashboard_outlined,
+                  activeIcon: Icons.dashboard_rounded,
+                  showExpanded: showExpanded,
+                  isMobile: isMobile,
+                ),
+                _buildNavItem(
+                  context,
+                  index: 1,
+                  title: "Inquiries & Leads",
+                  icon: Icons.mark_email_unread_outlined,
+                  activeIcon: Icons.mark_email_unread_rounded,
+                  showExpanded: showExpanded,
+                  isMobile: isMobile,
+                  badgeWidget: StreamBuilder<QuerySnapshot>(
+                    stream: FirebaseFirestore.instance
+                        .collection('registration_requests')
+                        .where('status', isEqualTo: 'PENDING')
+                        .snapshots(),
+                    builder: (context, regSnap) {
+                      return StreamBuilder<QuerySnapshot>(
+                        stream: FirebaseFirestore.instance.collection('business_inquiries').snapshots(),
+                        builder: (context, inqSnap) {
+                          final regCount = regSnap.hasData ? regSnap.data!.docs.length : 0;
+                          int inqCount = 0;
+                          if (inqSnap.hasData) {
+                            inqCount = inqSnap.data!.docs.where((d) {
+                              final st = (d.data() as Map<String, dynamic>)['status'];
+                              return st == 'NEW_INQUIRY' || st == 'PENDING';
+                            }).length;
+                          }
+                          final total = regCount + inqCount;
+                          if (total <= 0) return const SizedBox.shrink();
+                          return Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: Colors.orange.shade800,
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Text(
+                              '$total',
+                              style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                            ),
+                          );
+                        },
+                      );
+                    },
+                  ),
+                ),
+                _buildNavItem(
+                  context,
+                  index: 2,
+                  title: "Tenants & Stores",
+                  icon: Icons.business_outlined,
+                  activeIcon: Icons.business_rounded,
+                  showExpanded: showExpanded,
+                  isMobile: isMobile,
+                  badgeWidget: StreamBuilder<QuerySnapshot>(
+                    stream: FirebaseFirestore.instance
+                        .collection('renewal_requests')
+                        .where('status', isEqualTo: 'PENDING')
+                        .snapshots(),
+                    builder: (context, snapshot) {
+                      final count = snapshot.hasData ? snapshot.data!.docs.length : 0;
+                      if (count <= 0) return const SizedBox.shrink();
+                      return Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: Colors.amber.shade800,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          '$count',
+                          style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                _buildNavItem(
+                  context,
+                  index: 3,
+                  title: "Feature Matrix",
+                  icon: Icons.tune_outlined,
+                  activeIcon: Icons.tune_rounded,
+                  showExpanded: showExpanded,
+                  isMobile: isMobile,
+                ),
+                _buildNavItem(
+                  context,
+                  index: 4,
+                  title: "Plan Catalog",
+                  icon: Icons.layers_outlined,
+                  activeIcon: Icons.layers_rounded,
+                  showExpanded: showExpanded,
+                  isMobile: isMobile,
+                ),
+                _buildNavItem(
+                  context,
+                  index: 5,
+                  title: "Audit Logs",
+                  icon: Icons.history_edu_outlined,
+                  activeIcon: Icons.history_edu_rounded,
+                  showExpanded: showExpanded,
+                  isMobile: isMobile,
+                ),
+                _buildNavItem(
+                  context,
+                  index: 6,
+                  title: "App Updates",
+                  icon: Icons.system_update_alt_outlined,
+                  activeIcon: Icons.system_update_alt_rounded,
+                  showExpanded: showExpanded,
+                  isMobile: isMobile,
+                ),
+              ],
+            ),
+          ),
+          Container(
+            padding: EdgeInsets.symmetric(horizontal: showExpanded ? 12 : 6, vertical: 12),
+            decoration: BoxDecoration(
+              border: Border(
+                top: BorderSide(color: context.borderColor),
+              ),
+            ),
+            child: Column(
+              children: [
+                Consumer(
+                  builder: (context, ref, _) {
+                    final isDark = ref.watch(themeModeProvider) == ThemeMode.dark;
+                    return InkWell(
+                      borderRadius: BorderRadius.circular(8),
+                      onTap: () {
+                        ref.read(themeModeProvider.notifier).toggleTheme();
+                        HapticFeedback.lightImpact();
+                      },
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                        child: Row(
+                          mainAxisAlignment: showExpanded ? MainAxisAlignment.start : MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              isDark ? Icons.light_mode_outlined : Icons.dark_mode_outlined,
+                              size: 18,
+                              color: isDark ? Colors.amber : context.textSecondary,
+                            ),
+                            if (showExpanded) ...[
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  isDark ? "Light Mode" : "Dark Mode",
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: context.textPrimary,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+                const SizedBox(height: 4),
+                if (showExpanded)
+                  Container(
+                    margin: const EdgeInsets.symmetric(vertical: 4),
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: context.canvasColor,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: context.borderColor),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.admin_panel_settings_rounded, size: 16, color: ClassicTheme.primaryAccentIndigo),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            kAdminEmail,
+                            style: TextStyle(fontSize: 11, color: context.textSecondary),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                InkWell(
+                  borderRadius: BorderRadius.circular(8),
+                  onTap: () => ref.read(authProvider.notifier).signOut(),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                    child: Row(
+                      mainAxisAlignment: showExpanded ? MainAxisAlignment.start : MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.logout_rounded, size: 18, color: ClassicTheme.dangerRed),
+                        if (showExpanded) ...[
+                          const SizedBox(width: 10),
+                          const Expanded(
+                            child: Text(
+                              "Sign Out",
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: ClassicTheme.dangerRed,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNavItem(
+    BuildContext context, {
+    required int index,
+    required String title,
+    required IconData icon,
+    required IconData activeIcon,
+    required bool showExpanded,
+    required bool isMobile,
+    Widget? badgeWidget,
+  }) {
+    final isSelected = _selectedNavIndex == index;
+    final color = isSelected ? ClassicTheme.primaryAccentIndigo : context.textSecondary;
+
+    return Tooltip(
+      message: showExpanded ? '' : title,
+      waitDuration: const Duration(milliseconds: 300),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 4),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: () {
+            setState(() => _selectedNavIndex = index);
+            if (isMobile) Navigator.of(context).pop();
+          },
+          child: Container(
+            padding: EdgeInsets.symmetric(horizontal: showExpanded ? 12 : 8, vertical: 10),
+            decoration: BoxDecoration(
+              color: isSelected ? ClassicTheme.primaryAccentIndigo.withValues(alpha: 0.12) : Colors.transparent,
+              borderRadius: BorderRadius.circular(8),
+              border: isSelected
+                  ? Border.all(color: ClassicTheme.primaryAccentIndigo.withValues(alpha: 0.3))
+                  : null,
+            ),
+            child: Row(
+              mainAxisAlignment: showExpanded ? MainAxisAlignment.start : MainAxisAlignment.center,
+              children: [
+                Icon(isSelected ? activeIcon : icon, size: 20, color: color),
+                if (showExpanded) ...[
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      title,
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                        color: isSelected ? context.textPrimary : context.textSecondary,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  if (badgeWidget != null) badgeWidget,
+                ],
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -786,21 +1191,14 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
 class OrganizationsTab extends ConsumerStatefulWidget {
   const OrganizationsTab({super.key});
 
-  @override
-  ConsumerState<OrganizationsTab> createState() => _OrganizationsTabState();
-}
-
-class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
-  final _firestore = FirebaseFirestore.instance;
-
-  String _generateUniqueOrgId() {
+  static String generateUniqueOrgId() {
     final now = DateTime.now();
     final year = now.year.toString().substring(2);
     final randomDigits = 1000 + Random().nextInt(9000);
     return "ORG$year$randomDigits";
   }
 
-  Widget _buildFeatureGroup({
+  static Widget buildFeatureGroup({
     required BuildContext context,
     required String title,
     required String subtitle,
@@ -838,7 +1236,7 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
     );
   }
 
-  Widget _featureChipWidget({
+  static Widget featureChipWidget({
     required String label,
     required String subtitle,
     required bool selected,
@@ -881,11 +1279,7 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
     );
   }
 
-  void _showAddOrganizationDialog() {
-    _showOnboardOrganizationDialog(context);
-  }
-
-  void _showOnboardOrganizationDialog(
+  static void showOnboardOrganizationDialog(
     BuildContext context, {
     String? initialName,
     String? initialShopName,
@@ -904,7 +1298,7 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
     final formKey = GlobalKey<FormState>();
 
     // Client & Org Information Controllers
-    final orgIdController = TextEditingController(text: _generateUniqueOrgId());
+    final orgIdController = TextEditingController(text: generateUniqueOrgId());
     final ownerNameController = TextEditingController(text: initialName ?? '');
     final nameController = TextEditingController(
       text: initialShopName ?? (initialName != null ? "$initialName Restaurant" : ''),
@@ -1342,7 +1736,7 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                         ...RestaurantFeatureCatalog.byCategory.entries.map((catEntry) {
                           return Padding(
                             padding: const EdgeInsets.only(bottom: 12),
-                            child: _buildFeatureGroup(
+                            child: buildFeatureGroup(
                               context: context,
                               title: catEntry.key,
                               subtitle: "Configured capabilities for ${catEntry.key}",
@@ -1350,7 +1744,7 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                               accentColor: primaryAccent,
                               children: catEntry.value.map((feat) {
                                 final isSelected = featureToggles[feat.key] ?? false;
-                                return _featureChipWidget(
+                                return featureChipWidget(
                                   label: feat.label,
                                   subtitle: feat.description,
                                   selected: isSelected,
@@ -1461,6 +1855,16 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
     );
   }
 
+  @override
+  ConsumerState<OrganizationsTab> createState() => _OrganizationsTabState();
+}
+
+class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
+  final _firestore = FirebaseFirestore.instance;
+
+  void _showAddOrganizationDialog() {
+    OrganizationsTab.showOnboardOrganizationDialog(context);
+  }
 
   void _showRenewLicenseDialog(String orgId, String orgName) {
     bool isLoading = true;

@@ -21,6 +21,7 @@ class GoogleSheetsSetupGateDialog extends ConsumerStatefulWidget {
     final user = saasSession.currentUser;
 
     if (org == null) return;
+    if (saasSession.currentLicense?.isPureOffline == true) return;
 
     // Only store owners / client admins or master admins configure cloud database
     final role = user?.role.toUpperCase() ?? '';

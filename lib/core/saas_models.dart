@@ -96,12 +96,18 @@ class SaasLicense {
       'loyaltyEnabled': ['loyalty', 'loyaltyEnabled'],
       'expenseManagement': ['expenseManagementEnabled', 'expenseManagement', 'expenses'],
       'expenseManagementEnabled': ['expenseManagement', 'expenses', 'expenseManagementEnabled'],
+      'pureOfflineMode': ['pureOfflineMode', 'offlineMode', 'pureOffline', 'offline'],
+      'reservations': ['reservations', 'tableReservations', 'reservationSystem'],
+      'cloudSync': ['cloudSync', 'googleSheetsSync', 'webhookSync'],
     };
     for (final key in <String>[featureKey, ...?aliases[featureKey]]) {
       if (features.containsKey(key)) return features[key] == true;
     }
     return defaultValue;
   }
+
+  /// Returns true if the store operates in pure offline single-device mode (no cloud prompts).
+  bool get isPureOffline => isFeatureEnabled('pureOfflineMode');
 
   /// Backward-compatible feature checker: defaults to true if features map is unconfigured.
   bool hasFeature(String featureKey, {bool defaultValue = true}) {
