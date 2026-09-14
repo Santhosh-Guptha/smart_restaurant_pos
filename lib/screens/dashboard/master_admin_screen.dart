@@ -666,56 +666,58 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
 
     return Scaffold(
       backgroundColor: context.canvasColor,
-      drawer: isMobile ? Drawer(backgroundColor: context.surfaceColor, child: sidebarContent) : null,
-      body: Row(
-        children: [
-          if (!isMobile)
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              curve: Curves.easeInOut,
-              width: _isSidebarExpanded ? 240 : 72,
-              child: sidebarContent,
-            ),
-          Expanded(
-            child: Column(
-              children: [
-                _buildTopBar(context, isMobile: isMobile),
-                Expanded(
-                  child: Material(
-                    color: context.canvasColor,
-                    child: IndexedStack(
-                      index: _selectedNavIndex,
-                      children: [
-                        AdminDashboardView(
-                          onNavigateToInquiries: () => setState(() => _selectedNavIndex = 1),
-                          onNavigateToTenants: () => setState(() => _selectedNavIndex = 2),
-                        ),
-                        AdminInquiriesView(
-                          onOnboardLead: (lead) {
-                            OrganizationsTab.showOnboardOrganizationDialog(
-                              context,
-                              initialName: lead.clientName,
-                              initialShopName: lead.brandName,
-                              initialEmail: lead.email,
-                              initialMobile: lead.phone,
-                              initialAddress: lead.city,
-                              requestId: lead.id,
-                            );
-                          },
-                        ),
-                        const OrganizationsTab(),
-                        const AdminFeaturesView(),
-                        const PlansAndFeaturesTab(),
-                        const AuditLogsTab(),
-                        const AppUpdatesTab(),
-                      ],
+      drawer: isMobile ? Drawer(backgroundColor: context.surfaceColor, child: SafeArea(child: sidebarContent)) : null,
+      body: SafeArea(
+        child: Row(
+          children: [
+            if (!isMobile)
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                curve: Curves.easeInOut,
+                width: _isSidebarExpanded ? 240 : 72,
+                child: sidebarContent,
+              ),
+            Expanded(
+              child: Column(
+                children: [
+                  _buildTopBar(context, isMobile: isMobile),
+                  Expanded(
+                    child: Material(
+                      color: context.canvasColor,
+                      child: IndexedStack(
+                        index: _selectedNavIndex,
+                        children: [
+                          AdminDashboardView(
+                            onNavigateToInquiries: () => setState(() => _selectedNavIndex = 1),
+                            onNavigateToTenants: () => setState(() => _selectedNavIndex = 2),
+                          ),
+                          AdminInquiriesView(
+                            onOnboardLead: (lead) {
+                              OrganizationsTab.showOnboardOrganizationDialog(
+                                context,
+                                initialName: lead.clientName,
+                                initialShopName: lead.brandName,
+                                initialEmail: lead.email,
+                                initialMobile: lead.phone,
+                                initialAddress: lead.city,
+                                requestId: lead.id,
+                              );
+                            },
+                          ),
+                          const OrganizationsTab(),
+                          const AdminFeaturesView(),
+                          const PlansAndFeaturesTab(),
+                          const AuditLogsTab(),
+                          const AppUpdatesTab(),
+                        ],
+                      ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -740,8 +742,8 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
         : ("Control Panel", "Platform Administration");
 
     return Container(
-      height: 64,
-      padding: EdgeInsets.symmetric(horizontal: isVeryCompact ? 10 : 16),
+      height: isVeryCompact ? 56 : 64,
+      padding: EdgeInsets.symmetric(horizontal: isVeryCompact ? 8 : 16),
       decoration: BoxDecoration(
         color: context.surfaceColor,
         border: Border(
@@ -756,10 +758,12 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
                 icon: const Icon(Icons.menu_rounded),
                 color: context.textPrimary,
                 tooltip: "Open Menu",
+                padding: isVeryCompact ? const EdgeInsets.all(4) : const EdgeInsets.all(8),
+                constraints: isVeryCompact ? const BoxConstraints() : null,
                 onPressed: () => Scaffold.of(ctx).openDrawer(),
               ),
             ),
-            const SizedBox(width: 4),
+            SizedBox(width: isVeryCompact ? 4 : 8),
           ],
           Expanded(
             child: Column(
@@ -769,7 +773,7 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
                 Text(
                   currentTitle.$1,
                   style: TextStyle(
-                    fontSize: isVeryCompact ? 13.5 : 15.5,
+                    fontSize: isVeryCompact ? 13 : 15.5,
                     fontWeight: FontWeight.bold,
                     color: context.textPrimary,
                   ),
@@ -789,22 +793,22 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
               ],
             ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 6),
           ElevatedButton.icon(
             onPressed: () => OrganizationsTab.showOnboardOrganizationDialog(context),
-            icon: const Icon(Icons.add_business_rounded, size: 15),
+            icon: const Icon(Icons.add_business_rounded, size: 14),
             label: Text(
               isVeryCompact ? "Onboard" : "Onboard Tenant",
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11.5),
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11),
             ),
             style: ElevatedButton.styleFrom(
               backgroundColor: ClassicTheme.primaryAccentIndigo,
               foregroundColor: Colors.white,
-              padding: EdgeInsets.symmetric(horizontal: isVeryCompact ? 10 : 14, vertical: 8),
+              padding: EdgeInsets.symmetric(horizontal: isVeryCompact ? 8 : 14, vertical: isVeryCompact ? 6 : 8),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
             ),
           ),
-          const SizedBox(width: 6),
+          SizedBox(width: isVeryCompact ? 2 : 6),
           if (!isCompact) ...[
             IconButton(
               icon: const Icon(Icons.cloud_sync_rounded, color: Colors.green, size: 20),
@@ -828,7 +832,9 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
             ),
           ] else ...[
             PopupMenuButton<String>(
-              icon: Icon(Icons.more_vert_rounded, color: context.textPrimary, size: 22),
+              icon: Icon(Icons.more_vert_rounded, color: context.textPrimary, size: 20),
+              padding: isVeryCompact ? EdgeInsets.zero : const EdgeInsets.all(8),
+              constraints: isVeryCompact ? const BoxConstraints() : null,
               tooltip: "System Settings",
               color: context.surfaceColor,
               shape: RoundedRectangleBorder(

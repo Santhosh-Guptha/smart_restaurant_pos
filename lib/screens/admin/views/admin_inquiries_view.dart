@@ -165,7 +165,6 @@ class _AdminInquiriesViewState extends ConsumerState<AdminInquiriesView> {
               builder: (context, constraints) {
                 final width = constraints.maxWidth;
                 final isMobile = width < 650;
-                final isTablet = width >= 650 && width < 1050;
                 final isDesktop = width >= 1050;
 
                 final m1 = _buildMetricCard(
@@ -173,24 +172,28 @@ class _AdminInquiriesViewState extends ConsumerState<AdminInquiriesView> {
                   count: totalCount,
                   icon: Icons.mark_email_unread_rounded,
                   color: const Color(0xFF6366F1),
+                  isMobile: isMobile,
                 );
                 final m2 = _buildMetricCard(
                   title: 'Needs Action',
                   count: pendingCount,
                   icon: Icons.hourglass_top_rounded,
                   color: Colors.amber.shade700,
+                  isMobile: isMobile,
                 );
                 final m3 = _buildMetricCard(
                   title: 'Pricing Queries',
                   count: commercialCount,
                   icon: Icons.business_center_rounded,
                   color: const Color(0xFF0284C7),
+                  isMobile: isMobile,
                 );
                 final m4 = _buildMetricCard(
                   title: 'Free Trials',
                   count: trialCount,
                   icon: Icons.verified_user_rounded,
                   color: ClassicTheme.successEmerald,
+                  isMobile: isMobile,
                 );
 
                 Widget metricSection;
@@ -206,36 +209,24 @@ class _AdminInquiriesViewState extends ConsumerState<AdminInquiriesView> {
                       Expanded(child: m4),
                     ],
                   );
-                } else if (isTablet) {
+                } else {
                   metricSection = Column(
                     children: [
                       Row(
                         children: [
                           Expanded(child: m1),
-                          const SizedBox(width: 12),
+                          SizedBox(width: isMobile ? 8 : 12),
                           Expanded(child: m2),
                         ],
                       ),
-                      const SizedBox(height: 12),
+                      SizedBox(height: isMobile ? 8 : 12),
                       Row(
                         children: [
                           Expanded(child: m3),
-                          const SizedBox(width: 12),
+                          SizedBox(width: isMobile ? 8 : 12),
                           Expanded(child: m4),
                         ],
                       ),
-                    ],
-                  );
-                } else {
-                  metricSection = Column(
-                    children: [
-                      m1,
-                      const SizedBox(height: 8),
-                      m2,
-                      const SizedBox(height: 8),
-                      m3,
-                      const SizedBox(height: 8),
-                      m4,
                     ],
                   );
                 }
@@ -381,9 +372,10 @@ class _AdminInquiriesViewState extends ConsumerState<AdminInquiriesView> {
     required int count,
     required IconData icon,
     required Color color,
+    bool isMobile = false,
   }) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      padding: EdgeInsets.symmetric(horizontal: isMobile ? 10 : 16, vertical: isMobile ? 10 : 14),
       decoration: BoxDecoration(
         color: context.surfaceColor,
         borderRadius: BorderRadius.circular(12),
@@ -392,22 +384,23 @@ class _AdminInquiriesViewState extends ConsumerState<AdminInquiriesView> {
       child: Row(
         children: [
           Container(
-            padding: const EdgeInsets.all(10),
+            padding: EdgeInsets.all(isMobile ? 7 : 10),
             decoration: BoxDecoration(
               color: color.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(10),
             ),
-            child: Icon(icon, color: color, size: 22),
+            child: Icon(icon, color: color, size: isMobile ? 18 : 22),
           ),
-          const SizedBox(width: 14),
+          SizedBox(width: isMobile ? 8 : 14),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Text(
                   count.toString(),
                   style: TextStyle(
-                    fontSize: 20,
+                    fontSize: isMobile ? 17 : 20,
                     fontWeight: FontWeight.bold,
                     color: context.textPrimary,
                   ),
@@ -415,10 +408,12 @@ class _AdminInquiriesViewState extends ConsumerState<AdminInquiriesView> {
                 Text(
                   title,
                   style: TextStyle(
-                    fontSize: 11.5,
+                    fontSize: isMobile ? 10.5 : 11.5,
                     color: context.textSecondary,
                     fontWeight: FontWeight.w500,
                   ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ],
             ),

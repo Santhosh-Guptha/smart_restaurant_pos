@@ -82,7 +82,6 @@ class AdminDashboardView extends ConsumerWidget {
                       builder: (context, constraints) {
                         final width = constraints.maxWidth;
                         final isMobile = width < 650;
-                        final isTablet = width >= 650 && width < 1050;
                         final isDesktop = width >= 1050;
 
                         final kpi1 = _buildKpiCard(
@@ -92,6 +91,7 @@ class AdminDashboardView extends ConsumerWidget {
                           subtitle: 'Operational stores',
                           icon: Icons.store_mall_directory_rounded,
                           color: const Color(0xFF6366F1),
+                          isMobile: isMobile,
                           onTap: onNavigateToTenants,
                         );
                         final kpi2 = _buildKpiCard(
@@ -101,6 +101,7 @@ class AdminDashboardView extends ConsumerWidget {
                           subtitle: 'Needs renewal action',
                           icon: Icons.timer_outlined,
                           color: Colors.amber.shade800,
+                          isMobile: isMobile,
                           onTap: onNavigateToTenants,
                         );
                         final kpi3 = _buildKpiCard(
@@ -110,6 +111,7 @@ class AdminDashboardView extends ConsumerWidget {
                           subtitle: '$pendingInquiries Pricing • $pendingTrials Trials',
                           icon: Icons.mark_email_unread_rounded,
                           color: const Color(0xFF0284C7),
+                          isMobile: isMobile,
                           onTap: onNavigateToInquiries,
                         );
                         final kpi4 = _buildKpiCard(
@@ -119,6 +121,7 @@ class AdminDashboardView extends ConsumerWidget {
                           subtitle: 'Single-device POS desks',
                           icon: Icons.wifi_off_rounded,
                           color: ClassicTheme.successEmerald,
+                          isMobile: isMobile,
                           onTap: onNavigateToFeatures,
                         );
 
@@ -135,42 +138,31 @@ class AdminDashboardView extends ConsumerWidget {
                               Expanded(child: kpi4),
                             ],
                           );
-                        } else if (isTablet) {
+                        } else {
+                          // Clean 2x2 Grid for Tablet & Mobile - Compact and never takes over the whole screen
                           kpiSection = Column(
                             children: [
                               Row(
                                 children: [
                                   Expanded(child: kpi1),
-                                  const SizedBox(width: 14),
+                                  SizedBox(width: isMobile ? 10 : 14),
                                   Expanded(child: kpi2),
                                 ],
                               ),
-                              const SizedBox(height: 14),
+                              SizedBox(height: isMobile ? 10 : 14),
                               Row(
                                 children: [
                                   Expanded(child: kpi3),
-                                  const SizedBox(width: 14),
+                                  SizedBox(width: isMobile ? 10 : 14),
                                   Expanded(child: kpi4),
                                 ],
                               ),
                             ],
                           );
-                        } else {
-                          kpiSection = Column(
-                            children: [
-                              kpi1,
-                              const SizedBox(height: 10),
-                              kpi2,
-                              const SizedBox(height: 10),
-                              kpi3,
-                              const SizedBox(height: 10),
-                              kpi4,
-                            ],
-                          );
                         }
 
                         final operationalModesPanel = Container(
-                          padding: const EdgeInsets.all(20),
+                          padding: EdgeInsets.all(isMobile ? 14 : 20),
                           decoration: BoxDecoration(
                             color: context.surfaceColor,
                             borderRadius: BorderRadius.circular(14),
@@ -186,12 +178,12 @@ class AdminDashboardView extends ConsumerWidget {
                                   Text(
                                     'Subscription & Operational Modes',
                                     style: TextStyle(
-                                      fontSize: 15,
+                                      fontSize: isMobile ? 13.5 : 15,
                                       fontWeight: FontWeight.bold,
                                       color: context.textPrimary,
                                     ),
                                   ),
-                                  Icon(Icons.tune_rounded, size: 18, color: context.textSecondary),
+                                  Icon(Icons.tune_rounded, size: isMobile ? 16 : 18, color: context.textSecondary),
                                 ],
                               ),
                               const SizedBox(height: 16),
@@ -223,7 +215,7 @@ class AdminDashboardView extends ConsumerWidget {
                         );
 
                         final quickActionsPanel = Container(
-                          padding: const EdgeInsets.all(20),
+                          padding: EdgeInsets.all(isMobile ? 14 : 20),
                           decoration: BoxDecoration(
                             color: context.surfaceColor,
                             borderRadius: BorderRadius.circular(14),
@@ -533,13 +525,14 @@ class AdminDashboardView extends ConsumerWidget {
     required String subtitle,
     required IconData icon,
     required Color color,
+    bool isMobile = false,
     VoidCallback? onTap,
   }) {
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(14),
       child: Container(
-        padding: const EdgeInsets.all(18),
+        padding: EdgeInsets.all(isMobile ? 12 : 16),
         decoration: BoxDecoration(
           color: context.surfaceColor,
           borderRadius: BorderRadius.circular(14),
@@ -548,45 +541,52 @@ class AdminDashboardView extends ConsumerWidget {
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Container(
-                  padding: const EdgeInsets.all(8),
+                  padding: EdgeInsets.all(isMobile ? 6 : 8),
                   decoration: BoxDecoration(
                     color: color.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: BorderRadius.circular(8),
                   ),
-                  child: Icon(icon, color: color, size: 20),
+                  child: Icon(icon, color: color, size: isMobile ? 16 : 20),
                 ),
-                const Icon(Icons.arrow_forward_ios_rounded, size: 12, color: Colors.grey),
+                Icon(Icons.arrow_forward_ios_rounded, size: isMobile ? 10 : 12, color: Colors.grey),
               ],
             ),
-            const SizedBox(height: 14),
+            SizedBox(height: isMobile ? 8 : 12),
             Text(
               value,
               style: TextStyle(
-                fontSize: 22,
+                fontSize: isMobile ? 18 : 22,
                 fontWeight: FontWeight.bold,
                 color: context.textPrimary,
               ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
             const SizedBox(height: 2),
             Text(
               title,
               style: TextStyle(
-                fontSize: 12.5,
+                fontSize: isMobile ? 11.5 : 12.5,
                 fontWeight: FontWeight.w600,
                 color: context.textPrimary,
               ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
             Text(
               subtitle,
               style: TextStyle(
-                fontSize: 11,
+                fontSize: isMobile ? 10 : 11,
                 color: context.textSecondary,
               ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
           ],
         ),
@@ -608,8 +608,19 @@ class AdminDashboardView extends ConsumerWidget {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text(title, style: TextStyle(fontSize: 12.5, color: context.textPrimary, fontWeight: FontWeight.w500)),
-            Text('$count (${(pct * 100).toInt()}%)', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: color)),
+            Flexible(
+              child: Text(
+                title,
+                style: TextStyle(fontSize: 12, color: context.textPrimary, fontWeight: FontWeight.w500),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              '$count (${(pct * 100).toInt()}%)',
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: color),
+            ),
           ],
         ),
         const SizedBox(height: 6),
