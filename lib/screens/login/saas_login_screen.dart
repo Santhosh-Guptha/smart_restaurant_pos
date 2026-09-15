@@ -291,9 +291,9 @@ class _SaaSLoginScreenState extends ConsumerState<SaaSLoginScreen> {
                               ],
 
                               if (_isLoggingIn)
-                                const Center(
+                                Center(
                                   child: Padding(
-                                    padding: EdgeInsets.symmetric(vertical: 36.0),
+                                    padding: const EdgeInsets.symmetric(vertical: 36.0),
                                     child: CircularProgressIndicator(color: ClassicTheme.primaryAccent),
                                   ),
                                 )

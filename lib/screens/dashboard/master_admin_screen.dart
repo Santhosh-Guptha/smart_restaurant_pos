@@ -4968,11 +4968,11 @@ class _RegistrationRequestsTabState extends ConsumerState<RegistrationRequestsTa
                                     color: ClassicTheme.secondaryAccent.withValues(alpha: 0.12),
                                     borderRadius: BorderRadius.circular(6),
                                   ),
-                                  child: const Row(
+                                  child: Row(
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
                                       Icon(Icons.send_rounded, size: 13, color: ClassicTheme.secondaryAccent),
-                                      SizedBox(width: 4),
+                                      const SizedBox(width: 4),
                                       Text("Email", style: TextStyle(color: ClassicTheme.secondaryAccent, fontSize: 12, fontWeight: FontWeight.bold)),
                                     ],
                                   ),
