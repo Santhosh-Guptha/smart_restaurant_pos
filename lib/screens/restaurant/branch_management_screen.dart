@@ -866,7 +866,7 @@ class _BranchManagementScreenState
                     overflow: TextOverflow.ellipsis,
                   ),
                   Text(
-                    'Multi-store administration, QR codes & branch switcher',
+                    featureOn(FeatureKeys.qrOrdering) ? 'Multi-store administration, QR codes & branch switcher' : 'Multi-store administration & branch switcher',
                     style: TextStyle(fontSize: 12, color: context.textSecondary),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -1096,7 +1096,7 @@ class _BranchManagementScreenState
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    'Select a branch to operate, download QR standees, or edit settings',
+                    featureOn(FeatureKeys.qrOrdering) ? 'Select a branch to operate, download QR standees, or edit settings' : 'Select a branch to operate or edit its settings',
                     style: TextStyle(color: context.textSecondary, fontSize: 12),
                   ),
                 ],
@@ -1150,7 +1150,7 @@ class _BranchManagementScreenState
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    'Add your main dining hall, express cafe, or franchise branches to manage orders and table QR codes.',
+                    featureOn(FeatureKeys.qrOrdering) ? 'Add your main dining hall, express cafe, or franchise branches to manage orders and table QR codes.' : 'Add your main dining hall, express cafe, or franchise branches to manage orders per store.',
                     textAlign: TextAlign.center,
                     style: TextStyle(color: context.textSecondary, fontSize: 13),
                   ),
@@ -1500,6 +1500,8 @@ class _BranchManagementScreenState
                   ),
                 ),
 
+              // Table QR standees belong to qrOrdering.
+              if (featureOn(FeatureKeys.qrOrdering)) ...[
               const SizedBox(width: 12),
 
               // Download Table Standees PDF Button
@@ -1550,6 +1552,10 @@ class _BranchManagementScreenState
                 ),
               ),
 
+              ],
+
+              // Menu links belong to onlineMenu.
+              if (featureOn(FeatureKeys.onlineMenu)) ...[
               const SizedBox(width: 12),
 
               // Copy Digital Menu Ordering Link
@@ -1613,6 +1619,7 @@ class _BranchManagementScreenState
                   ),
                 ),
               ),
+              ],
 
               // Edit Button
               IconButton(

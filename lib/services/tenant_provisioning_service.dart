@@ -3,6 +3,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'package:bcrypt/bcrypt.dart';
 import '../core/subscription_plan_model.dart';
+import '../core/entitlements.dart';
+import '../core/saas_models.dart';
 import 'apps_script_backend_service.dart';
 import 'smtp_email_service.dart';
 
@@ -36,8 +38,39 @@ class TenantProvisioningService {
     String storageMode = 'CLIENTS_OWN_SHEETS',
     String? settlementUpiId,
     String? username,
+    String? planProfile,
   }) async {
     final cleanEmail = email.trim().toLowerCase();
+
+    // ── Entitlement alignment ─────────────────────────────────────────────
+    // The licence is written through the same resolver the app reads with, so
+    // a tenant can never be created in a shape the app refuses to run: an
+    // offline store gets one device, one outlet and no cloud keys whatever was
+    // ticked; a dependant is never on without its parent; the profile id is
+    // recorded so the console shows the right starting point.
+    final resolvedMode = StorageModes.all.contains(storageMode.toUpperCase())
+        ? storageMode.toUpperCase()
+        : StorageModes.clientsOwnSheets;
+    final profile = PlanProfile.byId(planProfile ?? _deriveProfileId(plan, resolvedMode));
+    final probe = SaasLicense(
+      planTier: plan.billingCycle,
+      planProfile: profile.id,
+      status: 'ACTIVE',
+      maxFranchises: plan.maxOutlets,
+      maxUsers: plan.maxUsers,
+      maxDevices: plan.maxDevices,
+      features: Map<String, bool>.from(plan.features),
+      startDate: DateTime.now(),
+      endDate: DateTime.now().add(Duration(days: plan.validityDays)),
+    );
+    final resolved = Entitlements.fromLicense(probe, storageMode: resolvedMode);
+    final alignedFeatures = <String, bool>{
+      for (final def in FeatureCatalog.all) def.key: resolved.isEnabled(def.key),
+      FeatureKeys.pureOfflineMode: resolved.isPureOffline,
+    };
+    final alignedDevices = resolved.maxDevices;
+    final alignedOutlets = resolved.maxOutlets;
+    storageMode = resolvedMode;
     final cleanName = clientName.trim();
     final cleanShopName = shopName.trim().isNotEmpty ? shopName.trim() : "$cleanName Restaurant";
     final cleanCategory = category?.trim().isNotEmpty == true ? category!.trim() : 'Restaurant & Cafe';
@@ -100,7 +133,7 @@ class TenantProvisioningService {
         'settlementUpiId': settlementUpiId?.trim() ?? '',
         'status': 'ACTIVE',
         'storageMode': storageMode,
-        'backendType': 'EXCEL',
+        'backendType': StorageModes.isOffline(storageMode) ? 'LOCAL' : 'EXCEL',
         'createdAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
       });
@@ -126,30 +159,33 @@ class TenantProvisioningService {
       await _firestore.collection('licenses').doc(orgId).set({
         'planTier': plan.billingCycle,
         'planName': plan.name,
+        'planProfile': profile.id,
         'status': 'ACTIVE',
         'storageMode': storageMode,
         'startDate': FieldValue.serverTimestamp(),
         'endDate': Timestamp.fromDate(endDate),
-        'maxFranchises': plan.maxOutlets,
+        'maxFranchises': alignedOutlets,
         'maxUsers': plan.maxUsers,
-        'maxDevices': plan.maxDevices,
+        'maxDevices': alignedDevices,
         'allowedRoles': plan.allowedRoles,
-        'features': plan.features,
+        'features': alignedFeatures,
         'expiryWarningDays': 3,
         'createdAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
       // 7. Create Features & Limits Documents
+      // Legacy mirror — read only by builds predating the resolver.
       await _firestore.collection('features').doc(orgId).set({
-        'features': plan.features,
+        'features': alignedFeatures,
+        'planProfile': profile.id,
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
       await _firestore.collection('limits').doc(orgId).set({
-        'maxFranchises': plan.maxOutlets,
+        'maxFranchises': alignedOutlets,
         'maxUsers': plan.maxUsers,
-        'maxDevices': plan.maxDevices,
+        'maxDevices': alignedDevices,
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
@@ -237,9 +273,9 @@ class TenantProvisioningService {
         organizationId: orgId,
         planTier: plan.name,
         defaultPassword: rawPassword,
-        features: plan.features,
-        maxStores: plan.maxOutlets,
-        maxDevices: plan.maxDevices,
+        features: alignedFeatures,
+        maxStores: alignedOutlets,
+        maxDevices: alignedDevices,
       ).catchError((e) {
         debugPrint("Background welcome email send warning: $e");
         return <String, dynamic>{};
@@ -275,5 +311,21 @@ class TenantProvisioningService {
         'message': e.toString().replaceFirst("Exception: ", ""),
       };
     }
+  }
+
+  /// Picks the profile a plan's toggles most resemble. Ids are the four the
+  /// console offers; nothing new is invented here.
+  static String _deriveProfileId(SubscriptionPlan plan, String storageMode) {
+    final on = plan.features.entries.where((e) => e.value).map((e) => e.key).toSet();
+    bool anyOf(CommercialTier tier) =>
+        FeatureCatalog.byTier(tier).any((d) => on.contains(d.key));
+    if (StorageModes.isOffline(storageMode)) {
+      return anyOf(CommercialTier.offlineAddOn)
+          ? PlanProfile.offlineDineIn.id
+          : PlanProfile.offlineSingle.id;
+    }
+    return anyOf(CommercialTier.onlineAddOn)
+        ? PlanProfile.omnichannel.id
+        : PlanProfile.connected.id;
   }
 }

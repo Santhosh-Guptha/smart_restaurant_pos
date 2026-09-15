@@ -251,14 +251,18 @@ class SaasSessionNotifier extends StateNotifier<SaasSessionState> {
             } catch (_) {}
           }
 
-          // Fetch Features & merge them
-          try {
-            final featDoc = await firestore.collection('features').doc(orgId).get();
-            if (featDoc.exists) {
-              final featData = featDoc.data()!;
-              licData['features'] = featData['features'];
-            }
-          } catch (_) {}
+          // licenses/{orgId} is the authority. The features/{orgId} mirror is
+          // read only for documents that predate it (no 'features' on the licence).
+          if (licData['features'] == null) {
+            try {
+              final featDoc = await firestore.collection('features').doc(orgId).get();
+              if (featDoc.exists) {
+                final featData = featDoc.data()!;
+                licData['features'] = featData['features'];
+                licData['planProfile'] ??= featData['planProfile'];
+              }
+            } catch (_) {}
+          }
 
           updatedLicense = SaasLicense.fromFirestore(licData);
           await box.put('saas_license', jsonEncode(updatedLicense.toJson()));
@@ -578,14 +582,17 @@ class SaasSessionNotifier extends StateNotifier<SaasSessionState> {
           } catch (_) {}
         }
 
-        // Fetch Features & merge them
-        try {
-          final featDoc = await firestore.collection('features').doc(orgId).get().timeout(const Duration(seconds: 5));
-          if (featDoc.exists) {
-            final featData = featDoc.data()!;
-            licData['features'] = featData['features'];
-          }
-        } catch (_) {}
+        // Legacy mirror, only when the licence carries no feature map.
+        if (licData['features'] == null) {
+          try {
+            final featDoc = await firestore.collection('features').doc(orgId).get().timeout(const Duration(seconds: 5));
+            if (featDoc.exists) {
+              final featData = featDoc.data()!;
+              licData['features'] = featData['features'];
+              licData['planProfile'] ??= featData['planProfile'];
+            }
+          } catch (_) {}
+        }
 
         license = SaasLicense.fromFirestore(licData);
       }
@@ -1242,14 +1249,17 @@ class SaasSessionNotifier extends StateNotifier<SaasSessionState> {
         } catch (_) {}
       }
 
-      // Fetch Features & merge them
-      try {
-        final featDoc = await firestore.collection('features').doc(orgId).get();
-        if (featDoc.exists) {
-          final featData = featDoc.data()!;
-          licData['features'] = featData['features'];
-        }
-      } catch (_) {}
+      // Legacy mirror, only when the licence carries no feature map.
+      if (licData['features'] == null) {
+        try {
+          final featDoc = await firestore.collection('features').doc(orgId).get();
+          if (featDoc.exists) {
+            final featData = featDoc.data()!;
+            licData['features'] = featData['features'];
+            licData['planProfile'] ??= featData['planProfile'];
+          }
+        } catch (_) {}
+      }
 
       final license = SaasLicense.fromFirestore(licData);
 
@@ -1563,10 +1573,13 @@ class SaasSessionNotifier extends StateNotifier<SaasSessionState> {
             }
           }
           
-          final featDoc = await firestore.collection('features').doc(orgId).get();
-          if (featDoc.exists) {
-            final featData = featDoc.data()!;
-            licData['features'] = featData['features'];
+          if (licData['features'] == null) {
+            final featDoc = await firestore.collection('features').doc(orgId).get();
+            if (featDoc.exists) {
+              final featData = featDoc.data()!;
+              licData['features'] = featData['features'];
+              licData['planProfile'] ??= featData['planProfile'];
+            }
           }
 
           final newLicense = SaasLicense.fromFirestore(licData);
@@ -1586,8 +1599,11 @@ class SaasSessionNotifier extends StateNotifier<SaasSessionState> {
         debugPrint("Realtime license listener error: $e");
       });
 
+      // The mirror listener only matters for a licence that has no feature map
+      // of its own; otherwise the licence listener above is the single source.
       _featuresListener = firestore.collection('features').doc(orgId).snapshots().listen((featSnapshot) async {
         if (!featSnapshot.exists || state.currentLicense == null || !mounted) return;
+        if (state.currentLicense!.features.isNotEmpty) return;
         try {
           final featData = featSnapshot.data()!;
           final Map<String, dynamic> featuresMap = Map<String, dynamic>.from(featData['features'] ?? {});

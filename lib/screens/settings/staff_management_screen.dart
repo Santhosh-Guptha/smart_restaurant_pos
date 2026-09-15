@@ -4,6 +4,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:bcrypt/bcrypt.dart';
 import '../../core/classic_theme.dart';
+import '../../core/cloud_gate.dart';
+import '../../core/entitlements.dart';
+import '../../providers/entitlements_provider.dart';
 import '../../core/constants.dart';
 import '../../core/rbac_permissions.dart';
 import '../../providers/restaurant_auth_provider.dart';
@@ -112,7 +115,11 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
         : {role};
 
     String station = existing?.assignedStation ?? 'All';
-    bool grantSheetAccess = existing?.isSheetAccessGranted ?? true;
+    final ent = ref.read(entitlementsProvider);
+    final hasCloud = ent.isEnabled(FeatureKeys.cloudSync);
+    final hasKds = ent.isEnabled(FeatureKeys.kdsEnabled);
+    // Sheet sharing needs the cloud; without it the flag is simply false.
+    bool grantSheetAccess = hasCloud && (existing?.isSheetAccessGranted ?? true);
 
     showDialog(
       context: context,
@@ -201,7 +208,7 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
                     labelStyle: TextStyle(color: context.textSecondary),
                     hintText: 'staff.member@gmail.com',
                     hintStyle: TextStyle(color: context.textSecondary.withValues(alpha: 0.5)),
-                    helperText: 'Used to log in & share store spreadsheet',
+                    helperText: hasCloud ? 'Used to log in & share store spreadsheet' : 'Used to log in',
                     helperStyle:
                         const TextStyle(color: ClassicTheme.warningAmber, fontSize: 12),
                     filled: true,
@@ -336,9 +343,10 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
                 ),
                 const SizedBox(height: 14),
 
-                // Kitchen Station & 4-Digit PIN Row
+                // Kitchen Station & 4-Digit PIN Row (station belongs to the KDS)
                 Row(
                   children: [
+                    if (hasKds) ...[
                     Expanded(
                       flex: 6,
                       child: DropdownButtonFormField<String>(
@@ -378,6 +386,7 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
                       ),
                     ),
                     const SizedBox(width: 12),
+                    ],
                     Expanded(
                       flex: 4,
                       child: TextField(
@@ -440,7 +449,8 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
                 ),
                 const SizedBox(height: 14),
 
-                // Shared Google Sheet Switcher
+                // Shared Google Sheet Switcher (cloud tenants only)
+                if (hasCloud)
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
                   title: Text(
@@ -493,14 +503,15 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
                   return;
                 }
 
-                // Uniqueness check in Firestore /users
+                // Uniqueness check in Firestore /users (skipped offline — the
+                // local store is the authority for a single-device tenant)
                 try {
-                  final userDocs = await FirebaseFirestore.instance
+                  final userDocs = await CloudGate.run(() => FirebaseFirestore.instance
                       .collection('users')
                       .where('username', isEqualTo: cleanUsername)
                       .limit(1)
-                      .get();
-                  if (userDocs.docs.isNotEmpty) {
+                      .get());
+                  if (userDocs != null && userDocs.docs.isNotEmpty) {
                     final docId = userDocs.docs.first.id;
                     final currentStaffId = existing?.id;
                     if (docId != currentStaffId && docId != 'usr_$currentStaffId') {
@@ -578,10 +589,12 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
                   isActive: existing?.isActive ?? true,
                 );
 
-                // 1. Sync staff credentials to Firestore (/users and /staff_users)
+                // 1. Sync staff credentials to Firestore (/users and /staff_users).
+                //    Cloud-connected tenants only; an offline till keeps staff in Hive.
                 final hashedPassword = BCrypt.hashpw(password, BCrypt.gensalt());
                 final usersDocId = existing?.id ?? 'usr_${newMember.id}';
 
+                if (hasCloud && !CloudGate.offline) {
                 try {
                   await FirebaseFirestore.instance.collection('users').doc(usersDocId).set({
                     'id': usersDocId,
@@ -626,6 +639,7 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
                 } catch (e) {
                   debugPrint('Firestore staff sync skipped: $e');
                 }
+                }
 
                 await ref
                     .read(restaurantAuthProvider.notifier)
@@ -636,9 +650,10 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
 
                 final authNotifier =
                     ref.read(restaurantAuthProvider.notifier);
-                final client = authNotifier.authenticatedHttpClient;
-                final sheetId =
-                    await RestaurantSheetsService.getSavedSpreadsheetId();
+                final client = hasCloud ? authNotifier.authenticatedHttpClient : null;
+                final sheetId = hasCloud
+                    ? await RestaurantSheetsService.getSavedSpreadsheetId()
+                    : null;
 
                 if (client != null && sheetId != null && sheetId.isNotEmpty) {
                   if (emailChanged) {
@@ -752,8 +767,9 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
               final authNotifier =
                   ref.read(restaurantAuthProvider.notifier);
               final client = authNotifier.authenticatedHttpClient;
-              final sheetId =
-                  await RestaurantSheetsService.getSavedSpreadsheetId();
+              final sheetId = CloudGate.offline
+                  ? null
+                  : await RestaurantSheetsService.getSavedSpreadsheetId();
 
               if (client != null && sheetId != null && sheetId.isNotEmpty) {
                 await RestaurantSheetsService.revokeStaffAccess(
@@ -763,6 +779,7 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
                 );
               }
 
+              if (!CloudGate.offline) {
               try {
                 await FirebaseFirestore.instance
                     .collection('staff_users')
@@ -778,6 +795,7 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
                     .delete();
               } catch (e) {
                 debugPrint('Firestore staff delete skipped: $e');
+              }
               }
 
               await ref

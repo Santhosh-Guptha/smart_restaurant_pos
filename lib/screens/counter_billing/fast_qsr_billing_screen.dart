@@ -229,8 +229,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
     // Load from local Hive cache first (instant 0ms response)
     _loadPendingFromHive();
 
-    final isPureOffline = ref.read(saasSessionProvider).currentLicense?.isPureOffline == true;
-    if (isPureOffline) {
+    if (!ref.read(entitlementsProvider).isEnabled(FeatureKeys.cloudSync)) {
       _isFetchingPendingOrders = false;
       return;
     }
@@ -2340,8 +2339,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
       // visible. The bill and every payment go to the durable Outbox on
       // failure with their original request ids, and the operator gets a
       // floating notice once the background work settles.
-      final isPureOffline = ref.read(saasSessionProvider).currentLicense?.isPureOffline == true;
-      if (isPureOffline) return;
+      if (!ref.read(entitlementsProvider).isEnabled(FeatureKeys.cloudSync)) return;
 
       int queued = 0;
       int lost = 0;
@@ -2929,7 +2927,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
       });
 
       // 4. Sync Bill to Google Sheets and Webhook
-      if (saasSession.currentLicense?.isPureOffline != true) {
+      if (ref.read(entitlementsProvider).isEnabled(FeatureKeys.cloudSync)) {
         try {
           final sheetId = AppsScriptBackendService.resolveSpreadsheetId(
             orgId: orgId,

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/legacy.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 
 import 'saas_session_provider.dart';
+import '../core/cloud_gate.dart';
 import '../services/firebase_connection_service.dart';
 
 // --- EXPENSES PROVIDER ---
@@ -17,7 +18,8 @@ final expensesProvider =
 });
 
 class ExpensesNotifier extends StateNotifier<List<Map<String, dynamic>>> {
-  final Box _box = Hive.box('expenses');
+  // Opened in main() with the other boxes.
+  Box get _box => Hive.box('expenses');
   final Ref _ref;
 
   ExpensesNotifier(this._ref) : super(const []) {
@@ -64,6 +66,8 @@ class ExpensesNotifier extends StateNotifier<List<Map<String, dynamic>>> {
   }
 
   Future<void> _loadFromFirestore() async {
+    // Offline tenants keep expenses on the device only (rule 4).
+    if (CloudGate.offline) return;
     final saasSession = _ref.read(saasSessionProvider);
     final orgId = saasSession.currentOrganization?.id;
     final franchiseId = saasSession.activeFranchiseId;

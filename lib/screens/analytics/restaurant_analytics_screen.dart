@@ -11,6 +11,7 @@ import '../../providers/saas_session_provider.dart';
 import '../../sync/local_store.dart';
 import '../../core/entitlements.dart';
 import '../../core/feature_route_guard.dart';
+import '../../core/cloud_gate.dart';
 
 enum StoreScopeMode { all, individual, selected }
 
@@ -90,12 +91,16 @@ class _RestaurantAnalyticsScreenState
       {'id': orgId, 'name': orgName},
     ];
 
-    try {
-      if (orgId.isNotEmpty && orgId != 'default') {
-        final snap = await FirebaseFirestore.instance
+    // Sibling outlets only exist for multiOutlet tenants; the lookup runs
+    // through the cloud gate so an offline tenant never reaches Firestore.
+    final snap = !featureOn(FeatureKeys.multiOutlet) || orgId.isEmpty || orgId == 'default'
+        ? null
+        : await CloudGate.run(() => FirebaseFirestore.instance
             .collection('outlets')
             .where('organizationId', isEqualTo: orgId)
-            .get();
+            .get());
+    try {
+      if (snap != null) {
         for (final doc in snap.docs) {
           final data = doc.data();
           final id = doc.id;
@@ -583,7 +588,8 @@ class _RestaurantAnalyticsScreenState
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // Multi-Store Scope Selector
-            _buildStoreScopeSelector(),
+            // Store scope is a multiOutlet control (rule 1).
+            if (featureOn(FeatureKeys.multiOutlet)) _buildStoreScopeSelector(),
 
             // Period Selector Pill Bar
             SingleChildScrollView(

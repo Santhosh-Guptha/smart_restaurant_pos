@@ -6,6 +6,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../core/classic_theme.dart';
 import '../core/constants.dart';
 import '../providers/saas_session_provider.dart';
+import '../providers/entitlements_provider.dart';
 import '../providers/restaurant_auth_provider.dart';
 import '../services/restaurant_sheets_service.dart';
 import '../services/client_ledger_cloud_router_service.dart';
@@ -21,7 +22,12 @@ class GoogleSheetsSetupGateDialog extends ConsumerStatefulWidget {
     final user = saasSession.currentUser;
 
     if (org == null) return;
-    if (saasSession.currentLicense?.isPureOffline == true) return;
+    // An offline store is never asked about Google. The resolver decides —
+    // storage mode first, then the legacy licence flag, then the profile.
+    if (ref.read(entitlementsProvider).isPureOffline) return;
+    // A pending storage change is completed on the migration gate, which runs
+    // its own consent + provisioning; do not compete with it here.
+    if (org.hasPendingStorageChange) return;
 
     // Only store owners / client admins or master admins configure cloud database
     final role = user?.role.toUpperCase() ?? '';
@@ -122,13 +128,14 @@ class _GoogleSheetsSetupGateDialogState extends ConsumerState<GoogleSheetsSetupG
       setState(() => _statusText = 'Finalizing store database records...');
 
       // 4. Update Firestore Organization & Primary Outlet
+      // The storage mode is the platform admin's decision (and changes only
+      // through the migration flow); this dialog records the sheet, nothing else.
       await FirebaseFirestore.instance.collection('organizations').doc(orgId).set({
         'googleSheetId': sheetId,
         'googleSheetUrl': sheetUrl,
         'spreadsheetId': sheetId,
         'ownerGoogleEmail': authorizedEmail,
         'isGoogleConnected': true,
-        'storageMode': 'CLIENTS_OWN_SHEETS',
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
 
@@ -278,7 +285,6 @@ class _GoogleSheetsSetupGateDialogState extends ConsumerState<GoogleSheetsSetupG
           'googleSheetUrl': sheetUrl,
           'spreadsheetId': sheetId,
           'isGoogleConnected': true,
-          'storageMode': 'CLIENTS_OWN_SHEETS',
           'updatedAt': FieldValue.serverTimestamp(),
         }, SetOptions(merge: true));
 

@@ -148,6 +148,26 @@ final List<DashboardCardMeta> kAllDashboardCards = [
     requiredFeature: FeatureKeys.analytics,
     allowedRoles: ['OWNER', 'MANAGER'],
   ),
+  DashboardCardMeta(
+    id: 'expenses',
+    title: 'Expenses',
+    subtitle: 'Purchases, wages & bills paid',
+    badge: 'Spend',
+    icon: Icons.receipt_long_rounded,
+    defaultColor: ClassicTheme.warningAmber,
+    requiredFeature: FeatureKeys.expenseManagement,
+    allowedRoles: ['OWNER', 'MANAGER'],
+  ),
+  DashboardCardMeta(
+    id: 'waiter',
+    title: 'Waiter Pad',
+    subtitle: 'Pick a table, take the order',
+    badge: 'Floor',
+    icon: Icons.room_service_rounded,
+    defaultColor: ClassicTheme.infoBlue,
+    requiredFeature: FeatureKeys.waiterOrdering,
+    allowedRoles: ['OWNER', 'MANAGER', 'WAITER'],
+  ),
 ];
 
 /// Default primary cards pinned on screen
@@ -165,6 +185,8 @@ const List<String> kDefaultPrimaryCardIds = [
 const List<String> kDefaultDropdownCardIds = [
   'outlets',
   'staff',
+  'expenses',
+  'waiter',
 ];
 
 class DashboardLayoutState {

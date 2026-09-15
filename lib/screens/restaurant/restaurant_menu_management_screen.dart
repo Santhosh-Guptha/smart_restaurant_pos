@@ -11,6 +11,9 @@ import '../../services/restaurant_sheets_service.dart';
 import '../../services/client_ledger_cloud_router_service.dart';
 import '../../services/apps_script_backend_service.dart';
 import '../../core/classic_theme.dart';
+import '../../core/cloud_gate.dart';
+import '../../core/entitlements.dart';
+import '../../providers/entitlements_provider.dart';
 
 class RestaurantMenuManagementScreen extends ConsumerStatefulWidget {
   const RestaurantMenuManagementScreen({super.key});
@@ -47,9 +50,14 @@ class _RestaurantMenuManagementScreenState
     _loadStationsFromHive();
 
     // Auto sync on start: if dishes exist in Hive, push to Firestore so website is immediately populated!
-    // If Hive is empty, attempt to restore from Firestore cloud
-    Future.microtask(() => _initCloudSyncAndRestore());
+    // If Hive is empty, attempt to restore from Firestore cloud. Cloud-connected tenants only (rule 4).
+    if (_cloudOn) Future.microtask(() => _initCloudSyncAndRestore());
   }
+
+  bool get _cloudOn => ref.read(entitlementsProvider).isEnabled(FeatureKeys.cloudSync);
+  bool get _onlineMenuOn => ref.read(entitlementsProvider).isEnabled(FeatureKeys.onlineMenu);
+  bool get _kdsOn => ref.read(entitlementsProvider).isEnabled(FeatureKeys.kdsEnabled);
+  bool get _kotOn => ref.read(entitlementsProvider).isEnabled(FeatureKeys.dualPrinting);
 
   Future<void> _initCloudSyncAndRestore() async {
     if (_dishes.isNotEmpty) {
@@ -151,9 +159,11 @@ class _RestaurantMenuManagementScreenState
     _loadCategoriesFromHive();
     _loadStationsFromHive();
     _loadDishesFromHive();
-    try {
-      await _pullCatalogFromSheets();
-    } catch (_) {}
+    if (_cloudOn) {
+      try {
+        await _pullCatalogFromSheets();
+      } catch (_) {}
+    }
     if (mounted) setState(() {});
   }
 
@@ -161,8 +171,8 @@ class _RestaurantMenuManagementScreenState
     try {
       final box = Hive.isBoxOpen('restaurant_config_box') ? Hive.box('restaurant_config_box') : null;
       box?.put('restaurant_menu_dishes', _dishes);
-      // Auto push to cloud in background
-      _syncDishesToCloud(silent: true);
+      // Auto push to cloud in background (cloud-connected tenants only)
+      if (_cloudOn) _syncDishesToCloud(silent: true);
     } catch (e) {
       debugPrint('Error saving dishes to Hive: $e');
     }
@@ -170,6 +180,7 @@ class _RestaurantMenuManagementScreenState
 
   /// Restores dishes from Firestore if local Hive is fresh
   Future<void> _restoreDishesFromCloud() async {
+    if (CloudGate.offline || !_cloudOn) return;
     try {
       final saasSession = ref.read(saasSessionProvider);
       final orgId = saasSession.currentOrganization?.id ?? 'default';
@@ -229,6 +240,7 @@ class _RestaurantMenuManagementScreenState
   /// Live synchronization of menu dishes to Firestore and connected Google Sheets
   Future<void> _syncDishesToCloud({bool silent = false}) async {
     if (_isSyncing) return;
+    if (CloudGate.offline || !_cloudOn) return;
     if (!silent && mounted) setState(() => _isSyncing = true);
 
     try {
@@ -247,15 +259,18 @@ class _RestaurantMenuManagementScreenState
         return;
       }
 
-      // 1. Sync dishes directly to the public_stores document for sanitized, instant single-fetch web menu
-      try {
-        await FirebaseFirestore.instance.collection('public_stores').doc(orgId).set({
-          'menu_items': _dishes,
-          'menu_updated_at': FieldValue.serverTimestamp(),
-          'operatingHours': {'isOpen': true},
-        }, SetOptions(merge: true));
-      } catch (fsErr) {
-        debugPrint('Public store menu sync notice (non-fatal): $fsErr');
+      // 1. Publish dishes to the public_stores document (the guest-facing web menu).
+      //    Owned by onlineMenu — a tenant without it has no web menu to publish.
+      if (_onlineMenuOn) {
+        try {
+          await FirebaseFirestore.instance.collection('public_stores').doc(orgId).set({
+            'menu_items': _dishes,
+            'menu_updated_at': FieldValue.serverTimestamp(),
+            'operatingHours': {'isOpen': true},
+          }, SetOptions(merge: true));
+        } catch (fsErr) {
+          debugPrint('Public store menu sync notice (non-fatal): $fsErr');
+        }
       }
 
       // 3. Sync to Google Sheets if connected
@@ -324,6 +339,7 @@ class _RestaurantMenuManagementScreenState
 
   Future<void> _pullCatalogFromSheets() async {
     if (_isSyncing) return;
+    if (CloudGate.offline || !_cloudOn) return;
     setState(() => _isSyncing = true);
     final sm = ScaffoldMessenger.of(context);
 
@@ -1265,7 +1281,9 @@ class _RestaurantMenuManagementScreenState
                     ),
                     const SizedBox(height: 12),
 
-                    // Station & Kitchen Routing
+                    // Station & Kitchen Routing — stations belong to the KDS; the
+                    // "sends to kitchen" switch also matters for KOT slips.
+                    if (_kdsOn || _kotOn)
                     Builder(
                       builder: (ctx) {
                         final stationNames = _stations.map((s) => s.name).toSet().toList();
@@ -1276,6 +1294,7 @@ class _RestaurantMenuManagementScreenState
                         return Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
+                            if (_kdsOn)
                             Container(
                               width: double.infinity,
                               padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -1313,7 +1332,7 @@ class _RestaurantMenuManagementScreenState
                                 ),
                               ),
                             ),
-                            const SizedBox(height: 8),
+                            if (_kdsOn) const SizedBox(height: 8),
                             // Direct Counter / Sends to Kitchen Switch
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -1753,7 +1772,7 @@ class _RestaurantMenuManagementScreenState
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: context.textPrimary),
             ),
             Text(
-              '${_dishes.length} dishes • Auto Syncing',
+              _cloudOn ? '${_dishes.length} dishes • Auto Syncing' : '${_dishes.length} dishes • Saved on this device',
               style: TextStyle(fontSize: 12, color: context.textSecondary, fontWeight: FontWeight.w500),
             ),
           ],
@@ -1792,6 +1811,7 @@ class _RestaurantMenuManagementScreenState
                   ],
                 ),
               ),
+              if (_kdsOn)
               PopupMenuItem(
                 value: 'stations',
                 child: Row(
@@ -1812,6 +1832,7 @@ class _RestaurantMenuManagementScreenState
                   ],
                 ),
               ),
+              if (_cloudOn) ...[
               const PopupMenuDivider(),
               PopupMenuItem(
                 value: 'sync',
@@ -1833,6 +1854,7 @@ class _RestaurantMenuManagementScreenState
                   ],
                 ),
               ),
+              ],
             ],
           ),
           const SizedBox(width: 6),
@@ -1928,6 +1950,7 @@ class _RestaurantMenuManagementScreenState
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                           ),
                         ),
+                        if (_kdsOn)
                         OutlinedButton.icon(
                           onPressed: _showManageStationsDialog,
                           icon: const Icon(Icons.soup_kitchen_rounded, size: 18, color: ClassicTheme.infoBlue),

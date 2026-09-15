@@ -17,6 +17,7 @@ import '../../services/smtp_email_service.dart';
 import '../../core/constants.dart';
 import '../../utils/ui_feedback.dart';
 import '../../core/classic_theme.dart';
+import '../../core/entitlements.dart';
 import '../../providers/theme_provider.dart';
 import '../../core/subscription_plan_model.dart';
 import '../../services/subscription_plan_service.dart';
@@ -1383,6 +1384,7 @@ class OrganizationsTab extends ConsumerStatefulWidget {
     int maxUsers = selectedPlan.maxUsers;
     int tableCount = selectedPlan.tableCount;
     String operatingMode = selectedPlan.operatingMode;
+    String storageMode = StorageModes.clientsOwnSheets;
 
     // Feature Toggles: populated dynamically from the selected plan
     final Map<String, bool> featureToggles = Map<String, bool>.from(selectedPlan.features);
@@ -1638,7 +1640,7 @@ class OrganizationsTab extends ConsumerStatefulWidget {
                             return DropdownMenuItem<SubscriptionPlan>(
                               value: plan,
                               child: Text(
-                                "${plan.name}  —  ₹${plan.price.toStringAsFixed(0)} / ${plan.validityDays} Days (${plan.billingCycle})",
+                                "${plan.name}  —  ${plan.validityDays} Days (${plan.billingCycle})",
                                 style: TextStyle(
                                   fontWeight: plan.isDefaultTrial ? FontWeight.bold : FontWeight.normal,
                                   color: plan.isDefaultTrial ? primaryAccent : null,
@@ -1778,6 +1780,33 @@ class OrganizationsTab extends ConsumerStatefulWidget {
                             ),
                           ],
                         ),
+
+                        const SizedBox(height: 10),
+                        // Storage mode decides the whole shape of the tenant: an offline
+                        // store gets one device and no cloud features, whatever is
+                        // ticked below — the resolver applies that at save.
+                        DropdownButtonFormField<String>(
+                          initialValue: storageMode,
+                          dropdownColor: context.surfaceColor,
+                          style: TextStyle(color: context.textPrimary, fontSize: 13),
+                          decoration: InputDecoration(
+                            labelText: "Storage Mode",
+                            labelStyle: TextStyle(color: context.textSecondary, fontSize: 13),
+                            prefixIcon: const Icon(Icons.dns_outlined, size: 16),
+                            helperText: StorageModes.isOffline(storageMode)
+                                ? "Single device, billing & menu on the device. No cloud, no second screen."
+                                : "Cloud ledger, multi-device, online add-ons available.",
+                            helperStyle: TextStyle(color: context.textSecondary, fontSize: 12),
+                            enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: context.borderColor)),
+                            focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: primaryAccent, width: 2)),
+                          ),
+                          items: StorageModes.all
+                              .map((m) => DropdownMenuItem(value: m, child: Text(StorageModes.label(m))))
+                              .toList(),
+                          onChanged: (v) {
+                            if (v != null) setDialogState(() => storageMode = v);
+                          },
+                        ),
                         const SizedBox(height: 20),
 
                         // SECTION 3: FEATURE ENTITLEMENTS (Grouped from Catalog)
@@ -1871,6 +1900,7 @@ class OrganizationsTab extends ConsumerStatefulWidget {
                               gstNo: gst.isNotEmpty ? gst : null,
                               plan: finalPlan,
                               requestId: requestId,
+                              storageMode: storageMode,
                             );
 
                             if (result['success'] != true) {
@@ -2880,18 +2910,22 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                                         ),
                                         title: const Row(
                                           children: [
-                                            Icon(Icons.warning_amber_rounded, color: ClassicTheme.warningAmber, size: 28),
+                                            Icon(Icons.swap_horiz_rounded, color: ClassicTheme.warningAmber, size: 28),
                                             SizedBox(width: 8),
                                             Expanded(
                                               child: Text(
-                                                "Warning: Storage Mode Change",
+                                                "Request a storage mode change",
                                                 style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                                               ),
                                             ),
                                           ],
                                         ),
                                         content: Text(
-                                          "Changing the storage architecture from $initialStorageMode to $newMode will disrupt the tenant's data synchronization. The tenant will lose access to data stored under the previous mode.\n\nAre you sure you want to proceed with this migration?",
+                                          "Saving will ask the store owner to move this tenant from $initialStorageMode to $newMode. "
+                                          "Nothing changes right now: the owner completes the change on their own device — "
+                                          "Google consent, provisioning, migrating every local record, then a count check. "
+                                          "The mode flips only after the check passes, and staff can keep billing on the current mode meanwhile. "
+                                          "You can cancel the request from the Features tab at any time before it completes.",
                                           style: TextStyle(color: context.textPrimary, fontSize: 13, height: 1.4),
                                         ),
                                         actions: [
@@ -2906,7 +2940,7 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                                             ),
                                             onPressed: () => Navigator.pop(wCtx, true),
-                                            child: const Text("Yes, Change Mode"),
+                                            child: const Text("Request change"),
                                           ),
                                         ],
                                       ),
@@ -3310,8 +3344,22 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                               'pan': pan,
                               'gst': gst,
                               'address': address,
-                              'storageMode': storageMode,
-                              if (storageMode == 'CLIENTS_OWN_SHEETS' && existingSheetId.isNotEmpty) ...{
+                              // The live mode is never flipped from the console. A different
+                              // selection becomes a pending request the owner completes on
+                              // their device (consent → provision → migrate → verify → flip).
+                              if (storageMode == initialStorageMode) 'storageMode': storageMode,
+                              if (storageMode != initialStorageMode)
+                                'pendingStorageChange': {
+                                  'from': initialStorageMode,
+                                  'to': storageMode,
+                                  'status': 'PENDING',
+                                  'requestedBy': 'master_admin',
+                                  'requestedAt': FieldValue.serverTimestamp(),
+                                  'steps': <String, dynamic>{},
+                                },
+                              if (storageMode == initialStorageMode &&
+                                  storageMode == 'CLIENTS_OWN_SHEETS' &&
+                                  existingSheetId.isNotEmpty) ...{
                                 'googleSheetId': existingSheetId,
                                 'googleSheetUrl': existingSheetUrl,
                                 'isGoogleConnected': true,
@@ -4196,6 +4244,7 @@ class _RegistrationRequestsTabState extends ConsumerState<RegistrationRequestsTa
     int maxDevices = selectedPlan.maxDevices;
     int tableCount = initialTableCount;
     String operatingMode = initialOperatingMode;
+    String storageMode = StorageModes.clientsOwnSheets;
 
     // Feature Toggles: initialize from selected plan, merged with any specific initial requested features
     final Map<String, bool> featureToggles = Map<String, bool>.from(selectedPlan.features);
@@ -4417,7 +4466,7 @@ class _RegistrationRequestsTabState extends ConsumerState<RegistrationRequestsTa
                             return DropdownMenuItem<SubscriptionPlan>(
                               value: plan,
                               child: Text(
-                                "${plan.name} — ₹${plan.price.toStringAsFixed(0)} / ${plan.validityDays}d (${plan.billingCycle})",
+                                "${plan.name} — ${plan.validityDays}d (${plan.billingCycle})",
                                 style: TextStyle(
                                   fontWeight: plan.isDefaultTrial ? FontWeight.bold : FontWeight.normal,
                                   color: plan.isDefaultTrial ? primaryAccent : null,
@@ -4495,6 +4544,33 @@ class _RegistrationRequestsTabState extends ConsumerState<RegistrationRequestsTa
                               ),
                             ),
                           ],
+                        ),
+
+                        const SizedBox(height: 10),
+                        // Storage mode decides the whole shape of the tenant: an offline
+                        // store gets one device and no cloud features, whatever is
+                        // ticked below — the resolver applies that at save.
+                        DropdownButtonFormField<String>(
+                          initialValue: storageMode,
+                          dropdownColor: context.surfaceColor,
+                          style: TextStyle(color: context.textPrimary, fontSize: 13),
+                          decoration: InputDecoration(
+                            labelText: "Storage Mode",
+                            labelStyle: TextStyle(color: context.textSecondary, fontSize: 13),
+                            prefixIcon: const Icon(Icons.dns_outlined, size: 16),
+                            helperText: StorageModes.isOffline(storageMode)
+                                ? "Single device, billing & menu on the device. No cloud, no second screen."
+                                : "Cloud ledger, multi-device, online add-ons available.",
+                            helperStyle: TextStyle(color: context.textSecondary, fontSize: 12),
+                            enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: context.borderColor)),
+                            focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: primaryAccent, width: 2)),
+                          ),
+                          items: StorageModes.all
+                              .map((m) => DropdownMenuItem(value: m, child: Text(StorageModes.label(m))))
+                              .toList(),
+                          onChanged: (v) {
+                            if (v != null) setDialogState(() => storageMode = v);
+                          },
                         ),
                         const SizedBox(height: 20),
 
@@ -4588,6 +4664,7 @@ class _RegistrationRequestsTabState extends ConsumerState<RegistrationRequestsTa
                               gstNo: gst.isNotEmpty ? gst : null,
                               plan: finalPlan,
                               requestId: requestId,
+                              storageMode: storageMode,
                             );
 
                             if (result['success'] != true) {
@@ -5736,7 +5813,8 @@ class _PlansAndFeaturesTabState extends ConsumerState<PlansAndFeaturesTab> {
     final nameCtrl = TextEditingController(text: existing?.name ?? '');
     final descCtrl = TextEditingController(text: existing?.description ?? '');
     final daysCtrl = TextEditingController(text: (existing?.validityDays ?? 365).toString());
-    final priceCtrl = TextEditingController(text: (existing?.price ?? 4999.0).toStringAsFixed(0));
+    // D5: prices are not stored in the product; the field stays 0 and is not shown.
+    final priceCtrl = TextEditingController(text: '0');
     final outletsCtrl = TextEditingController(text: (existing?.maxOutlets ?? 1).toString());
     final usersCtrl = TextEditingController(text: (existing?.maxUsers ?? 5).toString());
     final devicesCtrl = TextEditingController(text: (existing?.maxDevices ?? 3).toString());
@@ -5832,19 +5910,9 @@ class _PlansAndFeaturesTabState extends ConsumerState<PlansAndFeaturesTab> {
                       ),
                       const SizedBox(height: 14),
 
-                      // Pricing & Duration
+                      // Duration (pricing is agreed off-product — D5)
                       Row(
                         children: [
-                          Expanded(
-                            child: TextFormField(
-                              controller: priceCtrl,
-                              keyboardType: TextInputType.number,
-                              style: TextStyle(color: context.textPrimary, fontSize: 13),
-                              decoration: ClassicTheme.inputDecorationFor(context, hintText: "Price in INR", labelText: "Price (₹) *"),
-                              validator: (v) => v == null || v.trim().isEmpty ? "Required" : null,
-                            ),
-                          ),
-                          const SizedBox(width: 12),
                           Expanded(
                             child: TextFormField(
                               controller: daysCtrl,
@@ -6158,11 +6226,11 @@ class _PlansAndFeaturesTabState extends ConsumerState<PlansAndFeaturesTab> {
                                 Row(
                                   children: [
                                     Text(
-                                      plan.price <= 0 ? "FREE" : "₹${plan.price.toStringAsFixed(0)}",
+                                      "${plan.validityDays} Days",
                                       style: TextStyle(color: context.textPrimary, fontWeight: FontWeight.bold, fontSize: 16),
                                     ),
                                     Text(
-                                      " / ${plan.validityDays} Days",
+                                      "  ·  ${plan.billingCycle}",
                                       style: TextStyle(color: context.textSecondary, fontSize: 12),
                                     ),
                                   ],

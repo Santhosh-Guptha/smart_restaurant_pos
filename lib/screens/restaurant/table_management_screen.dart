@@ -30,6 +30,8 @@ import '../../services/client_ledger_cloud_router_service.dart';
 import '../../providers/restaurant_auth_provider.dart';
 import '../../core/entitlements.dart';
 import '../../core/feature_route_guard.dart';
+import '../../core/cloud_gate.dart';
+import '../../providers/entitlements_provider.dart';
 
 class TableManagementScreen extends ConsumerStatefulWidget {
   final int initialTabIndex;
@@ -124,10 +126,11 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen>
     final orgId = _getEffectiveOrgId();
     final saasSession = ref.read(saasSessionProvider);
     final shopName = saasSession.currentOrganization?.name ?? 'My Restaurant';
-    final isPureOffline = saasSession.currentLicense?.isPureOffline == true;
+    // Cloud pulls belong to cloudSync (the resolver, not the legacy licence flag).
+    final cloudOn = featureOn(FeatureKeys.cloudSync);
     _loadTablesFromHive(orgId, shopName);
     _loadCachedOrdersFromHive(orgId);
-    if (!isPureOffline) {
+    if (cloudOn) {
       await _syncOrdersFromGoogleSheet(orgId);
     }
     if (mounted) setState(() {});
@@ -294,7 +297,8 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen>
     final box = Hive.box('configBox');
     await box.put('restaurant_tables_$orgId', _tables.map((t) => t.toMap()).toList());
 
-    // Live Sync to connected Google Sheet
+    // Live Sync to connected Google Sheet — cloud-connected tenants only (rule 4).
+    if (!featureOn(FeatureKeys.cloudSync) || CloudGate.offline) return;
     try {
       final sheetId = _getGoogleSheetId(orgId);
 
@@ -1228,7 +1232,7 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen>
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text('Tables & Floor Layout', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-            Text('Floor Management, Reservations & QR Codes', style: TextStyle(fontSize: 12, color: Colors.white70)),
+            Text(_floorSubtitle(), style: const TextStyle(fontSize: 12, color: Colors.white70)),
           ],
         ),
         backgroundColor: ClassicTheme.primaryAccent,
@@ -1348,7 +1352,9 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen>
                     Text('No Dining Tables Configured', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: context.textPrimary)),
                     const SizedBox(height: 8),
                     Text(
-                      'Add tables to generate live scannable QR standees for customers to order directly from their phone.',
+                      ref.hasFeature(FeatureKeys.qrOrdering)
+                          ? 'Add tables to generate live scannable QR standees for customers to order directly from their phone.'
+                          : 'Add tables to seat guests, track running bills and keep the floor in view.',
                       textAlign: TextAlign.center,
                       style: TextStyle(fontSize: 13, color: context.textSecondary),
                     ),
@@ -1516,8 +1522,19 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen>
     );
   }
 
+  String _floorSubtitle() {
+    final parts = <String>['Floor Management'];
+    if (ref.hasFeature(FeatureKeys.reservations)) parts.add('Reservations');
+    if (ref.hasFeature(FeatureKeys.qrOrdering)) parts.add('QR Codes');
+    if (parts.length == 1) return parts.first;
+    return '${parts.sublist(0, parts.length - 1).join(', ')} & ${parts.last}';
+  }
+
   Widget _buildTableCard(RestaurantTable table, String shopName, String shopPhone, String shopAddress, String orgId) {
     final now = DateTime.now();
+    final hasWaiter = ref.hasFeature(FeatureKeys.waiterOrdering);
+    final hasReservations = ref.hasFeature(FeatureKeys.reservations);
+    final hasQr = ref.hasFeature(FeatureKeys.qrOrdering);
 
     // Determine reservation timing (T-01)
     bool isActivelyReserved = false;
@@ -1837,14 +1854,29 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen>
                       ),
                     ),
                     const SizedBox(height: 3),
-                    Text('Tap for details & QR', style: TextStyle(fontSize: 12, fontStyle: FontStyle.italic, color: context.textSecondary)),
+                    Text(hasQr ? 'Tap for details & QR' : 'Tap for details', style: TextStyle(fontSize: 12, fontStyle: FontStyle.italic, color: context.textSecondary)),
                   ],
                 ),
               ] else ...[
-                Text('Tap for details, reserve & QR', style: TextStyle(fontSize: 12, fontStyle: FontStyle.italic, color: context.textSecondary)),
+                Text(
+                  hasReservations && hasQr
+                      ? 'Tap for details, reserve & QR'
+                      : hasReservations
+                          ? 'Tap for details & reserve'
+                          : hasQr
+                              ? 'Tap for details & QR'
+                              : 'Tap for details',
+                  style: TextStyle(fontSize: 12, fontStyle: FontStyle.italic, color: context.textSecondary),
+                ),
               ],
               const SizedBox(height: 6),
-              // Action Button - Non-blocking for early walk-ins or seating reserved guests
+              // Action Button - Non-blocking for early walk-ins or seating reserved guests.
+              // Without waiterOrdering the button only seats the guest (dishes are
+              // added from the till's table picker); an occupied card then has no
+              // primary action — the detail sheet carries Collect Payment / Print.
+              if (!hasWaiter && isOccupiedCard)
+                const SizedBox.shrink()
+              else
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton.icon(
@@ -1878,9 +1910,11 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen>
                             ? 'Unblock Table'
                             : isOccupiedCard
                                 ? 'Add Items (Waiter)'
-                                : (isReservedCard
-                                    ? 'Seat Guest & Order'
-                                    : (hasUpcomingReservation ? 'Take Order (Walk-in)' : 'Take Order (Waiter)')),
+                                : !hasWaiter
+                                    ? 'Seat Guest'
+                                    : (isReservedCard
+                                        ? 'Seat Guest & Order'
+                                        : (hasUpcomingReservation ? 'Take Order (Walk-in)' : 'Take Order (Waiter)')),
                     style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
                   ),
                   onPressed: () async {
@@ -1916,6 +1950,16 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen>
                         }
                       });
                       _saveTablesToHive(orgId);
+                    }
+                    if (!hasWaiter) {
+                      // Seating is the whole action; dishes come from the till.
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                          content: Text('Table ${table.tableNumber} seated. Add dishes from the counter till.'),
+                          duration: const Duration(seconds: 2),
+                        ));
+                      }
+                      return;
                     }
                     Navigator.push(
                       context,
@@ -2071,6 +2115,11 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen>
     String shopAddress,
     String orgId,
   ) {
+    final ent = ref.read(entitlementsProvider);
+    final hasWaiter = ent.isEnabled(FeatureKeys.waiterOrdering);
+    final hasReservations = ent.isEnabled(FeatureKeys.reservations);
+    final hasDineInBilling = ent.isEnabled(FeatureKeys.dineInBilling);
+    final hasPrinting = ent.isEnabled(FeatureKeys.thermalPrinting);
     showModalBottomSheet(
       context: context,
       backgroundColor: context.surfaceColor,
@@ -2268,8 +2317,8 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen>
                   backgroundColor: ClassicTheme.successEmerald,
                   child: Icon(Icons.event_seat_rounded, color: Colors.white, size: 20),
                 ),
-                title: const Text('Seat Reserved Guest & Start Order', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: ClassicTheme.successEmerald)),
-                subtitle: Text('Guest ${table.reservedGuestName ?? ""} arrived! Seat and place order', style: const TextStyle(fontSize: 12)),
+                title: Text(hasWaiter ? 'Seat Reserved Guest & Start Order' : 'Seat Reserved Guest', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: ClassicTheme.successEmerald)),
+                subtitle: Text(hasWaiter ? 'Guest ${table.reservedGuestName ?? ""} arrived! Seat and place order' : 'Guest ${table.reservedGuestName ?? ""} arrived! Seat the party', style: const TextStyle(fontSize: 12)),
                 onTap: () async {
                   final newSessionId = table.activeSessionId ?? _generateSessionId(orgId, table.tableNumber);
                   setState(() {
@@ -2293,7 +2342,7 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen>
                     );
                   } catch (_) {}
                   if (ctx.mounted) Navigator.pop(ctx);
-                  if (mounted) {
+                  if (mounted && hasWaiter) {
                     Navigator.push(
                       context,
                       MaterialPageRoute(
@@ -2309,6 +2358,7 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen>
                   }
                 },
               ),
+              if (hasReservations)
               ListTile(
                 leading: CircleAvatar(
                   backgroundColor: ClassicTheme.secondaryAccent,
@@ -2356,7 +2406,7 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen>
                   final tableActiveOrders = _kotOrders.where(
                     (o) => _matchesTable(o, table) && o.status != KotStatus.paid && o.status != KotStatus.cancelled,
                   ).toList();
-                  if (tableActiveOrders.isNotEmpty || table.currentBillAmount > 0) {
+                  if (hasDineInBilling && (tableActiveOrders.isNotEmpty || table.currentBillAmount > 0)) {
                     final firstOrder = tableActiveOrders.isNotEmpty ? tableActiveOrders.first : null;
                     final totalAmount = tableActiveOrders.fold<double>(0.0, (sum, o) => sum + o.totalAmount);
                     final effectiveTotal = totalAmount > 0 ? totalAmount : table.currentBillAmount;
@@ -2376,9 +2426,10 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen>
                   return const SizedBox.shrink();
                 },
               ),
+              if (hasPrinting)
               ListTile(
                 leading: CircleAvatar(backgroundColor: ClassicTheme.secondaryAccent, child: const Icon(Icons.print, color: Colors.white, size: 20)),
-                title: const Text('Print Bill / KOT', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                title: const Text('Print Bill', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
                 subtitle: Text('Print thermal receipt for Table ${table.tableNumber} with GST', style: const TextStyle(fontSize: 12)),
                 onTap: () async {
                   Navigator.pop(ctx);
@@ -4034,7 +4085,9 @@ class _DishAvailabilitySheetState extends ConsumerState<_DishAvailabilitySheet> 
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        'Turn off dishes that are finished so guests cannot order them on QR menu.',
+                        ref.hasFeature(FeatureKeys.onlineMenu)
+                            ? 'Turn off dishes that are finished so guests cannot order them on the online menu.'
+                            : 'Turn off dishes that are finished so they cannot be added to a bill.',
                         style: TextStyle(fontSize: 12, color: context.textSecondary),
                       ),
                     ],

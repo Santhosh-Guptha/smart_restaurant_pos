@@ -6,6 +6,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../../core/classic_theme.dart';
 import '../../core/design_tokens.dart';
+import '../../core/cloud_gate.dart';
+import '../../core/entitlements.dart';
+import '../../providers/entitlements_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/saas_session_provider.dart';
 import '../../services/thermal_printer_service.dart';
@@ -23,6 +26,12 @@ class StoreConfigurationScreen extends ConsumerStatefulWidget {
 class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
+  // Feature-owned tabs. Expense categories exist only with expenseManagement,
+  // and the tab controller is sized to match (rule 2: off means absent).
+  late final bool _hasExpenses;
+  late final bool _hasKot;
+  late final bool _hasCloud;
+  late final bool _hasOnlineMenu;
   bool _isSaving = false;
 
   // ── Tab 1: Store Profile & Legal ──
@@ -91,7 +100,17 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 6, vsync: this, initialIndex: widget.initialTab);
+    final ent = ref.read(entitlementsProvider);
+    _hasExpenses = ent.isEnabled(FeatureKeys.expenseManagement);
+    _hasKot = ent.isEnabled(FeatureKeys.dualPrinting);
+    _hasCloud = ent.isEnabled(FeatureKeys.cloudSync);
+    _hasOnlineMenu = ent.isEnabled(FeatureKeys.onlineMenu);
+    final tabCount = _hasExpenses ? 6 : 5;
+    _tabController = TabController(
+      length: tabCount,
+      vsync: this,
+      initialIndex: widget.initialTab.clamp(0, tabCount - 1),
+    );
     _initControllers();
     _loadConfig();
   }
@@ -375,7 +394,8 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
         feedLines: _printerFeedLines.toInt(),
       );
 
-      // ── 4. Cloud Sync to Firestore ──
+      // ── 4. Cloud Sync to Firestore (cloud-connected tenants only, rule 4) ──
+      if (_hasCloud && !CloudGate.offline) {
       try {
         await FirebaseFirestore.instance.collection('organizations').doc(orgId).set({
           'name': rName,
@@ -408,7 +428,9 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
           'updatedAt': FieldValue.serverTimestamp(),
         }, SetOptions(merge: true));
 
-        // Public store profile for web QR diners (sanitized - no bank or secret keys)
+        // Public store profile for web diners (sanitized - no bank or secret keys).
+        // Only tenants with an online menu have a public profile to keep current.
+        if (_hasOnlineMenu) {
         await FirebaseFirestore.instance.collection('public_stores').doc(orgId).set({
           'name': rName,
           'phone': rPhone,
@@ -430,8 +452,10 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
           },
           'updatedAt': FieldValue.serverTimestamp(),
         }, SetOptions(merge: true));
+        }
       } catch (cloudErr) {
         debugPrint('Cloud store config sync note: $cloudErr');
+      }
       }
 
       if (mounted) {
@@ -624,7 +648,7 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: context.textPrimary),
             ),
             Text(
-              'Restaurant profile, taxes, payments, shifts, receipts & expenses',
+              _hasExpenses ? 'Restaurant profile, taxes, payments, shifts, receipts & expenses' : 'Restaurant profile, taxes, payments, shifts & receipts',
               style: TextStyle(fontSize: 12, color: context.textSecondary),
             ),
           ],
@@ -658,13 +682,14 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
           indicatorColor: ClassicTheme.primaryAccent,
           indicatorWeight: 3,
           tabAlignment: TabAlignment.start,
-          tabs: const [
-            Tab(icon: Icon(Icons.storefront_rounded, size: 18), text: 'Profile & Legal'),
-            Tab(icon: Icon(Icons.receipt_rounded, size: 18), text: 'Taxes & Charges'),
-            Tab(icon: Icon(Icons.payments_rounded, size: 18), text: 'Payments & UPI'),
-            Tab(icon: Icon(Icons.access_time_filled_rounded, size: 18), text: 'Hours & Shifts'),
-            Tab(icon: Icon(Icons.print_rounded, size: 18), text: 'KOT & Receipts'),
-            Tab(icon: Icon(Icons.receipt_long_rounded, size: 18), text: 'Expense Categories'),
+          tabs: [
+            const Tab(icon: Icon(Icons.storefront_rounded, size: 18), text: 'Profile & Legal'),
+            const Tab(icon: Icon(Icons.receipt_rounded, size: 18), text: 'Taxes & Charges'),
+            const Tab(icon: Icon(Icons.payments_rounded, size: 18), text: 'Payments & UPI'),
+            const Tab(icon: Icon(Icons.access_time_filled_rounded, size: 18), text: 'Hours & Shifts'),
+            Tab(icon: const Icon(Icons.print_rounded, size: 18), text: _hasKot ? 'KOT & Receipts' : 'Receipts'),
+            if (_hasExpenses)
+              const Tab(icon: Icon(Icons.receipt_long_rounded, size: 18), text: 'Expense Categories'),
           ],
         ),
       ),
@@ -676,7 +701,7 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
           _buildPaymentsAndUpiTab(),
           _buildHoursAndShiftsTab(),
           _buildKotAndReceiptsTab(),
-          _buildExpenseCategoriesTab(),
+          if (_hasExpenses) _buildExpenseCategoriesTab(),
         ],
       ),
       bottomNavigationBar: Container(
@@ -1116,7 +1141,9 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
               ),
               const SizedBox(height: 6),
               Text(
-                'When toggled OFF, online QR dining menu indicates the restaurant kitchen is currently closed.',
+                _hasOnlineMenu
+                    ? 'When toggled OFF, the online menu tells guests the kitchen is currently closed.'
+                    : 'When toggled OFF, receipts and reports mark the store as closed.',
                 style: TextStyle(color: context.textSecondary, fontSize: 12),
               ),
               const SizedBox(height: 14),
@@ -1215,16 +1242,18 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildSectionHeader('KOT & Thermal Receipt Customization', Icons.print_rounded),
+          _buildSectionHeader(_hasKot ? 'KOT & Thermal Receipt Customization' : 'Thermal Receipt Customization', Icons.print_rounded),
           const SizedBox(height: 12),
           _buildCard(
             children: [
+              if (_hasKot) ...[
               _buildToggleRow(
                 'Auto-Print KOT to Kitchen on New Order Dispatch',
                 _autoPrintKot,
                 (v) => setState(() => _autoPrintKot = v),
               ),
               Divider(color: context.borderColor),
+              ],
               _buildToggleRow(
                 'Auto-Print Customer Receipt on Bill Settlement',
                 _autoPrintBill,

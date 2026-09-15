@@ -20,6 +20,7 @@ import 'services/firebase_connection_service.dart';
 import 'services/database_cleanup_service.dart';
 import 'services/subscription_plan_service.dart';
 import 'screens/dashboard/restaurant_home_screen.dart';
+import 'screens/migration/storage_migration_gate_screen.dart';
 import 'screens/login/saas_login_screen.dart';
 import 'screens/login/saas_expired_screen.dart';
 import 'screens/login/first_login_password_screen.dart';
@@ -54,6 +55,7 @@ void main() async {
   await Hive.openBox('deviceBox');
   await Hive.openBox('restaurant_auth_box');
   await Hive.openBox('restaurant_config_box');
+  await Hive.openBox('expenses');
 
   // X-18: the durable Outbox existed but nothing started it, so its retry
   // backoff was never honoured and a write that failed while the network was
@@ -144,6 +146,7 @@ Future<void> _bootstrapMasterDatabaseIfNeeded() async {
   }
 }
 
+// Keep in step with pubspec.yaml `version:` — the forced-update check compares this.
 const String kCurrentAppVersion = '1.1.6';
 
 int _compareVersions(String v1, String v2) {
@@ -218,6 +221,11 @@ class SmartDineApp extends ConsumerWidget {
         homeScreen = const MasterAdminScreen();
       } else if (user.mustChangePassword) {
         homeScreen = const FirstLoginPasswordScreen();
+      } else if (saasSession.currentOrganization?.hasPendingStorageChange == true) {
+        // The platform admin asked for a storage-mode change. The owner
+        // completes it here before the store runs on the new mode; staff can
+        // still bill from this screen.
+        homeScreen = const StorageMigrationGateScreen();
       } else {
         homeScreen = const RestaurantHomeScreen();
       }

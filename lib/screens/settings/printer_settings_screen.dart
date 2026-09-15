@@ -10,6 +10,8 @@ import '../../services/thermal_printer_service.dart';
 import '../../utils/thermal_receipt_generator.dart';
 import '../../widgets/receipt_preview_dialog.dart';
 import '../../core/classic_theme.dart';
+import '../../core/entitlements.dart';
+import '../../providers/entitlements_provider.dart';
 
 class PrinterSettingsScreen extends ConsumerStatefulWidget {
   const PrinterSettingsScreen({super.key});
@@ -678,7 +680,8 @@ class _PrinterSettingsScreenState extends ConsumerState<PrinterSettingsScreen> {
             ),
             const SizedBox(height: 16),
 
-            // Backup and Restore Card
+            // Backup and Restore Card (owned by backupRestore)
+            if (ref.watch(entitlementsProvider).isEnabled(FeatureKeys.backupRestore)) ...[
             Card(
               elevation: 0,
               shape: RoundedRectangleBorder(
@@ -732,6 +735,7 @@ class _PrinterSettingsScreenState extends ConsumerState<PrinterSettingsScreen> {
               ),
             ),
             const SizedBox(height: 16),
+            ],
 
             // Connection status card
             Card(

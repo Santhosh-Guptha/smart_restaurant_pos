@@ -195,52 +195,37 @@ class SaasLicense {
     };
   }
 
+  /// Mock/offline-fallback licence: a short Connected licence.
+  ///
+  /// No feature map is written here on purpose — the resolver takes the
+  /// profile's baseline, so this can never drift from `PlanProfile.connected`.
   factory SaasLicense.defaultFree({int trialDays = 14, int expiryWarningDays = 3}) {
     return SaasLicense(
       planTier: 'TRIAL',
+      planProfile: 'CONNECTED',
       status: 'ACTIVE',
       maxFranchises: 1,
       maxUsers: 5,
-      maxDevices: 2,
+      maxDevices: 5,
       allowedRoles: const ['OWNER', 'MANAGER', 'BILLING', 'KITCHEN', 'WAITER'],
-      features: {
-        'billing': true,
-        'qsrBilling': true,
-        'tableManagement': true,
-        'kdsEnabled': true,
-        'qrOrdering': true,
-        'dualPrinting': true,
-        'recipeInventory': true,
-        'dayEndReports': true,
-        'multiOutlet': false,
-        'expenseManagement': true,
-      },
+      features: const {},
       startDate: DateTime.now(),
       endDate: DateTime.now().add(Duration(days: trialDays)),
       expiryWarningDays: expiryWarningDays,
     );
   }
 
+  /// Mock licence with everything on: the Omnichannel profile.
   factory SaasLicense.proMock() {
     return SaasLicense(
       planTier: 'YEARLY',
+      planProfile: 'OMNICHANNEL',
       status: 'ACTIVE',
-      maxFranchises: 5,
+      maxFranchises: 25,
       maxUsers: 20,
-      maxDevices: 10,
+      maxDevices: 15,
       allowedRoles: const ['OWNER', 'MANAGER', 'BILLING', 'KITCHEN', 'WAITER'],
-      features: {
-        'billing': true,
-        'qsrBilling': true,
-        'tableManagement': true,
-        'kdsEnabled': true,
-        'qrOrdering': true,
-        'dualPrinting': true,
-        'recipeInventory': true,
-        'dayEndReports': true,
-        'multiOutlet': true,
-        'expenseManagement': true,
-      },
+      features: const {},
       startDate: DateTime.now(),
       endDate: DateTime.now().add(const Duration(days: 365)),
     );
@@ -265,6 +250,12 @@ class SaasOrganization {
   final String? phone;
   final String? gstin;
 
+  /// A storage-mode change the platform admin asked for and the owner has not
+  /// finished yet: {from, to, status, requestedBy, requestedAt, steps{}}.
+  /// Null when nothing is pending. The tenant is routed to the migration gate
+  /// while `status == 'PENDING'`.
+  final Map<String, dynamic>? pendingStorageChange;
+
   SaasOrganization({
     required this.id,
     required this.name,
@@ -282,7 +273,12 @@ class SaasOrganization {
     this.upiId,
     this.phone,
     this.gstin,
+    this.pendingStorageChange,
   });
+
+  bool get hasPendingStorageChange =>
+      pendingStorageChange != null &&
+      (pendingStorageChange!['status']?.toString() ?? '') == 'PENDING';
 
   bool get isManagedCloud => storageMode == 'CLOUD_SYNC';
   bool get isPureOffline => storageMode == 'PURE_OFFLINE';
@@ -307,7 +303,25 @@ class SaasOrganization {
       upiId: json['upiId'] ?? json['defaultUpiId'] ?? json['upiVpa'],
       phone: json['phone'] ?? json['ownerPhone'],
       gstin: json['gstin'],
+      pendingStorageChange: _mapOrNull(json['pendingStorageChange']),
     );
+  }
+
+  static Map<String, dynamic>? _mapOrNull(dynamic v) {
+    if (v is Map) {
+      final out = <String, dynamic>{};
+      v.forEach((k, val) {
+        // Firestore Timestamps do not survive the Hive JSON cache; keep them
+        // as ISO strings.
+        if (val is Timestamp) {
+          out[k.toString()] = val.toDate().toIso8601String();
+        } else {
+          out[k.toString()] = val is Map ? _mapOrNull(val) : val;
+        }
+      });
+      return out;
+    }
+    return null;
   }
 
   Map<String, dynamic> toJson() {
@@ -329,6 +343,7 @@ class SaasOrganization {
       'upiId': upiId,
       'phone': phone,
       'gstin': gstin,
+      if (pendingStorageChange != null) 'pendingStorageChange': pendingStorageChange,
     };
   }
 
@@ -350,6 +365,7 @@ class SaasOrganization {
       upiId: data['upiId'] ?? data['defaultUpiId'] ?? data['upiVpa'],
       phone: data['phone'] ?? data['ownerPhone'],
       gstin: data['gstin'],
+      pendingStorageChange: _mapOrNull(data['pendingStorageChange']),
     );
   }
 

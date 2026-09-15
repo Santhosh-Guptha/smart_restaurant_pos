@@ -1683,7 +1683,8 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                       ),
                     ],
                   ),
-                  // Customer Email for POS Bill
+                  // Customer Email for POS Bill (owned by emailReceipts)
+                  if (featureOn(FeatureKeys.emailReceipts)) ...[
                   Row(
                     children: [
                       Icon(Icons.email_outlined, color: ClassicTheme.infoBlue, size: 18),
@@ -1705,6 +1706,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: context.borderColor)),
                     ),
                   ),
+                  ],
                   const SizedBox(height: 18),
 
                   // Payment Mode Tabs

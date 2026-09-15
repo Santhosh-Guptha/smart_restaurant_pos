@@ -871,7 +871,8 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen>
               child: const Icon(Icons.room_service_rounded, color: ClassicTheme.successEmerald, size: 24),
             ),
           ),
-          // Kitchen Analytics Action Button
+          // Kitchen Analytics Action Button (owned by analytics)
+          if (featureOn(FeatureKeys.analytics))
           IconButton(
             tooltip: 'Kitchen Analytics',
             onPressed: _showKitchenAnalyticsModal,
@@ -1708,7 +1709,8 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen>
             ),
             child: Row(
               children: [
-                // Print Slip Button
+                // Print Slip Button (owned by dualPrinting — KOT slips)
+                if (featureOn(FeatureKeys.dualPrinting))
                 IconButton(
                   tooltip: 'Print Kitchen KOT Slip',
                   onPressed: () => _printKitchenSlip(order),

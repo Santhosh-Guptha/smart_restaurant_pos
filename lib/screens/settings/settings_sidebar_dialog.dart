@@ -6,6 +6,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../../core/accent_palettes.dart';
 import '../../core/classic_theme.dart';
+import '../../core/entitlements.dart';
+import '../../providers/entitlements_provider.dart';
 import '../../core/rbac_permissions.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/restaurant_auth_provider.dart';
@@ -648,6 +650,9 @@ class _SettingsSidebarDialogState extends ConsumerState<SettingsSidebarDialog> {
                     ),
                   ],
                 ),
+                // New-KOT chimes only make sense when KOTs can arrive from another
+                // device, which needs the cloud (cloudSync).
+                if (ref.watch(entitlementsProvider).isEnabled(FeatureKeys.cloudSync)) ...[
                 const Divider(height: 12),
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
@@ -663,6 +668,7 @@ class _SettingsSidebarDialogState extends ConsumerState<SettingsSidebarDialog> {
                     await box.put('app_sound_alerts', val);
                   },
                 ),
+                ],
               ],
             ),
           ),
@@ -759,8 +765,10 @@ class _SettingsSidebarDialogState extends ConsumerState<SettingsSidebarDialog> {
                 );
               },
             ),
-          const SizedBox(height: 28),
-          _buildBackupSection(context),
+          if (ref.watch(entitlementsProvider).isEnabled(FeatureKeys.backupRestore)) ...[
+            const SizedBox(height: 28),
+            _buildBackupSection(context),
+          ],
         ],
       ),
     );

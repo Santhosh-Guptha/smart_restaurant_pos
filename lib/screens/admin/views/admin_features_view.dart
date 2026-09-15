@@ -106,7 +106,7 @@ class _AdminFeaturesViewState extends ConsumerState<AdminFeaturesView> {
       _maxOutlets = _readInt(lic?['maxFranchises'], profile.maxOutlets);
       _liveStorageMode = live.toUpperCase();
       _pending = pending is Map ? Map<String, dynamic>.from(pending) : null;
-      _targetStorageMode = (_pending != null && _pending!['status'] != 'DONE')
+      _targetStorageMode = (_pending != null && _pending!['status'] == 'PENDING')
           ? (_pending!['to'] ?? live).toString().toUpperCase()
           : _liveStorageMode;
       _applyHardConstraints();
@@ -268,6 +268,17 @@ class _AdminFeaturesViewState extends ConsumerState<AdminFeaturesView> {
           'updatedAt': now,
         }, SetOptions(merge: true));
       }
+
+      // The guest-facing web menu reads these two flags and nothing else about
+      // the plan, so it can show "not taking orders online" the moment an
+      // add-on is switched off — without redeploying the site.
+      final preview = _preview();
+      batch.set(fs.collection('public_stores').doc(orgId), {
+        'onlineMenuEnabled': preview.isEnabled(FeatureKeys.onlineMenu),
+        'onlineOrderingEnabled': preview.isEnabled(FeatureKeys.onlineOrderingEnabled),
+        'qrOrderingEnabled': preview.isEnabled(FeatureKeys.qrOrdering),
+        'entitlementsUpdatedAt': now,
+      }, SetOptions(merge: true));
 
       final enabled = _features.entries
           .where((e) => e.value)
@@ -513,8 +524,19 @@ class _AdminFeaturesViewState extends ConsumerState<AdminFeaturesView> {
   Widget _pendingBanner() {
     final p = _pending!;
     final steps = (p['steps'] is Map) ? Map<String, dynamic>.from(p['steps']) : {};
+    // Each step is written by StorageMigrationService as
+    // {status: DONE|SKIPPED|FAILED, at, detail}; a skipped step counts as done
+    // (an offline target needs no consent or sheet).
+    bool finished(dynamic v) {
+      if (v == true || v == 'done') return true;
+      if (v is Map) {
+        final st = v['status']?.toString().toUpperCase();
+        return st == 'DONE' || st == 'SKIPPED';
+      }
+      return false;
+    }
     final done = ['consent', 'provision', 'migrate', 'verify']
-        .where((s) => steps[s] == 'done' || steps[s] == true)
+        .where((s) => finished(steps[s]))
         .length;
     return Container(
       margin: const EdgeInsets.only(bottom: DS.space5),

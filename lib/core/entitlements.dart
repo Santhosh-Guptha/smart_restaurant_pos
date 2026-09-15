@@ -423,6 +423,22 @@ class StorageModes {
 
   static bool isOffline(String? mode) =>
       (mode ?? '').toUpperCase() == pureOffline;
+
+  static const List<String> all = [pureOffline, cloudSync, clientsOwnSheets];
+
+  /// What people see. Ids stay database values.
+  static String label(String? mode) {
+    switch ((mode ?? '').toUpperCase()) {
+      case pureOffline:
+        return 'Offline (this device only)';
+      case cloudSync:
+        return 'Cloud Sync';
+      case clientsOwnSheets:
+        return 'Your own Google Sheet';
+      default:
+        return mode ?? 'Unknown';
+    }
+  }
 }
 
 /// A named starting point a platform admin can apply in one click. A profile

@@ -1,186 +1,146 @@
 ﻿import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import '../core/subscription_plan_model.dart';
+import '../core/entitlements.dart';
 
 class SubscriptionPlanService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   static const String _collection = 'subscription_plans';
 
   /// Default fallback trial plan used if Firestore is offline or unseeded.
-  static const SubscriptionPlan fallbackTrialPlan = SubscriptionPlan(
+  ///
+  /// Mirrors the Connected profile: cloud on, online add-ons off. A trial is a
+  /// short Connected licence — it is not a fifth shape of tenant.
+  static final SubscriptionPlan fallbackTrialPlan = _fromProfile(
     id: 'trial',
+    profile: PlanProfile.connected,
     name: 'Free Trial (14 Days)',
-    description: 'Instant full access to SmartDine POS, Table Ordering, and KDS.',
+    description: 'Fourteen days of the Connected plan: cloud sync, analytics and every offline feature.',
     isDefaultTrial: true,
     validityDays: 14,
-    price: 0.0,
     billingCycle: 'TRIAL',
-    maxOutlets: 1,
     maxUsers: 5,
-    maxDevices: 3,
     tableCount: 15,
-    operatingMode: 'dineFirstPostpaid',
-    features: {
-      'qsrBilling': true,
-      'tableManagement': true,
-      'dineInBilling': true,
-      'kdsEnabled': true,
-      'qrOrdering': true,
-      'waiterOrdering': true,
-      'dualPrinting': true,
-      'thermalPrinting': true,
-      'dayEndReports': true,
-      'inventoryEnabled': false,
-      'multiOutlet': false,
-      'crm': true,
-    },
   );
 
-  /// Seeds the 4 standard subscription plans into Firestore if empty.
+  /// Seeds the standard plans into Firestore if the collection is empty.
+  ///
+  /// One plan per [PlanProfile], features and limits taken from the profile
+  /// so the console, the resolver and the seeded documents can never
+  /// disagree. Prices are not stored anywhere in the product (D5): pricing is
+  /// agreed with the platform admin, not read from a document.
   static Future<void> ensureDefaultPlansExist() async {
     try {
       final snapshot = await _firestore.collection(_collection).limit(1).get();
       if (snapshot.docs.isNotEmpty) return; // Already seeded
 
       final batch = _firestore.batch();
+      final plans = <SubscriptionPlan>[
+        fallbackTrialPlan,
+        _fromProfile(
+          id: 'offline_counter',
+          profile: PlanProfile.offlineSingle,
+          name: 'Offline Counter (Annual)',
+          description: 'One device, billing and menu on the device. No cloud, nothing to configure.',
+          validityDays: 365,
+          billingCycle: 'YEARLY',
+          maxUsers: 3,
+          tableCount: 0,
+          operatingMode: 'payFirstQSR',
+        ),
+        _fromProfile(
+          id: 'offline_dine_in',
+          profile: PlanProfile.offlineDineIn,
+          name: 'Offline Dine-In (Annual)',
+          description: 'One device with tables, running tabs, reservations, KOT slips and expenses.',
+          validityDays: 365,
+          billingCycle: 'YEARLY',
+          maxUsers: 5,
+          tableCount: 15,
+        ),
+        _fromProfile(
+          id: 'connected',
+          profile: PlanProfile.connected,
+          name: 'Connected (Annual)',
+          description: 'Cloud ledger, up to five devices, analytics. Online add-ons switched on per store.',
+          validityDays: 365,
+          billingCycle: 'YEARLY',
+          maxUsers: 10,
+          tableCount: 25,
+        ),
+        _fromProfile(
+          id: 'omnichannel',
+          profile: PlanProfile.omnichannel,
+          name: 'Everything (Annual)',
+          description: 'Every feature: kitchen screens, waiter pads, QR ordering, online menu, outlets.',
+          validityDays: 365,
+          billingCycle: 'YEARLY',
+          maxUsers: 50,
+          tableCount: 60,
+        ),
+      ];
 
-      // 1. Free Trial
-      final trialRef = _firestore.collection(_collection).doc('trial');
-      batch.set(trialRef, {
-        'name': 'Free Trial (14 Days)',
-        'description': 'Full access to POS, Table Management, KDS, and Dual Printing for 14 days.',
-        'isDefaultTrial': true,
-        'validityDays': 14,
-        'price': 0.0,
-        'billingCycle': 'TRIAL',
-        'maxOutlets': 1,
-        'maxUsers': 5,
-        'maxDevices': 3,
-        'tableCount': 15,
-        'operatingMode': 'dineFirstPostpaid',
-        'allowedRoles': ['OWNER', 'MANAGER', 'BILLING', 'KITCHEN', 'WAITER'],
-        'features': {
-          'qsrBilling': true,
-          'tableManagement': true,
-          'dineInBilling': true,
-          'kdsEnabled': true,
-          'qrOrdering': true,
-          'waiterOrdering': true,
-          'dualPrinting': true,
-          'thermalPrinting': true,
-          'dayEndReports': true,
-          'inventoryEnabled': false,
-          'multiOutlet': false,
-          'crm': true,
-        },
-        'createdAt': FieldValue.serverTimestamp(),
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
-
-      // 2. Starter Cafe
-      final starterRef = _firestore.collection(_collection).doc('starter');
-      batch.set(starterRef, {
-        'name': 'Starter Cafe (Annual)',
-        'description': 'Essential billing, table management, and thermal receipt printing for cafes.',
-        'isDefaultTrial': false,
-        'validityDays': 365,
-        'price': 4999.0,
-        'billingCycle': 'YEARLY',
-        'maxOutlets': 1,
-        'maxUsers': 3,
-        'maxDevices': 2,
-        'tableCount': 10,
-        'operatingMode': 'payFirstQSR',
-        'allowedRoles': ['OWNER', 'MANAGER', 'BILLING'],
-        'features': {
-          'qsrBilling': true,
-          'tableManagement': true,
-          'dineInBilling': true,
-          'kdsEnabled': false,
-          'qrOrdering': false,
-          'waiterOrdering': false,
-          'dualPrinting': true,
-          'thermalPrinting': true,
-          'dayEndReports': true,
-          'inventoryEnabled': false,
-          'multiOutlet': false,
-          'crm': true,
-        },
-        'createdAt': FieldValue.serverTimestamp(),
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
-
-      // 3. Pro Restaurant
-      final proRef = _firestore.collection(_collection).doc('pro');
-      batch.set(proRef, {
-        'name': 'Pro Restaurant (Annual)',
-        'description': 'Complete hospitality suite: KDS, QR ordering, multi-station printing, and stock.',
-        'isDefaultTrial': false,
-        'validityDays': 365,
-        'price': 11999.0,
-        'billingCycle': 'YEARLY',
-        'maxOutlets': 3,
-        'maxUsers': 10,
-        'maxDevices': 6,
-        'tableCount': 35,
-        'operatingMode': 'dineFirstPostpaid',
-        'allowedRoles': ['OWNER', 'MANAGER', 'BILLING', 'KITCHEN', 'WAITER'],
-        'features': {
-          'qsrBilling': true,
-          'tableManagement': true,
-          'dineInBilling': true,
-          'kdsEnabled': true,
-          'qrOrdering': true,
-          'waiterOrdering': true,
-          'dualPrinting': true,
-          'thermalPrinting': true,
-          'dayEndReports': true,
-          'inventoryEnabled': true,
-          'multiOutlet': false,
-          'crm': true,
-        },
-        'createdAt': FieldValue.serverTimestamp(),
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
-
-      // 4. Enterprise Chain
-      final enterpriseRef = _firestore.collection(_collection).doc('enterprise');
-      batch.set(enterpriseRef, {
-        'name': 'Enterprise Chain (Annual)',
-        'description': 'Multi-outlet franchise governance, recipe inventory, and unlimited scale.',
-        'isDefaultTrial': false,
-        'validityDays': 365,
-        'price': 24999.0,
-        'billingCycle': 'YEARLY',
-        'maxOutlets': 10,
-        'maxUsers': 30,
-        'maxDevices': 15,
-        'tableCount': 100,
-        'operatingMode': 'hybrid',
-        'allowedRoles': ['OWNER', 'MANAGER', 'BILLING', 'KITCHEN', 'WAITER'],
-        'features': {
-          'qsrBilling': true,
-          'tableManagement': true,
-          'dineInBilling': true,
-          'kdsEnabled': true,
-          'qrOrdering': true,
-          'waiterOrdering': true,
-          'dualPrinting': true,
-          'thermalPrinting': true,
-          'dayEndReports': true,
-          'inventoryEnabled': true,
-          'multiOutlet': true,
-          'crm': true,
-        },
-        'createdAt': FieldValue.serverTimestamp(),
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
+      for (final plan in plans) {
+        batch.set(_firestore.collection(_collection).doc(plan.id), {
+          ...plan.toFirestore(),
+          'planProfile': _profileFor(plan.id),
+          'createdAt': FieldValue.serverTimestamp(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+      }
 
       await batch.commit();
       debugPrint("✓ Successfully seeded default SmartDine subscription plans.");
     } catch (e) {
       debugPrint("SubscriptionPlanService ensureDefaultPlansExist error: $e");
     }
+  }
+
+  static String _profileFor(String planId) {
+    switch (planId) {
+      case 'offline_counter':
+        return PlanProfile.offlineSingle.id;
+      case 'offline_dine_in':
+        return PlanProfile.offlineDineIn.id;
+      case 'omnichannel':
+        return PlanProfile.omnichannel.id;
+      default:
+        return PlanProfile.connected.id;
+    }
+  }
+
+  static SubscriptionPlan _fromProfile({
+    required String id,
+    required PlanProfile profile,
+    required String name,
+    required String description,
+    required int validityDays,
+    required String billingCycle,
+    required int maxUsers,
+    required int tableCount,
+    bool isDefaultTrial = false,
+    String operatingMode = 'dineFirstPostpaid',
+  }) {
+    final features = Map<String, bool>.from(profile.features)
+      ..[FeatureKeys.pureOfflineMode] = profile.isOffline;
+    return SubscriptionPlan(
+      id: id,
+      name: name,
+      description: description,
+      isDefaultTrial: isDefaultTrial,
+      validityDays: validityDays,
+      price: 0.0, // D5: no prices in the product
+      billingCycle: billingCycle,
+      maxOutlets: profile.maxOutlets,
+      maxUsers: maxUsers,
+      maxDevices: profile.maxDevices,
+      tableCount: tableCount,
+      operatingMode: operatingMode,
+      allowedRoles: profile.isOffline
+          ? const ['OWNER', 'MANAGER', 'BILLING']
+          : const ['OWNER', 'MANAGER', 'BILLING', 'KITCHEN', 'WAITER'],
+      features: features,
+    );
   }
 
   /// Live stream of all subscription plans.

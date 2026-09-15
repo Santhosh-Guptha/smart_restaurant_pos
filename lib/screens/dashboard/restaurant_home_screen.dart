@@ -1,6 +1,5 @@
 import '../../providers/dashboard_layout_provider.dart';
 import '../../providers/entitlements_provider.dart';
-import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
@@ -28,7 +27,11 @@ import '../restaurant/store_configuration_screen.dart';
 import '../settings/settings_sidebar_dialog.dart';
 import '../analytics/restaurant_analytics_screen.dart';
 import '../orders/restaurant_order_history_screen.dart';
+import '../expenses/expenses_screen.dart';
+import '../waiter/waiter_table_picker_screen.dart';
 import '../../core/rbac_permissions.dart';
+import '../../core/entitlements.dart';
+import '../../core/cloud_gate.dart';
 
 class RestaurantHomeScreen extends ConsumerStatefulWidget {
   const RestaurantHomeScreen({super.key});
@@ -46,7 +49,9 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      final isPureOffline = ref.read(saasSessionProvider).currentLicense?.isPureOffline == true;
+      // The resolver (storage mode → legacy flag → profile) decides whether this
+      // tenant is offline; the licence flag alone is no longer the authority.
+      final isPureOffline = ref.read(entitlementsProvider).isPureOffline;
       if (!isPureOffline) {
         await GoogleSheetsSetupGateDialog.showIfRequired(context, ref);
       }
@@ -58,11 +63,11 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
 
   Future<void> _checkGoogleSheetsAccess() async {
     final saasSession = ref.read(saasSessionProvider);
-    if (saasSession.currentLicense?.isPureOffline == true) {
+    if (ref.read(entitlementsProvider).isPureOffline) {
       if (mounted) {
         setState(() {
           _sheetAccessVerified = true;
-          _sheetCheckMessage = 'Pure Offline Station · Direct Local POS';
+          _sheetCheckMessage = 'Offline Station · Direct Local POS';
         });
       }
       return;
@@ -98,9 +103,9 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
       String? sheetId = box?.get('restaurant_sheet_id_$orgId') ?? box?.get('google_sheet_id');
 
       if (sheetId == null || sheetId.isEmpty) {
-        // Fetch from Firestore
-        final doc = await FirebaseFirestore.instance.collection('organizations').doc(orgId).get();
-        sheetId = doc.data()?['googleSheetId']?.toString() ?? doc.data()?['spreadsheetId']?.toString();
+        // Fetch from Firestore (through the cloud gate)
+        final doc = await CloudGate.run(() => FirebaseFirestore.instance.collection('organizations').doc(orgId).get());
+        sheetId = doc?.data()?['googleSheetId']?.toString() ?? doc?.data()?['spreadsheetId']?.toString();
       }
 
       if (client != null && sheetId != null && sheetId.isNotEmpty) {
@@ -245,6 +250,8 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
     final bool roleStoreConfig = isOwner || isManager;
     final bool roleAnalytics = isOwner || isManager;
     final bool roleOrders = isOwner || isManager || isBilling;
+    final bool roleExpenses = isOwner || isManager;
+    final bool roleWaiter = isOwner || isManager || isWaiter;
 
     final bool isPureOffline = ent.isPureOffline;
 
@@ -455,6 +462,8 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
                       roleStoreConfig,
                       roleAnalytics,
                       roleOrders,
+                      roleExpenses,
+                      roleWaiter,
                     );
                     if (w != null) primaryCards.add(w);
                   }
@@ -641,6 +650,16 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
                                            Navigator.push(context, MaterialPageRoute(builder: (_) => const RestaurantAnalyticsScreen()));
                                          }
                                          break;
+                                       case 'expenses':
+                                         if (roleExpenses) {
+                                           Navigator.push(context, MaterialPageRoute(builder: (_) => const ExpensesScreen()));
+                                         }
+                                         break;
+                                       case 'waiter':
+                                         if (roleWaiter) {
+                                           Navigator.push(context, MaterialPageRoute(builder: (_) => const WaiterTablePickerScreen()));
+                                         }
+                                         break;
                                      }
                                    },
                                  ),
@@ -675,7 +694,7 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
     bool roleStaff,
     bool roleStoreConfig,
     bool roleAnalytics,
-    [bool roleOrders = true]
+    [bool roleOrders = true, bool roleExpenses = true, bool roleWaiter = true]
   ) {
     switch (id) {
       case 'counter_billing':
@@ -820,7 +839,7 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
       case 'analytics':
         if (!roleAnalytics) return null;
         return FeatureGatedCard(
-          featureKey: 'dayEndReports',
+          featureKey: FeatureKeys.analytics,
           featureLabel: 'Analytics & Rush Reports',
           onTap: null,
           child: _buildFeatureCard(
@@ -832,6 +851,42 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
             onTap: () => Navigator.push(
               context,
               MaterialPageRoute(builder: (_) => const RestaurantAnalyticsScreen()),
+            ),
+          ),
+        );
+      case 'expenses':
+        if (!roleExpenses) return null;
+        return FeatureGatedCard(
+          featureKey: FeatureKeys.expenseManagement,
+          featureLabel: 'Expense Tracking',
+          onTap: null,
+          child: _buildFeatureCard(
+            title: 'Expenses',
+            subtitle: 'Purchases, wages & bills paid',
+            badge: 'Spend',
+            icon: Icons.receipt_long_rounded,
+            accentColor: ClassicTheme.warningAmber,
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const ExpensesScreen()),
+            ),
+          ),
+        );
+      case 'waiter':
+        if (!roleWaiter) return null;
+        return FeatureGatedCard(
+          featureKey: FeatureKeys.waiterOrdering,
+          featureLabel: 'Waiter Pad',
+          onTap: null,
+          child: _buildFeatureCard(
+            title: 'Waiter Pad',
+            subtitle: 'Pick a table, take the order',
+            badge: 'Floor',
+            icon: Icons.room_service_rounded,
+            accentColor: ClassicTheme.infoBlue,
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const WaiterTablePickerScreen()),
             ),
           ),
         );

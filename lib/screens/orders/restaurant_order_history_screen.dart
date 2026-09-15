@@ -7,6 +7,9 @@ import 'package:share_plus/share_plus.dart';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../core/classic_theme.dart';
+import '../../core/cloud_gate.dart';
+import '../../core/entitlements.dart';
+import '../../providers/entitlements_provider.dart';
 import '../../core/constants.dart';
 import '../../core/restaurant_models.dart';
 import '../../providers/saas_session_provider.dart';
@@ -30,6 +33,10 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
   String _selectedDateFilter = 'Today'; // 'Today', 'Yesterday', 'Last 7 Days', 'All Time'
   String _selectedOutlet = 'ALL'; // 'ALL' or specific outlet ID
   List<Map<String, String>> _availableOutlets = [];
+  late final bool _hasCloud;
+  late final bool _hasMultiOutlet;
+  late final bool _hasDineInBilling;
+  late final bool _hasPrinting;
   String _searchQuery = '';
   final TextEditingController _searchCtrl = TextEditingController();
   StreamSubscription? _boxSubscription;
@@ -40,9 +47,14 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
   void initState() {
     super.initState();
     _selectedOrderType = widget.initialOrderType ?? 'ALL';
+    final ent = ref.read(entitlementsProvider);
+    _hasCloud = ent.isEnabled(FeatureKeys.cloudSync);
+    _hasMultiOutlet = ent.isEnabled(FeatureKeys.multiOutlet);
+    _hasDineInBilling = ent.isEnabled(FeatureKeys.dineInBilling);
+    _hasPrinting = ent.isEnabled(FeatureKeys.thermalPrinting);
     _initOutlets();
     _loadHiveCachedOrders();
-    _fetchLatestWebhookOrders();
+    if (_hasCloud) _fetchLatestWebhookOrders();
 
     if (Hive.isBoxOpen('configBox')) {
       _boxSubscription = Hive.box('configBox').watch().listen((event) {
@@ -80,12 +92,15 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
       if (currentOrgId.isNotEmpty) {'id': currentOrgId, 'name': orgName},
     ];
 
-    try {
-      if (currentOrgId.isNotEmpty) {
-        final snap = await FirebaseFirestore.instance
+    // Sibling outlets live in Firestore and only matter with multiOutlet.
+    final snap = !_hasMultiOutlet || currentOrgId.isEmpty
+        ? null
+        : await CloudGate.run(() => FirebaseFirestore.instance
             .collection('outlets')
             .where('organizationId', isEqualTo: currentOrgId)
-            .get();
+            .get());
+    try {
+      if (snap != null) {
         for (final doc in snap.docs) {
           final data = doc.data();
           final id = doc.id;
@@ -105,6 +120,7 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
   }
 
   Future<void> _fetchLatestWebhookOrders() async {
+    if (!_hasCloud || CloudGate.offline) return;
     try {
       final currentOrgId = _getEffectiveOrgId();
       final targetOutletIds = <String>[];
@@ -755,12 +771,13 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: context.textPrimary),
             ),
             Text(
-              'Complete live ledger of Dine-In, Takeaway & QR Web orders',
+              _hasCloud ? 'Complete live ledger of Dine-In, Takeaway & QR Web orders' : 'Ledger of every bill raised on this device',
               style: TextStyle(fontSize: 12, color: context.textSecondary),
             ),
           ],
         ),
         actions: [
+          if (_hasCloud)
           IconButton(
             icon: const Icon(Icons.refresh_rounded),
             tooltip: 'Refresh Orders',
@@ -899,7 +916,10 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
               // Orders List
               Expanded(
                 child: RefreshIndicator(
-                  onRefresh: _fetchLatestWebhookOrders,
+                  onRefresh: () async {
+                    _loadHiveCachedOrders();
+                    await _fetchLatestWebhookOrders();
+                  },
                   color: ClassicTheme.primaryAccent,
                   child: filtered.isEmpty
                       ? _buildEmptyState()
@@ -1429,7 +1449,7 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
                 Wrap(
                   spacing: 6,
                   children: [
-                    if (status == 'PENDING')
+                    if (status == 'PENDING' && _hasDineInBilling)
                       ElevatedButton.icon(
                         style: ElevatedButton.styleFrom(
                           backgroundColor: ClassicTheme.successEmerald,
@@ -1441,6 +1461,7 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
                         label: const Text('Collect Payment', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                         onPressed: () => _showCollectPaymentDialog(order),
                       ),
+                    if (_hasPrinting)
                     OutlinedButton.icon(
                       style: OutlinedButton.styleFrom(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),

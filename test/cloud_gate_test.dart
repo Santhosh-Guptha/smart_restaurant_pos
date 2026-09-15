@@ -2,7 +2,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:smart_restaurant_pos/core/cloud_gate.dart';
 
 void main() {
-  tearDown(() => CloudGate.setOffline(false));
+  tearDown(() {
+    CloudGate.setOffline(false);
+    CloudGate.setMigrating(false);
+  });
 
   group('CloudGate', () {
     test('open by default', () {
@@ -34,6 +37,22 @@ void main() {
     test('run() swallows exceptions into null', () async {
       final r = await CloudGate.run<int>(() async => throw StateError('boom'));
       expect(r, isNull);
+    });
+
+    test('a running migration opens the gate for its duration only', () async {
+      CloudGate.setOffline(true);
+      expect(CloudGate.offline, isTrue);
+      CloudGate.setMigrating(true);
+      expect(CloudGate.offline, isFalse, reason: 'the owner is moving the store');
+      var calls = 0;
+      await CloudGate.run(() async => calls++);
+      expect(calls, 1);
+      CloudGate.setMigrating(false);
+      expect(CloudGate.offline, isTrue);
+    });
+
+    test('CloudOfflineException reads like a sentence', () {
+      expect(const CloudOfflineException().toString(), contains('offline'));
     });
 
     test('offlineResponse is shaped like a failed webhook reply', () {
