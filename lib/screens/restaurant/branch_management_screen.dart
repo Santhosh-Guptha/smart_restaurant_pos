@@ -11,6 +11,7 @@ import '../../core/saas_models.dart';
 import '../../providers/saas_session_provider.dart';
 import '../../services/table_qr_pdf_service.dart';
 import '../../services/ordering_platform_config_service.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class BranchManagementScreen extends ConsumerStatefulWidget {
   const BranchManagementScreen({super.key});
@@ -1574,7 +1575,35 @@ class _BranchManagementScreenState
                 ),
               ),
 
-              
+              const SizedBox(width: 8),
+
+              // Open Digital Menu in Browser
+              OutlinedButton.icon(
+                onPressed: () async {
+                  try {
+                    final uri = Uri.parse(qrOrderingUrl);
+                    if (await canLaunchUrl(uri)) {
+                      await launchUrl(uri, mode: LaunchMode.externalApplication);
+                    }
+                  } catch (_) {}
+                },
+                icon: const Icon(Icons.open_in_browser_rounded,
+                    size: 16, color: Color(0xFF3B82F6)),
+                label: const Text(
+                  'OPEN MENU',
+                  style: TextStyle(
+                    color: Color(0xFF3B82F6),
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                style: OutlinedButton.styleFrom(
+                  side: BorderSide(color: context.borderColor),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+              ),
 
               // Edit Button
               IconButton(

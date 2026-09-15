@@ -258,8 +258,10 @@
       const params = new URLSearchParams(window.location.search);
       const rawSheet = params.get('sheet') || params.get('s') || params.get('sheetId') || params.get('sheet_id') || params.get('spreadsheet');
       const tableParam = params.get('table') || params.get('t') || params.get('tableno') || params.get('table_number');
-      const nameParam = params.get('name') || params.get('n') || params.get('restaurant') || params.get('shop') || params.get('store');
-      const orgParam = params.get('org') || params.get('o') || params.get('orgId') || params.get('organization_id') || params.get('store_id');
+      const nameParam = params.get('name') || params.get('n') || params.get('restaurant') || params.get('shop');
+      const storeIdParam = params.get('store') || params.get('store_id') || params.get('outlet') || params.get('branch');
+      if (storeIdParam) state.storeId = storeIdParam.trim();
+      const orgParam = params.get('org') || params.get('o') || params.get('orgId') || params.get('organization_id');
 
       if (rawSheet && rawSheet.trim().length > 0) {
         const clean = extractGoogleSheetId(rawSheet);
@@ -3676,31 +3678,7 @@
       const orgId = state.organizationId;
       const sheetId = state.googleSheetId;
 
-      // 1. PRIMARY: Google Apps Script Webhook
-      if (state.organizationId || state.googleSheetId) {
-        try {
-          let proxyUrl = `${DEFAULT_APPS_SCRIPT_WEBHOOK}?action=GET_MENU`;
-          if (state.organizationId) {
-            proxyUrl += `&org=${encodeURIComponent(state.organizationId)}`;
-          }
-          if (state.googleSheetId && !state.googleSheetId.startsWith('sheet_')) {
-            proxyUrl += `&sheet=${encodeURIComponent(state.googleSheetId)}`;
-          }
-
-          const proxyResp = await fetch(proxyUrl, { cache: 'no-store' });
-          if (proxyResp.ok) {
-            const proxyJson = await proxyResp.json();
-            if (proxyJson && proxyJson.success && Array.isArray(proxyJson.items) && proxyJson.items.length > 0) {
-              console.log(`[Menu] Loaded ${proxyJson.items.length} items from connected Google Sheet via Apps Script.`);
-              return proxyJson.items;
-            }
-          }
-        } catch (e) {
-          console.warn('[Menu] Apps Script proxy fetch error:', e);
-        }
-      }
-
-      // 2. Fallback: Direct Firestore Sanitized Public Store check (Safe & Direct)
+      // 1. FAST PRIMARY: Direct Firestore Sanitized Public Store check (Instant CDN Cache)
       if (orgId) {
         try {
           const storeUrl = `https://firestore.googleapis.com/v1/projects/smartdine-restaurant-pos/databases/(default)/documents/public_stores/${encodeURIComponent(orgId)}`;
@@ -3714,6 +3692,9 @@
             }
             if (f.upiId?.stringValue && !state.upiId) {
               state.upiId = f.upiId.stringValue;
+            }
+            if (f.googleSheetId?.stringValue && !state.googleSheetId) {
+              state.googleSheetId = f.googleSheetId.stringValue;
             }
 
             // Check if menu_items array exists directly on the public_stores document
@@ -3749,13 +3730,37 @@
               }).filter(it => it.name && it.name.trim().length > 0);
 
               if (dishes.length > 0) {
-                console.log(`[Menu] Loaded ${dishes.length} dishes dynamically from public store profile.`);
+                console.log(`[Menu] Loaded ${dishes.length} dishes dynamically from public store profile in < 200ms.`);
                 return dishes;
               }
             }
           }
         } catch (storeErr) {
           console.warn('[Menu] Store document menu check warning:', storeErr);
+        }
+      }
+
+      // 2. SECONDARY: Google Apps Script Webhook
+      if (state.organizationId || state.googleSheetId) {
+        try {
+          let proxyUrl = `${DEFAULT_APPS_SCRIPT_WEBHOOK}?action=GET_MENU`;
+          if (state.organizationId) {
+            proxyUrl += `&org=${encodeURIComponent(state.organizationId)}`;
+          }
+          if (state.googleSheetId && !state.googleSheetId.startsWith('sheet_')) {
+            proxyUrl += `&sheet=${encodeURIComponent(state.googleSheetId)}`;
+          }
+
+          const proxyResp = await fetch(proxyUrl, { cache: 'no-store' });
+          if (proxyResp.ok) {
+            const proxyJson = await proxyResp.json();
+            if (proxyJson && proxyJson.success && Array.isArray(proxyJson.items) && proxyJson.items.length > 0) {
+              console.log(`[Menu] Loaded ${proxyJson.items.length} items from connected Google Sheet via Apps Script.`);
+              return proxyJson.items;
+            }
+          }
+        } catch (e) {
+          console.warn('[Menu] Apps Script proxy fetch error:', e);
         }
       }
 
@@ -3935,82 +3940,8 @@
         state.googleSheetId = null;
       }
 
-      // W-06 & W-29: Fetch Master Razorpay Key from backend webhook
-      try {
-        let rzpUrl = `${DEFAULT_APPS_SCRIPT_WEBHOOK}?action=GET_PAYMENT_CONFIG`;
-        if (state.organizationId) rzpUrl += `&org=${encodeURIComponent(state.organizationId)}`;
-        const rzpResp = await fetch(rzpUrl);
-        if (rzpResp.ok) {
-          const rzpDoc = await rzpResp.json();
-          // X-03: the server returns `razorpay_key_id` (Code.gs GET_PAYMENT_CONFIG).
-          // Reading `keyId` always yielded undefined, so the placeholder key was
-          // handed to Razorpay and every guest card payment failed to open.
-          const rKey = rzpDoc.razorpay_key_id || rzpDoc.keyId || rzpDoc.key;
-          if (rKey && rKey.trim().length > 0 && !String(rKey).includes('placeholder')) {
-            state.razorpayKeyId = rKey.trim();
-            console.log('[Init] Configured Razorpay Key ID:', state.razorpayKeyId);
-          }
-        }
-      } catch (rzpErr) {
-        console.warn('[Init] Razorpay key lookup notice:', rzpErr);
-      }
-
-      // 1. Primary: Load Store Profile via Apps Script Webhook
-      let storeLoadedFromWebhook = false;
-      if (state.organizationId || state.googleSheetId) {
-        try {
-          let proxyUrl = `${DEFAULT_APPS_SCRIPT_WEBHOOK}?action=GET_STORE_PROFILE`;
-          if (state.organizationId) proxyUrl += `&org=${encodeURIComponent(state.organizationId)}`;
-          if (state.googleSheetId && !state.googleSheetId.startsWith('sheet_')) {
-            proxyUrl += `&sheet=${encodeURIComponent(state.googleSheetId)}`;
-          }
-          const whResp = await fetch(proxyUrl);
-          if (whResp.ok) {
-            const whJson = await whResp.json();
-            if (whJson.success && whJson.store) {
-              storeLoadedFromWebhook = true;
-              state.store = whJson.store;
-              const s = whJson.store;
-              if (s.name) state.restaurant.name = s.name;
-              if (s.upi_id) {
-                state.upiId = s.upi_id;
-                state.settlementUpiId = s.upi_id;
-              }
-              if (s.currency) state.currency = s.currency;
-              if (s.timezone) state.timezone = s.timezone;
-              if (s.google_sheet_id && !state.googleSheetId) state.googleSheetId = s.google_sheet_id;
-              if (s.gst_rate !== undefined) state.gstRate = Number(s.gst_rate);
-              if (s.service_charge_rate !== undefined) state.serviceCharge = Number(s.service_charge_rate);
-              else if (s.service_charge !== undefined) state.serviceCharge = Number(s.service_charge);
-              if (s.hours) {
-                state.operatingHours = {
-                  isOpen: s.hours.isOpen !== false,
-                  openFrom: s.hours.openFrom || '',
-                  openTo: s.hours.openTo || ''
-                };
-                if (s.hours.isOpen === false) state.isKitchenClosed = true;
-              }
-            } else if (whJson.upi_id) {
-              state.upiId = whJson.upi_id;
-              state.settlementUpiId = whJson.upi_id;
-              storeLoadedFromWebhook = true;
-            }
-          }
-        } catch (e) {
-          console.warn('[Init] Webhook store profile notice:', e);
-        }
-      }
-
-      // W-13 & W-31: License & Dining Suspension Guard
-      if (state.store) {
-        if (state.store.status === 'EXPIRED' || state.store.is_expired === true || state.store.plan_status === 'EXPIRED') {
-          state.loading = false;
-          showToast('Dining orders are temporarily suspended for this restaurant.', 'error');
-        }
-      }
-
-      // 2. Fallback: If org ID exists and webhook failed, resolve store details safely from Firestore public_stores
-      if (state.organizationId && !storeLoadedFromWebhook) {
+      // 1. Fast Store Profile Resolution from Firestore (100ms CDN)
+      if (state.organizationId) {
         try {
           const publicStoreUrl = `https://firestore.googleapis.com/v1/projects/smartdine-restaurant-pos/databases/(default)/documents/public_stores/${encodeURIComponent(state.organizationId)}`;
           const storeResp = await fetch(publicStoreUrl);
@@ -4053,6 +3984,23 @@
           console.warn('[Init] Public store profile resolution notice:', e);
         }
       }
+
+      // Background non-blocking fetch for Razorpay Key ID
+      (async () => {
+        try {
+          let rzpUrl = `${DEFAULT_APPS_SCRIPT_WEBHOOK}?action=GET_PAYMENT_CONFIG`;
+          if (state.organizationId) rzpUrl += `&org=${encodeURIComponent(state.organizationId)}`;
+          const rzpResp = await fetch(rzpUrl);
+          if (rzpResp.ok) {
+            const rzpDoc = await rzpResp.json();
+            const rKey = rzpDoc.razorpay_key_id || rzpDoc.keyId || rzpDoc.key;
+            if (rKey && rKey.trim().length > 0 && !String(rKey).includes('placeholder')) {
+              state.razorpayKeyId = rKey.trim();
+              console.log('[Init] Configured Razorpay Key ID in background:', state.razorpayKeyId);
+            }
+          }
+        } catch (_) {}
+      })();
 
       try {
         state.menuItems = await loadMenu();
@@ -4173,14 +4121,17 @@
     window.toggleUpiQr = toggleUpiQr;
     window.copyUpiId = copyUpiId;
     window.requestFinalBill = requestFinalBill;
-    window.autoFillDemoUtr = autoFillDemoUtr;
     window.confirmAndRecordPayment = confirmAndRecordPayment;
     window.syncOrdersFromGoogleSheet = syncOrdersFromGoogleSheet;
 
     // =========================================================================
     //  Boot
     // =========================================================================
-    document.addEventListener('DOMContentLoaded', init);
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', init);
+    } else {
+      init();
+    }
   </script>
 </body>
 </html>

@@ -9,6 +9,7 @@ import 'package:http/http.dart' as http;
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:uuid/uuid.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/classic_theme.dart';
 import '../../core/constants.dart';
@@ -2023,6 +2024,27 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
                     ),
                   ),
                 ],
+              ),
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  icon: const Icon(Icons.open_in_browser, size: 16),
+                  label: const Text('Open Menu in Browser', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: ClassicTheme.primaryAccent,
+                    side: BorderSide(color: context.borderColor),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                  onPressed: () async {
+                    try {
+                      final uri = Uri.parse(table.qrMenuUrl);
+                      if (await canLaunchUrl(uri)) {
+                        await launchUrl(uri, mode: LaunchMode.externalApplication);
+                      }
+                    } catch (_) {}
+                  },
+                ),
               ),
             ],
           ),

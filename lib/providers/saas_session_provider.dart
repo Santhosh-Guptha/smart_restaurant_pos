@@ -135,20 +135,18 @@ class SaasSessionNotifier extends StateNotifier<SaasSessionState> {
           );
 
           // Populate active staff member in restaurantAuthProvider for immediate role-based UI resolution
-          if (user.role != 'MASTER_ADMIN') {
-            final primaryRole = StaffRoleExtension.fromKey(user.role);
-            final staffMember = StaffMember(
-              id: user.id,
-              name: user.fullName,
-              username: user.username,
-              email: user.email,
-              role: primaryRole,
-              roles: [primaryRole],
-              assignedOutletId: user.franchiseId,
-              isActive: true,
-            );
-            _ref.read(restaurantAuthProvider.notifier).setActiveStaff(staffMember);
-          }
+          final primaryRole = StaffRoleExtension.fromKey(user.role);
+          final staffMember = StaffMember(
+            id: user.id,
+            name: user.fullName,
+            username: user.username,
+            email: user.email,
+            role: primaryRole,
+            roles: [primaryRole],
+            assignedOutletId: user.franchiseId,
+            isActive: true,
+          );
+          _ref.read(restaurantAuthProvider.notifier).setActiveStaff(staffMember);
 
           _setupRealtimeListeners(org.id);
           await _initializeSaaSLocalProfile(user.email, org.name);
@@ -702,19 +700,19 @@ class SaasSessionNotifier extends StateNotifier<SaasSessionState> {
       );
 
       // Populate active staff member in restaurantAuthProvider for immediate role-based UI resolution
+      final primaryRole = StaffRoleExtension.fromKey(role);
+      final staffMember = StaffMember(
+        id: userId,
+        name: user.fullName,
+        username: username,
+        email: userEmail,
+        role: primaryRole,
+        roles: [primaryRole],
+        assignedOutletId: franchiseId?.toString(),
+        isActive: true,
+      );
+      _ref.read(restaurantAuthProvider.notifier).setActiveStaff(staffMember);
       if (role != 'MASTER_ADMIN') {
-        final primaryRole = StaffRoleExtension.fromKey(role);
-        final staffMember = StaffMember(
-          id: userId,
-          name: user.fullName,
-          username: username,
-          email: userEmail,
-          role: primaryRole,
-          roles: [primaryRole],
-          assignedOutletId: franchiseId?.toString(),
-          isActive: true,
-        );
-        _ref.read(restaurantAuthProvider.notifier).setActiveStaff(staffMember);
         await _ref.read(restaurantAuthProvider.notifier).saveStaffMember(staffMember);
       }
 
@@ -826,20 +824,18 @@ class SaasSessionNotifier extends StateNotifier<SaasSessionState> {
     );
 
     // Populate active staff member in restaurantAuthProvider for immediate role-based UI resolution
-    if (user.role != 'MASTER_ADMIN') {
-      final primaryRole = StaffRoleExtension.fromKey(user.role);
-      final staffMember = StaffMember(
-        id: user.id,
-        name: user.fullName,
-        username: user.username,
-        email: user.email,
-        role: primaryRole,
-        roles: [primaryRole],
-        assignedOutletId: franchiseId?.toString(),
-        isActive: true,
-      );
-      _ref.read(restaurantAuthProvider.notifier).setActiveStaff(staffMember);
-    }
+    final primaryRole = StaffRoleExtension.fromKey(user.role);
+    final staffMember = StaffMember(
+      id: user.id,
+      name: user.fullName,
+      username: user.username,
+      email: user.email,
+      role: primaryRole,
+      roles: [primaryRole],
+      assignedOutletId: franchiseId?.toString(),
+      isActive: true,
+    );
+    _ref.read(restaurantAuthProvider.notifier).setActiveStaff(staffMember);
 
     await _updateSavedUsersList();
 
@@ -1225,6 +1221,22 @@ class SaasSessionNotifier extends StateNotifier<SaasSessionState> {
         activeFranchiseId: null,
         isMockMode: state.isMockMode,
       );
+
+      if (state.currentUser != null) {
+        final u = state.currentUser!;
+        final primaryRole = StaffRoleExtension.fromKey(u.role);
+        final staffMember = StaffMember(
+          id: u.id,
+          name: u.fullName,
+          username: u.username,
+          email: u.email,
+          role: primaryRole,
+          roles: [primaryRole],
+          assignedOutletId: null,
+          isActive: true,
+        );
+        _ref.read(restaurantAuthProvider.notifier).setActiveStaff(staffMember);
+      }
 
       return null; // success
     } catch (e) {

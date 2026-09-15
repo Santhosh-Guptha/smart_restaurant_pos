@@ -99,13 +99,15 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
 
     final activeStaff = ref.read(restaurantAuthProvider).activeStaff;
     final saasUser = ref.read(saasSessionProvider).currentUser;
-    final bool hasBillingAccess = (activeStaff != null)
-        ? activeStaff.canPerformBilling
-        : (saasUser != null &&
-            (saasUser.role == 'OWNER' ||
-                saasUser.role == 'MASTER_ADMIN' ||
-                saasUser.role == 'MANAGER' ||
-                saasUser.role == 'BILLING'));
+    final bool isMasterAdmin = saasUser?.role == 'MASTER_ADMIN';
+    final bool hasBillingAccess = isMasterAdmin ||
+        (activeStaff != null
+            ? activeStaff.canPerformBilling
+            : (saasUser != null &&
+                (saasUser.role == 'OWNER' ||
+                    saasUser.role == 'MASTER_ADMIN' ||
+                    saasUser.role == 'MANAGER' ||
+                    saasUser.role == 'BILLING')));
 
     if (!hasBillingAccess) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
