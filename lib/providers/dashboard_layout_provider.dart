@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
+import '../core/classic_theme.dart';
 import 'package:flutter_riverpod/legacy.dart';
 import 'package:hive_flutter/hive_flutter.dart';
-import '../core/saas_models.dart';
+import '../core/entitlements.dart';
 
 /// Represents a customizable card on the restaurant dashboard.
 class DashboardCardMeta {
@@ -25,30 +26,30 @@ class DashboardCardMeta {
     this.allowedRoles,
   });
 
-  bool isAllowedFor({SaasLicense? license, String? role, bool checkFeature = true}) {
+  /// Should this card exist for the person looking at the screen?
+  ///
+  /// Both halves fail closed. A card whose feature is not in the tenant's plan
+  /// is not drawn at all — it is not drawn greyed out with a padlock, because
+  /// a till covered in padlocks is a worse tool than a till that only shows
+  /// what this restaurant bought.
+  bool isAllowedFor({
+    Entitlements? entitlements,
+    String? role,
+    bool checkFeature = true,
+  }) {
     final normRole = role?.toUpperCase() ?? 'UNASSIGNED';
-    // Fail-closed for unknown or unassigned roles
-    if (normRole == 'UNASSIGNED') {
-      return false;
-    }
+    if (normRole == 'UNASSIGNED') return false;
+    if (normRole == 'MASTER_ADMIN') return true;
 
-    // Master admin sees everything
-    if (normRole == 'MASTER_ADMIN') {
-      return true;
-    }
-
-    // Role check (fail-closed)
     if (allowedRoles != null && allowedRoles!.isNotEmpty) {
       if (!allowedRoles!.map((r) => r.toUpperCase()).contains(normRole)) {
         return false;
       }
     }
 
-    // Feature check: backward compatible (defaults to true if license is null or features map is empty)
-    if (checkFeature && requiredFeature != null && license != null) {
-      if (license.features.isEmpty) return true;
-      final defaultVal = requiredFeature == 'multiOutlet' ? false : true;
-      return license.hasFeature(requiredFeature!, defaultValue: defaultVal);
+    if (checkFeature && requiredFeature != null) {
+      final ent = entitlements ?? Entitlements.none;
+      return ent.isEnabled(requiredFeature!);
     }
 
     return true;
@@ -63,8 +64,8 @@ const List<DashboardCardMeta> kAllDashboardCards = [
     subtitle: 'Fast QSR & instant tokens',
     badge: 'POS Desk',
     icon: Icons.point_of_sale_rounded,
-    defaultColor: Colors.amber,
-    requiredFeature: 'qsrBilling',
+    defaultColor: ClassicTheme.warningAmber,
+    requiredFeature: FeatureKeys.qsrBilling,
     allowedRoles: ['OWNER', 'MANAGER', 'BILLING', 'CASHIER'],
   ),
   DashboardCardMeta(
@@ -73,8 +74,8 @@ const List<DashboardCardMeta> kAllDashboardCards = [
     subtitle: 'Dine-in layout & live KOT',
     badge: 'Captain',
     icon: Icons.table_restaurant_rounded,
-    defaultColor: Color(0xFF10B981),
-    requiredFeature: 'tableManagement',
+    defaultColor: ClassicTheme.successEmerald,
+    requiredFeature: FeatureKeys.tableManagement,
     allowedRoles: ['OWNER', 'MANAGER', 'BILLING', 'CASHIER', 'WAITER', 'CAPTAIN'],
   ),
   DashboardCardMeta(
@@ -83,7 +84,8 @@ const List<DashboardCardMeta> kAllDashboardCards = [
     subtitle: 'All bills, modes & online orders',
     badge: 'Live Ledger',
     icon: Icons.receipt_long_rounded,
-    defaultColor: Color(0xFF6366F1),
+    defaultColor: ClassicTheme.secondaryAccent,
+    requiredFeature: FeatureKeys.billing,
     allowedRoles: ['OWNER', 'MANAGER', 'BILLING', 'CASHIER'],
   ),
   DashboardCardMeta(
@@ -92,8 +94,8 @@ const List<DashboardCardMeta> kAllDashboardCards = [
     subtitle: 'Live kitchen orders & tickets',
     badge: 'Chef Desk',
     icon: Icons.outdoor_grill_rounded,
-    defaultColor: Color(0xFFFF6B35),
-    requiredFeature: 'kdsEnabled',
+    defaultColor: ClassicTheme.primaryAccent,
+    requiredFeature: FeatureKeys.kdsEnabled,
     allowedRoles: ['OWNER', 'MANAGER', 'KITCHEN', 'CHEF'],
   ),
   DashboardCardMeta(
@@ -102,8 +104,8 @@ const List<DashboardCardMeta> kAllDashboardCards = [
     subtitle: 'Dishes, prices & categories',
     badge: 'Dynamic',
     icon: Icons.restaurant_menu_rounded,
-    defaultColor: Colors.teal,
-    requiredFeature: 'menuManagement',
+    defaultColor: ClassicTheme.secondaryAccent,
+    requiredFeature: FeatureKeys.menuManagement,
     allowedRoles: ['OWNER', 'MANAGER'],
   ),
   DashboardCardMeta(
@@ -112,8 +114,8 @@ const List<DashboardCardMeta> kAllDashboardCards = [
     subtitle: 'Create branch & auto-sheets',
     badge: 'Multi-Store',
     icon: Icons.storefront_rounded,
-    defaultColor: Colors.blueAccent,
-    requiredFeature: 'multiOutlet',
+    defaultColor: ClassicTheme.infoBlue,
+    requiredFeature: FeatureKeys.multiOutlet,
     allowedRoles: ['OWNER', 'MANAGER'],
   ),
   DashboardCardMeta(
@@ -122,8 +124,8 @@ const List<DashboardCardMeta> kAllDashboardCards = [
     subtitle: 'Roles, logins & sheet access',
     badge: 'RBAC Security',
     icon: Icons.people_alt_rounded,
-    defaultColor: Colors.deepPurpleAccent,
-    requiredFeature: 'staffManagement',
+    defaultColor: ClassicTheme.secondaryAccent,
+    requiredFeature: FeatureKeys.staffManagement,
     allowedRoles: ['OWNER', 'MANAGER'],
   ),
   DashboardCardMeta(
@@ -132,8 +134,8 @@ const List<DashboardCardMeta> kAllDashboardCards = [
     subtitle: 'Shifts, taxes, UPI & printer',
     badge: 'Operations',
     icon: Icons.tune_rounded,
-    defaultColor: Colors.deepOrangeAccent,
-    requiredFeature: 'storeConfiguration',
+    defaultColor: ClassicTheme.primaryAccent,
+    requiredFeature: FeatureKeys.storeConfiguration,
     allowedRoles: ['OWNER', 'MANAGER'],
   ),
   DashboardCardMeta(
@@ -142,8 +144,8 @@ const List<DashboardCardMeta> kAllDashboardCards = [
     subtitle: 'Heatmaps, dayparts & AOV',
     badge: 'Real-Time',
     icon: Icons.analytics_rounded,
-    defaultColor: Colors.pinkAccent,
-    requiredFeature: 'dayEndReports',
+    defaultColor: ClassicTheme.primaryAccent,
+    requiredFeature: FeatureKeys.analytics,
     allowedRoles: ['OWNER', 'MANAGER'],
   ),
 ];

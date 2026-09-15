@@ -239,7 +239,7 @@ class _RestaurantMenuManagementScreenState
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('Please log in with an organization to sync menu.'),
-              backgroundColor: Colors.orange,
+              backgroundColor: ClassicTheme.warningAmber,
               behavior: SnackBarBehavior.floating,
             ),
           );
@@ -301,7 +301,7 @@ class _RestaurantMenuManagementScreenState
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('✅ ${_dishes.length} menu items synced live to website & cloud!'),
-            backgroundColor: const Color(0xFF059669),
+            backgroundColor: ClassicTheme.successEmerald,
             behavior: SnackBarBehavior.floating,
           ),
         );
@@ -312,7 +312,7 @@ class _RestaurantMenuManagementScreenState
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Cloud sync notice: $e'),
-            backgroundColor: Colors.orange,
+            backgroundColor: ClassicTheme.warningAmber,
             behavior: SnackBarBehavior.floating,
           ),
         );
@@ -347,7 +347,7 @@ class _RestaurantMenuManagementScreenState
         sm.showSnackBar(
           const SnackBar(
             content: Text('No items found in Google Sheets inventory or unable to connect.'),
-            backgroundColor: Colors.orange,
+            backgroundColor: ClassicTheme.warningAmber,
           ),
         );
         return;
@@ -404,12 +404,12 @@ class _RestaurantMenuManagementScreenState
       sm.showSnackBar(
         SnackBar(
           content: Text('✅ Pulled catalog: $updatedCount updated, $addedCount new dishes from Google Sheets!'),
-          backgroundColor: const Color(0xFF059669),
+          backgroundColor: ClassicTheme.successEmerald,
         ),
       );
     } catch (e) {
       sm.showSnackBar(
-        SnackBar(content: Text('Catalog pull notice: $e'), backgroundColor: Colors.orange),
+        SnackBar(content: Text('Catalog pull notice: $e'), backgroundColor: ClassicTheme.warningAmber),
       );
     } finally {
       if (mounted) setState(() => _isSyncing = false);
@@ -461,10 +461,10 @@ class _RestaurantMenuManagementScreenState
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFEFF6FF),
+                    color: ClassicTheme.tintInfo,
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: const Icon(Icons.soup_kitchen_rounded, color: Color(0xFF2563EB), size: 20),
+                  child: const Icon(Icons.soup_kitchen_rounded, color: ClassicTheme.infoBlue, size: 20),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
@@ -477,7 +477,7 @@ class _RestaurantMenuManagementScreenState
                       ),
                       Text(
                         'Configure routing for cooking vs direct counter fulfillment',
-                        style: TextStyle(color: context.textSecondary, fontSize: 11),
+                        style: TextStyle(color: context.textSecondary, fontSize: 12),
                       ),
                     ],
                   ),
@@ -551,7 +551,7 @@ class _RestaurantMenuManagementScreenState
                                 icon: const Icon(Icons.add, size: 16),
                                 label: const Text('Add'),
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: const Color(0xFF2563EB),
+                                  backgroundColor: ClassicTheme.infoBlue,
                                   foregroundColor: Colors.white,
                                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
@@ -565,7 +565,7 @@ class _RestaurantMenuManagementScreenState
                             children: [
                               Checkbox(
                                 value: newSendsToKitchen,
-                                activeColor: const Color(0xFF2563EB),
+                                activeColor: ClassicTheme.infoBlue,
                                 onChanged: (val) => setDialogState(() => newSendsToKitchen = val ?? true),
                               ),
                               Expanded(
@@ -600,12 +600,12 @@ class _RestaurantMenuManagementScreenState
                           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                           decoration: BoxDecoration(
                             color: isDirect
-                                ? (context.isDark ? const Color(0xFF451A03) : const Color(0xFFFFFBEB))
+                                ? (context.isDark ? const Color(0xFF451A03) : ClassicTheme.tintWarning)
                                 : context.surfaceColor,
                             borderRadius: BorderRadius.circular(10),
                             border: Border.all(
                               color: isDirect
-                                  ? (context.isDark ? const Color(0xFFB45309) : const Color(0xFFFDE68A))
+                                  ? (context.isDark ? ClassicTheme.warningAmber : ClassicTheme.tintWarning)
                                   : context.borderColor,
                             ),
                           ),
@@ -613,7 +613,7 @@ class _RestaurantMenuManagementScreenState
                             children: [
                               Icon(
                                 isDirect ? Icons.inventory_2_outlined : Icons.soup_kitchen_outlined,
-                                color: isDirect ? const Color(0xFFD97706) : const Color(0xFF2563EB),
+                                color: isDirect ? ClassicTheme.warningAmber : ClassicTheme.infoBlue,
                                 size: 18,
                               ),
                               const SizedBox(width: 10),
@@ -631,9 +631,9 @@ class _RestaurantMenuManagementScreenState
                                           : 'Direct Counter fulfillment (bypasses KOT & KDS)',
                                       style: TextStyle(
                                         color: isDirect
-                                            ? (context.isDark ? const Color(0xFFFBBF24) : const Color(0xFFB45309))
+                                            ? (context.isDark ? const Color(0xFFFBBF24) : ClassicTheme.warningAmber)
                                             : context.textSecondary,
-                                        fontSize: 10,
+                                        fontSize: 12,
                                       ),
                                     ),
                                   ],
@@ -641,7 +641,7 @@ class _RestaurantMenuManagementScreenState
                               ),
                               Switch(
                                 value: station.sendsToKitchen,
-                                activeThumbColor: const Color(0xFF2563EB),
+                                activeThumbColor: ClassicTheme.infoBlue,
                                 onChanged: (val) {
                                   setDialogState(() {
                                     _stations[idx] = KitchenStation(
@@ -658,7 +658,7 @@ class _RestaurantMenuManagementScreenState
                               ),
                               if (_stations.length > 1)
                                 IconButton(
-                                  icon: const Icon(Icons.delete_outline, color: Color(0xFFEF4444), size: 18),
+                                  icon: const Icon(Icons.delete_outline, color: ClassicTheme.dangerRed, size: 18),
                                   tooltip: 'Delete Station',
                                   onPressed: () {
                                     setDialogState(() {
@@ -680,7 +680,7 @@ class _RestaurantMenuManagementScreenState
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(ctx),
-                child: const Text('Done', style: TextStyle(color: Color(0xFF2563EB), fontWeight: FontWeight.bold)),
+                child: const Text('Done', style: TextStyle(color: ClassicTheme.infoBlue, fontWeight: FontWeight.bold)),
               ),
             ],
           );
@@ -710,10 +710,10 @@ class _RestaurantMenuManagementScreenState
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFEFF6FF),
+                    color: ClassicTheme.tintInfo,
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: const Icon(Icons.category_rounded, color: Color(0xFF2563EB), size: 20),
+                  child: const Icon(Icons.category_rounded, color: ClassicTheme.infoBlue, size: 20),
                 ),
                 const SizedBox(width: 10),
                 Text(
@@ -770,7 +770,7 @@ class _RestaurantMenuManagementScreenState
                           icon: const Icon(Icons.add, size: 16),
                           label: const Text('Add Cat'),
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF2563EB),
+                            backgroundColor: ClassicTheme.infoBlue,
                             foregroundColor: Colors.white,
                             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
@@ -815,10 +815,10 @@ class _RestaurantMenuManagementScreenState
                               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                               decoration: BoxDecoration(
                                 color: isSel
-                                    ? const Color(0xFF2563EB)
+                                    ? ClassicTheme.infoBlue
                                     : (context.isDark ? ClassicTheme.cardSurfaceDark : context.inputFill),
                                 borderRadius: BorderRadius.circular(8),
-                                border: Border.all(color: isSel ? const Color(0xFF2563EB) : context.borderColor),
+                                border: Border.all(color: isSel ? ClassicTheme.infoBlue : context.borderColor),
                               ),
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
@@ -855,7 +855,7 @@ class _RestaurantMenuManagementScreenState
                         const SizedBox(height: 16),
                         Text(
                           'Subcategories under "$activeSelectedCategory":',
-                          style: const TextStyle(color: Color(0xFF2563EB), fontSize: 12, fontWeight: FontWeight.bold),
+                          style: const TextStyle(color: ClassicTheme.infoBlue, fontSize: 12, fontWeight: FontWeight.bold),
                         ),
                         const SizedBox(height: 8),
                         Row(
@@ -901,7 +901,7 @@ class _RestaurantMenuManagementScreenState
                               icon: const Icon(Icons.add, size: 16),
                               label: const Text('Add Sub'),
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFF059669),
+                                backgroundColor: ClassicTheme.successEmerald,
                                 foregroundColor: Colors.white,
                                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
@@ -918,7 +918,7 @@ class _RestaurantMenuManagementScreenState
                             return Chip(
                               backgroundColor: context.isDark ? ClassicTheme.cardSurfaceDark : context.inputFill,
                               side: BorderSide(color: context.borderColor),
-                              label: Text(sub, style: TextStyle(color: context.textPrimary, fontSize: 11)),
+                              label: Text(sub, style: TextStyle(color: context.textPrimary, fontSize: 12)),
                               deleteIcon: Icon(Icons.close, size: 13, color: context.textSecondary),
                               onDeleted: () {
                                 setDialogState(() {
@@ -939,7 +939,7 @@ class _RestaurantMenuManagementScreenState
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(ctx),
-                child: const Text('Done', style: TextStyle(color: Color(0xFF2563EB), fontWeight: FontWeight.bold)),
+                child: const Text('Done', style: TextStyle(color: ClassicTheme.infoBlue, fontWeight: FontWeight.bold)),
               ),
             ],
           );
@@ -981,10 +981,10 @@ class _RestaurantMenuManagementScreenState
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFEFF6FF),
+                    color: ClassicTheme.tintInfo,
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: Icon(existing == null ? Icons.add_circle : Icons.edit, color: const Color(0xFF2563EB), size: 20),
+                  child: Icon(existing == null ? Icons.add_circle : Icons.edit, color: ClassicTheme.infoBlue, size: 20),
                 ),
                 const SizedBox(width: 10),
                 Text(
@@ -1091,7 +1091,7 @@ class _RestaurantMenuManagementScreenState
                         const SizedBox(width: 8),
                         IconButton(
                           tooltip: 'Add new category',
-                          icon: const Icon(Icons.add_box_rounded, color: Color(0xFF2563EB)),
+                          icon: const Icon(Icons.add_box_rounded, color: ClassicTheme.infoBlue),
                           onPressed: () {
                             showDialog<String>(
                               context: context,
@@ -1128,7 +1128,7 @@ class _RestaurantMenuManagementScreenState
                                           Navigator.pop(subCtx, name);
                                         }
                                       },
-                                      style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF2563EB), foregroundColor: Colors.white),
+                                      style: ElevatedButton.styleFrom(backgroundColor: ClassicTheme.infoBlue, foregroundColor: Colors.white),
                                       child: const Text('Add Category'),
                                     ),
                                   ],
@@ -1201,7 +1201,7 @@ class _RestaurantMenuManagementScreenState
                         const SizedBox(width: 8),
                         IconButton(
                           tooltip: 'Add new subcategory',
-                          icon: const Icon(Icons.add_box_rounded, color: Color(0xFF2563EB)),
+                          icon: const Icon(Icons.add_box_rounded, color: ClassicTheme.infoBlue),
                           onPressed: () {
                             showDialog<String>(
                               context: context,
@@ -1238,7 +1238,7 @@ class _RestaurantMenuManagementScreenState
                                           Navigator.pop(subCtx, name);
                                         }
                                       },
-                                      style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF2563EB), foregroundColor: Colors.white),
+                                      style: ElevatedButton.styleFrom(backgroundColor: ClassicTheme.infoBlue, foregroundColor: Colors.white),
                                       child: const Text('Add Subcategory'),
                                     ),
                                   ],
@@ -1320,19 +1320,19 @@ class _RestaurantMenuManagementScreenState
                               decoration: BoxDecoration(
                                 color: sendsToKitchen
                                     ? (context.isDark ? const Color(0xFF064E3B) : const Color(0xFFF0FDF4))
-                                    : (context.isDark ? const Color(0xFF451A03) : const Color(0xFFFFFBEB)),
+                                    : (context.isDark ? const Color(0xFF451A03) : ClassicTheme.tintWarning),
                                 borderRadius: BorderRadius.circular(10),
                                 border: Border.all(
                                   color: sendsToKitchen
-                                      ? (context.isDark ? const Color(0xFF059669) : const Color(0xFF86EFAC))
-                                      : (context.isDark ? const Color(0xFFB45309) : const Color(0xFFFDE68A)),
+                                      ? (context.isDark ? ClassicTheme.successEmerald : const Color(0xFF86EFAC))
+                                      : (context.isDark ? ClassicTheme.warningAmber : ClassicTheme.tintWarning),
                                 ),
                               ),
                               child: Row(
                                 children: [
                                   Icon(
                                     sendsToKitchen ? Icons.soup_kitchen : Icons.inventory_2_outlined,
-                                    color: sendsToKitchen ? const Color(0xFF16A34A) : const Color(0xFFD97706),
+                                    color: sendsToKitchen ? ClassicTheme.successEmerald : ClassicTheme.warningAmber,
                                     size: 18,
                                   ),
                                   const SizedBox(width: 8),
@@ -1343,7 +1343,7 @@ class _RestaurantMenuManagementScreenState
                                         Text(
                                           sendsToKitchen ? 'Sends to Kitchen (KOT & KDS)' : 'Direct Counter (No Kitchen / No KOT)',
                                           style: TextStyle(
-                                            color: sendsToKitchen ? const Color(0xFF16A34A) : const Color(0xFFB45309),
+                                            color: sendsToKitchen ? ClassicTheme.successEmerald : ClassicTheme.warningAmber,
                                             fontWeight: FontWeight.bold,
                                             fontSize: 12,
                                           ),
@@ -1354,7 +1354,7 @@ class _RestaurantMenuManagementScreenState
                                               : 'Auto-marked ready. Skips KOT print (cold drinks, sweets, etc.)',
                                           style: TextStyle(
                                             color: sendsToKitchen ? const Color(0xFF15803D) : const Color(0xFF92400E),
-                                            fontSize: 10,
+                                            fontSize: 12,
                                           ),
                                         ),
                                       ],
@@ -1362,7 +1362,7 @@ class _RestaurantMenuManagementScreenState
                                   ),
                                   Switch(
                                     value: sendsToKitchen,
-                                    activeThumbColor: const Color(0xFF16A34A),
+                                    activeThumbColor: ClassicTheme.successEmerald,
                                     onChanged: (val) => setDialogState(() => sendsToKitchen = val),
                                   ),
                                 ],
@@ -1385,17 +1385,17 @@ class _RestaurantMenuManagementScreenState
                               padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
                               decoration: BoxDecoration(
                                 color: isVeg
-                                    ? (context.isDark ? const Color(0xFF064E3B) : const Color(0xFFECFDF5))
-                                    : (context.isDark ? const Color(0xFF450A0A) : const Color(0xFFFEF2F2)),
+                                    ? (context.isDark ? const Color(0xFF064E3B) : ClassicTheme.tintSuccess)
+                                    : (context.isDark ? const Color(0xFF450A0A) : ClassicTheme.tintDanger),
                                 borderRadius: BorderRadius.circular(10),
-                                border: Border.all(color: isVeg ? const Color(0xFF059669) : const Color(0xFFDC2626)),
+                                border: Border.all(color: isVeg ? ClassicTheme.successEmerald : ClassicTheme.dangerRed),
                               ),
                               child: Row(
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
-                                  Icon(Icons.eco, color: isVeg ? const Color(0xFF059669) : const Color(0xFFDC2626), size: 16),
+                                  Icon(Icons.eco, color: isVeg ? ClassicTheme.successEmerald : ClassicTheme.dangerRed, size: 16),
                                   const SizedBox(width: 6),
-                                  Text(isVeg ? 'Vegetarian' : 'Non-Veg', style: TextStyle(color: isVeg ? const Color(0xFF059669) : const Color(0xFFDC2626), fontWeight: FontWeight.bold, fontSize: 12)),
+                                  Text(isVeg ? 'Vegetarian' : 'Non-Veg', style: TextStyle(color: isVeg ? ClassicTheme.successEmerald : ClassicTheme.dangerRed, fontWeight: FontWeight.bold, fontSize: 12)),
                                 ],
                               ),
                             ),
@@ -1410,17 +1410,17 @@ class _RestaurantMenuManagementScreenState
                               padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
                               decoration: BoxDecoration(
                                 color: isAvailable
-                                    ? (context.isDark ? const Color(0xFF1E3A8A) : const Color(0xFFEFF6FF))
+                                    ? (context.isDark ? ClassicTheme.infoBlue : ClassicTheme.tintInfo)
                                     : (context.isDark ? ClassicTheme.cardSurfaceDark : context.inputFill),
                                 borderRadius: BorderRadius.circular(10),
-                                border: Border.all(color: isAvailable ? const Color(0xFF2563EB) : context.borderColor),
+                                border: Border.all(color: isAvailable ? ClassicTheme.infoBlue : context.borderColor),
                               ),
                               child: Row(
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
-                                  Icon(isAvailable ? Icons.check_circle_outline : Icons.block, color: isAvailable ? const Color(0xFF2563EB) : context.textSecondary, size: 16),
+                                  Icon(isAvailable ? Icons.check_circle_outline : Icons.block, color: isAvailable ? ClassicTheme.infoBlue : context.textSecondary, size: 16),
                                   const SizedBox(width: 6),
-                                  Text(isAvailable ? 'In Stock' : 'Sold Out', style: TextStyle(color: isAvailable ? const Color(0xFF2563EB) : context.textSecondary, fontWeight: FontWeight.bold, fontSize: 12)),
+                                  Text(isAvailable ? 'In Stock' : 'Sold Out', style: TextStyle(color: isAvailable ? ClassicTheme.infoBlue : context.textSecondary, fontWeight: FontWeight.bold, fontSize: 12)),
                                 ],
                               ),
                             ),
@@ -1448,12 +1448,12 @@ class _RestaurantMenuManagementScreenState
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text('Time-Restricted Serving', style: TextStyle(color: context.textPrimary, fontSize: 13, fontWeight: FontWeight.bold)),
-                                  Text('e.g. Breakfast only, Lunch only', style: TextStyle(color: context.textSecondary, fontSize: 11)),
+                                  Text('e.g. Breakfast only, Lunch only', style: TextStyle(color: context.textSecondary, fontSize: 12)),
                                 ],
                               ),
                               Switch(
                                 value: isTimeRestricted,
-                                activeThumbColor: const Color(0xFF2563EB),
+                                activeThumbColor: ClassicTheme.infoBlue,
                                 onChanged: (v) => setDialogState(() => isTimeRestricted = v),
                               ),
                             ],
@@ -1468,7 +1468,7 @@ class _RestaurantMenuManagementScreenState
                                     style: TextStyle(color: context.textPrimary, fontSize: 13),
                                     decoration: InputDecoration(
                                       labelText: 'Available From',
-                                      labelStyle: TextStyle(color: context.textSecondary, fontSize: 11),
+                                      labelStyle: TextStyle(color: context.textSecondary, fontSize: 12),
                                       hintText: 'HH:mm (e.g. 07:00)',
                                       filled: true,
                                       fillColor: context.inputFill,
@@ -1487,7 +1487,7 @@ class _RestaurantMenuManagementScreenState
                                     style: TextStyle(color: context.textPrimary, fontSize: 13),
                                     decoration: InputDecoration(
                                       labelText: 'Available Until',
-                                      labelStyle: TextStyle(color: context.textSecondary, fontSize: 11),
+                                      labelStyle: TextStyle(color: context.textSecondary, fontSize: 12),
                                       hintText: 'HH:mm (e.g. 11:30)',
                                       filled: true,
                                       fillColor: context.inputFill,
@@ -1562,7 +1562,7 @@ class _RestaurantMenuManagementScreenState
                   Navigator.pop(ctx);
                 },
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF2563EB),
+                  backgroundColor: ClassicTheme.infoBlue,
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
@@ -1596,10 +1596,10 @@ class _RestaurantMenuManagementScreenState
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF2563EB).withValues(alpha: 0.1),
+                    color: ClassicTheme.infoBlue.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: const Icon(Icons.timer_outlined, color: Color(0xFF2563EB), size: 20),
+                  child: const Icon(Icons.timer_outlined, color: ClassicTheme.infoBlue, size: 20),
                 ),
                 const SizedBox(width: 10),
                 Text(
@@ -1618,20 +1618,20 @@ class _RestaurantMenuManagementScreenState
                     Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: isOpen ? const Color(0xFF059669).withValues(alpha: 0.1) : const Color(0xFFDC2626).withValues(alpha: 0.1),
+                        color: isOpen ? ClassicTheme.successEmerald.withValues(alpha: 0.1) : ClassicTheme.dangerRed.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(
-                          color: isOpen ? const Color(0xFF059669) : const Color(0xFFDC2626),
+                          color: isOpen ? ClassicTheme.successEmerald : ClassicTheme.dangerRed,
                         ),
                       ),
                       child: Row(
                         children: [
-                          Icon(isOpen ? Icons.check_circle_rounded : Icons.info_outline_rounded, color: isOpen ? const Color(0xFF059669) : const Color(0xFFDC2626), size: 20),
+                          Icon(isOpen ? Icons.check_circle_rounded : Icons.info_outline_rounded, color: isOpen ? ClassicTheme.successEmerald : ClassicTheme.dangerRed, size: 20),
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
                               isOpen ? 'Kitchen is currently OPEN and accepting orders.' : 'Kitchen is currently paused between shifts.',
-                              style: TextStyle(color: isOpen ? const Color(0xFF059669) : const Color(0xFFDC2626), fontWeight: FontWeight.bold, fontSize: 12),
+                              style: TextStyle(color: isOpen ? ClassicTheme.successEmerald : ClassicTheme.dangerRed, fontWeight: FontWeight.bold, fontSize: 12),
                             ),
                           ),
                         ],
@@ -1647,9 +1647,9 @@ class _RestaurantMenuManagementScreenState
                         margin: const EdgeInsets.only(bottom: 8),
                         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                         decoration: BoxDecoration(
-                          color: isShiftActive ? const Color(0xFF2563EB).withValues(alpha: 0.1) : context.canvasColor,
+                          color: isShiftActive ? ClassicTheme.infoBlue.withValues(alpha: 0.1) : context.canvasColor,
                           borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: isShiftActive ? const Color(0xFF2563EB) : context.borderColor),
+                          border: Border.all(color: isShiftActive ? ClassicTheme.infoBlue : context.borderColor),
                         ),
                         child: Row(
                           children: [
@@ -1657,7 +1657,7 @@ class _RestaurantMenuManagementScreenState
                               child: Text(
                                 shift.name,
                                 style: TextStyle(
-                                  color: isShiftActive ? const Color(0xFF2563EB) : context.textPrimary,
+                                  color: isShiftActive ? ClassicTheme.infoBlue : context.textPrimary,
                                   fontWeight: FontWeight.bold,
                                   fontSize: 13,
                                 ),
@@ -1672,12 +1672,12 @@ class _RestaurantMenuManagementScreenState
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                 decoration: BoxDecoration(
-                                  color: const Color(0xFF2563EB).withValues(alpha: 0.15),
+                                  color: ClassicTheme.infoBlue.withValues(alpha: 0.15),
                                   borderRadius: BorderRadius.circular(4),
                                 ),
                                 child: const Text(
                                   'NOW ACTIVE',
-                                  style: TextStyle(color: Color(0xFF2563EB), fontSize: 9, fontWeight: FontWeight.bold),
+                                  style: TextStyle(color: ClassicTheme.infoBlue, fontSize: 12, fontWeight: FontWeight.bold),
                                 ),
                               ),
                           ],
@@ -1692,7 +1692,7 @@ class _RestaurantMenuManagementScreenState
               ElevatedButton(
                 onPressed: () => Navigator.pop(ctx),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF2563EB),
+                  backgroundColor: ClassicTheme.infoBlue,
                   foregroundColor: Colors.white,
                   elevation: 0,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
@@ -1754,7 +1754,7 @@ class _RestaurantMenuManagementScreenState
             ),
             Text(
               '${_dishes.length} dishes • Auto Syncing',
-              style: TextStyle(fontSize: 11, color: context.textSecondary, fontWeight: FontWeight.w500),
+              style: TextStyle(fontSize: 12, color: context.textSecondary, fontWeight: FontWeight.w500),
             ),
           ],
         ),
@@ -1786,7 +1786,7 @@ class _RestaurantMenuManagementScreenState
                 value: 'categories',
                 child: Row(
                   children: [
-                    const Icon(Icons.category_outlined, size: 18, color: Color(0xFF2563EB)),
+                    const Icon(Icons.category_outlined, size: 18, color: ClassicTheme.infoBlue),
                     const SizedBox(width: 10),
                     Text('Manage Categories', style: TextStyle(fontSize: 13, color: context.textPrimary)),
                   ],
@@ -1796,7 +1796,7 @@ class _RestaurantMenuManagementScreenState
                 value: 'stations',
                 child: Row(
                   children: [
-                    const Icon(Icons.soup_kitchen_outlined, size: 18, color: Color(0xFF2563EB)),
+                    const Icon(Icons.soup_kitchen_outlined, size: 18, color: ClassicTheme.infoBlue),
                     const SizedBox(width: 10),
                     Text('Kitchen Stations', style: TextStyle(fontSize: 13, color: context.textPrimary)),
                   ],
@@ -1806,7 +1806,7 @@ class _RestaurantMenuManagementScreenState
                 value: 'shifts',
                 child: Row(
                   children: [
-                    const Icon(Icons.schedule_rounded, size: 18, color: Color(0xFF2563EB)),
+                    const Icon(Icons.schedule_rounded, size: 18, color: ClassicTheme.infoBlue),
                     const SizedBox(width: 10),
                     Text('Operating Shifts', style: TextStyle(fontSize: 13, color: context.textPrimary)),
                   ],
@@ -1817,7 +1817,7 @@ class _RestaurantMenuManagementScreenState
                 value: 'sync',
                 child: Row(
                   children: [
-                    const Icon(Icons.cloud_sync_rounded, size: 18, color: Color(0xFF059669)),
+                    const Icon(Icons.cloud_sync_rounded, size: 18, color: ClassicTheme.successEmerald),
                     const SizedBox(width: 10),
                     Text('Sync Menu to Cloud', style: TextStyle(fontSize: 13, color: context.textPrimary)),
                   ],
@@ -1827,7 +1827,7 @@ class _RestaurantMenuManagementScreenState
                 value: 'pull',
                 child: Row(
                   children: [
-                    const Icon(Icons.cloud_download_rounded, size: 18, color: Color(0xFF059669)),
+                    const Icon(Icons.cloud_download_rounded, size: 18, color: ClassicTheme.successEmerald),
                     const SizedBox(width: 10),
                     Text('Pull from Google Sheets', style: TextStyle(fontSize: 13, color: context.textPrimary)),
                   ],
@@ -1861,7 +1861,7 @@ class _RestaurantMenuManagementScreenState
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
             ),
             style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF2563EB),
+              backgroundColor: ClassicTheme.infoBlue,
               foregroundColor: Colors.white,
               elevation: 0,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -1871,7 +1871,7 @@ class _RestaurantMenuManagementScreenState
       ),
       body: RefreshIndicator(
         onRefresh: _handleRefresh,
-        color: const Color(0xFF2563EB),
+        color: ClassicTheme.infoBlue,
         child: _dishes.isEmpty
             ? Center(
                 child: SingleChildScrollView(
@@ -1883,11 +1883,11 @@ class _RestaurantMenuManagementScreenState
                     Container(
                       padding: const EdgeInsets.all(24),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF2563EB).withValues(alpha: 0.1),
+                        color: ClassicTheme.infoBlue.withValues(alpha: 0.1),
                         shape: BoxShape.circle,
-                        border: Border.all(color: const Color(0xFF2563EB).withValues(alpha: 0.2)),
+                        border: Border.all(color: ClassicTheme.infoBlue.withValues(alpha: 0.2)),
                       ),
-                      child: const Icon(Icons.restaurant_menu_rounded, size: 48, color: Color(0xFF2563EB)),
+                      child: const Icon(Icons.restaurant_menu_rounded, size: 48, color: ClassicTheme.infoBlue),
                     ),
                     const SizedBox(height: 20),
                     Text(
@@ -1911,7 +1911,7 @@ class _RestaurantMenuManagementScreenState
                           icon: const Icon(Icons.add_rounded, size: 18),
                           label: const Text('Add Food Item', style: TextStyle(fontWeight: FontWeight.bold)),
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF2563EB),
+                            backgroundColor: ClassicTheme.infoBlue,
                             foregroundColor: Colors.white,
                             elevation: 0,
                             padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
@@ -1920,20 +1920,20 @@ class _RestaurantMenuManagementScreenState
                         ),
                         OutlinedButton.icon(
                           onPressed: _showManageCategoriesDialog,
-                          icon: const Icon(Icons.category_rounded, size: 18, color: Color(0xFF2563EB)),
-                          label: const Text('Manage Categories', style: TextStyle(color: Color(0xFF2563EB), fontWeight: FontWeight.bold)),
+                          icon: const Icon(Icons.category_rounded, size: 18, color: ClassicTheme.infoBlue),
+                          label: const Text('Manage Categories', style: TextStyle(color: ClassicTheme.infoBlue, fontWeight: FontWeight.bold)),
                           style: OutlinedButton.styleFrom(
-                            side: const BorderSide(color: Color(0xFF2563EB)),
+                            side: const BorderSide(color: ClassicTheme.infoBlue),
                             padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                           ),
                         ),
                         OutlinedButton.icon(
                           onPressed: _showManageStationsDialog,
-                          icon: const Icon(Icons.soup_kitchen_rounded, size: 18, color: Color(0xFF2563EB)),
-                          label: const Text('Kitchen Stations', style: TextStyle(color: Color(0xFF2563EB), fontWeight: FontWeight.bold)),
+                          icon: const Icon(Icons.soup_kitchen_rounded, size: 18, color: ClassicTheme.infoBlue),
+                          label: const Text('Kitchen Stations', style: TextStyle(color: ClassicTheme.infoBlue, fontWeight: FontWeight.bold)),
                           style: OutlinedButton.styleFrom(
-                            side: const BorderSide(color: Color(0xFF2563EB)),
+                            side: const BorderSide(color: ClassicTheme.infoBlue),
                             padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                           ),
@@ -1961,7 +1961,7 @@ class _RestaurantMenuManagementScreenState
                       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: context.borderColor)),
                       enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: context.borderColor)),
-                      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFF2563EB))),
+                      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: ClassicTheme.infoBlue)),
                     ),
                   ),
                   const SizedBox(height: 10),
@@ -1980,8 +1980,8 @@ class _RestaurantMenuManagementScreenState
                           selected: isSel,
                           showCheckmark: false,
                           backgroundColor: context.surfaceColor,
-                          selectedColor: const Color(0xFF2563EB),
-                          side: BorderSide(color: isSel ? const Color(0xFF2563EB) : context.borderColor),
+                          selectedColor: ClassicTheme.infoBlue,
+                          side: BorderSide(color: isSel ? ClassicTheme.infoBlue : context.borderColor),
                           label: Text(
                             cat,
                             style: TextStyle(
@@ -2016,13 +2016,13 @@ class _RestaurantMenuManagementScreenState
                           return ChoiceChip(
                             selected: isSel,
                             backgroundColor: context.surfaceColor,
-                            selectedColor: const Color(0xFF2563EB).withValues(alpha: 0.15),
-                            side: BorderSide(color: isSel ? const Color(0xFF2563EB) : context.borderColor),
+                            selectedColor: ClassicTheme.infoBlue.withValues(alpha: 0.15),
+                            side: BorderSide(color: isSel ? ClassicTheme.infoBlue : context.borderColor),
                             label: Text(
                               sub,
                               style: TextStyle(
-                                color: isSel ? const Color(0xFF2563EB) : context.textSecondary,
-                                fontSize: 11,
+                                color: isSel ? ClassicTheme.infoBlue : context.textSecondary,
+                                fontSize: 12,
                                 fontWeight: isSel ? FontWeight.bold : FontWeight.normal,
                               ),
                             ),
@@ -2066,7 +2066,7 @@ class _RestaurantMenuManagementScreenState
                                     color: !isAvail
                                         ? const Color(0xFFFCA5A5)
                                         : !isTimeAvail
-                                            ? const Color(0xFFFDE68A)
+                                            ? ClassicTheme.tintWarning
                                             : context.borderColor,
                                     width: !isAvail || !isTimeAvail ? 1.5 : 1,
                                   ),
@@ -2084,13 +2084,13 @@ class _RestaurantMenuManagementScreenState
                                     Container(
                                       padding: const EdgeInsets.all(4),
                                       decoration: BoxDecoration(
-                                        color: dish['isVeg'] == true ? const Color(0xFFECFDF5) : const Color(0xFFFEF2F2),
+                                        color: dish['isVeg'] == true ? ClassicTheme.tintSuccess : ClassicTheme.tintDanger,
                                         borderRadius: BorderRadius.circular(6),
-                                        border: Border.all(color: dish['isVeg'] == true ? const Color(0xFF059669) : const Color(0xFFDC2626)),
+                                        border: Border.all(color: dish['isVeg'] == true ? ClassicTheme.successEmerald : ClassicTheme.dangerRed),
                                       ),
                                       child: Icon(
                                         Icons.circle,
-                                        color: dish['isVeg'] == true ? const Color(0xFF059669) : const Color(0xFFDC2626),
+                                        color: dish['isVeg'] == true ? ClassicTheme.successEmerald : ClassicTheme.dangerRed,
                                         size: 8,
                                       ),
                                     ),
@@ -2121,12 +2121,12 @@ class _RestaurantMenuManagementScreenState
                                                 Container(
                                                   padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
                                                   decoration: BoxDecoration(
-                                                    color: const Color(0xFFFEE2E2),
+                                                    color: ClassicTheme.tintDanger,
                                                     borderRadius: BorderRadius.circular(4),
                                                   ),
                                                   child: const Text(
                                                     'SOLD OUT',
-                                                    style: TextStyle(color: Color(0xFFDC2626), fontSize: 9, fontWeight: FontWeight.bold),
+                                                    style: TextStyle(color: ClassicTheme.dangerRed, fontSize: 12, fontWeight: FontWeight.bold),
                                                   ),
                                                 ),
                                               ],
@@ -2138,12 +2138,12 @@ class _RestaurantMenuManagementScreenState
                                               Container(
                                                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                                 decoration: BoxDecoration(
-                                                  color: const Color(0xFF2563EB).withValues(alpha: 0.1),
+                                                  color: ClassicTheme.infoBlue.withValues(alpha: 0.1),
                                                   borderRadius: BorderRadius.circular(4),
                                                 ),
                                                 child: Text(
                                                   '${dish['category'] ?? ''} • ${dish['subcategory'] ?? 'General'}',
-                                                  style: const TextStyle(color: Color(0xFF2563EB), fontSize: 10, fontWeight: FontWeight.w600),
+                                                  style: const TextStyle(color: ClassicTheme.infoBlue, fontSize: 12, fontWeight: FontWeight.w600),
                                                 ),
                                               ),
                                               if (dish['sendsToKitchen'] == false) ...[
@@ -2151,18 +2151,18 @@ class _RestaurantMenuManagementScreenState
                                                 Container(
                                                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                                   decoration: BoxDecoration(
-                                                    color: const Color(0xFFFEF3C7),
+                                                    color: ClassicTheme.tintWarning,
                                                     borderRadius: BorderRadius.circular(4),
-                                                    border: Border.all(color: const Color(0xFFF59E0B)),
+                                                    border: Border.all(color: ClassicTheme.warningAmber),
                                                   ),
                                                   child: const Row(
                                                     mainAxisSize: MainAxisSize.min,
                                                     children: [
-                                                      Icon(Icons.flash_on, size: 10, color: Color(0xFFD97706)),
+                                                      Icon(Icons.flash_on, size: 10, color: ClassicTheme.warningAmber),
                                                       SizedBox(width: 2),
                                                       Text(
                                                         'Direct Counter / No KOT',
-                                                        style: TextStyle(color: Color(0xFFB45309), fontSize: 9, fontWeight: FontWeight.bold),
+                                                        style: TextStyle(color: ClassicTheme.warningAmber, fontSize: 12, fontWeight: FontWeight.bold),
                                                       ),
                                                     ],
                                                   ),
@@ -2173,8 +2173,8 @@ class _RestaurantMenuManagementScreenState
                                                 Text(
                                                   '⏰ ${dish['availableFrom']} - ${dish['availableTo']}',
                                                   style: TextStyle(
-                                                    color: isTimeAvail ? const Color(0xFFD97706) : const Color(0xFFDC2626),
-                                                    fontSize: 10,
+                                                    color: isTimeAvail ? ClassicTheme.warningAmber : ClassicTheme.dangerRed,
+                                                    fontSize: 12,
                                                     fontWeight: FontWeight.w500,
                                                   ),
                                                 ),
@@ -2196,7 +2196,7 @@ class _RestaurantMenuManagementScreenState
                                     // Availability Switch
                                     Switch(
                                       value: isAvail,
-                                      activeThumbColor: const Color(0xFF059669),
+                                      activeThumbColor: ClassicTheme.successEmerald,
                                       onChanged: (val) {
                                         setState(() {
                                           dish['isAvailable'] = val;
@@ -2246,7 +2246,7 @@ class _RestaurantMenuManagementScreenState
                                           value: 'edit',
                                           child: Row(
                                             children: [
-                                              const Icon(Icons.edit_outlined, size: 16, color: Color(0xFF2563EB)),
+                                              const Icon(Icons.edit_outlined, size: 16, color: ClassicTheme.infoBlue),
                                               const SizedBox(width: 8),
                                               Text('Edit Item', style: TextStyle(fontSize: 12, color: context.textPrimary)),
                                             ],
@@ -2256,9 +2256,9 @@ class _RestaurantMenuManagementScreenState
                                           value: 'delete',
                                           child: Row(
                                             children: [
-                                              Icon(Icons.delete_outline, size: 16, color: Color(0xFFDC2626)),
+                                              Icon(Icons.delete_outline, size: 16, color: ClassicTheme.dangerRed),
                                               SizedBox(width: 8),
-                                              Text('Delete Item', style: TextStyle(fontSize: 12, color: Color(0xFFDC2626))),
+                                              Text('Delete Item', style: TextStyle(fontSize: 12, color: ClassicTheme.dangerRed)),
                                             ],
                                           ),
                                         ),

@@ -345,7 +345,7 @@ class _GoogleSheetsSetupGateDialogState extends ConsumerState<GoogleSheetsSetupG
         ),
         title: Row(
           children: [
-            const Icon(Icons.info_outline_rounded, color: Colors.amber, size: 24),
+            const Icon(Icons.info_outline_rounded, color: ClassicTheme.warningAmber, size: 24),
             const SizedBox(width: 10),
             Text(
               'Google Authorization Notice',
@@ -480,7 +480,7 @@ class _GoogleSheetsSetupGateDialogState extends ConsumerState<GoogleSheetsSetupG
                             children: [
                               Text(
                                 'Registered Store Owner Email',
-                                style: TextStyle(color: context.textSecondary, fontSize: 11),
+                                style: TextStyle(color: context.textSecondary, fontSize: 12),
                               ),
                               Text(
                                 expectedEmail,
@@ -592,7 +592,7 @@ class _GoogleSheetsSetupGateDialogState extends ConsumerState<GoogleSheetsSetupG
   Widget _buildBenefitRow(IconData icon, String text) {
     return Row(
       children: [
-        Icon(icon, color: const Color(0xFF10B981), size: 16),
+        Icon(icon, color: ClassicTheme.successEmerald, size: 16),
         const SizedBox(width: 8),
         Expanded(
           child: Text(

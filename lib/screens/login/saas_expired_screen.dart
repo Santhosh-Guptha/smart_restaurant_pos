@@ -93,14 +93,15 @@ class _SaaSExpiredScreenState extends ConsumerState<SaaSExpiredScreen> {
             : "Your organization's subscription license has expired. Please renew your plan to continue point-of-sale and kitchen operations.");
 
     return Scaffold(
-      backgroundColor: context.textPrimary,
-      body: Center(
+      backgroundColor: context.canvasColor,
+      body: SafeArea(
+        child: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24.0),
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 440),
             child: Card(
-              color: context.textPrimary,
+              color: context.surfaceColor,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
               elevation: 16,
               child: Padding(
@@ -111,12 +112,12 @@ class _SaaSExpiredScreenState extends ConsumerState<SaaSExpiredScreen> {
                     Container(
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        color: (isTrial ? Colors.orangeAccent : Colors.redAccent).withValues(alpha: 0.12),
+                        color: (isTrial ? ClassicTheme.warningAmber : ClassicTheme.dangerRed).withValues(alpha: 0.12),
                         shape: BoxShape.circle,
                       ),
                       child: Icon(
                         isTrial ? Icons.hourglass_bottom_rounded : Icons.lock_outline_rounded,
-                        color: isTrial ? Colors.orangeAccent : Colors.redAccent,
+                        color: isTrial ? ClassicTheme.warningAmber : ClassicTheme.dangerRed,
                         size: 52,
                       ),
                     ),
@@ -162,7 +163,7 @@ class _SaaSExpiredScreenState extends ConsumerState<SaaSExpiredScreen> {
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
                               const Text("Plan Tier", style: TextStyle(color: Colors.white60, fontSize: 12)),
-                              Text(license?.planTier ?? 'TRIAL', style: TextStyle(color: isTrial ? Colors.orangeAccent : Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
+                              Text(license?.planTier ?? 'TRIAL', style: TextStyle(color: isTrial ? ClassicTheme.warningAmber : Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
                             ],
                           ),
                         ],
@@ -174,18 +175,18 @@ class _SaaSExpiredScreenState extends ConsumerState<SaaSExpiredScreen> {
                         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                         margin: const EdgeInsets.only(bottom: 12),
                         decoration: BoxDecoration(
-                          color: Colors.green.withValues(alpha: 0.12),
+                          color: ClassicTheme.successEmerald.withValues(alpha: 0.12),
                           borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: Colors.green),
+                          border: Border.all(color: ClassicTheme.successEmerald),
                         ),
                         child: const Row(
                           children: [
-                            Icon(Icons.check_circle_outline, color: Colors.green, size: 20),
+                            Icon(Icons.check_circle_outline, color: ClassicTheme.successEmerald, size: 20),
                             SizedBox(width: 8),
                             Expanded(
                               child: Text(
                                 "Renewal requested. Terminal will resume automatically when approved.",
-                                style: TextStyle(color: Colors.green, fontSize: 12, fontWeight: FontWeight.w600),
+                                style: TextStyle(color: ClassicTheme.successEmerald, fontSize: 12, fontWeight: FontWeight.w600),
                               ),
                             ),
                           ],
@@ -205,7 +206,7 @@ class _SaaSExpiredScreenState extends ConsumerState<SaaSExpiredScreen> {
                             style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
                           ),
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF2563EB),
+                            backgroundColor: ClassicTheme.infoBlue,
                             foregroundColor: Colors.white,
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                           ),
@@ -230,11 +231,11 @@ class _SaaSExpiredScreenState extends ConsumerState<SaaSExpiredScreen> {
                         Expanded(
                           child: OutlinedButton.icon(
                             onPressed: () => ref.read(authProvider.notifier).signOut(),
-                            icon: const Icon(Icons.logout_rounded, size: 16, color: Colors.redAccent),
-                            label: const Text("Sign Out", style: TextStyle(color: Colors.redAccent, fontSize: 12)),
+                            icon: const Icon(Icons.logout_rounded, size: 16, color: ClassicTheme.dangerRed),
+                            label: const Text("Sign Out", style: TextStyle(color: ClassicTheme.dangerRed, fontSize: 12)),
                             style: OutlinedButton.styleFrom(
-                              foregroundColor: Colors.redAccent,
-                              side: BorderSide(color: Colors.redAccent.withValues(alpha: 0.4)),
+                              foregroundColor: ClassicTheme.dangerRed,
+                              side: BorderSide(color: ClassicTheme.dangerRed.withValues(alpha: 0.4)),
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                             ),
                           ),
@@ -245,6 +246,7 @@ class _SaaSExpiredScreenState extends ConsumerState<SaaSExpiredScreen> {
                 ),
               ),
             ),
+          ),
           ),
         ),
       ),

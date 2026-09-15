@@ -382,7 +382,7 @@ class _SettingsSidebarDialogState extends ConsumerState<SettingsSidebarDialog> {
                         ),
                         child: Text(
                           'ROLE: $userRole',
-                          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: ClassicTheme.primaryAccent),
+                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: ClassicTheme.primaryAccent),
                         ),
                       ),
                     ],
@@ -418,7 +418,7 @@ class _SettingsSidebarDialogState extends ConsumerState<SettingsSidebarDialog> {
                       Text('License Plan:', style: TextStyle(fontSize: 13, color: context.textSecondary)),
                       Text(
                         license?.planTier ?? 'Enterprise Pro',
-                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.teal),
+                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: ClassicTheme.secondaryAccent),
                       ),
                     ],
                   ),
@@ -464,7 +464,7 @@ class _SettingsSidebarDialogState extends ConsumerState<SettingsSidebarDialog> {
                         const SizedBox(height: 2),
                         Text(
                           'Configure store profile, taxes, UPI accounts, shifts, receipt headers & expense categories.',
-                          style: TextStyle(fontSize: 11, color: context.textSecondary),
+                          style: TextStyle(fontSize: 12, color: context.textSecondary),
                         ),
                       ],
                     ),
@@ -507,10 +507,10 @@ class _SettingsSidebarDialogState extends ConsumerState<SettingsSidebarDialog> {
                 onPressed: () => _showChangePasswordDialog(context),
               ),
               OutlinedButton.icon(
-                icon: const Icon(Icons.logout_rounded, size: 18, color: Colors.redAccent),
-                label: const Text('Sign Out / Switch User', style: TextStyle(color: Colors.redAccent)),
+                icon: const Icon(Icons.logout_rounded, size: 18, color: ClassicTheme.dangerRed),
+                label: const Text('Sign Out / Switch User', style: TextStyle(color: ClassicTheme.dangerRed)),
                 style: OutlinedButton.styleFrom(
-                  side: const BorderSide(color: Colors.redAccent),
+                  side: const BorderSide(color: ClassicTheme.dangerRed),
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                 ),
@@ -557,12 +557,12 @@ class _SettingsSidebarDialogState extends ConsumerState<SettingsSidebarDialog> {
                 Container(
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
-                    color: pState.isConnected ? Colors.green.withValues(alpha: 0.12) : Colors.grey.withValues(alpha: 0.12),
+                    color: pState.isConnected ? ClassicTheme.successEmerald.withValues(alpha: 0.12) : Colors.grey.withValues(alpha: 0.12),
                     shape: BoxShape.circle,
                   ),
                   child: Icon(
                     pState.isConnected ? Icons.bluetooth_connected_rounded : Icons.bluetooth_disabled_rounded,
-                    color: pState.isConnected ? Colors.green : context.textSecondary,
+                    color: pState.isConnected ? ClassicTheme.successEmerald : context.textSecondary,
                     size: 24,
                   ),
                 ),
@@ -589,7 +589,7 @@ class _SettingsSidebarDialogState extends ConsumerState<SettingsSidebarDialog> {
                     icon: const Icon(Icons.print_rounded, size: 16),
                     label: const Text('Test Print'),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.teal.shade700,
+                      backgroundColor: ClassicTheme.secondaryAccent,
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
@@ -600,8 +600,8 @@ class _SettingsSidebarDialogState extends ConsumerState<SettingsSidebarDialog> {
                   OutlinedButton(
                     onPressed: () => pNotifier.disconnect(),
                     style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.redAccent,
-                      side: const BorderSide(color: Colors.redAccent),
+                      foregroundColor: ClassicTheme.dangerRed,
+                      side: const BorderSide(color: ClassicTheme.dangerRed),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                     ),
                     child: const Text('Disconnect'),
@@ -627,7 +627,7 @@ class _SettingsSidebarDialogState extends ConsumerState<SettingsSidebarDialog> {
                   title: Text('Auto-Print on Bill Checkout',
                       style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: context.textPrimary)),
                   subtitle: Text('Automatically send receipt to printer when completing bill checkout on this terminal',
-                      style: TextStyle(fontSize: 11, color: context.textSecondary)),
+                      style: TextStyle(fontSize: 12, color: context.textSecondary)),
                   value: pState.autoPrint,
                   activeThumbColor: ClassicTheme.primaryAccent,
                   onChanged: (val) => pNotifier.setAutoPrint(val),
@@ -653,7 +653,7 @@ class _SettingsSidebarDialogState extends ConsumerState<SettingsSidebarDialog> {
                   title: Text('Sound & Audio Alerts on New KOT',
                       style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: context.textPrimary)),
                   subtitle: Text('Play notification chime when a new KOT arrives from waiter or web diner',
-                      style: TextStyle(fontSize: 11, color: context.textSecondary)),
+                      style: TextStyle(fontSize: 12, color: context.textSecondary)),
                   value: _soundAlertsEnabled,
                   activeThumbColor: ClassicTheme.primaryAccent,
                   onChanged: (val) async {
@@ -731,7 +731,7 @@ class _SettingsSidebarDialogState extends ConsumerState<SettingsSidebarDialog> {
                           children: [
                             Text(dev.name.isNotEmpty ? dev.name : 'Thermal Printer',
                                 style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: context.textPrimary)),
-                            Text(dev.macAdress, style: TextStyle(fontSize: 11, color: context.textSecondary)),
+                            Text(dev.macAdress, style: TextStyle(fontSize: 12, color: context.textSecondary)),
                           ],
                         ),
                       ),
@@ -746,7 +746,7 @@ class _SettingsSidebarDialogState extends ConsumerState<SettingsSidebarDialog> {
                                 }
                               },
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: isCurrent ? Colors.green : ClassicTheme.primaryAccent,
+                          backgroundColor: isCurrent ? ClassicTheme.successEmerald : ClassicTheme.primaryAccent,
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
@@ -818,7 +818,7 @@ class _SettingsSidebarDialogState extends ConsumerState<SettingsSidebarDialog> {
         Text(
           'You choose a passphrase when exporting and must enter the same one to restore. '
           'It is not stored anywhere - a lost passphrase means a lost backup.',
-          style: TextStyle(color: context.textSecondary, fontSize: 11.5),
+          style: TextStyle(color: context.textSecondary, fontSize: 12),
         ),
       ],
     );
@@ -1078,7 +1078,7 @@ class _SettingsSidebarDialogState extends ConsumerState<SettingsSidebarDialog> {
         children: [
           Text(
             'Terminal & User preferences persist on this device.',
-            style: TextStyle(fontSize: 11, color: context.textSecondary),
+            style: TextStyle(fontSize: 12, color: context.textSecondary),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(

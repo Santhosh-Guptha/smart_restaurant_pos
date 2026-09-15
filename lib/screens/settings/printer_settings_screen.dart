@@ -123,7 +123,7 @@ class _PrinterSettingsScreenState extends ConsumerState<PrinterSettingsScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('✅ Printer layout customization saved successfully!'),
-          backgroundColor: Colors.green,
+          backgroundColor: ClassicTheme.successEmerald,
         ),
       );
     }
@@ -195,7 +195,7 @@ class _PrinterSettingsScreenState extends ConsumerState<PrinterSettingsScreen> {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('✅ Printer layout restored successfully from backup!'),
-              backgroundColor: Colors.green,
+              backgroundColor: ClassicTheme.successEmerald,
             ),
           );
         }
@@ -290,7 +290,7 @@ class _PrinterSettingsScreenState extends ConsumerState<PrinterSettingsScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(success ? '✅ Test page printed successfully!' : '❌ Test print failed.'),
-          backgroundColor: success ? Colors.green : Colors.red,
+          backgroundColor: success ? ClassicTheme.successEmerald : ClassicTheme.dangerRed,
         ),
       );
     }
@@ -720,8 +720,8 @@ class _PrinterSettingsScreenState extends ConsumerState<PrinterSettingsScreen> {
                             icon: const Icon(Icons.settings_backup_restore),
                             label: const Text('Restore Backup'),
                             style: OutlinedButton.styleFrom(
-                              foregroundColor: Colors.teal.shade800,
-                              side: BorderSide(color: Colors.teal.shade200),
+                              foregroundColor: ClassicTheme.secondaryAccent,
+                              side: BorderSide(color: ClassicTheme.secondaryAccent),
                             ),
                           ),
                         ),
@@ -756,7 +756,7 @@ class _PrinterSettingsScreenState extends ConsumerState<PrinterSettingsScreen> {
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                           decoration: BoxDecoration(
-                            color: printerState.isConnected ? Colors.green.shade50 : Colors.red.shade50,
+                            color: printerState.isConnected ? ClassicTheme.tintSuccess : ClassicTheme.tintDanger,
                             borderRadius: BorderRadius.circular(20),
                           ),
                           child: Row(
@@ -766,7 +766,7 @@ class _PrinterSettingsScreenState extends ConsumerState<PrinterSettingsScreen> {
                                 width: 8,
                                 height: 8,
                                 decoration: BoxDecoration(
-                                  color: printerState.isConnected ? Colors.green : Colors.red,
+                                  color: printerState.isConnected ? ClassicTheme.successEmerald : ClassicTheme.dangerRed,
                                   shape: BoxShape.circle,
                                 ),
                               ),
@@ -774,7 +774,7 @@ class _PrinterSettingsScreenState extends ConsumerState<PrinterSettingsScreen> {
                               Text(
                                 printerState.isConnected ? 'Connected' : 'Disconnected',
                                 style: TextStyle(
-                                  color: printerState.isConnected ? Colors.green.shade800 : Colors.red.shade800,
+                                  color: printerState.isConnected ? ClassicTheme.successEmerald : ClassicTheme.dangerRed,
                                   fontWeight: FontWeight.bold,
                                   fontSize: 12,
                                 ),
@@ -803,8 +803,8 @@ class _PrinterSettingsScreenState extends ConsumerState<PrinterSettingsScreen> {
                               icon: const Icon(Icons.link_off),
                               label: const Text('Disconnect'),
                               style: OutlinedButton.styleFrom(
-                                foregroundColor: Colors.red,
-                                side: const BorderSide(color: Colors.red),
+                                foregroundColor: ClassicTheme.dangerRed,
+                                side: const BorderSide(color: ClassicTheme.dangerRed),
                               ),
                             ),
                           ),
@@ -930,8 +930,8 @@ class _PrinterSettingsScreenState extends ConsumerState<PrinterSettingsScreen> {
                               subtitle: Text(dev.macAdress, style: const TextStyle(fontSize: 12)),
                               trailing: isCurrentlySelected
                                   ? (printerState.isConnected
-                                      ? const Icon(Icons.check_circle, color: Colors.green)
-                                      : const Icon(Icons.error_outline, color: Colors.orange))
+                                      ? const Icon(Icons.check_circle, color: ClassicTheme.successEmerald)
+                                      : const Icon(Icons.error_outline, color: ClassicTheme.warningAmber))
                                   : null,
                               onTap: () async {
                                 HapticFeedback.lightImpact();
@@ -942,7 +942,7 @@ class _PrinterSettingsScreenState extends ConsumerState<PrinterSettingsScreen> {
                                       content: Text(success
                                           ? '✅ Connected to ${dev.name}'
                                           : '❌ Connection failed. Check if printer is on.'),
-                                      backgroundColor: success ? Colors.green : Colors.red,
+                                      backgroundColor: success ? ClassicTheme.successEmerald : ClassicTheme.dangerRed,
                                     ),
                                   );
                                 }

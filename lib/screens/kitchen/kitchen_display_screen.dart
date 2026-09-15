@@ -37,9 +37,9 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
   Set<String> _terminalKeys = {};
 
   static const List<Map<String, dynamic>> _kdsStages = [
-    {'id': 'PENDING', 'label': 'New Received ⏳', 'color': Color(0xFFD97706)},
-    {'id': 'PREPARING', 'label': 'In Preparation 👨‍🍳', 'color': Color(0xFF2563EB)},
-    {'id': 'READY', 'label': 'Food Ready 🍳', 'color': Color(0xFF059669)},
+    {'id': 'PENDING', 'label': 'New Received ⏳', 'color': ClassicTheme.warningAmber},
+    {'id': 'PREPARING', 'label': 'In Preparation 👨‍🍳', 'color': ClassicTheme.infoBlue},
+    {'id': 'READY', 'label': 'Food Ready 🍳', 'color': ClassicTheme.successEmerald},
     {'id': 'ALL', 'label': 'All Active 📋', 'color': Color(0xFF4F46E5)},
   ];
 
@@ -169,7 +169,7 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
                     ),
                   ],
                 ),
-                backgroundColor: const Color(0xFFD97706),
+                backgroundColor: ClassicTheme.warningAmber,
                 duration: const Duration(seconds: 4),
                 behavior: SnackBarBehavior.floating,
               ),
@@ -562,7 +562,7 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('${order.kotNumber} recalled back to READY ↩️'),
-            backgroundColor: const Color(0xFF2563EB),
+            backgroundColor: ClassicTheme.infoBlue,
             behavior: SnackBarBehavior.floating,
           ),
         );
@@ -678,19 +678,19 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
 
       if (mounted) {
         String statusLabel = 'Updated';
-        Color snackBg = const Color(0xFF2563EB);
+        Color snackBg = ClassicTheme.infoBlue;
         final pendingLabel = statusQueued
             ? 'queued - will sync when the network returns'
             : 'did NOT sync - tell the pass';
         if (isServedAction) {
           statusLabel = syncOk ? 'served and removed from active board ✅' : 'served locally ($pendingLabel)';
-          snackBg = syncOk ? const Color(0xFF059669) : (statusQueued ? const Color(0xFFD97706) : const Color(0xFFDC2626));
+          snackBg = syncOk ? ClassicTheme.successEmerald : (statusQueued ? ClassicTheme.warningAmber : ClassicTheme.dangerRed);
         } else if (newStatus == KotStatus.preparing) {
           statusLabel = syncOk ? 'started preparing 👨‍🍳' : 'preparing locally ($pendingLabel)';
-          snackBg = syncOk ? const Color(0xFF2563EB) : (statusQueued ? const Color(0xFFD97706) : const Color(0xFFDC2626));
+          snackBg = syncOk ? ClassicTheme.infoBlue : (statusQueued ? ClassicTheme.warningAmber : ClassicTheme.dangerRed);
         } else if (newStatus == KotStatus.ready) {
           statusLabel = syncOk ? 'marked READY for serving! 🍳' : 'READY locally ($pendingLabel)';
-          snackBg = syncOk ? const Color(0xFF059669) : (statusQueued ? const Color(0xFFD97706) : const Color(0xFFDC2626));
+          snackBg = syncOk ? ClassicTheme.successEmerald : (statusQueued ? ClassicTheme.warningAmber : ClassicTheme.dangerRed);
         }
 
         ScaffoldMessenger.of(context).showSnackBar(
@@ -715,7 +715,7 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('This order contains only Direct Counter items. No KOT required.'),
-              backgroundColor: Color(0xFFD97706),
+              backgroundColor: ClassicTheme.warningAmber,
               behavior: SnackBarBehavior.floating,
             ),
           );
@@ -767,7 +767,7 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text('Kitchen Slip printed for ${order.tableName}'),
-              backgroundColor: const Color(0xFF059669),
+              backgroundColor: ClassicTheme.successEmerald,
               behavior: SnackBarBehavior.floating,
             ),
           );
@@ -777,7 +777,7 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('Bluetooth printer not connected. Configure in Settings.'),
-              backgroundColor: Color(0xFFD97706),
+              backgroundColor: ClassicTheme.warningAmber,
               behavior: SnackBarBehavior.floating,
             ),
           );
@@ -812,13 +812,13 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
             Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: const Color(0xFFEFF6FF),
+                color: ClassicTheme.tintInfo,
                 borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: const Color(0xFFDBEAFE)),
+                border: Border.all(color: ClassicTheme.tintInfo),
               ),
               child: const Icon(
                 Icons.outdoor_grill_rounded,
-                color: Color(0xFF2563EB),
+                color: ClassicTheme.infoBlue,
                 size: 20,
               ),
             ),
@@ -840,7 +840,7 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
                   Text(
                     'Chef: ${activeStaff?.name ?? "Kitchen Staff"} • ${_allOrders.length} active orders',
                     style: TextStyle(
-                      fontSize: 11,
+                      fontSize: 12,
                       color: context.textSecondary,
                       fontWeight: FontWeight.w500,
                     ),
@@ -859,15 +859,15 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
             icon: Badge(
               isLabelVisible: _servedOrdersHistory.isNotEmpty,
               label: Text('${_servedOrdersHistory.length}'),
-              backgroundColor: const Color(0xFF059669),
-              child: const Icon(Icons.room_service_rounded, color: Color(0xFF059669), size: 24),
+              backgroundColor: ClassicTheme.successEmerald,
+              child: const Icon(Icons.room_service_rounded, color: ClassicTheme.successEmerald, size: 24),
             ),
           ),
           // Kitchen Analytics Action Button
           IconButton(
             tooltip: 'Kitchen Analytics',
             onPressed: _showKitchenAnalyticsModal,
-            icon: const Icon(Icons.analytics_rounded, color: Color(0xFF2563EB), size: 24),
+            icon: const Icon(Icons.analytics_rounded, color: ClassicTheme.infoBlue, size: 24),
           ),
           // View Mode Toggle (Multi-Column Board vs Single-Stage Tabs)
           IconButton(
@@ -875,7 +875,7 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
             onPressed: () => setState(() => _isKanbanView = !_isKanbanView),
             icon: Icon(
               _isKanbanView ? Icons.tab_rounded : Icons.view_column_rounded,
-              color: const Color(0xFF2563EB),
+              color: ClassicTheme.infoBlue,
               size: 24,
             ),
           ),
@@ -888,7 +888,7 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
             Container(
               width: double.infinity,
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-              color: Colors.red.shade700,
+              color: ClassicTheme.dangerRed,
               child: Row(
                 children: [
                   const Icon(Icons.lock_clock_rounded, color: Colors.white, size: 18),
@@ -955,7 +955,7 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
                   const SizedBox(width: 6),
                   Text(
                     '👈 Swipe left/right to change stage • (${_kdsStages[_currentStageIndex]["label"]})',
-                    style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: context.textSecondary),
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: context.textSecondary),
                   ),
                 ],
               ),
@@ -979,7 +979,7 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
 
                   return RefreshIndicator(
                     onRefresh: _handleManualRefresh,
-                    color: const Color(0xFF2563EB),
+                    color: ClassicTheme.infoBlue,
                     child: stageOrders.isEmpty
                         ? LayoutBuilder(
                             builder: (context, constraints) => SingleChildScrollView(
@@ -1009,10 +1009,10 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
                                             _servedOrdersHistory.clear();
                                           });
                                         },
-                                        icon: const Icon(Icons.delete_sweep_rounded, size: 16, color: Color(0xFFDC2626)),
+                                        icon: const Icon(Icons.delete_sweep_rounded, size: 16, color: ClassicTheme.dangerRed),
                                         label: const Text(
                                           'Clear All',
-                                          style: TextStyle(color: Color(0xFFDC2626), fontWeight: FontWeight.bold, fontSize: 12),
+                                          style: TextStyle(color: ClassicTheme.dangerRed, fontWeight: FontWeight.bold, fontSize: 12),
                                         ),
                                       ),
                                     ],
@@ -1058,9 +1058,9 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
 
   Widget _buildKanbanBoard() {
     final stages = [
-      {'id': 'PENDING', 'title': 'New Received ⏳', 'color': const Color(0xFFD97706), 'bg': const Color(0xFFFFFBEB)},
-      {'id': 'PREPARING', 'title': 'In Preparation 👨‍🍳', 'color': const Color(0xFF2563EB), 'bg': const Color(0xFFEFF6FF)},
-      {'id': 'READY', 'title': 'Food Ready 🍳', 'color': const Color(0xFF059669), 'bg': const Color(0xFFECFDF5)},
+      {'id': 'PENDING', 'title': 'New Received ⏳', 'color': ClassicTheme.warningAmber, 'bg': ClassicTheme.tintWarning},
+      {'id': 'PREPARING', 'title': 'In Preparation 👨‍🍳', 'color': ClassicTheme.infoBlue, 'bg': ClassicTheme.tintInfo},
+      {'id': 'READY', 'title': 'Food Ready 🍳', 'color': ClassicTheme.successEmerald, 'bg': ClassicTheme.tintSuccess},
     ];
 
     return LayoutBuilder(
@@ -1155,7 +1155,7 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
                                   '${stageOrders.length}',
                                   style: const TextStyle(
                                     color: Colors.white,
-                                    fontSize: 11,
+                                    fontSize: 12,
                                     fontWeight: FontWeight.bold,
                                   ),
                                 ),
@@ -1252,7 +1252,7 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
               child: const Icon(
                 Icons.check_circle_outline_rounded,
                 size: 48,
-                color: Color(0xFF059669),
+                color: ClassicTheme.successEmerald,
               ),
             ),
             const SizedBox(height: 16),
@@ -1318,20 +1318,20 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
                   label: Text(
                     station,
                     style: TextStyle(
-                      fontSize: 11,
+                      fontSize: 12,
                       fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
                       color: isSelected ? Colors.white : context.textPrimary,
                     ),
                   ),
                   selected: isSelected,
-                  selectedColor: const Color(0xFF2563EB),
+                  selectedColor: ClassicTheme.infoBlue,
                   backgroundColor: Colors.white,
                   checkmarkColor: Colors.white,
                   showCheckmark: false,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(16),
                     side: BorderSide(
-                      color: isSelected ? const Color(0xFF2563EB) : context.borderColor,
+                      color: isSelected ? ClassicTheme.infoBlue : context.borderColor,
                     ),
                   ),
                   onSelected: (val) {
@@ -1385,7 +1385,7 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
               child: Text(
                 count.toString(),
                 style: TextStyle(
-                  fontSize: 11,
+                  fontSize: 12,
                   fontWeight: FontWeight.bold,
                   color: isSelected ? Colors.white : context.textSecondary,
                 ),
@@ -1408,16 +1408,16 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
     final paymentStatus = order.effectivePaymentStatus;
     final isPaid = paymentStatus == 'PAID';
 
-    Color statusBadgeBg = const Color(0xFFFEF3C7);
-    Color statusBadgeColor = const Color(0xFFD97706);
+    Color statusBadgeBg = ClassicTheme.tintWarning;
+    Color statusBadgeColor = ClassicTheme.warningAmber;
     String statusText = 'PENDING';
     if (isPreparing) {
-      statusBadgeBg = const Color(0xFFEFF6FF);
-      statusBadgeColor = const Color(0xFF2563EB);
+      statusBadgeBg = ClassicTheme.tintInfo;
+      statusBadgeColor = ClassicTheme.infoBlue;
       statusText = 'PREPARING';
     } else if (isReady) {
-      statusBadgeBg = const Color(0xFFD1FAE5);
-      statusBadgeColor = const Color(0xFF059669);
+      statusBadgeBg = ClassicTheme.tintSuccess;
+      statusBadgeColor = ClassicTheme.successEmerald;
       statusText = 'READY';
     } else if (isCompleted) {
       statusBadgeBg = context.inputFill;
@@ -1431,9 +1431,9 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
           color: isReady
-              ? const Color(0xFF059669)
+              ? ClassicTheme.successEmerald
               : isPreparing
-                  ? const Color(0xFF2563EB)
+                  ? ClassicTheme.infoBlue
                   : context.borderColor,
           width: isReady || isPreparing ? 1.5 : 1,
         ),
@@ -1453,9 +1453,9 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             decoration: BoxDecoration(
               color: isReady
-                  ? const Color(0xFFECFDF5)
+                  ? ClassicTheme.tintSuccess
                   : isPreparing
-                      ? const Color(0xFFEFF6FF)
+                      ? ClassicTheme.tintInfo
                       : context.canvasColor,
               borderRadius: const BorderRadius.vertical(top: Radius.circular(15)),
               border: Border(bottom: BorderSide(color: context.borderColor)),
@@ -1490,7 +1490,7 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
                             child: Text(
                               statusText,
                               style: TextStyle(
-                                fontSize: 10,
+                                fontSize: 12,
                                 fontWeight: FontWeight.bold,
                                 color: statusBadgeColor,
                               ),
@@ -1500,15 +1500,15 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                             decoration: BoxDecoration(
-                              color: isPaid ? const Color(0xFFD1FAE5) : const Color(0xFFFEF3C7),
+                              color: isPaid ? ClassicTheme.tintSuccess : ClassicTheme.tintWarning,
                               borderRadius: BorderRadius.circular(6),
                             ),
                             child: Text(
                               isPaid ? 'PAID ✅' : 'UNPAID ⏳',
                               style: TextStyle(
-                                fontSize: 10,
+                                fontSize: 12,
                                 fontWeight: FontWeight.bold,
-                                color: isPaid ? const Color(0xFF059669) : const Color(0xFFD97706),
+                                color: isPaid ? ClassicTheme.successEmerald : ClassicTheme.warningAmber,
                               ),
                             ),
                           ),
@@ -1524,7 +1524,7 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
                               child: Text(
                                 'Round ${order.courseNo}',
                                 style: const TextStyle(
-                                  fontSize: 10,
+                                  fontSize: 12,
                                   fontWeight: FontWeight.bold,
                                   color: Color(0xFF7E22CE),
                                 ),
@@ -1562,17 +1562,17 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
                     final timerDisplay =
                         '${elapsedMinutes.toString().padLeft(2, '0')}:${elapsedSeconds.toString().padLeft(2, '0')}';
 
-                    Color timerBg = const Color(0xFFEFF6FF);
-                    Color timerColor = const Color(0xFF2563EB);
+                    Color timerBg = ClassicTheme.tintInfo;
+                    Color timerColor = ClassicTheme.infoBlue;
                     if (isFoodReadyOrDone) {
-                      timerBg = const Color(0xFFD1FAE5);
-                      timerColor = const Color(0xFF059669);
+                      timerBg = ClassicTheme.tintSuccess;
+                      timerColor = ClassicTheme.successEmerald;
                     } else if (elapsedMinutes >= 10 && elapsedMinutes < 20) {
-                      timerBg = const Color(0xFFFEF3C7);
-                      timerColor = const Color(0xFFD97706);
+                      timerBg = ClassicTheme.tintWarning;
+                      timerColor = ClassicTheme.warningAmber;
                     } else if (elapsedMinutes >= 20) {
-                      timerBg = const Color(0xFFFEE2E2);
-                      timerColor = const Color(0xFFDC2626);
+                      timerBg = ClassicTheme.tintDanger;
+                      timerColor = ClassicTheme.dangerRed;
                     }
 
                     return Container(
@@ -1653,15 +1653,15 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
                                 Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
                                   decoration: BoxDecoration(
-                                    color: const Color(0xFFFEF3C7),
+                                    color: ClassicTheme.tintWarning,
                                     borderRadius: BorderRadius.circular(4),
-                                    border: Border.all(color: const Color(0xFFF59E0B), width: 0.8),
+                                    border: Border.all(color: ClassicTheme.warningAmber, width: 0.8),
                                   ),
                                   child: const Text(
                                     'Direct Counter',
                                     style: TextStyle(
-                                      color: Color(0xFFB45309),
-                                      fontSize: 9,
+                                      color: ClassicTheme.warningAmber,
+                                      fontSize: 12,
                                       fontWeight: FontWeight.bold,
                                     ),
                                   ),
@@ -1675,8 +1675,8 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
                               child: Text(
                                 'Note: ${item.notes!}',
                                 style: const TextStyle(
-                                  color: Color(0xFFD97706),
-                                  fontSize: 11,
+                                  color: ClassicTheme.warningAmber,
+                                  fontSize: 12,
                                   fontStyle: FontStyle.italic,
                                 ),
                               ),
@@ -1723,8 +1723,8 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
                               child: OutlinedButton(
                                 onPressed: () => _updateOrderStatus(order, KotStatus.preparing),
                                 style: OutlinedButton.styleFrom(
-                                  foregroundColor: const Color(0xFF2563EB),
-                                  side: const BorderSide(color: Color(0xFF2563EB)),
+                                  foregroundColor: ClassicTheme.infoBlue,
+                                  side: const BorderSide(color: ClassicTheme.infoBlue),
                                   padding: const EdgeInsets.symmetric(vertical: 10),
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(10),
@@ -1732,7 +1732,7 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
                                 ),
                                 child: const Text(
                                   'PREPARING',
-                                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11),
+                                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
                                 ),
                               ),
                             ),
@@ -1741,7 +1741,7 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
                               child: ElevatedButton(
                                 onPressed: () => _updateOrderStatus(order, KotStatus.ready),
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: const Color(0xFF059669),
+                                  backgroundColor: ClassicTheme.successEmerald,
                                   foregroundColor: Colors.white,
                                   padding: const EdgeInsets.symmetric(vertical: 10),
                                   elevation: 0,
@@ -1751,7 +1751,7 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
                                 ),
                                 child: const Text(
                                   'READY',
-                                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11),
+                                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
                                 ),
                               ),
                             ),
@@ -1766,7 +1766,7 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
                                 style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
                               ),
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFF059669),
+                                backgroundColor: ClassicTheme.successEmerald,
                                 foregroundColor: Colors.white,
                                 padding: const EdgeInsets.symmetric(vertical: 10),
                                 elevation: 0,
@@ -1784,7 +1784,7 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
                                     style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
                                   ),
                                   style: ElevatedButton.styleFrom(
-                                    backgroundColor: const Color(0xFF059669),
+                                    backgroundColor: ClassicTheme.successEmerald,
                                     foregroundColor: Colors.white,
                                     padding: const EdgeInsets.symmetric(vertical: 10),
                                     elevation: 0,
@@ -1803,7 +1803,7 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
                                           });
                                         },
                                         icon: const Icon(Icons.close_rounded, size: 14),
-                                        label: const Text('DISMISS', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                                        label: const Text('DISMISS', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                                         style: OutlinedButton.styleFrom(
                                           foregroundColor: context.textSecondary,
                                           side: BorderSide(color: context.borderColor),
@@ -1817,9 +1817,9 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
                                       child: ElevatedButton.icon(
                                         onPressed: () => _recallOrder(order),
                                         icon: const Icon(Icons.undo_rounded, size: 14),
-                                        label: const Text('RECALL ↩️', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                                        label: const Text('RECALL ↩️', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                                         style: ElevatedButton.styleFrom(
-                                          backgroundColor: const Color(0xFF2563EB),
+                                          backgroundColor: ClassicTheme.infoBlue,
                                           foregroundColor: Colors.white,
                                           padding: const EdgeInsets.symmetric(vertical: 10),
                                           elevation: 0,
@@ -1876,7 +1876,7 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
                               color: context.inputFill,
                               borderRadius: BorderRadius.circular(10),
                             ),
-                            child: const Icon(Icons.room_service_rounded, color: Color(0xFF059669), size: 20),
+                            child: const Icon(Icons.room_service_rounded, color: ClassicTheme.successEmerald, size: 20),
                           ),
                           const SizedBox(width: 10),
                           Column(
@@ -1888,7 +1888,7 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
                               ),
                               Text(
                                 'Orders cleared from active cooking board',
-                                style: TextStyle(fontSize: 11, color: context.textSecondary),
+                                style: TextStyle(fontSize: 12, color: context.textSecondary),
                               ),
                             ],
                           ),
@@ -1904,10 +1904,10 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
                                 });
                                 setModalState(() {});
                               },
-                              icon: const Icon(Icons.delete_sweep_rounded, size: 18, color: Color(0xFFDC2626)),
+                              icon: const Icon(Icons.delete_sweep_rounded, size: 18, color: ClassicTheme.dangerRed),
                               label: const Text(
                                 'Clear All',
-                                style: TextStyle(color: Color(0xFFDC2626), fontWeight: FontWeight.bold, fontSize: 12),
+                                style: TextStyle(color: ClassicTheme.dangerRed, fontWeight: FontWeight.bold, fontSize: 12),
                               ),
                             ),
                           IconButton(
@@ -2042,15 +2042,15 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
                     children: [
                       Container(
                         padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(color: const Color(0xFFEFF6FF), borderRadius: BorderRadius.circular(10)),
-                        child: const Icon(Icons.insights_rounded, color: Color(0xFF2563EB), size: 20),
+                        decoration: BoxDecoration(color: ClassicTheme.tintInfo, borderRadius: BorderRadius.circular(10)),
+                        child: const Icon(Icons.insights_rounded, color: ClassicTheme.infoBlue, size: 20),
                       ),
                       const SizedBox(width: 10),
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text('Kitchen Analytics & Performance', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: context.textPrimary)),
-                          Text('Live real-time kitchen efficiency metrics', style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
+                          Text('Live real-time kitchen efficiency metrics', style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
                         ],
                       ),
                     ],
@@ -2075,7 +2075,7 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
                           title: 'Avg Prep Time',
                           value: '$avgPrepTime min',
                           subtitle: 'Median: $medianPrepTime min • ${avgPrepTime <= 15 ? '⚡ Fast' : '👍 Optimal'}',
-                          color: avgPrepTime <= 15 ? Colors.green : Colors.blue,
+                          color: avgPrepTime <= 15 ? ClassicTheme.successEmerald : ClassicTheme.infoBlue,
                           icon: Icons.timer_outlined,
                         ),
                       ),
@@ -2085,7 +2085,7 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
                           title: 'Completed Tickets',
                           value: '${completedOrders.length}',
                           subtitle: 'Served to diners',
-                          color: const Color(0xFF6366F1),
+                          color: ClassicTheme.secondaryAccent,
                           icon: Icons.check_circle_outline_rounded,
                         ),
                       ),
@@ -2099,7 +2099,7 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
                           title: 'Current Active Load',
                           value: '${activeOrders.length}',
                           subtitle: '${pendingOrders.length} pending • ${prepOrders.length} in-prep',
-                          color: pendingOrders.length > 5 ? Colors.redAccent : Colors.amber.shade800,
+                          color: pendingOrders.length > 5 ? ClassicTheme.dangerRed : ClassicTheme.warningAmber,
                           icon: Icons.outdoor_grill_rounded,
                         ),
                       ),
@@ -2109,7 +2109,7 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
                           title: 'Total Plates Cooked',
                           value: '$totalPlates',
                           subtitle: 'Dishes prepared today',
-                          color: Colors.teal,
+                          color: ClassicTheme.secondaryAccent,
                           icon: Icons.restaurant_rounded,
                         ),
                       ),
@@ -2122,7 +2122,7 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text('Top Cooked Dishes Today', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: context.textPrimary)),
-                      Text('${topDishes.length} items', style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
+                      Text('${topDishes.length} items', style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
                     ],
                   ),
                   const SizedBox(height: 12),
@@ -2158,7 +2158,7 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
                                         width: 22,
                                         height: 22,
                                         decoration: BoxDecoration(
-                                          color: rank == 1 ? Colors.amber : (rank == 2 ? Colors.grey.shade400 : const Color(0xFFEFF6FF)),
+                                          color: rank == 1 ? ClassicTheme.warningAmber : (rank == 2 ? Colors.grey.shade400 : ClassicTheme.tintInfo),
                                           shape: BoxShape.circle,
                                         ),
                                         child: Center(
@@ -2166,8 +2166,8 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
                                             '$rank',
                                             style: TextStyle(
                                               fontWeight: FontWeight.bold,
-                                              fontSize: 11,
-                                              color: rank <= 2 ? Colors.white : const Color(0xFF2563EB),
+                                              fontSize: 12,
+                                              color: rank <= 2 ? Colors.white : ClassicTheme.infoBlue,
                                             ),
                                           ),
                                         ),
@@ -2176,7 +2176,7 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
                                       Text(dish.key, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: context.textPrimary)),
                                     ],
                                   ),
-                                  Text('${dish.value} plates', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Color(0xFF2563EB))),
+                                  Text('${dish.value} plates', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: ClassicTheme.infoBlue)),
                                 ],
                               ),
                               const SizedBox(height: 8),
@@ -2185,7 +2185,7 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
                                 child: LinearProgressIndicator(
                                   value: ratio.clamp(0.05, 1.0),
                                   backgroundColor: context.borderColor,
-                                  color: rank == 1 ? Colors.amber : const Color(0xFF2563EB),
+                                  color: rank == 1 ? ClassicTheme.warningAmber : ClassicTheme.infoBlue,
                                   minHeight: 6,
                                 ),
                               ),
@@ -2210,9 +2210,9 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceAround,
                       children: [
-                        _buildSourceCol('🍽️ Dine-In', '$dineInOrders orders', Colors.blue),
-                        _buildSourceCol('🛍️ Takeaway', '$takeawayOrders orders', Colors.amber.shade800),
-                        _buildSourceCol('📱 QR Web', '$qrOrders orders', const Color(0xFF7C3AED)),
+                        _buildSourceCol('🍽️ Dine-In', '$dineInOrders orders', ClassicTheme.infoBlue),
+                        _buildSourceCol('🛍️ Takeaway', '$takeawayOrders orders', ClassicTheme.warningAmber),
+                        _buildSourceCol('📱 QR Web', '$qrOrders orders', ClassicTheme.secondaryAccent),
                       ],
                     ),
                   ),
@@ -2245,14 +2245,14 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(title, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: color)),
+              Text(title, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: color)),
               Icon(icon, size: 16, color: color),
             ],
           ),
           const SizedBox(height: 6),
           Text(value, style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: color)),
           const SizedBox(height: 2),
-          Text(subtitle, style: TextStyle(fontSize: 10, color: context.textSecondary)),
+          Text(subtitle, style: TextStyle(fontSize: 12, color: context.textSecondary)),
         ],
       ),
     );

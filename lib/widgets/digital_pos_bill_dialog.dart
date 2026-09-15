@@ -259,7 +259,7 @@ class _DigitalPosBillDialogState extends ConsumerState<DigitalPosBillDialog> {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('Printer not connected. Please connect via Settings.'),
-              backgroundColor: Colors.orange,
+              backgroundColor: ClassicTheme.warningAmber,
             ),
           );
         }
@@ -295,14 +295,14 @@ class _DigitalPosBillDialogState extends ConsumerState<DigitalPosBillDialog> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('🖨️ Bill sent to thermal printer!'),
-            backgroundColor: Color(0xFF10B981),
+            backgroundColor: ClassicTheme.successEmerald,
           ),
         );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Print error: $e'), backgroundColor: Colors.red),
+          SnackBar(content: Text('Print error: $e'), backgroundColor: ClassicTheme.dangerRed),
         );
       }
     }
@@ -332,7 +332,7 @@ class _DigitalPosBillDialogState extends ConsumerState<DigitalPosBillDialog> {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
               decoration: const BoxDecoration(
-                color: Color(0xFF059669),
+                color: ClassicTheme.successEmerald,
                 borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
               ),
               child: Row(
@@ -375,8 +375,8 @@ class _DigitalPosBillDialogState extends ConsumerState<DigitalPosBillDialog> {
                     child: Text(
                       widget.paymentMode.toUpperCase(),
                       style: const TextStyle(
-                        color: Color(0xFF059669),
-                        fontSize: 11,
+                        color: ClassicTheme.successEmerald,
+                        fontSize: 12,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
@@ -407,12 +407,12 @@ class _DigitalPosBillDialogState extends ConsumerState<DigitalPosBillDialog> {
                           if (widget.organizationAddress != null && widget.organizationAddress!.isNotEmpty)
                             Text(
                               widget.organizationAddress!,
-                              style: TextStyle(color: context.textSecondary, fontSize: 11),
+                              style: TextStyle(color: context.textSecondary, fontSize: 12),
                               textAlign: TextAlign.center,
                             ),
                           Text(
                             'Invoice: ${widget.billNumber}',
-                            style: TextStyle(color: context.textSecondary, fontSize: 11, fontFamily: 'monospace'),
+                            style: TextStyle(color: context.textSecondary, fontSize: 12, fontFamily: 'monospace'),
                           ),
                         ],
                       ),
@@ -450,9 +450,9 @@ class _DigitalPosBillDialogState extends ConsumerState<DigitalPosBillDialog> {
                         children: [
                           Row(
                             children: [
-                              Expanded(flex: 5, child: Text('ITEM', style: TextStyle(color: context.textSecondary, fontSize: 10, fontWeight: FontWeight.bold))),
-                              Expanded(flex: 2, child: Text('QTY', textAlign: TextAlign.center, style: TextStyle(color: context.textSecondary, fontSize: 10, fontWeight: FontWeight.bold))),
-                              Expanded(flex: 3, child: Text('AMOUNT', textAlign: TextAlign.right, style: TextStyle(color: context.textSecondary, fontSize: 10, fontWeight: FontWeight.bold))),
+                              Expanded(flex: 5, child: Text('ITEM', style: TextStyle(color: context.textSecondary, fontSize: 12, fontWeight: FontWeight.bold))),
+                              Expanded(flex: 2, child: Text('QTY', textAlign: TextAlign.center, style: TextStyle(color: context.textSecondary, fontSize: 12, fontWeight: FontWeight.bold))),
+                              Expanded(flex: 3, child: Text('AMOUNT', textAlign: TextAlign.right, style: TextStyle(color: context.textSecondary, fontSize: 12, fontWeight: FontWeight.bold))),
                             ],
                           ),
                           const Divider(height: 12),
@@ -516,20 +516,20 @@ class _DigitalPosBillDialogState extends ConsumerState<DigitalPosBillDialog> {
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF10B981).withValues(alpha: 0.1),
+                        color: ClassicTheme.successEmerald.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: const Color(0xFF10B981).withValues(alpha: 0.3)),
+                        border: Border.all(color: ClassicTheme.successEmerald.withValues(alpha: 0.3)),
                       ),
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           const Text(
                             'GRAND TOTAL PAID',
-                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF047857)),
+                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: ClassicTheme.successEmerald),
                           ),
                           Text(
                             '₹${widget.totalAmount.toStringAsFixed(2)}',
-                            style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 18, color: Color(0xFF047857)),
+                            style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 18, color: ClassicTheme.successEmerald),
                           ),
                         ],
                       ),
@@ -541,16 +541,16 @@ class _DigitalPosBillDialogState extends ConsumerState<DigitalPosBillDialog> {
                     Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF2563EB).withValues(alpha: 0.05),
+                        color: ClassicTheme.infoBlue.withValues(alpha: 0.05),
                         borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: const Color(0xFF2563EB).withValues(alpha: 0.2)),
+                        border: Border.all(color: ClassicTheme.infoBlue.withValues(alpha: 0.2)),
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Row(
                             children: const [
-                              Icon(Icons.email_outlined, color: Color(0xFF2563EB), size: 18),
+                              Icon(Icons.email_outlined, color: ClassicTheme.infoBlue, size: 18),
                               SizedBox(width: 6),
                               Text(
                                 'Email Digital Tax Invoice to Customer',
@@ -585,7 +585,7 @@ class _DigitalPosBillDialogState extends ConsumerState<DigitalPosBillDialog> {
                               ElevatedButton(
                                 onPressed: _isSendingEmail ? null : () => _sendInvoiceEmail(_emailCtrl.text.trim()),
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: const Color(0xFF2563EB),
+                                  backgroundColor: ClassicTheme.infoBlue,
                                   foregroundColor: Colors.white,
                                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
@@ -602,7 +602,7 @@ class _DigitalPosBillDialogState extends ConsumerState<DigitalPosBillDialog> {
                               children: [
                                 Icon(
                                   _emailSuccess ? Icons.check_circle_rounded : Icons.info_outline,
-                                  color: _emailSuccess ? const Color(0xFF10B981) : Colors.orange,
+                                  color: _emailSuccess ? ClassicTheme.successEmerald : ClassicTheme.warningAmber,
                                   size: 14,
                                 ),
                                 const SizedBox(width: 4),
@@ -610,9 +610,9 @@ class _DigitalPosBillDialogState extends ConsumerState<DigitalPosBillDialog> {
                                   child: Text(
                                     _emailStatusMessage!,
                                     style: TextStyle(
-                                      fontSize: 11,
+                                      fontSize: 12,
                                       fontWeight: FontWeight.w600,
-                                      color: _emailSuccess ? const Color(0xFF047857) : Colors.orange.shade800,
+                                      color: _emailSuccess ? ClassicTheme.successEmerald : ClassicTheme.warningAmber,
                                     ),
                                   ),
                                 ),
@@ -660,8 +660,8 @@ class _DigitalPosBillDialogState extends ConsumerState<DigitalPosBillDialog> {
                           label: const Text('Share PDF', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                           style: OutlinedButton.styleFrom(
                             padding: const EdgeInsets.symmetric(vertical: 12),
-                            foregroundColor: const Color(0xFF2563EB),
-                            side: const BorderSide(color: Color(0xFF2563EB)),
+                            foregroundColor: ClassicTheme.infoBlue,
+                            side: const BorderSide(color: ClassicTheme.infoBlue),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                           ),
                           onPressed: () async {
@@ -685,7 +685,7 @@ class _DigitalPosBillDialogState extends ConsumerState<DigitalPosBillDialog> {
                         widget.onDismiss?.call();
                       },
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF059669),
+                        backgroundColor: ClassicTheme.successEmerald,
                         foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(vertical: 13),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
@@ -708,13 +708,13 @@ class _DigitalPosBillDialogState extends ConsumerState<DigitalPosBillDialog> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: TextStyle(color: context.textSecondary, fontSize: 11.5)),
+          Text(label, style: TextStyle(color: context.textSecondary, fontSize: 12)),
           Text(
             value,
             style: TextStyle(
-              color: isNegative ? const Color(0xFFDC2626) : context.textPrimary,
+              color: isNegative ? ClassicTheme.dangerRed : context.textPrimary,
               fontWeight: FontWeight.w600,
-              fontSize: 11.5,
+              fontSize: 12,
             ),
           ),
         ],

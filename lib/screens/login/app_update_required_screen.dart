@@ -15,8 +15,9 @@ class AppUpdateRequiredScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: context.textPrimary,
-      body: Center(
+      backgroundColor: context.canvasColor,
+      body: SafeArea(
+        child: Center(
         child: Padding(
           padding: const EdgeInsets.all(32.0),
           child: Column(
@@ -25,13 +26,13 @@ class AppUpdateRequiredScreen extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
-                  color: Colors.amberAccent.withValues(alpha: 0.1),
+                  color: ClassicTheme.warningAmber.withValues(alpha: 0.1),
                   shape: BoxShape.circle,
                 ),
                 child: const Icon(
                   Icons.system_update_alt,
                   size: 80,
-                  color: Colors.amberAccent,
+                  color: ClassicTheme.warningAmber,
                 ),
               ),
               const SizedBox(height: 32),
@@ -68,8 +69,8 @@ class AppUpdateRequiredScreen extends StatelessWidget {
                   icon: const Icon(Icons.download),
                   label: const Text("Download APK Directly"),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.amberAccent,
-                    foregroundColor: context.textPrimary,
+                    backgroundColor: ClassicTheme.primaryAccent,
+                    foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 16),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
@@ -78,6 +79,7 @@ class AppUpdateRequiredScreen extends StatelessWidget {
                 ),
               ),
             ],
+          ),
           ),
         ),
       ),

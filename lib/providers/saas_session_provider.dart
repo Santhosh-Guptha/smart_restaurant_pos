@@ -10,6 +10,7 @@ import 'package:bcrypt/bcrypt.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../core/saas_models.dart';
+import '../core/entitlements.dart';
 import '../core/rbac_permissions.dart';
 import '../core/constants.dart';
 import '../services/firebase_connection_service.dart';
@@ -605,8 +606,15 @@ class SaasSessionNotifier extends StateNotifier<SaasSessionState> {
               .where('organizationId', isEqualTo: orgId)
               .get().timeout(const Duration(seconds: 5));
           
-          if (orgDevices.docs.length >= license.maxDevices) {
-            return "Device Limit Reached (${license.maxDevices} max)";
+          // Use the resolved entitlement cap, not the raw licence field: a
+          // pure-offline tenant is one device whatever the licence document
+          // happens to say, and the previous check let a second till register
+          // against an offline plan.
+          final deviceCap = Entitlements.fromLicense(license).maxDevices;
+          if (orgDevices.docs.length >= deviceCap) {
+            return deviceCap <= 1
+                ? "This plan runs on a single device. Sign out on the other device first."
+                : "Device limit reached ($deviceCap devices).";
           }
 
           // Register device
@@ -1141,7 +1149,7 @@ class SaasSessionNotifier extends StateNotifier<SaasSessionState> {
   }
 
   bool simulateAddDevice(String uuid) {
-    final limit = state.currentLicense?.maxDevices ?? 1;
+    final limit = Entitlements.fromLicense(state.currentLicense).maxDevices;
     final box = Hive.box('configBox');
     final activeDeviceUuids = List<String>.from(box.get('saas_active_device_uuids', defaultValue: <String>[]));
     

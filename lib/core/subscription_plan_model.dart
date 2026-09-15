@@ -1,5 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import 'entitlements.dart';
+
 /// --- RESTAURANT FEATURE CATALOG & GROUPS ---
 class RestaurantFeatureItem {
   final String key;
@@ -17,215 +19,67 @@ class RestaurantFeatureItem {
   });
 }
 
+/// Bridge onto the canonical [FeatureCatalog].
+///
+/// The platform admin console and the plan editor each used to carry their own
+/// hand-written list of features, which drifted apart: four keys the screens
+/// gated on were missing from the console entirely. Both now read the same
+/// catalogue through this adapter, so adding a feature in one place makes it
+/// appear in every screen that lists features.
 class RestaurantFeatureCatalog {
-  static const List<RestaurantFeatureItem> allFeatures = [
-    // 1. Core POS & Operations
-    RestaurantFeatureItem(
-      key: 'qsrBilling',
-      label: 'Fast QSR Counter Billing',
-      description: 'High-speed takeaway and token billing for quick service counters.',
-      category: 'core',
-      iconCode: 'point_of_sale',
-    ),
-    RestaurantFeatureItem(
-      key: 'tableManagement',
-      label: 'Table & Floor Management',
-      description: 'Interactive visual dining floor layout with live table timer states.',
-      category: 'core',
-      iconCode: 'table_restaurant',
-    ),
-    RestaurantFeatureItem(
-      key: 'dineInBilling',
-      label: 'Dine-In Billing (Dine First / Pay First)',
-      description: 'Postpaid table rounds, running orders, and bill settlements.',
-      category: 'core',
-      iconCode: 'receipt_long',
-    ),
+  RestaurantFeatureCatalog._();
 
-    // 2. Kitchen & Service
-    RestaurantFeatureItem(
-      key: 'kdsEnabled',
-      label: 'Kitchen Display System (KDS)',
-      description: 'Paperless kitchen order screens with station routing and timers.',
-      category: 'kitchen',
-      iconCode: 'soup_kitchen',
-    ),
-    RestaurantFeatureItem(
-      key: 'qrOrdering',
-      label: 'Customer Table QR Ordering',
-      description: 'Guests scan table QR code to browse live menu and place orders.',
-      category: 'kitchen',
-      iconCode: 'qr_code_scanner',
-    ),
-    RestaurantFeatureItem(
-      key: 'waiterOrdering',
-      label: 'Waiter Floor Order Taking',
-      description: 'Mobile tablet order taking for floor staff with table sync.',
-      category: 'kitchen',
-      iconCode: 'hail',
-    ),
+  static final List<RestaurantFeatureItem> allFeatures = FeatureCatalog.all
+      .map((f) => RestaurantFeatureItem(
+            key: f.key,
+            label: f.label,
+            description: f.description,
+            category: _categoryFor(f.category),
+            iconCode: f.iconCode,
+          ))
+      .toList(growable: false);
 
-    // 3. Hardware & Printing
-    RestaurantFeatureItem(
-      key: 'dualPrinting',
-      label: 'Dual Printing (KOT + Customer Bill)',
-      description: 'Simultaneous printing of kitchen order tickets and receipt bills.',
-      category: 'hardware',
-      iconCode: 'print',
-    ),
-    RestaurantFeatureItem(
-      key: 'thermalPrinting',
-      label: 'Thermal ESC/POS Printing',
-      description: 'Support for Bluetooth, USB, and LAN thermal receipt printers.',
-      category: 'hardware',
-      iconCode: 'receipt',
-    ),
+  static String _categoryFor(String catalogCategory) {
+    switch (catalogCategory) {
+      case FeatureCatalog.catFloor:
+      case FeatureCatalog.catGuest:
+        return 'kitchen';
+      case FeatureCatalog.catBackOffice:
+      case FeatureCatalog.catChain:
+        return 'analytics';
+      default:
+        return 'core';
+    }
+  }
 
-    // 4. Analytics, Stock & Growth
-    RestaurantFeatureItem(
-      key: 'dayEndReports',
-      label: 'Shift & Day-End Z-Reports',
-      description: 'Cash drawer balancing, shift reconciliations, and EOD analytics.',
-      category: 'analytics',
-      iconCode: 'assessment',
-    ),
-    RestaurantFeatureItem(
-      key: 'inventoryEnabled',
-      label: 'Recipe & Ingredient Stock Tracking',
-      description: 'Track food waste, bill of materials (BOM), and ingredient depletion.',
-      category: 'analytics',
-      iconCode: 'inventory_2',
-    ),
-    RestaurantFeatureItem(
-      key: 'multiOutlet',
-      label: 'Multi-Outlet Branch Hierarchy',
-      description: 'Centralized chain governance across multiple branches and franchises.',
-      category: 'analytics',
-      iconCode: 'store',
-    ),
-    RestaurantFeatureItem(
-      key: 'pureOfflineMode',
-      label: 'Pure Offline Mode (Single Device)',
-      description: 'Zero cloud prompts. Ultra-fast local POS machine billing with direct thermal printing.',
-      category: 'core',
-      iconCode: 'wifi_off',
-    ),
-    RestaurantFeatureItem(
-      key: 'reservations',
-      label: 'Table Reservation System',
-      description: 'Book guest tables, assign arrival times, and manage seatings.',
-      category: 'core',
-      iconCode: 'event_seat',
-    ),
-    RestaurantFeatureItem(
-      key: 'cloudSync',
-      label: 'Google Sheets & Cloud Webhook Sync',
-      description: 'Automatic two-way cloud ledger and Google Sheets database synchronization.',
-      category: 'analytics',
-      iconCode: 'cloud_sync',
-    ),
-  ];
-
-  /// Standard Operational Presets for 1-Click Plan Allocation
-  static const Map<String, bool> presetPureOfflineCounter = {
-    'pureOfflineMode': true,
-    'qsrBilling': true,
-    'billing': true,
-    'menuManagement': true,
-    'thermalPrinting': true,
-    'tableManagement': false,
-    'reservations': false,
-    'dualPrinting': false,
-    'kdsEnabled': false,
-    'qrOrdering': false,
-    'onlineOrderingEnabled': false,
-    'waiterOrdering': false,
-    'cloudSync': false,
-    'multiOutlet': false,
-    'dayEndReports': true,
-    'expenseManagement': true,
-  };
-
-  static const Map<String, bool> presetPureOfflineDineIn = {
-    'pureOfflineMode': true,
-    'qsrBilling': true,
-    'billing': true,
-    'menuManagement': true,
-    'thermalPrinting': true,
-    'tableManagement': true,
-    'reservations': true,
-    'dualPrinting': true,
-    'kdsEnabled': false,
-    'qrOrdering': false,
-    'onlineOrderingEnabled': false,
-    'waiterOrdering': false,
-    'cloudSync': false,
-    'multiOutlet': false,
-    'dayEndReports': true,
-    'expenseManagement': true,
-  };
-
-  static const Map<String, bool> presetCloudStandard = {
-    'pureOfflineMode': false,
-    'qsrBilling': true,
-    'billing': true,
-    'menuManagement': true,
-    'thermalPrinting': true,
-    'tableManagement': true,
-    'reservations': true,
-    'dualPrinting': true,
-    'kdsEnabled': true,
-    'qrOrdering': false,
-    'onlineOrderingEnabled': false,
-    'waiterOrdering': false,
-    'cloudSync': true,
-    'multiOutlet': false,
-    'dayEndReports': true,
-    'expenseManagement': true,
-  };
-
-  static const Map<String, bool> presetOmnichannelEnterprise = {
-    'pureOfflineMode': false,
-    'qsrBilling': true,
-    'billing': true,
-    'menuManagement': true,
-    'thermalPrinting': true,
-    'tableManagement': true,
-    'reservations': true,
-    'dualPrinting': true,
-    'kdsEnabled': true,
-    'qrOrdering': true,
-    'onlineOrderingEnabled': true,
-    'waiterOrdering': true,
-    'cloudSync': true,
-    'multiOutlet': true,
-    'dayEndReports': true,
-    'expenseManagement': true,
-  };
+  // Operational presets, kept as named maps for the older plan editor.
+  static Map<String, bool> get presetPureOfflineCounter =>
+      Map<String, bool>.from(PlanProfile.offlineSingle.features);
+  static Map<String, bool> get presetPureOfflineDineIn =>
+      Map<String, bool>.from(PlanProfile.offlineDineIn.features);
+  static Map<String, bool> get presetCloudStandard =>
+      Map<String, bool>.from(PlanProfile.connected.features);
+  static Map<String, bool> get presetOmnichannelEnterprise =>
+      Map<String, bool>.from(PlanProfile.omnichannel.features);
 
   static Map<String, List<RestaurantFeatureItem>> get groupedFeatures {
-    final Map<String, List<RestaurantFeatureItem>> map = {
-      'Core POS & Floor': [],
-      'Kitchen & Waiter Service': [],
-      'Hardware & Printing': [],
-      'Analytics & Multi-Branch': [],
-    };
-
-    for (final item in allFeatures) {
-      if (item.category == 'core') {
-        map['Core POS & Floor']!.add(item);
-      } else if (item.category == 'kitchen') {
-        map['Kitchen & Waiter Service']!.add(item);
-      } else if (item.category == 'hardware') {
-        map['Hardware & Printing']!.add(item);
-      } else {
-        map['Analytics & Multi-Branch']!.add(item);
-      }
+    final map = <String, List<RestaurantFeatureItem>>{};
+    for (final f in FeatureCatalog.all) {
+      map.putIfAbsent(f.category, () => []).add(
+            RestaurantFeatureItem(
+              key: f.key,
+              label: f.label,
+              description: f.description,
+              category: _categoryFor(f.category),
+              iconCode: f.iconCode,
+            ),
+          );
     }
     return map;
   }
 
-  static Map<String, List<RestaurantFeatureItem>> get byCategory => groupedFeatures;
+  static Map<String, List<RestaurantFeatureItem>> get byCategory =>
+      groupedFeatures;
 }
 
 /// --- SUBSCRIPTION PLAN MODEL ---

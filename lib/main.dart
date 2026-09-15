@@ -1,4 +1,5 @@
 import 'dart:ui';
+import 'core/classic_theme.dart';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
@@ -293,7 +294,7 @@ class _LoadingSplashScreenState extends State<LoadingSplashScreen>
             end: Alignment.bottomRight,
             colors: [
               Color(0xFF0B1120),
-              Color(0xFF0F172A),
+              ClassicTheme.brandNavy,
               Color(0xFF1E293B),
             ],
           ),
@@ -317,7 +318,7 @@ class _LoadingSplashScreenState extends State<LoadingSplashScreen>
                           color: Colors.white.withValues(alpha: 0.04),
                           boxShadow: [
                             BoxShadow(
-                              color: const Color(0xFF38BDF8).withValues(alpha: 0.25 * _fadeAnim.value),
+                              color: ClassicTheme.infoBlue.withValues(alpha: 0.25 * _fadeAnim.value),
                               blurRadius: 36,
                               spreadRadius: 8,
                             ),
@@ -330,7 +331,7 @@ class _LoadingSplashScreenState extends State<LoadingSplashScreen>
                           errorBuilder: (_, __, ___) => const Icon(
                             Icons.point_of_sale_rounded,
                             size: 80,
-                            color: Color(0xFF38BDF8),
+                            color: ClassicTheme.infoBlue,
                           ),
                         ),
                       ),
@@ -369,7 +370,7 @@ class _LoadingSplashScreenState extends State<LoadingSplashScreen>
                   borderRadius: BorderRadius.all(Radius.circular(8)),
                   child: LinearProgressIndicator(
                     backgroundColor: Colors.transparent,
-                    valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF38BDF8)),
+                    valueColor: AlwaysStoppedAnimation<Color>(ClassicTheme.infoBlue),
                   ),
                 ),
               ),
@@ -402,7 +403,7 @@ class _LoadingSplashScreenState extends State<LoadingSplashScreen>
                     Text(
                       'v1.0.0 • Cloud Synced',
                       style: TextStyle(
-                        fontSize: 11,
+                        fontSize: 12,
                         color: Colors.white.withValues(alpha: 0.6),
                         fontWeight: FontWeight.w500,
                       ),

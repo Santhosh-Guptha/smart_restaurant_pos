@@ -1,4 +1,5 @@
 import '../../providers/dashboard_layout_provider.dart';
+import '../../providers/entitlements_provider.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -8,7 +9,6 @@ import 'package:http/http.dart' as http;
 
 import 'package:flutter/services.dart';
 import '../../core/classic_theme.dart';
-import '../../core/license_guard.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/restaurant_auth_provider.dart';
 import '../../providers/saas_session_provider.dart';
@@ -16,7 +16,6 @@ import '../../services/restaurant_sheets_service.dart';
 import '../../services/client_ledger_cloud_router_service.dart';
 import '../../services/apps_script_backend_service.dart';
 import '../../widgets/google_sheets_setup_gate_dialog.dart';
-import '../../widgets/feature_gated_widget.dart';
 
 import '../counter_billing/fast_qsr_billing_screen.dart';
 import '../restaurant/table_management_screen.dart';
@@ -174,7 +173,7 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
         ),
         title: Row(
           children: [
-            const Icon(Icons.logout_rounded, color: Colors.redAccent, size: 22),
+            const Icon(Icons.logout_rounded, color: ClassicTheme.dangerRed, size: 22),
             const SizedBox(width: 10),
             Text(
               'Confirm Logout',
@@ -193,7 +192,7 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.redAccent,
+              backgroundColor: ClassicTheme.dangerRed,
               foregroundColor: Colors.white,
             ),
             onPressed: () async {
@@ -229,15 +228,11 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
     final bool isKitchen = effectiveRole == StaffRole.kitchen;
     final bool isWaiter = effectiveRole == StaffRole.waiter;
 
-    // Feature enablement from license plan (backward compatible: defaults to true if empty/legacy)
-    final bool featBilling = LicenseGuard.hasFeature(ref, 'qsrBilling', defaultValue: true);
-    final bool featTables = LicenseGuard.hasFeature(ref, 'tableManagement', defaultValue: true);
-    final bool featKds = LicenseGuard.hasFeature(ref, 'kdsEnabled', defaultValue: true);
-    final bool featMenu = LicenseGuard.hasFeature(ref, 'menuManagement', defaultValue: true);
-    final bool featOutlets = LicenseGuard.hasFeature(ref, 'multiOutlet', defaultValue: false);
-    final bool featStaff = LicenseGuard.hasFeature(ref, 'staffManagement', defaultValue: true);
-    final bool featStoreConfig = LicenseGuard.hasFeature(ref, 'storeConfiguration', defaultValue: true);
-    final bool featAnalytics = LicenseGuard.hasFeature(ref, 'dayEndReports', defaultValue: true);
+    // Feature enablement, resolved from the tenant's plan. A card whose feature
+    // is not in the plan is absent from the dashboard entirely — the filtering
+    // happens in `DashboardCardMeta.isAllowedFor`, so there is no second list
+    // of booleans here to drift out of step with it.
+    final ent = ref.watch(entitlementsProvider);
 
     // Role permission flags for each card
     final bool roleBilling = isOwner || isManager || isBilling;
@@ -250,7 +245,7 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
     final bool roleAnalytics = isOwner || isManager;
     final bool roleOrders = isOwner || isManager || isBilling;
 
-    final bool isPureOffline = saasSession.currentLicense?.isPureOffline == true;
+    final bool isPureOffline = ent.isPureOffline;
 
     final String roleDisplayName = activeStaff != null
         ? '${activeStaff.name} (${activeStaff.role.displayName})'
@@ -276,10 +271,10 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
             Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: Colors.amber.withValues(alpha: 0.15),
+                color: ClassicTheme.warningAmber.withValues(alpha: 0.15),
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: const Icon(Icons.restaurant_rounded, color: Colors.amber, size: 22),
+              child: const Icon(Icons.restaurant_rounded, color: ClassicTheme.warningAmber, size: 22),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -301,15 +296,15 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                         decoration: BoxDecoration(
-                          color: isOwner ? Colors.amber.withValues(alpha: 0.15) : Colors.cyan.withValues(alpha: 0.15),
+                          color: isOwner ? ClassicTheme.warningAmber.withValues(alpha: 0.15) : ClassicTheme.infoBlue.withValues(alpha: 0.15),
                           borderRadius: BorderRadius.circular(6),
                         ),
                         child: Text(
                           roleDisplayName,
                           style: TextStyle(
-                            fontSize: 10,
+                            fontSize: 12,
                             fontWeight: FontWeight.bold,
-                            color: isOwner ? Colors.amber.shade900 : Colors.cyan.shade900,
+                            color: isOwner ? ClassicTheme.warningAmber : ClassicTheme.infoBlue,
                           ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
@@ -320,18 +315,18 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                           decoration: BoxDecoration(
-                            color: const Color(0xFF10B981).withValues(alpha: 0.15),
+                            color: ClassicTheme.successEmerald.withValues(alpha: 0.15),
                             borderRadius: BorderRadius.circular(6),
-                            border: Border.all(color: const Color(0xFF10B981).withValues(alpha: 0.3)),
+                            border: Border.all(color: ClassicTheme.successEmerald.withValues(alpha: 0.3)),
                           ),
                           child: const Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Icon(Icons.offline_pin_rounded, size: 11, color: Color(0xFF10B981)),
+                              Icon(Icons.offline_pin_rounded, size: 11, color: ClassicTheme.successEmerald),
                               SizedBox(width: 4),
                               Text(
                                 'Pure Offline Station',
-                                style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFF10B981)),
+                                style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: ClassicTheme.successEmerald),
                               ),
                             ],
                           ),
@@ -340,7 +335,7 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
                         Icon(
                           _sheetAccessVerified == true ? Icons.cloud_done_rounded : Icons.cloud_sync_rounded,
                           size: 13,
-                          color: _sheetAccessVerified == true ? const Color(0xFF10B981) : Colors.orangeAccent,
+                          color: _sheetAccessVerified == true ? ClassicTheme.successEmerald : ClassicTheme.warningAmber,
                         ),
                     ],
                   ),
@@ -362,7 +357,7 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
           ),
           IconButton(
             tooltip: 'Log Out of POS',
-            icon: const Icon(Icons.logout_rounded, color: Colors.redAccent, size: 22),
+            icon: const Icon(Icons.logout_rounded, color: ClassicTheme.dangerRed, size: 22),
             onPressed: _confirmLogout,
           ),
           const SizedBox(width: 6),
@@ -404,7 +399,7 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
                       ),
                       Text(
                         isOwner ? 'Master Admin Console' : 'Assigned Role Access',
-                        style: TextStyle(fontSize: 11, color: context.textSecondary),
+                        style: TextStyle(fontSize: 12, color: context.textSecondary),
                       ),
                     ],
                   ),
@@ -435,8 +430,12 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
                   final layoutState = ref.watch(dashboardLayoutProvider);
                   final saasSession = ref.watch(saasSessionProvider);
 
+                  final entitlements = ref.watch(entitlementsProvider);
                   final allowedCards = kAllDashboardCards.where((c) {
-                    return c.isAllowedFor(license: saasSession.currentLicense, role: roleStr, checkFeature: false);
+                    return c.isAllowedFor(
+                      entitlements: entitlements,
+                      role: roleStr,
+                    );
                   }).toList();
                   final allowedCardIds = allowedCards.map((c) => c.id).toSet();
 
@@ -584,7 +583,7 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
                                                   card.subtitle,
                                                   style: TextStyle(
                                                     color: context.textSecondary,
-                                                    fontSize: 10,
+                                                    fontSize: 12,
                                                   ),
                                                   overflow: TextOverflow.ellipsis,
                                                 ),
@@ -599,16 +598,12 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
                                      if (cardId == null) return;
                                      switch (cardId) {
                                        case 'counter_billing':
-                                         if (!featBilling) {
-                                           FeatureGatedButton.showUpgradeNotice(context, featureLabel: 'Counter POS Billing');
-                                         } else if (roleBilling) {
+                                         if (roleBilling) {
                                            Navigator.push(context, MaterialPageRoute(builder: (_) => const FastQsrBillingScreen()));
                                          }
                                          break;
                                        case 'tables':
-                                         if (!featTables) {
-                                           FeatureGatedButton.showUpgradeNotice(context, featureLabel: 'Tables & Floor Plan');
-                                         } else if (roleTables) {
+                                         if (roleTables) {
                                            Navigator.push(context, MaterialPageRoute(builder: (_) => const TableManagementScreen()));
                                          }
                                          break;
@@ -618,44 +613,32 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
                                          }
                                          break;
                                        case 'kds':
-                                         if (!featKds) {
-                                           FeatureGatedButton.showUpgradeNotice(context, featureLabel: 'Kitchen Display Screen (KDS)');
-                                         } else if (roleKds) {
+                                         if (roleKds) {
                                            Navigator.push(context, MaterialPageRoute(builder: (_) => const KitchenDisplayScreen()));
                                          }
                                          break;
                                        case 'menu':
-                                         if (!featMenu) {
-                                           FeatureGatedButton.showUpgradeNotice(context, featureLabel: 'Menu Configuration');
-                                         } else if (roleMenu) {
+                                         if (roleMenu) {
                                            Navigator.push(context, MaterialPageRoute(builder: (_) => const RestaurantMenuManagementScreen()));
                                          }
                                          break;
                                        case 'outlets':
-                                         if (!featOutlets) {
-                                           FeatureGatedButton.showUpgradeNotice(context, featureLabel: 'Multi-Store Outlets');
-                                         } else if (roleOutlets) {
+                                         if (roleOutlets) {
                                            Navigator.push(context, MaterialPageRoute(builder: (_) => const BranchManagementScreen()));
                                          }
                                          break;
                                        case 'staff':
-                                         if (!featStaff) {
-                                           FeatureGatedButton.showUpgradeNotice(context, featureLabel: 'Staff Management & RBAC');
-                                         } else if (roleStaff) {
+                                         if (roleStaff) {
                                            Navigator.push(context, MaterialPageRoute(builder: (_) => const StaffManagementScreen()));
                                          }
                                          break;
                                        case 'store_config':
-                                         if (!featStoreConfig) {
-                                           FeatureGatedButton.showUpgradeNotice(context, featureLabel: 'Store Settings');
-                                         } else if (roleStoreConfig) {
+                                         if (roleStoreConfig) {
                                            Navigator.push(context, MaterialPageRoute(builder: (_) => const StoreConfigurationScreen()));
                                          }
                                          break;
                                        case 'analytics':
-                                         if (!featAnalytics) {
-                                           FeatureGatedButton.showUpgradeNotice(context, featureLabel: 'Analytics & Rush Reports');
-                                         } else if (roleAnalytics) {
+                                         if (roleAnalytics) {
                                            Navigator.push(context, MaterialPageRoute(builder: (_) => const RestaurantAnalyticsScreen()));
                                          }
                                          break;
@@ -707,7 +690,7 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
             subtitle: 'Fast QSR & instant tokens',
             badge: 'POS Desk',
             icon: Icons.point_of_sale_rounded,
-            accentColor: Colors.amber,
+            accentColor: ClassicTheme.warningAmber,
             onTap: () => Navigator.push(
               context,
               MaterialPageRoute(builder: (_) => const FastQsrBillingScreen()),
@@ -725,7 +708,7 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
             subtitle: 'Dine-in layout & live KOT',
             badge: 'Captain',
             icon: Icons.table_restaurant_rounded,
-            accentColor: const Color(0xFF10B981),
+            accentColor: ClassicTheme.successEmerald,
             onTap: () => Navigator.push(
               context,
               MaterialPageRoute(builder: (_) => const TableManagementScreen()),
@@ -739,7 +722,7 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
           subtitle: 'All bills, modes & online orders',
           badge: 'Live Ledger',
           icon: Icons.receipt_long_rounded,
-          accentColor: const Color(0xFF6366F1),
+          accentColor: ClassicTheme.secondaryAccent,
           onTap: () => Navigator.push(
             context,
             MaterialPageRoute(builder: (_) => const RestaurantOrderHistoryScreen()),
@@ -756,7 +739,7 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
             subtitle: 'Live kitchen orders & tickets',
             badge: 'Chef Desk',
             icon: Icons.outdoor_grill_rounded,
-            accentColor: const Color(0xFFFF6B35),
+            accentColor: ClassicTheme.primaryAccent,
             onTap: () => Navigator.push(
               context,
               MaterialPageRoute(builder: (_) => const KitchenDisplayScreen()),
@@ -774,7 +757,7 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
             subtitle: 'Dishes, prices & categories',
             badge: 'Dynamic',
             icon: Icons.restaurant_menu_rounded,
-            accentColor: Colors.teal,
+            accentColor: ClassicTheme.secondaryAccent,
             onTap: () => Navigator.push(
               context,
               MaterialPageRoute(builder: (_) => const RestaurantMenuManagementScreen()),
@@ -792,7 +775,7 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
             subtitle: 'Create branch & auto-sheets',
             badge: 'Multi-Store',
             icon: Icons.storefront_rounded,
-            accentColor: Colors.blueAccent,
+            accentColor: ClassicTheme.infoBlue,
             onTap: () => Navigator.push(
               context,
               MaterialPageRoute(builder: (_) => const BranchManagementScreen()),
@@ -810,7 +793,7 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
             subtitle: 'Roles, logins & sheet access',
             badge: 'RBAC Security',
             icon: Icons.people_alt_rounded,
-            accentColor: Colors.deepPurpleAccent,
+            accentColor: ClassicTheme.secondaryAccent,
             onTap: () => Navigator.push(
               context,
               MaterialPageRoute(builder: (_) => const StaffManagementScreen()),
@@ -828,7 +811,7 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
             subtitle: 'Shifts, taxes, UPI & printer',
             badge: 'Operations',
             icon: Icons.tune_rounded,
-            accentColor: Colors.deepOrangeAccent,
+            accentColor: ClassicTheme.primaryAccent,
             onTap: () => Navigator.push(
               context,
               MaterialPageRoute(builder: (_) => const StoreConfigurationScreen()),
@@ -846,7 +829,7 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
             subtitle: 'Heatmaps, dayparts & AOV',
             badge: 'Real-Time',
             icon: Icons.analytics_rounded,
-            accentColor: Colors.pinkAccent,
+            accentColor: ClassicTheme.primaryAccent,
             onTap: () => Navigator.push(
               context,
               MaterialPageRoute(builder: (_) => const RestaurantAnalyticsScreen()),
@@ -875,8 +858,12 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
             final saasSession = ref.watch(saasSessionProvider);
             final userRole = saasSession.currentUser?.role ?? 'OWNER';
 
+            final entitlements = ref.watch(entitlementsProvider);
             final allowedCards = kAllDashboardCards.where((c) {
-              return c.isAllowedFor(license: saasSession.currentLicense, role: userRole);
+              return c.isAllowedFor(
+                entitlements: entitlements,
+                role: userRole,
+              );
             }).toList();
             final allowedCardIds = allowedCards.map((c) => c.id).toSet();
 
@@ -931,7 +918,7 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
                               const SizedBox(height: 2),
                               Text(
                                 "Screen cards • Dropdown cards • Tap to reorder or hide",
-                                style: TextStyle(color: context.textSecondary, fontSize: 11),
+                                style: TextStyle(color: context.textSecondary, fontSize: 12),
                               ),
                             ],
                           ),
@@ -957,13 +944,13 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
                           // 1. PINNED ON SCREEN
                           Row(
                             children: [
-                              const Icon(Icons.push_pin_rounded, size: 14, color: Color(0xFF10B981)),
+                              const Icon(Icons.push_pin_rounded, size: 14, color: ClassicTheme.successEmerald),
                               const SizedBox(width: 6),
                               Text(
                                 "PINNED ON SCREEN (${primaryMetas.length})",
                                 style: const TextStyle(
-                                  color: Color(0xFF10B981),
-                                  fontSize: 11,
+                                  color: ClassicTheme.successEmerald,
+                                  fontSize: 12,
                                   fontWeight: FontWeight.bold,
                                   letterSpacing: 1.1,
                                 ),
@@ -1004,19 +991,19 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
                                   ),
                                   subtitle: Text(
                                     card.subtitle,
-                                    style: TextStyle(color: context.textSecondary, fontSize: 11),
+                                    style: TextStyle(color: context.textSecondary, fontSize: 12),
                                   ),
                                   trailing: Row(
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
                                       IconButton(
                                         tooltip: "Move to Dropdown",
-                                        icon: const Icon(Icons.arrow_downward_rounded, size: 18, color: Colors.blueAccent),
+                                        icon: const Icon(Icons.arrow_downward_rounded, size: 18, color: ClassicTheme.infoBlue),
                                         onPressed: () => layoutNotifier.moveToDropdown(card.id),
                                       ),
                                       IconButton(
                                         tooltip: "Hide Card",
-                                        icon: const Icon(Icons.visibility_off_outlined, size: 18, color: Colors.redAccent),
+                                        icon: const Icon(Icons.visibility_off_outlined, size: 18, color: ClassicTheme.dangerRed),
                                         onPressed: () => layoutNotifier.hideCard(card.id),
                                       ),
                                     ],
@@ -1029,13 +1016,13 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
                           // 2. MORE TOOLS (DROPDOWN)
                           Row(
                             children: [
-                              const Icon(Icons.menu_open_rounded, size: 14, color: Colors.blueAccent),
+                              const Icon(Icons.menu_open_rounded, size: 14, color: ClassicTheme.infoBlue),
                               const SizedBox(width: 6),
                               Text(
                                 "IN 'MORE TOOLS' DROPDOWN (${dropdownMetas.length})",
                                 style: const TextStyle(
-                                  color: Colors.blueAccent,
-                                  fontSize: 11,
+                                  color: ClassicTheme.infoBlue,
+                                  fontSize: 12,
                                   fontWeight: FontWeight.bold,
                                   letterSpacing: 1.1,
                                 ),
@@ -1076,19 +1063,19 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
                                   ),
                                   subtitle: Text(
                                     card.subtitle,
-                                    style: TextStyle(color: context.textSecondary, fontSize: 11),
+                                    style: TextStyle(color: context.textSecondary, fontSize: 12),
                                   ),
                                   trailing: Row(
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
                                       IconButton(
                                         tooltip: "Pin to Screen",
-                                        icon: const Icon(Icons.arrow_upward_rounded, size: 18, color: Color(0xFF10B981)),
+                                        icon: const Icon(Icons.arrow_upward_rounded, size: 18, color: ClassicTheme.successEmerald),
                                         onPressed: () => layoutNotifier.moveToScreen(card.id),
                                       ),
                                       IconButton(
                                         tooltip: "Hide Card",
-                                        icon: const Icon(Icons.visibility_off_outlined, size: 18, color: Colors.redAccent),
+                                        icon: const Icon(Icons.visibility_off_outlined, size: 18, color: ClassicTheme.dangerRed),
                                         onPressed: () => layoutNotifier.hideCard(card.id),
                                       ),
                                     ],
@@ -1108,7 +1095,7 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
                                   "HIDDEN CARDS (${hiddenMetas.length})",
                                   style: const TextStyle(
                                     color: Colors.grey,
-                                    fontSize: 11,
+                                    fontSize: 12,
                                     fontWeight: FontWeight.bold,
                                     letterSpacing: 1.1,
                                   ),
@@ -1132,8 +1119,8 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
                                     style: TextStyle(color: context.textSecondary, fontSize: 13),
                                   ),
                                   trailing: TextButton.icon(
-                                    icon: const Icon(Icons.restore_rounded, size: 16, color: Color(0xFF10B981)),
-                                    label: const Text("Restore", style: TextStyle(color: Color(0xFF10B981), fontSize: 12)),
+                                    icon: const Icon(Icons.restore_rounded, size: 16, color: ClassicTheme.successEmerald),
+                                    label: const Text("Restore", style: TextStyle(color: ClassicTheme.successEmerald, fontSize: 12)),
                                     onPressed: () => layoutNotifier.restoreCard(card.id),
                                   ),
                                 ),
@@ -1202,18 +1189,18 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             decoration: BoxDecoration(
-              color: Colors.amber.withValues(alpha: 0.12),
+              color: ClassicTheme.warningAmber.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: Colors.amber.withValues(alpha: 0.3)),
+              border: Border.all(color: ClassicTheme.warningAmber.withValues(alpha: 0.3)),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.circle, color: Color(0xFF10B981), size: 8),
+                const Icon(Icons.circle, color: ClassicTheme.successEmerald, size: 8),
                 const SizedBox(width: 6),
                 Text(
                   shiftName,
-                  style: TextStyle(color: Colors.amber.shade900, fontSize: 11, fontWeight: FontWeight.bold),
+                  style: TextStyle(color: ClassicTheme.warningAmber, fontSize: 12, fontWeight: FontWeight.bold),
                 ),
               ],
             ),
@@ -1231,11 +1218,11 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
       decoration: BoxDecoration(
         color: context.surfaceColor,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.orangeAccent.withValues(alpha: 0.5)),
+        border: Border.all(color: ClassicTheme.warningAmber.withValues(alpha: 0.5)),
       ),
       child: Row(
         children: [
-          const Icon(Icons.info_outline_rounded, color: Colors.orangeAccent, size: 22),
+          const Icon(Icons.info_outline_rounded, color: ClassicTheme.warningAmber, size: 22),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -1247,7 +1234,7 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
                 ),
                 Text(
                   _sheetCheckMessage.isNotEmpty ? _sheetCheckMessage : 'Authorize your Google account to sync live orders with store database.',
-                  style: TextStyle(color: context.textSecondary, fontSize: 11),
+                  style: TextStyle(color: context.textSecondary, fontSize: 12),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -1257,7 +1244,7 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
           const SizedBox(width: 8),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.orangeAccent,
+              backgroundColor: ClassicTheme.warningAmber,
               foregroundColor: Colors.black,
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
@@ -1327,7 +1314,7 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
                       badge,
                       style: TextStyle(
                         color: accentColor,
-                        fontSize: 10,
+                        fontSize: 12,
                         fontWeight: FontWeight.bold,
                       ),
                       maxLines: 1,
@@ -1355,7 +1342,7 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
                     subtitle,
                     style: TextStyle(
                       color: context.textSecondary,
-                      fontSize: 10.5,
+                      fontSize: 12,
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,

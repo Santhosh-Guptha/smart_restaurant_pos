@@ -350,14 +350,14 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(ok ? '✅ Order updated to $newStatus!' : '⚠️ Order updated locally (cloud sync pending)'),
-            backgroundColor: ok ? Colors.green.shade700 : Colors.amber.shade800,
+            backgroundColor: ok ? ClassicTheme.successEmerald : ClassicTheme.warningAmber,
           ),
         );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error updating order: $e'), backgroundColor: Colors.red),
+          SnackBar(content: Text('Error updating order: $e'), backgroundColor: ClassicTheme.dangerRed),
         );
       }
     }
@@ -383,7 +383,7 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           title: Row(
             children: [
-              const Icon(Icons.cancel_outlined, color: Colors.redAccent, size: 22),
+              const Icon(Icons.cancel_outlined, color: ClassicTheme.dangerRed, size: 22),
               const SizedBox(width: 8),
               Text('Void / Cancel Order', style: TextStyle(color: context.textPrimary, fontSize: 16, fontWeight: FontWeight.bold)),
             ],
@@ -433,7 +433,7 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
                     'Kitchen Shortage',
                     'Payment Failed'
                   ].map((r) => ActionChip(
-                    label: Text(r, style: const TextStyle(fontSize: 11)),
+                    label: Text(r, style: const TextStyle(fontSize: 12)),
                     onPressed: () => setDlgState(() => reasonCtrl.text = r),
                   )).toList(),
                 ),
@@ -447,14 +447,14 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
             ),
             ElevatedButton(
               style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.redAccent,
+                backgroundColor: ClassicTheme.dangerRed,
                 foregroundColor: Colors.white,
               ),
               onPressed: () async {
                 final enteredReason = reasonCtrl.text.trim();
                 if (enteredReason.isEmpty) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('A cancellation reason is required for audit compliance.'), backgroundColor: Colors.redAccent),
+                    const SnackBar(content: Text('A cancellation reason is required for audit compliance.'), backgroundColor: ClassicTheme.dangerRed),
                   );
                   return;
                 }
@@ -466,7 +466,7 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
                   final authorizedStaff = staffList.where((s) => s.canVoidBill && s.verifyPin(enteredPin)).firstOrNull;
                   if (authorizedStaff == null) {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Invalid Manager PIN. Authorization denied.'), backgroundColor: Colors.redAccent),
+                      const SnackBar(content: Text('Invalid Manager PIN. Authorization denied.'), backgroundColor: ClassicTheme.dangerRed),
                     );
                     return;
                   }
@@ -562,7 +562,7 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Order #$orderId marked CANCELLED. (Audit logged)'),
-          backgroundColor: Colors.red.shade700,
+          backgroundColor: ClassicTheme.dangerRed,
         ),
       );
     }
@@ -605,13 +605,13 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
       final success = await ref.read(thermalPrinterProvider.notifier).printBytes(bytes);
       if (success && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('🖨️ Receipt sent to thermal printer!'), backgroundColor: Colors.green),
+          const SnackBar(content: Text('🖨️ Receipt sent to thermal printer!'), backgroundColor: ClassicTheme.successEmerald),
         );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Print error: $e'), backgroundColor: Colors.red),
+          SnackBar(content: Text('Print error: $e'), backgroundColor: ClassicTheme.dangerRed),
         );
       }
     }
@@ -663,7 +663,7 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
           ),
           title: Row(
             children: [
-              const Icon(Icons.payment_rounded, color: Colors.green),
+              const Icon(Icons.payment_rounded, color: ClassicTheme.successEmerald),
               const SizedBox(width: 8),
               Text('Collect Payment', style: TextStyle(fontWeight: FontWeight.bold, color: context.textPrimary, fontSize: 18)),
             ],
@@ -676,9 +676,9 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
                 width: double.infinity,
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: Colors.green.withValues(alpha: 0.1),
+                  color: ClassicTheme.successEmerald.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.green.withValues(alpha: 0.3)),
+                  border: Border.all(color: ClassicTheme.successEmerald.withValues(alpha: 0.3)),
                 ),
                 child: Column(
                   children: [
@@ -691,9 +691,9 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
                     const SizedBox(height: 4),
                     Text(
                       '₹${total.toStringAsFixed(2)}',
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 26, color: Colors.green),
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 26, color: ClassicTheme.successEmerald),
                     ),
-                    Text('Bill #$orderId', style: TextStyle(fontSize: 11, color: context.textSecondary)),
+                    Text('Bill #$orderId', style: TextStyle(fontSize: 12, color: context.textSecondary)),
                   ],
                 ),
               ),
@@ -708,7 +708,7 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
                   return ChoiceChip(
                     label: Text(mode),
                     selected: isSel,
-                    selectedColor: Colors.green.shade600,
+                    selectedColor: ClassicTheme.successEmerald,
                     labelStyle: TextStyle(color: isSel ? Colors.white : context.textPrimary, fontWeight: FontWeight.bold, fontSize: 12),
                     onSelected: (_) => setDialogState(() => selectedMode = mode),
                   );
@@ -722,7 +722,7 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
               child: Text('Cancel', style: TextStyle(color: context.textSecondary)),
             ),
             FilledButton.icon(
-              style: FilledButton.styleFrom(backgroundColor: Colors.green.shade600),
+              style: FilledButton.styleFrom(backgroundColor: ClassicTheme.successEmerald),
               icon: const Icon(Icons.check, size: 16),
               label: const Text('Confirm Settle & Mark Paid'),
               onPressed: () async {
@@ -756,7 +756,7 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
             ),
             Text(
               'Complete live ledger of Dine-In, Takeaway & QR Web orders',
-              style: TextStyle(fontSize: 11, color: context.textSecondary),
+              style: TextStyle(fontSize: 12, color: context.textSecondary),
             ),
           ],
         ),
@@ -944,25 +944,25 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
                 child: Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: Colors.green.withValues(alpha: 0.08),
+                    color: ClassicTheme.successEmerald.withValues(alpha: 0.08),
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.green.withValues(alpha: 0.2)),
+                    border: Border.all(color: ClassicTheme.successEmerald.withValues(alpha: 0.2)),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Row(
                         children: [
-                          const Icon(Icons.currency_rupee, size: 16, color: Colors.green),
-                          Text('Settled Revenue', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.green.shade800)),
+                          const Icon(Icons.currency_rupee, size: 16, color: ClassicTheme.successEmerald),
+                          Text('Settled Revenue', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: ClassicTheme.successEmerald)),
                         ],
                       ),
                       const SizedBox(height: 4),
                       Text(
                         '₹${totalRevenue.toStringAsFixed(2)}',
-                        style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.green),
+                        style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: ClassicTheme.successEmerald),
                       ),
-                      Text('$paidCount paid • $pendingCount pending', style: TextStyle(fontSize: 10.5, color: context.textSecondary)),
+                      Text('$paidCount paid • $pendingCount pending', style: TextStyle(fontSize: 12, color: context.textSecondary)),
                     ],
                   ),
                 ),
@@ -983,17 +983,17 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Text('Total Orders: $totalOrders', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: context.textPrimary)),
-                          Text('($_selectedDateFilter)', style: TextStyle(fontSize: 10, color: context.textSecondary)),
+                          Text('Total Orders: $totalOrders', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: context.textPrimary)),
+                          Text('($_selectedDateFilter)', style: TextStyle(fontSize: 12, color: context.textSecondary)),
                         ],
                       ),
                       const SizedBox(height: 6),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceAround,
                         children: [
-                          _buildMiniBadge('🍽️ Dine', '$dineInCount', Colors.blue),
-                          _buildMiniBadge('🛍️ Take', '$takeawayCount', Colors.amber.shade800),
-                          _buildMiniBadge('📱 Site', '$qrCount', const Color(0xFF7C3AED)),
+                          _buildMiniBadge('🍽️ Dine', '$dineInCount', ClassicTheme.infoBlue),
+                          _buildMiniBadge('🛍️ Take', '$takeawayCount', ClassicTheme.warningAmber),
+                          _buildMiniBadge('📱 Site', '$qrCount', ClassicTheme.secondaryAccent),
                         ],
                       ),
                     ],
@@ -1011,7 +1011,7 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
     return Column(
       children: [
         Text(count, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: color)),
-        Text(label, style: TextStyle(fontSize: 9.5, color: context.textSecondary)),
+        Text(label, style: TextStyle(fontSize: 12, color: context.textSecondary)),
       ],
     );
   }
@@ -1029,7 +1029,7 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
               controller: _searchCtrl,
               decoration: InputDecoration(
                 hintText: 'Search Bill #, KOT, Table, Customer or Mobile...',
-                hintStyle: TextStyle(fontSize: 11.5, color: context.textSecondary),
+                hintStyle: TextStyle(fontSize: 12, color: context.textSecondary),
                 prefixIcon: const Icon(Icons.search, size: 18),
                 suffixIcon: _searchQuery.isNotEmpty
                     ? IconButton(
@@ -1091,22 +1091,22 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                       margin: const EdgeInsets.only(right: 8),
                       decoration: BoxDecoration(
-                        color: Colors.amber.withValues(alpha: 0.12),
+                        color: ClassicTheme.warningAmber.withValues(alpha: 0.12),
                         borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.amber.withValues(alpha: 0.4)),
+                        border: Border.all(color: ClassicTheme.warningAmber.withValues(alpha: 0.4)),
                       ),
                       child: Row(
                         children: [
-                          const Icon(Icons.storefront_rounded, size: 14, color: Colors.amber),
+                          const Icon(Icons.storefront_rounded, size: 14, color: ClassicTheme.warningAmber),
                           const SizedBox(width: 4),
                           Text(
                             _availableOutlets.firstWhere(
                               (o) => o['id'] == _selectedOutlet,
                               orElse: () => {'name': 'All Stores'},
                             )['name'] ?? 'All Stores',
-                            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.amber),
+                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: ClassicTheme.warningAmber),
                           ),
-                          const Icon(Icons.arrow_drop_down, size: 16, color: Colors.amber),
+                          const Icon(Icons.arrow_drop_down, size: 16, color: ClassicTheme.warningAmber),
                         ],
                       ),
                     ),
@@ -1131,7 +1131,7 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
                       children: [
                         Icon(Icons.calendar_month_rounded, size: 14, color: ClassicTheme.primaryAccent),
                         const SizedBox(width: 4),
-                        Text(_selectedDateFilter, style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: ClassicTheme.primaryAccent)),
+                        Text(_selectedDateFilter, style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: ClassicTheme.primaryAccent)),
                         const Icon(Icons.arrow_drop_down, size: 16),
                       ],
                     ),
@@ -1148,10 +1148,10 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
                       selected: isSel,
                       visualDensity: VisualDensity.compact,
                       selectedColor: s == 'PAID'
-                          ? Colors.green.shade100
-                          : (s == 'PENDING' ? Colors.orange.shade100 : Colors.blue.shade100),
+                          ? ClassicTheme.tintSuccess
+                          : (s == 'PENDING' ? ClassicTheme.warningAmber : ClassicTheme.tintInfo),
                       labelStyle: TextStyle(
-                        fontSize: 10.5,
+                        fontSize: 12,
                         fontWeight: isSel ? FontWeight.bold : FontWeight.normal,
                         color: isSel ? Colors.black87 : context.textSecondary,
                       ),
@@ -1200,7 +1200,7 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
                   t['label'] as String,
                   textAlign: TextAlign.center,
                   style: TextStyle(
-                    fontSize: 11.5,
+                    fontSize: 12,
                     fontWeight: isSel ? FontWeight.bold : FontWeight.normal,
                     color: isSel ? ClassicTheme.primaryAccent : context.textSecondary,
                   ),
@@ -1235,13 +1235,13 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
     Color statusColor;
     String statusDisplay;
     if (isCancelled) {
-      statusColor = Colors.red;
+      statusColor = ClassicTheme.dangerRed;
       statusDisplay = 'CANCELLED ❌';
     } else if (isPaid) {
-      statusColor = Colors.green;
+      statusColor = ClassicTheme.successEmerald;
       statusDisplay = rawKitchen.isNotEmpty ? 'PAID ✅ ($rawKitchen)' : 'PAID ✅';
     } else {
-      statusColor = Colors.orange.shade800;
+      statusColor = ClassicTheme.warningAmber;
       statusDisplay = rawKitchen.isNotEmpty ? '$rawKitchen ⏳' : (status == 'PENDING' ? 'PENDING ⏳' : status);
     }
 
@@ -1250,19 +1250,19 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
     IconData typeIcon;
     switch (type) {
       case 'QR Self-Order':
-        typeBadgeBg = const Color(0xFF8B5CF6).withValues(alpha: 0.12);
+        typeBadgeBg = ClassicTheme.secondaryAccent.withValues(alpha: 0.12);
         typeBadgeText = const Color(0xFF6D28D9);
         typeIcon = Icons.qr_code_scanner_rounded;
         break;
       case 'Takeaway':
-        typeBadgeBg = Colors.amber.shade100;
-        typeBadgeText = Colors.amber.shade900;
+        typeBadgeBg = ClassicTheme.warningAmber;
+        typeBadgeText = ClassicTheme.warningAmber;
         typeIcon = Icons.takeout_dining_rounded;
         break;
       case 'Dine-In':
       default:
-        typeBadgeBg = Colors.blue.withValues(alpha: 0.12);
-        typeBadgeText = Colors.blue.shade800;
+        typeBadgeBg = ClassicTheme.infoBlue.withValues(alpha: 0.12);
+        typeBadgeText = ClassicTheme.infoBlue;
         typeIcon = Icons.restaurant_rounded;
     }
 
@@ -1298,7 +1298,7 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
                           const SizedBox(width: 4),
                           Text(
                             type == 'Dine-In' && tableName.isNotEmpty ? 'Dine-In • $tableName' : type,
-                            style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: typeBadgeText),
+                            style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: typeBadgeText),
                           ),
                         ],
                       ),
@@ -1307,7 +1307,7 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
                     if (kotNum.isNotEmpty)
                       Text(
                         kotNum,
-                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: context.textSecondary),
+                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: context.textSecondary),
                       ),
                   ],
                 ),
@@ -1319,7 +1319,7 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
                   ),
                   child: Text(
                     statusDisplay,
-                    style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: statusColor),
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: statusColor),
                   ),
                 ),
               ],
@@ -1336,7 +1336,7 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
                 ),
                 Text(
                   _formatDateTime(dt),
-                  style: TextStyle(fontSize: 11, color: context.textSecondary),
+                  style: TextStyle(fontSize: 12, color: context.textSecondary),
                 ),
               ],
             ),
@@ -1349,11 +1349,11 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
                 const SizedBox(width: 4),
                 Text(
                   customerName,
-                  style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: context.textPrimary),
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: context.textPrimary),
                 ),
                 if (customerPhone.isNotEmpty) ...[
                   const SizedBox(width: 6),
-                  Text('•  $customerPhone', style: TextStyle(fontSize: 11, color: context.textSecondary)),
+                  Text('•  $customerPhone', style: TextStyle(fontSize: 12, color: context.textSecondary)),
                 ],
                 const Spacer(),
                 Container(
@@ -1364,7 +1364,7 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
                   ),
                   child: Text(
                     paymentMode,
-                    style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold, color: context.textPrimary),
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: context.textPrimary),
                   ),
                 ),
               ],
@@ -1382,7 +1382,7 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
                       Icon(
                         Icons.circle,
                         size: 7,
-                        color: it['isVeg'] != false ? Colors.green : Colors.red,
+                        color: it['isVeg'] != false ? ClassicTheme.successEmerald : ClassicTheme.dangerRed,
                       ),
                       const SizedBox(width: 6),
                       Expanded(
@@ -1419,10 +1419,10 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Grand Total', style: TextStyle(fontSize: 10, color: context.textSecondary)),
+                    Text('Grand Total', style: TextStyle(fontSize: 12, color: context.textSecondary)),
                     Text(
                       '₹${total.toStringAsFixed(2)}',
-                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.green),
+                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: ClassicTheme.successEmerald),
                     ),
                   ],
                 ),
@@ -1432,13 +1432,13 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
                     if (status == 'PENDING')
                       ElevatedButton.icon(
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.green.shade600,
+                          backgroundColor: ClassicTheme.successEmerald,
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                           visualDensity: VisualDensity.compact,
                         ),
                         icon: const Icon(Icons.payment_rounded, size: 14),
-                        label: const Text('Collect Payment', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                        label: const Text('Collect Payment', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                         onPressed: () => _showCollectPaymentDialog(order),
                       ),
                     OutlinedButton.icon(
@@ -1447,7 +1447,7 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
                         visualDensity: VisualDensity.compact,
                       ),
                       icon: const Icon(Icons.print_rounded, size: 14),
-                      label: const Text('Print', style: TextStyle(fontSize: 11)),
+                      label: const Text('Print', style: TextStyle(fontSize: 12)),
                       onPressed: () => _printReceipt(order),
                     ),
                     IconButton(
@@ -1459,7 +1459,7 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
                     if (status != 'CANCELLED')
                       IconButton(
                         visualDensity: VisualDensity.compact,
-                        icon: const Icon(Icons.cancel_outlined, size: 16, color: Colors.redAccent),
+                        icon: const Icon(Icons.cancel_outlined, size: 16, color: ClassicTheme.dangerRed),
                         tooltip: 'Void / Cancel Order',
                         onPressed: () => _showVoidOrderDialog(order),
                       ),

@@ -347,24 +347,24 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: const Color(0xFF10B981).withValues(alpha: 0.12),
+                color: ClassicTheme.successEmerald.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFF10B981).withValues(alpha: 0.3)),
+                border: Border.all(color: ClassicTheme.successEmerald.withValues(alpha: 0.3)),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
                     children: [
-                      const Icon(Icons.verified_user_rounded, color: Color(0xFF10B981), size: 18),
+                      const Icon(Icons.verified_user_rounded, color: ClassicTheme.successEmerald, size: 18),
                       const SizedBox(width: 8),
-                      Text("Store ID: $orgId", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF10B981))),
+                      Text("Store ID: $orgId", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: ClassicTheme.successEmerald)),
                     ],
                   ),
                   const SizedBox(height: 6),
                   Text("Login Email: $email", style: TextStyle(fontSize: 12, color: context.textSecondary)),
                   const SizedBox(height: 2),
-                  const Text("Status: Instant Active (No Approval Required)", style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF10B981))),
+                  const Text("Status: Instant Active (No Approval Required)", style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: ClassicTheme.successEmerald)),
                 ],
               ),
             ),
@@ -382,7 +382,7 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
               Navigator.pop(context); // Back to sign in
             },
             style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFFF59E0B),
+              backgroundColor: ClassicTheme.warningAmber,
               foregroundColor: Colors.black,
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
@@ -403,7 +403,7 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Row(
           children: [
-            Icon(Icons.mark_email_read_rounded, color: Color(0xFFF59E0B)),
+            Icon(Icons.mark_email_read_rounded, color: ClassicTheme.warningAmber),
             SizedBox(width: 8),
             Text("Enterprise Request Received", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
           ],
@@ -419,7 +419,7 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
               Navigator.pop(context);
             },
             style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFFF59E0B),
+              backgroundColor: ClassicTheme.warningAmber,
               foregroundColor: Colors.black,
             ),
             child: const Text("Return to Sign In", style: TextStyle(fontWeight: FontWeight.bold)),
@@ -437,7 +437,7 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Row(
           children: [
-            Icon(Icons.info_outline, color: Color(0xFF2563EB)),
+            Icon(Icons.info_outline, color: ClassicTheme.infoBlue),
             SizedBox(width: 8),
             Text("Account Already Exists", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
           ],
@@ -467,7 +467,7 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Row(
           children: [
-            Icon(Icons.hourglass_top_rounded, color: Colors.orangeAccent),
+            Icon(Icons.hourglass_top_rounded, color: ClassicTheme.warningAmber),
             SizedBox(width: 8),
             Text("Request Under Review", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
           ],
@@ -491,7 +491,7 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final primaryAccent = const Color(0xFFF59E0B); // SmartDine Amber Gold
+    final primaryAccent = ClassicTheme.warningAmber; // SmartDine Amber Gold
 
     return Scaffold(
       backgroundColor: context.canvasColor,
@@ -697,12 +697,12 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
                                             Container(
                                               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                               decoration: BoxDecoration(
-                                                color: const Color(0xFF10B981).withValues(alpha: 0.15),
+                                                color: ClassicTheme.successEmerald.withValues(alpha: 0.15),
                                                 borderRadius: BorderRadius.circular(4),
                                               ),
                                               child: const Text(
                                                 "INSTANT ACCESS",
-                                                style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Color(0xFF10B981)),
+                                                style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: ClassicTheme.successEmerald),
                                               ),
                                             ),
                                           ],
@@ -710,7 +710,7 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
                                         const SizedBox(height: 2),
                                         Text(
                                           "No approval required. Start using POS, tables, KDS, and printing immediately.",
-                                          style: TextStyle(color: context.textSecondary, fontSize: 11),
+                                          style: TextStyle(color: context.textSecondary, fontSize: 12),
                                         ),
                                       ],
                                     ),
@@ -749,7 +749,7 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
                                         const SizedBox(height: 2),
                                         Text(
                                           "For multi-outlet restaurant chains needing customized franchise limits and dedicated consultation.",
-                                          style: TextStyle(color: context.textSecondary, fontSize: 11),
+                                          style: TextStyle(color: context.textSecondary, fontSize: 12),
                                         ),
                                       ],
                                     ),
@@ -773,14 +773,14 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                             decoration: BoxDecoration(
-                              color: const Color(0xFF10B981).withValues(alpha: 0.15),
+                              color: ClassicTheme.successEmerald.withValues(alpha: 0.15),
                               borderRadius: BorderRadius.circular(4),
                             ),
                             child: const Row(
                               children: [
-                                Icon(Icons.check_circle_rounded, size: 12, color: Color(0xFF10B981)),
+                                Icon(Icons.check_circle_rounded, size: 12, color: ClassicTheme.successEmerald),
                                 SizedBox(width: 4),
-                                Text("Verified", style: TextStyle(color: Color(0xFF10B981), fontSize: 11, fontWeight: FontWeight.bold)),
+                                Text("Verified", style: TextStyle(color: ClassicTheme.successEmerald, fontSize: 12, fontWeight: FontWeight.bold)),
                               ],
                             ),
                           ),
@@ -857,7 +857,7 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
                             ElevatedButton(
                               onPressed: _isVerifyingOtp ? null : _handleVerifyOtp,
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFF10B981),
+                                backgroundColor: ClassicTheme.successEmerald,
                                 foregroundColor: Colors.white,
                                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),

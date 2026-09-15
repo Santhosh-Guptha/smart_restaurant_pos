@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Register your restaurant · SmartDine</title>
+<meta name="description" content="Tell us about your restaurant. We review every request personally and set you up within a business day.">
+<meta name="theme-color" content="#0f1219">
+<meta name="robots" content="index,follow">
+<link rel="icon" href="/assets/logo.png">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=Sora:wght@300;400;500;600;700&display=swap">
+<style>
+  :root{
+    --night:#0f1219;--night-2:#171b26;--night-3:#1f2432;--paper:#f6f1e8;--ink:#16161c;--ink-2:#5a5a66;
+    --cream:#f3ede4;--cream-2:#b9b3a8;--lamp:#f2a93b;--lamp-2:#ffc46b;--mint:#5fd3a3;--flame:#ff6a3d;--line:#2a3040;--danger:#ff7b7b;
+    --bg:var(--night);--bg-2:var(--night-2);--bg-3:var(--night-3);--fg:var(--cream);--fg-2:var(--cream-2);--rule:var(--line);
+    --display:'Fraunces',Georgia,serif;--body:'Sora',-apple-system,'Segoe UI',sans-serif;
+  }
+  @media (prefers-color-scheme: light){:root:not([data-theme="dark"]){--bg:#f1ebe0;--bg-2:#faf6ee;--bg-3:#e6dfd2;--fg:#16161c;--fg-2:#5a5a66;--rule:#d9d1c2;--danger:#b3261e}}
+  :root[data-theme="light"]{--bg:#f1ebe0;--bg-2:#faf6ee;--bg-3:#e6dfd2;--fg:#16161c;--fg-2:#5a5a66;--rule:#d9d1c2;--danger:#b3261e}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--body);font-size:16px;line-height:1.55;-webkit-font-smoothing:antialiased;min-height:100vh;display:flex;flex-direction:column}
+  a{color:inherit;text-decoration:none}
+  nav{border-bottom:1px solid var(--rule);background:color-mix(in srgb,var(--bg) 80%,transparent);backdrop-filter:blur(12px)}
+  nav .wrap{max-width:1100px;margin:0 auto;padding:0 24px;height:64px;display:flex;align-items:center;justify-content:space-between}
+  .logo{font-family:var(--display);font-weight:700;font-size:22px;display:flex;align-items:center;gap:10px}
+  .logo img{width:32px;height:32px;border-radius:8px;box-shadow:0 0 22px 2px color-mix(in srgb,var(--lamp) 45%,transparent)}
+  nav a.back{font-size:14px;color:var(--fg-2)}nav a.back:hover{color:var(--fg)}
+
+  main{flex:1;display:grid;grid-template-columns:1fr 1fr;max-width:1100px;margin:0 auto;padding:56px 24px 96px;gap:56px;align-items:start;width:100%}
+  @media(max-width:900px){main{grid-template-columns:1fr;gap:36px;padding-top:36px}}
+  .kicker{font-size:12px;font-weight:600;letter-spacing:.18em;text-transform:uppercase;color:var(--lamp);margin:0 0 16px}
+  h1{font-family:var(--display);font-weight:600;font-size:clamp(36px,4.6vw,58px);line-height:1.02;letter-spacing:-.02em;margin:0;text-wrap:balance}
+  h1 em{font-style:italic;font-weight:500;background:linear-gradient(100deg,var(--lamp-2),var(--lamp) 45%,var(--flame));-webkit-background-clip:text;background-clip:text;color:transparent}
+  .lede{color:var(--fg-2);font-size:17.5px;font-weight:300;margin:20px 0 0;max-width:46ch}
+  .lede strong{color:var(--fg);font-weight:500}
+  .steps{margin:34px 0 0;padding:0;list-style:none;display:grid;gap:14px}
+  .steps li{display:grid;grid-template-columns:34px 1fr;gap:14px;align-items:start;color:var(--fg-2);font-size:15px}
+  .steps i{width:34px;height:34px;border-radius:50%;border:1px solid var(--rule);display:grid;place-items:center;font-family:var(--display);font-style:italic;color:var(--lamp);font-size:15px}
+  .steps b{display:block;color:var(--fg);font-weight:600;margin-bottom:2px}
+  aside{position:sticky;top:88px}
+
+  /* the form is a ticket */
+  form{background:var(--paper);color:var(--ink);border-radius:22px;padding:30px 28px 26px;box-shadow:0 50px 100px -50px rgba(0,0,0,.8),0 1px 0 rgba(255,255,255,.6) inset;position:relative;
+       transform:perspective(1400px) rotateY(-4deg) rotateX(2deg);transform-origin:left center;transition:transform .7s cubic-bezier(.2,.8,.2,1)}
+  form:focus-within,form:hover{transform:none}
+  @media(max-width:900px){form{transform:none}}
+  form::before{content:"";position:absolute;left:24px;right:24px;top:0;height:6px;background:repeating-linear-gradient(90deg,transparent 0 8px,var(--ink) 8px 9px);opacity:.08}
+  .fhead{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:22px;padding-bottom:16px;border-bottom:1px dashed #d8cfbe}
+  .fhead h2{font-family:var(--display);font-size:22px;margin:0;font-weight:600}
+  .fhead small{white-space:nowrap;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-2);font-weight:600}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  @media(max-width:560px){.grid{grid-template-columns:1fr}}
+  .f{display:flex;flex-direction:column;gap:6px}
+  .f.full{grid-column:1/-1}
+  label{font-size:12.5px;font-weight:600;color:#3c3c46;letter-spacing:.02em}
+  label span{color:var(--ink-2);font-weight:400}
+  input,select,textarea{font:inherit;font-size:15px;color:var(--ink);background:#fff;border:1px solid #ddd5c6;border-radius:10px;padding:12px 13px;outline:none;transition:border-color .2s,box-shadow .2s;width:100%;min-height:46px}
+  textarea{resize:vertical;min-height:84px}
+  input:focus,select:focus,textarea:focus{border-color:var(--lamp);box-shadow:0 0 0 3px color-mix(in srgb,var(--lamp) 25%,transparent)}
+  input[aria-invalid="true"],select[aria-invalid="true"]{border-color:#c0392b}
+  .err{font-size:12.5px;color:#c0392b;min-height:0;margin-top:-2px}
+  .err:empty{display:none}
+  .submit{margin-top:20px;display:flex;flex-direction:column;gap:12px}
+  button{font:inherit;font-weight:700;font-size:16px;border:0;border-radius:999px;padding:15px 22px;cursor:pointer;color:#1a1207;
+         background:linear-gradient(100deg,var(--lamp-2),var(--lamp) 55%,var(--flame));box-shadow:0 14px 34px -12px color-mix(in srgb,var(--lamp) 80%,transparent);transition:transform .25s,box-shadow .25s}
+  button:hover:not(:disabled){transform:translateY(-2px)}
+  button:disabled{opacity:.6;cursor:progress;transform:none}
+  .fine{font-size:12.5px;color:var(--ink-2);text-align:center}
+  .alert{border-radius:12px;padding:12px 14px;font-size:14px;line-height:1.45}
+  .alert.bad{background:#fdecea;color:#7a1f16;border:1px solid #f3c1bb}
+  .alert[hidden]{display:none}
+
+  /* success */
+  .done{background:var(--paper);color:var(--ink);border-radius:22px;padding:36px 30px;text-align:center;box-shadow:0 50px 100px -50px rgba(0,0,0,.8)}
+  .done .tick{width:74px;height:74px;border-radius:50%;background:var(--mint);color:#08301b;display:grid;place-items:center;font-size:34px;margin:0 auto 18px;animation:pop .6s cubic-bezier(.2,1.4,.3,1)}
+  @keyframes pop{from{transform:scale(.4);opacity:0}to{transform:scale(1);opacity:1}}
+  .done h2{font-family:var(--display);font-size:28px;margin:0 0 10px}
+  .done p{color:#3c3c46;margin:0 0 8px}
+  .done .ref{display:inline-block;margin-top:14px;font-family:var(--display);font-size:14px;background:#ede6d8;padding:6px 12px;border-radius:999px;color:var(--ink-2)}
+  .done[hidden]{display:none}
+  footer{border-top:1px solid var(--rule);padding:24px;text-align:center;font-size:13px;color:var(--fg-2)}
+  :focus-visible{outline:2px solid var(--lamp);outline-offset:2px}
+  @media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}form{transform:none}}
+</style>
+</head>
+<body>
+
+<nav><div class="wrap">
+  <a class="logo" href="/"><img src="/assets/logo.png" alt="" width="32" height="32">SmartDine</a>
+  <a class="back" href="/">← Back to site</a>
+</div></nav>
+
+<main>
+  <aside>
+    <p class="kicker">Register your restaurant</p>
+    <h1>Tell us about<br>your <em>room.</em></h1>
+    <p class="lede">Every request is read by a person, not a robot. <strong>We set you up within one business day</strong> and send your login details to the email you give us here.</p>
+    <ol class="steps">
+      <li><i>1</i><div><b>You tell us about the restaurant</b>Name, type, how many outlets and tables. Two minutes.</div></li>
+      <li><i>2</i><div><b>We review it</b>Someone on our team looks it over, usually the same day.</div></li>
+      <li><i>3</i><div><b>You get your keys</b>An email with your login and a first-time password. Add your menu, print your table QRs, hand the kitchen a tablet.</div></li>
+    </ol>
+  </aside>
+
+  <div>
+    <form id="reg" novalidate>
+      <div class="fhead"><h2>Registration request</h2><small>Ticket · New</small></div>
+      <div class="alert bad" id="formError" hidden role="alert"></div>
+      <div class="grid">
+        <div class="f"><label for="clientName">Your name <span>*</span></label><input id="clientName" name="clientName" autocomplete="name" required maxlength="80"><div class="err"></div></div>
+        <div class="f"><label for="mobile">Mobile <span>* WhatsApp preferred</span></label><input id="mobile" name="mobile" type="tel" inputmode="tel" autocomplete="tel" placeholder="+91 98765 43210" required><div class="err"></div></div>
+        <div class="f full"><label for="email">Email <span>* your login will be sent here</span></label><input id="email" name="email" type="email" autocomplete="email" required maxlength="120"><div class="err"></div></div>
+        <div class="f full"><label for="shopName">Restaurant / brand name <span>*</span></label><input id="shopName" name="shopName" autocomplete="organization" required maxlength="100"><div class="err"></div></div>
+        <div class="f"><label for="businessCategory">Type of place</label>
+          <select id="businessCategory" name="businessCategory">
+            <option>Restaurant &amp; Cafe</option><option>Fast Food / QSR</option><option>Fine Dining &amp; Bar</option><option>Bakery &amp; Sweets</option>
+            <option>Food Court / Kiosk</option><option>Cloud Kitchen / Delivery</option><option>Pizzeria / Italian</option><option>Coffee House / Tea Lounge</option><option>Other</option>
+          </select></div>
+        <div class="f"><label for="city">City</label><input id="city" name="city" autocomplete="address-level2" maxlength="60"></div>
+        <div class="f"><label for="requestedStoreCount">Number of outlets</label>
+          <select id="requestedStoreCount" name="requestedStoreCount"><option value="1">1 — just this one</option><option value="2">2</option><option value="3">3</option><option value="5">4–5</option><option value="10">6–10</option><option value="25">More than 10</option></select></div>
+        <div class="f"><label for="tableCount">Tables <span>approx., biggest outlet</span></label><input id="tableCount" name="tableCount" type="number" inputmode="numeric" min="0" max="500" placeholder="12"></div>
+        <div class="f full"><label for="referralSource">How did you hear about us?</label>
+          <select id="referralSource" name="referralSource"><option value="">Choose one</option><option>A friend or another restaurant</option><option>Search</option><option>Social media</option><option>Someone from SmartDine reached out</option><option>Other</option></select></div>
+        <div class="f full"><label for="notes">Anything we should know? <span>optional</span></label><textarea id="notes" name="notes" maxlength="600" placeholder="Opening date, current billing setup, what's frustrating you today…"></textarea></div>
+      </div>
+      <div class="submit">
+        <button type="submit" id="submitBtn">Send my request →</button>
+        <p class="fine">No card. No commitment. You'll hear from a person, not an auto-reply.</p>
+      </div>
+    </form>
+
+    <div class="done" id="done" hidden>
+      <div class="tick">✓</div>
+      <h2>Request received.</h2>
+      <p>Thanks, <b id="doneName"></b>. Someone on our team will review <b id="doneShop"></b> and email your login to <b id="doneEmail"></b> — usually within one business day.</p>
+      <p>Keep an eye on your inbox (and the spam folder, just in case).</p>
+      <span class="ref" id="doneRef"></span>
+      <p style="margin-top:22px"><a href="/" style="color:#7a4a00;font-weight:600">← Back to the site</a></p>
+    </div>
+  </div>
+</main>
+
+<footer>SmartDine · Made for the people who run the room.</footer>
+
+<script>
+// ────────────────────────────────────────────────────────────────────────
+//  CONFIG. The project id is fixed. The API key below is the project's
+//  Android key from google-services.json; if it is restricted to Android in
+//  Google Cloud console, create a Web key (Firebase console → Project
+//  settings → Your apps → Add app → Web) and paste it here instead.
+// ────────────────────────────────────────────────────────────────────────
+const FB = {
+  projectId: 'smartdine-restaurant-pos',
+  apiKey:    'AIzaSyBv9G7J15k47VKFwc0pUcC3oJHs4xNybyc',
+};
+const COLLECTION = 'registration_requests';   // the same queue the admin console reads
+
+const base = `https://firestore.googleapis.com/v1/projects/${FB.projectId}/databases/(default)/documents`;
+const docPath = (id) => `projects/${FB.projectId}/databases/(default)/documents/${COLLECTION}/${id}`;
+
+const $ = (id) => document.getElementById(id);
+const form = $('reg');
+const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+
+function fieldError(input, msg) {
+  const holder = input.closest('.f').querySelector('.err');
+  if (holder) holder.textContent = msg || '';
+  input.setAttribute('aria-invalid', msg ? 'true' : 'false');
+}
+function validate() {
+  let ok = true;
+  const name = $('clientName'), email = $('email'), mobile = $('mobile'), shop = $('shopName');
+  fieldError(name, name.value.trim().length < 2 ? 'Please enter your name.' : ''); ok &&= name.value.trim().length >= 2;
+  fieldError(email, emailRe.test(email.value.trim()) ? '' : 'Enter a valid email — your login goes here.'); ok &&= emailRe.test(email.value.trim());
+  const digits = mobile.value.replace(/\D/g, '');
+  fieldError(mobile, digits.length < 10 ? 'Enter a mobile number we can reach you on.' : ''); ok &&= digits.length >= 10;
+  fieldError(shop, shop.value.trim().length < 2 ? 'What is the restaurant called?' : ''); ok &&= shop.value.trim().length >= 2;
+  return ok;
+}
+
+// Firestore REST typed values
+const S  = (v) => ({ stringValue: String(v) });
+const I  = (v) => ({ integerValue: String(parseInt(v, 10) || 0) });
+const B  = (v) => ({ booleanValue: !!v });
+
+async function alreadyPending(email) {
+  const body = { structuredQuery: {
+    from: [{ collectionId: COLLECTION }],
+    where: { compositeFilter: { op: 'AND', filters: [
+      { fieldFilter: { field: { fieldPath: 'email' },  op: 'EQUAL', value: S(email) } },
+      { fieldFilter: { field: { fieldPath: 'status' }, op: 'EQUAL', value: S('PENDING') } },
+    ] } },
+    limit: 1,
+  } };
+  const r = await fetch(`${base}:runQuery?key=${FB.apiKey}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  if (!r.ok) return false;                     // if we can't check, let the admin de-duplicate
+  const rows = await r.json();
+  return rows.some(x => x.document);
+}
+
+async function submitRequest(data) {
+  const id = 'WEB-' + Date.now().toString(36).toUpperCase() + '-' + Math.random().toString(36).slice(2, 6).toUpperCase();
+  const fields = {
+    id:                  S(id),
+    clientName:          S(data.clientName),
+    shopName:            S(data.shopName),
+    businessCategory:    S(data.businessCategory),
+    mobile:              S(data.mobile),
+    email:               S(data.email),
+    city:                S(data.city || ''),
+    status:              S('PENDING'),
+    emailVerified:       B(false),              // no OTP on the web; the approval email confirms the address
+    requestedPlan:       S('ENTERPRISE_CUSTOM'),// the admin-review path, same as the app's custom request
+    requestedStoreCount: I(data.requestedStoreCount || 1),
+    tableCount:          I(data.tableCount || 0),
+    referralSource:      S(data.referralSource || ''),
+    notes:               S(data.notes || ''),
+    source:              S('WEB'),
+    sourcePage:          S(location.href.split('?')[0]),
+  };
+  // commit + transforms gives us real server timestamps, so the request sorts
+  // correctly beside the ones the app writes (which use FieldValue.serverTimestamp()).
+  const body = { writes: [
+    { update: { name: docPath(id), fields } },
+    { transform: { document: docPath(id), fieldTransforms: [
+      { fieldPath: 'createdAt', setToServerValue: 'REQUEST_TIME' },
+      { fieldPath: 'updatedAt', setToServerValue: 'REQUEST_TIME' },
+    ] } },
+  ] };
+  const r = await fetch(`${base}:commit?key=${FB.apiKey}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  if (!r.ok) {
+    let msg = `HTTP ${r.status}`;
+    try { msg = (await r.json()).error?.message || msg; } catch (_) {}
+    throw new Error(msg);
+  }
+  return id;
+}
+
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  $('formError').hidden = true;
+  if (!validate()) { form.querySelector('[aria-invalid="true"]')?.focus(); return; }
+
+  const btn = $('submitBtn'); btn.disabled = true; btn.textContent = 'Sending…';
+  const fd = Object.fromEntries(new FormData(form).entries());
+  for (const k in fd) fd[k] = String(fd[k]).trim();
+
+  try {
+    if (await alreadyPending(fd.email)) {
+      $('formError').textContent = 'We already have a request from this email waiting for review. You don’t need to send another — we’ll be in touch soon.';
+      $('formError').hidden = false;
+      return;
+    }
+    const id = await submitRequest(fd);
+    $('doneName').textContent = fd.clientName; $('doneShop').textContent = fd.shopName; $('doneEmail').textContent = fd.email;
+    $('doneRef').textContent = 'Reference ' + id;
+    form.hidden = true; $('done').hidden = false;
+    $('done').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  } catch (err) {
+    $('formError').textContent = 'We couldn’t send that just now (' + err.message + '). Please try again, or email santhoshbukka5@gmail.com and we’ll set you up by hand.';
+    $('formError').hidden = false;
+  } finally {
+    btn.disabled = false; btn.textContent = 'Send my request →';
+  }
+});
+
+// Live validation clears errors as people fix them.
+['clientName','email','mobile','shopName'].forEach(id => $(id).addEventListener('input', () => fieldError($(id), '')));
+</script>
+</body>
+</html>

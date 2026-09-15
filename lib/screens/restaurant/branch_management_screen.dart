@@ -36,12 +36,12 @@ class _BranchManagementScreenState
       showDialog(
         context: context,
         builder: (ctx) => AlertDialog(
-          backgroundColor: const Color(0xFF131927),
+          backgroundColor: ClassicTheme.cardSurfaceDark,
           shape:
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
           title: const Row(
             children: [
-              Icon(Icons.lock_outline_rounded, color: Colors.amber, size: 24),
+              Icon(Icons.lock_outline_rounded, color: ClassicTheme.warningAmber, size: 24),
               SizedBox(width: 10),
               Text(
                 'Branch Limit Reached',
@@ -58,7 +58,7 @@ class _BranchManagementScreenState
           actions: [
             ElevatedButton(
               style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.amber,
+                backgroundColor: ClassicTheme.warningAmber,
                 foregroundColor: Colors.black,
               ),
               onPressed: () => Navigator.pop(ctx),
@@ -87,7 +87,7 @@ class _BranchManagementScreenState
       barrierDismissible: false,
       builder: (dialogCtx) => StatefulBuilder(
         builder: (dialogCtx, setDialogState) => AlertDialog(
-          backgroundColor: const Color(0xFF131927),
+          backgroundColor: ClassicTheme.cardSurfaceDark,
           shape:
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
           title: Row(
@@ -95,11 +95,11 @@ class _BranchManagementScreenState
               Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: Colors.amber.withValues(alpha: 0.15),
+                  color: ClassicTheme.warningAmber.withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: const Icon(Icons.add_business_rounded,
-                    color: Colors.amber, size: 22),
+                    color: ClassicTheme.warningAmber, size: 22),
               ),
               const SizedBox(width: 12),
               const Expanded(
@@ -127,8 +127,8 @@ class _BranchManagementScreenState
                     const Text(
                       'BRANCH INFORMATION',
                       style: TextStyle(
-                        color: Colors.amber,
-                        fontSize: 11,
+                        color: ClassicTheme.warningAmber,
+                        fontSize: 12,
                         fontWeight: FontWeight.bold,
                         letterSpacing: 1.2,
                       ),
@@ -143,9 +143,9 @@ class _BranchManagementScreenState
                         hintText: 'e.g. $orgName - Downtown Branch',
                         hintStyle: const TextStyle(color: Colors.white24),
                         prefixIcon: const Icon(Icons.storefront_rounded,
-                            color: Colors.amber, size: 20),
+                            color: ClassicTheme.warningAmber, size: 20),
                         filled: true,
-                        fillColor: context.textPrimary,
+                        fillColor: context.inputFill,
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
                           borderSide: BorderSide.none,
@@ -170,10 +170,10 @@ class _BranchManagementScreenState
                                   TextStyle(color: context.textSecondary),
                               prefixIcon: const Icon(
                                   Icons.table_restaurant_rounded,
-                                  color: Colors.amber,
+                                  color: ClassicTheme.warningAmber,
                                   size: 20),
                               filled: true,
-                              fillColor: context.textPrimary,
+                              fillColor: context.inputFill,
                               border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(12),
                                 borderSide: BorderSide.none,
@@ -192,7 +192,7 @@ class _BranchManagementScreenState
                           flex: 2,
                           child: DropdownButtonFormField<String>(
                             initialValue: operatingMode,
-                            dropdownColor: context.textPrimary,
+                            dropdownColor: context.surfaceColor,
                             style: const TextStyle(
                                 color: Colors.white, fontSize: 13),
                             decoration: InputDecoration(
@@ -200,7 +200,7 @@ class _BranchManagementScreenState
                               labelStyle:
                                   TextStyle(color: context.textSecondary),
                               filled: true,
-                              fillColor: context.textPrimary,
+                              fillColor: context.inputFill,
                               border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(12),
                                 borderSide: BorderSide.none,
@@ -240,9 +240,9 @@ class _BranchManagementScreenState
                         hintText: 'Street, Landmark, City',
                         hintStyle: const TextStyle(color: Colors.white24),
                         prefixIcon: const Icon(Icons.location_on_outlined,
-                            color: Colors.amber, size: 20),
+                            color: ClassicTheme.warningAmber, size: 20),
                         filled: true,
-                        fillColor: context.textPrimary,
+                        fillColor: context.inputFill,
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
                           borderSide: BorderSide.none,
@@ -263,9 +263,9 @@ class _BranchManagementScreenState
                               labelStyle:
                                   TextStyle(color: context.textSecondary),
                               prefixIcon: const Icon(Icons.phone_outlined,
-                                  color: Colors.amber, size: 20),
+                                  color: ClassicTheme.warningAmber, size: 20),
                               filled: true,
-                              fillColor: context.textPrimary,
+                              fillColor: context.inputFill,
                               border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(12),
                                 borderSide: BorderSide.none,
@@ -285,9 +285,9 @@ class _BranchManagementScreenState
                               hintText: 'branch@upi',
                               hintStyle: const TextStyle(color: Colors.white24),
                               prefixIcon: const Icon(Icons.qr_code_rounded,
-                                  color: Colors.amber, size: 20),
+                                  color: ClassicTheme.warningAmber, size: 20),
                               filled: true,
-                              fillColor: context.textPrimary,
+                              fillColor: context.inputFill,
                               border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(12),
                                 borderSide: BorderSide.none,
@@ -303,8 +303,8 @@ class _BranchManagementScreenState
                     const Text(
                       'DEFAULT STORE ADMIN ACCOUNT',
                       style: TextStyle(
-                        color: Colors.amber,
-                        fontSize: 11,
+                        color: ClassicTheme.warningAmber,
+                        fontSize: 12,
                         fontWeight: FontWeight.bold,
                         letterSpacing: 1.2,
                       ),
@@ -312,7 +312,7 @@ class _BranchManagementScreenState
                     const SizedBox(height: 4),
                     Text(
                       'This user will have full managerial control of this outlet terminal and staff mapping.',
-                      style: TextStyle(color: context.textSecondary, fontSize: 11),
+                      style: TextStyle(color: context.textSecondary, fontSize: 12),
                     ),
                     const SizedBox(height: 10),
 
@@ -325,9 +325,9 @@ class _BranchManagementScreenState
                         hintText: 'e.g. Ramesh Chandra',
                         hintStyle: const TextStyle(color: Colors.white24),
                         prefixIcon: const Icon(Icons.person_outline_rounded,
-                            color: Colors.amber, size: 20),
+                            color: ClassicTheme.warningAmber, size: 20),
                         filled: true,
-                        fillColor: context.textPrimary,
+                        fillColor: context.inputFill,
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
                           borderSide: BorderSide.none,
@@ -348,9 +348,9 @@ class _BranchManagementScreenState
                         hintText: 'admin.branch@restaurant.com',
                         hintStyle: const TextStyle(color: Colors.white24),
                         prefixIcon: const Icon(Icons.email_outlined,
-                            color: Colors.amber, size: 20),
+                            color: ClassicTheme.warningAmber, size: 20),
                         filled: true,
-                        fillColor: context.textPrimary,
+                        fillColor: context.inputFill,
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
                           borderSide: BorderSide.none,
@@ -371,9 +371,9 @@ class _BranchManagementScreenState
                         labelText: 'Initial Password',
                         labelStyle: TextStyle(color: context.textSecondary),
                         prefixIcon: const Icon(Icons.key_rounded,
-                            color: Colors.amber, size: 20),
+                            color: ClassicTheme.warningAmber, size: 20),
                         filled: true,
-                        fillColor: context.textPrimary,
+                        fillColor: context.inputFill,
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
                           borderSide: BorderSide.none,
@@ -396,7 +396,7 @@ class _BranchManagementScreenState
             ),
             ElevatedButton(
               style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.amber,
+                backgroundColor: ClassicTheme.warningAmber,
                 foregroundColor: Colors.black,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
@@ -539,7 +539,7 @@ class _BranchManagementScreenState
                             SnackBar(
                               content: Text(
                                   '✓ Restaurant branch "$branchName" created successfully with Store Admin "$adminEmail".'),
-                              backgroundColor: const Color(0xFF10B981),
+                              backgroundColor: ClassicTheme.successEmerald,
                             ),
                           );
                         }
@@ -549,7 +549,7 @@ class _BranchManagementScreenState
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
                               content: Text('Failed to add branch: $e'),
-                              backgroundColor: Colors.redAccent,
+                              backgroundColor: ClassicTheme.dangerRed,
                             ),
                           );
                         }
@@ -591,7 +591,7 @@ class _BranchManagementScreenState
       context: context,
       builder: (dialogCtx) => StatefulBuilder(
         builder: (dialogCtx, setDialogState) => AlertDialog(
-          backgroundColor: const Color(0xFF131927),
+          backgroundColor: ClassicTheme.cardSurfaceDark,
           shape:
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
           title: Text(
@@ -613,7 +613,7 @@ class _BranchManagementScreenState
                       labelText: 'Branch Name',
                       labelStyle: TextStyle(color: context.textSecondary),
                       filled: true,
-                      fillColor: context.textPrimary,
+                      fillColor: context.inputFill,
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
                         borderSide: BorderSide.none,
@@ -635,7 +635,7 @@ class _BranchManagementScreenState
                             labelStyle:
                                 TextStyle(color: context.textSecondary),
                             filled: true,
-                            fillColor: context.textPrimary,
+                            fillColor: context.inputFill,
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(12),
                               borderSide: BorderSide.none,
@@ -647,7 +647,7 @@ class _BranchManagementScreenState
                       Expanded(
                         child: DropdownButtonFormField<String>(
                           initialValue: operatingMode,
-                          dropdownColor: context.textPrimary,
+                          dropdownColor: context.surfaceColor,
                           style: const TextStyle(
                               color: Colors.white, fontSize: 13),
                           decoration: InputDecoration(
@@ -655,7 +655,7 @@ class _BranchManagementScreenState
                             labelStyle:
                                 TextStyle(color: context.textSecondary),
                             filled: true,
-                            fillColor: context.textPrimary,
+                            fillColor: context.inputFill,
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(12),
                               borderSide: BorderSide.none,
@@ -692,7 +692,7 @@ class _BranchManagementScreenState
                       labelText: 'Address',
                       labelStyle: TextStyle(color: context.textSecondary),
                       filled: true,
-                      fillColor: context.textPrimary,
+                      fillColor: context.inputFill,
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
                         borderSide: BorderSide.none,
@@ -712,7 +712,7 @@ class _BranchManagementScreenState
                             labelStyle:
                                 TextStyle(color: context.textSecondary),
                             filled: true,
-                            fillColor: context.textPrimary,
+                            fillColor: context.inputFill,
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(12),
                               borderSide: BorderSide.none,
@@ -730,7 +730,7 @@ class _BranchManagementScreenState
                             labelStyle:
                                 TextStyle(color: context.textSecondary),
                             filled: true,
-                            fillColor: context.textPrimary,
+                            fillColor: context.inputFill,
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(12),
                               borderSide: BorderSide.none,
@@ -752,7 +752,7 @@ class _BranchManagementScreenState
             ),
             ElevatedButton(
               style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.amber,
+                backgroundColor: ClassicTheme.warningAmber,
                 foregroundColor: Colors.black,
               ),
               onPressed: isSaving
@@ -797,7 +797,7 @@ class _BranchManagementScreenState
                           SnackBar(
                             content:
                                 Text('✓ Branch "${nameCtrl.text.trim()}" updated.'),
-                            backgroundColor: const Color(0xFF10B981),
+                            backgroundColor: ClassicTheme.successEmerald,
                           ),
                         );
                       }
@@ -838,11 +838,11 @@ class _BranchManagementScreenState
             Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: Colors.amber.withValues(alpha: 0.15),
+                color: ClassicTheme.warningAmber.withValues(alpha: 0.15),
                 borderRadius: BorderRadius.circular(10),
               ),
               child: const Icon(Icons.account_tree_rounded,
-                  color: Colors.amber, size: 22),
+                  color: ClassicTheme.warningAmber, size: 22),
             ),
             const SizedBox(width: 10),
             Expanded(
@@ -858,7 +858,7 @@ class _BranchManagementScreenState
                   ),
                   Text(
                     'Multi-store administration, QR codes & branch switcher',
-                    style: TextStyle(fontSize: 11, color: context.textSecondary),
+                    style: TextStyle(fontSize: 12, color: context.textSecondary),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -884,7 +884,7 @@ class _BranchManagementScreenState
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(
-              child: CircularProgressIndicator(color: Colors.amber),
+              child: CircularProgressIndicator(color: ClassicTheme.warningAmber),
             );
           }
 
@@ -906,7 +906,7 @@ class _BranchManagementScreenState
               builder: (ctx, franchiseSnap) {
                 if (franchiseSnap.connectionState == ConnectionState.waiting) {
                   return const Center(
-                    child: CircularProgressIndicator(color: Colors.amber),
+                    child: CircularProgressIndicator(color: ClassicTheme.warningAmber),
                   );
                 }
 
@@ -979,7 +979,7 @@ class _BranchManagementScreenState
         outlets.fold<int>(0, (totalCount, o) => totalCount + o.tableCount);
 
     return RefreshIndicator(
-      color: Colors.amber,
+      color: ClassicTheme.warningAmber,
       backgroundColor: context.surfaceColor,
       onRefresh: _handleRefresh,
       child: SingleChildScrollView(
@@ -997,7 +997,7 @@ class _BranchManagementScreenState
                   children: [
                     _buildMetricCard(
                       icon: Icons.store_mall_directory_rounded,
-                      iconColor: Colors.amber,
+                      iconColor: ClassicTheme.warningAmber,
                       title: 'Outlets Allocated',
                       value: '${outlets.length} / $maxBranches',
                       subtitle: outlets.length >= maxBranches
@@ -1007,7 +1007,7 @@ class _BranchManagementScreenState
                     const SizedBox(height: 10),
                     _buildMetricCard(
                       icon: Icons.table_restaurant_rounded,
-                      iconColor: const Color(0xFF10B981),
+                      iconColor: ClassicTheme.successEmerald,
                       title: 'Total Dining Tables',
                       value: totalTables.toString(),
                       subtitle: 'Across all active branches',
@@ -1015,7 +1015,7 @@ class _BranchManagementScreenState
                     const SizedBox(height: 10),
                     _buildMetricCard(
                       icon: Icons.verified_user_rounded,
-                      iconColor: Colors.cyan,
+                      iconColor: ClassicTheme.infoBlue,
                       title: 'Subscription Tier',
                       value: license?.planTier ?? 'ACTIVE',
                       subtitle: license?.daysRemaining != null
@@ -1030,7 +1030,7 @@ class _BranchManagementScreenState
                     Expanded(
                       child: _buildMetricCard(
                         icon: Icons.store_mall_directory_rounded,
-                        iconColor: Colors.amber,
+                        iconColor: ClassicTheme.warningAmber,
                         title: 'Outlets Allocated',
                         value: '${outlets.length} / $maxBranches',
                         subtitle: outlets.length >= maxBranches
@@ -1042,7 +1042,7 @@ class _BranchManagementScreenState
                     Expanded(
                       child: _buildMetricCard(
                         icon: Icons.table_restaurant_rounded,
-                        iconColor: const Color(0xFF10B981),
+                        iconColor: ClassicTheme.successEmerald,
                         title: 'Total Dining Tables',
                         value: totalTables.toString(),
                         subtitle: 'Across all active branches',
@@ -1052,7 +1052,7 @@ class _BranchManagementScreenState
                     Expanded(
                       child: _buildMetricCard(
                         icon: Icons.verified_user_rounded,
-                        iconColor: Colors.cyan,
+                        iconColor: ClassicTheme.infoBlue,
                         title: 'Subscription Tier',
                         value: license?.planTier ?? 'ACTIVE',
                         subtitle: license?.daysRemaining != null
@@ -1088,7 +1088,7 @@ class _BranchManagementScreenState
                   const SizedBox(height: 2),
                   Text(
                     'Select a branch to operate, download QR standees, or edit settings',
-                    style: TextStyle(color: context.textSecondary, fontSize: 11.5),
+                    style: TextStyle(color: context.textSecondary, fontSize: 12),
                   ),
                 ],
               ),
@@ -1104,7 +1104,7 @@ class _BranchManagementScreenState
                 label: const Text('ADD RESTAURANT BRANCH',
                     style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.amber,
+                  backgroundColor: ClassicTheme.warningAmber,
                   foregroundColor: Colors.black,
                   padding:
                       const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -1123,14 +1123,14 @@ class _BranchManagementScreenState
               width: double.infinity,
               padding: const EdgeInsets.all(40),
               decoration: BoxDecoration(
-                color: const Color(0xFF131927),
+                color: ClassicTheme.cardSurfaceDark,
                 borderRadius: BorderRadius.circular(20),
                 border: Border.all(color: context.textPrimary),
               ),
               child: Column(
                 children: [
                   const Icon(Icons.storefront_rounded,
-                      color: Colors.amber, size: 54),
+                      color: ClassicTheme.warningAmber, size: 54),
                   const SizedBox(height: 16),
                   const Text(
                     'No Restaurant Branches Registered Yet',
@@ -1157,7 +1157,7 @@ class _BranchManagementScreenState
                     icon: const Icon(Icons.add_rounded),
                     label: const Text('REGISTER FIRST BRANCH'),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.amber,
+                      backgroundColor: ClassicTheme.warningAmber,
                       foregroundColor: Colors.black,
                     ),
                   ),
@@ -1227,7 +1227,7 @@ class _BranchManagementScreenState
               children: [
                 Text(
                   title,
-                  style: TextStyle(color: context.textSecondary, fontSize: 11),
+                  style: TextStyle(color: context.textSecondary, fontSize: 12),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -1247,7 +1247,7 @@ class _BranchManagementScreenState
                   subtitle,
                   style: TextStyle(
                     color: iconColor.withValues(alpha: 0.85),
-                    fontSize: 10.5,
+                    fontSize: 12,
                     fontWeight: FontWeight.w500,
                   ),
                   maxLines: 1,
@@ -1268,13 +1268,13 @@ class _BranchManagementScreenState
     required bool isCurrentActive,
   }) {
     String modeLabel = 'Dine First (Postpaid)';
-    Color modeColor = Colors.cyan;
+    Color modeColor = ClassicTheme.infoBlue;
     if (outlet.operatingMode == 'payFirstQSR') {
       modeLabel = 'Pay First (QSR)';
-      modeColor = Colors.orange;
+      modeColor = ClassicTheme.warningAmber;
     } else if (outlet.operatingMode == 'hybrid') {
       modeLabel = 'Hybrid Service';
-      modeColor = Colors.purpleAccent;
+      modeColor = ClassicTheme.secondaryAccent;
     }
 
     final qrOrderingUrl =
@@ -1286,7 +1286,7 @@ class _BranchManagementScreenState
         color: context.surfaceColor,
         borderRadius: BorderRadius.circular(18),
         border: Border.all(
-          color: isCurrentActive ? Colors.amber : context.borderColor,
+          color: isCurrentActive ? ClassicTheme.warningAmber : context.borderColor,
           width: isCurrentActive ? 2 : 1,
         ),
       ),
@@ -1299,11 +1299,11 @@ class _BranchManagementScreenState
               CircleAvatar(
                 radius: 20,
                 backgroundColor: isCurrentActive
-                    ? Colors.amber.withValues(alpha: 0.2)
+                    ? ClassicTheme.warningAmber.withValues(alpha: 0.2)
                     : context.borderColor,
                 child: Icon(
                   Icons.storefront_rounded,
-                  color: isCurrentActive ? Colors.amber : Colors.white70,
+                  color: isCurrentActive ? ClassicTheme.warningAmber : Colors.white70,
                   size: 22,
                 ),
               ),
@@ -1328,7 +1328,7 @@ class _BranchManagementScreenState
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 10, vertical: 3),
                             decoration: BoxDecoration(
-                              color: Colors.amber,
+                              color: ClassicTheme.warningAmber,
                               borderRadius: BorderRadius.circular(8),
                             ),
                             child: Row(
@@ -1340,7 +1340,7 @@ class _BranchManagementScreenState
                                   'ACTIVE CONTEXT',
                                   style: TextStyle(
                                     color: context.textPrimary,
-                                    fontSize: 10,
+                                    fontSize: 12,
                                     fontWeight: FontWeight.w900,
                                   ),
                                 ),
@@ -1371,7 +1371,7 @@ class _BranchManagementScreenState
                   modeLabel,
                   style: TextStyle(
                     color: modeColor,
-                    fontSize: 11,
+                    fontSize: 12,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
@@ -1389,7 +1389,7 @@ class _BranchManagementScreenState
                   '${outlet.tableCount} Tables',
                   style: TextStyle(
                     color: context.textSecondary,
-                    fontSize: 11,
+                    fontSize: 12,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
@@ -1449,7 +1449,7 @@ class _BranchManagementScreenState
                               fontWeight: FontWeight.bold,
                             ),
                           ),
-                          backgroundColor: Colors.amber,
+                          backgroundColor: ClassicTheme.warningAmber,
                         ),
                       );
                     }
@@ -1458,7 +1458,7 @@ class _BranchManagementScreenState
                   label: const Text('SWITCH TO BRANCH',
                       style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.amber,
+                    backgroundColor: ClassicTheme.warningAmber,
                     foregroundColor: Colors.black,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(10),
@@ -1470,19 +1470,19 @@ class _BranchManagementScreenState
                   padding:
                       const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                   decoration: BoxDecoration(
-                    color: Colors.amber.withValues(alpha: 0.15),
+                    color: ClassicTheme.warningAmber.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: Colors.amber.withValues(alpha: 0.3)),
+                    border: Border.all(color: ClassicTheme.warningAmber.withValues(alpha: 0.3)),
                   ),
                   child: const Row(
                     children: [
                       Icon(Icons.radio_button_checked_rounded,
-                          size: 16, color: Colors.amber),
+                          size: 16, color: ClassicTheme.warningAmber),
                       SizedBox(width: 6),
                       Text(
                         'Currently Operating',
                         style: TextStyle(
-                          color: Colors.amber,
+                          color: ClassicTheme.warningAmber,
                           fontSize: 12,
                           fontWeight: FontWeight.bold,
                         ),
@@ -1515,7 +1515,7 @@ class _BranchManagementScreenState
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
                                 content: Text('Error generating standees: $e'),
-                                backgroundColor: Colors.redAccent,
+                                backgroundColor: ClassicTheme.dangerRed,
                               ),
                             );
                           }
@@ -1524,7 +1524,7 @@ class _BranchManagementScreenState
                         }
                       },
                 icon: const Icon(Icons.qr_code_2_rounded,
-                    size: 16, color: Colors.amber),
+                    size: 16, color: ClassicTheme.warningAmber),
                 label: Text(
                   'PRINT TABLE QR STANDEES',
                   style: TextStyle(
@@ -1552,7 +1552,7 @@ class _BranchManagementScreenState
                       SnackBar(
                         content: Text(
                             'Table ordering link copied: $qrOrderingUrl'),
-                        backgroundColor: const Color(0xFF10B981),
+                        backgroundColor: ClassicTheme.successEmerald,
                       ),
                     );
                   }
@@ -1588,11 +1588,11 @@ class _BranchManagementScreenState
                   } catch (_) {}
                 },
                 icon: const Icon(Icons.open_in_browser_rounded,
-                    size: 16, color: Color(0xFF3B82F6)),
+                    size: 16, color: ClassicTheme.infoBlue),
                 label: const Text(
                   'OPEN MENU',
                   style: TextStyle(
-                    color: Color(0xFF3B82F6),
+                    color: ClassicTheme.infoBlue,
                     fontSize: 12,
                     fontWeight: FontWeight.bold,
                   ),

@@ -455,7 +455,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text("⚠️ ${item['name'] ?? 'Item'} is currently sold out!"),
-          backgroundColor: Colors.redAccent,
+          backgroundColor: ClassicTheme.dangerRed,
           duration: const Duration(milliseconds: 1400),
         ),
       );
@@ -469,7 +469,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text("Cannot add more: Only $stock in stock!"),
-          backgroundColor: Colors.orange.shade800,
+          backgroundColor: ClassicTheme.warningAmber,
           duration: const Duration(milliseconds: 1400),
         ),
       );
@@ -567,7 +567,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                             ),
                             Text(
                               'Kitchen instructions & modifiers for this dish',
-                              style: TextStyle(fontSize: 11, color: context.textSecondary),
+                              style: TextStyle(fontSize: 12, color: context.textSecondary),
                             ),
                           ],
                         ),
@@ -592,15 +592,15 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                       return ActionChip(
                         label: Text(mod),
                         labelStyle: TextStyle(
-                          fontSize: 11,
+                          fontSize: 12,
                           fontWeight: hasMod ? FontWeight.bold : FontWeight.normal,
                           color: hasMod ? Colors.white : context.textPrimary,
                         ),
-                        backgroundColor: hasMod ? const Color(0xFF2563EB) : context.inputFill,
+                        backgroundColor: hasMod ? ClassicTheme.infoBlue : context.inputFill,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(16),
                           side: BorderSide(
-                            color: hasMod ? const Color(0xFF2563EB) : context.borderColor,
+                            color: hasMod ? ClassicTheme.infoBlue : context.borderColor,
                           ),
                         ),
                         onPressed: () {
@@ -646,12 +646,12 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                               noteCtrl.clear();
                             });
                           },
-                          child: const Text('Clear Notes', style: TextStyle(color: Color(0xFFDC2626))),
+                          child: const Text('Clear Notes', style: TextStyle(color: ClassicTheme.dangerRed)),
                         ),
                       const Spacer(),
                       ElevatedButton(
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF2563EB),
+                          backgroundColor: ClassicTheme.infoBlue,
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
@@ -710,7 +710,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Cannot send KOT: ${unavailableItems.join(", ")} is sold out or unavailable.'),
-            backgroundColor: const Color(0xFFDC2626),
+            backgroundColor: ClassicTheme.dangerRed,
             behavior: SnackBarBehavior.floating,
           ),
         );
@@ -935,7 +935,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                 ),
               ],
             ),
-            backgroundColor: const Color(0xFF059669),
+            backgroundColor: ClassicTheme.successEmerald,
             duration: const Duration(seconds: 3),
             behavior: SnackBarBehavior.floating,
           ),
@@ -1085,18 +1085,18 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                                           decoration: BoxDecoration(
                                             color: ord.effectiveKitchenStatus == 'READY'
-                                                ? const Color(0xFFD1FAE5)
-                                                : const Color(0xFFEFF6FF),
+                                                ? ClassicTheme.tintSuccess
+                                                : ClassicTheme.tintInfo,
                                             borderRadius: BorderRadius.circular(6),
                                           ),
                                           child: Text(
                                             ord.effectiveKitchenStatus,
                                             style: TextStyle(
-                                              fontSize: 11,
+                                              fontSize: 12,
                                               fontWeight: FontWeight.bold,
                                               color: ord.effectiveKitchenStatus == 'READY'
-                                                  ? const Color(0xFF059669)
-                                                  : const Color(0xFF2563EB),
+                                                  ? ClassicTheme.successEmerald
+                                                  : ClassicTheme.infoBlue,
                                             ),
                                           ),
                                         ),
@@ -1114,7 +1114,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                                          margin: const EdgeInsets.symmetric(vertical: 3),
                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                                          decoration: BoxDecoration(
-                                           color: isVoided ? const Color(0xFFFEF2F2) : Colors.white,
+                                           color: isVoided ? ClassicTheme.tintDanger : Colors.white,
                                            borderRadius: BorderRadius.circular(8),
                                            border: Border.all(
                                              color: isVoided ? const Color(0xFFFECACA) : context.inputFill,
@@ -1148,14 +1148,14 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                                                      const SizedBox(height: 1),
                                                      Text(
                                                        'Note: ${it.notes}',
-                                                       style: const TextStyle(fontSize: 10.5, fontStyle: FontStyle.italic, color: Color(0xFFD97706)),
+                                                       style: const TextStyle(fontSize: 12, fontStyle: FontStyle.italic, color: ClassicTheme.warningAmber),
                                                      ),
                                                    ],
                                                    if (it.voidedQty > 0) ...[
                                                       const SizedBox(height: 1),
                                                       Text(
                                                         'Voided ${it.voidedQty.toInt()}x: ${it.voidReason ?? "Cancelled"}',
-                                                        style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFFDC2626)),
+                                                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: ClassicTheme.dangerRed),
                                                       ),
                                                     ],
                                                  ],
@@ -1166,25 +1166,25 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                                decoration: BoxDecoration(
                                                  color: isVoided
-                                                     ? const Color(0xFFFEE2E2)
-                                                     : (isItemReady ? const Color(0xFFD1FAE5) : const Color(0xFFEFF6FF)),
+                                                     ? ClassicTheme.tintDanger
+                                                     : (isItemReady ? ClassicTheme.tintSuccess : ClassicTheme.tintInfo),
                                                  borderRadius: BorderRadius.circular(6),
                                                ),
                                                child: Text(
                                                  itemStatus,
                                                  style: TextStyle(
-                                                   fontSize: 9.5,
+                                                   fontSize: 12,
                                                    fontWeight: FontWeight.bold,
                                                    color: isVoided
-                                                       ? const Color(0xFFDC2626)
-                                                       : (isItemReady ? const Color(0xFF059669) : const Color(0xFF2563EB)),
+                                                       ? ClassicTheme.dangerRed
+                                                       : (isItemReady ? ClassicTheme.successEmerald : ClassicTheme.infoBlue),
                                                  ),
                                                ),
                                              ),
                                              if (!isVoided) ...[
                                                const SizedBox(width: 4),
                                                IconButton(
-                                                 icon: const Icon(Icons.remove_circle_outline_rounded, size: 16, color: Color(0xFFDC2626)),
+                                                 icon: const Icon(Icons.remove_circle_outline_rounded, size: 16, color: ClassicTheme.dangerRed),
                                                  tooltip: 'Void / Cancel dish',
                                                  padding: EdgeInsets.zero,
                                                  constraints: const BoxConstraints(),
@@ -1202,7 +1202,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                                         if (ord.reprintCount > 0)
                                           Text(
                                             'Reprinted ${ord.reprintCount} time(s)',
-                                            style: TextStyle(fontSize: 11, color: context.textSecondary, fontStyle: FontStyle.italic),
+                                            style: TextStyle(fontSize: 12, color: context.textSecondary, fontStyle: FontStyle.italic),
                                           )
                                         else
                                           const SizedBox.shrink(),
@@ -1293,7 +1293,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
               child: const Text('Keep Dish'),
             ),
             ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFDC2626)),
+              style: ElevatedButton.styleFrom(backgroundColor: ClassicTheme.dangerRed),
               onPressed: () => Navigator.pop(ctx, true),
               child: const Text('Confirm Void', style: TextStyle(color: Colors.white)),
             ),
@@ -1376,7 +1376,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('${it.name} voided from KOT #${ord.kotNumber}'),
-            backgroundColor: const Color(0xFFDC2626),
+            backgroundColor: ClassicTheme.dangerRed,
           ),
         );
       }
@@ -1391,7 +1391,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('This order contains only direct counter items. No KOT to print.'),
-              backgroundColor: Color(0xFFD97706),
+              backgroundColor: ClassicTheme.warningAmber,
             ),
           );
         }
@@ -1436,7 +1436,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text('Reprint #$newReprintCount sent to printer ✅'),
-              backgroundColor: const Color(0xFF059669),
+              backgroundColor: ClassicTheme.successEmerald,
             ),
           );
         }
@@ -1445,7 +1445,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('Bluetooth printer not connected. Configure in Settings.'),
-              backgroundColor: Color(0xFFD97706),
+              backgroundColor: ClassicTheme.warningAmber,
             ),
           );
         }
@@ -1582,7 +1582,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                                     scale: 0.75,
                                     child: Switch(
                                       value: includeServiceCharge,
-                                      activeThumbColor: const Color(0xFF2563EB),
+                                      activeThumbColor: ClassicTheme.infoBlue,
                                       onChanged: (val) => setModalState(() => includeServiceCharge = val),
                                     ),
                                   ),
@@ -1613,8 +1613,8 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              const Text('Server Tip 💖', style: TextStyle(fontSize: 13, color: Color(0xFF2563EB), fontWeight: FontWeight.bold)),
-                              Text('₹${_selectedTip.toStringAsFixed(2)}', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF2563EB))),
+                              const Text('Server Tip 💖', style: TextStyle(fontSize: 13, color: ClassicTheme.infoBlue, fontWeight: FontWeight.bold)),
+                              Text('₹${_selectedTip.toStringAsFixed(2)}', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: ClassicTheme.infoBlue)),
                             ],
                           ),
                         ],
@@ -1682,7 +1682,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                   // Customer Email for POS Bill
                   Row(
                     children: [
-                      Icon(Icons.email_outlined, color: Color(0xFF2563EB), size: 18),
+                      Icon(Icons.email_outlined, color: ClassicTheme.infoBlue, size: 18),
                       SizedBox(width: 8),
                       Text(
                         'Customer Email for POS Bill (Optional)',
@@ -1723,7 +1723,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                       width: double.infinity,
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFEFF6FF),
+                        color: ClassicTheme.tintInfo,
                         borderRadius: BorderRadius.circular(16),
                         border: Border.all(color: const Color(0xFFBFDBFE)),
                       ),
@@ -1752,17 +1752,17 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                           const SizedBox(height: 12),
                           Text(
                             'Scan & Pay ₹${totalPayable.toStringAsFixed(2)}',
-                            style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Color(0xFF1E3A8A)),
+                            style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: ClassicTheme.infoBlue),
                           ),
                           const SizedBox(height: 4),
                           Text(
                             upiId.isNotEmpty ? 'UPI ID: $upiId' : 'Please configure UPI ID in Store Settings',
-                            style: TextStyle(fontSize: 11.5, color: upiId.isNotEmpty ? const Color(0xFF3B82F6) : Colors.red),
+                            style: TextStyle(fontSize: 12, color: upiId.isNotEmpty ? ClassicTheme.infoBlue : ClassicTheme.dangerRed),
                           ),
                           const SizedBox(height: 6),
                           Text(
                             'Scan with GPay, PhonePe, Paytm or any UPI App',
-                            style: TextStyle(fontSize: 11, color: context.textSecondary),
+                            style: TextStyle(fontSize: 12, color: context.textSecondary),
                           ),
                         ],
                       ),
@@ -1774,7 +1774,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                         icon: const Icon(Icons.check_circle_rounded, size: 20),
                         label: Text('Confirm UPI Payment Received (₹${totalPayable.toStringAsFixed(2)})'),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF10B981),
+                          backgroundColor: ClassicTheme.successEmerald,
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(vertical: 14),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -1862,7 +1862,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                                 Text('Change to return:', style: TextStyle(fontSize: 12, color: context.textSecondary)),
                                 Text(
                                   '₹${cashChange.toStringAsFixed(2)}',
-                                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF10B981)),
+                                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: ClassicTheme.successEmerald),
                                 ),
                               ],
                             ),
@@ -1877,7 +1877,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                         icon: const Icon(Icons.check_circle_rounded, size: 20),
                         label: Text('Confirm Cash Payment (₹${totalPayable.toStringAsFixed(2)})'),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF10B981),
+                          backgroundColor: ClassicTheme.successEmerald,
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(vertical: 14),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -1905,7 +1905,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                         icon: const Icon(Icons.credit_card_rounded, size: 20),
                         label: Text('Confirm Card Payment (₹${totalPayable.toStringAsFixed(2)})'),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF7C3AED),
+                          backgroundColor: ClassicTheme.secondaryAccent,
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(vertical: 14),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -1950,7 +1950,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
         ),
         selected: isSel,
         onSelected: (_) => onSelect(label),
-        selectedColor: const Color(0xFF2563EB),
+        selectedColor: ClassicTheme.infoBlue,
         backgroundColor: context.inputFill,
       ),
     );
@@ -1966,7 +1966,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
       builder: (ctx) => AlertDialog(
         title: Row(
           children: const [
-            Icon(Icons.warning_amber_rounded, color: Color(0xFFD97706), size: 24),
+            Icon(Icons.warning_amber_rounded, color: ClassicTheme.warningAmber, size: 24),
             SizedBox(width: 8),
             Text('Unserved Food Warning'),
           ],
@@ -1981,7 +1981,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
             child: const Text('Wait for Kitchen'),
           ),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFD97706)),
+            style: ElevatedButton.styleFrom(backgroundColor: ClassicTheme.warningAmber),
             onPressed: () => Navigator.pop(ctx, true),
             child: const Text('Proceed to Settle', style: TextStyle(color: Colors.white)),
           ),
@@ -1997,7 +1997,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
       label: Text(label),
       selected: isSelected,
       onSelected: (_) => onSelect(amount),
-      selectedColor: const Color(0xFF2563EB),
+      selectedColor: ClassicTheme.infoBlue,
       backgroundColor: context.inputFill,
       labelStyle: TextStyle(
         color: isSelected ? Colors.white : context.textPrimary,
@@ -2334,7 +2334,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                   child: const Text('Stay'),
                 ),
                 ElevatedButton(
-                  style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF2563EB)),
+                  style: ElevatedButton.styleFrom(backgroundColor: ClassicTheme.infoBlue),
                   onPressed: () => Navigator.pop(ctx, true),
                   child: const Text('Leave (Save Draft)', style: TextStyle(color: Colors.white)),
                 ),
@@ -2365,13 +2365,13 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFEFF6FF),
+                    color: ClassicTheme.tintInfo,
                     borderRadius: BorderRadius.circular(6),
                     border: Border.all(color: const Color(0xFFBFDBFE)),
                   ),
                   child: Text(
                     'Table ${widget.table.tableNumber}',
-                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF2563EB)),
+                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: ClassicTheme.infoBlue),
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -2383,7 +2383,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
             ),
             Text(
               'Captain: ${activeStaff?.name ?? "Waiter"} • Service Order Pad',
-              style: TextStyle(fontSize: 11, color: context.textSecondary),
+              style: TextStyle(fontSize: 12, color: context.textSecondary),
             ),
           ],
         ),
@@ -2395,8 +2395,8 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                 icon: const Icon(Icons.receipt_long_rounded, size: 16),
                 label: const Text('Settle Bill'),
                 style: OutlinedButton.styleFrom(
-                  foregroundColor: const Color(0xFF059669),
-                  side: const BorderSide(color: Color(0xFF059669)),
+                  foregroundColor: ClassicTheme.successEmerald,
+                  side: const BorderSide(color: ClassicTheme.successEmerald),
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                 ),
@@ -2435,17 +2435,17 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFFEF3C7),
+                        color: ClassicTheme.tintWarning,
                         borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: const Color(0xFFFDE68A)),
+                        border: Border.all(color: ClassicTheme.tintWarning),
                       ),
                       child: Row(
                         children: [
-                          const Icon(Icons.outdoor_grill_rounded, size: 14, color: Color(0xFFD97706)),
+                          const Icon(Icons.outdoor_grill_rounded, size: 14, color: ClassicTheme.warningAmber),
                           const SizedBox(width: 4),
                           Text(
                             '${_tableOrders.length} Rounds • $_tableTotalItems Items • ₹${_tableBalance.toStringAsFixed(0)} 📋',
-                            style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: Color(0xFFB45309)),
+                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: ClassicTheme.warningAmber),
                           ),
                         ],
                       ),
@@ -2497,12 +2497,12 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                         label: Text(cat),
                         selected: isSelected,
                         onSelected: (_) => setState(() => _selectedCategory = cat),
-                        selectedColor: const Color(0xFF2563EB),
+                        selectedColor: ClassicTheme.infoBlue,
                         backgroundColor: context.inputFill,
                         labelStyle: TextStyle(
                           color: isSelected ? Colors.white : context.textPrimary,
                           fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-                          fontSize: 11.5,
+                          fontSize: 12,
                         ),
                       );
                     },
@@ -2517,7 +2517,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
           Expanded(
             child: RefreshIndicator(
               onRefresh: _handleRefresh,
-              color: const Color(0xFF2563EB),
+              color: ClassicTheme.infoBlue,
               child: _isLoadingMenu
                   ? const Center(child: CircularProgressIndicator())
                   : hierarchy.isEmpty
@@ -2578,7 +2578,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                                       ),
                                       child: Text(
                                         '$totalInCat dishes',
-                                        style: const TextStyle(fontSize: 10.5, color: Colors.white, fontWeight: FontWeight.bold),
+                                        style: const TextStyle(fontSize: 12, color: Colors.white, fontWeight: FontWeight.bold),
                                       ),
                                     ),
                                   ],
@@ -2602,7 +2602,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                                             width: 4,
                                             height: 14,
                                             decoration: BoxDecoration(
-                                              color: const Color(0xFF2563EB),
+                                              color: ClassicTheme.infoBlue,
                                               borderRadius: BorderRadius.circular(2),
                                             ),
                                           ),
@@ -2618,7 +2618,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                                           const SizedBox(width: 6),
                                           Text(
                                             '(${items.length})',
-                                            style: TextStyle(fontSize: 11, color: Colors.grey.shade400),
+                                            style: TextStyle(fontSize: 12, color: Colors.grey.shade400),
                                           ),
                                         ],
                                       ),
@@ -2653,7 +2653,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                                                 height: 14,
                                                 decoration: BoxDecoration(
                                                   border: Border.all(
-                                                    color: isVeg ? const Color(0xFF16A34A) : const Color(0xFFDC2626),
+                                                    color: isVeg ? ClassicTheme.successEmerald : ClassicTheme.dangerRed,
                                                     width: 1.5,
                                                   ),
                                                   borderRadius: BorderRadius.circular(3),
@@ -2663,7 +2663,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                                                     width: 6,
                                                     height: 6,
                                                     decoration: BoxDecoration(
-                                                      color: isVeg ? const Color(0xFF16A34A) : const Color(0xFFDC2626),
+                                                      color: isVeg ? ClassicTheme.successEmerald : ClassicTheme.dangerRed,
                                                       shape: BoxShape.circle,
                                                     ),
                                                   ),
@@ -2688,14 +2688,14 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                                                       style: TextStyle(
                                                         fontSize: 12,
                                                         fontWeight: FontWeight.w600,
-                                                        color: isAvail ? const Color(0xFF2563EB) : context.textSecondary,
+                                                        color: isAvail ? ClassicTheme.infoBlue : context.textSecondary,
                                                       ),
                                                     ),
                                                     if (_tray[itemId]?['item']?['notes']?.toString().isNotEmpty == true) ...[
                                                       const SizedBox(height: 2),
                                                       Text(
                                                         '📝 ${_tray[itemId]!['item']['notes']}',
-                                                        style: const TextStyle(fontSize: 10.5, fontStyle: FontStyle.italic, color: Color(0xFFD97706), fontWeight: FontWeight.w600),
+                                                        style: const TextStyle(fontSize: 12, fontStyle: FontStyle.italic, color: ClassicTheme.warningAmber, fontWeight: FontWeight.w600),
                                                       ),
                                                     ],
                                                   ],
@@ -2707,23 +2707,23 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                                                 Container(
                                                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                                                   decoration: BoxDecoration(
-                                                    color: const Color(0xFFFEE2E2),
+                                                    color: ClassicTheme.tintDanger,
                                                     borderRadius: BorderRadius.circular(8),
                                                     border: Border.all(color: const Color(0xFFFCA5A5)),
                                                   ),
-                                                  child: const Text('SOLD OUT', style: TextStyle(color: Color(0xFFDC2626), fontSize: 10.5, fontWeight: FontWeight.bold)),
+                                                  child: const Text('SOLD OUT', style: TextStyle(color: ClassicTheme.dangerRed, fontSize: 12, fontWeight: FontWeight.bold)),
                                                 )
                                               else if (inTrayQty == 0)
                                                 ElevatedButton(
                                                   style: ElevatedButton.styleFrom(
-                                                    backgroundColor: const Color(0xFFEFF6FF),
-                                                    foregroundColor: const Color(0xFF2563EB),
+                                                    backgroundColor: ClassicTheme.tintInfo,
+                                                    foregroundColor: ClassicTheme.infoBlue,
                                                     elevation: 0,
                                                     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
                                                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                                                   ),
                                                   onPressed: () => _addToTray(item),
-                                                  child: const Text('+ ADD', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11.5)),
+                                                  child: const Text('+ ADD', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
                                                 )
                                               else
                                                 Row(
@@ -2735,7 +2735,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                                                             ? Icons.note_alt_rounded
                                                             : Icons.note_alt_outlined,
                                                         color: _tray[itemId]?['item']?['notes']?.toString().isNotEmpty == true
-                                                            ? const Color(0xFFD97706)
+                                                            ? ClassicTheme.warningAmber
                                                             : context.textSecondary,
                                                         size: 18,
                                                       ),
@@ -2746,7 +2746,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                                                     ),
                                                     const SizedBox(width: 4),
                                                     IconButton(
-                                                      icon: const Icon(Icons.remove_circle_outline_rounded, color: Color(0xFFEF4444), size: 22),
+                                                      icon: const Icon(Icons.remove_circle_outline_rounded, color: ClassicTheme.dangerRed, size: 22),
                                                       onPressed: () => _removeFromTray(item),
                                                     ),
                                                     Text(
@@ -2754,7 +2754,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                                                       style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: context.textPrimary),
                                                     ),
                                                     IconButton(
-                                                      icon: const Icon(Icons.add_circle_rounded, color: Color(0xFF2563EB), size: 22),
+                                                      icon: const Icon(Icons.add_circle_rounded, color: ClassicTheme.infoBlue, size: 22),
                                                       onPressed: () => _addToTray(item),
                                                     ),
                                                   ],
@@ -2797,7 +2797,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                         ),
                         Text(
                           '+ GST (${_storeGstRate.toStringAsFixed(0)}%) & SC',
-                          style: TextStyle(fontSize: 10.5, color: context.textSecondary),
+                          style: TextStyle(fontSize: 12, color: context.textSecondary),
                         ),
                       ],
                     ),
@@ -2812,7 +2812,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                           : const Icon(Icons.outdoor_grill_rounded, size: 18),
                       label: Text(_isSending ? 'Sending to Kitchen...' : 'Send KOT to Kitchen 🍳'),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF2563EB),
+                        backgroundColor: ClassicTheme.infoBlue,
                         foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),

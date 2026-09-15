@@ -21,7 +21,6 @@ import '../../providers/theme_provider.dart';
 import '../../core/subscription_plan_model.dart';
 import '../../services/subscription_plan_service.dart';
 import '../../services/tenant_provisioning_service.dart';
-import 'franchise_payment_settings_dialog.dart';
 import '../admin/views/admin_dashboard_view.dart';
 import '../admin/views/admin_inquiries_view.dart';
 import '../admin/views/admin_features_view.dart';
@@ -147,7 +146,7 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
             ),
             title: const Row(
               children: [
-                Icon(Icons.warning_amber_rounded, color: Colors.redAccent, size: 24),
+                Icon(Icons.warning_amber_rounded, color: ClassicTheme.dangerRed, size: 24),
                 SizedBox(width: 8),
                 Text("Clear All Client Data", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
               ],
@@ -200,7 +199,7 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
                         }
                       },
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.redAccent,
+                  backgroundColor: ClassicTheme.dangerRed,
                   foregroundColor: Colors.white,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                 ),
@@ -212,13 +211,6 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
           );
         },
       ),
-    );
-  }
-
-  void _showFranchisePaymentSettingsDialog() {
-    showDialog(
-      context: context,
-      builder: (ctx) => const FranchisePaymentSettingsDialog(),
     );
   }
 
@@ -265,8 +257,8 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
               children: [
                 Container(
                   padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(color: const Color(0xFF0284C7).withValues(alpha: 0.15), shape: BoxShape.circle),
-                  child: const Icon(Icons.mark_email_read_rounded, color: Color(0xFF0284C7), size: 22),
+                  decoration: BoxDecoration(color: ClassicTheme.infoBlue.withValues(alpha: 0.15), shape: BoxShape.circle),
+                  child: const Icon(Icons.mark_email_read_rounded, color: ClassicTheme.infoBlue, size: 22),
                 ),
                 const SizedBox(width: 10),
                 const Expanded(
@@ -280,16 +272,16 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
                       color: (usernameController.text.isNotEmpty && passwordController.text.isNotEmpty)
-                          ? Colors.green.withValues(alpha: 0.15)
-                          : Colors.amber.withValues(alpha: 0.15),
+                          ? ClassicTheme.successEmerald.withValues(alpha: 0.15)
+                          : ClassicTheme.warningAmber.withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(6),
                     ),
                     child: Text(
                       (usernameController.text.isNotEmpty && passwordController.text.isNotEmpty) ? "CONFIGURED" : "PENDING SETUP",
                       style: TextStyle(
-                        fontSize: 10,
+                        fontSize: 12,
                         fontWeight: FontWeight.bold,
-                        color: (usernameController.text.isNotEmpty && passwordController.text.isNotEmpty) ? Colors.green : Colors.amber.shade800,
+                        color: (usernameController.text.isNotEmpty && passwordController.text.isNotEmpty) ? ClassicTheme.successEmerald : ClassicTheme.warningAmber,
                       ),
                     ),
                   ),
@@ -383,9 +375,9 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
                           SwitchListTile(
                             contentPadding: EdgeInsets.zero,
                             title: Text("Use SSL / TLS Direct Connection", style: TextStyle(color: context.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
-                            subtitle: Text("Enable if connecting directly via Port 465 (Gmail Port 587 uses STARTTLS by default)", style: TextStyle(color: context.textSecondary, fontSize: 11)),
+                            subtitle: Text("Enable if connecting directly via Port 465 (Gmail Port 587 uses STARTTLS by default)", style: TextStyle(color: context.textSecondary, fontSize: 12)),
                             value: isSsl,
-                            activeThumbColor: const Color(0xFF0284C7),
+                            activeThumbColor: ClassicTheme.infoBlue,
                             onChanged: (v) => setDialogState(() => isSsl = v),
                           ),
                           const Divider(height: 28),
@@ -439,7 +431,7 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
                                     : const Icon(Icons.send_rounded, size: 16),
                                 label: const Text("Send Test", style: TextStyle(fontSize: 12)),
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: const Color(0xFF0284C7),
+                                  backgroundColor: ClassicTheme.infoBlue,
                                   foregroundColor: Colors.white,
                                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                                 ),
@@ -479,7 +471,7 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
                   }
                 },
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF0284C7),
+                  backgroundColor: ClassicTheme.infoBlue,
                   foregroundColor: Colors.white,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                 ),
@@ -514,8 +506,8 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
               children: [
                 Container(
                   padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(color: Colors.green.withValues(alpha: 0.15), shape: BoxShape.circle),
-                  child: const Icon(Icons.cloud_sync_rounded, color: Colors.green, size: 22),
+                  decoration: BoxDecoration(color: ClassicTheme.successEmerald.withValues(alpha: 0.15), shape: BoxShape.circle),
+                  child: const Icon(Icons.cloud_sync_rounded, color: ClassicTheme.successEmerald, size: 22),
                 ),
                 const SizedBox(width: 10),
                 const Expanded(
@@ -557,21 +549,21 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
                       padding: const EdgeInsets.all(10),
                       margin: const EdgeInsets.only(bottom: 10),
                       decoration: BoxDecoration(
-                        color: testSuccess ? Colors.green.withValues(alpha: 0.1) : Colors.red.withValues(alpha: 0.1),
+                        color: testSuccess ? ClassicTheme.successEmerald.withValues(alpha: 0.1) : ClassicTheme.dangerRed.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: testSuccess ? Colors.green : Colors.red),
+                        border: Border.all(color: testSuccess ? ClassicTheme.successEmerald : ClassicTheme.dangerRed),
                       ),
                       child: Row(
                         children: [
                           Icon(testSuccess ? Icons.check_circle_rounded : Icons.error_outline_rounded,
-                              color: testSuccess ? Colors.green : Colors.red, size: 18),
+                              color: testSuccess ? ClassicTheme.successEmerald : ClassicTheme.dangerRed, size: 18),
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
                               testResult!,
                               style: TextStyle(
-                                  color: testSuccess ? Colors.green.shade800 : Colors.red.shade800,
-                                  fontSize: 11.5,
+                                  color: testSuccess ? ClassicTheme.successEmerald : ClassicTheme.dangerRed,
+                                  fontSize: 12,
                                   fontWeight: FontWeight.w600),
                             ),
                           ),
@@ -635,7 +627,7 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
                 child: Text("Cancel", style: TextStyle(color: context.textSecondary)),
               ),
               ElevatedButton(
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white),
+                style: ElevatedButton.styleFrom(backgroundColor: ClassicTheme.successEmerald, foregroundColor: Colors.white),
                 onPressed: () async {
                   final url = urlController.text.trim();
                   await AppsScriptBackendService.setWebhookUrl(url);
@@ -784,7 +776,7 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
                   Text(
                     currentTitle.$2,
                     style: TextStyle(
-                      fontSize: 11,
+                      fontSize: 12,
                       color: context.textSecondary,
                     ),
                     maxLines: 1,
@@ -799,7 +791,7 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
             icon: const Icon(Icons.add_business_rounded, size: 14),
             label: Text(
               isVeryCompact ? "Onboard" : "Onboard Tenant",
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11),
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
             ),
             style: ElevatedButton.styleFrom(
               backgroundColor: ClassicTheme.primaryAccentIndigo,
@@ -811,22 +803,17 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
           SizedBox(width: isVeryCompact ? 2 : 6),
           if (!isCompact) ...[
             IconButton(
-              icon: const Icon(Icons.cloud_sync_rounded, color: Colors.green, size: 20),
+              icon: const Icon(Icons.cloud_sync_rounded, color: ClassicTheme.successEmerald, size: 20),
               tooltip: "Cloud Database Webhook",
               onPressed: _showWebhookSettingsDialog,
             ),
             IconButton(
-              icon: const Icon(Icons.email_outlined, color: Color(0xFF38BDF8), size: 20),
+              icon: const Icon(Icons.email_outlined, color: ClassicTheme.infoBlue, size: 20),
               tooltip: "Platform SMTP Email",
               onPressed: _showSmtpSettingsDialog,
             ),
             IconButton(
-              icon: const Icon(Icons.payment_rounded, color: Color(0xFFF59E0B), size: 20),
-              tooltip: "Apply Store Razorpay Gateways",
-              onPressed: _showFranchisePaymentSettingsDialog,
-            ),
-            IconButton(
-              icon: const Icon(Icons.cleaning_services_rounded, color: Colors.orangeAccent, size: 20),
+              icon: const Icon(Icons.cleaning_services_rounded, color: ClassicTheme.warningAmber, size: 20),
               tooltip: "Clean Database (Keep Admin)",
               onPressed: _showClearDatabaseDialog,
             ),
@@ -849,9 +836,6 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
                   case 'smtp':
                     _showSmtpSettingsDialog();
                     break;
-                  case 'razorpay':
-                    _showFranchisePaymentSettingsDialog();
-                    break;
                   case 'cleanup':
                     _showClearDatabaseDialog();
                     break;
@@ -862,7 +846,7 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
                   value: 'webhook',
                   child: Row(
                     children: [
-                      Icon(Icons.cloud_sync_rounded, color: Colors.green, size: 18),
+                      Icon(Icons.cloud_sync_rounded, color: ClassicTheme.successEmerald, size: 18),
                       SizedBox(width: 10),
                       Text('Cloud Webhook URL', style: TextStyle(fontSize: 13)),
                     ],
@@ -872,19 +856,9 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
                   value: 'smtp',
                   child: Row(
                     children: [
-                      Icon(Icons.email_outlined, color: Color(0xFF38BDF8), size: 18),
+                      Icon(Icons.email_outlined, color: ClassicTheme.infoBlue, size: 18),
                       SizedBox(width: 10),
                       Text('Platform SMTP Email', style: TextStyle(fontSize: 13)),
-                    ],
-                  ),
-                ),
-                const PopupMenuItem(
-                  value: 'razorpay',
-                  child: Row(
-                    children: [
-                      Icon(Icons.payment_rounded, color: Color(0xFFF59E0B), size: 18),
-                      SizedBox(width: 10),
-                      Text('Store Razorpay Gateways', style: TextStyle(fontSize: 13)),
                     ],
                   ),
                 ),
@@ -893,9 +867,9 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
                   value: 'cleanup',
                   child: Row(
                     children: [
-                      Icon(Icons.cleaning_services_rounded, color: Colors.redAccent, size: 18),
+                      Icon(Icons.cleaning_services_rounded, color: ClassicTheme.dangerRed, size: 18),
                       SizedBox(width: 10),
-                      Text('Clean Database (Keep Admin)', style: TextStyle(fontSize: 13, color: Colors.redAccent)),
+                      Text('Clean Database (Keep Admin)', style: TextStyle(fontSize: 13, color: ClassicTheme.dangerRed)),
                     ],
                   ),
                 ),
@@ -959,7 +933,7 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
                         Text(
                           "Super Admin Console",
                           style: TextStyle(
-                            fontSize: 10,
+                            fontSize: 12,
                             color: context.textSecondary,
                             fontWeight: FontWeight.w500,
                           ),
@@ -1024,12 +998,12 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
                           return Container(
                             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                             decoration: BoxDecoration(
-                              color: Colors.orange.shade800,
+                              color: ClassicTheme.warningAmber,
                               borderRadius: BorderRadius.circular(10),
                             ),
                             child: Text(
                               '$total',
-                              style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                              style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
                             ),
                           );
                         },
@@ -1056,12 +1030,12 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
                       return Container(
                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                         decoration: BoxDecoration(
-                          color: Colors.amber.shade800,
+                          color: ClassicTheme.warningAmber,
                           borderRadius: BorderRadius.circular(10),
                         ),
                         child: Text(
                           '$count',
-                          style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                          style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
                         ),
                       );
                     },
@@ -1132,7 +1106,7 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
                             Icon(
                               isDark ? Icons.light_mode_outlined : Icons.dark_mode_outlined,
                               size: 18,
-                              color: isDark ? Colors.amber : context.textSecondary,
+                              color: isDark ? ClassicTheme.warningAmber : context.textSecondary,
                             ),
                             if (showExpanded) ...[
                               const SizedBox(width: 10),
@@ -1170,7 +1144,7 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
                         Expanded(
                           child: Text(
                             kAdminEmail,
-                            style: TextStyle(fontSize: 11, color: context.textSecondary),
+                            style: TextStyle(fontSize: 12, color: context.textSecondary),
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
@@ -1309,7 +1283,7 @@ class OrganizationsTab extends ConsumerStatefulWidget {
             ],
           ),
           const SizedBox(height: 2),
-          Text(subtitle, style: TextStyle(color: context.textSecondary, fontSize: 11)),
+          Text(subtitle, style: TextStyle(color: context.textSecondary, fontSize: 12)),
           const SizedBox(height: 8),
           Wrap(
             spacing: 8,
@@ -1351,7 +1325,7 @@ class OrganizationsTab extends ConsumerStatefulWidget {
               ),
               child: Text(
                 dependencyTag,
-                style: TextStyle(color: color, fontSize: 9, fontWeight: FontWeight.bold),
+                style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.bold),
               ),
             ),
           ],
@@ -1422,7 +1396,7 @@ class OrganizationsTab extends ConsumerStatefulWidget {
       builder: (context) {
         return StatefulBuilder(
           builder: (context, setDialogState) {
-            final primaryAccent = const Color(0xFFF59E0B);
+            final primaryAccent = ClassicTheme.warningAmber;
             return AlertDialog(
               backgroundColor: context.surfaceColor,
               shape: RoundedRectangleBorder(
@@ -1447,7 +1421,7 @@ class OrganizationsTab extends ConsumerStatefulWidget {
                     ),
                     child: Text(
                       "Dynamic Plan Onboarding",
-                      style: TextStyle(color: primaryAccent, fontSize: 11, fontWeight: FontWeight.bold),
+                      style: TextStyle(color: primaryAccent, fontSize: 12, fontWeight: FontWeight.bold),
                     ),
                   ),
                 ],
@@ -1978,7 +1952,7 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
       barrierDismissible: false,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) {
-          final primaryAccent = context.isDark ? const Color(0xFF60A5FA) : const Color(0xFF2563EB);
+          final primaryAccent = context.isDark ? ClassicTheme.infoBlue : ClassicTheme.infoBlue;
 
           if (!isDataLoaded) {
             isDataLoaded = true;
@@ -2039,10 +2013,10 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: Colors.green.withValues(alpha: 0.15),
+                    color: ClassicTheme.successEmerald.withValues(alpha: 0.15),
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(Icons.card_membership_rounded, color: Colors.green, size: 22),
+                  child: const Icon(Icons.card_membership_rounded, color: ClassicTheme.successEmerald, size: 22),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -2115,11 +2089,11 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                                   child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
-                                      Text("Expires On", style: TextStyle(color: context.textSecondary, fontSize: 10)),
+                                      Text("Expires On", style: TextStyle(color: context.textSecondary, fontSize: 12)),
                                       const SizedBox(height: 2),
                                       Text(
                                         "${endDate.day}/${endDate.month}/${endDate.year} ($daysLeft days)",
-                                        style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold, fontSize: 12),
+                                        style: const TextStyle(color: ClassicTheme.successEmerald, fontWeight: FontWeight.bold, fontSize: 12),
                                       ),
                                     ],
                                   ),
@@ -2128,31 +2102,31 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                             ],
                           ),
                           const SizedBox(height: 10),
-                          Text("Quick Extend Duration:", style: TextStyle(color: context.textSecondary, fontSize: 11, fontWeight: FontWeight.w600)),
+                          Text("Quick Extend Duration:", style: TextStyle(color: context.textSecondary, fontSize: 12, fontWeight: FontWeight.w600)),
                           const SizedBox(height: 6),
                           Wrap(
                             spacing: 8,
                             runSpacing: 6,
                             children: [
                               ActionChip(
-                                label: const Text("+7 Days", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                                label: const Text("+7 Days", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                                 onPressed: () => setDialogState(() => endDate = DateTime.now().add(const Duration(days: 7))),
                               ),
                               ActionChip(
-                                label: const Text("+14 Days", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                                label: const Text("+14 Days", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                                 onPressed: () => setDialogState(() => endDate = DateTime.now().add(const Duration(days: 14))),
                               ),
                               ActionChip(
-                                label: const Text("+30 Days", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                                label: const Text("+30 Days", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                                 onPressed: () => setDialogState(() => endDate = DateTime.now().add(const Duration(days: 30))),
                               ),
                               ActionChip(
-                                label: const Text("+1 Year", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                                label: const Text("+1 Year", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                                 onPressed: () => setDialogState(() => endDate = DateTime.now().add(const Duration(days: 365))),
                               ),
                               ActionChip(
                                 avatar: const Icon(Icons.calendar_today, size: 14),
-                                label: const Text("Pick Date", style: TextStyle(fontSize: 11)),
+                                label: const Text("Pick Date", style: TextStyle(fontSize: 12)),
                                 onPressed: () async {
                                   final picked = await showDatePicker(
                                     context: context,
@@ -2172,7 +2146,7 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                           const SizedBox(height: 4),
                           Text(
                             "Notify administrators and display in-app reminder before subscription ends.",
-                            style: TextStyle(color: context.textSecondary, fontSize: 11),
+                            style: TextStyle(color: context.textSecondary, fontSize: 12),
                           ),
                           const SizedBox(height: 8),
                           DropdownButtonFormField<int>(
@@ -2255,7 +2229,7 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                                     role == 'MANAGER' ? 'Store Manager' :
                                     role == 'BILLING' ? 'Cashier / Billing' :
                                     role == 'KITCHEN' ? 'Kitchen Chef' : 'Table Captain / Waiter',
-                                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: allowedRoles.contains(role) ? primaryAccent : null),
+                                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: allowedRoles.contains(role) ? primaryAccent : null),
                                   ),
                                   selected: allowedRoles.contains(role),
                                   selectedColor: primaryAccent.withValues(alpha: 0.15),
@@ -2274,49 +2248,49 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                           const SizedBox(height: 16),
                           Text("Dynamic Feature Toggles (Real-Time Propagation)", style: TextStyle(color: context.textPrimary, fontWeight: FontWeight.bold, fontSize: 13)),
                           const SizedBox(height: 4),
-                          Text("Changes reflect on client POS terminals instantly without app restarts.", style: TextStyle(color: context.textSecondary, fontSize: 11)),
+                          Text("Changes reflect on client POS terminals instantly without app restarts.", style: TextStyle(color: context.textSecondary, fontSize: 12)),
                           const SizedBox(height: 8),
                           Wrap(
                             spacing: 8,
                             runSpacing: 6,
                             children: [
                               FilterChip(
-                                label: const Text("Fast QSR Billing", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                                label: const Text("Fast QSR Billing", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                                 selected: qsrBilling,
                                 onSelected: (val) => setDialogState(() => qsrBilling = val),
                               ),
                               FilterChip(
-                                label: const Text("Dine-In Tables", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                                label: const Text("Dine-In Tables", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                                 selected: tableManagement,
                                 onSelected: (val) => setDialogState(() => tableManagement = val),
                               ),
                               FilterChip(
-                                label: const Text("Kitchen Screen (KDS)", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                                label: const Text("Kitchen Screen (KDS)", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                                 selected: kdsEnabled,
                                 onSelected: (val) => setDialogState(() => kdsEnabled = val),
                               ),
                               FilterChip(
-                                label: const Text("Table QR Menu", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                                label: const Text("Table QR Menu", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                                 selected: qrOrdering,
                                 onSelected: (val) => setDialogState(() => qrOrdering = val),
                               ),
                               FilterChip(
-                                label: const Text("Dual KOT Printing", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                                label: const Text("Dual KOT Printing", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                                 selected: dualPrinting,
                                 onSelected: (val) => setDialogState(() => dualPrinting = val),
                               ),
                               FilterChip(
-                                label: const Text("Recipe Inventory", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                                label: const Text("Recipe Inventory", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                                 selected: recipeInventory,
                                 onSelected: (val) => setDialogState(() => recipeInventory = val),
                               ),
                               FilterChip(
-                                label: const Text("Day-End Summary", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                                label: const Text("Day-End Summary", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                                 selected: dayEndReports,
                                 onSelected: (val) => setDialogState(() => dayEndReports = val),
                               ),
                               FilterChip(
-                                label: const Text("Multi-Branch Hierarchy", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                                label: const Text("Multi-Branch Hierarchy", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                                 selected: multiOutlet,
                                 onSelected: (val) => setDialogState(() => multiOutlet = val),
                               ),
@@ -2439,7 +2413,7 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                     : const Icon(Icons.check_circle_rounded, size: 16),
                 label: Text(isSaving ? "Saving..." : "Save & Activate License", style: const TextStyle(fontWeight: FontWeight.bold)),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.green,
+                  backgroundColor: ClassicTheme.successEmerald,
                   foregroundColor: Colors.white,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                 ),
@@ -2475,16 +2449,6 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
     bool isProvisioningSheet = false;
     bool mustChangePassword = false;
 
-    // Tenant Razorpay Gateway Configuration
-    bool isRazorpayEnabled = false;
-    final rzpKeyIdController = TextEditingController();
-    final rzpKeySecretController = TextEditingController();
-    final rzpWebhookSecretController = TextEditingController();
-    bool obscureRzpSecret = true;
-    bool isTestingRzp = false;
-    String? rzpTestMessage;
-    bool rzpTestPassed = false;
-
     // Tenant SMTP Configuration
     bool inheritPlatformSmtp = true;
     final smtpHostController = TextEditingController(text: 'smtp.gmail.com');
@@ -2509,7 +2473,7 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
       builder: (context) {
         return StatefulBuilder(
           builder: (context, setDialogState) {
-            final primaryAccent = context.isDark ? const Color(0xFF60A5FA) : const Color(0xFF2563EB);
+            final primaryAccent = context.isDark ? ClassicTheme.infoBlue : ClassicTheme.infoBlue;
 
             if (!dataLoaded) {
               dataLoaded = true;
@@ -2532,15 +2496,6 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                     initialStorageMode = storageMode;
                     existingSheetId = (data['googleSheetId'] ?? '').toString();
                     existingSheetUrl = (data['googleSheetUrl'] ?? '').toString();
-
-                    // Razorpay
-                    if (data['razorpay'] is Map) {
-                      final rzp = Map<String, dynamic>.from(data['razorpay'] as Map);
-                      isRazorpayEnabled = rzp['enabled'] == true;
-                      rzpKeyIdController.text = (rzp['keyId'] ?? '').toString();
-                      rzpKeySecretController.text = (rzp['keySecret'] ?? '').toString();
-                      rzpWebhookSecretController.text = (rzp['webhookSecret'] ?? '').toString();
-                    }
 
                     // SMTP
                     if (data['smtpConfig'] is Map) {
@@ -2626,7 +2581,7 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                     ),
                     child: Text(
                       "ID: $orgId",
-                      style: TextStyle(color: primaryAccent, fontSize: 11, fontWeight: FontWeight.bold),
+                      style: TextStyle(color: primaryAccent, fontSize: 12, fontWeight: FontWeight.bold),
                     ),
                   ),
                 ],
@@ -2925,7 +2880,7 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                                         ),
                                         title: const Row(
                                           children: [
-                                            Icon(Icons.warning_amber_rounded, color: Colors.amber, size: 28),
+                                            Icon(Icons.warning_amber_rounded, color: ClassicTheme.warningAmber, size: 28),
                                             SizedBox(width: 8),
                                             Expanded(
                                               child: Text(
@@ -2946,7 +2901,7 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                                           ),
                                           ElevatedButton(
                                             style: ElevatedButton.styleFrom(
-                                              backgroundColor: Colors.redAccent,
+                                              backgroundColor: ClassicTheme.dangerRed,
                                               foregroundColor: Colors.white,
                                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                                             ),
@@ -2973,13 +2928,13 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                                   padding: const EdgeInsets.all(12),
                                   decoration: BoxDecoration(
                                     color: existingSheetId.isNotEmpty
-                                        ? const Color(0xFF10B981).withValues(alpha: 0.08)
-                                        : Colors.amber.withValues(alpha: 0.08),
+                                        ? ClassicTheme.successEmerald.withValues(alpha: 0.08)
+                                        : ClassicTheme.warningAmber.withValues(alpha: 0.08),
                                     borderRadius: BorderRadius.circular(10),
                                     border: Border.all(
                                       color: existingSheetId.isNotEmpty
-                                          ? const Color(0xFF10B981).withValues(alpha: 0.3)
-                                          : Colors.amber.withValues(alpha: 0.3),
+                                          ? ClassicTheme.successEmerald.withValues(alpha: 0.3)
+                                          : ClassicTheme.warningAmber.withValues(alpha: 0.3),
                                     ),
                                   ),
                                   child: Column(
@@ -2993,8 +2948,8 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                                                 : Icons.warning_amber_rounded,
                                             size: 18,
                                             color: existingSheetId.isNotEmpty
-                                                ? const Color(0xFF10B981)
-                                                : Colors.amber,
+                                                ? ClassicTheme.successEmerald
+                                                : ClassicTheme.warningAmber,
                                           ),
                                           const SizedBox(width: 8),
                                           Expanded(
@@ -3006,8 +2961,8 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                                                 fontWeight: FontWeight.bold,
                                                 fontSize: 12,
                                                 color: existingSheetId.isNotEmpty
-                                                    ? const Color(0xFF10B981)
-                                                    : Colors.amber.shade900,
+                                                    ? ClassicTheme.successEmerald
+                                                    : ClassicTheme.warningAmber,
                                               ),
                                             ),
                                           ),
@@ -3030,7 +2985,7 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                                         existingSheetId.isNotEmpty
                                             ? "Cloud Database Status: Connected & Active"
                                             : "This tenant has no linked cloud database. Click below to provision or connect.",
-                                        style: TextStyle(fontSize: 11, color: context.textSecondary),
+                                        style: TextStyle(fontSize: 12, color: context.textSecondary),
                                       ),
                                       const SizedBox(height: 8),
                                       ElevatedButton.icon(
@@ -3087,10 +3042,10 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                                             : const Icon(Icons.add_to_drive_rounded, size: 16),
                                         label: Text(
                                           existingSheetId.isNotEmpty ? "Re-connect / Repair Database" : "Provision Cloud Database Now",
-                                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11),
+                                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
                                         ),
                                         style: ElevatedButton.styleFrom(
-                                          backgroundColor: const Color(0xFF10B981),
+                                          backgroundColor: ClassicTheme.successEmerald,
                                           foregroundColor: Colors.white,
                                           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
@@ -3105,7 +3060,7 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                                 dense: true,
                                 contentPadding: EdgeInsets.zero,
                                 title: Text("Require Password Reset on Next Login", style: TextStyle(color: context.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
-                                subtitle: Text("Prompt user to change their temporary password upon login", style: TextStyle(color: context.textSecondary, fontSize: 11)),
+                                subtitle: Text("Prompt user to change their temporary password upon login", style: TextStyle(color: context.textSecondary, fontSize: 12)),
                                 value: mustChangePassword,
                                 activeThumbColor: primaryAccent,
                                 onChanged: (v) => setDialogState(() => mustChangePassword = v),
@@ -3113,177 +3068,25 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
 
                               const SizedBox(height: 18),
 
-                              // ── SECTION 2: TENANT RAZORPAY GATEWAY SETUP ─────────────
-                              Container(
-                                padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 10),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFF59E0B).withValues(alpha: 0.12),
-                                  borderRadius: BorderRadius.circular(6),
-                                ),
-                                child: const Row(
-                                  children: [
-                                    Icon(Icons.payment_rounded, color: Color(0xFFF59E0B), size: 16),
-                                    SizedBox(width: 6),
-                                    Text("2. Tenant Razorpay Gateway Setup", style: TextStyle(color: Color(0xFFF59E0B), fontWeight: FontWeight.bold, fontSize: 13)),
-                                  ],
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                "Configure dedicated Razorpay gateway credentials for this restaurant. Table QR and online customer payments will be routed directly to this restaurant's Razorpay account.",
-                                style: TextStyle(color: context.textSecondary, fontSize: 11.5, height: 1.3),
-                              ),
-                              const SizedBox(height: 6),
-                              SwitchListTile.adaptive(
-                                dense: true,
-                                contentPadding: EdgeInsets.zero,
-                                title: Text("Enable Custom Tenant Razorpay Gateway", style: TextStyle(color: context.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
-                                subtitle: Text("When enabled, QR & counter dynamic UPI settle directly into this tenant's account", style: TextStyle(color: context.textSecondary, fontSize: 11)),
-                                value: isRazorpayEnabled,
-                                activeThumbColor: const Color(0xFFF59E0B),
-                                onChanged: (v) => setDialogState(() => isRazorpayEnabled = v),
-                              ),
-                              if (isRazorpayEnabled) ...[
-                                const SizedBox(height: 8),
-                                TextFormField(
-                                  controller: rzpKeyIdController,
-                                  style: TextStyle(color: context.textPrimary, fontSize: 13, fontFamily: 'monospace'),
-                                  decoration: InputDecoration(
-                                    labelText: "Razorpay Key ID *",
-                                    hintText: "rzp_test_... or rzp_live_...",
-                                    labelStyle: TextStyle(color: context.textSecondary, fontSize: 13),
-                                    prefixIcon: const Icon(Icons.key_rounded, size: 18),
-                                    enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: context.borderColor)),
-                                    focusedBorder: const UnderlineInputBorder(borderSide: BorderSide(color: Color(0xFFF59E0B), width: 2)),
-                                  ),
-                                  validator: isRazorpayEnabled ? (v) => v == null || v.trim().isEmpty ? "Key ID required" : null : null,
-                                ),
-                                const SizedBox(height: 10),
-                                TextFormField(
-                                  controller: rzpKeySecretController,
-                                  obscureText: obscureRzpSecret,
-                                  style: TextStyle(color: context.textPrimary, fontSize: 13, fontFamily: 'monospace'),
-                                  decoration: InputDecoration(
-                                    labelText: "Razorpay Key Secret *",
-                                    hintText: "Enter secret key",
-                                    labelStyle: TextStyle(color: context.textSecondary, fontSize: 13),
-                                    prefixIcon: const Icon(Icons.password_rounded, size: 18),
-                                    enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: context.borderColor)),
-                                    focusedBorder: const UnderlineInputBorder(borderSide: BorderSide(color: Color(0xFFF59E0B), width: 2)),
-                                    suffixIcon: IconButton(
-                                      icon: Icon(obscureRzpSecret ? Icons.visibility_outlined : Icons.visibility_off_outlined, size: 18, color: context.textSecondary),
-                                      onPressed: () => setDialogState(() => obscureRzpSecret = !obscureRzpSecret),
-                                    ),
-                                  ),
-                                  validator: isRazorpayEnabled ? (v) => v == null || v.trim().isEmpty ? "Key secret required" : null : null,
-                                ),
-                                const SizedBox(height: 10),
-                                TextFormField(
-                                  controller: rzpWebhookSecretController,
-                                  obscureText: true,
-                                  style: TextStyle(color: context.textPrimary, fontSize: 13, fontFamily: 'monospace'),
-                                  decoration: InputDecoration(
-                                    labelText: "Webhook Secret (Optional)",
-                                    hintText: "Webhook Secret from Razorpay Dashboard",
-                                    labelStyle: TextStyle(color: context.textSecondary, fontSize: 13),
-                                    prefixIcon: const Icon(Icons.webhook_rounded, size: 18),
-                                    enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: context.borderColor)),
-                                    focusedBorder: const UnderlineInputBorder(borderSide: BorderSide(color: Color(0xFFF59E0B), width: 2)),
-                                  ),
-                                ),
-                                const SizedBox(height: 12),
-                                Row(
-                                  children: [
-                                    ElevatedButton.icon(
-                                      onPressed: isTestingRzp
-                                          ? null
-                                          : () async {
-                                              final keyId = rzpKeyIdController.text.trim();
-                                              final keySecret = rzpKeySecretController.text.trim();
-                                              if (keyId.isEmpty) {
-                                                AppToast.showError(context, "Enter Key ID first");
-                                                return;
-                                              }
-                                              setDialogState(() {
-                                                isTestingRzp = true;
-                                                rzpTestMessage = null;
-                                              });
-                                              try {
-                                                final res = await AppsScriptBackendService.testOutletRazorpay(
-                                                  outletId: orgId,
-                                                  keyId: keyId,
-                                                  keySecret: keySecret,
-                                                );
-                                                final ok = res['ok'] == true || res['success'] == true;
-                                                setDialogState(() {
-                                                  isTestingRzp = false;
-                                                  rzpTestPassed = ok;
-                                                  rzpTestMessage = (res['message'] ?? res['error'] ?? (ok ? "Accepted" : "Failed")).toString();
-                                                });
-                                                if (ok) {
-                                                  if (context.mounted) AppToast.showSuccess(context, "Razorpay verified for this store!");
-                                                } else {
-                                                  if (context.mounted) AppToast.showError(context, rzpTestMessage ?? "Verification failed");
-                                                }
-                                              } catch (e) {
-                                                setDialogState(() {
-                                                  isTestingRzp = false;
-                                                  rzpTestPassed = false;
-                                                  rzpTestMessage = "Error: $e";
-                                                });
-                                                if (context.mounted) AppToast.showError(context, "Test failed: $e");
-                                              }
-                                            },
-                                      icon: isTestingRzp
-                                          ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                                          : const Icon(Icons.verified_user_rounded, size: 16),
-                                      label: Text(isTestingRzp ? "Testing..." : "Test Connection", style: const TextStyle(fontSize: 12)),
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: const Color(0xFFF59E0B),
-                                        foregroundColor: Colors.white,
-                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-                                      ),
-                                    ),
-                                    if (rzpTestMessage != null) ...[
-                                      const SizedBox(width: 10),
-                                      Expanded(
-                                        child: Text(
-                                          rzpTestMessage!,
-                                          style: TextStyle(
-                                            fontSize: 11,
-                                            fontWeight: FontWeight.w600,
-                                            color: rzpTestPassed ? Colors.green : Colors.redAccent,
-                                          ),
-                                          maxLines: 2,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                      ),
-                                    ],
-                                  ],
-                                ),
-                              ],
-
-                              const SizedBox(height: 18),
-
                               // ── SECTION 3: EMAIL & SMTP CONFIGURATION ─────────────
                               Container(
                                 padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 10),
                                 decoration: BoxDecoration(
-                                  color: const Color(0xFF0284C7).withValues(alpha: 0.12),
+                                  color: ClassicTheme.infoBlue.withValues(alpha: 0.12),
                                   borderRadius: BorderRadius.circular(6),
                                 ),
                                 child: const Row(
                                   children: [
-                                    Icon(Icons.mark_email_read_rounded, color: Color(0xFF0284C7), size: 16),
+                                    Icon(Icons.mark_email_read_rounded, color: ClassicTheme.infoBlue, size: 16),
                                     SizedBox(width: 6),
-                                    Text("3. Email & SMTP Configuration", style: TextStyle(color: Color(0xFF0284C7), fontWeight: FontWeight.bold, fontSize: 13)),
+                                    Text("3. Email & SMTP Configuration", style: TextStyle(color: ClassicTheme.infoBlue, fontWeight: FontWeight.bold, fontSize: 13)),
                                   ],
                                 ),
                               ),
                               const SizedBox(height: 8),
                               Text(
                                 "Configure outgoing email server for sending digital POS tax invoices to customers upon bill settlement and administrative alerts.",
-                                style: TextStyle(color: context.textSecondary, fontSize: 11.5, height: 1.3),
+                                style: TextStyle(color: context.textSecondary, fontSize: 12, height: 1.3),
                               ),
                               const SizedBox(height: 6),
                               SwitchListTile.adaptive(
@@ -3294,10 +3097,10 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                                   inheritPlatformSmtp
                                       ? "Uses the central system SMTP server configured by master admin"
                                       : "Using dedicated custom SMTP credentials for this tenant",
-                                  style: TextStyle(color: context.textSecondary, fontSize: 11),
+                                  style: TextStyle(color: context.textSecondary, fontSize: 12),
                                 ),
                                 value: inheritPlatformSmtp,
-                                activeThumbColor: const Color(0xFF0284C7),
+                                activeThumbColor: ClassicTheme.infoBlue,
                                 onChanged: (v) => setDialogState(() => inheritPlatformSmtp = v),
                               ),
                               if (!inheritPlatformSmtp) ...[
@@ -3314,7 +3117,7 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                                           hintText: "smtp.gmail.com",
                                           labelStyle: TextStyle(color: context.textSecondary, fontSize: 13),
                                           enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: context.borderColor)),
-                                          focusedBorder: const UnderlineInputBorder(borderSide: BorderSide(color: Color(0xFF0284C7), width: 2)),
+                                          focusedBorder: const UnderlineInputBorder(borderSide: BorderSide(color: ClassicTheme.infoBlue, width: 2)),
                                         ),
                                       ),
                                     ),
@@ -3330,7 +3133,7 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                                           hintText: "587",
                                           labelStyle: TextStyle(color: context.textSecondary, fontSize: 13),
                                           enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: context.borderColor)),
-                                          focusedBorder: const UnderlineInputBorder(borderSide: BorderSide(color: Color(0xFF0284C7), width: 2)),
+                                          focusedBorder: const UnderlineInputBorder(borderSide: BorderSide(color: ClassicTheme.infoBlue, width: 2)),
                                         ),
                                       ),
                                     ),
@@ -3346,7 +3149,7 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                                     labelStyle: TextStyle(color: context.textSecondary, fontSize: 13),
                                     prefixIcon: const Icon(Icons.account_circle_outlined, size: 18),
                                     enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: context.borderColor)),
-                                    focusedBorder: const UnderlineInputBorder(borderSide: BorderSide(color: Color(0xFF0284C7), width: 2)),
+                                    focusedBorder: const UnderlineInputBorder(borderSide: BorderSide(color: ClassicTheme.infoBlue, width: 2)),
                                   ),
                                 ),
                                 const SizedBox(height: 10),
@@ -3360,7 +3163,7 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                                     labelStyle: TextStyle(color: context.textSecondary, fontSize: 13),
                                     prefixIcon: const Icon(Icons.lock_outline, size: 18),
                                     enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: context.borderColor)),
-                                    focusedBorder: const UnderlineInputBorder(borderSide: BorderSide(color: Color(0xFF0284C7), width: 2)),
+                                    focusedBorder: const UnderlineInputBorder(borderSide: BorderSide(color: ClassicTheme.infoBlue, width: 2)),
                                     suffixIcon: IconButton(
                                       icon: Icon(obscureSmtpPassword ? Icons.visibility_outlined : Icons.visibility_off_outlined, size: 18, color: context.textSecondary),
                                       onPressed: () => setDialogState(() => obscureSmtpPassword = !obscureSmtpPassword),
@@ -3377,7 +3180,7 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                                     labelStyle: TextStyle(color: context.textSecondary, fontSize: 13),
                                     prefixIcon: const Icon(Icons.badge_outlined, size: 18),
                                     enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: context.borderColor)),
-                                    focusedBorder: const UnderlineInputBorder(borderSide: BorderSide(color: Color(0xFF0284C7), width: 2)),
+                                    focusedBorder: const UnderlineInputBorder(borderSide: BorderSide(color: ClassicTheme.infoBlue, width: 2)),
                                   ),
                                 ),
                                 const SizedBox(height: 8),
@@ -3385,9 +3188,9 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                                   dense: true,
                                   contentPadding: EdgeInsets.zero,
                                   title: Text("Use SSL / TLS Direct Connection", style: TextStyle(color: context.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
-                                  subtitle: Text("Enable if Port 465 (Port 587 uses STARTTLS by default)", style: TextStyle(color: context.textSecondary, fontSize: 11)),
+                                  subtitle: Text("Enable if Port 465 (Port 587 uses STARTTLS by default)", style: TextStyle(color: context.textSecondary, fontSize: 12)),
                                   value: smtpIsSsl,
-                                  activeThumbColor: const Color(0xFF0284C7),
+                                  activeThumbColor: ClassicTheme.infoBlue,
                                   onChanged: (v) => setDialogState(() => smtpIsSsl = v),
                                 ),
                                 const Divider(height: 20),
@@ -3445,9 +3248,9 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                                       icon: isTestingSmtp
                                           ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
                                           : const Icon(Icons.send_rounded, size: 14),
-                                      label: const Text("Send Test", style: TextStyle(fontSize: 11)),
+                                      label: const Text("Send Test", style: TextStyle(fontSize: 12)),
                                       style: ElevatedButton.styleFrom(
-                                        backgroundColor: const Color(0xFF0284C7),
+                                        backgroundColor: ClassicTheme.infoBlue,
                                         foregroundColor: Colors.white,
                                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
@@ -3513,42 +3316,24 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                                 'googleSheetUrl': existingSheetUrl,
                                 'isGoogleConnected': true,
                               },
-                              'razorpay': {
-                                'enabled': isRazorpayEnabled,
-                                'keyId': rzpKeyIdController.text.trim(),
-                                'keySecret': rzpKeySecretController.text.trim(),
-                                'webhookSecret': rzpWebhookSecretController.text.trim(),
-                                'updatedAt': FieldValue.serverTimestamp(),
-                              },
                               'smtpConfig': smtpMap,
                               'updatedAt': FieldValue.serverTimestamp(),
                             }, SetOptions(merge: true));
 
-                            // Sync Razorpay to Apps Script backend & public_stores
-                            if (isRazorpayEnabled && rzpKeyIdController.text.trim().isNotEmpty) {
-                              try {
-                                await AppsScriptBackendService.setOutletRazorpay(
-                                  outletId: orgId,
-                                  keyId: rzpKeyIdController.text.trim(),
-                                  keySecret: rzpKeySecretController.text.trim(),
-                                  webhookSecret: rzpWebhookSecretController.text.trim(),
-                                );
-                              } catch (e) {
-                                debugPrint("AppsScript razorpay sync error: $e");
-                              }
-
-                              FirebaseFirestore.instance.collection('public_stores').doc(orgId).set({
-                                'isRazorpayEnabled': true,
-                                'razorpayKeyId': rzpKeyIdController.text.trim(),
-                                'updatedAt': FieldValue.serverTimestamp(),
-                              }, SetOptions(merge: true)).catchError((e) => debugPrint("public_stores razorpay sync error: $e"));
-                            } else {
-                              FirebaseFirestore.instance.collection('public_stores').doc(orgId).set({
-                                'isRazorpayEnabled': false,
-                                'razorpayKeyId': '',
-                                'updatedAt': FieldValue.serverTimestamp(),
-                              }, SetOptions(merge: true)).catchError((e) => debugPrint("public_stores razorpay clear error: $e"));
-                            }
+                            // Payment gateway credentials are no longer stored.
+                            // A bill is settled in cash, on the restaurant's own
+                            // card machine, or against the restaurant's UPI ID —
+                            // the platform never holds the money, so there is
+                            // nothing here to configure.
+                            FirebaseFirestore.instance
+                                .collection('public_stores')
+                                .doc(orgId)
+                                .set({
+                              'isRazorpayEnabled': false,
+                              'razorpayKeyId': '',
+                              'updatedAt': FieldValue.serverTimestamp(),
+                            }, SetOptions(merge: true)).catchError((e) =>
+                                    debugPrint("public_stores gateway clear note: $e"));
 
                             // 2. Cache SMTP Config to Hive for instant offline billing invoice dispatch
                             try {
@@ -3585,7 +3370,7 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                                   orgId: orgId,
                                   userId: masterSession.currentUser?.id ?? 'master_admin',
                                   actionType: 'CLIENT_UPDATED',
-                                  details: 'Tenant $orgName ($orgId) settings, Razorpay and SMTP updated.',
+                                  details: 'Tenant $orgName ($orgId) settings and SMTP updated.',
                                 );
 
                             // 5. Reload active context if master admin is currently impersonating this client
@@ -3632,7 +3417,7 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
 
   @override
   Widget build(BuildContext context) {
-    final primaryAccent = context.isDark ? const Color(0xFF60A5FA) : const Color(0xFF2563EB);
+    final primaryAccent = context.isDark ? ClassicTheme.infoBlue : ClassicTheme.infoBlue;
 
     return Padding(
       padding: const EdgeInsets.all(16.0),
@@ -3673,9 +3458,9 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                 margin: const EdgeInsets.only(bottom: 16),
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
-                  color: Colors.amber.withValues(alpha: 0.12),
+                  color: ClassicTheme.warningAmber.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.amber.withValues(alpha: 0.5)),
+                  border: Border.all(color: ClassicTheme.warningAmber.withValues(alpha: 0.5)),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -3685,10 +3470,10 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                         Container(
                           padding: const EdgeInsets.all(6),
                           decoration: BoxDecoration(
-                            color: Colors.amber.withValues(alpha: 0.2),
+                            color: ClassicTheme.warningAmber.withValues(alpha: 0.2),
                             shape: BoxShape.circle,
                           ),
-                          child: const Icon(Icons.notifications_active_rounded, color: Colors.amber, size: 18),
+                          child: const Icon(Icons.notifications_active_rounded, color: ClassicTheme.warningAmber, size: 18),
                         ),
                         const SizedBox(width: 10),
                         Expanded(
@@ -3697,12 +3482,12 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                             children: [
                               Text(
                                 "Action Required: ${requests.length} License Renewal Request${requests.length > 1 ? 's' : ''}",
-                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.amber),
+                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: ClassicTheme.warningAmber),
                               ),
                               const SizedBox(height: 2),
                               Text(
                                 "Client stores have completed their trial or plan and requested immediate license extension.",
-                                style: TextStyle(color: context.textSecondary, fontSize: 11),
+                                style: TextStyle(color: context.textSecondary, fontSize: 12),
                               ),
                             ],
                           ),
@@ -3737,7 +3522,7 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                                   ),
                                   Text(
                                     "Tenant: $rOrgId  •  Previous: $rTier",
-                                    style: TextStyle(color: context.textSecondary, fontSize: 11),
+                                    style: TextStyle(color: context.textSecondary, fontSize: 12),
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                   ),
@@ -3747,9 +3532,9 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                             ElevatedButton.icon(
                               onPressed: () => _showRenewLicenseDialog(rOrgId, rOrgName),
                               icon: const Icon(Icons.card_membership_rounded, size: 14),
-                              label: const Text("Renew License", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                              label: const Text("Renew License", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.green,
+                                backgroundColor: ClassicTheme.successEmerald,
                                 foregroundColor: Colors.white,
                                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                                 minimumSize: Size.zero,
@@ -3851,13 +3636,13 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
                                     IconButton(
-                                      icon: const Icon(Icons.card_membership_rounded, color: Colors.green, size: 20),
+                                      icon: const Icon(Icons.card_membership_rounded, color: ClassicTheme.successEmerald, size: 20),
                                       tooltip: "Edit License & Plan Entitlements",
                                       onPressed: () => _showRenewLicenseDialog(docId, name),
                                     ),
                                     IconButton(
                                       icon: Icon(Icons.edit_outlined, color: primaryAccent, size: 20),
-                                      tooltip: "Edit Tenant Profile, Razorpay & SMTP",
+                                      tooltip: "Edit tenant profile & email",
                                       onPressed: () => _showEditOrganizationDialog(docId, name),
                                     ),
                                   ],
@@ -3877,14 +3662,14 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                                       return Container(
                                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                                         decoration: BoxDecoration(
-                                          color: status == 'ACTIVE' ? Colors.green.withValues(alpha: 0.15) : Colors.red.withValues(alpha: 0.15),
+                                          color: status == 'ACTIVE' ? ClassicTheme.successEmerald.withValues(alpha: 0.15) : ClassicTheme.dangerRed.withValues(alpha: 0.15),
                                           borderRadius: BorderRadius.circular(6),
                                         ),
                                         child: Text(
                                           status,
                                           style: TextStyle(
-                                            color: status == 'ACTIVE' ? Colors.green : Colors.redAccent,
-                                            fontSize: 10,
+                                            color: status == 'ACTIVE' ? ClassicTheme.successEmerald : ClassicTheme.dangerRed,
+                                            fontSize: 12,
                                             fontWeight: FontWeight.bold,
                                           ),
                                         ),
@@ -3911,16 +3696,16 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                                     String badgeLabel;
 
                                     if (isExpired) {
-                                      badgeColor = Colors.redAccent;
+                                      badgeColor = ClassicTheme.dangerRed;
                                       badgeLabel = "EXPIRED";
                                     } else if (isNear) {
-                                      badgeColor = Colors.amber;
+                                      badgeColor = ClassicTheme.warningAmber;
                                       badgeLabel = "EXPIRES IN $daysLeft DAYS";
                                     } else if (tier == 'TRIAL') {
-                                      badgeColor = Colors.orangeAccent;
+                                      badgeColor = ClassicTheme.warningAmber;
                                       badgeLabel = "TRIAL ($daysLeft days)";
                                     } else {
-                                      badgeColor = Colors.green;
+                                      badgeColor = ClassicTheme.successEmerald;
                                       badgeLabel = "$tier ($daysLeft days)";
                                     }
 
@@ -3944,7 +3729,7 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                                           const SizedBox(width: 4),
                                           Text(
                                             badgeLabel,
-                                            style: TextStyle(color: badgeColor, fontSize: 10, fontWeight: FontWeight.bold),
+                                            style: TextStyle(color: badgeColor, fontSize: 12, fontWeight: FontWeight.bold),
                                           ),
                                         ],
                                       ),
@@ -3960,18 +3745,18 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                                         return Container(
                                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                                           decoration: BoxDecoration(
-                                            color: Colors.redAccent.withValues(alpha: 0.15),
+                                            color: ClassicTheme.dangerRed.withValues(alpha: 0.15),
                                             borderRadius: BorderRadius.circular(6),
-                                            border: Border.all(color: Colors.redAccent),
+                                            border: Border.all(color: ClassicTheme.dangerRed),
                                           ),
                                           child: const Row(
                                             mainAxisSize: MainAxisSize.min,
                                             children: [
-                                              Icon(Icons.bolt_rounded, size: 12, color: Colors.redAccent),
+                                              Icon(Icons.bolt_rounded, size: 12, color: ClassicTheme.dangerRed),
                                               SizedBox(width: 4),
                                               Text(
                                                 "RENEWAL REQUESTED",
-                                                style: TextStyle(color: Colors.redAccent, fontSize: 9.5, fontWeight: FontWeight.bold),
+                                                style: TextStyle(color: ClassicTheme.dangerRed, fontSize: 12, fontWeight: FontWeight.bold),
                                               ),
                                             ],
                                           ),
@@ -4009,18 +3794,18 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: isAccent ? const Color(0xFF2563EB).withValues(alpha: 0.12) : Colors.grey.withValues(alpha: 0.1),
+        color: isAccent ? ClassicTheme.infoBlue.withValues(alpha: 0.12) : Colors.grey.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(6),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 13, color: isAccent ? const Color(0xFF2563EB) : Colors.grey),
+          Icon(icon, size: 13, color: isAccent ? ClassicTheme.infoBlue : Colors.grey),
           const SizedBox(width: 5),
-          Text(text, style: TextStyle(fontSize: 11.5, fontWeight: isAccent ? FontWeight.bold : FontWeight.normal, color: context.textPrimary)),
+          Text(text, style: TextStyle(fontSize: 12, fontWeight: isAccent ? FontWeight.bold : FontWeight.normal, color: context.textPrimary)),
           if (isVerified) ...[
             const SizedBox(width: 4),
-            const Icon(Icons.verified_rounded, size: 12, color: Color(0xFF10B981)),
+            const Icon(Icons.verified_rounded, size: 12, color: ClassicTheme.successEmerald),
           ],
         ],
       ),
@@ -4036,7 +3821,7 @@ class AuditLogsTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final firestore = FirebaseFirestore.instance;
-    final primaryAccent = context.isDark ? const Color(0xFF60A5FA) : const Color(0xFF2563EB);
+    final primaryAccent = context.isDark ? ClassicTheme.infoBlue : ClassicTheme.infoBlue;
 
     return Padding(
       padding: const EdgeInsets.all(16.0),
@@ -4086,7 +3871,7 @@ class AuditLogsTab extends StatelessWidget {
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
                             Text(action, style: TextStyle(color: primaryAccent, fontWeight: FontWeight.bold, fontSize: 13)),
-                            Text(timestamp, style: TextStyle(color: context.textSecondary, fontSize: 10)),
+                            Text(timestamp, style: TextStyle(color: context.textSecondary, fontSize: 12)),
                           ],
                         ),
                         subtitle: Column(
@@ -4106,7 +3891,7 @@ class AuditLogsTab extends StatelessWidget {
                                     borderRadius: BorderRadius.circular(4),
                                     border: Border.all(color: context.borderColor),
                                   ),
-                                  child: Text("By: $userName", style: TextStyle(color: primaryAccent, fontSize: 10, fontWeight: FontWeight.w600)),
+                                  child: Text("By: $userName", style: TextStyle(color: primaryAccent, fontSize: 12, fontWeight: FontWeight.w600)),
                                 ),
                                 Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
@@ -4118,8 +3903,8 @@ class AuditLogsTab extends StatelessWidget {
                                   child: Text(
                                     "Org: $orgName",
                                     style: TextStyle(
-                                      color: context.isDark ? const Color(0xFF34D399) : const Color(0xFF059669),
-                                      fontSize: 10,
+                                      color: context.isDark ? const Color(0xFF34D399) : ClassicTheme.successEmerald,
+                                      fontSize: 12,
                                       fontWeight: FontWeight.w600,
                                     ),
                                   ),
@@ -4135,8 +3920,8 @@ class AuditLogsTab extends StatelessWidget {
                                     child: Text(
                                       "Outlet: $franchiseName",
                                       style: TextStyle(
-                                        color: context.isDark ? const Color(0xFF38BDF8) : const Color(0xFF0284C7),
-                                        fontSize: 10,
+                                        color: context.isDark ? ClassicTheme.infoBlue : ClassicTheme.infoBlue,
+                                        fontSize: 12,
                                         fontWeight: FontWeight.w600,
                                       ),
                                     ),
@@ -4201,7 +3986,7 @@ class _AppUpdatesTabState extends State<AppUpdatesTab> {
 
   @override
   Widget build(BuildContext context) {
-    final primaryAccent = context.isDark ? const Color(0xFF60A5FA) : const Color(0xFF2563EB);
+    final primaryAccent = context.isDark ? ClassicTheme.infoBlue : ClassicTheme.infoBlue;
 
     return Padding(
       padding: const EdgeInsets.all(24.0),
@@ -4268,7 +4053,7 @@ class _AppUpdatesTabState extends State<AppUpdatesTab> {
                         } catch (e) {
                           if (context.mounted) {
                             ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text("Error saving: $e"), backgroundColor: Colors.redAccent),
+                              SnackBar(content: Text("Error saving: $e"), backgroundColor: ClassicTheme.dangerRed),
                             );
                           }
                         } finally {
@@ -4428,7 +4213,7 @@ class _RegistrationRequestsTabState extends ConsumerState<RegistrationRequestsTa
       builder: (context) {
         return StatefulBuilder(
           builder: (context, setDialogState) {
-            const primaryAccent = Color(0xFF10B981);
+            const primaryAccent = ClassicTheme.successEmerald;
             return AlertDialog(
               backgroundColor: context.surfaceColor,
               shape: RoundedRectangleBorder(
@@ -4453,7 +4238,7 @@ class _RegistrationRequestsTabState extends ConsumerState<RegistrationRequestsTa
                     ),
                     child: const Text(
                       "Request Approval",
-                      style: TextStyle(color: primaryAccent, fontSize: 11, fontWeight: FontWeight.bold),
+                      style: TextStyle(color: primaryAccent, fontSize: 12, fontWeight: FontWeight.bold),
                     ),
                   ),
                 ],
@@ -4873,7 +4658,7 @@ class _RegistrationRequestsTabState extends ConsumerState<RegistrationRequestsTa
             ],
           ),
           const SizedBox(height: 2),
-          Text(subtitle, style: TextStyle(color: context.textSecondary, fontSize: 11)),
+          Text(subtitle, style: TextStyle(color: context.textSecondary, fontSize: 12)),
           const SizedBox(height: 8),
           Wrap(
             spacing: 8,
@@ -4914,7 +4699,7 @@ class _RegistrationRequestsTabState extends ConsumerState<RegistrationRequestsTa
               ),
               child: Text(
                 dependencyTag,
-                style: TextStyle(color: color, fontSize: 9, fontWeight: FontWeight.bold),
+                style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.bold),
               ),
             ),
           ],
@@ -4958,7 +4743,7 @@ class _RegistrationRequestsTabState extends ConsumerState<RegistrationRequestsTa
   }
 
   void _showRequestDetailsDialog(UnifiedClientRequest request) {
-    final primaryAccent = context.isDark ? const Color(0xFF60A5FA) : const Color(0xFF2563EB);
+    final primaryAccent = context.isDark ? ClassicTheme.infoBlue : ClassicTheme.infoBlue;
     final isTrial = request.isTrial;
     final cleanPhone = request.mobile.replaceAll(RegExp(r'[^0-9+]'), '');
 
@@ -4979,12 +4764,12 @@ class _RegistrationRequestsTabState extends ConsumerState<RegistrationRequestsTa
               Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: (isTrial ? const Color(0xFF10B981) : const Color(0xFF8B5CF6)).withValues(alpha: 0.12),
+                  color: (isTrial ? ClassicTheme.successEmerald : ClassicTheme.secondaryAccent).withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Icon(
                   isTrial ? Icons.storefront_rounded : Icons.business_center_rounded,
-                  color: isTrial ? const Color(0xFF10B981) : const Color(0xFF8B5CF6),
+                  color: isTrial ? ClassicTheme.successEmerald : ClassicTheme.secondaryAccent,
                   size: 22,
                 ),
               ),
@@ -5024,7 +4809,7 @@ class _RegistrationRequestsTabState extends ConsumerState<RegistrationRequestsTa
                   style: TextStyle(
                     color: _getStatusColor(request.status),
                     fontWeight: FontWeight.bold,
-                    fontSize: 11,
+                    fontSize: 12,
                   ),
                 ),
               ),
@@ -5049,10 +4834,10 @@ class _RegistrationRequestsTabState extends ConsumerState<RegistrationRequestsTa
                     width: double.infinity,
                     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                     decoration: BoxDecoration(
-                      color: (isTrial ? const Color(0xFF10B981) : const Color(0xFF8B5CF6)).withValues(alpha: 0.08),
+                      color: (isTrial ? ClassicTheme.successEmerald : ClassicTheme.secondaryAccent).withValues(alpha: 0.08),
                       borderRadius: BorderRadius.circular(10),
                       border: Border.all(
-                        color: (isTrial ? const Color(0xFF10B981) : const Color(0xFF8B5CF6)).withValues(alpha: 0.25),
+                        color: (isTrial ? ClassicTheme.successEmerald : ClassicTheme.secondaryAccent).withValues(alpha: 0.25),
                       ),
                     ),
                     child: Row(
@@ -5060,7 +4845,7 @@ class _RegistrationRequestsTabState extends ConsumerState<RegistrationRequestsTa
                         Icon(
                           isTrial ? Icons.verified_rounded : Icons.star_rounded,
                           size: 18,
-                          color: isTrial ? const Color(0xFF10B981) : const Color(0xFF8B5CF6),
+                          color: isTrial ? ClassicTheme.successEmerald : ClassicTheme.secondaryAccent,
                         ),
                         const SizedBox(width: 8),
                         Expanded(
@@ -5069,7 +4854,7 @@ class _RegistrationRequestsTabState extends ConsumerState<RegistrationRequestsTa
                             style: TextStyle(
                               fontWeight: FontWeight.bold,
                               fontSize: 13,
-                              color: isTrial ? const Color(0xFF10B981) : const Color(0xFF8B5CF6),
+                              color: isTrial ? ClassicTheme.successEmerald : ClassicTheme.secondaryAccent,
                             ),
                           ),
                         ),
@@ -5119,15 +4904,15 @@ class _RegistrationRequestsTabState extends ConsumerState<RegistrationRequestsTa
                                 child: Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                                   decoration: BoxDecoration(
-                                    color: Colors.blue.withValues(alpha: 0.12),
+                                    color: ClassicTheme.infoBlue.withValues(alpha: 0.12),
                                     borderRadius: BorderRadius.circular(6),
                                   ),
                                   child: const Row(
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
-                                      Icon(Icons.call_rounded, size: 13, color: Colors.blue),
+                                      Icon(Icons.call_rounded, size: 13, color: ClassicTheme.infoBlue),
                                       SizedBox(width: 4),
-                                      Text("Call", style: TextStyle(color: Colors.blue, fontSize: 11, fontWeight: FontWeight.bold)),
+                                      Text("Call", style: TextStyle(color: ClassicTheme.infoBlue, fontSize: 12, fontWeight: FontWeight.bold)),
                                     ],
                                   ),
                                 ),
@@ -5147,7 +4932,7 @@ class _RegistrationRequestsTabState extends ConsumerState<RegistrationRequestsTa
                                     children: [
                                       Icon(Icons.chat_bubble_outline_rounded, size: 13, color: Color(0xFF25D366)),
                                       SizedBox(width: 4),
-                                      Text("WhatsApp", style: TextStyle(color: Color(0xFF25D366), fontSize: 11, fontWeight: FontWeight.bold)),
+                                      Text("WhatsApp", style: TextStyle(color: Color(0xFF25D366), fontSize: 12, fontWeight: FontWeight.bold)),
                                     ],
                                   ),
                                 ),
@@ -5180,15 +4965,15 @@ class _RegistrationRequestsTabState extends ConsumerState<RegistrationRequestsTa
                                 child: Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                                   decoration: BoxDecoration(
-                                    color: Colors.purple.withValues(alpha: 0.12),
+                                    color: ClassicTheme.secondaryAccent.withValues(alpha: 0.12),
                                     borderRadius: BorderRadius.circular(6),
                                   ),
                                   child: const Row(
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
-                                      Icon(Icons.send_rounded, size: 13, color: Colors.purple),
+                                      Icon(Icons.send_rounded, size: 13, color: ClassicTheme.secondaryAccent),
                                       SizedBox(width: 4),
-                                      Text("Email", style: TextStyle(color: Colors.purple, fontSize: 11, fontWeight: FontWeight.bold)),
+                                      Text("Email", style: TextStyle(color: ClassicTheme.secondaryAccent, fontSize: 12, fontWeight: FontWeight.bold)),
                                     ],
                                   ),
                                 ),
@@ -5316,10 +5101,10 @@ class _RegistrationRequestsTabState extends ConsumerState<RegistrationRequestsTa
                     AppToast.showSuccess(context, "Trial Request Rejected.");
                   }
                 },
-                icon: const Icon(Icons.close_rounded, size: 16, color: Colors.redAccent),
-                label: const Text("Reject", style: TextStyle(color: Colors.redAccent, fontSize: 12)),
+                icon: const Icon(Icons.close_rounded, size: 16, color: ClassicTheme.dangerRed),
+                label: const Text("Reject", style: TextStyle(color: ClassicTheme.dangerRed, fontSize: 12)),
                 style: OutlinedButton.styleFrom(
-                  side: const BorderSide(color: Colors.redAccent),
+                  side: const BorderSide(color: ClassicTheme.dangerRed),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                 ),
               ),
@@ -5354,7 +5139,7 @@ class _RegistrationRequestsTabState extends ConsumerState<RegistrationRequestsTa
                 icon: const Icon(Icons.rocket_launch_rounded, size: 16),
                 label: const Text("Approve & Onboard Store", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF10B981),
+                  backgroundColor: ClassicTheme.successEmerald,
                   foregroundColor: Colors.white,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                 ),
@@ -5393,10 +5178,10 @@ class _RegistrationRequestsTabState extends ConsumerState<RegistrationRequestsTa
                     AppToast.showSuccess(context, "Marked as Contacted.");
                   }
                 },
-                icon: const Icon(Icons.check_rounded, size: 16, color: Color(0xFF2563EB)),
-                label: const Text("Mark as Contacted", style: TextStyle(color: Color(0xFF2563EB), fontSize: 12, fontWeight: FontWeight.bold)),
+                icon: const Icon(Icons.check_rounded, size: 16, color: ClassicTheme.infoBlue),
+                label: const Text("Mark as Contacted", style: TextStyle(color: ClassicTheme.infoBlue, fontSize: 12, fontWeight: FontWeight.bold)),
                 style: OutlinedButton.styleFrom(
-                  side: const BorderSide(color: Color(0xFF2563EB)),
+                  side: const BorderSide(color: ClassicTheme.infoBlue),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                 ),
               ),
@@ -5421,7 +5206,7 @@ class _RegistrationRequestsTabState extends ConsumerState<RegistrationRequestsTa
                 icon: const Icon(Icons.rocket_launch_rounded, size: 16),
                 label: const Text("Onboard Store Directly", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF8B5CF6),
+                  backgroundColor: ClassicTheme.secondaryAccent,
                   foregroundColor: Colors.white,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                 ),
@@ -5449,7 +5234,7 @@ class _RegistrationRequestsTabState extends ConsumerState<RegistrationRequestsTa
                 icon: const Icon(Icons.rocket_launch_rounded, size: 16),
                 label: const Text("Convert & Onboard Store", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF10B981),
+                  backgroundColor: ClassicTheme.successEmerald,
                   foregroundColor: Colors.white,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                 ),
@@ -5463,7 +5248,7 @@ class _RegistrationRequestsTabState extends ConsumerState<RegistrationRequestsTa
 
   @override
   Widget build(BuildContext context) {
-    final primaryAccent = context.isDark ? const Color(0xFF60A5FA) : const Color(0xFF2563EB);
+    final primaryAccent = context.isDark ? ClassicTheme.infoBlue : ClassicTheme.infoBlue;
 
     return Padding(
       padding: const EdgeInsets.all(16.0),
@@ -5544,13 +5329,13 @@ class _RegistrationRequestsTabState extends ConsumerState<RegistrationRequestsTa
             scrollDirection: Axis.horizontal,
             child: Row(
               children: [
-                _filterChip("Pending", 'PENDING', Colors.orangeAccent),
+                _filterChip("Pending", 'PENDING', ClassicTheme.warningAmber),
                 const SizedBox(width: 6),
-                _filterChip("Free Trials", 'TRIALS', const Color(0xFF10B981)),
+                _filterChip("Free Trials", 'TRIALS', ClassicTheme.successEmerald),
                 const SizedBox(width: 6),
-                _filterChip("Plan Inquiries", 'INQUIRIES', const Color(0xFF8B5CF6)),
+                _filterChip("Plan Inquiries", 'INQUIRIES', ClassicTheme.secondaryAccent),
                 const SizedBox(width: 6),
-                _filterChip("Approved / Done", 'APPROVED', const Color(0xFF10B981)),
+                _filterChip("Approved / Done", 'APPROVED', ClassicTheme.successEmerald),
                 const SizedBox(width: 6),
                 _filterChip("All", 'ALL', primaryAccent),
               ],
@@ -5694,7 +5479,7 @@ class _RegistrationRequestsTabState extends ConsumerState<RegistrationRequestsTa
                             borderRadius: BorderRadius.circular(12),
                             side: BorderSide(
                               color: req.isPending
-                                  ? Colors.orangeAccent.withValues(alpha: 0.4)
+                                  ? ClassicTheme.warningAmber.withValues(alpha: 0.4)
                                   : context.borderColor,
                             ),
                           ),
@@ -5714,12 +5499,12 @@ class _RegistrationRequestsTabState extends ConsumerState<RegistrationRequestsTa
                                       Container(
                                         padding: const EdgeInsets.all(8),
                                         decoration: BoxDecoration(
-                                          color: (isTrial ? const Color(0xFF10B981) : const Color(0xFF8B5CF6)).withValues(alpha: 0.12),
+                                          color: (isTrial ? ClassicTheme.successEmerald : ClassicTheme.secondaryAccent).withValues(alpha: 0.12),
                                           borderRadius: BorderRadius.circular(8),
                                         ),
                                         child: Icon(
                                           isTrial ? Icons.storefront_rounded : Icons.business_center_rounded,
-                                          color: isTrial ? const Color(0xFF10B981) : const Color(0xFF8B5CF6),
+                                          color: isTrial ? ClassicTheme.successEmerald : ClassicTheme.secondaryAccent,
                                           size: 20,
                                         ),
                                       ),
@@ -5772,7 +5557,7 @@ class _RegistrationRequestsTabState extends ConsumerState<RegistrationRequestsTa
                                               style: TextStyle(
                                                 color: _getStatusColor(req.status),
                                                 fontWeight: FontWeight.bold,
-                                                fontSize: 11,
+                                                fontSize: 12,
                                               ),
                                             ),
                                           ),
@@ -5780,14 +5565,14 @@ class _RegistrationRequestsTabState extends ConsumerState<RegistrationRequestsTa
                                           Container(
                                             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                             decoration: BoxDecoration(
-                                              color: (isTrial ? const Color(0xFF10B981) : const Color(0xFF8B5CF6)).withValues(alpha: 0.1),
+                                              color: (isTrial ? ClassicTheme.successEmerald : ClassicTheme.secondaryAccent).withValues(alpha: 0.1),
                                               borderRadius: BorderRadius.circular(4),
                                             ),
                                             child: Text(
                                               isTrial ? "Trial" : req.selectedPlan,
                                               style: TextStyle(
-                                                color: isTrial ? const Color(0xFF10B981) : const Color(0xFF8B5CF6),
-                                                fontSize: 10,
+                                                color: isTrial ? ClassicTheme.successEmerald : ClassicTheme.secondaryAccent,
+                                                fontSize: 12,
                                                 fontWeight: FontWeight.bold,
                                               ),
                                             ),
@@ -5829,7 +5614,7 @@ class _RegistrationRequestsTabState extends ConsumerState<RegistrationRequestsTa
                                         children: [
                                           if (cleanPhone.isNotEmpty) ...[
                                             IconButton(
-                                              icon: const Icon(Icons.call_rounded, size: 18, color: Colors.blue),
+                                              icon: const Icon(Icons.call_rounded, size: 18, color: ClassicTheme.infoBlue),
                                               tooltip: "Call ${req.mobile}",
                                               onPressed: () => _makePhoneCall(req.mobile),
                                               padding: EdgeInsets.zero,
@@ -5847,7 +5632,7 @@ class _RegistrationRequestsTabState extends ConsumerState<RegistrationRequestsTa
                                           ],
                                           if (req.email.isNotEmpty)
                                             IconButton(
-                                              icon: const Icon(Icons.mail_outline_rounded, size: 18, color: Colors.purple),
+                                              icon: const Icon(Icons.mail_outline_rounded, size: 18, color: ClassicTheme.secondaryAccent),
                                               tooltip: "Email ${req.email}",
                                               onPressed: () => _sendEmail(req.email, req.clientName),
                                               padding: EdgeInsets.zero,
@@ -5884,7 +5669,7 @@ class _RegistrationRequestsTabState extends ConsumerState<RegistrationRequestsTa
   Widget _filterChip(String label, String value, Color color) {
     final isSelected = _selectedFilter == value;
     return ChoiceChip(
-      label: Text(label, style: TextStyle(fontSize: 11.5, fontWeight: isSelected ? FontWeight.bold : FontWeight.normal)),
+      label: Text(label, style: TextStyle(fontSize: 12, fontWeight: isSelected ? FontWeight.bold : FontWeight.normal)),
       selected: isSelected,
       selectedColor: color.withValues(alpha: 0.2),
       onSelected: (_) => setState(() => _selectedFilter = value),
@@ -5895,16 +5680,16 @@ class _RegistrationRequestsTabState extends ConsumerState<RegistrationRequestsTa
     switch (status.toUpperCase()) {
       case 'APPROVED':
       case 'CONVERTED':
-        return const Color(0xFF10B981);
+        return ClassicTheme.successEmerald;
       case 'CONTACTED':
-        return const Color(0xFF2563EB);
+        return ClassicTheme.infoBlue;
       case 'REJECTED':
       case 'ARCHIVED':
-        return Colors.redAccent;
+        return ClassicTheme.dangerRed;
       case 'NEW_INQUIRY':
       case 'PENDING':
       default:
-        return Colors.orangeAccent;
+        return ClassicTheme.warningAmber;
     }
   }
 
@@ -5912,18 +5697,18 @@ class _RegistrationRequestsTabState extends ConsumerState<RegistrationRequestsTa
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: isAccent ? const Color(0xFF2563EB).withValues(alpha: 0.1) : Colors.grey.withValues(alpha: 0.1),
+        color: isAccent ? ClassicTheme.infoBlue.withValues(alpha: 0.1) : Colors.grey.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(6),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 13, color: isAccent ? const Color(0xFF2563EB) : Colors.grey),
+          Icon(icon, size: 13, color: isAccent ? ClassicTheme.infoBlue : Colors.grey),
           const SizedBox(width: 5),
-          Text(text, style: TextStyle(fontSize: 11.5, fontWeight: isAccent ? FontWeight.bold : FontWeight.normal)),
+          Text(text, style: TextStyle(fontSize: 12, fontWeight: isAccent ? FontWeight.bold : FontWeight.normal)),
           if (isVerified) ...[
             const SizedBox(width: 4),
-            const Icon(Icons.verified_rounded, size: 12, color: Color(0xFF10B981)),
+            const Icon(Icons.verified_rounded, size: 12, color: ClassicTheme.successEmerald),
           ],
         ],
       ),
@@ -5974,7 +5759,7 @@ class _PlansAndFeaturesTabState extends ConsumerState<PlansAndFeaturesTab> {
       barrierDismissible: false,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) {
-          final primaryAccent = const Color(0xFFF59E0B);
+          final primaryAccent = ClassicTheme.warningAmber;
           return AlertDialog(
             backgroundColor: context.surfaceColor,
             shape: RoundedRectangleBorder(
@@ -6078,9 +5863,9 @@ class _PlansAndFeaturesTabState extends ConsumerState<PlansAndFeaturesTab> {
                               style: TextStyle(color: context.textPrimary, fontSize: 13),
                               decoration: ClassicTheme.inputDecorationFor(context, labelText: "Service Mode"),
                               items: [
-                                const DropdownMenuItem(value: 'dineFirstPostpaid', child: Text('Dine First, Pay Later', style: TextStyle(fontSize: 11))),
-                                const DropdownMenuItem(value: 'payFirstQSR', child: Text('Pay First (QSR)', style: TextStyle(fontSize: 11))),
-                                const DropdownMenuItem(value: 'hybrid', child: Text('Hybrid Mode', style: TextStyle(fontSize: 11))),
+                                const DropdownMenuItem(value: 'dineFirstPostpaid', child: Text('Dine First, Pay Later', style: TextStyle(fontSize: 12))),
+                                const DropdownMenuItem(value: 'payFirstQSR', child: Text('Pay First (QSR)', style: TextStyle(fontSize: 12))),
+                                const DropdownMenuItem(value: 'hybrid', child: Text('Hybrid Mode', style: TextStyle(fontSize: 12))),
                               ],
                               onChanged: (v) => setDialogState(() => operatingMode = v!),
                             ),
@@ -6137,16 +5922,16 @@ class _PlansAndFeaturesTabState extends ConsumerState<PlansAndFeaturesTab> {
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                         decoration: BoxDecoration(
-                          color: isDefaultTrial ? const Color(0xFF10B981).withValues(alpha: 0.1) : context.surfaceColor,
+                          color: isDefaultTrial ? ClassicTheme.successEmerald.withValues(alpha: 0.1) : context.surfaceColor,
                           borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: isDefaultTrial ? const Color(0xFF10B981).withValues(alpha: 0.3) : context.borderColor),
+                          border: Border.all(color: isDefaultTrial ? ClassicTheme.successEmerald.withValues(alpha: 0.3) : context.borderColor),
                         ),
                         child: SwitchListTile(
                           contentPadding: EdgeInsets.zero,
                           title: const Text("Use as Default Free Trial for New Signups", style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
-                          subtitle: const Text("New restaurants selecting 'Start Free Trial' will immediately receive this plan.", style: TextStyle(fontSize: 11)),
+                          subtitle: const Text("New restaurants selecting 'Start Free Trial' will immediately receive this plan.", style: TextStyle(fontSize: 12)),
                           value: isDefaultTrial,
-                          activeThumbColor: const Color(0xFF10B981),
+                          activeThumbColor: ClassicTheme.successEmerald,
                           onChanged: (v) => setDialogState(() => isDefaultTrial = v),
                         ),
                       ),
@@ -6182,7 +5967,7 @@ class _PlansAndFeaturesTabState extends ConsumerState<PlansAndFeaturesTab> {
                                     labelStyle: TextStyle(
                                       color: isChecked ? primaryAccent : context.textSecondary,
                                       fontWeight: isChecked ? FontWeight.bold : FontWeight.normal,
-                                      fontSize: 11.5,
+                                      fontSize: 12,
                                     ),
                                     side: BorderSide(color: isChecked ? primaryAccent : context.borderColor),
                                     onSelected: (val) {
@@ -6260,7 +6045,7 @@ class _PlansAndFeaturesTabState extends ConsumerState<PlansAndFeaturesTab> {
 
   @override
   Widget build(BuildContext context) {
-    final primaryAccent = const Color(0xFFF59E0B);
+    final primaryAccent = ClassicTheme.warningAmber;
 
     return StreamBuilder<List<SubscriptionPlan>>(
       stream: SubscriptionPlanService.getAllPlansStream(),
@@ -6347,7 +6132,7 @@ class _PlansAndFeaturesTabState extends ConsumerState<PlansAndFeaturesTab> {
                                   children: [
                                     Icon(
                                       isTrial ? Icons.star_rounded : Icons.card_membership_rounded,
-                                      color: isTrial ? primaryAccent : const Color(0xFF60A5FA),
+                                      color: isTrial ? primaryAccent : ClassicTheme.infoBlue,
                                       size: 24,
                                     ),
                                     const SizedBox(width: 10),
@@ -6365,7 +6150,7 @@ class _PlansAndFeaturesTabState extends ConsumerState<PlansAndFeaturesTab> {
                                         ),
                                         child: Text(
                                           "⭐ DEFAULT FREE TRIAL",
-                                          style: TextStyle(color: primaryAccent, fontWeight: FontWeight.bold, fontSize: 10),
+                                          style: TextStyle(color: primaryAccent, fontWeight: FontWeight.bold, fontSize: 12),
                                         ),
                                       ),
                                   ],
@@ -6405,7 +6190,7 @@ class _PlansAndFeaturesTabState extends ConsumerState<PlansAndFeaturesTab> {
                             const SizedBox(height: 12),
 
                             // Enabled Feature Chips
-                            Text("Included Features:", style: TextStyle(color: context.textSecondary, fontSize: 11, fontWeight: FontWeight.w600)),
+                            Text("Included Features:", style: TextStyle(color: context.textSecondary, fontSize: 12, fontWeight: FontWeight.w600)),
                             const SizedBox(height: 6),
                             Wrap(
                               spacing: 6,
@@ -6424,7 +6209,7 @@ class _PlansAndFeaturesTabState extends ConsumerState<PlansAndFeaturesTab> {
                                   ),
                                   child: Text(
                                     featDef.label,
-                                    style: TextStyle(fontSize: 10.5, color: context.textPrimary, fontWeight: FontWeight.w500),
+                                    style: TextStyle(fontSize: 12, color: context.textPrimary, fontWeight: FontWeight.w500),
                                   ),
                                 );
                               }).toList(),
@@ -6458,7 +6243,7 @@ class _PlansAndFeaturesTabState extends ConsumerState<PlansAndFeaturesTab> {
                                 if (!isTrial) ...[
                                   const SizedBox(width: 8),
                                   IconButton(
-                                    icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 20),
+                                    icon: const Icon(Icons.delete_outline_rounded, color: ClassicTheme.dangerRed, size: 20),
                                     tooltip: "Delete Plan",
                                     onPressed: () async {
                                       try {
@@ -6499,7 +6284,7 @@ class _PlansAndFeaturesTabState extends ConsumerState<PlansAndFeaturesTab> {
         children: [
           Icon(icon, size: 13, color: context.textSecondary),
           const SizedBox(width: 4),
-          Text(label, style: TextStyle(fontSize: 11, color: context.textPrimary, fontWeight: FontWeight.w600)),
+          Text(label, style: TextStyle(fontSize: 12, color: context.textPrimary, fontWeight: FontWeight.w600)),
         ],
       ),
     );

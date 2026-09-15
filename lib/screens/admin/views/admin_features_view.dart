@@ -1,13 +1,25 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+
 import '../../../core/classic_theme.dart';
-import '../../../core/subscription_plan_model.dart';
+import '../../../core/design_tokens.dart';
+import '../../../core/entitlements.dart';
+import '../../../core/responsive.dart';
 import '../../../utils/ui_feedback.dart';
 
-/// Granular Feature & Plan Allocation Matrix.
-/// Allows Master Admin to apply 1-click operational presets (including Pure Offline Modes)
-/// or toggle features individually for any tenant organization with instant propagation.
+/// What each tenant is allowed to do.
+///
+/// The toggle list is generated from [FeatureCatalog], so a feature added to
+/// the product appears here automatically instead of having to be hand-copied
+/// into a second list that then drifts. Two rules are enforced here rather
+/// than left to the operator:
+///
+///  * Core features have no switch. Billing, menu and printing are what the
+///    product is; a tenant without them has nothing.
+///  * An offline tenant cannot be given anything that needs the cloud or a
+///    second device. Those toggles are not shown as "off" — they are not
+///    offered, because the app would refuse them anyway.
 class AdminFeaturesView extends ConsumerStatefulWidget {
   const AdminFeaturesView({super.key});
 
@@ -20,502 +32,439 @@ class _AdminFeaturesViewState extends ConsumerState<AdminFeaturesView> {
   String _selectedOrgName = '';
   bool _isLoadingOrg = false;
   bool _isSaving = false;
+  bool _dirty = false;
 
-  Map<String, bool> _activeFeatures = {};
+  Map<String, bool> _features = {};
+  int _maxDevices = 1;
+  int _maxOutlets = 1;
+  String _profileId = PlanProfile.connected.id;
 
-  @override
-  void initState() {
-    super.initState();
-  }
+  bool get _isOffline => _features[FeatureKeys.pureOfflineMode] == true;
 
-  Future<void> _loadTenantFeatures(String orgId, String orgName) async {
+  // ───────────────────────────────────────────────────────────── data
+
+  Future<void> _loadTenant(String orgId, String orgName) async {
     setState(() {
       _selectedOrgId = orgId;
       _selectedOrgName = orgName;
       _isLoadingOrg = true;
+      _dirty = false;
     });
 
     try {
-      final featDoc = await FirebaseFirestore.instance.collection('features').doc(orgId).get();
-      if (featDoc.exists && featDoc.data()?['features'] != null) {
-        final f = Map<String, dynamic>.from(featDoc.data()!['features']);
-        _activeFeatures = f.map((k, v) => MapEntry(k, v == true));
-      } else {
-        final licDoc = await FirebaseFirestore.instance.collection('licenses').doc(orgId).get();
-        if (licDoc.exists && licDoc.data()?['features'] != null) {
-          final f = Map<String, dynamic>.from(licDoc.data()!['features']);
-          _activeFeatures = f.map((k, v) => MapEntry(k, v == true));
-        } else {
-          _activeFeatures = Map.from(RestaurantFeatureCatalog.presetCloudStandard);
+      Map<String, dynamic>? source;
+
+      final featDoc = await FirebaseFirestore.instance
+          .collection('features')
+          .doc(orgId)
+          .get();
+      if (featDoc.exists && featDoc.data() != null) {
+        source = featDoc.data();
+      }
+
+      final licDoc = await FirebaseFirestore.instance
+          .collection('licenses')
+          .doc(orgId)
+          .get();
+      final lic = licDoc.exists ? licDoc.data() : null;
+
+      final rawFeatures = (source?['features'] ?? lic?['features']);
+      final profileId = (source?['planProfile'] ?? lic?['planProfile'])?.toString();
+
+      final profile = profileId != null
+          ? PlanProfile.byId(profileId)
+          : PlanProfile.forTier(lic?['planTier']?.toString());
+
+      final resolved = <String, bool>{}..addAll(profile.features);
+      if (rawFeatures is Map) {
+        for (final e in rawFeatures.entries) {
+          resolved[e.key.toString()] = e.value == true;
         }
       }
+
+      _features = resolved;
+      _profileId = profile.id;
+      _maxDevices = _readInt(lic?['maxDevices'], profile.maxDevices);
+      _maxOutlets = _readInt(lic?['maxFranchises'], profile.maxOutlets);
+      _applyHardConstraints();
     } catch (e) {
-      if (mounted) AppToast.showError(context, 'Failed to read features: $e');
+      if (mounted) AppToast.showError(context, 'Could not read this store: $e');
     } finally {
       if (mounted) setState(() => _isLoadingOrg = false);
     }
   }
 
-  void _applyPreset(Map<String, bool> preset) {
-    setState(() {
-      _activeFeatures = Map.from(preset);
-    });
-    AppToast.showSuccess(context, 'Preset applied to editor. Click "Save Changes" to publish.');
+  static int _readInt(dynamic v, int fallback) {
+    if (v is num && v > 0) return v.toInt();
+    return fallback;
   }
 
-  Future<void> _saveTenantFeatures() async {
-    if (_selectedOrgId == null) return;
+  /// Keeps the editor honest: whatever the operator clicks, an offline tenant
+  /// ends up with one device and no cloud or second-device features.
+  void _applyHardConstraints() {
+    if (!_isOffline) return;
+    _maxDevices = 1;
+    _maxOutlets = 1;
+    for (final def in FeatureCatalog.all) {
+      if (def.need == FeatureNeed.cloud ||
+          def.need == FeatureNeed.secondDevice) {
+        _features[def.key] = false;
+      }
+    }
+  }
+
+  void _applyProfile(PlanProfile profile) {
+    setState(() {
+      _profileId = profile.id;
+      _features = Map<String, bool>.from(profile.features);
+      _maxDevices = profile.maxDevices;
+      _maxOutlets = profile.maxOutlets;
+      _applyHardConstraints();
+      _dirty = true;
+    });
+    AppToast.showSuccess(
+      context,
+      '${profile.label} loaded into the editor',
+      subtitle: 'Nothing is live until you save.',
+    );
+  }
+
+  void _toggle(String key, bool value) {
+    setState(() {
+      _features[key] = value;
+      if (key == FeatureKeys.pureOfflineMode) _applyHardConstraints();
+      // Turning a feature off takes its dependants with it, so the saved
+      // state can never describe something the app would refuse to run.
+      if (!value) {
+        for (final def in FeatureCatalog.all) {
+          if (def.dependsOn.contains(key)) _features[def.key] = false;
+        }
+      }
+      _dirty = true;
+    });
+  }
+
+  Future<void> _save() async {
+    final orgId = _selectedOrgId;
+    if (orgId == null) return;
     setState(() => _isSaving = true);
 
     try {
+      _applyHardConstraints();
       final now = FieldValue.serverTimestamp();
 
-      // Write to features/{orgId}
-      await FirebaseFirestore.instance.collection('features').doc(_selectedOrgId!).set({
-        'features': _activeFeatures,
+      await FirebaseFirestore.instance.collection('features').doc(orgId).set({
+        'features': _features,
+        'planProfile': _profileId,
+        'maxDevices': _maxDevices,
+        'maxFranchises': _maxOutlets,
         'updatedAt': now,
         'updatedBy': 'master_admin',
       }, SetOptions(merge: true));
 
-      // Also sync to licenses/{orgId}
-      await FirebaseFirestore.instance.collection('licenses').doc(_selectedOrgId!).set({
-        'features': _activeFeatures,
+      await FirebaseFirestore.instance.collection('licenses').doc(orgId).set({
+        'features': _features,
+        'planProfile': _profileId,
+        'maxDevices': _maxDevices,
+        'maxFranchises': _maxOutlets,
         'updatedAt': now,
       }, SetOptions(merge: true));
 
-      // Audit Log
+      final enabled = _features.entries
+          .where((e) => e.value)
+          .map((e) => e.key)
+          .toList()
+        ..sort();
+
       await FirebaseFirestore.instance.collection('audit_logs').add({
         'action': 'FEATURES_UPDATED',
-        'targetOrgId': _selectedOrgId,
+        'targetOrgId': orgId,
         'targetOrgName': _selectedOrgName,
-        'details': 'Master Admin modified feature flags for $_selectedOrgName: $_activeFeatures',
+        'details': 'Plan set to $_profileId for $_selectedOrgName · '
+            '$_maxDevices device(s), $_maxOutlets outlet(s) · '
+            'on: ${enabled.join(', ')}',
         'by': 'master_admin',
         'timestamp': now,
       });
 
       if (mounted) {
-        AppToast.showSuccess(context, 'Feature allocation saved & propagated to client POS terminals!');
+        setState(() => _dirty = false);
+        AppToast.showSuccess(
+          context,
+          'Saved',
+          subtitle: 'Tills pick this up on their next sync.',
+        );
       }
     } catch (e) {
-      if (mounted) AppToast.showError(context, 'Failed to save features: $e');
+      if (mounted) AppToast.showError(context, 'Could not save: $e');
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
   }
+
+  // ───────────────────────────────────────────────────────────── build
 
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance.collection('organizations').snapshots(),
       builder: (context, orgSnap) {
-        final orgDocs = orgSnap.hasData ? orgSnap.data!.docs : [];
+        final List<QueryDocumentSnapshot<Object?>> orgDocs =
+            orgSnap.data?.docs ?? const <QueryDocumentSnapshot<Object?>>[];
 
-        // Auto-select first org if none selected
         if (_selectedOrgId == null && orgDocs.isNotEmpty) {
           final first = orgDocs.first;
           final firstData = first.data() as Map<String, dynamic>;
           WidgetsBinding.instance.addPostFrameCallback((_) {
-            _loadTenantFeatures(first.id, firstData['name'] ?? first.id);
+            if (mounted && _selectedOrgId == null) {
+              _loadTenant(first.id, (firstData['name'] ?? first.id).toString());
+            }
           });
         }
 
-        return LayoutBuilder(
-          builder: (context, constraints) {
-            final width = constraints.maxWidth;
-            final isMobile = width < 650;
-            final isTablet = width >= 650 && width < 1050;
+        final compact = context.isCompactScreen;
+        final gutter = context.pageGutter;
 
-            final int gridCols = isMobile ? 1 : (isTablet ? 2 : 3);
-            final double gridAspect = isMobile ? 3.8 : (isTablet ? 2.8 : 2.4);
-
-            final orgDropdown = Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              decoration: BoxDecoration(
-                color: context.inputFill,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: context.borderColor),
-              ),
-              child: DropdownButtonHideUnderline(
-                child: DropdownButton<String>(
-                  value: _selectedOrgId,
-                  dropdownColor: context.surfaceColor,
-                  isExpanded: isMobile,
-                  hint: Text('Select Store...', style: TextStyle(color: context.textSecondary, fontSize: 13)),
-                  items: orgDocs.map((doc) {
-                    final d = doc.data() as Map<String, dynamic>;
-                    final name = d['name'] ?? doc.id;
-                    return DropdownMenuItem<String>(
-                      value: doc.id,
-                      child: Text(
-                        '$name (${doc.id})',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.bold,
-                          color: context.textPrimary,
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    );
-                  }).toList(),
-                  onChanged: (newId) {
-                    if (newId != null) {
-                      final doc = orgDocs.firstWhere((d) => d.id == newId);
-                      final d = doc.data() as Map<String, dynamic>;
-                      _loadTenantFeatures(newId, d['name'] ?? newId);
-                    }
-                  },
-                ),
-              ),
-            );
-
-            return Padding(
-              padding: EdgeInsets.all(isMobile ? 14 : 20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+        return Column(
+          children: [
+            Expanded(
+              child: ListView(
+                padding: EdgeInsets.fromLTRB(gutter, gutter, gutter, DS.space10),
                 children: [
-                  // Header Card
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: context.surfaceColor,
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: context.borderColor),
-                      boxShadow: ClassicTheme.cardShadow(context.isDark),
-                    ),
-                    child: width >= 800
-                        ? Row(
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.all(10),
-                                decoration: BoxDecoration(
-                                  color: ClassicTheme.primaryAccent.withValues(alpha: 0.15),
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: const Icon(Icons.tune_rounded, color: ClassicTheme.primaryAccent, size: 24),
-                              ),
-                              const SizedBox(width: 14),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      'Tenant Plan Presets & Dynamic Feature Gating',
-                                      style: TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.bold,
-                                        color: context.textPrimary,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      'Assign operating profiles (Pure Offline POS vs Omnichannel Cloud) or fine-tune features individually.',
-                                      style: TextStyle(fontSize: 12, color: context.textSecondary),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              const SizedBox(width: 16),
-                              orgDropdown,
-                            ],
-                          )
-                        : Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Container(
-                                    padding: const EdgeInsets.all(8),
-                                    decoration: BoxDecoration(
-                                      color: ClassicTheme.primaryAccent.withValues(alpha: 0.15),
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    child: const Icon(Icons.tune_rounded, color: ClassicTheme.primaryAccent, size: 20),
-                                  ),
-                                  const SizedBox(width: 10),
-                                  Expanded(
-                                    child: Text(
-                                      'Tenant Plan Presets & Dynamic Feature Gating',
-                                      style: TextStyle(
-                                        fontSize: 15,
-                                        fontWeight: FontWeight.bold,
-                                        color: context.textPrimary,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                'Assign operating profiles (Pure Offline POS vs Omnichannel Cloud) or fine-tune features individually.',
-                                style: TextStyle(fontSize: 12, color: context.textSecondary),
-                              ),
-                              const SizedBox(height: 12),
-                              SizedBox(width: double.infinity, child: orgDropdown),
-                            ],
-                          ),
-                  ),
-                  const SizedBox(height: 16),
-
-                  // 1-Click Operational Presets Row
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: context.surfaceColor,
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: context.borderColor),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          '1-Click Plan & Operational Presets',
-                          style: TextStyle(
-                            fontSize: 13.5,
-                            fontWeight: FontWeight.bold,
-                            color: context.textPrimary,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'Instantly configure all toggles for the selected store using verified operational blueprints:',
-                          style: TextStyle(fontSize: 11.5, color: context.textSecondary),
-                        ),
-                        const SizedBox(height: 12),
-                        Wrap(
-                          spacing: 10,
-                          runSpacing: 8,
-                          children: [
-                            _presetButton(
-                              title: 'Pure Offline Counter (Single POS)',
-                              subtitle: 'Zero cloud freeze · Direct thermal printer only',
-                              icon: Icons.wifi_off_rounded,
-                              color: Colors.amber.shade800,
-                              onTap: () => _applyPreset(RestaurantFeatureCatalog.presetPureOfflineCounter),
-                            ),
-                            _presetButton(
-                              title: 'Pure Offline Dine-In & Tables',
-                              subtitle: 'Single-device manual tables & reservations',
-                              icon: Icons.table_restaurant_rounded,
-                              color: ClassicTheme.successEmerald,
-                              onTap: () => _applyPreset(RestaurantFeatureCatalog.presetPureOfflineDineIn),
-                            ),
-                            _presetButton(
-                              title: 'Cloud Standard POS',
-                              subtitle: 'Counter billing + Google Sheets live sync',
-                              icon: Icons.cloud_done_rounded,
-                              color: const Color(0xFF0284C7),
-                              onTap: () => _applyPreset(RestaurantFeatureCatalog.presetCloudStandard),
-                            ),
-                            _presetButton(
-                              title: 'Omnichannel Enterprise',
-                              subtitle: 'All features (QR Ordering, KDS, Waiter App, Chain)',
-                              icon: Icons.stars_rounded,
-                              color: const Color(0xFF6366F1),
-                              onTap: () => _applyPreset(RestaurantFeatureCatalog.presetOmnichannelEnterprise),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-
-                  // Feature Switches Matrix
-                  Expanded(
-                    child: _isLoadingOrg
-                        ? const Center(child: CircularProgressIndicator())
-                        : Container(
-                            padding: const EdgeInsets.all(18),
-                            decoration: BoxDecoration(
-                              color: context.surfaceColor,
-                              borderRadius: BorderRadius.circular(14),
-                              border: Border.all(color: context.borderColor),
-                              boxShadow: ClassicTheme.cardShadow(context.isDark),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Wrap(
-                                  spacing: 10,
-                                  runSpacing: 10,
-                                  alignment: WrapAlignment.spaceBetween,
-                                  crossAxisAlignment: WrapCrossAlignment.center,
-                                  children: [
-                                    Text(
-                                      'Feature Allocation for: $_selectedOrgName (${_selectedOrgId ?? ""})',
-                                      style: TextStyle(
-                                        fontSize: 14.5,
-                                        fontWeight: FontWeight.bold,
-                                        color: context.textPrimary,
-                                      ),
-                                    ),
-                                    ElevatedButton.icon(
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: ClassicTheme.successEmerald,
-                                        foregroundColor: Colors.white,
-                                        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                      ),
-                                      icon: _isSaving
-                                          ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                                          : const Icon(Icons.save_rounded, size: 16),
-                                      label: const Text('Save Changes', style: TextStyle(fontWeight: FontWeight.bold)),
-                                      onPressed: _isSaving ? null : _saveTenantFeatures,
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 14),
-                                Divider(color: context.borderColor, height: 1),
-                                const SizedBox(height: 12),
-
-                                // Grid of individual feature toggles
-                                Expanded(
-                                  child: GridView.count(
-                                    crossAxisCount: gridCols,
-                                    crossAxisSpacing: 12,
-                                    mainAxisSpacing: 12,
-                                    childAspectRatio: gridAspect,
-                                    children: [
-                                  _featureToggleTile(
-                                    keyName: 'pureOfflineMode',
-                                    title: 'Pure Offline Mode',
-                                    description: 'Disables all cloud prompts & Google Sheets gates.',
-                                    icon: Icons.wifi_off_rounded,
-                                    accentColor: Colors.amber.shade800,
-                                  ),
-                                  _featureToggleTile(
-                                    keyName: 'qsrBilling',
-                                    title: 'Fast QSR Counter Billing',
-                                    description: 'Instant token & takeaway desk billing.',
-                                    icon: Icons.point_of_sale_rounded,
-                                    accentColor: const Color(0xFF6366F1),
-                                  ),
-                                  _featureToggleTile(
-                                    keyName: 'tableManagement',
-                                    title: 'Dine-In Table Management',
-                                    description: 'Interactive visual dining floor layout.',
-                                    icon: Icons.table_restaurant_rounded,
-                                    accentColor: ClassicTheme.successEmerald,
-                                  ),
-                                  _featureToggleTile(
-                                    keyName: 'reservations',
-                                    title: 'Table Reservation System',
-                                    description: 'Manual table booking & guest arrival seating.',
-                                    icon: Icons.event_seat_rounded,
-                                    accentColor: const Color(0xFF0284C7),
-                                  ),
-                                  _featureToggleTile(
-                                    keyName: 'dualPrinting',
-                                    title: 'Dual KOT Printing',
-                                    description: 'Kitchen order tickets + Customer bill printing.',
-                                    icon: Icons.print_rounded,
-                                    accentColor: Colors.teal,
-                                  ),
-                                  _featureToggleTile(
-                                    keyName: 'kdsEnabled',
-                                    title: 'Kitchen Display (KDS)',
-                                    description: 'Digital chef order station screen.',
-                                    icon: Icons.outdoor_grill_rounded,
-                                    accentColor: ClassicTheme.primaryAccentCoral,
-                                  ),
-                                  _featureToggleTile(
-                                    keyName: 'qrOrdering',
-                                    title: 'Table QR Ordering',
-                                    description: 'Guest scan & order via smartdine-pos.web.app/r/.',
-                                    icon: Icons.qr_code_scanner_rounded,
-                                    accentColor: Colors.purple,
-                                  ),
-                                  _featureToggleTile(
-                                    keyName: 'waiterOrdering',
-                                    title: 'Waiter Mobile Order App',
-                                    description: 'Floor staff handheld order taking.',
-                                    icon: Icons.hail_rounded,
-                                    accentColor: Colors.pinkAccent,
-                                  ),
-                                  _featureToggleTile(
-                                    keyName: 'cloudSync',
-                                    title: 'Cloud Google Sheets Sync',
-                                    description: 'Automated 2-way cloud ledger backup.',
-                                    icon: Icons.cloud_sync_rounded,
-                                    accentColor: const Color(0xFF10B981),
-                                  ),
-                                  _featureToggleTile(
-                                    keyName: 'dayEndReports',
-                                    title: 'Shift & Day-End Reports',
-                                    description: 'Cash reconciliation & Z-Reports.',
-                                    icon: Icons.assessment_rounded,
-                                    accentColor: Colors.indigo,
-                                  ),
-                                  _featureToggleTile(
-                                    keyName: 'multiOutlet',
-                                    title: 'Multi-Store Hierarchy',
-                                    description: 'Chain franchise branch management.',
-                                    icon: Icons.storefront_rounded,
-                                    accentColor: Colors.deepOrangeAccent,
-                                  ),
-                                  _featureToggleTile(
-                                    keyName: 'recipeInventory',
-                                    title: 'Recipe & Stock Tracking',
-                                    description: 'Ingredient depletion & Bill of Materials.',
-                                    icon: Icons.inventory_2_rounded,
-                                    accentColor: Colors.blueGrey,
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
+                  _header(orgDocs, compact),
+                  const SizedBox(height: DS.space5),
+                  if (_selectedOrgId == null)
+                    _emptyState()
+                  else if (_isLoadingOrg)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: DS.space10),
+                      child: Center(child: CircularProgressIndicator()),
+                    )
+                  else ...[
+                    _profileSection(),
+                    const SizedBox(height: DS.space5),
+                    _limitsSection(),
+                    const SizedBox(height: DS.space5),
+                    ..._featureSections(),
+                  ],
+                ],
               ),
-            ],
-          ),
+            ),
+            if (_selectedOrgId != null && !_isLoadingOrg) _saveBar(),
+          ],
         );
-      },
-    );
       },
     );
   }
 
-  Widget _presetButton({
-    required String title,
-    required String subtitle,
-    required IconData icon,
-    required Color color,
-    required VoidCallback onTap,
-  }) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(10),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.08),
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: color.withValues(alpha: 0.3)),
+  Widget _header(List<QueryDocumentSnapshot<Object?>> orgDocs, bool compact) {
+    final picker = Container(
+      padding: const EdgeInsets.symmetric(horizontal: DS.space3),
+      decoration: BoxDecoration(
+        color: context.inputFill,
+        borderRadius: BorderRadius.circular(DS.radiusMd),
+        border: Border.all(color: context.borderColor),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          value: _selectedOrgId,
+          isExpanded: true,
+          dropdownColor: context.surfaceColor,
+          borderRadius: BorderRadius.circular(DS.radiusMd),
+          hint: Text('Choose a store',
+              style: TextStyle(
+                  color: context.textSecondary, fontSize: DS.fontBody)),
+          items: orgDocs.map<DropdownMenuItem<String>>((doc) {
+            final d = doc.data() as Map<String, dynamic>;
+            final name = (d['name'] ?? doc.id).toString();
+            return DropdownMenuItem<String>(
+              value: doc.id,
+              child: Text(
+                name,
+                style: TextStyle(
+                  fontSize: DS.fontBody,
+                  fontWeight: FontWeight.w600,
+                  color: context.textPrimary,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            );
+          }).toList(),
+          onChanged: (newId) {
+            if (newId == null) return;
+            final doc = orgDocs.firstWhere((d) => d.id == newId);
+            final d = doc.data() as Map<String, dynamic>;
+            _loadTenant(newId, (d['name'] ?? newId).toString());
+          },
         ),
-        child: Row(
+      ),
+    );
+
+    final heading = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'What each store can do',
+          style: TextStyle(
+            fontSize: compact ? DS.fontTitle : DS.fontHeadline,
+            fontWeight: FontWeight.w800,
+            color: context.textPrimary,
+          ),
+        ),
+        const SizedBox(height: DS.space1),
+        Text(
+          'Pick a plan to start from, then adjust anything. Staff only ever '
+          'see the buttons for what is switched on here.',
+          style: TextStyle(
+            fontSize: DS.fontCaption,
+            color: context.textSecondary,
+            height: 1.45,
+          ),
+        ),
+      ],
+    );
+
+    return Container(
+      padding: const EdgeInsets.all(DS.space4),
+      decoration: ClassicTheme.cardDecorationFor(context),
+      child: compact
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                heading,
+                const SizedBox(height: DS.space4),
+                picker,
+              ],
+            )
+          : Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Expanded(child: heading),
+                const SizedBox(width: DS.space5),
+                SizedBox(width: 280, child: picker),
+              ],
+            ),
+    );
+  }
+
+  Widget _emptyState() => Container(
+        padding: const EdgeInsets.all(DS.space8),
+        decoration: ClassicTheme.cardDecorationFor(context),
+        child: Column(
+          children: [
+            Icon(Icons.storefront_outlined,
+                size: 40, color: context.textMuted),
+            const SizedBox(height: DS.space3),
+            Text(
+              'No store selected yet',
+              style: TextStyle(
+                fontSize: DS.fontBodyLg,
+                fontWeight: FontWeight.w700,
+                color: context.textPrimary,
+              ),
+            ),
+            const SizedBox(height: DS.space1),
+            Text(
+              'Choose one above to see and change what it can do.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                  fontSize: DS.fontCaption, color: context.textSecondary),
+            ),
+          ],
+        ),
+      );
+
+  Widget _profileSection() {
+    return Container(
+      padding: const EdgeInsets.all(DS.space4),
+      decoration: ClassicTheme.cardDecorationFor(context),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('START FROM A PLAN', style: ClassicTheme.sectionLabel(context)),
+          const SizedBox(height: DS.space3),
+          LayoutBuilder(
+            builder: (context, c) {
+              final columns = c.maxWidth < 560
+                  ? 1
+                  : (c.maxWidth < 900 ? 2 : 4);
+              return GridView.count(
+                crossAxisCount: columns,
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                mainAxisSpacing: DS.space3,
+                crossAxisSpacing: DS.space3,
+                childAspectRatio: columns == 1 ? 4.2 : 1.35,
+                children: PlanProfile.all
+                    .map((p) => _profileCard(p, columns == 1))
+                    .toList(),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _profileCard(PlanProfile profile, bool dense) {
+    final selected = _profileId == profile.id;
+    final accent = profile.features[FeatureKeys.pureOfflineMode] == true
+        ? ClassicTheme.secondaryAccent
+        : ClassicTheme.primaryAccent;
+
+    return InkWell(
+      onTap: () => _applyProfile(profile),
+      borderRadius: BorderRadius.circular(DS.radiusMd),
+      child: Container(
+        padding: const EdgeInsets.all(DS.space3),
+        decoration: BoxDecoration(
+          color: selected ? accent.withValues(alpha: 0.12) : context.sunkenSurface,
+          borderRadius: BorderRadius.circular(DS.radiusMd),
+          border: Border.all(
+            color: selected ? accent : context.borderColor,
+            width: selected ? 2 : 1,
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, color: color, size: 18),
-            const SizedBox(width: 10),
+            Row(
+              children: [
+                Icon(
+                  profile.features[FeatureKeys.pureOfflineMode] == true
+                      ? Icons.wifi_off_rounded
+                      : Icons.cloud_done_rounded,
+                  size: 18,
+                  color: accent,
+                ),
+                const SizedBox(width: DS.space2),
+                Expanded(
+                  child: Text(
+                    profile.label,
+                    style: TextStyle(
+                      fontSize: DS.fontBody,
+                      fontWeight: FontWeight.w700,
+                      color: context.textPrimary,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                if (selected)
+                  Icon(Icons.check_circle_rounded, size: 18, color: accent),
+              ],
+            ),
+            const SizedBox(height: DS.space2),
             Flexible(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    title,
-                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: context.textPrimary),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  Text(
-                    subtitle,
-                    style: TextStyle(fontSize: 10, color: context.textSecondary),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
+              child: Text(
+                profile.description,
+                style: TextStyle(
+                  fontSize: DS.fontMicro,
+                  color: context.textSecondary,
+                  height: 1.4,
+                ),
+                maxLines: dense ? 2 : 4,
+                overflow: TextOverflow.ellipsis,
               ),
             ),
           ],
@@ -524,77 +473,338 @@ class _AdminFeaturesViewState extends ConsumerState<AdminFeaturesView> {
     );
   }
 
-  Widget _featureToggleTile({
-    required String keyName,
-    required String title,
-    required String description,
-    required IconData icon,
-    required Color accentColor,
-  }) {
-    final bool isEnabled = _activeFeatures[keyName] ?? false;
-
+  Widget _limitsSection() {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: isEnabled
-            ? accentColor.withValues(alpha: 0.06)
-            : (context.isDark ? Colors.white.withValues(alpha: 0.02) : Colors.black.withValues(alpha: 0.02)),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-          color: isEnabled ? accentColor.withValues(alpha: 0.4) : context.borderColor,
-          width: isEnabled ? 1.5 : 1,
-        ),
-      ),
-      child: Row(
+      padding: const EdgeInsets.all(DS.space4),
+      decoration: ClassicTheme.cardDecorationFor(context),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: (isEnabled ? accentColor : Colors.grey).withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Icon(icon, color: isEnabled ? accentColor : Colors.grey, size: 18),
+          Text('HOW MANY', style: ClassicTheme.sectionLabel(context)),
+          const SizedBox(height: DS.space3),
+          LayoutBuilder(
+            builder: (context, c) {
+              final stacked = c.maxWidth < 520;
+              final devices = _counter(
+                label: 'Devices',
+                help: _isOffline
+                    ? 'Offline stores run on one device. This is fixed.'
+                    : 'Tills, kitchen screens and waiter tablets together.',
+                value: _maxDevices,
+                min: 1,
+                max: 30,
+                locked: _isOffline,
+                onChanged: (v) => setState(() {
+                  _maxDevices = v;
+                  _dirty = true;
+                }),
+              );
+              final outlets = _counter(
+                label: 'Outlets',
+                help: _isOffline
+                    ? 'One outlet, on this device.'
+                    : 'Branches under the same owner login.',
+                value: _maxOutlets,
+                min: 1,
+                max: 50,
+                locked: _isOffline ||
+                    _features[FeatureKeys.multiOutlet] != true,
+                onChanged: (v) => setState(() {
+                  _maxOutlets = v;
+                  _dirty = true;
+                }),
+              );
+              return stacked
+                  ? Column(children: [
+                      devices,
+                      const SizedBox(height: DS.space3),
+                      outlets,
+                    ])
+                  : Row(children: [
+                      Expanded(child: devices),
+                      const SizedBox(width: DS.space3),
+                      Expanded(child: outlets),
+                    ]);
+            },
           ),
-          const SizedBox(width: 10),
+        ],
+      ),
+    );
+  }
+
+  Widget _counter({
+    required String label,
+    required String help,
+    required int value,
+    required int min,
+    required int max,
+    required bool locked,
+    required ValueChanged<int> onChanged,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(DS.space3),
+      decoration: BoxDecoration(
+        color: context.sunkenSurface,
+        borderRadius: BorderRadius.circular(DS.radiusMd),
+        border: Border.all(color: context.borderColor),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: DS.fontBody,
+                    fontWeight: FontWeight.w700,
+                    color: context.textPrimary,
+                  ),
+                ),
+              ),
+              if (locked)
+                Icon(Icons.lock_outline_rounded,
+                    size: 16, color: context.textMuted)
+              else ...[
+                _stepper(Icons.remove_rounded,
+                    value > min ? () => onChanged(value - 1) : null),
+                SizedBox(
+                  width: 44,
+                  child: Text(
+                    '$value',
+                    textAlign: TextAlign.center,
+                    style: ClassicTheme.money(context, size: DS.fontTitle),
+                  ),
+                ),
+                _stepper(Icons.add_rounded,
+                    value < max ? () => onChanged(value + 1) : null),
+              ],
+              if (locked)
+                Padding(
+                  padding: const EdgeInsets.only(left: DS.space2),
+                  child: Text(
+                    '$value',
+                    style: ClassicTheme.money(context, size: DS.fontTitle),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: DS.space1),
+          Text(
+            help,
+            style: TextStyle(
+              fontSize: DS.fontMicro,
+              color: context.textSecondary,
+              height: 1.4,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _stepper(IconData icon, VoidCallback? onTap) => SizedBox(
+        width: DS.tapTargetMin,
+        height: DS.tapTargetMin,
+        child: IconButton(
+          onPressed: onTap,
+          icon: Icon(icon, size: 18),
+          style: IconButton.styleFrom(
+            backgroundColor: context.surfaceColor,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(DS.radiusSm),
+              side: BorderSide(color: context.borderColor),
+            ),
+          ),
+        ),
+      );
+
+  List<Widget> _featureSections() {
+    final sections = <Widget>[];
+    FeatureCatalog.grouped.forEach((category, defs) {
+      final visible = defs.where((d) {
+        if (d.key == FeatureKeys.pureOfflineMode) return false;
+        if (_isOffline &&
+            (d.need == FeatureNeed.cloud ||
+                d.need == FeatureNeed.secondDevice)) {
+          return false;
+        }
+        return true;
+      }).toList();
+      if (visible.isEmpty) return;
+
+      sections.add(
+        Container(
+          margin: const EdgeInsets.only(bottom: DS.space4),
+          padding: const EdgeInsets.all(DS.space4),
+          decoration: ClassicTheme.cardDecorationFor(context),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(category.toUpperCase(),
+                  style: ClassicTheme.sectionLabel(context)),
+              const SizedBox(height: DS.space2),
+              ...visible.map(_featureRow),
+            ],
+          ),
+        ),
+      );
+    });
+
+    if (_isOffline) {
+      sections.add(
+        Container(
+          padding: const EdgeInsets.all(DS.space4),
+          decoration: BoxDecoration(
+            color: ClassicTheme.secondaryAccent.withValues(alpha: 0.10),
+            borderRadius: BorderRadius.circular(DS.radiusLg),
+            border: Border.all(
+                color: ClassicTheme.secondaryAccent.withValues(alpha: 0.4)),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Icon(Icons.wifi_off_rounded,
+                  size: 18, color: ClassicTheme.secondaryAccent),
+              const SizedBox(width: DS.space3),
+              Expanded(
+                child: Text(
+                  'This store runs offline on a single device, so the kitchen '
+                  'display, waiter ordering, guest QR ordering, extra outlets '
+                  'and cloud sync are not offered — they need either a network '
+                  'or a second screen. Switch the plan to a connected one to '
+                  'use them.',
+                  style: TextStyle(
+                    fontSize: DS.fontMicro,
+                    color: context.textSecondary,
+                    height: 1.5,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return sections;
+  }
+
+  Widget _featureRow(FeatureDef def) {
+    final on = !def.isAddOn || (_features[def.key] ?? false);
+    final missingDep = def.dependsOn.firstWhere(
+      (d) => _features[d] != true && FeatureCatalog.find(d)?.isAddOn == true,
+      orElse: () => '',
+    );
+    final blockedByDep = missingDep.isNotEmpty;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: DS.space1),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Text(
-                  title,
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.bold,
-                    color: context.textPrimary,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        def.label,
+                        style: TextStyle(
+                          fontSize: DS.fontBody,
+                          fontWeight: FontWeight.w600,
+                          color: context.textPrimary,
+                        ),
+                      ),
+                    ),
+                    if (!def.isAddOn) ...[
+                      const SizedBox(width: DS.space2),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: DS.space2, vertical: 2),
+                        decoration: ClassicTheme.pill(context.successColor),
+                        child: Text(
+                          'always on',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: context.successColor,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
+                const SizedBox(height: 2),
                 Text(
-                  description,
-                  style: TextStyle(fontSize: 10.5, color: context.textSecondary),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+                  blockedByDep
+                      ? 'Needs ${FeatureCatalog.find(missingDep)?.label ?? missingDep} switched on first.'
+                      : def.description,
+                  style: TextStyle(
+                    fontSize: DS.fontMicro,
+                    color: blockedByDep
+                        ? context.warningColor
+                        : context.textSecondary,
+                    height: 1.4,
+                  ),
                 ),
               ],
             ),
           ),
-          Switch(
-            value: isEnabled,
-            activeThumbColor: accentColor,
-            onChanged: (val) {
-              setState(() {
-                _activeFeatures[keyName] = val;
-                // Keep aliases in sync
-                if (keyName == 'qsrBilling') _activeFeatures['billing'] = val;
-                if (keyName == 'qrOrdering') _activeFeatures['onlineOrderingEnabled'] = val;
-                if (keyName == 'dayEndReports') _activeFeatures['reportsEnabled'] = val;
-                if (keyName == 'recipeInventory') _activeFeatures['inventoryEnabled'] = val;
-              });
-            },
+          const SizedBox(width: DS.space3),
+          Switch.adaptive(
+            value: on,
+            onChanged: (!def.isAddOn || blockedByDep)
+                ? null
+                : (v) => _toggle(def.key, v),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _saveBar() {
+    return Container(
+      padding: EdgeInsets.fromLTRB(
+          context.pageGutter, DS.space3, context.pageGutter, DS.space3),
+      decoration: BoxDecoration(
+        color: context.surfaceColor,
+        border: Border(top: BorderSide(color: context.borderColor)),
+      ),
+      child: SafeArea(
+        top: false,
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                _dirty
+                    ? 'Unsaved changes for $_selectedOrgName'
+                    : 'Everything saved for $_selectedOrgName',
+                style: TextStyle(
+                  fontSize: DS.fontCaption,
+                  fontWeight: FontWeight.w600,
+                  color: _dirty ? context.warningColor : context.textSecondary,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            const SizedBox(width: DS.space3),
+            ElevatedButton.icon(
+              onPressed: (_isSaving || !_dirty) ? null : _save,
+              icon: _isSaving
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: Colors.white))
+                  : const Icon(Icons.check_rounded, size: 18),
+              label: Text(_isSaving ? 'Saving' : 'Save'),
+            ),
+          ],
+        ),
       ),
     );
   }

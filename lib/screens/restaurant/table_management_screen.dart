@@ -531,7 +531,7 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: Text('🛎️ $tName requested $rType!'),
-                backgroundColor: Colors.amber.shade900,
+                backgroundColor: ClassicTheme.warningAmber,
                 duration: const Duration(seconds: 4),
                 action: SnackBarAction(
                   label: 'View',
@@ -893,7 +893,7 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('🖨️ Bill Printed for ${billMap['table_name'] ?? "Table"}!'),
-            backgroundColor: Colors.green.shade700,
+            backgroundColor: ClassicTheme.successEmerald,
             duration: const Duration(seconds: 3),
           ),
         );
@@ -1148,14 +1148,14 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
                             return ListTile(
                               contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
                               leading: CircleAvatar(
-                                backgroundColor: Colors.amber.shade100,
+                                backgroundColor: ClassicTheme.warningAmber,
                                 child: const Text('🛎️', style: TextStyle(fontSize: 18)),
                               ),
                               title: Text('$table • $reqType', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
                               subtitle: Text('Guest: $guestName • Status: Pending'),
                               trailing: ElevatedButton.icon(
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.green.shade700,
+                                  backgroundColor: ClassicTheme.successEmerald,
                                   foregroundColor: Colors.white,
                                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
@@ -1176,7 +1176,7 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     SnackBar(
                                       content: Text('Attended request for $table!'),
-                                      backgroundColor: Colors.green.shade700,
+                                      backgroundColor: ClassicTheme.successEmerald,
                                       duration: const Duration(seconds: 2),
                                     ),
                                   );
@@ -1224,7 +1224,7 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text('Tables & Floor Layout', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-            Text('Floor Management, Reservations & QR Codes', style: TextStyle(fontSize: 11, color: Colors.white70)),
+            Text('Floor Management, Reservations & QR Codes', style: TextStyle(fontSize: 12, color: Colors.white70)),
           ],
         ),
         backgroundColor: ClassicTheme.primaryAccent,
@@ -1250,7 +1250,7 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
             Container(
               width: double.infinity,
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-              color: Colors.red.shade700,
+              color: ClassicTheme.dangerRed,
               child: Row(
                 children: [
                   const Icon(Icons.lock_clock_rounded, color: Colors.white, size: 18),
@@ -1268,7 +1268,7 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
             Container(
               width: double.infinity,
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              color: Colors.amber.shade800,
+              color: ClassicTheme.warningAmber,
               child: Row(
                 children: [
                   const Icon(Icons.warning_amber_rounded, color: Colors.white, size: 18),
@@ -1287,7 +1287,7 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
               onTap: _showWaiterAlertsDialog,
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                color: Colors.amber.shade800,
+                color: ClassicTheme.warningAmber,
                 child: Row(
                   children: [
                     const Icon(Icons.notifications_active, color: Colors.white, size: 18),
@@ -1300,7 +1300,7 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
                     ),
                     const Text(
                       'Attend →',
-                      style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11),
+                      style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
                     ),
                   ],
                 ),
@@ -1401,18 +1401,18 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
-              _buildMetricPill('Total', '$total', Colors.blue),
-              _buildMetricPill('Vacant', '$vacant', Colors.green),
+              _buildMetricPill('Total', '$total', ClassicTheme.infoBlue),
+              _buildMetricPill('Vacant', '$vacant', ClassicTheme.successEmerald),
               if (seated > 0)
-                _buildMetricPill('Seated', '$seated', const Color(0xFF3B82F6)),
-              _buildMetricPill('Occupied', '$occupied', Colors.redAccent),
+                _buildMetricPill('Seated', '$seated', ClassicTheme.infoBlue),
+              _buildMetricPill('Occupied', '$occupied', ClassicTheme.dangerRed),
               if (reserved > 0)
-                _buildMetricPill('Reserved', '$reserved', const Color(0xFF8B5CF6)),
+                _buildMetricPill('Reserved', '$reserved', ClassicTheme.secondaryAccent),
               if (cleaning > 0)
-                _buildMetricPill('Cleaning', '$cleaning', Colors.amber.shade800),
+                _buildMetricPill('Cleaning', '$cleaning', ClassicTheme.warningAmber),
               if (blocked > 0)
                 _buildMetricPill('Blocked', '$blocked', Colors.grey.shade600),
-              _buildMetricPill('Billed', '$billed', Colors.orange),
+              _buildMetricPill('Billed', '$billed', ClassicTheme.warningAmber),
             ],
           ),
         ),
@@ -1479,24 +1479,24 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
       mainAxisSize: MainAxisSize.min,
       children: [
         Text(value, style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: color)),
-        Text(label, style: TextStyle(fontSize: 11, color: context.textSecondary)),
+        Text(label, style: TextStyle(fontSize: 12, color: context.textSecondary)),
       ],
     );
   }
 
   Widget _buildSourceBadge(String? src) {
     String label = 'POS';
-    Color badgeColor = Colors.deepOrange;
+    Color badgeColor = ClassicTheme.primaryAccent;
     final s = (src ?? '').toUpperCase();
     if (s.contains('QR') || s.contains('WEB') || s.contains('ONLINE')) {
       label = '📱 QR';
-      badgeColor = Colors.teal;
+      badgeColor = ClassicTheme.secondaryAccent;
     } else if (s.contains('WAITER')) {
       label = '🤵 Waiter';
-      badgeColor = Colors.indigo;
+      badgeColor = ClassicTheme.secondaryAccent;
     } else {
       label = '🖥️ POS';
-      badgeColor = Colors.deepOrange;
+      badgeColor = ClassicTheme.primaryAccent;
     }
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 4.5, vertical: 1.5),
@@ -1507,7 +1507,7 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
       ),
       child: Text(
         label,
-        style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: badgeColor),
+        style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: badgeColor),
       ),
     );
   }
@@ -1543,25 +1543,25 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
     Color statusColor;
     String statusText;
     if (table.status == TableStatus.seated) {
-      statusColor = const Color(0xFF3B82F6);
+      statusColor = ClassicTheme.infoBlue;
       statusText = 'Seated';
     } else if (table.status == TableStatus.occupied) {
-      statusColor = Colors.redAccent;
+      statusColor = ClassicTheme.dangerRed;
       statusText = 'Occupied';
     } else if (table.status == TableStatus.billed) {
-      statusColor = Colors.orange;
+      statusColor = ClassicTheme.warningAmber;
       statusText = 'Billed';
     } else if (table.status == TableStatus.cleaning) {
-      statusColor = const Color(0xFFD97706);
+      statusColor = ClassicTheme.warningAmber;
       statusText = 'Cleaning';
     } else if (table.status == TableStatus.blocked) {
       statusColor = context.textSecondary;
       statusText = 'Blocked';
     } else if (isReservedCard) {
-      statusColor = const Color(0xFF8B5CF6);
+      statusColor = ClassicTheme.secondaryAccent;
       statusText = 'Reserved';
     } else {
-      statusColor = Colors.green;
+      statusColor = ClassicTheme.successEmerald;
       statusText = 'Vacant';
     }
 
@@ -1577,14 +1577,14 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
     return Card(
       elevation: 0,
       color: hasAlert
-          ? Colors.amber.shade50
+          ? ClassicTheme.warningAmber
           : (isReservedCard ? const Color(0xFFFBF8FF) : context.surfaceColor),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
         side: BorderSide(
           color: isOccupiedCard
               ? statusColor.withValues(alpha: 0.5)
-              : (isReservedCard ? const Color(0xFF8B5CF6) : context.borderColor),
+              : (isReservedCard ? ClassicTheme.secondaryAccent : context.borderColor),
           width: isReservedCard ? 2 : 1.5,
         ),
       ),
@@ -1612,7 +1612,7 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
                       children: [
                         CircleAvatar(radius: 3.5, backgroundColor: statusColor),
                         const SizedBox(width: 4),
-                        Text(statusText, style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: statusColor)),
+                        Text(statusText, style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: statusColor)),
                       ],
                     ),
                   ),
@@ -1635,16 +1635,16 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
                   margin: const EdgeInsets.only(top: 2, bottom: 2),
                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                   decoration: BoxDecoration(
-                    color: Colors.amber.shade200,
+                    color: ClassicTheme.warningAmber,
                     borderRadius: BorderRadius.circular(6),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Text('🛎️ ', style: TextStyle(fontSize: 10)),
+                      const Text('🛎️ ', style: TextStyle(fontSize: 12)),
                       Text(
                         '${matchingAlert['requestType'] ?? "Waiter"} Called',
-                        style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold, color: Colors.amber.shade900),
+                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: ClassicTheme.warningAmber),
                       ),
                     ],
                   ),
@@ -1657,12 +1657,12 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
                       Text('Table ${table.tableNumber}', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: context.textPrimary)),
                       if (isReservedCard) ...[
                         const SizedBox(width: 6),
-                        const Icon(Icons.bookmark_rounded, size: 16, color: Color(0xFF8B5CF6)),
+                        const Icon(Icons.bookmark_rounded, size: 16, color: ClassicTheme.secondaryAccent),
                       ],
                     ],
                   ),
                   const SizedBox(height: 2),
-                  Text('${table.section} • ${table.capacity} Seats', style: TextStyle(fontSize: 11, color: context.textSecondary)),
+                  Text('${table.section} • ${table.capacity} Seats', style: TextStyle(fontSize: 12, color: context.textSecondary)),
                 ],
               ),
               // Body info: Reserved details OR Occupied customer details OR Upcoming chip OR Vacant
@@ -1670,21 +1670,21 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF8B5CF6).withValues(alpha: 0.12),
+                    color: ClassicTheme.secondaryAccent.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: const Color(0xFF8B5CF6).withValues(alpha: 0.25)),
+                    border: Border.all(color: ClassicTheme.secondaryAccent.withValues(alpha: 0.25)),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Row(
                         children: [
-                          const Icon(Icons.person_rounded, size: 12, color: Color(0xFF7C3AED)),
+                          const Icon(Icons.person_rounded, size: 12, color: ClassicTheme.secondaryAccent),
                           const SizedBox(width: 3),
                           Expanded(
                             child: Text(
                               table.reservedGuestName?.isNotEmpty == true ? table.reservedGuestName! : 'Guest Reserved',
-                              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF6D28D9)),
+                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF6D28D9)),
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
@@ -1694,9 +1694,9 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
                         const SizedBox(height: 2),
                         Row(
                           children: [
-                            const Icon(Icons.phone_rounded, size: 10, color: Color(0xFF7C3AED)),
+                            const Icon(Icons.phone_rounded, size: 10, color: ClassicTheme.secondaryAccent),
                             const SizedBox(width: 3),
-                            Text(table.reservedGuestPhone!, style: const TextStyle(fontSize: 10, color: Color(0xFF6D28D9))),
+                            Text(table.reservedGuestPhone!, style: const TextStyle(fontSize: 12, color: Color(0xFF6D28D9))),
                           ],
                         ),
                       ],
@@ -1704,7 +1704,7 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
                         const SizedBox(height: 2),
                         Text(
                           '${table.reservedTime!.hour % 12 == 0 ? 12 : table.reservedTime!.hour % 12}:${table.reservedTime!.minute.toString().padLeft(2, '0')} ${table.reservedTime!.hour >= 12 ? 'PM' : 'AM'} • ${table.reservedPartySize ?? table.capacity} Guests',
-                          style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Colors.purple.shade900),
+                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: ClassicTheme.secondaryAccent),
                         ),
                       ],
                     ],
@@ -1714,9 +1714,9 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
-                    color: Colors.amber.withValues(alpha: 0.12),
+                    color: ClassicTheme.warningAmber.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: Colors.amber.withValues(alpha: 0.25)),
+                    border: Border.all(color: ClassicTheme.warningAmber.withValues(alpha: 0.25)),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -1727,7 +1727,7 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
                           Expanded(
                             child: Row(
                               children: [
-                                Icon(Icons.person_rounded, size: 12, color: Colors.amber.shade900),
+                                Icon(Icons.person_rounded, size: 12, color: ClassicTheme.warningAmber),
                                 const SizedBox(width: 3),
                                 Expanded(
                                   child: Text(
@@ -1735,7 +1735,7 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
                                         ? table.currentCustomerName!
                                         : 'Dine-In Guest',
                                     style: TextStyle(
-                                      fontSize: 11,
+                                      fontSize: 12,
                                       fontWeight: FontWeight.bold,
                                       color: context.textPrimary,
                                     ),
@@ -1756,7 +1756,7 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
                             const SizedBox(width: 3),
                             Text(
                               table.currentCustomerPhone!,
-                              style: TextStyle(fontSize: 10, color: context.textSecondary),
+                              style: TextStyle(fontSize: 12, color: context.textSecondary),
                             ),
                           ],
                         ),
@@ -1766,9 +1766,9 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           Text('${table.activeItemCount} Items',
-                              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: context.textPrimary)),
+                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: context.textPrimary)),
                           Text('₹${table.currentBillAmount.toStringAsFixed(0)}',
-                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.amber.shade900)),
+                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: ClassicTheme.warningAmber)),
                         ],
                       ),
                     ],
@@ -1778,15 +1778,15 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
                   decoration: BoxDecoration(
-                    color: Colors.amber.shade50,
+                    color: ClassicTheme.warningAmber,
                     borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: Colors.amber.shade200),
+                    border: Border.all(color: ClassicTheme.warningAmber),
                   ),
                   child: Row(
                     children: [
-                      Icon(Icons.cleaning_services_rounded, size: 13, color: Colors.amber.shade800),
+                      Icon(Icons.cleaning_services_rounded, size: 13, color: ClassicTheme.warningAmber),
                       const SizedBox(width: 4),
-                      Text('Sanitizing Table...', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: Colors.amber.shade900)),
+                      Text('Sanitizing Table...', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: ClassicTheme.warningAmber)),
                     ],
                   ),
                 ),
@@ -1802,7 +1802,7 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
                     children: [
                       Icon(Icons.block_rounded, size: 13, color: Colors.grey.shade700),
                       const SizedBox(width: 4),
-                      Text('Table Blocked', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: Colors.grey.shade800)),
+                      Text('Table Blocked', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey.shade800)),
                     ],
                   ),
                 ),
@@ -1813,19 +1813,19 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
                       decoration: BoxDecoration(
-                        color: Colors.purple.shade50,
+                        color: ClassicTheme.secondaryAccent,
                         borderRadius: BorderRadius.circular(6),
-                        border: Border.all(color: Colors.purple.shade200),
+                        border: Border.all(color: ClassicTheme.secondaryAccent),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.schedule_rounded, size: 11, color: Colors.purple.shade700),
+                          Icon(Icons.schedule_rounded, size: 11, color: ClassicTheme.secondaryAccent),
                           const SizedBox(width: 3),
                           Flexible(
                             child: Text(
                               'Resv at $upcomingResvText (Open for Walk-ins)',
-                              style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w600, color: Colors.purple.shade800),
+                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: ClassicTheme.secondaryAccent),
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
@@ -1833,11 +1833,11 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
                       ),
                     ),
                     const SizedBox(height: 3),
-                    Text('Tap for details & QR', style: TextStyle(fontSize: 10.5, fontStyle: FontStyle.italic, color: context.textSecondary)),
+                    Text('Tap for details & QR', style: TextStyle(fontSize: 12, fontStyle: FontStyle.italic, color: context.textSecondary)),
                   ],
                 ),
               ] else ...[
-                Text('Tap for details, reserve & QR', style: TextStyle(fontSize: 10.5, fontStyle: FontStyle.italic, color: context.textSecondary)),
+                Text('Tap for details, reserve & QR', style: TextStyle(fontSize: 12, fontStyle: FontStyle.italic, color: context.textSecondary)),
               ],
               const SizedBox(height: 6),
               // Action Button - Non-blocking for early walk-ins or seating reserved guests
@@ -1846,12 +1846,12 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
                 child: ElevatedButton.icon(
                   style: ElevatedButton.styleFrom(
                     backgroundColor: table.status == TableStatus.cleaning
-                        ? Colors.amber.shade700
+                        ? ClassicTheme.warningAmber
                         : table.status == TableStatus.blocked
                             ? Colors.grey.shade700
                             : isOccupiedCard
-                                ? Colors.amber.shade700
-                                : (isReservedCard ? const Color(0xFF7C3AED) : ClassicTheme.primaryAccent),
+                                ? ClassicTheme.warningAmber
+                                : (isReservedCard ? ClassicTheme.secondaryAccent : ClassicTheme.primaryAccent),
                     foregroundColor: Colors.white,
                     elevation: 0,
                     padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
@@ -1877,7 +1877,7 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
                                 : (isReservedCard
                                     ? 'Seat Guest & Order'
                                     : (hasUpcomingReservation ? 'Take Order (Walk-in)' : 'Take Order (Waiter)')),
-                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
                   ),
                   onPressed: () async {
                     if (table.status == TableStatus.cleaning || table.status == TableStatus.blocked) {
@@ -1962,11 +1962,11 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
                 ),
                 child: Column(
                   children: [
-                    Text(shopName.toUpperCase(), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFF1E3A8A))),
+                    Text(shopName.toUpperCase(), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: ClassicTheme.infoBlue)),
                     const SizedBox(height: 6),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-                      decoration: BoxDecoration(color: Colors.amber.shade400, borderRadius: BorderRadius.circular(12)),
+                      decoration: BoxDecoration(color: ClassicTheme.warningAmber, borderRadius: BorderRadius.circular(12)),
                       child: Text('TABLE ${table.tableNumber}', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: context.textPrimary)),
                     ),
                     const SizedBox(height: 12),
@@ -1977,9 +1977,9 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
                       backgroundColor: Colors.white,
                     ),
                     const SizedBox(height: 8),
-                    const Text('SCAN TO VIEW MENU & ORDER', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 10.5, color: Color(0xFF1E3A8A))),
+                    const Text('SCAN TO VIEW MENU & ORDER', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: ClassicTheme.infoBlue)),
                     const SizedBox(height: 2),
-                    Text(table.qrMenuUrl, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 8, color: Colors.grey)),
+                    Text(table.qrMenuUrl, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12, color: Colors.grey)),
                   ],
                 ),
               ),
@@ -2122,9 +2122,9 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
                 );
               },
               child: ListTile(
-                leading: const CircleAvatar(backgroundColor: Color(0xFF2563EB), child: Icon(Icons.point_of_sale, color: Colors.white, size: 20)),
+                leading: const CircleAvatar(backgroundColor: ClassicTheme.infoBlue, child: Icon(Icons.point_of_sale, color: Colors.white, size: 20)),
                 title: const Text('Place Order for Customers (Waiter)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                subtitle: Text('Take waiter order for Table ${table.tableNumber} & send to kitchen', style: const TextStyle(fontSize: 11)),
+                subtitle: Text('Take waiter order for Table ${table.tableNumber} & send to kitchen', style: const TextStyle(fontSize: 12)),
                 onTap: () async {
                   if (!LicenseGuard.checkAndShowLockout(context, ref, actionName: 'take waiter table orders')) {
                     return;
@@ -2150,11 +2150,11 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
                 },
                 child: ListTile(
                   leading: const CircleAvatar(
-                    backgroundColor: Color(0xFF8B5CF6),
+                    backgroundColor: ClassicTheme.secondaryAccent,
                     child: Icon(Icons.bookmark_add_rounded, color: Colors.white, size: 20),
                   ),
                   title: const Text('Reserve Table (Call Booking)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                  subtitle: const Text('Book caller reservation for a specific time slot & guest', style: TextStyle(fontSize: 11)),
+                  subtitle: const Text('Book caller reservation for a specific time slot & guest', style: TextStyle(fontSize: 12)),
                   onTap: () {
                     Navigator.pop(ctx);
                     _showReserveTableDialog(table, orgId);
@@ -2162,9 +2162,9 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
                 ),
               ),
               ListTile(
-                leading: const CircleAvatar(backgroundColor: Color(0xFF3B82F6), child: Icon(Icons.person_pin_rounded, color: Colors.white, size: 20)),
+                leading: const CircleAvatar(backgroundColor: ClassicTheme.infoBlue, child: Icon(Icons.person_pin_rounded, color: Colors.white, size: 20)),
                 title: const Text('Seat Walk-in Guests', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                subtitle: const Text('Seat guests at table and start new dining session', style: TextStyle(fontSize: 11)),
+                subtitle: const Text('Seat guests at table and start new dining session', style: TextStyle(fontSize: 12)),
                 onTap: () async {
                   final newSessionId = table.activeSessionId ?? _generateSessionId(orgId, table.tableNumber);
                   setState(() {
@@ -2190,9 +2190,9 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
                 },
               ),
               ListTile(
-                leading: CircleAvatar(backgroundColor: Colors.amber.shade700, child: const Icon(Icons.cleaning_services_rounded, color: Colors.white, size: 20)),
-                title: const Text('Mark as Cleaning', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFFB45309))),
-                subtitle: const Text('Mark table as currently being sanitized', style: TextStyle(fontSize: 11)),
+                leading: CircleAvatar(backgroundColor: ClassicTheme.warningAmber, child: const Icon(Icons.cleaning_services_rounded, color: Colors.white, size: 20)),
+                title: const Text('Mark as Cleaning', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: ClassicTheme.warningAmber)),
+                subtitle: const Text('Mark table as currently being sanitized', style: TextStyle(fontSize: 12)),
                 onTap: () async {
                   setState(() {
                     final idx = _tables.indexWhere((t) => t.id == table.id);
@@ -2214,7 +2214,7 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
               ListTile(
                 leading: CircleAvatar(backgroundColor: Colors.grey.shade600, child: const Icon(Icons.block_rounded, color: Colors.white, size: 20)),
                 title: Text('Block Table', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: context.textSecondary)),
-                subtitle: const Text('Mark table blocked for maintenance or private VIP booking', style: TextStyle(fontSize: 11)),
+                subtitle: const Text('Mark table blocked for maintenance or private VIP booking', style: TextStyle(fontSize: 12)),
                 onTap: () async {
                   setState(() {
                     final idx = _tables.indexWhere((t) => t.id == table.id);
@@ -2236,9 +2236,9 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
             ],
             if (table.status == TableStatus.cleaning || table.status == TableStatus.blocked) ...[
               ListTile(
-                leading: CircleAvatar(backgroundColor: Colors.green.shade600, child: const Icon(Icons.check_circle_outline, color: Colors.white, size: 20)),
-                title: Text(table.status == TableStatus.cleaning ? 'Cleaning Completed → Set Vacant' : 'Unblock Table → Set Vacant', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.green)),
-                subtitle: const Text('Make table available for seating guests', style: TextStyle(fontSize: 11)),
+                leading: CircleAvatar(backgroundColor: ClassicTheme.successEmerald, child: const Icon(Icons.check_circle_outline, color: Colors.white, size: 20)),
+                title: Text(table.status == TableStatus.cleaning ? 'Cleaning Completed → Set Vacant' : 'Unblock Table → Set Vacant', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: ClassicTheme.successEmerald)),
+                subtitle: const Text('Make table available for seating guests', style: TextStyle(fontSize: 12)),
                 onTap: () async {
                   setState(() {
                     final idx = _tables.indexWhere((t) => t.id == table.id);
@@ -2261,11 +2261,11 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
             if (table.status == TableStatus.reserved) ...[
               ListTile(
                 leading: const CircleAvatar(
-                  backgroundColor: Colors.green,
+                  backgroundColor: ClassicTheme.successEmerald,
                   child: Icon(Icons.event_seat_rounded, color: Colors.white, size: 20),
                 ),
-                title: const Text('Seat Reserved Guest & Start Order', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.green)),
-                subtitle: Text('Guest ${table.reservedGuestName ?? ""} arrived! Seat and place order', style: const TextStyle(fontSize: 11)),
+                title: const Text('Seat Reserved Guest & Start Order', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: ClassicTheme.successEmerald)),
+                subtitle: Text('Guest ${table.reservedGuestName ?? ""} arrived! Seat and place order', style: const TextStyle(fontSize: 12)),
                 onTap: () async {
                   final newSessionId = table.activeSessionId ?? _generateSessionId(orgId, table.tableNumber);
                   setState(() {
@@ -2307,11 +2307,11 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
               ),
               ListTile(
                 leading: const CircleAvatar(
-                  backgroundColor: Color(0xFF8B5CF6),
+                  backgroundColor: ClassicTheme.secondaryAccent,
                   child: Icon(Icons.edit_calendar_rounded, color: Colors.white, size: 20),
                 ),
                 title: const Text('Change Time / Re-reserve Table', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                subtitle: const Text('Update booking time slot, party size or guest details', style: TextStyle(fontSize: 11)),
+                subtitle: const Text('Update booking time slot, party size or guest details', style: TextStyle(fontSize: 12)),
                 onTap: () {
                   Navigator.pop(ctx);
                   _showReserveTableDialog(table, orgId, isEditing: true);
@@ -2319,11 +2319,11 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
               ),
               ListTile(
                 leading: CircleAvatar(
-                  backgroundColor: Colors.orange.shade100,
-                  child: Icon(Icons.cancel_outlined, color: Colors.orange.shade800, size: 20),
+                  backgroundColor: ClassicTheme.warningAmber,
+                  child: Icon(Icons.cancel_outlined, color: ClassicTheme.warningAmber, size: 20),
                 ),
-                title: Text('Cancel Reservation (Release Table)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.orange.shade800)),
-                subtitle: const Text('Reset table back to vacant', style: TextStyle(fontSize: 11)),
+                title: Text('Cancel Reservation (Release Table)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: ClassicTheme.warningAmber)),
+                subtitle: const Text('Reset table back to vacant', style: TextStyle(fontSize: 12)),
                 onTap: () async {
                   setState(() {
                     final idx = _tables.indexWhere((t) => t.id == table.id);
@@ -2360,9 +2360,9 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
                     final roundsText = tableActiveOrders.length > 1 ? ' • ${tableActiveOrders.length} rounds' : '';
 
                     return ListTile(
-                      leading: const CircleAvatar(backgroundColor: Colors.green, child: Icon(Icons.payment_rounded, color: Colors.white, size: 20)),
-                      title: Text('Collect Payment (₹${effectiveTotal.toStringAsFixed(0)})', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.green)),
-                      subtitle: Text('Settle bill via Dynamic UPI / Cash / Card ($totalItems items$roundsText)', style: const TextStyle(fontSize: 11)),
+                      leading: const CircleAvatar(backgroundColor: ClassicTheme.successEmerald, child: Icon(Icons.payment_rounded, color: Colors.white, size: 20)),
+                      title: Text('Collect Payment (₹${effectiveTotal.toStringAsFixed(0)})', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: ClassicTheme.successEmerald)),
+                      subtitle: Text('Settle bill via Dynamic UPI / Cash / Card ($totalItems items$roundsText)', style: const TextStyle(fontSize: 12)),
                       onTap: () {
                         Navigator.pop(ctx);
                         _showCollectPaymentDialog(firstOrder, table: table);
@@ -2373,36 +2373,36 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
                 },
               ),
               ListTile(
-                leading: CircleAvatar(backgroundColor: Colors.indigo.shade600, child: const Icon(Icons.print, color: Colors.white, size: 20)),
+                leading: CircleAvatar(backgroundColor: ClassicTheme.secondaryAccent, child: const Icon(Icons.print, color: Colors.white, size: 20)),
                 title: const Text('Print Bill / KOT', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                subtitle: Text('Print thermal receipt for Table ${table.tableNumber} with GST', style: const TextStyle(fontSize: 11)),
+                subtitle: Text('Print thermal receipt for Table ${table.tableNumber} with GST', style: const TextStyle(fontSize: 12)),
                 onTap: () async {
                   Navigator.pop(ctx);
                   await _printCurrentTableBill(table);
                 },
               ),
               ListTile(
-                leading: CircleAvatar(backgroundColor: Colors.blue.shade600, child: const Icon(Icons.drive_file_move_outlined, color: Colors.white, size: 20)),
-                title: const Text('Move Table', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFF2563EB))),
-                subtitle: const Text('Transfer active order to another vacant table', style: TextStyle(fontSize: 11)),
+                leading: CircleAvatar(backgroundColor: ClassicTheme.infoBlue, child: const Icon(Icons.drive_file_move_outlined, color: Colors.white, size: 20)),
+                title: const Text('Move Table', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: ClassicTheme.infoBlue)),
+                subtitle: const Text('Transfer active order to another vacant table', style: TextStyle(fontSize: 12)),
                 onTap: () {
                   Navigator.pop(ctx);
                   _showMoveTableModal(table);
                 },
               ),
               ListTile(
-                leading: CircleAvatar(backgroundColor: Colors.teal.shade600, child: const Icon(Icons.call_merge_rounded, color: Colors.white, size: 20)),
-                title: const Text('Merge Tables', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFF0D9488))),
-                subtitle: const Text('Combine another table into this bill session', style: TextStyle(fontSize: 11)),
+                leading: CircleAvatar(backgroundColor: ClassicTheme.secondaryAccent, child: const Icon(Icons.call_merge_rounded, color: Colors.white, size: 20)),
+                title: const Text('Merge Tables', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: ClassicTheme.successEmerald)),
+                subtitle: const Text('Combine another table into this bill session', style: TextStyle(fontSize: 12)),
                 onTap: () {
                   Navigator.pop(ctx);
                   _showMergeTablesModal(table);
                 },
               ),
               ListTile(
-                leading: CircleAvatar(backgroundColor: Colors.amber.shade700, child: const Icon(Icons.cleaning_services_rounded, color: Colors.white, size: 20)),
-                title: const Text('Mark as Cleaning', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFFB45309))),
-                subtitle: const Text('Table needs sanitizing before next guest', style: TextStyle(fontSize: 11)),
+                leading: CircleAvatar(backgroundColor: ClassicTheme.warningAmber, child: const Icon(Icons.cleaning_services_rounded, color: Colors.white, size: 20)),
+                title: const Text('Mark as Cleaning', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: ClassicTheme.warningAmber)),
+                subtitle: const Text('Table needs sanitizing before next guest', style: TextStyle(fontSize: 12)),
                 onTap: () async {
                   final effOrgId = _getEffectiveOrgId();
                   setState(() {
@@ -2423,9 +2423,9 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
                 },
               ),
               ListTile(
-                leading: CircleAvatar(backgroundColor: Colors.green.shade600, child: const Icon(Icons.check, color: Colors.white, size: 20)),
-                title: const Text('Mark Table as Vacant (Clear)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.green)),
-                subtitle: const Text('Reset table session after customer payment', style: TextStyle(fontSize: 11)),
+                leading: CircleAvatar(backgroundColor: ClassicTheme.successEmerald, child: const Icon(Icons.check, color: Colors.white, size: 20)),
+                title: const Text('Mark Table as Vacant (Clear)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: ClassicTheme.successEmerald)),
+                subtitle: const Text('Reset table session after customer payment', style: TextStyle(fontSize: 12)),
                 onTap: () async {
                   final effOrgId = _getEffectiveOrgId();
                   // Check if there is an active unpaid bill on this table (T-06)
@@ -2445,7 +2445,7 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
                         content: Text('Table ${table.tableNumber} has pending bill of ₹${table.currentBillAmount.toStringAsFixed(0)}. Settle bill first or force override.'),
-                        backgroundColor: Colors.redAccent,
+                        backgroundColor: ClassicTheme.dangerRed,
                       ),
                     );
                     return;
@@ -2485,8 +2485,8 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
               ),
             ],
             ListTile(
-              leading: CircleAvatar(backgroundColor: Colors.red.shade100, child: Icon(Icons.delete_outline, color: Colors.red.shade700, size: 20)),
-              title: Text('Delete Table', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.red.shade700)),
+              leading: CircleAvatar(backgroundColor: ClassicTheme.tintDanger, child: Icon(Icons.delete_outline, color: ClassicTheme.dangerRed, size: 20)),
+              title: Text('Delete Table', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: ClassicTheme.dangerRed)),
               onTap: () async {
                 setState(() {
                   _tables.removeWhere((t) => t.id == table.id);
@@ -2627,10 +2627,10 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
               Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF8B5CF6).withValues(alpha: 0.15),
+                  color: ClassicTheme.secondaryAccent.withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: const Icon(Icons.bookmark_added_rounded, color: Color(0xFF8B5CF6), size: 22),
+                child: const Icon(Icons.bookmark_added_rounded, color: ClassicTheme.secondaryAccent, size: 22),
               ),
               const SizedBox(width: 10),
               Expanded(
@@ -2643,7 +2643,7 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
                     ),
                     Text(
                       '${table.section} • Max ${table.capacity} Guests',
-                      style: TextStyle(fontSize: 11, color: context.textSecondary),
+                      style: TextStyle(fontSize: 12, color: context.textSecondary),
                     ),
                   ],
                 ),
@@ -2769,7 +2769,7 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
               child: Text('Cancel', style: TextStyle(color: context.textSecondary)),
             ),
             FilledButton.icon(
-              style: FilledButton.styleFrom(backgroundColor: const Color(0xFF7C3AED)),
+              style: FilledButton.styleFrom(backgroundColor: ClassicTheme.secondaryAccent),
               icon: const Icon(Icons.check, size: 18),
               label: Text(isEditing ? 'Update Reservation' : 'Confirm Reservation'),
               onPressed: () async {
@@ -2827,7 +2827,7 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
                   sm.showSnackBar(
                     SnackBar(
                       content: Text('🔖 Table ${table.tableNumber} reserved for ${name.isNotEmpty ? name : "Guest"} at $formattedTime'),
-                      backgroundColor: const Color(0xFF7C3AED),
+                      backgroundColor: ClassicTheme.secondaryAccent,
                     ),
                   );
                 }
@@ -2952,7 +2952,7 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
                           children: [
                             Row(
                               children: [
-                                const Icon(Icons.receipt_long_rounded, color: Color(0xFF10B981), size: 22),
+                                const Icon(Icons.receipt_long_rounded, color: ClassicTheme.successEmerald, size: 22),
                                 const SizedBox(width: 8),
                                 Text(
                                   'Collect Payment & Settle',
@@ -2986,14 +2986,14 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
                           colors: [
-                            const Color(0xFF10B981).withValues(alpha: 0.14),
-                            const Color(0xFF059669).withValues(alpha: 0.08),
+                            ClassicTheme.successEmerald.withValues(alpha: 0.14),
+                            ClassicTheme.successEmerald.withValues(alpha: 0.08),
                           ],
                           begin: Alignment.topLeft,
                           end: Alignment.bottomRight,
                         ),
                         borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: const Color(0xFF10B981).withValues(alpha: 0.35)),
+                        border: Border.all(color: ClassicTheme.successEmerald.withValues(alpha: 0.35)),
                       ),
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -3004,10 +3004,10 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
                               Text(
                                 'TOTAL PAYABLE',
                                 style: TextStyle(
-                                  fontSize: 11,
+                                  fontSize: 12,
                                   fontWeight: FontWeight.bold,
                                   letterSpacing: 0.8,
-                                  color: Colors.green.shade800,
+                                  color: ClassicTheme.successEmerald,
                                 ),
                               ),
                               const SizedBox(height: 2),
@@ -3016,7 +3016,7 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
                                 style: const TextStyle(
                                   fontSize: 26,
                                   fontWeight: FontWeight.w900,
-                                  color: Color(0xFF059669),
+                                  color: ClassicTheme.successEmerald,
                                 ),
                               ),
                             ],
@@ -3026,21 +3026,21 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
                             children: [
                               Text(
                                 'Subtotal: ₹${dishesSubtotal.toStringAsFixed(2)}',
-                                style: TextStyle(fontSize: 11, color: context.textSecondary),
+                                style: TextStyle(fontSize: 12, color: context.textSecondary),
                               ),
                               if (includeServiceCharge && scAmount > 0)
                                 Text(
                                   'SC (${scRate.toStringAsFixed(0)}%): ₹${scAmount.toStringAsFixed(2)}',
-                                  style: TextStyle(fontSize: 11, color: context.textSecondary),
+                                  style: TextStyle(fontSize: 12, color: context.textSecondary),
                                 ),
                               Text(
                                 'GST (${gstRate.toStringAsFixed(0)}%): ₹${gstAmount.toStringAsFixed(2)}',
-                                style: TextStyle(fontSize: 11, color: context.textSecondary),
+                                style: TextStyle(fontSize: 12, color: context.textSecondary),
                               ),
                               if (selectedTip > 0)
                                 Text(
                                   'Tip: ₹${selectedTip.toStringAsFixed(0)}',
-                                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.purple.shade700),
+                                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: ClassicTheme.secondaryAccent),
                                 ),
                             ],
                           ),
@@ -3072,14 +3072,14 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
                                   ),
                                   Text(
                                     includeServiceCharge ? '₹${(dishesSubtotal * (scRate / 100.0)).toStringAsFixed(2)} added to bill' : 'Waived upon request',
-                                    style: TextStyle(fontSize: 11, color: context.textSecondary),
+                                    style: TextStyle(fontSize: 12, color: context.textSecondary),
                                   ),
                                 ],
                               ),
                             ),
                             Switch(
                               value: includeServiceCharge,
-                              activeThumbColor: const Color(0xFF10B981),
+                              activeThumbColor: ClassicTheme.successEmerald,
                               onChanged: (val) => setModalState(() => includeServiceCharge = val),
                             ),
                           ],
@@ -3103,13 +3103,13 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
                             return ChoiceChip(
                               label: Text(t == 0.0 ? 'No Tip' : '₹${t.toStringAsFixed(0)}'),
                               selected: isSel,
-                              selectedColor: Colors.purple.shade600,
+                              selectedColor: ClassicTheme.secondaryAccent,
                               backgroundColor: context.canvasColor,
-                              side: BorderSide(color: isSel ? Colors.purple.shade600 : context.borderColor),
+                              side: BorderSide(color: isSel ? ClassicTheme.secondaryAccent : context.borderColor),
                               labelStyle: TextStyle(
                                 color: isSel ? Colors.white : context.textPrimary,
                                 fontWeight: isSel ? FontWeight.bold : FontWeight.normal,
-                                fontSize: 11.5,
+                                fontSize: 12,
                               ),
                               onSelected: (_) => setModalState(() => selectedTip = t),
                             );
@@ -3131,7 +3131,7 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
                           label: 'UPI / QR',
                           icon: Icons.qr_code_2_rounded,
                           isSelected: selectedPaymentMode == 'UPI / QR',
-                          color: Colors.blueAccent,
+                          color: ClassicTheme.infoBlue,
                           onTap: () => setModalState(() => selectedPaymentMode = 'UPI / QR'),
                         ),
                         const SizedBox(width: 8),
@@ -3139,7 +3139,7 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
                           label: 'CASH',
                           icon: Icons.money_rounded,
                           isSelected: selectedPaymentMode == 'CASH',
-                          color: const Color(0xFF10B981),
+                          color: ClassicTheme.successEmerald,
                           onTap: () => setModalState(() => selectedPaymentMode = 'CASH'),
                         ),
                         const SizedBox(width: 8),
@@ -3147,7 +3147,7 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
                           label: 'CARD',
                           icon: Icons.credit_card_rounded,
                           isSelected: selectedPaymentMode == 'CARD',
-                          color: Colors.deepPurpleAccent,
+                          color: ClassicTheme.secondaryAccent,
                           onTap: () => setModalState(() => selectedPaymentMode = 'CARD'),
                         ),
                       ],
@@ -3160,20 +3160,20 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
                         width: double.infinity,
                         padding: const EdgeInsets.all(14),
                         decoration: BoxDecoration(
-                          color: Colors.blue.withValues(alpha: 0.06),
+                          color: ClassicTheme.infoBlue.withValues(alpha: 0.06),
                           borderRadius: BorderRadius.circular(14),
-                          border: Border.all(color: Colors.blueAccent.withValues(alpha: 0.3)),
+                          border: Border.all(color: ClassicTheme.infoBlue.withValues(alpha: 0.3)),
                         ),
                         child: Column(
                           children: [
                             Row(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                const Icon(Icons.qr_code_rounded, color: Colors.blueAccent, size: 20),
+                                const Icon(Icons.qr_code_rounded, color: ClassicTheme.infoBlue, size: 20),
                                 const SizedBox(width: 8),
                                 Text(
                                   'Dynamic UPI QR Code',
-                                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.blue.shade900),
+                                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: ClassicTheme.infoBlue),
                                 ),
                               ],
                             ),
@@ -3198,12 +3198,12 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
                             const SizedBox(height: 8),
                             Text(
                               upiId.isNotEmpty ? 'UPI ID: $upiId' : '⚠️ Please configure UPI ID in Store Settings',
-                              style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: upiId.isNotEmpty ? const Color(0xFF3B82F6) : Colors.red),
+                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: upiId.isNotEmpty ? ClassicTheme.infoBlue : ClassicTheme.dangerRed),
                             ),
                             const SizedBox(height: 2),
                             Text(
                               'Customer can scan with GPay, PhonePe, Paytm or any UPI App',
-                              style: TextStyle(fontSize: 11, color: context.textSecondary),
+                              style: TextStyle(fontSize: 12, color: context.textSecondary),
                             ),
                           ],
                         ),
@@ -3216,7 +3216,7 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
                       width: double.infinity,
                       child: ElevatedButton.icon(
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: selectedPaymentMode == 'UPI / QR' ? Colors.blueAccent : const Color(0xFF10B981),
+                          backgroundColor: selectedPaymentMode == 'UPI / QR' ? ClassicTheme.infoBlue : ClassicTheme.successEmerald,
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(vertical: 14),
                           elevation: 0,
@@ -3370,7 +3370,7 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
                                 content: Text('✅ ₹${totalPayable.toStringAsFixed(2)} collected via $selectedPaymentMode. $tName is now Vacant!'),
-                                backgroundColor: const Color(0xFF10B981),
+                                backgroundColor: ClassicTheme.successEmerald,
                                 duration: const Duration(seconds: 3),
                               ),
                             );
@@ -3416,7 +3416,7 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
               Text(
                 label,
                 style: TextStyle(
-                  fontSize: 11,
+                  fontSize: 12,
                   fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
                   color: isSelected ? color : context.textPrimary,
                 ),
@@ -3443,9 +3443,9 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Row(
           children: [
-            Icon(Icons.warning_amber_rounded, color: Colors.redAccent, size: 24),
+            Icon(Icons.warning_amber_rounded, color: ClassicTheme.dangerRed, size: 24),
             SizedBox(width: 8),
-            Text('Unpaid Bill Detected!', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold, fontSize: 16)),
+            Text('Unpaid Bill Detected!', style: TextStyle(color: ClassicTheme.dangerRed, fontWeight: FontWeight.bold, fontSize: 16)),
           ],
         ),
         content: SingleChildScrollView(child: Column(
@@ -3474,8 +3474,8 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
               _promptManagerForceVacate(table, unpaidOrder, orgId);
             },
             style: OutlinedButton.styleFrom(
-              foregroundColor: Colors.redAccent,
-              side: const BorderSide(color: Colors.redAccent),
+              foregroundColor: ClassicTheme.dangerRed,
+              side: const BorderSide(color: ClassicTheme.dangerRed),
             ),
             child: const Text('Force Clear (Manager)'),
           ),
@@ -3487,7 +3487,7 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
             icon: const Icon(Icons.payment, size: 16),
             label: const Text('Collect Payment'),
             style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF059669),
+              backgroundColor: ClassicTheme.successEmerald,
               foregroundColor: Colors.white,
             ),
           ),
@@ -3507,7 +3507,7 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           title: const Row(
             children: [
-              Icon(Icons.shield_outlined, color: Color(0xFFDC2626), size: 22),
+              Icon(Icons.shield_outlined, color: ClassicTheme.dangerRed, size: 22),
               SizedBox(width: 8),
               Text('Manager Override', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
             ],
@@ -3553,7 +3553,7 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
                     'Order Entered in Error',
                     'Manager Complimentary',
                   ].map((r) => ActionChip(
-                    label: Text(r, style: const TextStyle(fontSize: 11)),
+                    label: Text(r, style: const TextStyle(fontSize: 12)),
                     onPressed: () => setDlgState(() => reasonCtrl.text = r),
                   )).toList(),
                 ),
@@ -3570,7 +3570,7 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
                 final reason = reasonCtrl.text.trim();
                 if (reason.isEmpty) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Audit reason is mandatory to force clear an unpaid table.'), backgroundColor: Colors.red),
+                    const SnackBar(content: Text('Audit reason is mandatory to force clear an unpaid table.'), backgroundColor: ClassicTheme.dangerRed),
                   );
                   return;
                 }
@@ -3580,7 +3580,7 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
                 final authorized = staffList.where((s) => s.canForceVacateTable && s.verifyPin(pin)).firstOrNull;
                 if (authorized == null) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Invalid Manager PIN. Override authorization denied.'), backgroundColor: Colors.red),
+                    const SnackBar(content: Text('Invalid Manager PIN. Override authorization denied.'), backgroundColor: ClassicTheme.dangerRed),
                   );
                   return;
                 }
@@ -3619,12 +3619,12 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
                       content: Text('Table ${table.tableNumber} force-cleared. Audit recorded.'),
-                      backgroundColor: Colors.orange.shade800,
+                      backgroundColor: ClassicTheme.warningAmber,
                     ),
                   );
                 }
               },
-              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFDC2626), foregroundColor: Colors.white),
+              style: ElevatedButton.styleFrom(backgroundColor: ClassicTheme.dangerRed, foregroundColor: Colors.white),
               child: const Text('Authorize & Vacate'),
             ),
           ],
@@ -3638,7 +3638,7 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
 
     if (vacantTables.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No vacant tables available to move to!'), backgroundColor: Colors.orange),
+        const SnackBar(content: Text('No vacant tables available to move to!'), backgroundColor: ClassicTheme.warningAmber),
       );
       return;
     }
@@ -3649,7 +3649,7 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Row(
           children: [
-            const Icon(Icons.drive_file_move_outlined, color: Color(0xFF2563EB)),
+            const Icon(Icons.drive_file_move_outlined, color: ClassicTheme.infoBlue),
             const SizedBox(width: 8),
             Text('Move Table ${fromTable.tableNumber}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
           ],
@@ -3672,11 +3672,11 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
                     return ListTile(
                       contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                       leading: const CircleAvatar(
-                        backgroundColor: Color(0xFFEFF6FF),
-                        child: Icon(Icons.table_restaurant, color: Color(0xFF2563EB), size: 18),
+                        backgroundColor: ClassicTheme.tintInfo,
+                        child: Icon(Icons.table_restaurant, color: ClassicTheme.infoBlue, size: 18),
                       ),
                       title: Text('Table ${target.tableNumber}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                      subtitle: Text('${target.section} • Capacity: ${target.capacity}', style: const TextStyle(fontSize: 11)),
+                      subtitle: Text('${target.section} • Capacity: ${target.capacity}', style: const TextStyle(fontSize: 12)),
                       trailing: Icon(Icons.arrow_forward_ios, size: 14, color: context.textSecondary),
                       onTap: () async {
                         Navigator.pop(mCtx);
@@ -3735,7 +3735,7 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
                               content: Text('Table ${fromTable.tableNumber} moved to Table ${target.tableNumber} successfully!'),
-                              backgroundColor: const Color(0xFF059669),
+                              backgroundColor: ClassicTheme.successEmerald,
                             ),
                           );
                         }
@@ -3756,7 +3756,7 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
 
     if (otherOccupied.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No other occupied tables available to merge!'), backgroundColor: Colors.orange),
+        const SnackBar(content: Text('No other occupied tables available to merge!'), backgroundColor: ClassicTheme.warningAmber),
       );
       return;
     }
@@ -3770,7 +3770,7 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           title: Row(
             children: [
-              const Icon(Icons.call_merge_rounded, color: Color(0xFF0D9488)),
+              const Icon(Icons.call_merge_rounded, color: ClassicTheme.successEmerald),
               const SizedBox(width: 8),
               Text('Merge into Table ${targetTable.tableNumber}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
             ],
@@ -3793,9 +3793,9 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
 
                       return CheckboxListTile(
                         value: isChecked,
-                        activeColor: const Color(0xFF0D9488),
+                        activeColor: ClassicTheme.successEmerald,
                         title: Text('Table ${src.tableNumber} (₹${src.currentBillAmount.toStringAsFixed(0)})', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                        subtitle: Text('${src.activeItemCount} items • ${src.currentCustomerName ?? "Guest"}', style: const TextStyle(fontSize: 11)),
+                        subtitle: Text('${src.activeItemCount} items • ${src.currentCustomerName ?? "Guest"}', style: const TextStyle(fontSize: 12)),
                         onChanged: (val) {
                           setDlgState(() {
                             if (val == true) {
@@ -3881,12 +3881,12 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
                             content: Text('Merged ${selectedTables.length} tables into Table ${targetTable.tableNumber}!'),
-                            backgroundColor: const Color(0xFF0D9488),
+                            backgroundColor: ClassicTheme.successEmerald,
                           ),
                         );
                       }
                     },
-              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0D9488), foregroundColor: Colors.white),
+              style: ElevatedButton.styleFrom(backgroundColor: ClassicTheme.successEmerald, foregroundColor: Colors.white),
               child: const Text('Confirm Merge'),
             ),
           ],
@@ -4012,15 +4012,15 @@ class _DishAvailabilitySheetState extends ConsumerState<_DishAvailabilitySheet> 
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                               decoration: BoxDecoration(
-                                color: Colors.red.shade50,
+                                color: ClassicTheme.tintDanger,
                                 borderRadius: BorderRadius.circular(10),
-                                border: Border.all(color: Colors.red.shade200),
+                                border: Border.all(color: ClassicTheme.dangerRed),
                               ),
                               child: Text(
                                 '$soldOutCount Sold Out',
                                 style: TextStyle(
-                                  color: Colors.red.shade800,
-                                  fontSize: 11,
+                                  color: ClassicTheme.dangerRed,
+                                  fontSize: 12,
                                   fontWeight: FontWeight.bold,
                                 ),
                               ),
@@ -4086,7 +4086,7 @@ class _DishAvailabilitySheetState extends ConsumerState<_DishAvailabilitySheet> 
                   return Padding(
                     padding: const EdgeInsets.only(right: 8),
                     child: ChoiceChip(
-                      label: Text(cat, style: const TextStyle(fontSize: 11)),
+                      label: Text(cat, style: const TextStyle(fontSize: 12)),
                       selected: isSel,
                       selectedColor: ClassicTheme.primaryAccent.withValues(alpha: 0.15),
                       backgroundColor: context.inputFill,
@@ -4152,18 +4152,18 @@ class _DishAvailabilitySheetState extends ConsumerState<_DishAvailabilitySheet> 
                                       Container(
                                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                         decoration: BoxDecoration(
-                                          color: isAvailable ? Colors.green.shade50 : Colors.red.shade50,
+                                          color: isAvailable ? ClassicTheme.tintSuccess : ClassicTheme.tintDanger,
                                           borderRadius: BorderRadius.circular(6),
                                           border: Border.all(
-                                            color: isAvailable ? Colors.green.shade200 : Colors.red.shade300,
+                                            color: isAvailable ? ClassicTheme.tintSuccess : ClassicTheme.dangerRed,
                                           ),
                                         ),
                                         child: Text(
                                           isAvailable ? 'AVAILABLE' : 'SOLD OUT',
                                           style: TextStyle(
-                                            fontSize: 9,
+                                            fontSize: 12,
                                             fontWeight: FontWeight.w900,
-                                            color: isAvailable ? Colors.green.shade800 : Colors.red.shade800,
+                                            color: isAvailable ? ClassicTheme.successEmerald : ClassicTheme.dangerRed,
                                           ),
                                         ),
                                       ),
@@ -4181,9 +4181,9 @@ class _DishAvailabilitySheetState extends ConsumerState<_DishAvailabilitySheet> 
                             // Quick Toggle Switch
                             Switch.adaptive(
                               value: isAvailable,
-                              activeThumbColor: Colors.green,
-                              activeTrackColor: Colors.green.shade200,
-                              inactiveThumbColor: Colors.red.shade400,
+                              activeThumbColor: ClassicTheme.successEmerald,
+                              activeTrackColor: ClassicTheme.tintSuccess,
+                              inactiveThumbColor: ClassicTheme.dangerRed,
                               onChanged: (val) {
                                 HapticFeedback.lightImpact();
                                 _toggleAvailability(id, val);

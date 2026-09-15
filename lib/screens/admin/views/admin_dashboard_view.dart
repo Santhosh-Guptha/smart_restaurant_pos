@@ -90,7 +90,7 @@ class AdminDashboardView extends ConsumerWidget {
                           value: '$activeCount / $totalOrgs',
                           subtitle: 'Operational stores',
                           icon: Icons.store_mall_directory_rounded,
-                          color: const Color(0xFF6366F1),
+                          color: ClassicTheme.secondaryAccent,
                           isMobile: isMobile,
                           onTap: onNavigateToTenants,
                         );
@@ -100,7 +100,7 @@ class AdminDashboardView extends ConsumerWidget {
                           value: '$expiring7Days',
                           subtitle: 'Needs renewal action',
                           icon: Icons.timer_outlined,
-                          color: Colors.amber.shade800,
+                          color: ClassicTheme.warningAmber,
                           isMobile: isMobile,
                           onTap: onNavigateToTenants,
                         );
@@ -110,7 +110,7 @@ class AdminDashboardView extends ConsumerWidget {
                           value: '$totalPendingLeads',
                           subtitle: '$pendingInquiries Pricing • $pendingTrials Trials',
                           icon: Icons.mark_email_unread_rounded,
-                          color: const Color(0xFF0284C7),
+                          color: ClassicTheme.infoBlue,
                           isMobile: isMobile,
                           onTap: onNavigateToInquiries,
                         );
@@ -192,7 +192,7 @@ class AdminDashboardView extends ConsumerWidget {
                                 title: 'Paid Subscriptions (Annual / Monthly)',
                                 count: paidAnnualCount,
                                 total: totalLicenses > 0 ? totalLicenses : 1,
-                                color: const Color(0xFF6366F1),
+                                color: ClassicTheme.secondaryAccent,
                               ),
                               const SizedBox(height: 14),
                               _buildDistributionBar(
@@ -208,7 +208,7 @@ class AdminDashboardView extends ConsumerWidget {
                                 title: 'Pure Offline Single-Device Clients',
                                 count: pureOfflineCount,
                                 total: totalLicenses > 0 ? totalLicenses : 1,
-                                color: Colors.amber.shade700,
+                                color: ClassicTheme.warningAmber,
                               ),
                             ],
                           ),
@@ -248,7 +248,7 @@ class AdminDashboardView extends ConsumerWidget {
                                 icon: Icons.layers_rounded,
                                 title: 'Configure Feature Presets',
                                 subtitle: 'Offline vs Cloud allocation',
-                                color: const Color(0xFF6366F1),
+                                color: ClassicTheme.secondaryAccent,
                                 onTap: onNavigateToFeatures,
                               ),
                               const SizedBox(height: 10),
@@ -257,7 +257,7 @@ class AdminDashboardView extends ConsumerWidget {
                                 icon: Icons.email_outlined,
                                 title: 'Pending Website Queries',
                                 subtitle: '$totalPendingLeads leads awaiting call',
-                                color: Colors.amber.shade800,
+                                color: ClassicTheme.warningAmber,
                                 onTap: onNavigateToInquiries,
                               ),
                             ],
@@ -275,8 +275,8 @@ class AdminDashboardView extends ConsumerWidget {
                                 decoration: BoxDecoration(
                                   gradient: LinearGradient(
                                     colors: context.isDark
-                                        ? [const Color(0xFF1E1B4B), const Color(0xFF0F172A)]
-                                        : [const Color(0xFFEEF2FF), Colors.white],
+                                        ? [const Color(0xFF1E1B4B), ClassicTheme.brandNavy]
+                                        : [ClassicTheme.tintSecondary, Colors.white],
                                     begin: Alignment.topLeft,
                                     end: Alignment.bottomRight,
                                   ),
@@ -429,7 +429,7 @@ class AdminDashboardView extends ConsumerWidget {
                                   children: [
                                     Row(
                                       children: [
-                                        const Icon(Icons.shield_outlined, size: 18, color: Color(0xFF10B981)),
+                                        const Icon(Icons.shield_outlined, size: 18, color: ClassicTheme.successEmerald),
                                         const SizedBox(width: 8),
                                         Text(
                                           'Recent Governance & Audit Activity',
@@ -479,10 +479,10 @@ class AdminDashboardView extends ConsumerWidget {
                                               Container(
                                                 padding: const EdgeInsets.all(5),
                                                 decoration: BoxDecoration(
-                                                  color: const Color(0xFF6366F1).withValues(alpha: 0.12),
+                                                  color: ClassicTheme.secondaryAccent.withValues(alpha: 0.12),
                                                   borderRadius: BorderRadius.circular(6),
                                                 ),
-                                                child: const Icon(Icons.history_toggle_off_rounded, size: 14, color: Color(0xFF6366F1)),
+                                                child: const Icon(Icons.history_toggle_off_rounded, size: 14, color: ClassicTheme.secondaryAccent),
                                               ),
                                               const SizedBox(width: 10),
                                               Expanded(
@@ -671,7 +671,7 @@ class AdminDashboardView extends ConsumerWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(title, style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: context.textPrimary)),
-                  Text(subtitle, style: TextStyle(fontSize: 11, color: context.textSecondary)),
+                  Text(subtitle, style: TextStyle(fontSize: 12, color: context.textSecondary)),
                 ],
               ),
             ),

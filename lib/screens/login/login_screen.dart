@@ -33,7 +33,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       body: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
-            colors: [context.textPrimary, Color(0xFF1E3A8A), Color(0xFF1E1B4B)],
+            colors: [
+              ClassicTheme.brandNavy,
+              ClassicTheme.secondaryAccent,
+              ClassicTheme.primaryAccent,
+            ],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
           ),
@@ -63,14 +67,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   Container(
                     padding: const EdgeInsets.all(20),
                     decoration: BoxDecoration(
-                      color: Colors.orange.withValues(alpha: 0.12),
+                      color: ClassicTheme.warningAmber.withValues(alpha: 0.12),
                       shape: BoxShape.circle,
-                      border: Border.all(color: Colors.orange.withValues(alpha: 0.4), width: 1.5),
+                      border: Border.all(color: ClassicTheme.warningAmber.withValues(alpha: 0.4), width: 1.5),
                     ),
                     child: const Icon(
                       Icons.storefront,
                       size: 68,
-                      color: Colors.orange,
+                      color: ClassicTheme.warningAmber,
                     ),
                   ),
                   const SizedBox(height: 24),
@@ -105,7 +109,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       width: 50,
                       child: CircularProgressIndicator(
                         strokeWidth: 3,
-                        valueColor: AlwaysStoppedAnimation<Color>(Colors.orange),
+                        valueColor: AlwaysStoppedAnimation<Color>(ClassicTheme.warningAmber),
                       ),
                     ),
                     const SizedBox(height: 16),
@@ -121,12 +125,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       icon: const Icon(Icons.cloud_sync, size: 22),
                       label: const Text('Connect Google Cloud'),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.orange,
+                        backgroundColor: ClassicTheme.warningAmber,
                         foregroundColor: Colors.white,
                         minimumSize: const Size(double.infinity, 52),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                         elevation: 4,
-                        shadowColor: Colors.orange.withValues(alpha: 0.4),
+                        shadowColor: ClassicTheme.warningAmber.withValues(alpha: 0.4),
                         textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                       ),
                     ),
@@ -162,7 +166,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         'Secure local sandbox protection',
                         style: TextStyle(
                           color: Colors.white.withValues(alpha: 0.4),
-                          fontSize: 11,
+                          fontSize: 12,
                         ),
                       ),
                     ],
@@ -195,11 +199,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       context: context,
       barrierDismissible: false,
       builder: (ctx) => AlertDialog(
-        backgroundColor: context.textPrimary,
+        backgroundColor: context.surfaceColor,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Row(
           children: [
-            Icon(Icons.warning_amber_rounded, color: Colors.amber, size: 28),
+            Icon(Icons.warning_amber_rounded, color: ClassicTheme.warningAmber, size: 28),
             SizedBox(width: 10),
             Expanded(
               child: Text(
@@ -220,9 +224,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.amber.withValues(alpha: 0.1),
+                color: ClassicTheme.warningAmber.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.amber.withValues(alpha: 0.3)),
+                border: Border.all(color: ClassicTheme.warningAmber.withValues(alpha: 0.3)),
               ),
               child: const Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -230,7 +234,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   Text(
                     '⚠️ NO CLOUD BACKUP',
                     style: TextStyle(
-                      color: Colors.amber,
+                      color: ClassicTheme.warningAmber,
                       fontWeight: FontWeight.bold,
                       fontSize: 13,
                     ),
@@ -276,7 +280,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               style: TextStyle(fontWeight: FontWeight.bold),
             ),
             style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.orange,
+              backgroundColor: ClassicTheme.warningAmber,
               foregroundColor: Colors.white,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
             ),
@@ -301,7 +305,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         Expanded(
           child: Text(
             text,
-            style: const TextStyle(color: Colors.white60, fontSize: 11, height: 1.4),
+            style: const TextStyle(color: Colors.white60, fontSize: 12, height: 1.4),
           ),
         ),
       ],

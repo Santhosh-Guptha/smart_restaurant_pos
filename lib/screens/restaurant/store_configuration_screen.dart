@@ -5,10 +5,10 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../../core/classic_theme.dart';
+import '../../core/design_tokens.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/saas_session_provider.dart';
 import '../../services/thermal_printer_service.dart';
-import '../../services/apps_script_backend_service.dart';
 import '../../utils/ui_feedback.dart';
 import '../settings/printer_settings_screen.dart';
 
@@ -45,15 +45,6 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
   // ── Tab 3: Payment & UPI Settlements ──
   late TextEditingController _upiIdCtrl;
   late TextEditingController _upiNameCtrl;
-  late TextEditingController _razorpayKeyCtrl;
-  late TextEditingController _razorpaySecretCtrl;
-  late TextEditingController _razorpayWebhookCtrl;
-  bool _enableRazorpay = false;
-  bool _obscureRzpSecret = true;
-  bool _obscureRzpWebhook = true;
-  bool _isTestingRazorpay = false;
-  String? _rzpTestMessage;
-  bool _rzpTestSuccess = false;
   bool _enableUpi = true;
   bool _enableCash = true;
   bool _enableCard = true;
@@ -120,10 +111,6 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
 
     _upiIdCtrl = TextEditingController();
     _upiNameCtrl = TextEditingController();
-    _razorpayKeyCtrl = TextEditingController();
-    _razorpaySecretCtrl = TextEditingController();
-    _razorpayWebhookCtrl = TextEditingController();
-
     _settlementUpiCtrl = TextEditingController();
     _bankAccountCtrl = TextEditingController();
     _bankIfscCtrl = TextEditingController();
@@ -155,10 +142,6 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
 
     _upiIdCtrl.dispose();
     _upiNameCtrl.dispose();
-    _razorpayKeyCtrl.dispose();
-    _razorpaySecretCtrl.dispose();
-    _razorpayWebhookCtrl.dispose();
-
     _settlementUpiCtrl.dispose();
     _bankAccountCtrl.dispose();
     _bankIfscCtrl.dispose();
@@ -211,10 +194,6 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
     // 3. Payments & UPI
     _upiIdCtrl.text = rBox?.get('restaurant_upi_id') ?? cBox?.get('default_vpa_$email', defaultValue: org?.upiId ?? '');
     _upiNameCtrl.text = rBox?.get('restaurant_upi_name', defaultValue: _nameCtrl.text) ?? _nameCtrl.text;
-    _enableRazorpay = rBox?.get('enable_razorpay', defaultValue: false) ?? false;
-    _razorpayKeyCtrl.text = rBox?.get('restaurant_razorpay_key', defaultValue: '') ?? '';
-    _razorpaySecretCtrl.text = rBox?.get('restaurant_razorpay_secret', defaultValue: '') ?? '';
-    _razorpayWebhookCtrl.text = rBox?.get('restaurant_razorpay_webhook', defaultValue: '') ?? '';
     _enableUpi = rBox?.get('enable_upi', defaultValue: true) ?? true;
     _enableCash = rBox?.get('enable_cash', defaultValue: true) ?? true;
     _enableCard = rBox?.get('enable_card', defaultValue: true) ?? true;
@@ -223,24 +202,6 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
     _bankAccountCtrl.text = rBox?.get('bank_account') ?? cBox?.get('bank_account_', defaultValue: '');
     _bankIfscCtrl.text = rBox?.get('bank_ifsc') ?? cBox?.get('bank_ifsc_', defaultValue: '');
     _bankHolderCtrl.text = rBox?.get('bank_holder') ?? cBox?.get('bank_holder_', defaultValue: '');
-
-    // Cloud fallback for Razorpay if local key is empty
-    final orgId = user?.organizationId ?? org?.id ?? '';
-    if (_razorpayKeyCtrl.text.isEmpty && orgId.isNotEmpty) {
-      FirebaseFirestore.instance.collection('organizations').doc(orgId).get().then((doc) {
-        if (doc.exists && doc.data() != null) {
-          final rzp = doc.data()!['razorpay'];
-          if (rzp is Map && mounted) {
-            setState(() {
-              _enableRazorpay = rzp['enabled'] == true;
-              _razorpayKeyCtrl.text = (rzp['keyId'] ?? '').toString();
-              _razorpaySecretCtrl.text = (rzp['keySecret'] ?? '').toString();
-              _razorpayWebhookCtrl.text = (rzp['webhookSecret'] ?? '').toString();
-            });
-          }
-        }
-      }).catchError((_) {});
-    }
 
     // Multi-UPI list
     final rawUpiList = cBox?.get('shop_upi_accounts_$email', defaultValue: <String>[]);
@@ -291,55 +252,6 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
     if (mounted) setState(() {});
   }
 
-  Future<void> _testRazorpayConnection() async {
-    final keyId = _razorpayKeyCtrl.text.trim();
-    final keySecret = _razorpaySecretCtrl.text.trim();
-    if (keyId.isEmpty) {
-      AppToast.showError(context, 'Please enter a Razorpay Key ID first.');
-      return;
-    }
-    final saasSession = ref.read(saasSessionProvider);
-    final org = saasSession.currentOrganization;
-    final user = saasSession.currentUser;
-    final orgId = user?.organizationId ?? org?.id ?? 'ORG_DEFAULT';
-
-    setState(() {
-      _isTestingRazorpay = true;
-      _rzpTestMessage = null;
-      _rzpTestSuccess = false;
-    });
-
-    try {
-      final res = await AppsScriptBackendService.testOutletRazorpay(
-        outletId: orgId,
-        keyId: keyId,
-        keySecret: keySecret,
-      );
-      final ok = res['ok'] == true || res['success'] == true;
-      if (mounted) {
-        setState(() {
-          _isTestingRazorpay = false;
-          _rzpTestSuccess = ok;
-          _rzpTestMessage = (res['message'] ?? res['error'] ?? (ok ? 'Credentials verified with Razorpay!' : 'Verification failed')).toString();
-        });
-        if (ok) {
-          AppToast.showSuccess(context, 'Razorpay Connection Verified!', subtitle: 'Your API key pair is accepted.');
-        } else {
-          AppToast.showError(context, _rzpTestMessage ?? 'Razorpay verification failed.');
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _isTestingRazorpay = false;
-          _rzpTestSuccess = false;
-          _rzpTestMessage = 'Test error: $e';
-        });
-        AppToast.showError(context, 'Failed to test Razorpay: $e');
-      }
-    }
-  }
-
   Future<void> _saveConfig() async {
     setState(() => _isSaving = true);
     try {
@@ -371,9 +283,6 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
 
       final upiId = _upiIdCtrl.text.trim();
       final upiName = _upiNameCtrl.text.trim().isNotEmpty ? _upiNameCtrl.text.trim() : rName;
-      final razorpayKey = _razorpayKeyCtrl.text.trim();
-      final razorpaySecret = _razorpaySecretCtrl.text.trim();
-      final razorpayWebhook = _razorpayWebhookCtrl.text.trim();
 
       final settlementUpi = _settlementUpiCtrl.text.trim();
       final bankAccount = _bankAccountCtrl.text.trim();
@@ -398,10 +307,6 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
 
       await rBox.put('restaurant_upi_id', upiId);
       await rBox.put('restaurant_upi_name', upiName);
-      await rBox.put('enable_razorpay', _enableRazorpay);
-      await rBox.put('restaurant_razorpay_key', razorpayKey);
-      await rBox.put('restaurant_razorpay_secret', razorpaySecret);
-      await rBox.put('restaurant_razorpay_webhook', razorpayWebhook);
       await rBox.put('enable_upi', _enableUpi);
       await rBox.put('enable_cash', _enableCash);
       await rBox.put('enable_card', _enableCard);
@@ -410,28 +315,6 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
       await rBox.put('bank_account', bankAccount);
       await rBox.put('bank_ifsc', bankIfsc);
       await rBox.put('bank_holder', bankHolder);
-
-      // Backend sync for Razorpay
-      if (_enableRazorpay && razorpayKey.isNotEmpty) {
-        try {
-          await AppsScriptBackendService.setOutletRazorpay(
-            outletId: orgId,
-            keyId: razorpayKey,
-            keySecret: razorpaySecret,
-            webhookSecret: razorpayWebhook,
-          );
-        } catch (e) {
-          debugPrint('AppsScript razorpay sync error: $e');
-        }
-      } else if (!_enableRazorpay && razorpayKey.isEmpty) {
-        try {
-          await AppsScriptBackendService.clearOutletRazorpay(
-            outletId: orgId,
-          );
-        } catch (e) {
-          debugPrint('AppsScript razorpay clear note: $e');
-        }
-      }
 
       await rBox.put('shift_breakfast', _breakfastShiftCtrl.text.trim());
       await rBox.put('shift_lunch', _lunchShiftCtrl.text.trim());
@@ -512,13 +395,6 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
           'bankAccount': bankAccount,
           'bankIfsc': bankIfsc,
           'bankHolder': bankHolder,
-          'razorpay': {
-            'enabled': _enableRazorpay,
-            'keyId': razorpayKey,
-            'keySecret': razorpaySecret,
-            'webhookSecret': razorpayWebhook,
-            'updatedAt': FieldValue.serverTimestamp(),
-          },
           'operatingHours': {
             'isOpen': _isStoreOpen,
             'openFrom': _openFrom,
@@ -547,8 +423,6 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
           'deliveryCharge': deliveryCharge,
           'upiId': upiId,
           'upiMerchantName': upiName,
-          'isRazorpayEnabled': _enableRazorpay,
-          'razorpayKeyId': _enableRazorpay ? razorpayKey : '',
           'operatingHours': {
             'isOpen': _isStoreOpen,
             'openFrom': _openFrom,
@@ -751,7 +625,7 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
             ),
             Text(
               'Restaurant profile, taxes, payments, shifts, receipts & expenses',
-              style: TextStyle(fontSize: 11, color: context.textSecondary),
+              style: TextStyle(fontSize: 12, color: context.textSecondary),
             ),
           ],
         ),
@@ -816,7 +690,7 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
             Expanded(
               child: Text(
                 'Changes apply immediately to Counter Billing, Waiter Orders, KDS and Web Menu.',
-                style: TextStyle(fontSize: 11, color: context.textSecondary),
+                style: TextStyle(fontSize: 12, color: context.textSecondary),
               ),
             ),
             const SizedBox(width: 12),
@@ -960,7 +834,7 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
                     Expanded(
                       child: Text(
                         'GST Breakdown: ${(gst / 2).toStringAsFixed(2)}% CGST + ${(gst / 2).toStringAsFixed(2)}% SGST printed on all digital & thermal tax invoices.',
-                        style: TextStyle(fontSize: 11, color: context.textPrimary),
+                        style: TextStyle(fontSize: 12, color: context.textPrimary),
                       ),
                     ),
                   ],
@@ -1004,7 +878,7 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
               const SizedBox(height: 4),
               Text(
                 'Defines whether cashier billing enforces payment up-front (QSR fast food) or allows dine-in post-pay (casual dining).',
-                style: TextStyle(color: context.textSecondary, fontSize: 11),
+                style: TextStyle(color: context.textSecondary, fontSize: 12),
               ),
               const SizedBox(height: 10),
               DropdownButtonFormField<String>(
@@ -1083,7 +957,7 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
                     border: Border.all(color: context.borderColor),
                   ),
                   child: Text('No secondary UPI accounts configured. Dynamic table QR will use the Primary UPI VPA.',
-                      style: TextStyle(fontSize: 11, color: context.textSecondary)),
+                      style: TextStyle(fontSize: 12, color: context.textSecondary)),
                 )
               else
                 Column(
@@ -1108,12 +982,12 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
                               children: [
                                 Text('${acc['name'] ?? ''} (${acc['app'] ?? 'UPI'})',
                                     style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: context.textPrimary)),
-                                Text(acc['vpa'] ?? '', style: TextStyle(fontSize: 11, color: context.textSecondary)),
+                                Text(acc['vpa'] ?? '', style: TextStyle(fontSize: 12, color: context.textSecondary)),
                               ],
                             ),
                           ),
                           IconButton(
-                            icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 18),
+                            icon: const Icon(Icons.delete_outline_rounded, color: ClassicTheme.dangerRed, size: 18),
                             onPressed: () => setState(() => _upiAccounts.removeAt(idx)),
                           ),
                         ],
@@ -1172,108 +1046,49 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
               const SizedBox(height: 16),
               Divider(color: context.borderColor),
               const SizedBox(height: 12),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('Online Payment Gateway (Razorpay):',
-                            style: TextStyle(color: context.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
-                        const SizedBox(height: 2),
-                        Text(
-                          'Allows diners scanning Table QR to pay via Google Pay, PhonePe, Paytm, or Cards directly to your merchant account.',
-                          style: TextStyle(color: context.textSecondary, fontSize: 11),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Switch.adaptive(
-                    value: _enableRazorpay,
-                    activeThumbColor: const Color(0xFFF59E0B),
-                    onChanged: (v) => setState(() => _enableRazorpay = v),
-                  ),
-                ],
-              ),
-              if (_enableRazorpay) ...[
-                const SizedBox(height: 12),
-                _buildTextField(
-                  _razorpayKeyCtrl,
-                  'Razorpay Key ID * (e.g. rzp_live_... or rzp_test_...)',
-                  Icons.vpn_key_rounded,
+              Container(
+                padding: const EdgeInsets.all(DS.space3),
+                decoration: BoxDecoration(
+                  color: context.sunkenSurface,
+                  borderRadius: BorderRadius.circular(DS.radiusMd),
+                  border: Border.all(color: context.borderColor),
                 ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: _razorpaySecretCtrl,
-                  obscureText: _obscureRzpSecret,
-                  style: TextStyle(color: context.textPrimary, fontSize: 13, fontFamily: 'monospace'),
-                  decoration: InputDecoration(
-                    labelText: 'Razorpay Key Secret *',
-                    labelStyle: TextStyle(color: context.textSecondary, fontSize: 12),
-                    prefixIcon: const Icon(Icons.lock_outline_rounded, size: 20, color: Color(0xFFF59E0B)),
-                    suffixIcon: IconButton(
-                      icon: Icon(_obscureRzpSecret ? Icons.visibility_outlined : Icons.visibility_off_outlined, size: 18, color: context.textSecondary),
-                      onPressed: () => setState(() => _obscureRzpSecret = !_obscureRzpSecret),
-                    ),
-                    filled: true,
-                    fillColor: context.canvasColor,
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: context.borderColor)),
-                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: context.borderColor)),
-                  ),
-                ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: _razorpayWebhookCtrl,
-                  obscureText: _obscureRzpWebhook,
-                  style: TextStyle(color: context.textPrimary, fontSize: 13, fontFamily: 'monospace'),
-                  decoration: InputDecoration(
-                    labelText: 'Webhook Secret (Optional)',
-                    labelStyle: TextStyle(color: context.textSecondary, fontSize: 12),
-                    prefixIcon: const Icon(Icons.webhook_rounded, size: 20, color: Color(0xFFF59E0B)),
-                    suffixIcon: IconButton(
-                      icon: Icon(_obscureRzpWebhook ? Icons.visibility_outlined : Icons.visibility_off_outlined, size: 18, color: context.textSecondary),
-                      onPressed: () => setState(() => _obscureRzpWebhook = !_obscureRzpWebhook),
-                    ),
-                    filled: true,
-                    fillColor: context.canvasColor,
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: context.borderColor)),
-                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: context.borderColor)),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Row(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    ElevatedButton.icon(
-                      onPressed: _isTestingRazorpay ? null : _testRazorpayConnection,
-                      icon: _isTestingRazorpay
-                          ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                          : const Icon(Icons.verified_user_rounded, size: 16),
-                      label: Text(_isTestingRazorpay ? 'Verifying...' : 'Test Gateway Connection', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFFF59E0B),
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    Icon(Icons.info_outline_rounded,
+                        size: 18, color: context.textSecondary),
+                    const SizedBox(width: DS.space2),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Guests pay you directly',
+                            style: TextStyle(
+                              color: context.textPrimary,
+                              fontSize: DS.fontCaption,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            'The UPI ID above is what a guest sees as a QR code when they '
+                            'pay from their phone, so the money reaches your account with '
+                            'nothing in between. Cash and card-machine payments are '
+                            'recorded here by your staff when the bill is settled.',
+                            style: TextStyle(
+                              color: context.textSecondary,
+                              fontSize: DS.fontMicro,
+                              height: 1.45,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                    if (_rzpTestMessage != null) ...[
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          _rzpTestMessage!,
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                            color: _rzpTestSuccess ? Colors.green : Colors.redAccent,
-                          ),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ],
                   ],
                 ),
-              ],
+              ),
             ],
           ),
         ],
@@ -1302,7 +1117,7 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
               const SizedBox(height: 6),
               Text(
                 'When toggled OFF, online QR dining menu indicates the restaurant kitchen is currently closed.',
-                style: TextStyle(color: context.textSecondary, fontSize: 11),
+                style: TextStyle(color: context.textSecondary, fontSize: 12),
               ),
               const SizedBox(height: 14),
               Divider(color: context.borderColor),
@@ -1326,11 +1141,11 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text('Opens At', style: TextStyle(color: context.textSecondary, fontSize: 11)),
+                            Text('Opens At', style: TextStyle(color: context.textSecondary, fontSize: 12)),
                             const SizedBox(height: 4),
                             Row(
                               children: [
-                                const Icon(Icons.wb_sunny_rounded, color: Colors.amber, size: 16),
+                                const Icon(Icons.wb_sunny_rounded, color: ClassicTheme.warningAmber, size: 16),
                                 const SizedBox(width: 6),
                                 Text(_openFrom,
                                     style: TextStyle(color: context.textPrimary, fontSize: 14, fontWeight: FontWeight.bold)),
@@ -1356,11 +1171,11 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text('Closes At', style: TextStyle(color: context.textSecondary, fontSize: 11)),
+                            Text('Closes At', style: TextStyle(color: context.textSecondary, fontSize: 12)),
                             const SizedBox(height: 4),
                             Row(
                               children: [
-                                const Icon(Icons.nightlight_round, color: Color(0xFF6366F1), size: 16),
+                                const Icon(Icons.nightlight_round, color: ClassicTheme.secondaryAccent, size: 16),
                                 const SizedBox(width: 6),
                                 Text(_openTo,
                                     style: TextStyle(color: context.textPrimary, fontSize: 14, fontWeight: FontWeight.bold)),
@@ -1566,11 +1381,11 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
                       backgroundColor: ClassicTheme.primaryAccent.withValues(alpha: 0.15),
                       radius: 10,
                       child: Text(cat.isNotEmpty ? cat[0].toUpperCase() : 'C',
-                          style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: ClassicTheme.primaryAccent)),
+                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: ClassicTheme.primaryAccent)),
                     ),
                     label: Text(cat, style: TextStyle(color: context.textPrimary, fontSize: 12)),
                     deleteIcon: const Icon(Icons.close_rounded, size: 16),
-                    deleteIconColor: Colors.redAccent,
+                    deleteIconColor: ClassicTheme.dangerRed,
                     onDeleted: () => setState(() => _categories.remove(cat)),
                   );
                 }).toList(),

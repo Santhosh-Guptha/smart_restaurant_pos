@@ -9,8 +9,8 @@ class AppToast {
       message: message,
       subtitle: subtitle,
       icon: Icons.check_circle_rounded,
-      iconColor: const Color(0xFF10B981), // Emerald
-      borderColor: const Color(0xFF059669),
+      iconColor: ClassicTheme.successEmerald, // Emerald
+      borderColor: ClassicTheme.successEmerald,
       bgColor: const Color(0xFF064E3B),
     );
   }
@@ -23,7 +23,7 @@ class AppToast {
       subtitle: formattedMessage,
       icon: Icons.error_rounded,
       iconColor: const Color(0xFFF87171), // Crimson
-      borderColor: const Color(0xFFDC2626),
+      borderColor: ClassicTheme.dangerRed,
       bgColor: const Color(0xFF450A0A),
       duration: const Duration(seconds: 4),
     );
@@ -36,7 +36,7 @@ class AppToast {
       subtitle: subtitle,
       icon: Icons.warning_amber_rounded,
       iconColor: const Color(0xFFFBBF24), // Amber
-      borderColor: const Color(0xFFD97706),
+      borderColor: ClassicTheme.warningAmber,
       bgColor: const Color(0xFF451A03),
     );
   }
@@ -47,8 +47,8 @@ class AppToast {
       message: message,
       subtitle: subtitle,
       icon: Icons.info_outline_rounded,
-      iconColor: const Color(0xFF38BDF8), // Sky Blue
-      borderColor: const Color(0xFF0284C7),
+      iconColor: ClassicTheme.infoBlue, // Sky Blue
+      borderColor: ClassicTheme.infoBlue,
       bgColor: const Color(0xFF082F49),
     );
   }
@@ -204,7 +204,7 @@ class AppLoadingDialog {
                   height: 28,
                   child: CircularProgressIndicator(
                     strokeWidth: 2.8,
-                    valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF38BDF8)),
+                    valueColor: AlwaysStoppedAnimation<Color>(ClassicTheme.infoBlue),
                   ),
                 ),
                 const SizedBox(width: 18),

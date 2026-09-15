@@ -82,13 +82,13 @@ class _AdminInquiriesViewState extends ConsumerState<AdminInquiriesView> {
       case 'PENDING':
       case 'NEW_INQUIRY':
       case 'NEW':
-        return Colors.amber.shade700;
+        return ClassicTheme.warningAmber;
       case 'APPROVED':
       case 'CONVERTED':
       case 'ACTIVE':
         return ClassicTheme.successEmerald;
       case 'CONTACTED':
-        return const Color(0xFF0284C7);
+        return ClassicTheme.infoBlue;
       case 'REJECTED':
       case 'CANCELLED':
         return ClassicTheme.dangerRed;
@@ -171,21 +171,21 @@ class _AdminInquiriesViewState extends ConsumerState<AdminInquiriesView> {
                   title: 'Total Leads',
                   count: totalCount,
                   icon: Icons.mark_email_unread_rounded,
-                  color: const Color(0xFF6366F1),
+                  color: ClassicTheme.secondaryAccent,
                   isMobile: isMobile,
                 );
                 final m2 = _buildMetricCard(
                   title: 'Needs Action',
                   count: pendingCount,
                   icon: Icons.hourglass_top_rounded,
-                  color: Colors.amber.shade700,
+                  color: ClassicTheme.warningAmber,
                   isMobile: isMobile,
                 );
                 final m3 = _buildMetricCard(
                   title: 'Pricing Queries',
                   count: commercialCount,
                   icon: Icons.business_center_rounded,
-                  color: const Color(0xFF0284C7),
+                  color: ClassicTheme.infoBlue,
                   isMobile: isMobile,
                 );
                 final m4 = _buildMetricCard(
@@ -425,7 +425,7 @@ class _AdminInquiriesViewState extends ConsumerState<AdminInquiriesView> {
 
   Widget _buildLeadCard(UnifiedClientLead lead) {
     final isTrial = lead.isTrial;
-    final typeColor = isTrial ? ClassicTheme.successEmerald : const Color(0xFF6366F1);
+    final typeColor = isTrial ? ClassicTheme.successEmerald : ClassicTheme.secondaryAccent;
     final statusColor = _getStatusColor(lead.status);
 
     return Container(
@@ -434,7 +434,7 @@ class _AdminInquiriesViewState extends ConsumerState<AdminInquiriesView> {
         color: context.surfaceColor,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
-          color: lead.isPending ? Colors.amber.shade700.withValues(alpha: 0.4) : context.borderColor,
+          color: lead.isPending ? ClassicTheme.warningAmber.withValues(alpha: 0.4) : context.borderColor,
           width: lead.isPending ? 1.5 : 1,
         ),
         boxShadow: ClassicTheme.cardShadow(context.isDark),
@@ -510,19 +510,19 @@ class _AdminInquiriesViewState extends ConsumerState<AdminInquiriesView> {
                             isTrial ? '14-Day Free Trial' : lead.selectedPlan,
                             style: TextStyle(
                               color: typeColor,
-                              fontSize: 11,
+                              fontSize: 12,
                               fontWeight: FontWeight.bold,
                             ),
                           ),
                         ),
                         Text(
                           lead.businessCategory,
-                          style: TextStyle(fontSize: 11.5, color: context.textSecondary),
+                          style: TextStyle(fontSize: 12, color: context.textSecondary),
                         ),
                         if (lead.outlets.isNotEmpty)
-                          Text('• ${lead.outlets}', style: TextStyle(fontSize: 11.5, color: context.textSecondary)),
+                          Text('• ${lead.outlets}', style: TextStyle(fontSize: 12, color: context.textSecondary)),
                         if (lead.stations.isNotEmpty)
-                          Text('• ${lead.stations}', style: TextStyle(fontSize: 11.5, color: context.textSecondary)),
+                          Text('• ${lead.stations}', style: TextStyle(fontSize: 12, color: context.textSecondary)),
                       ],
                     ),
                   ],
@@ -544,7 +544,7 @@ class _AdminInquiriesViewState extends ConsumerState<AdminInquiriesView> {
                       lead.status,
                       style: TextStyle(
                         color: statusColor,
-                        fontSize: 11,
+                        fontSize: 12,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
@@ -553,7 +553,7 @@ class _AdminInquiriesViewState extends ConsumerState<AdminInquiriesView> {
                   if (lead.createdAt != null)
                     Text(
                       '${lead.createdAt!.day}/${lead.createdAt!.month}/${lead.createdAt!.year} ${lead.createdAt!.hour.toString().padLeft(2, '0')}:${lead.createdAt!.minute.toString().padLeft(2, '0')}',
-                      style: TextStyle(fontSize: 10.5, color: context.textSecondary),
+                      style: TextStyle(fontSize: 12, color: context.textSecondary),
                     ),
                 ],
               ),
@@ -632,8 +632,8 @@ class _AdminInquiriesViewState extends ConsumerState<AdminInquiriesView> {
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                         side: BorderSide(color: context.borderColor),
                       ),
-                      icon: const Icon(Icons.call_rounded, size: 14, color: Color(0xFF0284C7)),
-                      label: const Text('Call', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
+                      icon: const Icon(Icons.call_rounded, size: 14, color: ClassicTheme.infoBlue),
+                      label: const Text('Call', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                       onPressed: () => _makeCall(lead.phone),
                     ),
                     ElevatedButton.icon(
@@ -643,7 +643,7 @@ class _AdminInquiriesViewState extends ConsumerState<AdminInquiriesView> {
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                       ),
                       icon: const Icon(Icons.chat_bubble_outline_rounded, size: 14),
-                      label: const Text('WhatsApp', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
+                      label: const Text('WhatsApp', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                       onPressed: () => _openWhatsApp(lead.phone, lead.clientName, lead.brandName),
                     ),
                   ],
@@ -653,8 +653,8 @@ class _AdminInquiriesViewState extends ConsumerState<AdminInquiriesView> {
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                         side: BorderSide(color: context.borderColor),
                       ),
-                      icon: const Icon(Icons.mail_rounded, size: 14, color: Colors.purple),
-                      label: const Text('Email', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
+                      icon: const Icon(Icons.mail_rounded, size: 14, color: ClassicTheme.secondaryAccent),
+                      label: const Text('Email', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                       onPressed: () => _sendEmail(lead.email, lead.brandName),
                     ),
                 ],
@@ -672,7 +672,7 @@ class _AdminInquiriesViewState extends ConsumerState<AdminInquiriesView> {
                         foregroundColor: context.textSecondary,
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                       ),
-                      child: const Text('Mark Contacted', style: TextStyle(fontSize: 11.5)),
+                      child: const Text('Mark Contacted', style: TextStyle(fontSize: 12)),
                       onPressed: () => _updateLeadStatus(lead, 'CONTACTED'),
                     ),
                   ElevatedButton.icon(

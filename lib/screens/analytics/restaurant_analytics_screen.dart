@@ -25,9 +25,9 @@ class _RestaurantAnalyticsScreenState
   String _selectedPeriod = 'Today'; // 'Today', 'Yesterday', 'Last 7 Days', 'This Month'
   int? _selectedHour;
 
-  static const amberAccent = Color(0xFFF59E0B);
-  static const coralAccent = Color(0xFFFF6B35);
-  static const emeraldAccent = Color(0xFF10B981);
+  static const amberAccent = ClassicTheme.warningAmber;
+  static const coralAccent = ClassicTheme.primaryAccent;
+  static const emeraldAccent = ClassicTheme.successEmerald;
 
   // Multi-Store Scope Configuration
   StoreScopeMode _scopeMode = StoreScopeMode.all;
@@ -311,7 +311,7 @@ class _RestaurantAnalyticsScreenState
           'aov': dOrders > 0 ? (dSales / dOrders) : 0.0,
           'topSubcategory': 'Starters & Special',
           'turnaround': '45 mins',
-          'color': const Color(0xFF8B5CF6),
+          'color': ClassicTheme.secondaryAccent,
           'icon': Icons.dinner_dining_rounded,
         },
         {
@@ -507,7 +507,7 @@ class _RestaurantAnalyticsScreenState
                         : (_scopeMode == StoreScopeMode.individual
                             ? 'Single Store Focus'
                             : '${_multiSelectedOutletIds.length} Selected Stores Aggregated'),
-                    style: TextStyle(fontSize: 10.5, color: context.textSecondary),
+                    style: TextStyle(fontSize: 12, color: context.textSecondary),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -542,7 +542,7 @@ class _RestaurantAnalyticsScreenState
                     'LIVE',
                     style: TextStyle(
                       color: emeraldAccent,
-                      fontSize: 9.5,
+                      fontSize: 12,
                       fontWeight: FontWeight.w900,
                       letterSpacing: 0.5,
                     ),
@@ -658,7 +658,7 @@ class _RestaurantAnalyticsScreenState
                           const SizedBox(height: 2),
                           Text(
                             'No settled orders recorded for this period yet. Data populates automatically in real-time as bills are settled.',
-                            style: TextStyle(color: context.textSecondary, fontSize: 11),
+                            style: TextStyle(color: context.textSecondary, fontSize: 12),
                           ),
                         ],
                       ),
@@ -699,14 +699,14 @@ class _RestaurantAnalyticsScreenState
                         value: '₹ ${avgAov.toStringAsFixed(0)}',
                         subtitle: 'Highest at Dinner',
                         icon: Icons.trending_up_rounded,
-                        accentColor: const Color(0xFF0284C7),
+                        accentColor: ClassicTheme.infoBlue,
                       ),
                       _buildKpiCard(
                         title: 'TABLE TURNAROUND',
                         value: '35 mins',
                         subtitle: 'Optimal velocity',
                         icon: Icons.timer_outlined,
-                        accentColor: const Color(0xFF7C3AED),
+                        accentColor: ClassicTheme.secondaryAccent,
                       ),
                       _buildKpiCard(
                         title: 'PEAK RUSH HOUR',
@@ -746,7 +746,7 @@ class _RestaurantAnalyticsScreenState
                           value: '₹ ${avgAov.toStringAsFixed(0)}',
                           subtitle: 'Highest at Dinner',
                           icon: Icons.trending_up_rounded,
-                          accentColor: const Color(0xFF0284C7),
+                          accentColor: ClassicTheme.infoBlue,
                         ),
                       ),
                       const SizedBox(width: 10),
@@ -756,7 +756,7 @@ class _RestaurantAnalyticsScreenState
                           value: '35 mins',
                           subtitle: 'Optimal velocity',
                           icon: Icons.timer_outlined,
-                          accentColor: const Color(0xFF7C3AED),
+                          accentColor: ClassicTheme.secondaryAccent,
                         ),
                       ),
                       const SizedBox(width: 10),
@@ -824,7 +824,7 @@ class _RestaurantAnalyticsScreenState
                               ),
                               Text(
                                 'Visualizes kitchen load and service volume',
-                                style: TextStyle(color: context.textSecondary, fontSize: 11),
+                                style: TextStyle(color: context.textSecondary, fontSize: 12),
                               ),
                             ],
                           ),
@@ -887,7 +887,7 @@ class _RestaurantAnalyticsScreenState
                                           '$orders',
                                           style: TextStyle(
                                             color: isPeak ? coralAccent : context.textSecondary,
-                                            fontSize: 9.5,
+                                            fontSize: 12,
                                             fontWeight: isPeak ? FontWeight.bold : FontWeight.normal,
                                           ),
                                         ),
@@ -906,7 +906,7 @@ class _RestaurantAnalyticsScreenState
                                         '${hour}h',
                                         style: TextStyle(
                                           color: isSelected ? amberAccent : context.textSecondary,
-                                          fontSize: 10,
+                                          fontSize: 12,
                                           fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
                                         ),
                                       ),
@@ -1067,7 +1067,7 @@ class _RestaurantAnalyticsScreenState
               Flexible(
                 child: Text(
                   title,
-                  style: TextStyle(color: context.textSecondary, fontSize: 9.5, fontWeight: FontWeight.bold, letterSpacing: 0.4),
+                  style: TextStyle(color: context.textSecondary, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 0.4),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -1085,7 +1085,7 @@ class _RestaurantAnalyticsScreenState
           const SizedBox(height: 2),
           Text(
             subtitle,
-            style: TextStyle(color: context.textSecondary, fontSize: 10),
+            style: TextStyle(color: context.textSecondary, fontSize: 12),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
@@ -1137,7 +1137,7 @@ class _RestaurantAnalyticsScreenState
                     ),
                     Text(
                       shift['time'] as String,
-                      style: TextStyle(color: context.textSecondary, fontSize: 9.5),
+                      style: TextStyle(color: context.textSecondary, fontSize: 12),
                     ),
                   ],
                 ),
@@ -1151,7 +1151,7 @@ class _RestaurantAnalyticsScreenState
           ),
           Text(
             '${shift['orders']} orders · AOV ₹ ${(shift['aov'] as double).toStringAsFixed(0)}',
-            style: TextStyle(color: context.textSecondary, fontSize: 10),
+            style: TextStyle(color: context.textSecondary, fontSize: 12),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
@@ -1159,19 +1159,19 @@ class _RestaurantAnalyticsScreenState
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text('Speed:', style: TextStyle(color: context.textSecondary, fontSize: 10)),
-              Text(shift['turnaround'] as String, style: TextStyle(color: context.textPrimary, fontWeight: FontWeight.bold, fontSize: 10)),
+              Text('Speed:', style: TextStyle(color: context.textSecondary, fontSize: 12)),
+              Text(shift['turnaround'] as String, style: TextStyle(color: context.textPrimary, fontWeight: FontWeight.bold, fontSize: 12)),
             ],
           ),
           const SizedBox(height: 2),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text('Top:', style: TextStyle(color: context.textSecondary, fontSize: 10)),
+              Text('Top:', style: TextStyle(color: context.textSecondary, fontSize: 12)),
               Flexible(
                 child: Text(
                   shift['topSubcategory'] as String,
-                  style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.bold),
+                  style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.bold),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -1214,7 +1214,7 @@ class _RestaurantAnalyticsScreenState
           const SizedBox(height: 4),
           Text(
             'Weekly distribution across all service days',
-            style: TextStyle(color: context.textSecondary, fontSize: 11),
+            style: TextStyle(color: context.textSecondary, fontSize: 12),
           ),
           const SizedBox(height: 16),
 
@@ -1234,7 +1234,7 @@ class _RestaurantAnalyticsScreenState
                       style: TextStyle(
                         color: isWeekend ? coralAccent : context.textPrimary,
                         fontWeight: isWeekend ? FontWeight.bold : FontWeight.normal,
-                        fontSize: 11.5,
+                        fontSize: 12,
                       ),
                     ),
                   ),
@@ -1261,7 +1261,7 @@ class _RestaurantAnalyticsScreenState
                       style: TextStyle(
                         color: isWeekend ? coralAccent : context.textSecondary,
                         fontWeight: FontWeight.bold,
-                        fontSize: 11,
+                        fontSize: 12,
                       ),
                     ),
                   ),
@@ -1309,7 +1309,7 @@ class _RestaurantAnalyticsScreenState
           const SizedBox(height: 4),
           Text(
             'Tracks item velocity across distinct menu groups',
-            style: TextStyle(color: context.textSecondary, fontSize: 11),
+            style: TextStyle(color: context.textSecondary, fontSize: 12),
           ),
           const SizedBox(height: 14),
 
@@ -1343,7 +1343,7 @@ class _RestaurantAnalyticsScreenState
                       ),
                       child: Text(
                         subcat['category'] as String,
-                        style: const TextStyle(color: amberAccent, fontSize: 9.5, fontWeight: FontWeight.bold),
+                        style: const TextStyle(color: amberAccent, fontSize: 12, fontWeight: FontWeight.bold),
                       ),
                     ),
                     const SizedBox(width: 10),
@@ -1357,7 +1357,7 @@ class _RestaurantAnalyticsScreenState
                     ),
                     Text(
                       '${subcat['qty']} sold',
-                      style: TextStyle(color: context.textSecondary, fontSize: 11),
+                      style: TextStyle(color: context.textSecondary, fontSize: 12),
                     ),
                     const SizedBox(width: 12),
                     Text(
@@ -1402,17 +1402,17 @@ class _RestaurantAnalyticsScreenState
                 segments: const [
                   ButtonSegment(
                     value: StoreScopeMode.all,
-                    label: Text('All Stores', style: TextStyle(fontSize: 11)),
+                    label: Text('All Stores', style: TextStyle(fontSize: 12)),
                     icon: Icon(Icons.domain_rounded, size: 14),
                   ),
                   ButtonSegment(
                     value: StoreScopeMode.individual,
-                    label: Text('Individual', style: TextStyle(fontSize: 11)),
+                    label: Text('Individual', style: TextStyle(fontSize: 12)),
                     icon: Icon(Icons.storefront_rounded, size: 14),
                   ),
                   ButtonSegment(
                     value: StoreScopeMode.selected,
-                    label: Text('Selected', style: TextStyle(fontSize: 11)),
+                    label: Text('Selected', style: TextStyle(fontSize: 12)),
                     icon: Icon(Icons.checklist_rounded, size: 14),
                   ),
                 ],
@@ -1442,7 +1442,7 @@ class _RestaurantAnalyticsScreenState
                       selected: isSel,
                       selectedColor: amberAccent,
                       labelStyle: TextStyle(
-                        fontSize: 11.5,
+                        fontSize: 12,
                         fontWeight: isSel ? FontWeight.bold : FontWeight.normal,
                         color: isSel ? Colors.black : context.textPrimary,
                       ),
@@ -1471,7 +1471,7 @@ class _RestaurantAnalyticsScreenState
                   selectedColor: amberAccent.withValues(alpha: 0.3),
                   checkmarkColor: amberAccent,
                   labelStyle: TextStyle(
-                    fontSize: 11.5,
+                    fontSize: 12,
                     fontWeight: isSel ? FontWeight.bold : FontWeight.normal,
                     color: isSel ? amberAccent : context.textSecondary,
                   ),
@@ -1542,7 +1542,7 @@ class _RestaurantAnalyticsScreenState
                       ),
                       Text(
                         'Live revenue and order throughput across selected outlets',
-                        style: TextStyle(color: context.textSecondary, fontSize: 11),
+                        style: TextStyle(color: context.textSecondary, fontSize: 12),
                       ),
                     ],
                   ),
@@ -1556,7 +1556,7 @@ class _RestaurantAnalyticsScreenState
                 ),
                 child: Text(
                   '${_perStoreData.length} Outlets',
-                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: amberAccent),
+                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: amberAccent),
                 ),
               ),
             ],
@@ -1586,7 +1586,7 @@ class _RestaurantAnalyticsScreenState
                         child: Text(
                           '${idx + 1}',
                           style: TextStyle(
-                            fontSize: 11,
+                            fontSize: 12,
                             fontWeight: FontWeight.bold,
                             color: idx == 0 ? Colors.black : context.textSecondary,
                           ),
@@ -1621,7 +1621,7 @@ class _RestaurantAnalyticsScreenState
                       minHeight: 6,
                       backgroundColor: context.borderColor.withValues(alpha: 0.3),
                       valueColor: AlwaysStoppedAnimation<Color>(
-                        idx == 0 ? amberAccent : const Color(0xFF0284C7),
+                        idx == 0 ? amberAccent : ClassicTheme.infoBlue,
                       ),
                     ),
                   ),
@@ -1631,15 +1631,15 @@ class _RestaurantAnalyticsScreenState
                     children: [
                       Text(
                         '📦 $orders Orders',
-                        style: TextStyle(fontSize: 11, color: context.textSecondary),
+                        style: TextStyle(fontSize: 12, color: context.textSecondary),
                       ),
                       Text(
                         '🎯 AOV: ₹${aov.toStringAsFixed(0)}',
-                        style: TextStyle(fontSize: 11, color: context.textSecondary),
+                        style: TextStyle(fontSize: 12, color: context.textSecondary),
                       ),
                       Text(
                         '🔥 Peak: $peak',
-                        style: TextStyle(fontSize: 11, color: context.textSecondary),
+                        style: TextStyle(fontSize: 12, color: context.textSecondary),
                       ),
                     ],
                   ),
@@ -1665,7 +1665,7 @@ class _RestaurantAnalyticsScreenState
           ),
         ),
         const SizedBox(width: 5),
-        Text(label, style: TextStyle(color: context.textSecondary, fontSize: 10)),
+        Text(label, style: TextStyle(color: context.textSecondary, fontSize: 12)),
       ],
     );
   }

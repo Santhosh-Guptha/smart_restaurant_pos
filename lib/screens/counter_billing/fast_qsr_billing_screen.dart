@@ -115,7 +115,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('Access Denied: You do not have permission to access Billing Counter.'),
-              backgroundColor: Colors.red,
+              backgroundColor: ClassicTheme.dangerRed,
             ),
           );
           Navigator.of(context).pop();
@@ -412,7 +412,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text("${item['name']} is SOLD OUT (86)!"),
-          backgroundColor: Colors.redAccent,
+          backgroundColor: ClassicTheme.dangerRed,
           duration: const Duration(milliseconds: 1400),
         ),
       );
@@ -425,7 +425,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text("Cannot add more: Only $stock in stock!"),
-          backgroundColor: Colors.orange.shade800,
+          backgroundColor: ClassicTheme.warningAmber,
           duration: const Duration(milliseconds: 1400),
         ),
       );
@@ -435,7 +435,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text("${item['name']} is available only between ${item['availableFrom']} - ${item['availableTo']}."),
-          backgroundColor: Colors.amber.shade900,
+          backgroundColor: ClassicTheme.warningAmber,
           duration: const Duration(milliseconds: 1600),
         ),
       );
@@ -592,12 +592,12 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                               Container(
                                 padding: const EdgeInsets.all(12),
                                 decoration: BoxDecoration(
-                                  color: const Color(0xFF10B981).withValues(alpha: 0.15),
+                                  color: ClassicTheme.successEmerald.withValues(alpha: 0.15),
                                   shape: BoxShape.circle,
                                 ),
                                 child: const Icon(
                                   Icons.table_restaurant_rounded,
-                                  color: Color(0xFF10B981),
+                                  color: ClassicTheme.successEmerald,
                                   size: 30,
                                 ),
                               ),
@@ -614,7 +614,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                               Text(
                                 'Select table & running bill',
                                 textAlign: TextAlign.center,
-                                style: TextStyle(fontSize: 11, color: context.textSecondary),
+                                style: TextStyle(fontSize: 12, color: context.textSecondary),
                               ),
                             ],
                           ),
@@ -651,12 +651,12 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                               Container(
                                 padding: const EdgeInsets.all(12),
                                 decoration: BoxDecoration(
-                                  color: Colors.amber.withValues(alpha: 0.15),
+                                  color: ClassicTheme.warningAmber.withValues(alpha: 0.15),
                                   shape: BoxShape.circle,
                                 ),
                                 child: const Icon(
                                   Icons.takeout_dining_rounded,
-                                  color: Colors.amber,
+                                  color: ClassicTheme.warningAmber,
                                   size: 30,
                                 ),
                               ),
@@ -673,7 +673,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                               Text(
                                 'Quick parcel counter bill',
                                 textAlign: TextAlign.center,
-                                style: TextStyle(fontSize: 11, color: context.textSecondary),
+                                style: TextStyle(fontSize: 12, color: context.textSecondary),
                               ),
                             ],
                           ),
@@ -729,7 +729,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                             const SizedBox(height: 2),
                             Text(
                               'Synchronized with website QR menu orders in real time',
-                              style: TextStyle(fontSize: 11, color: context.textSecondary),
+                              style: TextStyle(fontSize: 12, color: context.textSecondary),
                             ),
                           ],
                         ),
@@ -753,7 +753,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                           avatar: Icon(
                             hasActive ? Icons.circle : Icons.table_restaurant_rounded,
                             size: 14,
-                            color: hasActive ? Colors.redAccent : (isSel ? Colors.white : context.textSecondary),
+                            color: hasActive ? ClassicTheme.dangerRed : (isSel ? Colors.white : context.textSecondary),
                           ),
                           label: Text(t),
                           selected: isSel,
@@ -762,7 +762,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                           side: BorderSide(
                             color: isSel
                                 ? ClassicTheme.primaryAccent
-                                : (hasActive ? Colors.redAccent.withValues(alpha: 0.5) : context.borderColor),
+                                : (hasActive ? ClassicTheme.dangerRed.withValues(alpha: 0.5) : context.borderColor),
                           ),
                           labelStyle: TextStyle(
                             color: isSel ? Colors.white : context.textPrimary,
@@ -785,16 +785,16 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                       Container(
                         padding: const EdgeInsets.all(14),
                         decoration: BoxDecoration(
-                          color: Colors.amber.withValues(alpha: 0.1),
+                          color: ClassicTheme.warningAmber.withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.amber.withValues(alpha: 0.5)),
+                          border: Border.all(color: ClassicTheme.warningAmber.withValues(alpha: 0.5)),
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Row(
                               children: [
-                                const Icon(Icons.info_outline_rounded, color: Colors.amber, size: 20),
+                                const Icon(Icons.info_outline_rounded, color: ClassicTheme.warningAmber, size: 20),
                                 const SizedBox(width: 8),
                                 Expanded(
                                   child: Text(
@@ -971,7 +971,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                               Text(
                                 'Instant Settlement (Cash / UPI / Card)',
                                 textAlign: TextAlign.center,
-                                style: TextStyle(fontSize: 10.5, color: context.textSecondary),
+                                style: TextStyle(fontSize: 12, color: context.textSecondary),
                               ),
                             ],
                           ),
@@ -997,11 +997,11 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                           decoration: BoxDecoration(
                             color: context.canvasColor,
                             borderRadius: BorderRadius.circular(14),
-                            border: Border.all(color: const Color(0xFF10B981)),
+                            border: Border.all(color: ClassicTheme.successEmerald),
                           ),
                           child: Column(
                             children: [
-                              const Icon(Icons.receipt_long_rounded, color: Color(0xFF10B981), size: 28),
+                              const Icon(Icons.receipt_long_rounded, color: ClassicTheme.successEmerald, size: 28),
                               const SizedBox(height: 8),
                               Text(
                                 'Pay Later',
@@ -1011,7 +1011,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                               Text(
                                 'Settle After Meal (Keep Bill Open)',
                                 textAlign: TextAlign.center,
-                                style: TextStyle(fontSize: 10.5, color: context.textSecondary),
+                                style: TextStyle(fontSize: 12, color: context.textSecondary),
                               ),
                             ],
                           ),
@@ -1069,7 +1069,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                   keyboardType: TextInputType.emailAddress,
                   style: TextStyle(fontSize: 12.5, color: context.textPrimary),
                   decoration: InputDecoration(
-                    prefixIcon: const Icon(Icons.email_outlined, size: 18, color: Color(0xFF2563EB)),
+                    prefixIcon: const Icon(Icons.email_outlined, size: 18, color: ClassicTheme.infoBlue),
                     hintText: 'Customer email for invoice (optional)',
                     isDense: true,
                     contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
@@ -1085,7 +1085,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                         icon: const Icon(Icons.money_rounded, size: 18),
                         label: const Text('Cash'),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF10B981),
+                          backgroundColor: ClassicTheme.successEmerald,
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(vertical: 14),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
@@ -1102,7 +1102,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                         icon: const Icon(Icons.qr_code_2_rounded, size: 18),
                         label: const Text('UPI / QR'),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.blueAccent,
+                          backgroundColor: ClassicTheme.infoBlue,
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(vertical: 14),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
@@ -1119,7 +1119,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                         icon: const Icon(Icons.credit_card_rounded, size: 18),
                         label: const Text('Card'),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.deepPurpleAccent,
+                          backgroundColor: ClassicTheme.secondaryAccent,
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(vertical: 14),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
@@ -1139,8 +1139,8 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                     icon: const Icon(Icons.call_split_rounded, size: 18),
                     label: const Text('Split Multi-Mode (Cash + UPI + Card)'),
                     style: OutlinedButton.styleFrom(
-                      foregroundColor: const Color(0xFF2563EB),
-                      side: const BorderSide(color: Color(0xFF2563EB)),
+                      foregroundColor: ClassicTheme.infoBlue,
+                      side: const BorderSide(color: ClassicTheme.infoBlue),
                       padding: const EdgeInsets.symmetric(vertical: 12),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                     ),
@@ -1291,8 +1291,8 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
                       color: remaining.abs() < 0.01
-                          ? const Color(0xFFD1FAE5)
-                          : const Color(0xFFFEF3C7),
+                          ? ClassicTheme.tintSuccess
+                          : ClassicTheme.tintWarning,
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Row(
@@ -1305,7 +1305,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                               : (remaining > 0 ? 'Remaining: ₹${remaining.toStringAsFixed(2)}' : 'Excess: ₹${(-remaining).toStringAsFixed(2)}'),
                           style: TextStyle(
                             fontWeight: FontWeight.bold,
-                            color: remaining.abs() < 0.01 ? const Color(0xFF059669) : const Color(0xFFD97706),
+                            color: remaining.abs() < 0.01 ? ClassicTheme.successEmerald : ClassicTheme.warningAmber,
                           ),
                         ),
                       ],
@@ -1336,7 +1336,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                               );
                             },
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF059669),
+                        backgroundColor: ClassicTheme.successEmerald,
                         foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(vertical: 14),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
@@ -1376,7 +1376,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           title: Row(
             children: [
-              const Icon(Icons.security_rounded, color: Colors.amber, size: 24),
+              const Icon(Icons.security_rounded, color: ClassicTheme.warningAmber, size: 24),
               const SizedBox(width: 8),
               Text('Manager Authorization', style: TextStyle(color: context.textPrimary, fontSize: 16, fontWeight: FontWeight.bold)),
             ],
@@ -1417,7 +1417,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                   _openDiscountInputDialog(authorizedBy: authorizer);
                 } else {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Invalid Manager PIN. Authorization denied.'), backgroundColor: Colors.redAccent),
+                    const SnackBar(content: Text('Invalid Manager PIN. Authorization denied.'), backgroundColor: ClassicTheme.dangerRed),
                   );
                 }
               },
@@ -1516,7 +1516,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                   spacing: 6,
                   runSpacing: 4,
                   children: ['Staff Meal', 'Customer Courtesy', 'Promotional Offer', 'Manager Discretion'].map((r) => ActionChip(
-                    label: Text(r, style: const TextStyle(fontSize: 11)),
+                    label: Text(r, style: const TextStyle(fontSize: 12)),
                     onPressed: () => setDlgState(() => reasonCtrl.text = r),
                   )).toList(),
                 ),
@@ -1530,7 +1530,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                   setState(() => _appliedDiscount = null);
                   Navigator.pop(ctx);
                 },
-                child: const Text('Remove Discount', style: TextStyle(color: Colors.redAccent)),
+                child: const Text('Remove Discount', style: TextStyle(color: ClassicTheme.dangerRed)),
               ),
             TextButton(
               onPressed: () => Navigator.pop(ctx),
@@ -1549,7 +1549,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                 final enteredReason = reasonCtrl.text.trim();
                 if (enteredReason.isEmpty) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Discount reason is mandatory for audit compliance.'), backgroundColor: Colors.redAccent),
+                    const SnackBar(content: Text('Discount reason is mandatory for audit compliance.'), backgroundColor: ClassicTheme.dangerRed),
                   );
                   return;
                 }
@@ -1637,7 +1637,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
             title: Row(
               children: [
-                const Icon(Icons.assessment_rounded, color: Colors.amber, size: 26),
+                const Icon(Icons.assessment_rounded, color: ClassicTheme.warningAmber, size: 26),
                 const SizedBox(width: 8),
                 Text('Shift Close & Z-Report', style: TextStyle(color: context.textPrimary, fontWeight: FontWeight.bold, fontSize: 18)),
               ],
@@ -1684,8 +1684,8 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
                       color: varianceP == 0
-                          ? const Color(0xFFD1FAE5)
-                          : (varianceP > 0 ? const Color(0xFFFEF3C7) : const Color(0xFFFEE2E2)),
+                          ? ClassicTheme.tintSuccess
+                          : (varianceP > 0 ? ClassicTheme.tintWarning : ClassicTheme.tintDanger),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Row(
@@ -1718,7 +1718,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
               ),
               ElevatedButton(
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.amber.shade700,
+                  backgroundColor: ClassicTheme.warningAmber,
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                 ),
@@ -1758,7 +1758,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                     ScaffoldMessenger.of(ctx).showSnackBar(
                       SnackBar(
                         content: Text(ok ? '✅ Shift closed successfully! Z-Report saved to Sheets.' : '⚠️ Shift closed locally (sync queued).'),
-                        backgroundColor: ok ? const Color(0xFF10B981) : Colors.orange,
+                        backgroundColor: ok ? ClassicTheme.successEmerald : ClassicTheme.warningAmber,
                       ),
                     );
                   }
@@ -2174,7 +2174,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
               children: [
                 const Icon(
                   Icons.outdoor_grill_rounded,
-                  color: Color(0xFF10B981),
+                  color: ClassicTheme.successEmerald,
                   size: 56,
                 ),
                 const SizedBox(height: 16),
@@ -2387,7 +2387,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                   : 'Bill $targetBillId: $queued record(s) queued - network is down. '
                       'They will sync automatically when it returns.',
             ),
-            backgroundColor: lost > 0 ? const Color(0xFFDC2626) : const Color(0xFFD97706),
+            backgroundColor: lost > 0 ? ClassicTheme.dangerRed : ClassicTheme.warningAmber,
             duration: Duration(seconds: lost > 0 ? 10 : 5),
             behavior: SnackBarBehavior.floating,
           ),
@@ -2738,20 +2738,20 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
         await PrintBluetoothThermal.writeBytes(billBytes);
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('🖨️ Bill sent to thermal printer!'), backgroundColor: Colors.green),
+            const SnackBar(content: Text('🖨️ Bill sent to thermal printer!'), backgroundColor: ClassicTheme.successEmerald),
           );
         }
       } else {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Printer not connected. Please connect in Settings.'), backgroundColor: Colors.orange),
+            const SnackBar(content: Text('Printer not connected. Please connect in Settings.'), backgroundColor: ClassicTheme.warningAmber),
           );
         }
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Print error: $e'), backgroundColor: Colors.red),
+          SnackBar(content: Text('Print error: $e'), backgroundColor: ClassicTheme.dangerRed),
         );
       }
     }
@@ -3068,7 +3068,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
       debugPrint('Error settling bill: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error settling bill: $e'), backgroundColor: Colors.redAccent),
+          SnackBar(content: Text('Error settling bill: $e'), backgroundColor: ClassicTheme.dangerRed),
         );
       }
     }
@@ -3158,14 +3158,14 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                         decoration: BoxDecoration(
                           gradient: LinearGradient(
                             colors: [
-                              const Color(0xFF10B981).withValues(alpha: 0.14),
-                              const Color(0xFF059669).withValues(alpha: 0.08),
+                              ClassicTheme.successEmerald.withValues(alpha: 0.14),
+                              ClassicTheme.successEmerald.withValues(alpha: 0.08),
                             ],
                             begin: Alignment.topLeft,
                             end: Alignment.bottomRight,
                           ),
                           borderRadius: BorderRadius.circular(14),
-                          border: Border.all(color: const Color(0xFF10B981).withValues(alpha: 0.35)),
+                          border: Border.all(color: ClassicTheme.successEmerald.withValues(alpha: 0.35)),
                         ),
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -3176,10 +3176,10 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                                 Text(
                                   'TOTAL PAYABLE',
                                   style: TextStyle(
-                                    fontSize: 11,
+                                    fontSize: 12,
                                     fontWeight: FontWeight.bold,
                                     letterSpacing: 0.8,
-                                    color: Colors.green.shade800,
+                                    color: ClassicTheme.successEmerald,
                                   ),
                                 ),
                                 const SizedBox(height: 2),
@@ -3188,7 +3188,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                                   style: const TextStyle(
                                     fontSize: 26,
                                     fontWeight: FontWeight.w900,
-                                    color: Color(0xFF059669),
+                                    color: ClassicTheme.successEmerald,
                                   ),
                                 ),
                               ],
@@ -3198,20 +3198,20 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                               children: [
                                 Text(
                                   'Subtotal: ₹${subtotal.toStringAsFixed(2)}',
-                                  style: TextStyle(fontSize: 11, color: context.textSecondary),
+                                  style: TextStyle(fontSize: 12, color: context.textSecondary),
                                 ),
                                 if (_serviceChargeRate > 0 || scAmt > 0)
                                   Text(
                                     'SC (${_serviceChargeRate.toStringAsFixed(0)}%): ₹${scAmt.toStringAsFixed(2)}',
-                                    style: TextStyle(fontSize: 11, color: context.textSecondary),
+                                    style: TextStyle(fontSize: 12, color: context.textSecondary),
                                   ),
                                 Text(
                                   'GST (${_gstRate.toStringAsFixed(0)}%): ₹${gst.toStringAsFixed(2)}',
-                                  style: TextStyle(fontSize: 11, color: context.textSecondary),
+                                  style: TextStyle(fontSize: 12, color: context.textSecondary),
                                 ),
                                 Text(
                                   '${items.length} items',
-                                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: context.textPrimary),
+                                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: context.textPrimary),
                                 ),
                               ],
                             ),
@@ -3278,7 +3278,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                             label: 'CASH',
                             icon: Icons.money_rounded,
                             isSelected: selectedMode == 'CASH',
-                            color: const Color(0xFF10B981),
+                            color: ClassicTheme.successEmerald,
                             onTap: () => setModalState(() => selectedMode = 'CASH'),
                           ),
                           const SizedBox(width: 8),
@@ -3286,7 +3286,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                             label: 'UPI / QR',
                             icon: Icons.qr_code_2_rounded,
                             isSelected: selectedMode == 'UPI',
-                            color: Colors.blueAccent,
+                            color: ClassicTheme.infoBlue,
                             onTap: () => setModalState(() => selectedMode = 'UPI'),
                           ),
                           const SizedBox(width: 8),
@@ -3294,7 +3294,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                             label: 'CARD',
                             icon: Icons.credit_card_rounded,
                             isSelected: selectedMode == 'CARD',
-                            color: Colors.deepPurpleAccent,
+                            color: ClassicTheme.secondaryAccent,
                             onTap: () => setModalState(() => selectedMode = 'CARD'),
                           ),
                           const SizedBox(width: 8),
@@ -3302,7 +3302,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                             label: 'OTHER',
                             icon: Icons.more_horiz_rounded,
                             isSelected: selectedMode == 'OTHER',
-                            color: Colors.orange,
+                            color: ClassicTheme.warningAmber,
                             onTap: () => setModalState(() => selectedMode = 'OTHER'),
                           ),
                         ],
@@ -3314,9 +3314,9 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                         Container(
                           padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
-                            color: const Color(0xFF10B981).withValues(alpha: 0.08),
+                            color: ClassicTheme.successEmerald.withValues(alpha: 0.08),
                             borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: const Color(0xFF10B981).withValues(alpha: 0.3)),
+                            border: Border.all(color: ClassicTheme.successEmerald.withValues(alpha: 0.3)),
                           ),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -3387,7 +3387,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                                     Text('Change to return to customer:', style: TextStyle(fontSize: 12, color: context.textSecondary)),
                                     Text(
                                       '₹${change.toStringAsFixed(2)}',
-                                      style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF10B981)),
+                                      style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: ClassicTheme.successEmerald),
                                     ),
                                   ],
                                 ),
@@ -3413,20 +3413,20 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                               width: double.infinity,
                               padding: const EdgeInsets.all(14),
                               decoration: BoxDecoration(
-                                color: Colors.blue.withValues(alpha: 0.06),
+                                color: ClassicTheme.infoBlue.withValues(alpha: 0.06),
                                 borderRadius: BorderRadius.circular(14),
-                                border: Border.all(color: Colors.blueAccent.withValues(alpha: 0.3)),
+                                border: Border.all(color: ClassicTheme.infoBlue.withValues(alpha: 0.3)),
                               ),
                               child: Column(
                                 children: [
                                   Row(
                                     mainAxisAlignment: MainAxisAlignment.center,
                                     children: [
-                                      const Icon(Icons.qr_code_rounded, color: Colors.blueAccent, size: 20),
+                                      const Icon(Icons.qr_code_rounded, color: ClassicTheme.infoBlue, size: 20),
                                       const SizedBox(width: 8),
                                       Text(
                                         'Dynamic UPI QR Code',
-                                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.blue.shade900),
+                                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: ClassicTheme.infoBlue),
                                       ),
                                     ],
                                   ),
@@ -3451,12 +3451,12 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                                   const SizedBox(height: 8),
                                   Text(
                                     upiId.isNotEmpty ? 'UPI ID: $upiId' : '⚠️ Please configure UPI ID in Store Settings',
-                                    style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: upiId.isNotEmpty ? const Color(0xFF3B82F6) : Colors.red),
+                                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: upiId.isNotEmpty ? ClassicTheme.infoBlue : ClassicTheme.dangerRed),
                                   ),
                                   const SizedBox(height: 2),
                                   Text(
                                     'Customer can scan with GPay, PhonePe, Paytm or any UPI App',
-                                    style: TextStyle(fontSize: 11, color: context.textSecondary),
+                                    style: TextStyle(fontSize: 12, color: context.textSecondary),
                                   ),
                                 ],
                               ),
@@ -3472,7 +3472,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                         keyboardType: TextInputType.emailAddress,
                         style: TextStyle(fontSize: 13, color: context.textPrimary),
                         decoration: InputDecoration(
-                          prefixIcon: const Icon(Icons.email_outlined, size: 18, color: Color(0xFF2563EB)),
+                          prefixIcon: const Icon(Icons.email_outlined, size: 18, color: ClassicTheme.infoBlue),
                           labelText: 'Customer Email for POS Bill (Optional)',
                           labelStyle: TextStyle(fontSize: 12, color: context.textSecondary),
                           isDense: true,
@@ -3487,7 +3487,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                         width: double.infinity,
                         child: ElevatedButton.icon(
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: selectedMode == 'UPI' ? Colors.blueAccent : const Color(0xFF10B981),
+                            backgroundColor: selectedMode == 'UPI' ? ClassicTheme.infoBlue : ClassicTheme.successEmerald,
                             foregroundColor: Colors.white,
                             padding: const EdgeInsets.symmetric(vertical: 14),
                             elevation: 0,
@@ -3556,7 +3556,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
               Text(
                 label,
                 style: TextStyle(
-                  fontSize: 11,
+                  fontSize: 12,
                   fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
                   color: isSelected ? color : context.textSecondary,
                 ),
@@ -3588,7 +3588,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           title: Row(
             children: [
-              const Icon(Icons.cancel_outlined, color: Colors.redAccent, size: 24),
+              const Icon(Icons.cancel_outlined, color: ClassicTheme.dangerRed, size: 24),
               const SizedBox(width: 8),
               Text('Void / Cancel Bill', style: TextStyle(color: context.textPrimary, fontSize: 16, fontWeight: FontWeight.bold)),
             ],
@@ -3638,7 +3638,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                     'Kitchen Shortage',
                     'Payment Failed'
                   ].map((r) => ActionChip(
-                    label: Text(r, style: const TextStyle(fontSize: 11)),
+                    label: Text(r, style: const TextStyle(fontSize: 12)),
                     onPressed: () => setDlgState(() => reasonCtrl.text = r),
                   )).toList(),
                 ),
@@ -3652,14 +3652,14 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
             ),
             ElevatedButton(
               style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.redAccent,
+                backgroundColor: ClassicTheme.dangerRed,
                 foregroundColor: Colors.white,
               ),
               onPressed: () async {
                 final enteredReason = reasonCtrl.text.trim();
                 if (enteredReason.isEmpty) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('A cancellation reason is required for audit compliance.'), backgroundColor: Colors.redAccent),
+                    const SnackBar(content: Text('A cancellation reason is required for audit compliance.'), backgroundColor: ClassicTheme.dangerRed),
                   );
                   return;
                 }
@@ -3671,7 +3671,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                   final authorizedStaff = staffList.where((s) => s.canVoidBill && s.verifyPin(enteredPin)).firstOrNull;
                   if (authorizedStaff == null) {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Invalid Manager PIN. Authorization denied.'), backgroundColor: Colors.redAccent),
+                      const SnackBar(content: Text('Invalid Manager PIN. Authorization denied.'), backgroundColor: ClassicTheme.dangerRed),
                     );
                     return;
                   }
@@ -3770,7 +3770,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Order #$orderId voided. Reason: $reason (Audit logged)'),
-          backgroundColor: Colors.red.shade700,
+          backgroundColor: ClassicTheme.dangerRed,
         ),
       );
     }
@@ -3877,23 +3877,23 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
         // Summary Metric Bar
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          color: Colors.amber.withValues(alpha: 0.08),
+          color: ClassicTheme.warningAmber.withValues(alpha: 0.08),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Row(
                 children: [
-                  Icon(Icons.hourglass_bottom_rounded, size: 16, color: Colors.amber.shade900),
+                  Icon(Icons.hourglass_bottom_rounded, size: 16, color: ClassicTheme.warningAmber),
                   const SizedBox(width: 6),
                   Text(
                     '${filtered.length} Pending Bills',
-                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.amber.shade900),
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: ClassicTheme.warningAmber),
                   ),
                 ],
               ),
               Text(
                 'Total Unsettled: ₹${totalUnsettled.toStringAsFixed(2)}',
-                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w900, color: Colors.amber.shade900),
+                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w900, color: ClassicTheme.warningAmber),
               ),
             ],
           ),
@@ -3918,10 +3918,10 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                               Container(
                                 padding: const EdgeInsets.all(20),
                                 decoration: BoxDecoration(
-                                  color: const Color(0xFF10B981).withValues(alpha: 0.1),
+                                  color: ClassicTheme.successEmerald.withValues(alpha: 0.1),
                                   shape: BoxShape.circle,
                                 ),
-                                child: const Icon(Icons.check_circle_rounded, size: 48, color: Color(0xFF10B981)),
+                                child: const Icon(Icons.check_circle_rounded, size: 48, color: ClassicTheme.successEmerald),
                               ),
                               const SizedBox(height: 14),
                               Text(
@@ -4038,7 +4038,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                                   ),
                                   child: Text(
                                     orderType,
-                                    style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: context.textSecondary),
+                                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: context.textSecondary),
                                   ),
                                 ),
                                 if (order['isConsolidated'] == true) ...[
@@ -4046,13 +4046,13 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                                   Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
                                     decoration: BoxDecoration(
-                                      color: Colors.purple.withValues(alpha: 0.12),
+                                      color: ClassicTheme.secondaryAccent.withValues(alpha: 0.12),
                                       borderRadius: BorderRadius.circular(6),
-                                      border: Border.all(color: Colors.purple.withValues(alpha: 0.3)),
+                                      border: Border.all(color: ClassicTheme.secondaryAccent.withValues(alpha: 0.3)),
                                     ),
                                     child: Text(
                                       '${order['sessionRoundsCount'] ?? 2} Rounds',
-                                      style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: Colors.purple),
+                                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: ClassicTheme.secondaryAccent),
                                     ),
                                   ),
                                 ],
@@ -4060,7 +4060,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                                   const SizedBox(width: 6),
                                   Text(
                                     '#$token',
-                                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: context.textSecondary),
+                                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: context.textSecondary),
                                   ),
                                 ],
                                 const Spacer(),
@@ -4068,18 +4068,18 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                                 // Elapsed time & status pill
                                 Text(
                                   timeAgo,
-                                  style: TextStyle(fontSize: 11, color: context.textSecondary),
+                                  style: TextStyle(fontSize: 12, color: context.textSecondary),
                                 ),
                                 const SizedBox(width: 6),
                                 Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                   decoration: BoxDecoration(
-                                    color: Colors.amber.withValues(alpha: 0.15),
+                                    color: ClassicTheme.warningAmber.withValues(alpha: 0.15),
                                     borderRadius: BorderRadius.circular(10),
                                   ),
                                   child: const Text(
                                     '● Unpaid',
-                                    style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.amber),
+                                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: ClassicTheme.warningAmber),
                                   ),
                                 ),
                               ],
@@ -4103,17 +4103,17 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                                           style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: context.textPrimary),
                                         ),
                                         if (customerPhone.isNotEmpty) ...[
-                                          Text(' • $customerPhone', style: TextStyle(fontSize: 11.5, color: context.textSecondary)),
+                                          Text(' • $customerPhone', style: TextStyle(fontSize: 12, color: context.textSecondary)),
                                         ],
                                       ],
                                       if (waiterName.isNotEmpty) ...[
                                         if (customerName.isNotEmpty || customerPhone.isNotEmpty)
                                           const SizedBox(width: 10),
-                                        Icon(Icons.badge_outlined, size: 13, color: Colors.indigo.shade400),
+                                        Icon(Icons.badge_outlined, size: 13, color: ClassicTheme.secondaryAccent),
                                         const SizedBox(width: 3),
                                         Text(
                                           'Waiter: $waiterName',
-                                          style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Colors.indigo.shade600),
+                                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: ClassicTheme.secondaryAccent),
                                         ),
                                       ],
                                     ],
@@ -4136,7 +4136,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                                     Column(
                                       crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
-                                        Text('Bill Amount', style: TextStyle(fontSize: 10.5, color: context.textSecondary)),
+                                        Text('Bill Amount', style: TextStyle(fontSize: 12, color: context.textSecondary)),
                                         Text(
                                           '₹${total.toStringAsFixed(2)}',
                                           style: const TextStyle(
@@ -4182,7 +4182,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                                     IconButton(
                                       icon: const Icon(Icons.cancel_outlined, size: 20),
                                       tooltip: 'Void / Cancel Bill (Manager)',
-                                      color: Colors.redAccent,
+                                      color: ClassicTheme.dangerRed,
                                       onPressed: () => _showVoidPendingBillDialog(order),
                                     ),
                                     const SizedBox(width: 4),
@@ -4190,7 +4190,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                                     // Accept Payment & Settle Button
                                     ElevatedButton.icon(
                                       style: ElevatedButton.styleFrom(
-                                        backgroundColor: const Color(0xFF10B981),
+                                        backgroundColor: ClassicTheme.successEmerald,
                                         foregroundColor: Colors.white,
                                         elevation: 0,
                                         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -4276,14 +4276,14 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                 ),
                 Text(
                   'Cashier: ${activeStaff?.name ?? "Staff"} • Store Desk',
-                  style: TextStyle(fontSize: 11, color: context.textSecondary),
+                  style: TextStyle(fontSize: 12, color: context.textSecondary),
                 ),
               ],
             ),
             actions: [
               if (_tabController.index == 0) ...[
                 IconButton(
-                  icon: const Icon(Icons.assessment_outlined, color: Colors.amber),
+                  icon: const Icon(Icons.assessment_outlined, color: ClassicTheme.warningAmber),
                   tooltip: 'Shift Close (Z-Report)',
                   onPressed: _showShiftCloseDialog,
                 ),
@@ -4349,7 +4349,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                           ),
                           child: Text(
                             '${_cart.length}',
-                            style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                            style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
                           ),
                         ),
                       ],
@@ -4373,7 +4373,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                           ),
                           child: Text(
                             '${pendingOrders.length}',
-                            style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                            style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
                           ),
                         ),
                       ],
@@ -4516,7 +4516,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                                           ),
                                           child: Text(
                                             '$totalInCat dishes',
-                                            style: const TextStyle(fontSize: 10.5, color: Colors.white, fontWeight: FontWeight.bold),
+                                            style: const TextStyle(fontSize: 12, color: Colors.white, fontWeight: FontWeight.bold),
                                           ),
                                         ),
                                       ],
@@ -4556,7 +4556,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                                               const SizedBox(width: 6),
                                               Text(
                                                 '(${items.length})',
-                                                style: TextStyle(fontSize: 11, color: context.textSecondary),
+                                                style: TextStyle(fontSize: 12, color: context.textSecondary),
                                               ),
                                             ],
                                           ),
@@ -4603,7 +4603,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                                                     height: 16,
                                                     decoration: BoxDecoration(
                                                       border: Border.all(
-                                                        color: item['isVeg'] != false ? const Color(0xFF10B981) : Colors.redAccent,
+                                                        color: item['isVeg'] != false ? ClassicTheme.successEmerald : ClassicTheme.dangerRed,
                                                         width: 1.5,
                                                       ),
                                                       borderRadius: BorderRadius.circular(3),
@@ -4613,7 +4613,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                                                         width: 8,
                                                         height: 8,
                                                         decoration: BoxDecoration(
-                                                          color: item['isVeg'] != false ? const Color(0xFF10B981) : Colors.redAccent,
+                                                          color: item['isVeg'] != false ? ClassicTheme.successEmerald : ClassicTheme.dangerRed,
                                                           shape: BoxShape.circle,
                                                         ),
                                                       ),
@@ -4640,17 +4640,17 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                                                           children: [
                                                             Text(
                                                               '$catName • $subName',
-                                                              style: TextStyle(fontSize: 11, color: context.textSecondary),
+                                                              style: TextStyle(fontSize: 12, color: context.textSecondary),
                                                             ),
                                                             if (!isAvailable) ...[
                                                               const SizedBox(width: 6),
                                                               Container(
                                                                 padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
                                                                 decoration: BoxDecoration(
-                                                                  color: Colors.redAccent.withValues(alpha: 0.12),
+                                                                  color: ClassicTheme.dangerRed.withValues(alpha: 0.12),
                                                                   borderRadius: BorderRadius.circular(4),
                                                                 ),
-                                                                child: const Text('SOLD OUT', style: TextStyle(color: Colors.redAccent, fontSize: 9, fontWeight: FontWeight.bold)),
+                                                                child: const Text('SOLD OUT', style: TextStyle(color: ClassicTheme.dangerRed, fontSize: 12, fontWeight: FontWeight.bold)),
                                                               ),
                                                             ],
                                                           ],
@@ -4676,7 +4676,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                                                   if (!isAvailable || !isOrderable)
                                                     TextButton(
                                                       onPressed: null,
-                                                      child: Text('Unavailable', style: TextStyle(color: context.textSecondary, fontSize: 11)),
+                                                      child: Text('Unavailable', style: TextStyle(color: context.textSecondary, fontSize: 12)),
                                                     )
                                                   else if (qtyInCart == 0)
                                                     ElevatedButton.icon(
@@ -4790,14 +4790,14 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                                         Container(
                                           padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
                                           decoration: BoxDecoration(
-                                            color: const Color(0xFFD1FAE5),
+                                            color: ClassicTheme.tintSuccess,
                                             borderRadius: BorderRadius.circular(4),
                                           ),
                                           child: Text(
                                             '-₹${_discount.toStringAsFixed(2)}',
                                             style: const TextStyle(
-                                              color: Color(0xFF059669),
-                                              fontSize: 10,
+                                              color: ClassicTheme.successEmerald,
+                                              fontSize: 12,
                                               fontWeight: FontWeight.bold,
                                             ),
                                           ),
@@ -4808,7 +4808,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                                         _serviceChargeRate > 0
                                             ? '(incl. ${_serviceChargeRate.toStringAsFixed(0)}% SC + ${_gstRate.toStringAsFixed(0)}% GST)'
                                             : '(incl. ${_gstRate.toStringAsFixed(0)}% GST)',
-                                        style: TextStyle(fontSize: 10.5, color: context.textSecondary),
+                                        style: TextStyle(fontSize: 12, color: context.textSecondary),
                                       ),
                                     ],
                                   ),
@@ -4831,7 +4831,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
 
                             // Clear Cart Button
                             IconButton(
-                              icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent),
+                              icon: const Icon(Icons.delete_outline_rounded, color: ClassicTheme.dangerRed),
                               tooltip: 'Clear Cart',
                               onPressed: () {
                                 setState(() {

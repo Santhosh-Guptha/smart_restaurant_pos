@@ -82,7 +82,7 @@ class _FirstLoginPasswordScreenState extends ConsumerState<FirstLoginPasswordScr
     final session = ref.watch(saasSessionProvider);
     final user = session.currentUser;
     final org = session.currentOrganization;
-    final primaryAccent = context.isDark ? const Color(0xFF60A5FA) : const Color(0xFF2563EB);
+    final primaryAccent = context.isDark ? ClassicTheme.infoBlue : ClassicTheme.infoBlue;
 
     return Scaffold(
       backgroundColor: context.canvasColor,
@@ -119,11 +119,11 @@ class _FirstLoginPasswordScreenState extends ConsumerState<FirstLoginPasswordScr
                         width: 70,
                         height: 70,
                         decoration: BoxDecoration(
-                          color: const Color(0xFF10B981).withValues(alpha: 0.12),
+                          color: ClassicTheme.successEmerald.withValues(alpha: 0.12),
                           shape: BoxShape.circle,
-                          border: Border.all(color: const Color(0xFF10B981).withValues(alpha: 0.3), width: 2),
+                          border: Border.all(color: ClassicTheme.successEmerald.withValues(alpha: 0.3), width: 2),
                         ),
-                        child: const Icon(Icons.lock_reset_rounded, size: 38, color: Color(0xFF10B981)),
+                        child: const Icon(Icons.lock_reset_rounded, size: 38, color: ClassicTheme.successEmerald),
                       ),
                     ),
                     const SizedBox(height: 20),
@@ -183,7 +183,7 @@ class _FirstLoginPasswordScreenState extends ConsumerState<FirstLoginPasswordScr
                     ],
 
                     // New Password Input
-                    Text("NEW PASSWORD", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: context.textSecondary, letterSpacing: 0.5)),
+                    Text("NEW PASSWORD", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: context.textSecondary, letterSpacing: 0.5)),
                     const SizedBox(height: 6),
                     TextFormField(
                       controller: _newPasswordController,
@@ -207,7 +207,7 @@ class _FirstLoginPasswordScreenState extends ConsumerState<FirstLoginPasswordScr
                     const SizedBox(height: 18),
 
                     // Confirm Password Input
-                    Text("CONFIRM NEW PASSWORD", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: context.textSecondary, letterSpacing: 0.5)),
+                    Text("CONFIRM NEW PASSWORD", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: context.textSecondary, letterSpacing: 0.5)),
                     const SizedBox(height: 6),
                     TextFormField(
                       controller: _confirmPasswordController,
@@ -236,7 +236,7 @@ class _FirstLoginPasswordScreenState extends ConsumerState<FirstLoginPasswordScr
                       child: ElevatedButton(
                         onPressed: _isSaving ? null : _handleSavePassword,
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF10B981),
+                          backgroundColor: ClassicTheme.successEmerald,
                           foregroundColor: Colors.white,
                           elevation: 0,
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),

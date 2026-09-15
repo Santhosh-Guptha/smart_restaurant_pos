@@ -58,7 +58,7 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(18), side: BorderSide(color: context.borderColor)),
           title: Row(
             children: [
-              const Icon(Icons.lock_outline_rounded, color: Colors.amber, size: 24),
+              const Icon(Icons.lock_outline_rounded, color: ClassicTheme.warningAmber, size: 24),
               const SizedBox(width: 10),
               Text(
                 'Staff Seat Limit Reached',
@@ -75,7 +75,7 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
           actions: [
             ElevatedButton(
               style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.amber,
+                backgroundColor: ClassicTheme.warningAmber,
                 foregroundColor: Colors.black,
               ),
               onPressed: () => Navigator.pop(ctx),
@@ -154,7 +154,7 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(color: Colors.amber),
+                      borderSide: const BorderSide(color: ClassicTheme.warningAmber),
                     ),
                   ),
                 ),
@@ -168,11 +168,11 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
                     labelText: 'Staff Username (Unique Login Handle)',
                     labelStyle: TextStyle(color: context.textSecondary),
                     prefixText: '@',
-                    prefixStyle: TextStyle(color: Colors.amber.shade700, fontWeight: FontWeight.bold, fontSize: 15),
+                    prefixStyle: TextStyle(color: ClassicTheme.warningAmber, fontWeight: FontWeight.bold, fontSize: 15),
                     hintText: 'e.g. chef_ravi, cashier1',
                     hintStyle: TextStyle(color: context.textSecondary.withValues(alpha: 0.5)),
                     helperText: 'Unique username for direct login on POS terminal',
-                    helperStyle: const TextStyle(color: Colors.amber, fontSize: 11),
+                    helperStyle: const TextStyle(color: ClassicTheme.warningAmber, fontSize: 12),
                     filled: true,
                     fillColor: context.canvasColor,
                     border: OutlineInputBorder(
@@ -185,7 +185,7 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(color: Colors.amber),
+                      borderSide: const BorderSide(color: ClassicTheme.warningAmber),
                     ),
                   ),
                 ),
@@ -203,7 +203,7 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
                     hintStyle: TextStyle(color: context.textSecondary.withValues(alpha: 0.5)),
                     helperText: 'Used to log in & share store spreadsheet',
                     helperStyle:
-                        const TextStyle(color: Colors.amber, fontSize: 11),
+                        const TextStyle(color: ClassicTheme.warningAmber, fontSize: 12),
                     filled: true,
                     fillColor: context.canvasColor,
                     border: OutlineInputBorder(
@@ -216,7 +216,7 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(color: Colors.amber),
+                      borderSide: const BorderSide(color: ClassicTheme.warningAmber),
                     ),
                   ),
                 ),
@@ -233,7 +233,7 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
                     hintText: 'Enter staff login password',
                     hintStyle: TextStyle(color: context.textSecondary.withValues(alpha: 0.5)),
                     helperText: 'Used by staff to log in on their device/tab',
-                    helperStyle: TextStyle(color: context.textSecondary, fontSize: 11),
+                    helperStyle: TextStyle(color: context.textSecondary, fontSize: 12),
                     suffixIcon: IconButton(
                       icon: Icon(
                         obscurePassword ? Icons.visibility_off : Icons.visibility,
@@ -254,7 +254,7 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(color: Colors.amber),
+                      borderSide: const BorderSide(color: ClassicTheme.warningAmber),
                     ),
                   ),
                 ),
@@ -315,7 +315,7 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
                       labelStyle: TextStyle(
                         color: isSelected ? ClassicTheme.primaryAccent : context.textSecondary,
                         fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                        fontSize: 11.5,
+                        fontSize: 12,
                       ),
                       onSelected: (checked) {
                         setDialogState(() {
@@ -385,7 +385,7 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
                         keyboardType: TextInputType.number,
                         maxLength: 4,
                         style: TextStyle(
-                          color: Colors.amber.shade900,
+                          color: ClassicTheme.warningAmber,
                           fontWeight: FontWeight.bold,
                           letterSpacing: 4,
                         ),
@@ -405,7 +405,7 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
                           ),
                           focusedBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12),
-                            borderSide: const BorderSide(color: Colors.amber),
+                            borderSide: const BorderSide(color: ClassicTheme.warningAmber),
                           ),
                         ),
                       ),
@@ -434,7 +434,7 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(color: Colors.amber),
+                      borderSide: const BorderSide(color: ClassicTheme.warningAmber),
                     ),
                   ),
                 ),
@@ -449,9 +449,9 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
                   ),
                   subtitle: Text(
                     'Shares restaurant operational spreadsheet with staff email',
-                    style: TextStyle(color: context.textSecondary, fontSize: 11),
+                    style: TextStyle(color: context.textSecondary, fontSize: 12),
                   ),
-                  activeThumbColor: Colors.amber,
+                  activeThumbColor: ClassicTheme.warningAmber,
                   value: grantSheetAccess,
                   onChanged: (val) =>
                       setDialogState(() => grantSheetAccess = val),
@@ -477,7 +477,7 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
                       content: Text('Please fill in Name, Username, and Login Password.'),
-                      backgroundColor: Colors.redAccent,
+                      backgroundColor: ClassicTheme.dangerRed,
                     ),
                   );
                   return;
@@ -487,7 +487,7 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
                       content: Text('Username can only contain letters, numbers, dots, dashes, and underscores.'),
-                      backgroundColor: Colors.redAccent,
+                      backgroundColor: ClassicTheme.dangerRed,
                     ),
                   );
                   return;
@@ -508,7 +508,7 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
                             content: Text('Username "@$cleanUsername" is already taken. Please choose another.'),
-                            backgroundColor: Colors.redAccent,
+                            backgroundColor: ClassicTheme.dangerRed,
                           ),
                         );
                       }
@@ -526,7 +526,7 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
                         content: Text('Cannot create or manage platform administrator accounts from tenant staff settings.'),
-                        backgroundColor: Colors.redAccent,
+                        backgroundColor: ClassicTheme.dangerRed,
                       ),
                     );
                   }
@@ -542,7 +542,7 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
                         content: Text('Username "@$cleanUsername" is already assigned to another staff member.'),
-                        backgroundColor: Colors.redAccent,
+                        backgroundColor: ClassicTheme.dangerRed,
                       ),
                     );
                   }
@@ -684,14 +684,14 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
                     SnackBar(
                       content: Text(message),
                       backgroundColor: (attemptedShare && !sharingSuccess)
-                          ? Colors.orange
-                          : const Color(0xFF10B981),
+                          ? ClassicTheme.warningAmber
+                          : ClassicTheme.successEmerald,
                     ),
                   );
                 }
               },
               style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.amber,
+                backgroundColor: ClassicTheme.warningAmber,
                 foregroundColor: Colors.black,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
@@ -713,7 +713,7 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Cannot remove the primary Store Owner account.'),
-          backgroundColor: Colors.orange,
+          backgroundColor: ClassicTheme.warningAmber,
         ),
       );
       return;
@@ -743,7 +743,7 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.redAccent,
+              backgroundColor: ClassicTheme.dangerRed,
               foregroundColor: Colors.white,
             ),
             onPressed: () async {
@@ -789,7 +789,7 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
                   SnackBar(
                     content: Text(
                         'Staff "${staff.name}" removed and Google Sheet access revoked.'),
-                    backgroundColor: Colors.redAccent,
+                    backgroundColor: ClassicTheme.dangerRed,
                   ),
                 );
               }
@@ -831,11 +831,11 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
             Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: Colors.amber.withValues(alpha: 0.15),
+                color: ClassicTheme.warningAmber.withValues(alpha: 0.15),
                 borderRadius: BorderRadius.circular(10),
               ),
               child: const Icon(Icons.people_alt_rounded,
-                  color: Colors.amber, size: 22),
+                  color: ClassicTheme.warningAmber, size: 22),
             ),
             const SizedBox(width: 10),
             Expanded(
@@ -850,7 +850,7 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
                   ),
                   Text(
                     '${staffList.length} / $maxUsers Seats · ${license?.planTier ?? "ACTIVE"} Plan',
-                    style: TextStyle(fontSize: 11, color: context.textSecondary),
+                    style: TextStyle(fontSize: 12, color: context.textSecondary),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -866,9 +866,9 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
               onPressed: () => _showAddEditStaffModal(),
               icon: const Icon(Icons.person_add_rounded, size: 16),
               label: const Text('ADD STAFF',
-                  style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
               style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.amber,
+                backgroundColor: ClassicTheme.warningAmber,
                 foregroundColor: Colors.black,
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                 shape: RoundedRectangleBorder(
@@ -881,7 +881,7 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
       ),
       body: RefreshIndicator(
         onRefresh: _handleRefresh,
-        color: Colors.amber,
+        color: ClassicTheme.warningAmber,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
           child: staffList.isEmpty
@@ -917,23 +917,23 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
                   switch (staff.role) {
                     case StaffRole.owner:
                       iconData = Icons.admin_panel_settings_rounded;
-                      badgeColor = Colors.purple;
+                      badgeColor = ClassicTheme.secondaryAccent;
                       break;
                     case StaffRole.manager:
                       iconData = Icons.supervisor_account_rounded;
-                      badgeColor = Colors.blue;
+                      badgeColor = ClassicTheme.infoBlue;
                       break;
                     case StaffRole.billing:
                       iconData = Icons.point_of_sale_rounded;
-                      badgeColor = const Color(0xFF10B981);
+                      badgeColor = ClassicTheme.successEmerald;
                       break;
                     case StaffRole.kitchen:
                       iconData = Icons.outdoor_grill_rounded;
-                      badgeColor = Colors.orange;
+                      badgeColor = ClassicTheme.warningAmber;
                       break;
                     case StaffRole.waiter:
                       iconData = Icons.room_service_rounded;
-                      badgeColor = Colors.cyan;
+                      badgeColor = ClassicTheme.infoBlue;
                       break;
                     case StaffRole.unassigned:
                       iconData = Icons.person_outline_rounded;
@@ -992,14 +992,14 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
                                          Container(
                                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
                                            decoration: BoxDecoration(
-                                             color: Colors.amber.withValues(alpha: 0.15),
+                                             color: ClassicTheme.warningAmber.withValues(alpha: 0.15),
                                              borderRadius: BorderRadius.circular(4),
                                            ),
                                            child: Text(
                                              '@${staff.username}',
                                              style: TextStyle(
-                                               color: Colors.amber.shade900,
-                                               fontSize: 10,
+                                               color: ClassicTheme.warningAmber,
+                                               fontSize: 12,
                                                fontWeight: FontWeight.bold,
                                              ),
                                            ),
@@ -1016,16 +1016,16 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
                                                rBadgeColor = const Color(0xFFE11D48);
                                                break;
                                              case StaffRole.manager:
-                                               rBadgeColor = const Color(0xFFD97706);
+                                               rBadgeColor = ClassicTheme.warningAmber;
                                                break;
                                              case StaffRole.billing:
-                                               rBadgeColor = const Color(0xFF059669);
+                                               rBadgeColor = ClassicTheme.successEmerald;
                                                break;
                                              case StaffRole.kitchen:
-                                               rBadgeColor = const Color(0xFF7C3AED);
+                                               rBadgeColor = ClassicTheme.secondaryAccent;
                                                break;
                                              case StaffRole.waiter:
-                                               rBadgeColor = const Color(0xFF2563EB);
+                                               rBadgeColor = ClassicTheme.infoBlue;
                                                break;
                                              case StaffRole.unassigned:
                                                rBadgeColor = Colors.grey;
@@ -1041,7 +1041,7 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
                                                r.displayName,
                                                style: TextStyle(
                                                  color: rBadgeColor,
-                                                 fontSize: 9.5,
+                                                 fontSize: 12,
                                                  fontWeight: FontWeight.bold,
                                                ),
                                              ),
@@ -1055,7 +1055,7 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
                                     'Station: ${staff.assignedStation}',
                                     style: TextStyle(
                                       color: context.textSecondary,
-                                      fontSize: 11.5,
+                                      fontSize: 12,
                                     ),
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
@@ -1078,7 +1078,7 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
                                 constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
                                 onPressed: () => _confirmDeleteStaff(staff),
                                 icon: const Icon(Icons.delete_outline_rounded,
-                                    color: Colors.redAccent, size: 18),
+                                    color: ClassicTheme.dangerRed, size: 18),
                               ),
                             ],
                           ],
@@ -1118,8 +1118,8 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
                                       horizontal: 8, vertical: 4),
                                   decoration: BoxDecoration(
                                     color: staff.isSheetAccessGranted
-                                        ? const Color(0xFF10B981).withValues(alpha: 0.12)
-                                        : Colors.orange.withValues(alpha: 0.12),
+                                        ? ClassicTheme.successEmerald.withValues(alpha: 0.12)
+                                        : ClassicTheme.warningAmber.withValues(alpha: 0.12),
                                     borderRadius: BorderRadius.circular(6),
                                   ),
                                   child: Row(
@@ -1131,8 +1131,8 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
                                             : Icons.cloud_sync_rounded,
                                         size: 13,
                                         color: staff.isSheetAccessGranted
-                                            ? const Color(0xFF10B981)
-                                            : Colors.orange,
+                                            ? ClassicTheme.successEmerald
+                                            : ClassicTheme.warningAmber,
                                       ),
                                       const SizedBox(width: 5),
                                       Text(
@@ -1141,10 +1141,10 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
                                             : 'Pending Share',
                                         style: TextStyle(
                                           color: staff.isSheetAccessGranted
-                                              ? const Color(0xFF10B981)
-                                              : Colors.orange,
+                                              ? ClassicTheme.successEmerald
+                                              : ClassicTheme.warningAmber,
                                           fontWeight: FontWeight.bold,
-                                          fontSize: 11,
+                                          fontSize: 12,
                                         ),
                                       ),
                                     ],
@@ -1154,7 +1154,7 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
                                   padding: const EdgeInsets.symmetric(
                                       horizontal: 8, vertical: 4),
                                   decoration: BoxDecoration(
-                                    color: Colors.amber.withValues(alpha: 0.12),
+                                    color: ClassicTheme.warningAmber.withValues(alpha: 0.12),
                                     borderRadius: BorderRadius.circular(6),
                                   ),
                                   child: Row(
@@ -1163,15 +1163,15 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
                                       const Text(
                                         'PIN: ',
                                         style: TextStyle(
-                                          color: Colors.amber,
-                                          fontSize: 10,
+                                          color: ClassicTheme.warningAmber,
+                                          fontSize: 12,
                                           fontWeight: FontWeight.bold,
                                         ),
                                       ),
                                       Text(
                                         staff.pin.isEmpty ? 'Not set' : ('•' * staff.pin.length),
                                         style: TextStyle(
-                                          color: Colors.amber.shade900,
+                                          color: ClassicTheme.warningAmber,
                                           fontWeight: FontWeight.w900,
                                           fontSize: 12,
                                           letterSpacing: 1.5,
