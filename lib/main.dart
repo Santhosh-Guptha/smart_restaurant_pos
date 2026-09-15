@@ -143,7 +143,7 @@ Future<void> _bootstrapMasterDatabaseIfNeeded() async {
   }
 }
 
-const String kCurrentAppVersion = '1.1.0';
+const String kCurrentAppVersion = '1.1.5';
 
 int _compareVersions(String v1, String v2) {
   final cleanV1 = v1.split('+').first.trim();
