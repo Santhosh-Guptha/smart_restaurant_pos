@@ -9,13 +9,20 @@ import '../core/cloud_gate.dart';
 /// for automated Multi-Tenant Organization, Outlet, and Spreadsheet management.
 class AppsScriptBackendService {
   static const String _defaultWebhookUrl =
-      'https://script.google.com/macros/s/AKfycbxIAGxL_Chf3xMKfpqMyJ8fHkYq990x-WHSH6coCWpxQaWCH7zRV599esQ604oEVtrF/exec';
+      'https://script.google.com/macros/s/AKfycbxTGh6K2icpbJE9V_uPhltoLNwVKxQCioFbeCDsqcNSdhl-Id-FiI4Pssx-NSIP_eCDOQ/exec';
   static const String _secretToken = "SMART_POS_SECURE_TOKEN_2026";
 
 
   static String getWebhookUrl() {
     final box = Hive.box('configBox');
-    return box.get('apps_script_webhook_url', defaultValue: _defaultWebhookUrl);
+    final stored = box.get('apps_script_webhook_url');
+    if (stored == null ||
+        stored.toString().isEmpty ||
+        stored.toString().contains('AKfycbxIAGxL_Chf3xMKfpqMyJ8fHkYq990x') ||
+        stored.toString().contains('AKfycbwmwGpu3ZKMiDJjGnZAXGCrMBr0s5bootd')) {
+      return _defaultWebhookUrl;
+    }
+    return stored.toString();
   }
 
   static Future<void> setWebhookUrl(String url) async {
