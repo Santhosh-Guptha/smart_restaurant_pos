@@ -1123,9 +1123,9 @@ class _BranchManagementScreenState
               width: double.infinity,
               padding: const EdgeInsets.all(40),
               decoration: BoxDecoration(
-                color: ClassicTheme.cardSurfaceDark,
+                color: context.surfaceColor,
                 borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: context.textPrimary),
+                border: Border.all(color: context.borderColor),
               ),
               child: Column(
                 children: [

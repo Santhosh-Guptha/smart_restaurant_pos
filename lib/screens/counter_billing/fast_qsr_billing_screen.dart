@@ -4269,13 +4269,18 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
             ),
             title: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
                   'Counter Billing POS',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: context.textPrimary),
                 ),
                 Text(
                   'Cashier: ${activeStaff?.name ?? "Staff"} • Store Desk',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: TextStyle(fontSize: 12, color: context.textSecondary),
                 ),
               ],
@@ -4291,6 +4296,9 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                 Container(
                   margin: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  // Capped: a long table name ("Terrace 12 — window") would
+                  // otherwise grow this pill and squeeze the title off screen.
+                  constraints: const BoxConstraints(maxWidth: 150),
                   decoration: BoxDecoration(
                     color: ClassicTheme.primaryAccent.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(20),
@@ -4305,12 +4313,16 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                         color: ClassicTheme.primaryAccent,
                       ),
                       const SizedBox(width: 5),
-                      Text(
-                        _orderType == 'Dine-In' ? (_selectedTable ?? 'Dine-In') : 'Takeaway',
-                        style: const TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                          color: ClassicTheme.primaryAccent,
+                      Flexible(
+                        child: Text(
+                          _orderType == 'Dine-In' ? (_selectedTable ?? 'Dine-In') : 'Takeaway',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: ClassicTheme.primaryAccent,
+                          ),
                         ),
                       ),
                     ],
@@ -4498,7 +4510,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                                     margin: EdgeInsets.only(top: catIdx > 0 ? 16 : 0, bottom: 8),
                                     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                                     decoration: BoxDecoration(
-                                      color: context.textPrimary,
+                                      color: ClassicTheme.secondaryAccent,
                                       borderRadius: BorderRadius.circular(10),
                                     ),
                                     child: Row(
@@ -4762,76 +4774,86 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                         ],
                       ),
                       child: SafeArea(
-                        child: Row(
-                          children: [
-                            // Item Count & Total Amount
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Text(
-                                    '${_cart.fold<int>(0, (total, i) => total + i.qty.toInt())} Items Added',
-                                    style: TextStyle(fontSize: 12, color: context.textSecondary),
-                                  ),
-                                  const SizedBox(height: 2),
-                                  Row(
-                                    children: [
-                                      Text(
-                                        '₹${_grandTotal.toStringAsFixed(2)}',
-                                        style: TextStyle(
-                                          fontSize: 18,
-                                          fontWeight: FontWeight.w900,
-                                          color: context.textPrimary,
-                                        ),
-                                      ),
-                                      if (_discount > 0) ...[
-                                        const SizedBox(width: 5),
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                                          decoration: BoxDecoration(
-                                            color: ClassicTheme.tintSuccess,
-                                            borderRadius: BorderRadius.circular(4),
-                                          ),
-                                          child: Text(
-                                            '-₹${_discount.toStringAsFixed(2)}',
-                                            style: const TextStyle(
-                                              color: ClassicTheme.successEmerald,
-                                              fontSize: 12,
-                                              fontWeight: FontWeight.bold,
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                      const SizedBox(width: 6),
-                                      Text(
-                                        _serviceChargeRate > 0
-                                            ? '(incl. ${_serviceChargeRate.toStringAsFixed(0)}% SC + ${_gstRate.toStringAsFixed(0)}% GST)'
-                                            : '(incl. ${_gstRate.toStringAsFixed(0)}% GST)',
-                                        style: TextStyle(fontSize: 12, color: context.textSecondary),
-                                      ),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                            ),
+                        child: LayoutBuilder(
+                          builder: (context, c) {
+                            // On a 360dp phone the totals and the three
+                            // controls cannot share one row. The tax note was
+                            // the first thing to overflow, and it did so
+                            // silently. Below ~520dp the bar becomes two rows.
+                            final stacked = c.maxWidth < 520;
 
-                            // Discount Button
-                            IconButton(
+                            final totals = Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  '${_cart.fold<int>(0, (total, i) => total + i.qty.toInt())} Items Added',
+                                  style: TextStyle(
+                                      fontSize: 12, color: context.textSecondary),
+                                ),
+                                const SizedBox(height: 2),
+                                // Wrap, not Row: the discount chip and the tax
+                                // note drop to a second line rather than
+                                // pushing the total off the screen.
+                                Wrap(
+                                  crossAxisAlignment: WrapCrossAlignment.center,
+                                  spacing: 6,
+                                  runSpacing: 2,
+                                  children: [
+                                    Text(
+                                      '₹${_grandTotal.toStringAsFixed(2)}',
+                                      style: TextStyle(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.w900,
+                                        color: context.textPrimary,
+                                      ),
+                                    ),
+                                    if (_discount > 0)
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 5, vertical: 1),
+                                        decoration: BoxDecoration(
+                                          color: ClassicTheme.tintSuccess,
+                                          borderRadius: BorderRadius.circular(4),
+                                        ),
+                                        child: Text(
+                                          '-₹${_discount.toStringAsFixed(2)}',
+                                          style: const TextStyle(
+                                            color: ClassicTheme.successEmerald,
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ),
+                                    Text(
+                                      _serviceChargeRate > 0
+                                          ? '(incl. ${_serviceChargeRate.toStringAsFixed(0)}% SC + ${_gstRate.toStringAsFixed(0)}% GST)'
+                                          : '(incl. ${_gstRate.toStringAsFixed(0)}% GST)',
+                                      style: TextStyle(
+                                          fontSize: 12,
+                                          color: context.textSecondary),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            );
+
+                            final discountButton = IconButton(
                               icon: Icon(
                                 Icons.percent_rounded,
-                                color: _appliedDiscount != null ? ClassicTheme.primaryAccent : context.textSecondary,
+                                color: _appliedDiscount != null
+                                    ? ClassicTheme.primaryAccent
+                                    : context.textSecondary,
                               ),
                               tooltip: _appliedDiscount != null
                                   ? 'Discount: ${_appliedDiscount!.type == DiscountType.percentage ? "${_appliedDiscount!.value}%" : "₹${_appliedDiscount!.value}"}'
                                   : 'Apply Discount',
                               onPressed: _showDiscountDialog,
-                            ),
-                            const SizedBox(width: 4),
+                            );
 
-                            // Clear Cart Button
-                            IconButton(
-                              icon: const Icon(Icons.delete_outline_rounded, color: ClassicTheme.dangerRed),
+                            final clearButton = IconButton(
+                              icon: const Icon(Icons.delete_outline_rounded,
+                                  color: ClassicTheme.dangerRed),
                               tooltip: 'Clear Cart',
                               onPressed: () {
                                 setState(() {
@@ -4839,26 +4861,59 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                                   _appliedDiscount = null;
                                 });
                               },
-                            ),
-                            const SizedBox(width: 8),
+                            );
 
-                            // Next Button
-                            ElevatedButton.icon(
+                            final nextButton = ElevatedButton.icon(
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: ClassicTheme.primaryAccent,
                                 foregroundColor: Colors.white,
                                 elevation: 0,
-                                padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 12),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 22, vertical: 12),
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12)),
                               ),
-                              icon: const Icon(Icons.arrow_forward_rounded, size: 18),
+                              icon: const Icon(Icons.arrow_forward_rounded,
+                                  size: 18),
                               label: const Text(
                                 'Next',
-                                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                                style: TextStyle(
+                                    fontWeight: FontWeight.bold, fontSize: 15),
                               ),
                               onPressed: _onNextPressed,
-                            ),
-                          ],
+                            );
+
+                            if (!stacked) {
+                              return Row(
+                                children: [
+                                  Expanded(child: totals),
+                                  discountButton,
+                                  const SizedBox(width: 4),
+                                  clearButton,
+                                  const SizedBox(width: 8),
+                                  nextButton,
+                                ],
+                              );
+                            }
+
+                            return Column(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                totals,
+                                const SizedBox(height: 10),
+                                Row(
+                                  children: [
+                                    discountButton,
+                                    const SizedBox(width: 4),
+                                    clearButton,
+                                    const SizedBox(width: 8),
+                                    Expanded(child: nextButton),
+                                  ],
+                                ),
+                              ],
+                            );
+                          },
                         ),
                       ),
                     ),

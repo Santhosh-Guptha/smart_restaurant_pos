@@ -185,9 +185,9 @@ class AppLoadingDialog {
             margin: const EdgeInsets.symmetric(horizontal: 40),
             padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
             decoration: BoxDecoration(
-              color: context.textPrimary,
+              color: context.raisedSurface,
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: context.textPrimary),
+              border: Border.all(color: context.borderColor),
               boxShadow: [
                 BoxShadow(
                   color: Colors.black.withValues(alpha: 0.6),
@@ -211,8 +211,8 @@ class AppLoadingDialog {
                 Flexible(
                   child: Text(
                     message,
-                    style: const TextStyle(
-                      color: Colors.white,
+                    style: TextStyle(
+                      color: context.textPrimary,
                       fontSize: 14,
                       fontWeight: FontWeight.w500,
                       decoration: TextDecoration.none,

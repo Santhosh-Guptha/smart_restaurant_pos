@@ -2560,7 +2560,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                                 margin: EdgeInsets.only(top: catIdx > 0 ? 16 : 0, bottom: 8),
                                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                                 decoration: BoxDecoration(
-                                  color: context.textPrimary,
+                                  color: ClassicTheme.secondaryAccent,
                                   borderRadius: BorderRadius.circular(10),
                                 ),
                                 child: Row(
