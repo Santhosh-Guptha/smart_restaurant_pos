@@ -118,7 +118,7 @@ class PosReceiptLivePreview extends StatelessWidget {
                   ),
                   child: Text(
                     paperSize,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 10,
                       fontWeight: FontWeight.bold,
                       color: ClassicTheme.primaryAccent,

@@ -10,6 +10,11 @@ DateTime _parseDateTime(dynamic value, {DateTime? fallback}) {
 
 class SaasLicense {
   final String planTier; // TRIAL, MONTHLY, YEARLY, LIFETIME
+
+  /// Which plan profile the platform admin applied (OFFLINE_SINGLE,
+  /// OFFLINE_DINE_IN, CONNECTED, OMNICHANNEL). Null on documents written
+  /// before profiles existed; the resolver falls back to [planTier].
+  final String? planProfile;
   final String status; // ACTIVE, EXPIRED, PAST_DUE
   final int maxFranchises;
   final int maxUsers;
@@ -22,6 +27,7 @@ class SaasLicense {
 
   SaasLicense({
     required this.planTier,
+    this.planProfile,
     required this.status,
     required this.maxFranchises,
     required this.maxUsers,
@@ -35,6 +41,7 @@ class SaasLicense {
 
   SaasLicense copyWith({
     String? planTier,
+    String? planProfile,
     String? status,
     int? maxFranchises,
     int? maxUsers,
@@ -47,6 +54,7 @@ class SaasLicense {
   }) {
     return SaasLicense(
       planTier: planTier ?? this.planTier,
+      planProfile: planProfile ?? this.planProfile,
       status: status ?? this.status,
       maxFranchises: maxFranchises ?? this.maxFranchises,
       maxUsers: maxUsers ?? this.maxUsers,
@@ -122,6 +130,7 @@ class SaasLicense {
         : const ['OWNER', 'MANAGER', 'BILLING', 'KITCHEN', 'WAITER'];
     return SaasLicense(
       planTier: json['planTier'] ?? 'TRIAL',
+      planProfile: json['planProfile']?.toString(),
       status: json['status'] ?? 'INACTIVE',
       maxFranchises: json['maxFranchises'] ?? 1,
       maxUsers: json['maxUsers'] ?? 5,
@@ -137,6 +146,7 @@ class SaasLicense {
   Map<String, dynamic> toJson() {
     return {
       'planTier': planTier,
+      if (planProfile != null) 'planProfile': planProfile,
       'status': status,
       'maxFranchises': maxFranchises,
       'maxUsers': maxUsers,
@@ -156,6 +166,7 @@ class SaasLicense {
         : const ['OWNER', 'MANAGER', 'BILLING', 'KITCHEN', 'WAITER'];
     return SaasLicense(
       planTier: data['planTier'] ?? 'TRIAL',
+      planProfile: data['planProfile']?.toString(),
       status: data['status'] ?? 'INACTIVE',
       maxFranchises: data['maxFranchises'] ?? 1,
       maxUsers: data['maxUsers'] ?? 5,
@@ -171,6 +182,7 @@ class SaasLicense {
   Map<String, dynamic> toFirestore() {
     return {
       'planTier': planTier,
+      if (planProfile != null) 'planProfile': planProfile,
       'status': status,
       'maxFranchises': maxFranchises,
       'maxUsers': maxUsers,

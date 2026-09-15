@@ -6,7 +6,7 @@ import 'classic_theme.dart';
 class AppTheme {
   AppTheme._();
 
-  static const Color defaultPrimaryColor = ClassicTheme.primaryAccent;
+  static Color get defaultPrimaryColor => ClassicTheme.primaryAccent;
 
   static ThemeData getTheme([Color? primaryColor]) => ClassicTheme.darkTheme;
 

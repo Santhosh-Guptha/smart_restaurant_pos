@@ -57,7 +57,7 @@ class DashboardCardMeta {
 }
 
 /// All available dashboard cards registered for the restaurant POS with RBAC constraints.
-const List<DashboardCardMeta> kAllDashboardCards = [
+final List<DashboardCardMeta> kAllDashboardCards = [
   DashboardCardMeta(
     id: 'counter_billing',
     title: 'Counter Billing',

@@ -4,6 +4,7 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:bcrypt/bcrypt.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../../core/accent_palettes.dart';
 import '../../core/classic_theme.dart';
 import '../../core/rbac_permissions.dart';
 import '../../providers/auth_provider.dart';
@@ -132,7 +133,7 @@ class _SettingsSidebarDialogState extends ConsumerState<SettingsSidebarDialog> {
               color: ClassicTheme.primaryAccent.withValues(alpha: 0.12),
               shape: BoxShape.circle,
             ),
-            child: const Icon(Icons.manage_accounts_rounded, color: ClassicTheme.primaryAccent, size: 22),
+            child: Icon(Icons.manage_accounts_rounded, color: ClassicTheme.primaryAccent, size: 22),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -266,7 +267,7 @@ class _SettingsSidebarDialogState extends ConsumerState<SettingsSidebarDialog> {
                 Container(
                   width: 6,
                   height: 6,
-                  decoration: const BoxDecoration(
+                  decoration: BoxDecoration(
                     color: ClassicTheme.primaryAccent,
                     shape: BoxShape.circle,
                   ),
@@ -361,7 +362,7 @@ class _SettingsSidebarDialogState extends ConsumerState<SettingsSidebarDialog> {
                   backgroundColor: ClassicTheme.primaryAccent.withValues(alpha: 0.15),
                   child: Text(
                     userName.isNotEmpty ? userName[0].toUpperCase() : 'O',
-                    style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: ClassicTheme.primaryAccent),
+                    style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: ClassicTheme.primaryAccent),
                   ),
                 ),
                 const SizedBox(width: 16),
@@ -382,7 +383,7 @@ class _SettingsSidebarDialogState extends ConsumerState<SettingsSidebarDialog> {
                         ),
                         child: Text(
                           'ROLE: $userRole',
-                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: ClassicTheme.primaryAccent),
+                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: ClassicTheme.primaryAccent),
                         ),
                       ),
                     ],
@@ -418,7 +419,7 @@ class _SettingsSidebarDialogState extends ConsumerState<SettingsSidebarDialog> {
                       Text('License Plan:', style: TextStyle(fontSize: 13, color: context.textSecondary)),
                       Text(
                         license?.planTier ?? 'Enterprise Pro',
-                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: ClassicTheme.secondaryAccent),
+                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: ClassicTheme.secondaryAccent),
                       ),
                     ],
                   ),
@@ -450,7 +451,7 @@ class _SettingsSidebarDialogState extends ConsumerState<SettingsSidebarDialog> {
                       color: ClassicTheme.primaryAccent.withValues(alpha: 0.18),
                       shape: BoxShape.circle,
                     ),
-                    child: const Icon(Icons.storefront_rounded, size: 24, color: ClassicTheme.primaryAccent),
+                    child: Icon(Icons.storefront_rounded, size: 24, color: ClassicTheme.primaryAccent),
                   ),
                   const SizedBox(width: 14),
                   Expanded(
@@ -994,8 +995,90 @@ class _SettingsSidebarDialogState extends ConsumerState<SettingsSidebarDialog> {
             icon: Icons.brightness_auto_rounded,
             isSelected: currentMode == ThemeMode.system,
           ),
+          const SizedBox(height: 28),
+          _buildSectionHeading(
+            'Accent colour',
+            'Pick the colour for buttons, selections and highlights across the '
+                'whole app. Saved on this device for your login only.',
+          ),
+          const SizedBox(height: 14),
+          _buildAccentPicker(context),
         ],
       ),
+    );
+  }
+
+  Widget _buildAccentPicker(BuildContext context) {
+    final current = ref.watch(accentProvider);
+    return Wrap(
+      spacing: 12,
+      runSpacing: 12,
+      children: AccentPalette.all.map((p) {
+        final selected = p.id == current.id;
+        return Semantics(
+          button: true,
+          selected: selected,
+          label: '${p.label} accent',
+          child: InkWell(
+            onTap: () => ref.read(accentProvider.notifier).setAccent(p),
+            borderRadius: BorderRadius.circular(14),
+            child: Container(
+              width: 112,
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: context.surfaceColor,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: selected ? p.primary : context.borderColor,
+                  width: selected ? 2 : 1,
+                ),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Container(
+                        width: 30,
+                        height: 30,
+                        decoration: BoxDecoration(
+                          color: p.primary,
+                          shape: BoxShape.circle,
+                        ),
+                        child: selected
+                            ? const Icon(Icons.check_rounded,
+                                size: 18, color: Colors.white)
+                            : null,
+                      ),
+                      const SizedBox(width: 6),
+                      Container(
+                        width: 16,
+                        height: 16,
+                        decoration: BoxDecoration(
+                          color: p.secondary,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    p.label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
+                      color: context.textPrimary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      }).toList(),
     );
   }
 
@@ -1045,7 +1128,7 @@ class _SettingsSidebarDialogState extends ConsumerState<SettingsSidebarDialog> {
               ),
             ),
             if (isSelected)
-              const Icon(Icons.check_circle_rounded, color: ClassicTheme.primaryAccent, size: 22),
+              Icon(Icons.check_circle_rounded, color: ClassicTheme.primaryAccent, size: 22),
           ],
         ),
       ),
@@ -1118,7 +1201,7 @@ class _SettingsSidebarDialogState extends ConsumerState<SettingsSidebarDialog> {
                     color: ClassicTheme.primaryAccent.withValues(alpha: 0.12),
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(Icons.lock_reset_rounded, color: ClassicTheme.primaryAccent, size: 20),
+                  child: Icon(Icons.lock_reset_rounded, color: ClassicTheme.primaryAccent, size: 20),
                 ),
                 const SizedBox(width: 10),
                 Text('Update Operator Password',

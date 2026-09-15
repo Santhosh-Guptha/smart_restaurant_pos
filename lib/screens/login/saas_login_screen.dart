@@ -225,7 +225,7 @@ class _SaaSLoginScreenState extends ConsumerState<SaaSLoginScreen> {
                       borderRadius: BorderRadius.circular(18),
                       border: Border.all(color: ClassicTheme.primaryAccent.withValues(alpha: 0.3)),
                     ),
-                    child: const Icon(
+                    child: Icon(
                       Icons.storefront_rounded,
                       size: 34,
                       color: ClassicTheme.primaryAccent,
@@ -463,7 +463,7 @@ class _SaaSLoginScreenState extends ConsumerState<SaaSLoginScreen> {
               shape: BoxShape.circle,
               border: Border.all(color: ClassicTheme.primaryAccent.withValues(alpha: 0.3)),
             ),
-            child: const Icon(
+            child: Icon(
               Icons.verified_user_rounded,
               size: 30,
               color: ClassicTheme.primaryAccent,
@@ -505,7 +505,7 @@ class _SaaSLoginScreenState extends ConsumerState<SaaSLoginScreen> {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.mail_outline_rounded, size: 14, color: ClassicTheme.primaryAccent),
+                Icon(Icons.mail_outline_rounded, size: 14, color: ClassicTheme.primaryAccent),
                 const SizedBox(width: 6),
                 Text(
                   _mfaEmail,
@@ -580,7 +580,7 @@ class _SaaSLoginScreenState extends ConsumerState<SaaSLoginScreen> {
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: ClassicTheme.primaryAccent, width: 2),
+              borderSide: BorderSide(color: ClassicTheme.primaryAccent, width: 2),
             ),
             filled: true,
             fillColor: context.isDark ? Colors.grey[900] : Colors.grey[50],

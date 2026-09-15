@@ -229,6 +229,12 @@ class SmartDineApp extends ConsumerWidget {
 
     final themeMode = ref.watch(themeModeProvider);
 
+    // The user's accent. Watching it here is what makes a swatch tap in
+    // Settings recolour the whole app: the theme getters below read
+    // ClassicTheme.activePalette, which the notifier sets before this rebuild.
+    ref.watch(accentProvider);
+    ref.read(accentProvider.notifier).bindUser(saasSession.currentUser?.id);
+
     return MaterialApp(
       navigatorKey: navigatorKey,
       scaffoldMessengerKey: scaffoldMessengerKey,

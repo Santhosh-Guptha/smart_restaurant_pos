@@ -26,7 +26,7 @@ class _RestaurantAnalyticsScreenState
   int? _selectedHour;
 
   static const amberAccent = ClassicTheme.warningAmber;
-  static const coralAccent = ClassicTheme.primaryAccent;
+  static Color get coralAccent => ClassicTheme.primaryAccent;
   static const emeraldAccent = ClassicTheme.successEmerald;
 
   // Multi-Store Scope Configuration
@@ -812,7 +812,7 @@ class _RestaurantAnalyticsScreenState
                               color: coralAccent.withValues(alpha: 0.15),
                               borderRadius: BorderRadius.circular(8),
                             ),
-                            child: const Icon(Icons.flash_on_rounded, color: coralAccent, size: 18),
+                            child: Icon(Icons.flash_on_rounded, color: coralAccent, size: 18),
                           ),
                           const SizedBox(width: 10),
                           Column(

@@ -30,25 +30,28 @@ class RestaurantFeatureCatalog {
   RestaurantFeatureCatalog._();
 
   static final List<RestaurantFeatureItem> allFeatures = FeatureCatalog.all
-      .map((f) => RestaurantFeatureItem(
-            key: f.key,
-            label: f.label,
-            description: f.description,
-            category: _categoryFor(f.category),
-            iconCode: f.iconCode,
-          ))
+      .map(_item)
       .toList(growable: false);
 
-  static String _categoryFor(String catalogCategory) {
-    switch (catalogCategory) {
-      case FeatureCatalog.catFloor:
-      case FeatureCatalog.catGuest:
-        return 'kitchen';
-      case FeatureCatalog.catBackOffice:
-      case FeatureCatalog.catChain:
-        return 'analytics';
-      default:
+  static RestaurantFeatureItem _item(FeatureDef f) => RestaurantFeatureItem(
+        key: f.key,
+        label: f.label,
+        description: f.description,
+        category: _categoryFor(f.tier),
+        iconCode: f.iconCode,
+      );
+
+  /// The older editor groups by four legacy names; map tiers onto them.
+  static String _categoryFor(CommercialTier tier) {
+    switch (tier) {
+      case CommercialTier.offlineBasic:
         return 'core';
+      case CommercialTier.offlineAddOn:
+        return 'kitchen';
+      case CommercialTier.onlineBasic:
+        return 'analytics';
+      case CommercialTier.onlineAddOn:
+        return 'hardware';
     }
   }
 
@@ -65,15 +68,7 @@ class RestaurantFeatureCatalog {
   static Map<String, List<RestaurantFeatureItem>> get groupedFeatures {
     final map = <String, List<RestaurantFeatureItem>>{};
     for (final f in FeatureCatalog.all) {
-      map.putIfAbsent(f.category, () => []).add(
-            RestaurantFeatureItem(
-              key: f.key,
-              label: f.label,
-              description: f.description,
-              category: _categoryFor(f.category),
-              iconCode: f.iconCode,
-            ),
-          );
+      map.putIfAbsent(f.tier.label, () => []).add(_item(f));
     }
     return map;
   }

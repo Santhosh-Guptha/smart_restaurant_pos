@@ -17,6 +17,9 @@ final entitlementsProvider = Provider<Entitlements>((ref) {
   return Entitlements.fromLicense(
     session.currentLicense,
     isMasterAdmin: isPlatformAdmin,
+    // Offline is a property of the organisation's storage mode, not a
+    // feature flag. The legacy flag is still honoured inside fromLicense.
+    storageMode: session.currentOrganization?.storageMode,
   );
 });
 

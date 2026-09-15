@@ -202,7 +202,7 @@ class _GoogleSheetsSetupGateDialogState extends ConsumerState<GoogleSheetsSetupG
         ),
         title: Row(
           children: [
-            const Icon(Icons.link_rounded, color: ClassicTheme.primaryAccent, size: 24),
+            Icon(Icons.link_rounded, color: ClassicTheme.primaryAccent, size: 24),
             const SizedBox(width: 10),
             Text(
               'Link Google Sheet',
@@ -375,7 +375,7 @@ class _GoogleSheetsSetupGateDialogState extends ConsumerState<GoogleSheetsSetupG
               Navigator.pop(ctx);
               _handleAuthorizeGoogle();
             },
-            child: const Text('Retry Authorization', style: TextStyle(color: ClassicTheme.primaryAccent, fontWeight: FontWeight.bold)),
+            child: Text('Retry Authorization', style: TextStyle(color: ClassicTheme.primaryAccent, fontWeight: FontWeight.bold)),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
@@ -426,7 +426,7 @@ class _GoogleSheetsSetupGateDialogState extends ConsumerState<GoogleSheetsSetupG
                       color: ClassicTheme.primaryAccent.withValues(alpha: 0.12),
                       shape: BoxShape.circle,
                     ),
-                    child: const Icon(
+                    child: Icon(
                       Icons.table_chart_rounded,
                       color: ClassicTheme.primaryAccent,
                       size: 40,
@@ -472,7 +472,7 @@ class _GoogleSheetsSetupGateDialogState extends ConsumerState<GoogleSheetsSetupG
                     ),
                     child: Row(
                       children: [
-                        const Icon(Icons.account_circle_outlined, color: ClassicTheme.primaryAccent, size: 22),
+                        Icon(Icons.account_circle_outlined, color: ClassicTheme.primaryAccent, size: 22),
                         const SizedBox(width: 10),
                         Expanded(
                           child: Column(
@@ -513,7 +513,7 @@ class _GoogleSheetsSetupGateDialogState extends ConsumerState<GoogleSheetsSetupG
                   Center(
                     child: Column(
                       children: [
-                        const SizedBox(
+                        SizedBox(
                           width: 28,
                           height: 28,
                           child: CircularProgressIndicator(

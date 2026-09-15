@@ -961,7 +961,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                           ),
                           child: Column(
                             children: [
-                              const Icon(Icons.payment_rounded, color: ClassicTheme.primaryAccent, size: 28),
+                              Icon(Icons.payment_rounded, color: ClassicTheme.primaryAccent, size: 28),
                               const SizedBox(height: 8),
                               Text(
                                 'Pay Now',
@@ -1061,7 +1061,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                 const SizedBox(height: 4),
                 Text(
                   'Total Payable: ₹${_payableTotal(existingOrderToAppend).toStringAsFixed(2)}',
-                  style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: ClassicTheme.primaryAccent),
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: ClassicTheme.primaryAccent),
                 ),
                 const SizedBox(height: 12),
                 TextField(
@@ -1251,7 +1251,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                   ),
                   Text(
                     'Total Payable: ₹${payable.toStringAsFixed(2)}',
-                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: ClassicTheme.primaryAccent),
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: ClassicTheme.primaryAccent),
                   ),
                   const SizedBox(height: 14),
                   TextField(
@@ -1446,7 +1446,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
           title: Row(
             children: [
-              const Icon(Icons.percent_rounded, color: ClassicTheme.primaryAccent, size: 24),
+              Icon(Icons.percent_rounded, color: ClassicTheme.primaryAccent, size: 24),
               const SizedBox(width: 8),
               Text('Apply Discount', style: TextStyle(color: context.textPrimary, fontWeight: FontWeight.bold, fontSize: 17)),
             ],
@@ -2196,7 +2196,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                   ),
                   child: Text(
                     'TOKEN: $token',
-                    style: const TextStyle(
+                    style: TextStyle(
                       color: ClassicTheme.primaryAccent,
                       fontSize: 26,
                       fontWeight: FontWeight.w900,
@@ -4017,7 +4017,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                                       const SizedBox(width: 5),
                                       Text(
                                         tableName,
-                                        style: const TextStyle(
+                                        style: TextStyle(
                                           fontWeight: FontWeight.bold,
                                           fontSize: 12.5,
                                           color: ClassicTheme.primaryAccent,
@@ -4052,7 +4052,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                                     ),
                                     child: Text(
                                       '${order['sessionRoundsCount'] ?? 2} Rounds',
-                                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: ClassicTheme.secondaryAccent),
+                                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: ClassicTheme.secondaryAccent),
                                     ),
                                   ),
                                 ],
@@ -4139,7 +4139,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                                         Text('Bill Amount', style: TextStyle(fontSize: 12, color: context.textSecondary)),
                                         Text(
                                           '₹${total.toStringAsFixed(2)}',
-                                          style: const TextStyle(
+                                          style: TextStyle(
                                             fontSize: 18,
                                             fontWeight: FontWeight.w900,
                                             color: ClassicTheme.primaryAccent,
@@ -4318,7 +4318,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                           _orderType == 'Dine-In' ? (_selectedTable ?? 'Dine-In') : 'Takeaway',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.bold,
                             color: ClassicTheme.primaryAccent,
@@ -4676,7 +4676,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                                                     padding: const EdgeInsets.symmetric(horizontal: 8),
                                                     child: Text(
                                                       '₹${price.toStringAsFixed(2)}',
-                                                      style: const TextStyle(
+                                                      style: TextStyle(
                                                         fontSize: 14,
                                                         fontWeight: FontWeight.bold,
                                                         color: ClassicTheme.primaryAccent,
@@ -4716,7 +4716,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                                                           InkWell(
                                                             onTap: () => _decrementCartItem(itemId),
                                                             borderRadius: BorderRadius.circular(6),
-                                                            child: const Padding(
+                                                            child: Padding(
                                                               padding: EdgeInsets.all(6.0),
                                                               child: Icon(Icons.remove_rounded, size: 16, color: ClassicTheme.primaryAccent),
                                                             ),
@@ -4725,7 +4725,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                                                             padding: const EdgeInsets.symmetric(horizontal: 8.0),
                                                             child: Text(
                                                               '$qtyInCart',
-                                                              style: const TextStyle(
+                                                              style: TextStyle(
                                                                 fontWeight: FontWeight.bold,
                                                                 fontSize: 13,
                                                                 color: ClassicTheme.primaryAccent,
@@ -4735,7 +4735,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                                                           InkWell(
                                                             onTap: () => _addToCart(item),
                                                             borderRadius: BorderRadius.circular(6),
-                                                            child: const Padding(
+                                                            child: Padding(
                                                               padding: EdgeInsets.all(6.0),
                                                               child: Icon(Icons.add_rounded, size: 16, color: ClassicTheme.primaryAccent),
                                                             ),

@@ -653,7 +653,7 @@ class _AdminInquiriesViewState extends ConsumerState<AdminInquiriesView> {
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                         side: BorderSide(color: context.borderColor),
                       ),
-                      icon: const Icon(Icons.mail_rounded, size: 14, color: ClassicTheme.secondaryAccent),
+                      icon: Icon(Icons.mail_rounded, size: 14, color: ClassicTheme.secondaryAccent),
                       label: const Text('Email', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                       onPressed: () => _sendEmail(lead.email, lead.brandName),
                     ),

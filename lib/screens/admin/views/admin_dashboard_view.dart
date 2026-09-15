@@ -297,7 +297,7 @@ class AdminDashboardView extends ConsumerWidget {
                                                   color: ClassicTheme.primaryAccent.withValues(alpha: 0.15),
                                                   borderRadius: BorderRadius.circular(10),
                                                 ),
-                                                child: const Icon(Icons.rocket_launch_rounded, color: ClassicTheme.primaryAccent, size: 22),
+                                                child: Icon(Icons.rocket_launch_rounded, color: ClassicTheme.primaryAccent, size: 22),
                                               ),
                                               const SizedBox(width: 12),
                                               Expanded(
@@ -344,7 +344,7 @@ class AdminDashboardView extends ConsumerWidget {
                                               color: ClassicTheme.primaryAccent.withValues(alpha: 0.15),
                                               borderRadius: BorderRadius.circular(12),
                                             ),
-                                            child: const Icon(Icons.rocket_launch_rounded, color: ClassicTheme.primaryAccent, size: 28),
+                                            child: Icon(Icons.rocket_launch_rounded, color: ClassicTheme.primaryAccent, size: 28),
                                           ),
                                           const SizedBox(width: 16),
                                           Expanded(
@@ -482,7 +482,7 @@ class AdminDashboardView extends ConsumerWidget {
                                                   color: ClassicTheme.secondaryAccent.withValues(alpha: 0.12),
                                                   borderRadius: BorderRadius.circular(6),
                                                 ),
-                                                child: const Icon(Icons.history_toggle_off_rounded, size: 14, color: ClassicTheme.secondaryAccent),
+                                                child: Icon(Icons.history_toggle_off_rounded, size: 14, color: ClassicTheme.secondaryAccent),
                                               ),
                                               const SizedBox(width: 10),
                                               Expanded(

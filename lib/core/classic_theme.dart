@@ -1,6 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'accent_palettes.dart';
 import 'design_tokens.dart';
 
 /// The application theme.
@@ -34,15 +35,22 @@ class ClassicTheme {
   static const Color inputFillLight = DS.lightInputFill;
 
   // ── Brand & status ───────────────────────────────────────────────────────
-  /// The action colour. Primary buttons, selected states, focus rings.
-  static const Color primaryAccent = DS.clay;
+  /// The accent the signed-in user chose in Settings → Appearance. Set by
+  /// `accentProvider` before the theme is built; stored on this device only.
+  static AccentPalette activePalette = AccentPalette.fallback;
 
-  /// Kept for source compatibility; both now resolve to the brand pair.
-  static const Color primaryAccentCoral = DS.clayBright;
-  static const Color primaryAccentIndigo = DS.pine;
+  /// The action colour. Primary buttons, selected states, focus rings.
+  /// A getter rather than a constant so the user's chosen accent flows to
+  /// every call site without touching them.
+  static Color get primaryAccent => activePalette.primary;
+
+  /// Kept for source compatibility; both now follow the chosen accent.
+  static Color get primaryAccentCoral => activePalette.primaryBright;
+  static Color get primaryAccentIndigo => activePalette.secondary;
 
   /// Structural colour for rails, headers and resting chips.
-  static const Color secondaryAccent = DS.pine;
+  static Color get secondaryAccent => activePalette.secondary;
+  static Color get primaryAccentDim => activePalette.primaryDim;
   static const Color brandNavy = DS.darkCanvas;
 
   static const Color tintInfo = DS.tintInfo;
@@ -228,7 +236,7 @@ class ClassicTheme {
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(DS.radiusMd),
-        borderSide: const BorderSide(color: primaryAccent, width: 2),
+        borderSide: BorderSide(color: primaryAccent, width: 2),
       ),
       errorBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(DS.radiusMd),
@@ -280,7 +288,7 @@ class ClassicTheme {
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(DS.radiusMd),
-        borderSide: const BorderSide(color: primaryAccent, width: 2),
+        borderSide: BorderSide(color: primaryAccent, width: 2),
       ),
       errorBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(DS.radiusMd),
@@ -315,12 +323,16 @@ class ClassicTheme {
       brightness: brightness,
       primary: primaryAccent,
       onPrimary: Colors.white,
-      primaryContainer: dark ? DS.clayDim : const Color(0xFFFFE6DF),
-      onPrimaryContainer: dark ? Colors.white : DS.clayDim,
+      primaryContainer: dark
+          ? activePalette.primaryDim
+          : activePalette.primary.withValues(alpha: 0.14),
+      onPrimaryContainer: dark ? Colors.white : activePalette.primaryDim,
       secondary: secondaryAccent,
       onSecondary: Colors.white,
-      secondaryContainer: dark ? DS.pineDim : const Color(0xFFD9EFED),
-      onSecondaryContainer: dark ? Colors.white : DS.pineDim,
+      secondaryContainer: dark
+          ? activePalette.secondary.withValues(alpha: 0.35)
+          : activePalette.secondary.withValues(alpha: 0.14),
+      onSecondaryContainer: dark ? Colors.white : activePalette.secondary,
       tertiary: infoBlue,
       onTertiary: Colors.white,
       error: dangerRed,
@@ -475,7 +487,7 @@ class ClassicTheme {
         ),
       ),
 
-      floatingActionButtonTheme: const FloatingActionButtonThemeData(
+      floatingActionButtonTheme: FloatingActionButtonThemeData(
         backgroundColor: primaryAccent,
         foregroundColor: Colors.white,
         elevation: 2,
@@ -498,7 +510,7 @@ class ClassicTheme {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(DS.radiusMd),
-          borderSide: const BorderSide(color: primaryAccent, width: 2),
+          borderSide: BorderSide(color: primaryAccent, width: 2),
         ),
         errorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(DS.radiusMd),
@@ -585,9 +597,9 @@ class ClassicTheme {
       navigationRailTheme: NavigationRailThemeData(
         backgroundColor: surface,
         indicatorColor: primaryAccent.withValues(alpha: 0.18),
-        selectedIconTheme: const IconThemeData(color: primaryAccent, size: 24),
+        selectedIconTheme: IconThemeData(color: primaryAccent, size: 24),
         unselectedIconTheme: IconThemeData(color: txtSecondary, size: 22),
-        selectedLabelTextStyle: const TextStyle(
+        selectedLabelTextStyle: TextStyle(
             fontSize: DS.fontMicro,
             fontWeight: FontWeight.w700,
             color: primaryAccent),

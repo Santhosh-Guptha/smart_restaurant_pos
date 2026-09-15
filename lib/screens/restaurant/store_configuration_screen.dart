@@ -518,7 +518,7 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
                     color: ClassicTheme.primaryAccent.withValues(alpha: 0.12),
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(Icons.qr_code_2_rounded, color: ClassicTheme.primaryAccent, size: 20),
+                  child: Icon(Icons.qr_code_2_rounded, color: ClassicTheme.primaryAccent, size: 20),
                 ),
                 const SizedBox(width: 10),
                 Text('Add UPI VPA Account', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: context.textPrimary)),
@@ -829,7 +829,7 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
                 ),
                 child: Row(
                   children: [
-                    const Icon(Icons.info_outline_rounded, size: 16, color: ClassicTheme.primaryAccent),
+                    Icon(Icons.info_outline_rounded, size: 16, color: ClassicTheme.primaryAccent),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
@@ -974,7 +974,7 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
                       ),
                       child: Row(
                         children: [
-                          const Icon(Icons.account_balance_wallet_rounded, size: 18, color: ClassicTheme.primaryAccent),
+                          Icon(Icons.account_balance_wallet_rounded, size: 18, color: ClassicTheme.primaryAccent),
                           const SizedBox(width: 10),
                           Expanded(
                             child: Column(
@@ -1175,7 +1175,7 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
                             const SizedBox(height: 4),
                             Row(
                               children: [
-                                const Icon(Icons.nightlight_round, color: ClassicTheme.secondaryAccent, size: 16),
+                                Icon(Icons.nightlight_round, color: ClassicTheme.secondaryAccent, size: 16),
                                 const SizedBox(width: 6),
                                 Text(_openTo,
                                     style: TextStyle(color: context.textPrimary, fontSize: 14, fontWeight: FontWeight.bold)),
@@ -1238,13 +1238,13 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
                   Row(
                     children: [
                       IconButton(
-                        icon: const Icon(Icons.remove_circle_outline, color: ClassicTheme.primaryAccent, size: 20),
+                        icon: Icon(Icons.remove_circle_outline, color: ClassicTheme.primaryAccent, size: 20),
                         onPressed: _billCopies > 1 ? () => setState(() => _billCopies--) : null,
                       ),
                       Text('$_billCopies',
                           style: TextStyle(color: context.textPrimary, fontWeight: FontWeight.bold, fontSize: 15)),
                       IconButton(
-                        icon: const Icon(Icons.add_circle_outline, color: ClassicTheme.primaryAccent, size: 20),
+                        icon: Icon(Icons.add_circle_outline, color: ClassicTheme.primaryAccent, size: 20),
                         onPressed: _billCopies < 5 ? () => setState(() => _billCopies++) : null,
                       ),
                     ],
@@ -1303,7 +1303,7 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
                     MaterialPageRoute(builder: (_) => const PrinterSettingsScreen()),
                   );
                 },
-                icon: const Icon(Icons.settings_bluetooth_rounded, color: ClassicTheme.primaryAccent, size: 18),
+                icon: Icon(Icons.settings_bluetooth_rounded, color: ClassicTheme.primaryAccent, size: 18),
                 label: const Text('Pair & Test Physical ESC/POS Bluetooth & USB Printers', style: TextStyle(fontSize: 13)),
               ),
             ],
@@ -1342,7 +1342,7 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
                         hintStyle: TextStyle(color: context.textSecondary, fontSize: 12),
                         filled: true,
                         fillColor: context.canvasColor,
-                        prefixIcon: const Icon(Icons.add_box_rounded, color: ClassicTheme.primaryAccent, size: 20),
+                        prefixIcon: Icon(Icons.add_box_rounded, color: ClassicTheme.primaryAccent, size: 20),
                         border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: context.borderColor)),
                         enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: context.borderColor)),
                       ),
@@ -1381,7 +1381,7 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
                       backgroundColor: ClassicTheme.primaryAccent.withValues(alpha: 0.15),
                       radius: 10,
                       child: Text(cat.isNotEmpty ? cat[0].toUpperCase() : 'C',
-                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: ClassicTheme.primaryAccent)),
+                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: ClassicTheme.primaryAccent)),
                     ),
                     label: Text(cat, style: TextStyle(color: context.textPrimary, fontSize: 12)),
                     deleteIcon: const Icon(Icons.close_rounded, size: 16),
@@ -1465,7 +1465,7 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
         fillColor: context.canvasColor,
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: context.borderColor)),
         enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: context.borderColor)),
-        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: ClassicTheme.primaryAccent, width: 1.5)),
+        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: ClassicTheme.primaryAccent, width: 1.5)),
         contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       ),
     );

@@ -909,7 +909,7 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
                     color: ClassicTheme.primaryAccentIndigo.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: const Icon(
+                  child: Icon(
                     Icons.restaurant_rounded,
                     color: ClassicTheme.primaryAccentIndigo,
                     size: 20,
@@ -1139,7 +1139,7 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
                     ),
                     child: Row(
                       children: [
-                        const Icon(Icons.admin_panel_settings_rounded, size: 16, color: ClassicTheme.primaryAccentIndigo),
+                        Icon(Icons.admin_panel_settings_rounded, size: 16, color: ClassicTheme.primaryAccentIndigo),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
@@ -5632,7 +5632,7 @@ class _RegistrationRequestsTabState extends ConsumerState<RegistrationRequestsTa
                                           ],
                                           if (req.email.isNotEmpty)
                                             IconButton(
-                                              icon: const Icon(Icons.mail_outline_rounded, size: 18, color: ClassicTheme.secondaryAccent),
+                                              icon: Icon(Icons.mail_outline_rounded, size: 18, color: ClassicTheme.secondaryAccent),
                                               tooltip: "Email ${req.email}",
                                               onPressed: () => _sendEmail(req.email, req.clientName),
                                               padding: EdgeInsets.zero,

@@ -1657,7 +1657,7 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
                       Text('Table ${table.tableNumber}', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: context.textPrimary)),
                       if (isReservedCard) ...[
                         const SizedBox(width: 6),
-                        const Icon(Icons.bookmark_rounded, size: 16, color: ClassicTheme.secondaryAccent),
+                        Icon(Icons.bookmark_rounded, size: 16, color: ClassicTheme.secondaryAccent),
                       ],
                     ],
                   ),
@@ -1679,7 +1679,7 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
                     children: [
                       Row(
                         children: [
-                          const Icon(Icons.person_rounded, size: 12, color: ClassicTheme.secondaryAccent),
+                          Icon(Icons.person_rounded, size: 12, color: ClassicTheme.secondaryAccent),
                           const SizedBox(width: 3),
                           Expanded(
                             child: Text(
@@ -1694,7 +1694,7 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
                         const SizedBox(height: 2),
                         Row(
                           children: [
-                            const Icon(Icons.phone_rounded, size: 10, color: ClassicTheme.secondaryAccent),
+                            Icon(Icons.phone_rounded, size: 10, color: ClassicTheme.secondaryAccent),
                             const SizedBox(width: 3),
                             Text(table.reservedGuestPhone!, style: const TextStyle(fontSize: 12, color: Color(0xFF6D28D9))),
                           ],
@@ -2149,7 +2149,7 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
                   _showReserveTableDialog(table, orgId);
                 },
                 child: ListTile(
-                  leading: const CircleAvatar(
+                  leading: CircleAvatar(
                     backgroundColor: ClassicTheme.secondaryAccent,
                     child: Icon(Icons.bookmark_add_rounded, color: Colors.white, size: 20),
                   ),
@@ -2306,7 +2306,7 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
                 },
               ),
               ListTile(
-                leading: const CircleAvatar(
+                leading: CircleAvatar(
                   backgroundColor: ClassicTheme.secondaryAccent,
                   child: Icon(Icons.edit_calendar_rounded, color: Colors.white, size: 20),
                 ),
@@ -2630,7 +2630,7 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
                   color: ClassicTheme.secondaryAccent.withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: const Icon(Icons.bookmark_added_rounded, color: ClassicTheme.secondaryAccent, size: 22),
+                child: Icon(Icons.bookmark_added_rounded, color: ClassicTheme.secondaryAccent, size: 22),
               ),
               const SizedBox(width: 10),
               Expanded(

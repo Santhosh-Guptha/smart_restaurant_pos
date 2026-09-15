@@ -411,8 +411,8 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                     ),
                     onPressed: () => _showCustomizeDashboardSheet(context, ref),
-                    icon: const Icon(Icons.dashboard_customize_rounded, size: 15, color: ClassicTheme.primaryAccent),
-                    label: const Text(
+                    icon: Icon(Icons.dashboard_customize_rounded, size: 15, color: ClassicTheme.primaryAccent),
+                    label: Text(
                       'Customize',
                       style: TextStyle(
                         fontSize: 12,
@@ -519,7 +519,7 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
                                   menuMaxHeight: 380,
                                   borderRadius: BorderRadius.circular(16),
                                   dropdownColor: context.surfaceColor,
-                                  icon: const Icon(
+                                  icon: Icon(
                                     Icons.keyboard_arrow_down_rounded,
                                     color: ClassicTheme.primaryAccent,
                                     size: 24,
@@ -532,7 +532,7 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
                                           color: ClassicTheme.primaryAccent.withValues(alpha: 0.12),
                                           borderRadius: BorderRadius.circular(8),
                                         ),
-                                        child: const Icon(
+                                        child: Icon(
                                           Icons.grid_view_rounded,
                                           size: 16,
                                           color: ClassicTheme.primaryAccent,
@@ -925,8 +925,8 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
                             onPressed: () {
                               layoutNotifier.resetToDefault(allowedCardIds: allowedCards.map((c) => c.id).toList());
                             },
-                            icon: const Icon(Icons.refresh, size: 14, color: ClassicTheme.primaryAccent),
-                            label: const Text(
+                            icon: Icon(Icons.refresh, size: 14, color: ClassicTheme.primaryAccent),
+                            label: Text(
                               "Reset",
                               style: TextStyle(color: ClassicTheme.primaryAccent, fontSize: 12, fontWeight: FontWeight.bold),
                             ),
