@@ -216,9 +216,14 @@ class AuthNotifier extends StateNotifier<ShopAccount?> {
     return false;
   }
 
-  /// SaaS Login endpoint utilizing saasSessionProvider (supports username or email)
-  Future<String?> loginSaaS(String usernameOrEmail, String password, {bool rememberMe = false}) async {
-    return await _ref.read(saasSessionProvider.notifier).login(usernameOrEmail, password, rememberMe: rememberMe);
+  /// SaaS Login endpoint utilizing saasSessionProvider (supports username or email, and optional 2MFA code)
+  Future<String?> loginSaaS(String usernameOrEmail, String password, {bool rememberMe = false, String? mfaCode}) async {
+    return await _ref.read(saasSessionProvider.notifier).login(usernameOrEmail, password, rememberMe: rememberMe, mfaCode: mfaCode);
+  }
+
+  /// Resends 2-Step Verification code to Master Admin email
+  Future<Map<String, dynamic>> resendMfaCode(String email) async {
+    return await _ref.read(saasSessionProvider.notifier).resendMfaCode(email);
   }
 
   /// Logs out the current user session (SaaS & Local)

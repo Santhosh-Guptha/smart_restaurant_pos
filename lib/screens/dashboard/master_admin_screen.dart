@@ -3041,7 +3041,7 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                                                 try {
                                                   final authClient = await ClientLedgerCloudRouterService.getAuthenticatedClientIfAvailable();
                                                   http.Client clientToUse;
-                                                  String ownerEmail = 'santhoshbukka5@gmail.com';
+                                                  String ownerEmail = kAdminEmail;
                                                   if (authClient == null) {
                                                     final authRes = await ClientLedgerCloudRouterService.authorizeGoogleAccount();
                                                     if (authRes['success'] != true || authRes['client'] == null) {

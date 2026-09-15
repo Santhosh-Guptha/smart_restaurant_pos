@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:crypto/crypto.dart';
+import 'package:bcrypt/bcrypt.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:smart_restaurant_pos/core/constants.dart';
 import 'package:smart_restaurant_pos/core/rbac_permissions.dart';
@@ -293,9 +294,9 @@ void main() {
   group('7. Staff Privacy & Master Admin Isolation Tests', () {
     test('isMasterAdminEmail correctly identifies platform admin emails and rejects tenant staff', () {
       expect(isMasterAdminEmail('smartdine.platform@gmail.com'), isTrue);
-      expect(isMasterAdminEmail('santhoshbukka5@gmail.com'), isTrue);
+      expect(isMasterAdminEmail('santhoshbukka5@gmail.com'), isFalse);
       expect(isMasterAdminEmail('SMARTDINE.PLATFORM@GMAIL.COM'), isTrue);
-      expect(isMasterAdminEmail('SANTHOSHBUKKA5@GMAIL.COM'), isTrue);
+      expect(isMasterAdminEmail('SANTHOSHBUKKA5@GMAIL.COM'), isFalse);
       expect(isMasterAdminEmail('owner@mumbaicafe.com'), isFalse);
       expect(isMasterAdminEmail('waiter1@restaurant.com'), isFalse);
       expect(isMasterAdminEmail(''), isFalse);
@@ -359,6 +360,29 @@ void main() {
       expect(mergedOrder.effectiveKitchenStatus, equals('PENDING'));
       expect(mergedOrder.items.length, equals(2));
       expect(mergedOrder.items.fold<num>(0, (s, i) => s + i.qty), equals(3));
+    });
+  });
+
+  group('9. Master Admin Password Verification & 2MFA Email Security Tests', () {
+    test('Master Admin password hash verifies correctly with Santhosh@2001', () {
+      const plainPassword = 'Santhosh@2001';
+      final hash = BCrypt.hashpw(plainPassword, BCrypt.gensalt());
+
+      expect(BCrypt.checkpw(plainPassword, hash), isTrue);
+      expect(BCrypt.checkpw('wrong_password', hash), isFalse);
+      expect(BCrypt.checkpw('admin', hash), isFalse);
+    });
+
+    test('Sole platform Master Admin email is smartdine.platform@gmail.com', () {
+      expect(kAdminEmail, equals('smartdine.platform@gmail.com'));
+      expect(kAdminEmails, contains('smartdine.platform@gmail.com'));
+      expect(kAdminEmails, isNot(contains('santhoshbukka5@gmail.com')));
+      expect(kAdminEmails.length, equals(1));
+    });
+
+    test('isMasterAdminEmail correctly accepts smartdine.platform and rejects santhoshbukka5', () {
+      expect(isMasterAdminEmail('smartdine.platform@gmail.com'), isTrue);
+      expect(isMasterAdminEmail('santhoshbukka5@gmail.com'), isFalse);
     });
   });
 }

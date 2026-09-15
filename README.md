@@ -74,7 +74,7 @@ All communication between the customer table ordering web app (`smartbizz.devmon
 
 ## 👥 Master Application Admin & Dynamic Licensing
 
-The Master Application Administrator (`santhoshbukka5@gmail.com`) retains complete dynamic control over all client organizations through the built-in Master Admin Control Panel:
+The Master Application Administrator (`smartdine.platform@gmail.com`) retains complete dynamic control over all client organizations through the built-in Master Admin Control Panel:
 
 1. **Self-Service Onboarding Requests**: Prospective clients submit onboarding forms specifying desired trial duration (7, 14, 30 days), staff seat limits, branch scale, and feature requirements.
 2. **1-Click Tenant Provisioning**: Admin approves requests with customized licenses, user caps, station roles, and feature toggles.
@@ -171,5 +171,5 @@ For deep architectural specifications, user journeys, troubleshooting runbooks, 
 
 ## 📜 Operational License & Governance
 
-SmartDine POS is distributed as an enterprise hospitality software solution. All proprietary algorithms, zero-cost architecture specifications, and brand assets are managed by DevMonks Space (`smartbizz.devmonks.space`). Master Administrative Authority is retained by `smartdine.platform@gmail.com` and `santhoshbukka5@gmail.com`.
+SmartDine POS is distributed as an enterprise hospitality software solution. All proprietary algorithms, zero-cost architecture specifications, and brand assets are managed by DevMonks Space (`smartbizz.devmonks.space`). Master Administrative Authority is retained by `smartdine.platform@gmail.com`.
 

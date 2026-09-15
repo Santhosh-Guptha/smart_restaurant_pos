@@ -24,7 +24,6 @@ const String kAdminEmail = 'smartdine.platform@gmail.com'; // Primary production
 
 const List<String> kAdminEmails = [
   'smartdine.platform@gmail.com',
-  'santhoshbukka5@gmail.com',
 ];
 
 bool isMasterAdminEmail(String? email) {

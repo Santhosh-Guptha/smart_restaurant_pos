@@ -259,7 +259,7 @@ form.addEventListener('submit', async (e) => {
     form.hidden = true; $('done').hidden = false;
     $('done').scrollIntoView({ behavior: 'smooth', block: 'start' });
   } catch (err) {
-    $('formError').textContent = 'We couldn’t send that just now (' + err.message + '). Please try again, or email santhoshbukka5@gmail.com and we’ll set you up by hand.';
+    $('formError').textContent = 'We couldn’t send that just now (' + err.message + '). Please try again, or email smartdine.platform@gmail.com and we’ll set you up by hand.';
     $('formError').hidden = false;
   } finally {
     btn.disabled = false; btn.textContent = 'Send my request →';

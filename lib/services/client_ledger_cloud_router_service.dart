@@ -27,7 +27,7 @@ class GoogleAuthClient extends http.BaseClient {
 /// Routes billing, khata, and catalog data directly to the Client's Google Sheet
 /// in their personal Google Drive with zero transaction storage in Firebase.
 class ClientLedgerCloudRouterService {
-  static const String masterAdminEmail = 'santhoshbukka5@gmail.com';
+  static const String masterAdminEmail = kAdminEmail;
 
   static final GoogleSignIn _googleSignIn = GoogleSignIn(
     serverClientId: kGoogleClientId,

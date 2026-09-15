@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:mailer/mailer.dart';
 import 'package:mailer/smtp_server.dart';
+import '../core/constants.dart';
 
 class SmtpConfig {
   final String host;
@@ -244,7 +245,7 @@ class SmtpEmailService {
         <tr>
           <td style="background: #f8fafc; border-radius: 8px; padding: 10px 14px;">
             <div style="font-size: 11px; color: #475569;">
-              <strong>&#9993; Official Support:</strong> <a href="mailto:santhoshbukka5@gmail.com" style="color: #2563eb; text-decoration: none; font-weight: 600;">santhoshbukka5@gmail.com</a>
+              <strong>&#9993; Official Support:</strong> <a href="mailto:$kAdminEmail" style="color: #2563eb; text-decoration: none; font-weight: 600;">$kAdminEmail</a>
             </div>
             <div style="font-size: 10px; color: #94a3b8; margin-top: 4px;">
               This is an automated system message. For immediate assistance, reply to this email or contact support.
@@ -330,6 +331,84 @@ class SmtpEmailService {
       return {'success': true, 'message': 'OTP email delivered successfully.'};
     } catch (e) {
       debugPrint("SmtpEmailService error sending OTP: $e");
+      return {'success': false, 'error': e.toString()};
+    }
+  }
+
+  // =========================================================================
+  // 1b. TEMPLATE: MASTER ADMIN 2-STEP VERIFICATION (2MFA) OTP EMAIL
+  // =========================================================================
+  static Future<Map<String, dynamic>> sendMfaLoginOtp({
+    required String recipientEmail,
+    required String clientName,
+    required String otpCode,
+  }) async {
+    final cleanEmail = recipientEmail.trim().toLowerCase();
+    if (cleanEmail.isEmpty || !cleanEmail.contains('@')) {
+      return {'success': false, 'error': 'Invalid recipient email address.'};
+    }
+
+    try {
+      final config = await getSmtpConfig();
+      if (!config.isConfigured) return {'success': false, 'error': 'SMTP Gateway not configured.'};
+
+      final smtpServer = _buildSmtpServer(config);
+      final headerHtml = _buildHeaderHtml(
+        badgeText: "Security Challenge - 2MFA",
+        badgeBg: "#fef3c7",
+        badgeColor: "#d97706",
+        title: "SmartDine Security Center",
+        subtitle: "Platform Master Admin Authentication",
+      );
+      final footerHtml = _buildFooterHtml();
+
+      final message = Message()
+        ..from = Address(config.username, config.fromName)
+        ..recipients.add(cleanEmail)
+        ..subject = '[SmartDine Security] Master Admin 2-Step Verification Code: $otpCode'
+        ..text = 'Hello $clientName,\n\nYour 6-digit Master Admin verification code is: $otpCode\n\nThis code will expire in 10 minutes.\nIf you did not attempt to sign in, please secure your administrative credentials immediately.\n\nBest regards,\nSmartDine Platform Security'
+        ..html = '''
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { font-family: 'Segoe UI', Arial, sans-serif; background-color: #f1f5f9; margin: 0; padding: 24px; }
+    .card { max-width: 520px; margin: 0 auto; background: #ffffff; border-radius: 16px; border: 1px solid #e2e8f0; padding: 32px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }
+    .greeting { color: #334155; font-size: 15px; margin-bottom: 16px; }
+    .otp-box { text-align: center; margin: 24px 0; background: #eff6ff; border: 2px dashed #2563eb; border-radius: 12px; padding: 20px; }
+    .otp-code { font-size: 36px; font-weight: 900; letter-spacing: 8px; color: #1d4ed8; font-family: monospace; }
+    .expiry { color: #dc2626; font-size: 12px; font-weight: 600; margin-top: 8px; }
+    .note { color: #64748b; font-size: 13px; line-height: 1.5; }
+    .warning { background: #fffbeb; border: 1px solid #fef3c7; border-radius: 8px; padding: 12px; margin-top: 16px; color: #92400e; font-size: 12px; line-height: 1.4; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    $headerHtml
+    <p class="greeting">Hello <strong>$clientName</strong>,</p>
+    <p class="note">A sign-in attempt to the <strong>SmartDine Master Administration Console</strong> requires two-step verification. Please enter the following 6-digit security code to verify your identity:</p>
+    
+    <div class="otp-box">
+      <div class="otp-code">$otpCode</div>
+      <div class="expiry">&#9201; Valid for 10 minutes</div>
+    </div>
+    
+    <div class="warning">
+      <strong>&#9888; Security Alert:</strong> If you did not initiate this login attempt, someone may be attempting to access the platform. Please secure your account immediately.
+    </div>
+    
+    $footerHtml
+  </div>
+</body>
+</html>
+''';
+
+      await send(message, smtpServer).timeout(const Duration(seconds: 15));
+      debugPrint("SmtpEmailService: 2MFA login OTP sent to $cleanEmail");
+      return {'success': true, 'message': '2MFA code delivered successfully.'};
+    } catch (e) {
+      debugPrint("SmtpEmailService error sending 2MFA OTP: $e");
       return {'success': false, 'error': e.toString()};
     }
   }
@@ -560,7 +639,7 @@ class SmtpEmailService {
         $upgradeFeaturesHtml
       </ul>
       <div style="margin-top: 10px; font-size: 11.5px; color: #78350f;">
-        To unlock any of these features, add more stores or expand device limits, contact support at <a href="mailto:santhoshbukka5@gmail.com" style="color: #2563eb; font-weight: bold;">santhoshbukka5@gmail.com</a>.
+        To unlock any of these features, add more stores or expand device limits, contact support at <a href="mailto:$kAdminEmail" style="color: #2563eb; font-weight: bold;">$kAdminEmail</a>.
       </div>
     </div>
     ''' : ''}
@@ -681,7 +760,7 @@ class SmtpEmailService {
 
       final message = Message()
         ..from = Address(config.username, "SmartDine Platform Alerts")
-        ..recipients.add("santhoshbukka5@gmail.com")
+        ..recipients.add(kAdminEmail)
         ..subject = '[Priority] License Renewal Requested: $orgName ($orgId)'
         ..text = 'Hello Master Admin,\n\nClient "$orgName" (ID: $orgId) has requested a license renewal for their $planTier plan.\n\nClient Email: ${clientEmail ?? "N/A"}\nPhone: ${clientPhone ?? "N/A"}\n\nPlease sign in to the Master Admin Console to approve and extend this client\'s license.\n\nSmartDine System Alert'
         ..html = '''

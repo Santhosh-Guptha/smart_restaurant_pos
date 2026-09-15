@@ -7,15 +7,27 @@ import 'subscription_plan_service.dart';
 class DatabaseCleanupService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
-  /// Ensures that the immutable Master Admin user always exists in Firestore.
+  /// Ensures that the immutable Master Admin user always exists in Firestore with Santhosh@2001 credentials.
   /// If missing or deleted at any time, it will automatically regenerate.
   static Future<void> ensureMasterAdminUserExists() async {
     try {
-      final hashedPassword = BCrypt.hashpw('admin', BCrypt.gensalt());
+      final hashedPassword = BCrypt.hashpw('Santhosh@2001', BCrypt.gensalt());
 
-      // 1. Primary Platform Master Admin
+      // 1. Primary Platform Master Admin (smartdine.platform@gmail.com)
       final adminDoc = await _firestore.collection('users').doc('usr_master_admin').get();
-      if (!adminDoc.exists || adminDoc.data()?['role'] != 'MASTER_ADMIN' || adminDoc.data()?['username'] != 'admin') {
+      bool needsUpdate = !adminDoc.exists ||
+          adminDoc.data()?['role'] != 'MASTER_ADMIN' ||
+          adminDoc.data()?['username'] != 'admin' ||
+          adminDoc.data()?['email'] != kAdminEmail;
+
+      if (!needsUpdate) {
+        final existingHash = adminDoc.data()?['passwordHash'] as String?;
+        if (existingHash == null || !BCrypt.checkpw('Santhosh@2001', existingHash)) {
+          needsUpdate = true;
+        }
+      }
+
+      if (needsUpdate) {
         await _firestore.collection('users').doc('usr_master_admin').set({
           'id': 'usr_master_admin',
           'username': 'admin',
@@ -27,25 +39,17 @@ class DatabaseCleanupService {
           'createdAt': FieldValue.serverTimestamp(),
           'updatedAt': FieldValue.serverTimestamp(),
         }, SetOptions(merge: true));
-        debugPrint("✓ Master admin user usr_master_admin ($kAdminEmail) regenerated with username 'admin'.");
+        debugPrint("✓ Master admin user usr_master_admin ($kAdminEmail) secured with username 'admin'.");
       }
 
-      // 2. Co-Owner Master Admin (Santhosh Bukka)
-      final santhoshDoc = await _firestore.collection('users').doc('usr_master_admin_santhosh').get();
-      if (!santhoshDoc.exists || santhoshDoc.data()?['role'] != 'MASTER_ADMIN' || santhoshDoc.data()?['username'] != 'santhosh') {
-        await _firestore.collection('users').doc('usr_master_admin_santhosh').set({
-          'id': 'usr_master_admin_santhosh',
-          'username': 'santhosh',
-          'email': 'santhoshbukka5@gmail.com',
-          'fullName': 'Santhosh Bukka',
-          'role': 'MASTER_ADMIN',
-          'organizationId': 'SYSTEM_ADMIN',
-          'passwordHash': hashedPassword,
-          'createdAt': FieldValue.serverTimestamp(),
-          'updatedAt': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
-        debugPrint("✓ Master admin user usr_master_admin_santhosh (santhoshbukka5@gmail.com) regenerated with username 'santhosh'.");
-      }
+      // 2. Remove legacy co-admin account if it exists
+      try {
+        final santhoshDoc = await _firestore.collection('users').doc('usr_master_admin_santhosh').get();
+        if (santhoshDoc.exists) {
+          await _firestore.collection('users').doc('usr_master_admin_santhosh').delete();
+          debugPrint("✓ Legacy account usr_master_admin_santhosh permanently purged.");
+        }
+      } catch (_) {}
     } catch (e) {
       debugPrint("Error ensuring master admin user: $e");
     }

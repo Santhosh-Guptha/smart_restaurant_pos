@@ -14,6 +14,7 @@ import '../core/rbac_permissions.dart';
 import '../core/constants.dart';
 import '../services/firebase_connection_service.dart';
 import '../services/client_ledger_cloud_router_service.dart';
+import '../services/otp_verification_service.dart';
 import 'restaurant_auth_provider.dart';
 
 class SaasSessionState {
@@ -374,7 +375,7 @@ class SaasSessionNotifier extends StateNotifier<SaasSessionState> {
   }
 
   /// Custom Username or Email & Password Authentication against Master Control Plane Firestore
-  Future<String?> login(String usernameOrEmail, String password, {bool rememberMe = false}) async {
+  Future<String?> login(String usernameOrEmail, String password, {bool rememberMe = false, String? mfaCode}) async {
     final conn = _ref.read(firebaseConnectionServiceProvider);
     final firestore = conn.masterFirestore;
 
@@ -466,6 +467,37 @@ class SaasSessionNotifier extends StateNotifier<SaasSessionState> {
       final franchiseId = userData['franchiseId'];
       final userEmail = (userData['email'] as String?)?.trim().toLowerCase() ?? input;
       final username = (userData['username'] as String?)?.trim().toLowerCase() ?? input;
+
+      // Two-Factor Authentication (2MFA) challenge for Master Admin
+      final bool isMasterAdmin = role == 'MASTER_ADMIN' ||
+          isMasterAdminEmail(userEmail) ||
+          orgId == 'SYSTEM_ADMIN' ||
+          userId == 'usr_master_admin';
+
+      if (isMasterAdmin) {
+        final targetMfaEmail = (userEmail.isNotEmpty && userEmail.contains('@'))
+            ? userEmail
+            : kAdminEmail;
+
+        if (mfaCode == null || mfaCode.trim().isEmpty) {
+          final otpRes = await OtpVerificationService.sendMfaLoginOtp(
+            email: targetMfaEmail,
+            clientName: userData['fullName'] ?? 'SmartDine Platform Admin',
+          );
+          if (otpRes['success'] != true) {
+            return "Failed to send 2-step verification code: ${otpRes['message'] ?? 'Please try again'}";
+          }
+          return 'MFA_REQUIRED:$targetMfaEmail';
+        } else {
+          final verifyRes = await OtpVerificationService.verifyEmailOtp(
+            email: targetMfaEmail,
+            enteredOtp: mfaCode.trim(),
+          );
+          if (verifyRes['success'] != true) {
+            return verifyRes['message'] ?? 'Invalid or expired 2-step verification code.';
+          }
+        }
+      }
 
       if (role != 'OWNER' && role != 'CLIENT' && role != 'MASTER_ADMIN' && (franchiseId == null || franchiseId.toString().trim().isEmpty)) {
         // Allow unassigned outlet only if organization has default
@@ -746,6 +778,18 @@ class SaasSessionNotifier extends StateNotifier<SaasSessionState> {
       }
       return "Login failed: ${e.toString()}";
     }
+  }
+
+  /// Resends 2-Step Verification code to the Master Admin email
+  Future<Map<String, dynamic>> resendMfaCode(String email) async {
+    final cleanEmail = email.trim().toLowerCase();
+    final targetEmail = (cleanEmail.isNotEmpty && cleanEmail.contains('@'))
+        ? cleanEmail
+        : kAdminEmail;
+    return await OtpVerificationService.sendMfaLoginOtp(
+      email: targetEmail,
+      clientName: 'SmartDine Platform Admin',
+    );
   }
 
   /// Attempts offline verification of credentials stored locally.

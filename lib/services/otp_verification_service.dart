@@ -2,6 +2,7 @@ import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'smtp_email_service.dart';
+import 'apps_script_backend_service.dart';
 
 class OtpVerificationService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -11,6 +12,7 @@ class OtpVerificationService {
   static Future<Map<String, dynamic>> sendEmailOtp({
     required String email,
     required String clientName,
+    bool isMfa = false,
   }) async {
     final cleanEmail = email.trim().toLowerCase();
     if (cleanEmail.isEmpty || !cleanEmail.contains('@')) {
@@ -64,11 +66,17 @@ class OtpVerificationService {
 
       // 1. Try sending via SMTP Mailer
       try {
-        final smtpRes = await SmtpEmailService.sendOtpEmail(
-          recipientEmail: cleanEmail,
-          clientName: clientName,
-          otpCode: otpCode,
-        );
+        final smtpRes = isMfa
+            ? await SmtpEmailService.sendMfaLoginOtp(
+                recipientEmail: cleanEmail,
+                clientName: clientName,
+                otpCode: otpCode,
+              )
+            : await SmtpEmailService.sendOtpEmail(
+                recipientEmail: cleanEmail,
+                clientName: clientName,
+                otpCode: otpCode,
+              );
         if (smtpRes['success'] == true) {
           emailDelivered = true;
         } else {
@@ -76,6 +84,23 @@ class OtpVerificationService {
         }
       } catch (e) {
         debugPrint("SMTP dispatch error: $e");
+      }
+
+      // 2. Fallback to Google Apps Script Webhook
+      if (!emailDelivered) {
+        try {
+          final appsScriptRes = await AppsScriptBackendService.sendOtpEmail(
+            email: cleanEmail,
+            clientName: clientName,
+            otpCode: otpCode,
+          );
+          if (appsScriptRes) {
+            emailDelivered = true;
+            debugPrint("OTP verification email delivered via Apps Script Webhook fallback.");
+          }
+        } catch (e) {
+          debugPrint("Apps Script Webhook OTP dispatch note: $e");
+        }
       }
 
       if (emailDelivered) {
@@ -149,5 +174,17 @@ class OtpVerificationService {
     } catch (_) {
       return false;
     }
+  }
+
+  /// Dispatches 2-Step Verification code for Master Admin login
+  static Future<Map<String, dynamic>> sendMfaLoginOtp({
+    required String email,
+    required String clientName,
+  }) async {
+    return await sendEmailOtp(
+      email: email,
+      clientName: clientName,
+      isMfa: true,
+    );
   }
 }
