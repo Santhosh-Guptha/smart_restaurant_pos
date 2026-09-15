@@ -28,6 +28,8 @@ import '../../utils/thermal_receipt_generator.dart';
 import '../../services/restaurant_sheets_service.dart';
 import '../../services/client_ledger_cloud_router_service.dart';
 import '../../providers/restaurant_auth_provider.dart';
+import '../../core/entitlements.dart';
+import '../../core/feature_route_guard.dart';
 
 class TableManagementScreen extends ConsumerStatefulWidget {
   final int initialTabIndex;
@@ -37,7 +39,8 @@ class TableManagementScreen extends ConsumerStatefulWidget {
   ConsumerState<TableManagementScreen> createState() => _TableManagementScreenState();
 }
 
-class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
+class _TableManagementScreenState extends ConsumerState<TableManagementScreen>
+    with FeatureRouteGuard<TableManagementScreen> {
   String _selectedSection = 'ALL';
   bool _isSyncingOrders = false;
 
@@ -66,8 +69,10 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
   @override
   void initState() {
     super.initState();
+    // No floor plan in the plan: pop before loading anything.
+    guardFeature(FeatureKeys.tableManagement);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _initData();
+      if (mounted) _initData();
     });
   }
 
@@ -99,10 +104,9 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen> {
     // 2. Load cached KOT orders from Hive
     _loadCachedOrdersFromHive(orgId);
 
-    final isPureOffline = saasSession.currentLicense?.isPureOffline == true;
-
-    // 3. Initial sync from Google Sheet (only when not pure offline)
-    if (!isPureOffline) {
+    // 3. Initial sync from Google Sheet — only when the cloud ledger is on.
+    //    The floor still renders from local state without it.
+    if (featureOn(FeatureKeys.cloudSync)) {
       _syncOrdersFromGoogleSheet(orgId);
 
       // 4. Periodic background polling from Google Sheet every 5 seconds

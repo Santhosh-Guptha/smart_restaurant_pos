@@ -1,4 +1,5 @@
 import 'dart:async';
+import '../core/cloud_gate.dart';
 import 'dart:math' as math;
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/foundation.dart';
@@ -211,6 +212,9 @@ class Outbox {
 
   /// Drains the pending outbox operations sequentially with per-op exponential backoff (S-6, S-7, S-10)
   static Future<void> drain({String? spreadsheetId}) async {
+    // Nothing leaves an offline till. Items stay queued; if the store is
+    // later moved online they are sent then, in order.
+    if (CloudGate.offline) return;
     if (_isDraining) return;
     _isDraining = true;
 

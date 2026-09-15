@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../core/cloud_gate.dart';
 import '../core/entitlements.dart';
 import 'saas_session_provider.dart';
 
@@ -14,13 +15,18 @@ final entitlementsProvider = Provider<Entitlements>((ref) {
   final role = (session.currentUser?.role ?? '').toUpperCase();
   final isPlatformAdmin = role == 'MASTER_ADMIN';
 
-  return Entitlements.fromLicense(
+  final resolved = Entitlements.fromLicense(
     session.currentLicense,
     isMasterAdmin: isPlatformAdmin,
     // Offline is a property of the organisation's storage mode, not a
     // feature flag. The legacy flag is still honoured inside fromLicense.
     storageMode: session.currentOrganization?.storageMode,
   );
+
+  // The one place the network switch is set. Everything that talks to the
+  // cloud consults CloudGate first, so an offline tenant makes no requests.
+  CloudGate.setOffline(resolved.isPureOffline && !isPlatformAdmin);
+  return resolved;
 });
 
 /// Convenience for a single key, so a widget can watch just the one feature it

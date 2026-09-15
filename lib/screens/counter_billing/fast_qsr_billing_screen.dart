@@ -23,6 +23,8 @@ import '../../widgets/digital_pos_bill_dialog.dart';
 import '../../billing/bill_calculator.dart';
 import '../../sync/outbox.dart';
 import '../../sync/local_store.dart';
+import '../../core/entitlements.dart';
+import '../../providers/entitlements_provider.dart';
 
 class FastQsrBillingScreen extends ConsumerStatefulWidget {
   final String? initialTableNumber;
@@ -85,9 +87,23 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
   }
 
   @override
+  /// Running tabs (pay later, append rounds, Pending Bills) are an add-on.
+  /// Captured once at start so the tab bar and its controller agree for the
+  /// life of the screen.
+  late final bool _hasRunningTabs;
+  late final bool _hasTablePicker;
+  late final bool _hasEmailReceipts;
+  late final bool _hasDayEnd;
+
+  @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    final ent = ref.read(entitlementsProvider);
+    _hasRunningTabs = ent.isEnabled(FeatureKeys.dineInBilling);
+    _hasTablePicker = ent.isEnabled(FeatureKeys.tableManagement);
+    _hasEmailReceipts = ent.isEnabled(FeatureKeys.emailReceipts);
+    _hasDayEnd = ent.isEnabled(FeatureKeys.dayEndReports);
+    _tabController = TabController(length: _hasRunningTabs ? 2 : 1, vsync: this);
     _tabController.addListener(() {
       if (mounted) {
         if (_tabController.index == 1) {
@@ -151,11 +167,17 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
       }
     } catch (_) {}
 
-    // 3. Periodic cloud background sync with concurrency guard
-    _pendingPollTimer = Timer.periodic(const Duration(seconds: 4), (_) {
-      _fetchPendingOrders();
-    });
-    _fetchPendingOrders(); // Initial fetch
+    // 3. Periodic cloud background sync with concurrency guard. Pending bills
+    //    are a running-tabs feature and the poll is a cloud call: neither the
+    //    timer nor the initial fetch exists without both switched on.
+    final ent = ref.read(entitlementsProvider);
+    if (ent.isEnabled(FeatureKeys.dineInBilling) &&
+        ent.isEnabled(FeatureKeys.cloudSync)) {
+      _pendingPollTimer = Timer.periodic(const Duration(seconds: 4), (_) {
+        _fetchPendingOrders();
+      });
+      _fetchPendingOrders(); // Initial fetch
+    }
   }
 
   void _loadStoreConfig() {
@@ -570,7 +592,15 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                         onTap: () {
                           Navigator.pop(ctx);
                           setState(() => _orderType = 'Dine-In');
-                          _showTableSelectionModal();
+                          if (_hasTablePicker) {
+                            _showTableSelectionModal();
+                          } else {
+                            // No floor plan in this plan: the order is still
+                            // dine-in (packaging and tax treatment follow), it
+                            // just isn't tied to a table.
+                            setState(() => _selectedTable = 'Dine-in');
+                            _showPaymentChoiceModal(isDineIn: true);
+                          }
                         },
                         borderRadius: BorderRadius.circular(16),
                         child: Container(
@@ -889,7 +919,9 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
     final box = Hive.isBoxOpen('restaurant_config_box') ? Hive.box('restaurant_config_box') : null;
     final defaultPolicy = box?.get('dine_in_payment_timing', defaultValue: 'ASK_AT_CHECKOUT');
 
-    if (!isDineIn || defaultPolicy == 'PAY_NOW') {
+    // Without running tabs every bill is settled now, whatever the store's
+    // dine-in policy says: there is no open tab to settle later.
+    if (!isDineIn || defaultPolicy == 'PAY_NOW' || !_hasRunningTabs) {
       _showPaymentTenderModal(isDineIn: isDineIn, existingOrderToAppend: existingOrderToAppend);
       return;
     }
@@ -1064,19 +1096,21 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                   style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: ClassicTheme.primaryAccent),
                 ),
                 const SizedBox(height: 12),
-                TextField(
-                  controller: _customerEmailCtrl,
-                  keyboardType: TextInputType.emailAddress,
-                  style: TextStyle(fontSize: 12.5, color: context.textPrimary),
-                  decoration: InputDecoration(
-                    prefixIcon: const Icon(Icons.email_outlined, size: 18, color: ClassicTheme.infoBlue),
-                    hintText: 'Customer email for invoice (optional)',
-                    isDense: true,
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                if (_hasEmailReceipts) ...[
+                  TextField(
+                    controller: _customerEmailCtrl,
+                    keyboardType: TextInputType.emailAddress,
+                    style: TextStyle(fontSize: 12.5, color: context.textPrimary),
+                    decoration: InputDecoration(
+                      prefixIcon: const Icon(Icons.email_outlined, size: 18, color: ClassicTheme.infoBlue),
+                      hintText: 'Customer email for invoice (optional)',
+                      isDense: true,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
                   ),
-                ),
-                const SizedBox(height: 14),
+                  const SizedBox(height: 14),
+                ],
 
                 Row(
                   children: [
@@ -3466,21 +3500,23 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                         const SizedBox(height: 16),
                       ],
 
-                      // Customer Email for POS Bill
-                      TextField(
-                        controller: emailCtrl,
-                        keyboardType: TextInputType.emailAddress,
-                        style: TextStyle(fontSize: 13, color: context.textPrimary),
-                        decoration: InputDecoration(
-                          prefixIcon: const Icon(Icons.email_outlined, size: 18, color: ClassicTheme.infoBlue),
-                          labelText: 'Customer Email for POS Bill (Optional)',
-                          labelStyle: TextStyle(fontSize: 12, color: context.textSecondary),
-                          isDense: true,
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                      // Customer Email for POS Bill — an online add-on
+                      if (_hasEmailReceipts) ...[
+                        TextField(
+                          controller: emailCtrl,
+                          keyboardType: TextInputType.emailAddress,
+                          style: TextStyle(fontSize: 13, color: context.textPrimary),
+                          decoration: InputDecoration(
+                            prefixIcon: const Icon(Icons.email_outlined, size: 18, color: ClassicTheme.infoBlue),
+                            labelText: 'Customer Email for POS Bill (Optional)',
+                            labelStyle: TextStyle(fontSize: 12, color: context.textSecondary),
+                            isDense: true,
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 16),
+                        const SizedBox(height: 16),
+                      ],
 
                       // Confirm & Mark Done Button
                       SizedBox(
@@ -4287,11 +4323,12 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
             ),
             actions: [
               if (_tabController.index == 0) ...[
-                IconButton(
-                  icon: const Icon(Icons.assessment_outlined, color: ClassicTheme.warningAmber),
-                  tooltip: 'Shift Close (Z-Report)',
-                  onPressed: _showShiftCloseDialog,
-                ),
+                if (_hasDayEnd)
+                  IconButton(
+                    icon: const Icon(Icons.assessment_outlined, color: ClassicTheme.warningAmber),
+                    tooltip: 'Shift Close (Z-Report)',
+                    onPressed: _showShiftCloseDialog,
+                  ),
                 // Order Type Pill (Dine-In or Takeaway indicator)
                 Container(
                   margin: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
@@ -4368,30 +4405,33 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                     ],
                   ),
                 ),
-                Tab(
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.pending_actions_rounded, size: 18),
-                      const SizedBox(width: 6),
-                      const Text('Pending Bills'),
-                      if (pendingOrders.isNotEmpty) ...[
+                // Running tabs are an add-on; without them the till is a
+                // single-tab screen and the controller has length 1.
+                if (_hasRunningTabs)
+                  Tab(
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.pending_actions_rounded, size: 18),
                         const SizedBox(width: 6),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFE11D48),
-                            borderRadius: BorderRadius.circular(10),
+                        const Text('Pending Bills'),
+                        if (pendingOrders.isNotEmpty) ...[
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                            decoration: BoxDecoration(
+                              color: ClassicTheme.dangerRed,
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Text(
+                              '${pendingOrders.length}',
+                              style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                            ),
                           ),
-                          child: Text(
-                            '${pendingOrders.length}',
-                            style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
-                          ),
-                        ),
+                        ],
                       ],
-                    ],
+                    ),
                   ),
-                ),
               ],
             ),
           ),
@@ -4920,8 +4960,8 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                 ],
               ),
 
-              // Tab 1: Pending Bills Tab
-              _buildPendingBillsTab(pendingOrders, orgId),
+              // Tab 1: Pending Bills — only with running tabs
+              if (_hasRunningTabs) _buildPendingBillsTab(pendingOrders, orgId),
             ],
           ),
         );

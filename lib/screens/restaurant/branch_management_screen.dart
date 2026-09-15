@@ -11,6 +11,8 @@ import '../../core/saas_models.dart';
 import '../../providers/saas_session_provider.dart';
 import '../../services/table_qr_pdf_service.dart';
 import '../../services/ordering_platform_config_service.dart';
+import '../../core/entitlements.dart';
+import '../../core/feature_route_guard.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class BranchManagementScreen extends ConsumerStatefulWidget {
@@ -22,8 +24,15 @@ class BranchManagementScreen extends ConsumerStatefulWidget {
 }
 
 class _BranchManagementScreenState
-    extends ConsumerState<BranchManagementScreen> {
+    extends ConsumerState<BranchManagementScreen>
+    with FeatureRouteGuard<BranchManagementScreen> {
   bool _isExportingPdf = false;
+
+  @override
+  void initState() {
+    super.initState();
+    guardFeature(FeatureKeys.multiOutlet);
+  }
 
   void _showAddBranchDialog({
     required BuildContext context,

@@ -16,6 +16,8 @@ import '../../services/apps_script_backend_service.dart';
 import '../../sync/local_store.dart';
 import '../../sync/outbox.dart';
 import '../../core/classic_theme.dart';
+import '../../core/entitlements.dart';
+import '../../core/feature_route_guard.dart';
 
 class KitchenDisplayScreen extends ConsumerStatefulWidget {
   const KitchenDisplayScreen({super.key});
@@ -24,7 +26,8 @@ class KitchenDisplayScreen extends ConsumerStatefulWidget {
   ConsumerState<KitchenDisplayScreen> createState() => _KitchenDisplayScreenState();
 }
 
-class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
+class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen>
+    with FeatureRouteGuard<KitchenDisplayScreen> {
   String _selectedFilter = 'PENDING'; // New Received first by default!
   String _selectedStation = 'ALL';
   int _currentStageIndex = 0;
@@ -60,6 +63,9 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
   @override
   void initState() {
     super.initState();
+    // A kitchen screen with the kitchen display switched off pops straight
+    // back. Nothing below starts on a screen that is leaving.
+    guardFeature(FeatureKeys.kdsEnabled);
     _pageController = PageController(initialPage: 0);
     _loadLiveOrders();
     _loadTerminalKeys();
@@ -75,11 +81,13 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen> {
     _tickerTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       _clockNotifier.value = DateTime.now();
     });
-    // Live synchronization poll for incoming table & POS orders
+    // Live synchronization poll for incoming table & POS orders. Local Hive
+    // is watched above; the cloud poll only exists when the cloud does.
+    final cloudOn = featureOn(FeatureKeys.cloudSync);
     _pollTimer = Timer.periodic(const Duration(seconds: 3), (_) {
       if (mounted) {
         _loadLiveOrders();
-        _pollWebhookOrders();
+        if (cloudOn) _pollWebhookOrders();
       }
     });
   }

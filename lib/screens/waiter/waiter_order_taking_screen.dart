@@ -21,6 +21,8 @@ import 'package:esc_pos_utils_plus/esc_pos_utils_plus.dart';
 import 'package:print_bluetooth_thermal/print_bluetooth_thermal.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import '../../core/classic_theme.dart';
+import '../../core/entitlements.dart';
+import '../../core/feature_route_guard.dart';
 
 class WaiterOrderTakingScreen extends ConsumerStatefulWidget {
   final RestaurantTable table;
@@ -36,7 +38,8 @@ class WaiterOrderTakingScreen extends ConsumerStatefulWidget {
   ConsumerState<WaiterOrderTakingScreen> createState() => _WaiterOrderTakingScreenState();
 }
 
-class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScreen> {
+class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScreen>
+    with FeatureRouteGuard<WaiterOrderTakingScreen> {
   // Menu items loaded dynamically from Hive
   List<Map<String, dynamic>> _menuItems = [];
   bool _isLoadingMenu = true;
@@ -175,6 +178,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
   @override
   void initState() {
     super.initState();
+    guardFeature(FeatureKeys.waiterOrdering);
     if (widget.existingOrder != null) {
       _tableOrders = [widget.existingOrder!];
     }

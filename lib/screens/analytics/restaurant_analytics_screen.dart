@@ -9,6 +9,8 @@ import '../../core/classic_theme.dart';
 import '../../core/restaurant_models.dart';
 import '../../providers/saas_session_provider.dart';
 import '../../sync/local_store.dart';
+import '../../core/entitlements.dart';
+import '../../core/feature_route_guard.dart';
 
 enum StoreScopeMode { all, individual, selected }
 
@@ -21,7 +23,8 @@ class RestaurantAnalyticsScreen extends ConsumerStatefulWidget {
 }
 
 class _RestaurantAnalyticsScreenState
-    extends ConsumerState<RestaurantAnalyticsScreen> {
+    extends ConsumerState<RestaurantAnalyticsScreen>
+    with FeatureRouteGuard<RestaurantAnalyticsScreen> {
   String _selectedPeriod = 'Today'; // 'Today', 'Yesterday', 'Last 7 Days', 'This Month'
   int? _selectedHour;
 
@@ -49,6 +52,9 @@ class _RestaurantAnalyticsScreenState
   @override
   void initState() {
     super.initState();
+    // Analytics reads the cloud; an offline or unlicensed store never gets
+    // here, and never starts the refresh timer below.
+    guardFeature(FeatureKeys.analytics);
     _initTenantOutlets();
 
     // Live periodic refresh every 10 seconds

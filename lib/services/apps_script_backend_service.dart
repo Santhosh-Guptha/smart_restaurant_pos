@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:uuid/uuid.dart';
+import '../core/cloud_gate.dart';
 
 /// Service that interacts with the Zero-Cost Google Apps Script Webhook
 /// for automated Multi-Tenant Organization, Outlet, and Spreadsheet management.
@@ -1206,6 +1207,9 @@ class AppsScriptBackendService {
   }
 
   static Future<Map<String, dynamic>?> _postToWebhook(Map<String, dynamic> payload) async {
+    // An offline tenant makes no requests at all. Same shape as a failed
+    // call, so every existing caller handles it without change.
+    if (CloudGate.offline) return CloudGate.offlineResponse();
     try {
       final url = getWebhookUrl();
       if (!_isValidUrl(url)) return null;
