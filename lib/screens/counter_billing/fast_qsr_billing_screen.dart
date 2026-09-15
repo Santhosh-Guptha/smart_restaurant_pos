@@ -86,7 +86,6 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
     return defaultVal;
   }
 
-  @override
   /// Running tabs (pay later, append rounds, Pending Bills) are an add-on.
   /// Captured once at start so the tab bar and its controller agree for the
   /// life of the screen.
@@ -170,7 +169,6 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
     // 3. Periodic cloud background sync with concurrency guard. Pending bills
     //    are a running-tabs feature and the poll is a cloud call: neither the
     //    timer nor the initial fetch exists without both switched on.
-    final ent = ref.read(entitlementsProvider);
     if (ent.isEnabled(FeatureKeys.dineInBilling) &&
         ent.isEnabled(FeatureKeys.cloudSync)) {
       _pendingPollTimer = Timer.periodic(const Duration(seconds: 4), (_) {
