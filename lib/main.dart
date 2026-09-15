@@ -181,6 +181,22 @@ class SmartDineApp extends ConsumerWidget {
           scaffoldMessengerKey: scaffoldMessengerKey,
           title: 'SmartDine Update',
           theme: AppTheme.lightTheme,
+          darkTheme: AppTheme.darkTheme,
+        builder: (context, child) {
+          // One guard for the whole app: clamp the system text scale.
+          //
+          // A server who has set their phone's font to 1.8x would otherwise blow
+          // every fixed-height row in the till — line items overlap, totals slide
+          // under buttons, and the bill becomes unreadable at exactly the moment
+          // it matters. Clamping to 1.3 keeps the app legible for people who need
+          // larger type without destroying the layout for the person billing.
+          final scaler = MediaQuery.textScalerOf(context)
+              .clamp(minScaleFactor: 0.85, maxScaleFactor: 1.3);
+          return MediaQuery(
+            data: MediaQuery.of(context).copyWith(textScaler: scaler),
+            child: child ?? const SizedBox.shrink(),
+          );
+        },
           home: AppUpdateRequiredScreen(latestVersion: latestVer, apkUrl: apkUrl),
           debugShowCheckedModeBanner: false,
         );
@@ -220,6 +236,21 @@ class SmartDineApp extends ConsumerWidget {
       theme: AppTheme.lightTheme,
       darkTheme: AppTheme.darkTheme,
       themeMode: themeMode,
+      builder: (context, child) {
+        // One guard for the whole app: clamp the system text scale.
+        //
+        // A server who has set their phone's font to 1.8x would otherwise blow
+        // every fixed-height row in the till — line items overlap, totals slide
+        // under buttons, and the bill becomes unreadable at exactly the moment
+        // it matters. Clamping to 1.3 keeps the app legible for people who need
+        // larger type without destroying the layout for the person billing.
+        final scaler = MediaQuery.textScalerOf(context)
+            .clamp(minScaleFactor: 0.85, maxScaleFactor: 1.3);
+        return MediaQuery(
+          data: MediaQuery.of(context).copyWith(textScaler: scaler),
+          child: child ?? const SizedBox.shrink(),
+        );
+      },
       home: homeScreen,
       debugShowCheckedModeBanner: false,
     );

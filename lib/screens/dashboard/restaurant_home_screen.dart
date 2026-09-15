@@ -16,6 +16,7 @@ import '../../services/restaurant_sheets_service.dart';
 import '../../services/client_ledger_cloud_router_service.dart';
 import '../../services/apps_script_backend_service.dart';
 import '../../widgets/google_sheets_setup_gate_dialog.dart';
+import '../../widgets/feature_gated_widget.dart';
 
 import '../counter_billing/fast_qsr_billing_screen.dart';
 import '../restaurant/table_management_screen.dart';
@@ -428,8 +429,6 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
               Consumer(
                 builder: (context, ref, _) {
                   final layoutState = ref.watch(dashboardLayoutProvider);
-                  final saasSession = ref.watch(saasSessionProvider);
-
                   final entitlements = ref.watch(entitlementsProvider);
                   final allowedCards = kAllDashboardCards.where((c) {
                     return c.isAllowedFor(

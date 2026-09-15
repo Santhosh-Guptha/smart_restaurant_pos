@@ -43,8 +43,11 @@
   :root[data-theme="light"] { --bg:#f1ebe0; --bg-2:#faf6ee; --bg-3:#e6dfd2; --fg:#16161c; --fg-2:#5a5a66; --rule:#d9d1c2; }
 
   *{box-sizing:border-box}
-  html{scroll-behavior:smooth}
-  body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--body);font-size:17px;line-height:1.6;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+  /* `clip` rather than `hidden`: it stops the decorative glow and the
+     ticker from widening the page on a phone without turning <html>
+     into a scroll container, which would break the sticky nav. */
+  html{scroll-behavior:smooth;overflow-x:clip}
+  body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--body);font-size:17px;line-height:1.6;-webkit-font-smoothing:antialiased;overflow-x:clip}
   a{color:inherit;text-decoration:none}
   .wrap{max-width:1180px;margin:0 auto;padding:0 24px}
   h1,h2,h3{font-family:var(--display);font-weight:600;letter-spacing:-.02em;text-wrap:balance;margin:0}
@@ -237,36 +240,59 @@
     .tk1,.tk2,.tk3{opacity:1}
   }
 
-  /* ── pricing section ─────────────────────────────────── */
-  .pricing{padding:100px 0}
-  .pricing-head{text-align:center;max-width:680px;margin:0 auto 56px}
-  .pricing-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:24px;align-items:stretch}
-  @media(max-width:960px){.pricing-grid{grid-template-columns:1fr;max-width:500px;margin:0 auto}}
-  .plan-card{background:var(--bg-2);border:1px solid var(--rule);border-radius:22px;padding:32px 26px;display:flex;flex-direction:column;justify-content:space-between;position:relative;transition:transform .3s cubic-bezier(.2,.8,.2,1),border-color .3s}
-  .plan-card:hover{transform:translateY(-4px);border-color:color-mix(in srgb,var(--lamp) 50%,transparent)}
-  .plan-card.featured{background:linear-gradient(175deg,color-mix(in srgb,var(--lamp) 9%,var(--bg-2)),var(--bg-2));border:2px solid color-mix(in srgb,var(--lamp) 60%,transparent);box-shadow:0 24px 48px -20px color-mix(in srgb,var(--lamp) 25%,transparent)}
-  .plan-badge{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--lamp);background:color-mix(in srgb,var(--lamp) 14%,transparent);border:1px solid color-mix(in srgb,var(--lamp) 30%,transparent);padding:4px 12px;border-radius:999px;margin-bottom:14px}
-  .plan-title{font-family:var(--display);font-size:26px;font-weight:600;margin:0 0 8px;color:var(--fg)}
-  .plan-price{display:flex;align-items:baseline;gap:6px;margin:16px 0 10px}
-  .plan-price .curr{font-family:var(--display);font-size:24px;color:var(--fg)}
-  .plan-price .amount{font-family:var(--display);font-size:46px;font-weight:700;line-height:1;color:var(--fg)}
-  .plan-price .period{font-size:14px;color:var(--fg-2)}
-  .plan-desc{font-size:14px;color:var(--fg-2);min-height:42px;margin-bottom:20px;line-height:1.5}
-  .plan-features{list-style:none;margin:0 0 28px;padding:0;display:grid;gap:11px;font-size:13.5px;color:var(--fg-2);border-top:1px solid var(--rule);padding-top:18px}
-  .plan-features li{display:flex;align-items:flex-start;gap:10px;line-height:1.4}
-  .plan-features li .chk{color:var(--mint);font-weight:700;flex-shrink:0}
-  .plan-cta-note{text-align:center;font-size:12px;color:var(--fg-2);margin-top:10px}
 
-  /* ── modals ─────────────────────────────────────────── */
-  .modal-overlay{position:fixed;inset:0;z-index:1000;background:rgba(8,10,15,.78);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);display:none;align-items:center;justify-content:center;padding:20px;opacity:0;transition:opacity .25s ease}
-  .modal-overlay.active{display:flex;opacity:1}
-  .modal-box{background:var(--bg-2);border:1px solid var(--rule);border-radius:24px;width:100%;max-width:620px;max-height:90vh;overflow-y:auto;padding:32px 28px;position:relative;box-shadow:0 30px 80px -20px rgba(0,0,0,.9);transform:scale(.95);transition:transform .25s cubic-bezier(.2,.8,.2,1)}
-  .modal-overlay.active .modal-box{transform:scale(1)}
-  .modal-close{position:absolute;top:18px;right:18px;width:34px;height:34px;border-radius:50%;background:var(--bg-3);border:1px solid var(--rule);color:var(--fg);cursor:pointer;display:grid;place-items:center;font-size:16px;line-height:1;transition:background .2s,color .2s}
-  .modal-close:hover{background:var(--rule);color:var(--lamp)}
-  .modal-head{margin-bottom:20px}
-  .modal-head h3{font-family:var(--display);font-size:26px;margin:0 0 6px;color:var(--fg)}
-  .modal-head p{margin:0;color:var(--fg-2);font-size:14px;line-height:1.5}
+  /* ── capabilities ────────────────────────────────────── */
+  .cap-head{text-align:center;max-width:720px;margin:0 auto 12px}
+  .cap-tabs{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin:34px 0 44px}
+  .cap-tab{font:inherit;font-size:14px;font-weight:600;color:var(--fg-2);background:var(--bg-3);border:1px solid var(--rule);border-radius:999px;padding:10px 18px;cursor:pointer;transition:color .25s,border-color .25s,background .25s,transform .25s}
+  .cap-tab:hover{transform:translateY(-2px)}
+  .cap-tab[aria-selected="true"]{color:var(--bg);background:var(--lamp);border-color:var(--lamp)}
+  .cap-panel{display:none}
+  .cap-panel.on{display:block;animation:capin .55s cubic-bezier(.2,.8,.2,1) both}
+  @keyframes capin{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:none}}
+  @media(prefers-reduced-motion:reduce){.cap-panel.on{animation:none}}
+
+  .cap-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:22px}
+  @media(max-width:880px){.cap-grid{grid-template-columns:1fr}}
+  .cap{display:grid;grid-template-columns:184px 1fr;gap:20px;align-items:center;border:1px solid var(--rule);border-radius:20px;padding:20px;background:var(--bg);perspective:1000px;transition:border-color .3s,transform .5s cubic-bezier(.2,.8,.2,1)}
+  .cap:hover{border-color:color-mix(in srgb,var(--lamp) 50%,var(--rule));transform:translateY(-4px)}
+  @media(max-width:560px){.cap{grid-template-columns:1fr;gap:16px}}
+  .cap h3{font-size:19px;margin-bottom:7px}
+  .cap p{margin:0;color:var(--fg-2);font-size:14.5px}
+  .cap .tag{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;padding:3px 9px;border-radius:999px;margin-bottom:10px}
+  .tag.core{color:var(--mint);background:color-mix(in srgb,var(--mint) 14%,transparent);border:1px solid color-mix(in srgb,var(--mint) 34%,transparent)}
+  .tag.add{color:var(--lamp);background:color-mix(in srgb,var(--lamp) 14%,transparent);border:1px solid color-mix(in srgb,var(--lamp) 34%,transparent)}
+
+  /* little screen mocks — drawn, not photographed, so they stay crisp */
+  .mock{min-height:132px;border-radius:14px;background:var(--paper);color:var(--ink);padding:11px;font-size:10.5px;line-height:1.35;overflow:hidden;box-shadow:0 18px 34px -22px rgba(0,0,0,.85);transform:rotateY(-9deg) rotateX(4deg);transform-origin:right center;transition:transform .6s cubic-bezier(.2,.8,.2,1)}
+  .cap:hover .mock{transform:none}
+  @media(max-width:560px){.mock{transform:none;height:auto;min-height:118px}}
+  .mock .mrow{display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px dashed #d8cfbe}
+  .mock .mrow:last-child{border-bottom:0}
+  .mock b{font-weight:600}
+  .mock .mt{font-family:var(--display);font-size:12.5px;font-weight:600;margin-bottom:5px;display:flex;justify-content:space-between;align-items:baseline}
+  .mock .pil{font-size:9px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:2px 7px;border-radius:999px}
+  .pil.go{background:#d7f3e5;color:#16663f}
+  .pil.wait{background:#fdeccb;color:#8a5a06}
+  .pil.hot{background:#ffe0d6;color:#a03a1c}
+  .mock .bar{height:5px;border-radius:3px;background:#e4dccc;margin:5px 0}
+  .mock .bar i{display:block;height:100%;border-radius:3px;background:var(--lamp)}
+  .mock .qr{width:46px;height:46px;border-radius:6px;background:
+      repeating-linear-gradient(90deg,#16161c 0 4px,transparent 4px 8px),
+      repeating-linear-gradient(0deg,#16161c 0 4px,transparent 4px 8px);
+      background-color:#fff;border:3px solid #16161c}
+  .mock .grid2{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+  .mock .tile{border:1px solid #ddd4c2;border-radius:7px;padding:5px 6px;font-size:9.5px}
+  .mock .tile.busy{background:#fdeccb;border-color:#efd39a}
+  .mock .tile.free{background:#e8f6ee;border-color:#bfe4d1}
+
+  .cap-note{margin-top:34px;border:1px dashed var(--rule);border-radius:18px;padding:22px 24px;display:flex;gap:16px;align-items:flex-start;background:var(--bg)}
+  .cap-note .cn-ico{font-size:22px;flex:none;line-height:1}
+  .cap-note p{margin:0;color:var(--fg-2);font-size:14.5px}
+  .cap-note strong{color:var(--fg);font-weight:600}
+
+  /* ── section band reused by the capabilities panel ───── */
+  .pricing{padding:100px 0}
   .plan-pill{background:color-mix(in srgb,var(--lamp) 10%,var(--bg-3));border:1px solid color-mix(in srgb,var(--lamp) 35%,transparent);border-radius:12px;padding:10px 14px;font-size:13.5px;color:var(--lamp);display:flex;align-items:center;justify-content:space-between;margin-bottom:18px}
   .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:13px;margin-bottom:18px}
   @media(max-width:600px){.form-grid{grid-template-columns:1fr}.modal-box{padding:24px 18px}}
@@ -299,7 +325,7 @@
       <li><a href="#features">Features</a></li>
       <li><a href="#guests">Guests</a></li>
       <li><a href="#group">Groups &amp; franchises</a></li>
-      <li><a href="#pricing">Pricing &amp; Plans</a></li>
+      <li><a href="#included">What's included</a></li>
     </ul>
     <a class="btn lamp sm" href="javascript:void(0)" onclick="openTrialModal()">Start free trial</a>
   </div>
@@ -315,7 +341,7 @@
       <p class="lede">The table orders. The kitchen sees it before the waiter has turned around. The counter settles it in two taps. <strong>One system for the whole floor</strong> — and it keeps working when the Wi‑Fi doesn't.</p>
       <div class="hero-cta">
         <a class="btn lamp" href="javascript:void(0)" onclick="openTrialModal()">Start 14-Day Free Trial →</a>
-        <a class="btn ghost" href="#pricing">View Plans &amp; Pricing</a>
+        <a class="btn ghost" href="#included">See what's included</a>
       </div>
       <p class="hero-note"><b>Free to start.</b> Runs on the phones and tablets you already own. Nothing to install in the kitchen but a screen.</p>
     </div>
@@ -354,7 +380,7 @@
     <div class="stations">
       <div class="flip rv d1" tabindex="0" role="button" aria-label="Owner station — tap to see features">
         <div class="face front"><span class="num">01</span><span class="ico">🏛️</span><h3>Owner</h3><p>Know the day before anyone tells you.</p><span class="hint">Turn over ↻</span></div>
-        <div class="face back"><h3>The owner sees</h3><ul><li>Sales, top dishes and busy hours across every outlet — live</li><li>Who did what: every discount, void and refund has a name on it</li><li>Menu, prices and staff roles set once, everywhere</li><li>Payment accounts per branch, verified before they go live</li><li>One encrypted backup you can restore anywhere</li></ul></div>
+        <div class="face back"><h3>The owner sees</h3><ul><li>Sales, top dishes and busy hours across every outlet — live</li><li>Who did what: every discount, void and refund has a name on it</li><li>Menu, prices and staff roles set once, everywhere</li><li>Each branch banks its own takings through its own UPI ID</li><li>One encrypted backup you can restore anywhere</li></ul></div>
       </div>
       <div class="flip rv d2" tabindex="0" role="button" aria-label="Counter station — tap to see features">
         <div class="face front"><span class="num">02</span><span class="ico">🧾</span><h3>Counter</h3><p>Settle a table in two taps. Even when the network drops.</p><span class="hint">Turn over ↻</span></div>
@@ -468,96 +494,345 @@
 </section>
 
 
-<!-- ═══════════════ PRICING & PLANS ═══════════════ -->
-<section class="band pricing" id="pricing">
+<!-- ═══════════════ WHAT YOU SWITCH ON ═══════════════ -->
+<section class="band pricing" id="included">
   <div class="wrap">
-    <div class="pricing-head rv">
-      <p class="kicker">Simple, transparent plans</p>
-      <h2>Fair pricing for independent venues<br>and growing chains.</h2>
-      <p class="lede" style="margin:16px auto 0">Start with an unrestricted 14-day trial on the phones and tablets you already have. Expand to custom multi-outlet operations with dedicated support.</p>
+    <div class="cap-head rv">
+      <p class="kicker">Built to fit your room</p>
+      <h2>Take the whole system,<br>or only the part you need.</h2>
+      <p class="lede" style="margin:16px auto 0">Every venue gets billing and the menu — that is the till, and it never depends on anything else. Everything past that is switched on for you when you want it, and switched off when you don't.</p>
     </div>
 
-    <div class="pricing-grid">
-      <!-- Plan 1: 14-Day Free Trial -->
-      <div class="plan-card rv d1">
-        <div>
-          <span class="plan-badge">Full Feature Trial</span>
-          <h3 class="plan-title">14-Day Free Trial</h3>
-          <p class="plan-desc">Experience every floor station with zero commitment and no credit card required.</p>
-          <div class="plan-price">
-            <span class="curr">₹</span>
-            <span class="amount">0</span>
-            <span class="period">/ 14 Days</span>
+    <div class="cap-tabs rv d1" role="tablist" aria-label="What's included">
+      <button class="cap-tab" role="tab" id="tab-core" aria-controls="panel-core" aria-selected="true" type="button">Always included</button>
+      <button class="cap-tab" role="tab" id="tab-floor" aria-controls="panel-floor" aria-selected="false" type="button">Floor &amp; kitchen</button>
+      <button class="cap-tab" role="tab" id="tab-guest" aria-controls="panel-guest" aria-selected="false" type="button">Guest ordering</button>
+      <button class="cap-tab" role="tab" id="tab-office" aria-controls="panel-office" aria-selected="false" type="button">Back office</button>
+      <button class="cap-tab" role="tab" id="tab-group" aria-controls="panel-group" aria-selected="false" type="button">More than one venue</button>
+    </div>
+
+    <!-- CORE -->
+    <div class="cap-panel on" id="panel-core" role="tabpanel" aria-labelledby="tab-core">
+      <div class="cap-grid">
+        <div class="cap">
+          <div class="mock">
+            <div class="mt"><span>Bill · Table 7</span><span class="pil go">Open</span></div>
+            <div class="mrow"><span>Ghee roast dosa × 2</span><b>240</b></div>
+            <div class="mrow"><span>Filter coffee × 3</span><b>135</b></div>
+            <div class="mrow"><span>Mysore bonda</span><b>90</b></div>
+            <div class="mrow" style="margin-top:4px"><b>Total</b><b>465</b></div>
           </div>
-          <ul class="plan-features">
-            <li><span class="chk">✓</span><span><strong>1 Counter Billing Station</strong> (Fast QSR &amp; Dine-In)</span></li>
-            <li><span class="chk">✓</span><span><strong>1 Kitchen Display (KDS)</strong> with live ticket bell</span></li>
-            <li><span class="chk">✓</span><span><strong>1 Waiter Mobile Station</strong> with course firing</span></li>
-            <li><span class="chk">✓</span><span><strong>Table QR Menus</strong> for unlimited dine-in guests</span></li>
-            <li><span class="chk">✓</span><span><strong>Google Sheets Sync</strong> in your private Drive</span></li>
-            <li><span class="chk">✓</span><span><strong>Thermal Receipt Printing</strong> (58mm/80mm ESC/POS)</span></li>
-            <li><span class="chk">✓</span><span><strong>Works Offline</strong> when broadband drops</span></li>
-          </ul>
+          <div>
+            <span class="tag core">Always included</span>
+            <h3>Billing</h3>
+            <p>Take the order, price it, split it, settle it, print it. Counter queue or table service — the same till does both.</p>
+          </div>
         </div>
-        <div>
-          <button type="button" class="btn lamp" style="width:100%;justify-content:center" onclick="openTrialModal()">Start 14-Day Free Trial →</button>
-          <p class="plan-cta-note">Instant registration · No credit card required</p>
+
+        <div class="cap">
+          <div class="mock">
+            <div class="mt"><span>Menu</span><span class="pil wait">2 sold out</span></div>
+            <div class="mrow"><span>Ghee roast dosa</span><b>120</b></div>
+            <div class="mrow"><span>Paneer butter masala</span><b>260</b></div>
+            <div class="mrow" style="opacity:.45"><span>Prawn biryani</span><b>86'd</b></div>
+            <div class="bar"><i style="width:72%"></i></div>
+          </div>
+          <div>
+            <span class="tag core">Always included</span>
+            <h3>Your menu</h3>
+            <p>Dishes, categories, prices and taxes. Sold out of something? Mark it once and it stops being offered everywhere.</p>
+          </div>
+        </div>
+
+        <div class="cap">
+          <div class="mock" style="display:flex;gap:10px;align-items:center">
+            <div style="flex:1">
+              <div class="mt"><span>Receipt</span></div>
+              <div class="mrow"><span>Subtotal</span><b>465</b></div>
+              <div class="mrow"><span>GST 5%</span><b>23</b></div>
+              <div class="mrow"><b>Paid · cash</b><b>488</b></div>
+            </div>
+          </div>
+          <div>
+            <span class="tag core">Always included</span>
+            <h3>Printing</h3>
+            <p>Thermal receipts over Bluetooth, USB or the network — 58mm and 80mm. The bill a guest walks out with looks like a bill.</p>
+          </div>
+        </div>
+
+        <div class="cap">
+          <div class="mock">
+            <div class="mt"><span>Connection</span><span class="pil hot">Offline</span></div>
+            <div class="mrow"><span>Orders held safely</span><b>14</b></div>
+            <div class="mrow"><span>Will send when back</span><b>Yes</b></div>
+            <div class="bar"><i style="width:100%;background:#5fd3a3"></i></div>
+            <div style="font-size:9.5px;color:#5a5a66;margin-top:4px">Service continues as normal.</div>
+          </div>
+          <div>
+            <span class="tag core">Always included</span>
+            <h3>Works without the internet</h3>
+            <p>The broadband dropping is not your problem. Orders and bills are kept on the device and sent the moment it's back — nothing leaves the room unrecorded.</p>
+          </div>
         </div>
       </div>
 
-      <!-- Plan 2: Growth Plan -->
-      <div class="plan-card featured rv d2">
-        <div>
-          <span class="plan-badge" style="background:color-mix(in srgb,var(--lamp) 22%,transparent)">Most Popular · Cafés &amp; Bars</span>
-          <h3 class="plan-title">Growth Plan</h3>
-          <p class="plan-desc">For busy independent venues handling high lunch &amp; dinner dining volume.</p>
-          <div class="plan-price">
-            <span class="curr">₹</span>
-            <span class="amount">999</span>
-            <span class="period">/ month</span>
+      <div class="cap-note rv">
+        <span class="cn-ico">🧾</span>
+        <p><strong>A counter-only venue can stop here.</strong> One device, no network, no cloud prompts, nothing on screen your staff will never use. It is a complete till on its own — not a crippled version of something bigger.</p>
+      </div>
+    </div>
+
+    <!-- FLOOR -->
+    <div class="cap-panel" id="panel-floor" role="tabpanel" aria-labelledby="tab-floor" hidden>
+      <div class="cap-grid">
+        <div class="cap">
+          <div class="mock">
+            <div class="mt"><span>Floor</span><span class="pil go">11 / 14 live</span></div>
+            <div class="grid2">
+              <div class="tile busy">T1 · 42 min<br>Bill asked</div>
+              <div class="tile free">T2 · free</div>
+              <div class="tile busy">T3 · 18 min</div>
+              <div class="tile free">T4 · free</div>
+            </div>
           </div>
-          <ul class="plan-features">
-            <li><span class="chk">✓</span><span><strong>Everything in Free Trial</strong>, plus:</span></li>
-            <li><span class="chk">✓</span><span><strong>Up to 5 Concurrent Stations</strong> (Billing + Waiters)</span></li>
-            <li><span class="chk">✓</span><span><strong>Multi-Station KDS</strong> (Tandoor, Grill, Bar passes)</span></li>
-            <li><span class="chk">✓</span><span><strong>Guest Table QR Ordering</strong> with UPI &amp; Cards</span></li>
-            <li><span class="chk">✓</span><span><strong>Table Status Map</strong> with reservations timeline</span></li>
-            <li><span class="chk">✓</span><span><strong>Split Billing</strong> by item, seat, or share</span></li>
-            <li><span class="chk">✓</span><span><strong>Shift Cash Tracking</strong> &amp; End-of-Day Z-Reports</span></li>
-            <li><span class="chk">✓</span><span><strong>Priority WhatsApp &amp; Phone Support</strong></span></li>
-          </ul>
+          <div>
+            <span class="tag add">Switch on</span>
+            <h3>Tables &amp; floor plan</h3>
+            <p>A map of the room that tells the truth: seated, ordering, bill requested, being cleaned. How long each table has been sitting, without asking anyone.</p>
+          </div>
         </div>
-        <div>
-          <button type="button" class="btn ghost" style="width:100%;justify-content:center;border-color:var(--lamp);color:var(--lamp);font-weight:700" onclick="openContactModal('Growth Plan (₹999/mo)')">For More Details Contact →</button>
-          <p class="plan-cta-note">Tailored floor setup &amp; hardware advice</p>
+
+        <div class="cap">
+          <div class="mock">
+            <div class="mt"><span>Kitchen · Pass</span><span class="pil hot">3 cooking</span></div>
+            <div class="mrow"><span><b>T7</b> Ghee roast × 2</span><span class="pil wait">6:20</span></div>
+            <div class="mrow"><span><b>T2</b> Paneer masala</span><span class="pil go">Ready</span></div>
+            <div class="mrow"><span><b>T9</b> Biryani × 3</span><span class="pil hot">New</span></div>
+          </div>
+          <div>
+            <span class="tag add">Switch on</span>
+            <h3>Kitchen display</h3>
+            <p>Tickets on a screen instead of paper, with a bell when a new round lands and a timer on every one. Stations for the tandoor, the grill, the bar.</p>
+          </div>
+        </div>
+
+        <div class="cap">
+          <div class="mock">
+            <div class="mt"><span>Waiter · Ravi</span><span class="pil go">T7</span></div>
+            <div class="mrow"><span>Starters</span><span class="pil go">Fired</span></div>
+            <div class="mrow"><span>Mains</span><span class="pil wait">Hold</span></div>
+            <div class="mrow"><span>Dessert</span><span style="opacity:.5">Not yet</span></div>
+          </div>
+          <div>
+            <span class="tag add">Switch on</span>
+            <h3>Waiter ordering</h3>
+            <p>Your floor staff take the order at the table on a phone. Courses fire when they say so, not all at once.</p>
+          </div>
+        </div>
+
+        <div class="cap">
+          <div class="mock">
+            <div class="mt"><span>Tonight</span><span class="pil wait">4 booked</span></div>
+            <div class="mrow"><span>7:30 · Iyer · 4</span><span class="pil go">Seated</span></div>
+            <div class="mrow"><span>8:00 · Fernandes · 2</span><span class="pil wait">Due</span></div>
+            <div class="mrow"><span>8:45 · Rao · 6</span><span style="opacity:.5">Later</span></div>
+          </div>
+          <div>
+            <span class="tag add">Switch on</span>
+            <h3>Reservations</h3>
+            <p>Bookings sit on the same floor map as the walk-ins, so a table can't be promised twice.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- GUEST -->
+    <div class="cap-panel" id="panel-guest" role="tabpanel" aria-labelledby="tab-guest" hidden>
+      <div class="cap-grid">
+        <div class="cap">
+          <div class="mock" style="display:flex;gap:11px;align-items:center">
+            <div class="qr"></div>
+            <div style="flex:1">
+              <div class="mt"><span>Table 7</span></div>
+              <div style="font-size:9.5px;color:#5a5a66">Scan to read today's menu. No app, no sign-up.</div>
+            </div>
+          </div>
+          <div>
+            <span class="tag add">Switch on</span>
+            <h3>Online menu</h3>
+            <p>A QR on the table opens your live menu on the guest's own phone. Change a price at the till and it changes there.</p>
+          </div>
+        </div>
+
+        <div class="cap">
+          <div class="mock">
+            <div class="mt"><span>Their basket</span><span class="pil go">T7</span></div>
+            <div class="mrow"><span>Ghee roast dosa × 2</span><b>240</b></div>
+            <div class="mrow"><span>Filter coffee</span><b>45</b></div>
+            <div class="mrow"><b>Send to kitchen</b><span class="pil hot">Tap</span></div>
+          </div>
+          <div>
+            <span class="tag add">Switch on</span>
+            <h3>Guests order for themselves</h3>
+            <p>They choose, they send, the ticket lands in the kitchen. Nobody waits for someone to come over with a pad.</p>
+          </div>
+        </div>
+
+        <div class="cap">
+          <div class="mock" style="display:flex;gap:11px;align-items:center">
+            <div class="qr"></div>
+            <div style="flex:1">
+              <div class="mt"><span>Pay</span><span class="pil go">Direct</span></div>
+              <div style="font-size:9.5px;color:#5a5a66">Your own UPI ID. The money goes straight to your account.</div>
+            </div>
+          </div>
+          <div>
+            <span class="tag add">Switch on</span>
+            <h3>Paying at the table</h3>
+            <p>The guest scans your UPI QR and pays you directly — we never sit in the middle of your money. Cash and card-machine payments get recorded the same way, so the drawer still matches the day.</p>
+          </div>
+        </div>
+
+        <div class="cap">
+          <div class="mock">
+            <div class="mt"><span>Takeaway</span><span class="pil wait">2 waiting</span></div>
+            <div class="mrow"><span>#418 · Pickup 7:40</span><span class="pil go">Ready</span></div>
+            <div class="mrow"><span>#419 · Pickup 7:55</span><span class="pil hot">Cooking</span></div>
+          </div>
+          <div>
+            <span class="tag add">Switch on</span>
+            <h3>Orders from a link</h3>
+            <p>Pickup and takeaway orders placed from a link you can put anywhere — your profile, a poster, a message.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- OFFICE -->
+    <div class="cap-panel" id="panel-office" role="tabpanel" aria-labelledby="tab-office" hidden>
+      <div class="cap-grid">
+        <div class="cap">
+          <div class="mock">
+            <div class="mt"><span>Close of day</span><span class="pil go">Balanced</span></div>
+            <div class="mrow"><span>Cash counted</span><b>18,400</b></div>
+            <div class="mrow"><span>UPI</span><b>41,250</b></div>
+            <div class="mrow"><span>Card machine</span><b>8,770</b></div>
+          </div>
+          <div>
+            <span class="tag add">Switch on</span>
+            <h3>Shift &amp; day-end</h3>
+            <p>Cash up at the end of the night and see the drawer agree with the day — or see exactly where it doesn't.</p>
+          </div>
+        </div>
+
+        <div class="cap">
+          <div class="mock">
+            <div class="mt"><span>Busy hours</span></div>
+            <div class="bar"><i style="width:34%"></i></div>
+            <div class="bar"><i style="width:81%"></i></div>
+            <div class="bar"><i style="width:63%"></i></div>
+            <div style="font-size:9.5px;color:#5a5a66">Thu · lunch peak 1–2pm</div>
+          </div>
+          <div>
+            <span class="tag add">Switch on</span>
+            <h3>What actually sells</h3>
+            <p>Which dishes, which hours, which staff member. Enough to decide what to cook more of and when to roster.</p>
+          </div>
+        </div>
+
+        <div class="cap">
+          <div class="mock">
+            <div class="mt"><span>Who can do what</span></div>
+            <div class="mrow"><span>Ravi · waiter</span><span class="pil go">Floor</span></div>
+            <div class="mrow"><span>Anu · manager</span><span class="pil wait">Discounts</span></div>
+            <div class="mrow"><span>Kiran · kitchen</span><span class="pil go">Pass</span></div>
+          </div>
+          <div>
+            <span class="tag add">Switch on</span>
+            <h3>Staff &amp; permissions</h3>
+            <p>Everyone gets their own login and only the screens their job needs. Every discount, void and refund carries a name.</p>
+          </div>
+        </div>
+
+        <div class="cap">
+          <div class="mock">
+            <div class="mt"><span>Stock</span><span class="pil wait">Low: 2</span></div>
+            <div class="mrow"><span>Paneer</span><b>1.4 kg</b></div>
+            <div class="mrow"><span>Ghee</span><b>800 ml</b></div>
+            <div class="mrow"><span>Coffee powder</span><b>3.2 kg</b></div>
+          </div>
+          <div>
+            <span class="tag add">Switch on</span>
+            <h3>Stock &amp; recipes</h3>
+            <p>Ingredients come down as dishes go out, so you find out you're low on paneer before the kitchen does.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- GROUP -->
+    <div class="cap-panel" id="panel-group" role="tabpanel" aria-labelledby="tab-group" hidden>
+      <div class="cap-grid">
+        <div class="cap">
+          <div class="mock">
+            <div class="mt"><span>All outlets</span><span class="pil go">6 live</span></div>
+            <div class="mrow"><span>Indiranagar</span><span class="pil go">On time</span></div>
+            <div class="mrow"><span>Jubilee Hills</span><span class="pil go">On time</span></div>
+            <div class="mrow"><span>Bandra</span><span class="pil wait">2 late</span></div>
+          </div>
+          <div>
+            <span class="tag add">Switch on</span>
+            <h3>Every branch on one screen</h3>
+            <p>Sales, tables and kitchen speed side by side. You spot the outlet quietly slipping before month-end does.</p>
+          </div>
+        </div>
+
+        <div class="cap">
+          <div class="mock">
+            <div class="mt"><span>Brand menu</span><span class="pil wait">6 outlets</span></div>
+            <div class="mrow"><span>Ghee roast dosa</span><b>120 – 145</b></div>
+            <div class="mrow"><span>Filter coffee</span><b>40 – 55</b></div>
+            <div style="font-size:9.5px;color:#5a5a66;margin-top:4px">Set once. Each branch adjusts its own price.</div>
+          </div>
+          <div>
+            <span class="tag add">Switch on</span>
+            <h3>One menu, local prices</h3>
+            <p>Change the brand menu once. Each outlet keeps its own prices and marks what it has today.</p>
+          </div>
+        </div>
+
+        <div class="cap">
+          <div class="mock">
+            <div class="mt"><span>Each branch</span></div>
+            <div class="mrow"><span>Indiranagar UPI</span><span class="pil go">Set</span></div>
+            <div class="mrow"><span>Bandra UPI</span><span class="pil go">Set</span></div>
+            <div class="mrow"><span>Kochi UPI</span><span class="pil wait">Pending</span></div>
+          </div>
+          <div>
+            <span class="tag add">Switch on</span>
+            <h3>Each branch banks its own takings</h3>
+            <p>Every outlet has its own UPI ID, so its money lands in its own account. Nothing is pooled and nothing is routed through us.</p>
+          </div>
+        </div>
+
+        <div class="cap">
+          <div class="mock">
+            <div class="mt"><span>New outlet</span><span class="pil go">Ready</span></div>
+            <div class="mrow"><span>Menu copied</span><span class="pil go">✓</span></div>
+            <div class="mrow"><span>Staff roles copied</span><span class="pil go">✓</span></div>
+            <div class="mrow"><span>Table QRs printed</span><span class="pil go">✓</span></div>
+          </div>
+          <div>
+            <span class="tag add">Switch on</span>
+            <h3>Opening the next one</h3>
+            <p>A new branch starts from the last one: same menu, same roles, its own tables and its own takings.</p>
+          </div>
         </div>
       </div>
 
-      <!-- Plan 3: Enterprise & Multi-Outlet -->
-      <div class="plan-card rv d3">
-        <div>
-          <span class="plan-badge">Groups &amp; Franchises</span>
-          <h3 class="plan-title">Enterprise Suite</h3>
-          <p class="plan-desc">Central management for multi-branch brands, cloud kitchens &amp; food courts.</p>
-          <div class="plan-price">
-            <span class="amount" style="font-size:36px">Custom</span>
-            <span class="period">/ volume</span>
-          </div>
-          <ul class="plan-features">
-            <li><span class="chk">✓</span><span><strong>Everything in Growth Plan</strong>, plus:</span></li>
-            <li><span class="chk">✓</span><span><strong>Central Head-Office Live Dashboard</strong> (All Outlets)</span></li>
-            <li><span class="chk">✓</span><span><strong>Master Brand Menu</strong> with branch price overrides</span></li>
-            <li><span class="chk">✓</span><span><strong>Branch-Specific Bank Accounts</strong> &amp; UPI IDs</span></li>
-            <li><span class="chk">✓</span><span><strong>Role-Based Access Control</strong> (Manager, Waiter, Chef)</span></li>
-            <li><span class="chk">✓</span><span><strong>Custom Weighing Scales</strong> &amp; dual-screen tills</span></li>
-            <li><span class="chk">✓</span><span><strong>Custom ERP / Accounting Export</strong> &amp; SLA</span></li>
-            <li><span class="chk">✓</span><span><strong>Dedicated Account Manager</strong> &amp; staff onboarding</span></li>
-          </ul>
-        </div>
-        <div>
-          <button type="button" class="btn ghost" style="width:100%;justify-content:center" onclick="openContactModal('Enterprise & Multi-Outlet Franchise')">For More Details Contact →</button>
-          <p class="plan-cta-note">Custom proposal tailored to your outlet count</p>
-        </div>
+      <div class="cap-note rv">
+        <span class="cn-ico">🏗️</span>
+        <p><strong>Franchises work the same way, one level up.</strong> Head office sets the menu and the rules; each franchisee runs their own room, their own staff and their own money, and sees only their own numbers.</p>
       </div>
     </div>
   </div>
@@ -573,7 +848,7 @@
     <p class="lede rv d2">Bring the phones and tablets you already have. Add your menu, print a QR for each table, hand the kitchen a screen. That's the whole setup.</p>
     <div class="hero-cta rv d3">
       <a class="btn lamp" href="javascript:void(0)" onclick="openTrialModal()">Start 14-Day Free Trial →</a>
-      <a class="btn ghost" href="javascript:void(0)" onclick="openContactModal('Enterprise &amp; Multi-Outlet')">For More Details Contact →</a>
+      <a class="btn ghost" href="javascript:void(0)" onclick="openContactModal('More than one venue')">Talk to us about your venue →</a>
     </div>
   </div>
 </section>
@@ -622,6 +897,32 @@
     });
     stage.addEventListener('mouseleave', ()=>{ board.style.transform = ''; });
   }
+
+  // Capability tabs. Keyboard-navigable, and the panels are real content
+  // rather than something a screen reader has to guess at.
+  const tabs = Array.from(document.querySelectorAll('.cap-tab'));
+  if (tabs.length) {
+    const show = (tab) => {
+      tabs.forEach(t => {
+        const on = t === tab;
+        t.setAttribute('aria-selected', on ? 'true' : 'false');
+        const panel = document.getElementById(t.getAttribute('aria-controls'));
+        if (!panel) return;
+        panel.classList.toggle('on', on);
+        panel.hidden = !on;
+      });
+    };
+    tabs.forEach((t, i) => {
+      t.addEventListener('click', () => show(t));
+      t.addEventListener('keydown', e => {
+        if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+        e.preventDefault();
+        const next = tabs[(i + (e.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length];
+        next.focus();
+        show(next);
+      });
+    });
+  }
 })();
 </script>
 
@@ -637,8 +938,8 @@
       </div>
 
       <div class="plan-pill">
-        <span><strong>Selected:</strong> 14-Day Free Trial (All 5 Stations Included)</span>
-        <span style="font-weight:700">₹0</span>
+        <span><strong>Your trial:</strong> every station, unlocked, for 14 days</span>
+        <span style="font-weight:700">No card</span>
       </div>
 
       <form id="trialForm" onsubmit="handleTrialSubmit(event)">
@@ -730,12 +1031,12 @@
       </div>
 
       <div class="plan-pill">
-        <span><strong>Inquiring About:</strong> <span id="contactPlanLabel">Growth Plan (₹999/mo)</span></span>
+        <span><strong>Inquiring About:</strong> <span id="contactPlanLabel">Setting up my venue</span></span>
         <span style="font-weight:700">Custom Quote</span>
       </div>
 
       <form id="contactForm" onsubmit="handleContactSubmit(event)">
-        <input type="hidden" id="contact_selectedPlan" value="Growth Plan (₹999/mo)">
+        <input type="hidden" id="contact_selectedPlan" value="Setting up my venue">
         
         <!-- Section A: Basic Details -->
         <p style="font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--lamp);margin:0 0 10px">1. Basic Contact Details</p>
@@ -800,7 +1101,7 @@
         </div>
 
         <button type="submit" id="contactSubmitBtn" class="btn lamp form-submit-btn">
-          <span>Submit Inquiry &amp; Request Pricing →</span>
+          <span>Send this to us →</span>
         </button>
         <p class="form-note">⚡ Dedicated solutions architect connects within 2–4 business hours.</p>
       </form>
