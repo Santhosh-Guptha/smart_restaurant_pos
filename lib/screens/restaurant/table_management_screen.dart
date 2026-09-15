@@ -1228,10 +1228,10 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen>
           tooltip: 'Back to Home',
           onPressed: () => Navigator.pop(context),
         ),
-        title: const Column(
+        title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Tables & Floor Layout', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+            const Text('Tables & Floor Layout', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
             Text(_floorSubtitle(), style: const TextStyle(fontSize: 12, color: Colors.white70)),
           ],
         ),
