@@ -146,18 +146,18 @@
   @media(max-width:560px){.stations{grid-template-columns:1fr}}
   .flip{position:relative;height:340px;transform-style:preserve-3d;transition:transform .9s cubic-bezier(.2,.8,.2,1);cursor:pointer;outline:none}
   .flip:hover,.flip:focus-visible,.flip.on{transform:rotateY(180deg)}
-  .face{position:absolute;inset:0;border-radius:20px;padding:22px 20px;backface-visibility:hidden;-webkit-backface-visibility:hidden;display:flex;flex-direction:column;overflow:hidden}
-  .front{background:linear-gradient(170deg,var(--bg-3),var(--bg-2));border:1px solid var(--rule);padding:22px 20px 44px;justify-content:flex-end}
-  .front .num{position:absolute;top:20px;left:20px;font-family:var(--display);font-style:italic;font-size:14px;color:var(--lamp)}
-  .front .ico{position:absolute;top:46px;left:20px;font-size:36px;filter:drop-shadow(0 8px 20px rgba(0,0,0,.4))}
-  .front h3{font-size:24px;line-height:1.2;margin:0 0 6px}
-  .front p{margin:0;color:var(--fg-2);font-size:13.5px;line-height:1.45}
-  .front .hint{position:absolute;right:18px;bottom:14px;font-size:10.5px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--fg-2);display:inline-flex;align-items:center;gap:3px;pointer-events:none}
-  .back{transform:rotateY(180deg);background:var(--paper);color:var(--ink);justify-content:flex-start;padding:22px 18px}
-  .back h3{color:var(--ink);font-size:17.5px;font-weight:700;line-height:1.2;margin:0 0 10px}
-  .back ul{margin:0;padding:0;list-style:none;font-size:12.5px;line-height:1.38;display:grid;gap:6px}
-  .back li{display:flex;gap:7px;align-items:flex-start;color:#2c2c34}
-  .back li::before{content:"";flex:none;width:5px;height:5px;border-radius:50%;background:var(--lamp);margin-top:5px}
+  .face{position:absolute;inset:0;border-radius:20px;padding:26px;backface-visibility:hidden;-webkit-backface-visibility:hidden;display:flex;flex-direction:column;justify-content:flex-end}
+  .front{background:linear-gradient(170deg,var(--bg-3),var(--bg-2));border:1px solid var(--rule)}
+  .front .num{position:absolute;top:22px;left:26px;font-family:var(--display);font-style:italic;font-size:15px;color:var(--lamp)}
+  .front .ico{position:absolute;top:56px;left:26px;font-size:38px;filter:drop-shadow(0 8px 20px rgba(0,0,0,.4))}
+  .front h3{font-size:26px}
+  .front p{margin:8px 0 0;color:var(--fg-2);font-size:14.5px}
+  .front .hint{position:absolute;right:22px;bottom:22px;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--fg-2)}
+  .back{transform:rotateY(180deg);background:var(--paper);color:var(--ink);justify-content:flex-start}
+  .back h3{color:var(--ink);font-size:20px;margin-bottom:12px}
+  .back ul{margin:0;padding:0;list-style:none;font-size:14px;line-height:1.5;display:grid;gap:9px}
+  .back li{display:flex;gap:10px;align-items:flex-start;color:#2c2c34}
+  .back li::before{content:"";flex:none;width:8px;height:8px;border-radius:50%;background:var(--lamp);margin-top:7px}
 
   /* ── feature band ────────────────────────────────────── */
   .band{background:var(--bg-2);border-top:1px solid var(--rule);border-bottom:1px solid var(--rule)}
@@ -290,18 +290,6 @@
   .cap-note .cn-ico{font-size:22px;flex:none;line-height:1}
   .cap-note p{margin:0;color:var(--fg-2);font-size:14.5px}
   .cap-note strong{color:var(--fg);font-weight:600}
-
-  /* ── modals ─────────────────────────────────────────── */
-  .modal-overlay{position:fixed;inset:0;z-index:1000;background:rgba(8,10,15,.78);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);display:none;align-items:center;justify-content:center;padding:20px;opacity:0;transition:opacity .25s ease}
-  .modal-overlay.active{display:flex;opacity:1}
-  .modal-box{background:var(--bg-2);border:1px solid var(--rule);border-radius:24px;width:100%;max-width:620px;max-height:90vh;overflow-y:auto;padding:32px 28px;position:relative;box-shadow:0 30px 80px -20px rgba(0,0,0,.9);transform:scale(.95);transition:transform .25s cubic-bezier(.2,.8,.2,1)}
-  .modal-overlay.active .modal-box{transform:scale(1)}
-  .modal-close{position:absolute;top:18px;right:18px;width:34px;height:34px;border-radius:50%;background:var(--bg-3);border:1px solid var(--rule);color:var(--fg);cursor:pointer;display:grid;place-items:center;font-size:16px;line-height:1;transition:background .2s,color .2s}
-  .modal-close:hover{background:var(--rule);color:var(--lamp)}
-  .modal-head{margin-bottom:20px}
-  .modal-head h3{font-family:var(--display);font-size:26px;margin:0 0 6px;color:var(--fg)}
-  .modal-head p{margin:0;color:var(--fg-2);font-size:14px;line-height:1.5}
-  .badge{display:inline-block;font-size:11.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--lamp);background:color-mix(in srgb,var(--lamp) 14%,transparent);border:1px solid color-mix(in srgb,var(--lamp) 32%,transparent);border-radius:999px;padding:3px 10px}
 
   /* ── section band reused by the capabilities panel ───── */
   .pricing{padding:100px 0}
@@ -768,15 +756,15 @@
 
         <div class="cap">
           <div class="mock">
-            <div class="mt"><span>Stock</span><span class="pil wait">Low: 2</span></div>
-            <div class="mrow"><span>Paneer</span><b>1.4 kg</b></div>
-            <div class="mrow"><span>Ghee</span><b>800 ml</b></div>
-            <div class="mrow"><span>Coffee powder</span><b>3.2 kg</b></div>
+            <div class="mt"><span>Backup</span><span class="pil go">Encrypted</span></div>
+            <div class="mrow"><span>Bills &amp; payments</span><b>Included</b></div>
+            <div class="mrow"><span>Menu &amp; tables</span><b>Included</b></div>
+            <div class="mrow"><span>Settings</span><b>Included</b></div>
           </div>
           <div>
-            <span class="tag add">Switch on</span>
-            <h3>Stock &amp; recipes</h3>
-            <p>Ingredients come down as dishes go out, so you find out you're low on paneer before the kitchen does.</p>
+            <span class="tag core">Always included</span>
+            <h3>Your data, in your hands</h3>
+            <p>Everything this device holds goes into one file, encrypted with a passphrase only you know, and restores onto a new device in a tap.</p>
           </div>
         </div>
       </div>
@@ -939,18 +927,18 @@
 </script>
 
 <!-- ═══════════════ MODAL 1: FREE TRIAL REGISTRATION (MATCHES MOBILE APP) ═══════════════ -->
-<div class="modal-overlay" id="trialModal" role="dialog" aria-modal="true" aria-labelledby="trialModalTitle" style="display:none">
+<div class="modal-overlay" id="trialModal" role="dialog" aria-modal="true" aria-labelledby="trialModalTitle">
   <div class="modal-box">
     <button class="modal-close" onclick="closeModals()" aria-label="Close modal">✕</button>
     <div id="trialFormContainer">
       <div class="modal-head">
         <span class="badge" style="display:inline-block;margin-bottom:8px">14-Day Free Access</span>
         <h3 id="trialModalTitle">Register Your Free Trial</h3>
-        <p>Matches your SmartDine mobile app onboarding. Experience live table QR ordering, kitchen display, and counter billing.</p>
+        <p>Counter billing, tables and running tabs, reservations, kitchen tickets, the cloud ledger and your sales reports — for fourteen days.</p>
       </div>
 
       <div class="plan-pill">
-        <span><strong>Your trial:</strong> every station, unlocked, for 14 days</span>
+        <span><strong>Your trial:</strong> 14 days, reviewed and activated by our team</span>
         <span style="font-weight:700">No card</span>
       </div>
 
@@ -1015,12 +1003,12 @@
     <!-- Success View for Trial -->
     <div id="trialSuccessView" class="success-view" style="display:none">
       <div class="success-ring">✓</div>
-      <h3>Trial Registered Successfully!</h3>
+      <h3>Request received</h3>
       <p id="trialSuccessMsg">Thank you! Your 14-day free trial request has been submitted.</p>
       <div class="success-box">
-        <div><strong>📧 Notification Sent:</strong> smartdine.platform@gmail.com</div>
-        <div style="margin-top:4px"><strong>✉️ Confirmation Sent:</strong> <span id="trialClientEmailDisp"></span></div>
-        <div style="margin-top:4px"><strong>⏱️ Next Steps:</strong> Our onboarding team will connect with you via WhatsApp to assist with hardware pairing &amp; menu setup.</div>
+        <div><strong>📋 What happens now:</strong> our team reviews your request and sets your store up. Your trial starts when they activate it, not before.</div>
+        <div style="margin-top:4px"><strong>📱 Fastest route:</strong> message us on WhatsApp below and we will set you up the same day.</div>
+        <div style="margin-top:4px"><strong>✉️ We have on file:</strong> <span id="trialClientEmailDisp"></span></div>
       </div>
       <div class="success-actions">
         <a id="trialWhatsAppBtn" class="btn lamp" style="width:100%;justify-content:center" href="#" target="_blank" rel="noopener">Chat on WhatsApp for Instant Setup →</a>
@@ -1032,7 +1020,7 @@
 </div>
 
 <!-- ═══════════════ MODAL 2: FOR MORE DETAILS CONTACT (BASIC + BUSINESS DETAILS) ═══════════════ -->
-<div class="modal-overlay" id="contactModal" role="dialog" aria-modal="true" aria-labelledby="contactModalTitle" style="display:none">
+<div class="modal-overlay" id="contactModal" role="dialog" aria-modal="true" aria-labelledby="contactModalTitle">
   <div class="modal-box">
     <button class="modal-close" onclick="closeModals()" aria-label="Close modal">✕</button>
     <div id="contactFormContainer">
@@ -1125,8 +1113,8 @@
       <h3>Business Inquiry Received!</h3>
       <p id="contactSuccessMsg">Thank you! Your requirements have been received by our commercial team.</p>
       <div class="success-box">
-        <div><strong>📧 Sent to Sales Desk:</strong> smartdine.platform@gmail.com</div>
-        <div style="margin-top:4px"><strong>✉️ Confirmation Sent to You:</strong> <span id="contactClientEmailDisp"></span></div>
+        <div><strong>📋 With our team:</strong> your message is in the queue and someone will pick it up.</div>
+        <div style="margin-top:4px"><strong>✉️ We have on file:</strong> <span id="contactClientEmailDisp"></span></div>
         <div style="margin-top:4px"><strong>⏱️ Response Window:</strong> An enterprise solution architect will connect within <strong>2 to 4 business hours</strong> with custom pricing.</div>
       </div>
       <div class="success-actions">
@@ -1142,7 +1130,7 @@
 // =========================================================================
 //  Modal Management & Lead/Trial Automation
 // =========================================================================
-const DEFAULT_APPS_SCRIPT_WEBHOOK = 'https://script.google.com/macros/s/AKfycbxTGh6K2icpbJE9V_uPhltoLNwVKxQCioFbeCDsqcNSdhl-Id-FiI4Pssx-NSIP_eCDOQ/exec';
+const DEFAULT_APPS_SCRIPT_WEBHOOK = 'https://script.google.com/macros/s/AKfycbwmwGpu3ZKMiDJjGnZAXGCrMBr0s5bootdPpjtWdh5HeWIiU4uGu9BMPV8EBhte9F9Elg/exec';
 const FIRESTORE_BASE = 'https://firestore.googleapis.com/v1/projects/smartdine-restaurant-pos/databases/(default)/documents';
 
 function openTrialModal() {
@@ -1229,7 +1217,11 @@ async function handleTrialSubmit(e) {
     console.warn('Firestore write warning:', err);
   }
 
-  // 2. Dispatch to Apps Script Webhook (Sends Email to smartdine.platform & Client)
+  // 2. Best-effort ping to the Apps Script webhook. NOTE: the deployed script
+  //    has no handler for this action today, so it sends no e-mail — the
+  //    request reaches the team through the Firestore write above, which the
+  //    admin console lists under Inquiries & Leads. Do not advertise e-mail
+  //    on this page until a handler exists.
   try {
     fetch(DEFAULT_APPS_SCRIPT_WEBHOOK, {
       method: 'POST',
@@ -1313,7 +1305,11 @@ async function handleContactSubmit(e) {
     console.warn('Firestore inquiry write warning:', err);
   }
 
-  // 2. Dispatch to Apps Script Webhook (Sends Email to smartdine.platform & Client)
+  // 2. Best-effort ping to the Apps Script webhook. NOTE: the deployed script
+  //    has no handler for this action today, so it sends no e-mail — the
+  //    request reaches the team through the Firestore write above, which the
+  //    admin console lists under Inquiries & Leads. Do not advertise e-mail
+  //    on this page until a handler exists.
   try {
     fetch(DEFAULT_APPS_SCRIPT_WEBHOOK, {
       method: 'POST',

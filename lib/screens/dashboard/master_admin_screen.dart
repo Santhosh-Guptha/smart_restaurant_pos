@@ -29,6 +29,7 @@ import '../admin/views/admin_encyclopedia_view.dart';
 import '../admin/views/admin_packages_view.dart';
 import '../admin/views/admin_migrations_view.dart';
 import '../admin/dialogs/tenant_access_dialog.dart';
+import '../admin/widgets/tenant_package_editor.dart';
 
 class MasterAdminScreen extends ConsumerStatefulWidget {
   const MasterAdminScreen({super.key});
@@ -1304,6 +1305,32 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
 }
 
 // --- TAB 1: ORGANIZATIONS MANAGEMENT ---
+/// The seeded subscription record that goes with a package.
+///
+/// The package (a [PlanProfile]) decides what the tenant can do; the
+/// subscription record only supplies the human-facing plan name and billing
+/// cycle. Keeping them matched means an "Offline counter" tenant is not filed
+/// under "Connected (Annual)" in the billing list. Falls back to whatever was
+/// selected when a tenant is on an older, hand-made plan.
+SubscriptionPlan _planForProfile(
+  PlanProfile profile,
+  List<SubscriptionPlan> available,
+  SubscriptionPlan fallback,
+) {
+  const idForProfile = <String, String>{
+    'OFFLINE_SINGLE': 'offline_counter',
+    'OFFLINE_DINE_IN': 'offline_dine_in',
+    'CONNECTED': 'connected',
+    'OMNICHANNEL': 'omnichannel',
+  };
+  final wanted = idForProfile[profile.id];
+  if (wanted == null) return fallback;
+  for (final plan in available) {
+    if (plan.id == wanted) return plan;
+  }
+  return fallback;
+}
+
 class OrganizationsTab extends ConsumerStatefulWidget {
   const OrganizationsTab({super.key});
 
@@ -1434,17 +1461,18 @@ class OrganizationsTab extends ConsumerStatefulWidget {
       orElse: () => availablePlans.isNotEmpty ? availablePlans.first : SubscriptionPlanService.fallbackTrialPlan,
     );
 
-    int validityDays = selectedPlan.validityDays;
-    int maxOutlets = selectedPlan.maxOutlets;
-    int maxDevices = selectedPlan.maxDevices;
     int maxUsers = selectedPlan.maxUsers;
     int tableCount = selectedPlan.tableCount;
     String operatingMode = selectedPlan.operatingMode;
-    String storageMode = StorageModes.clientsOwnSheets;
+
+    // Package, storage, limits, validity and add-ons in one value object that
+    // resolves itself, so nothing below can read a half-configured licence.
+    TenantPackageSelection selection = TenantPackageSelection.forProfile(
+      PlanProfile.connected,
+      validityDays: selectedPlan.validityDays,
+    );
 
     // Feature Toggles: populated dynamically from the selected plan
-    final Map<String, bool> featureToggles = Map<String, bool>.from(selectedPlan.features);
-
     bool isCreating = false;
     bool obscurePassword = true;
 
@@ -1667,100 +1695,53 @@ class OrganizationsTab extends ConsumerStatefulWidget {
                         ),
                         const SizedBox(height: 20),
 
-                        // SECTION 2: DYNAMIC SUBSCRIPTION PLAN & ALLOCATIONS
+                        // SECTIONS 2 & 3: PACKAGE, VALIDITY AND ADD-ONS
+                        //
+                        // One editor for all three. It offers only the storage
+                        // modes the package can run, shows included features as
+                        // included rather than as switches that would not
+                        // survive the resolver, and the licence is written from
+                        // what the resolver says — so the tenant gets exactly
+                        // what is on this screen.
+                        TenantPackageEditor(
+                          value: selection,
+                          onChanged: (v) => setDialogState(() => selection = v),
+                        ),
+                        const SizedBox(height: 20),
+
+                        // Quotas the package does not decide.
                         Container(
                           padding: const EdgeInsets.symmetric(vertical: 4),
                           child: Row(
                             children: [
-                              Icon(Icons.workspace_premium_rounded, color: primaryAccent, size: 16),
+                              Icon(Icons.tune_rounded, color: primaryAccent, size: 16),
                               const SizedBox(width: 6),
-                              Text("2. Subscription Plan & Quota Allocations", style: TextStyle(color: primaryAccent, fontWeight: FontWeight.bold, fontSize: 13)),
+                              Text("Other quotas", style: TextStyle(color: primaryAccent, fontWeight: FontWeight.bold, fontSize: 13)),
                             ],
                           ),
                         ),
-                        const SizedBox(height: 10),
-                        DropdownButtonFormField<SubscriptionPlan>(
-                          initialValue: availablePlans.any((p) => p.id == selectedPlan.id)
-                              ? availablePlans.firstWhere((p) => p.id == selectedPlan.id)
-                              : selectedPlan,
-                          dropdownColor: context.surfaceColor,
-                          style: TextStyle(color: context.textPrimary, fontSize: 13),
-                          decoration: InputDecoration(
-                            labelText: "Assigned Plan (Auto-Populates Features & Limits)",
-                            labelStyle: TextStyle(color: context.textSecondary, fontSize: 13),
-                            prefixIcon: const Icon(Icons.stars_rounded, size: 18),
-                            enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: context.borderColor)),
-                            focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: primaryAccent, width: 2)),
-                          ),
-                          items: availablePlans.map((plan) {
-                            return DropdownMenuItem<SubscriptionPlan>(
-                              value: plan,
-                              child: Text(
-                                "${plan.name}  —  ${plan.validityDays} Days (${plan.billingCycle})",
-                                style: TextStyle(
-                                  fontWeight: plan.isDefaultTrial ? FontWeight.bold : FontWeight.normal,
-                                  color: plan.isDefaultTrial ? primaryAccent : null,
-                                ),
-                              ),
-                            );
-                          }).toList(),
-                          onChanged: (newPlan) {
-                            if (newPlan != null) {
-                              setDialogState(() {
-                                selectedPlan = newPlan;
-                                validityDays = newPlan.validityDays;
-                                maxOutlets = newPlan.maxOutlets;
-                                maxDevices = newPlan.maxDevices;
-                                maxUsers = newPlan.maxUsers;
-                                tableCount = newPlan.tableCount;
-                                operatingMode = newPlan.operatingMode;
-                                featureToggles.clear();
-                                featureToggles.addAll(newPlan.features);
-                              });
-                            }
-                          },
-                        ),
-                        const SizedBox(height: 14),
+                        const SizedBox(height: 6),
                         Row(
                           children: [
                             Expanded(
                               child: TextFormField(
-                                initialValue: validityDays.toString(),
-                                key: ValueKey('val_$validityDays'),
+                                initialValue: maxUsers.toString(),
                                 style: TextStyle(color: context.textPrimary),
                                 keyboardType: TextInputType.number,
                                 decoration: InputDecoration(
-                                  labelText: "Validity (Days)",
+                                  labelText: "Max Staff / Users",
                                   labelStyle: TextStyle(color: context.textSecondary, fontSize: 13),
-                                  prefixIcon: const Icon(Icons.calendar_today_rounded, size: 16),
+                                  prefixIcon: const Icon(Icons.groups_rounded, size: 16),
                                   enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: context.borderColor)),
                                   focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: primaryAccent, width: 2)),
                                 ),
-                                onChanged: (v) => validityDays = int.tryParse(v) ?? validityDays,
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: TextFormField(
-                                initialValue: maxOutlets.toString(),
-                                key: ValueKey('out_$maxOutlets'),
-                                style: TextStyle(color: context.textPrimary),
-                                keyboardType: TextInputType.number,
-                                decoration: InputDecoration(
-                                  labelText: "Max Branches / Outlets",
-                                  labelStyle: TextStyle(color: context.textSecondary, fontSize: 13),
-                                  prefixIcon: const Icon(Icons.store_rounded, size: 16),
-                                  enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: context.borderColor)),
-                                  focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: primaryAccent, width: 2)),
-                                ),
-                                onChanged: (v) => maxOutlets = int.tryParse(v) ?? maxOutlets,
+                                onChanged: (v) => maxUsers = int.tryParse(v) ?? maxUsers,
                               ),
                             ),
                             const SizedBox(width: 12),
                             Expanded(
                               child: TextFormField(
                                 initialValue: tableCount.toString(),
-                                key: ValueKey('tab_$tableCount'),
                                 style: TextStyle(color: context.textPrimary),
                                 keyboardType: TextInputType.number,
                                 decoration: InputDecoration(
@@ -1776,133 +1757,26 @@ class OrganizationsTab extends ConsumerStatefulWidget {
                           ],
                         ),
                         const SizedBox(height: 10),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: TextFormField(
-                                initialValue: maxUsers.toString(),
-                                key: ValueKey('usr_$maxUsers'),
-                                style: TextStyle(color: context.textPrimary),
-                                keyboardType: TextInputType.number,
-                                decoration: InputDecoration(
-                                  labelText: "Max Staff / Users",
-                                  labelStyle: TextStyle(color: context.textSecondary, fontSize: 13),
-                                  prefixIcon: const Icon(Icons.badge_rounded, size: 16),
-                                  enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: context.borderColor)),
-                                  focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: primaryAccent, width: 2)),
-                                ),
-                                onChanged: (v) => maxUsers = int.tryParse(v) ?? maxUsers,
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: TextFormField(
-                                initialValue: maxDevices.toString(),
-                                key: ValueKey('dev_$maxDevices'),
-                                style: TextStyle(color: context.textPrimary),
-                                keyboardType: TextInputType.number,
-                                decoration: InputDecoration(
-                                  labelText: "Max POS Terminals",
-                                  labelStyle: TextStyle(color: context.textSecondary, fontSize: 13),
-                                  prefixIcon: const Icon(Icons.devices_rounded, size: 16),
-                                  enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: context.borderColor)),
-                                  focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: primaryAccent, width: 2)),
-                                ),
-                                onChanged: (v) => maxDevices = int.tryParse(v) ?? maxDevices,
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: DropdownButtonFormField<String>(
-                                initialValue: operatingMode,
-                                dropdownColor: context.surfaceColor,
-                                style: TextStyle(color: context.textPrimary, fontSize: 13),
-                                decoration: InputDecoration(
-                                  labelText: "Operating Mode",
-                                  labelStyle: TextStyle(color: context.textSecondary, fontSize: 13),
-                                  prefixIcon: const Icon(Icons.room_service_rounded, size: 16),
-                                  enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: context.borderColor)),
-                                  focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: primaryAccent, width: 2)),
-                                ),
-                                items: const [
-                                  DropdownMenuItem(value: 'dineFirstPostpaid', child: Text("Dine-In Postpaid")),
-                                  DropdownMenuItem(value: 'counterPrepaid', child: Text("Fast QSR Prepaid")),
-                                  DropdownMenuItem(value: 'hybrid', child: Text("Hybrid Dynamic")),
-                                ],
-                                onChanged: (v) {
-                                  if (v != null) setDialogState(() => operatingMode = v);
-                                },
-                              ),
-                            ),
-                          ],
-                        ),
-
-                        const SizedBox(height: 10),
-                        // Storage mode decides the whole shape of the tenant: an offline
-                        // store gets one device and no cloud features, whatever is
-                        // ticked below — the resolver applies that at save.
                         DropdownButtonFormField<String>(
-                          initialValue: storageMode,
+                          initialValue: operatingMode,
                           dropdownColor: context.surfaceColor,
                           style: TextStyle(color: context.textPrimary, fontSize: 13),
                           decoration: InputDecoration(
-                            labelText: "Storage Mode",
+                            labelText: "Operating Mode",
                             labelStyle: TextStyle(color: context.textSecondary, fontSize: 13),
-                            prefixIcon: const Icon(Icons.dns_outlined, size: 16),
-                            helperText: StorageModes.isOffline(storageMode)
-                                ? "Single device, billing & menu on the device. No cloud, no second screen."
-                                : "Cloud ledger, multi-device, online add-ons available.",
-                            helperStyle: TextStyle(color: context.textSecondary, fontSize: 12),
+                            prefixIcon: const Icon(Icons.room_service_rounded, size: 16),
                             enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: context.borderColor)),
                             focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: primaryAccent, width: 2)),
                           ),
-                          items: StorageModes.all
-                              .map((m) => DropdownMenuItem(value: m, child: Text(StorageModes.label(m))))
-                              .toList(),
+                          items: const [
+                            DropdownMenuItem(value: 'dineFirstPostpaid', child: Text("Dine-In Postpaid")),
+                            DropdownMenuItem(value: 'counterPrepaid', child: Text("Fast QSR Prepaid")),
+                            DropdownMenuItem(value: 'hybrid', child: Text("Hybrid Dynamic")),
+                          ],
                           onChanged: (v) {
-                            if (v != null) setDialogState(() => storageMode = v);
+                            if (v != null) setDialogState(() => operatingMode = v);
                           },
                         ),
-                        const SizedBox(height: 20),
-
-                        // SECTION 3: FEATURE ENTITLEMENTS (Grouped from Catalog)
-                        Container(
-                          padding: const EdgeInsets.symmetric(vertical: 4),
-                          child: Row(
-                            children: [
-                              Icon(Icons.checklist_rtl_rounded, color: primaryAccent, size: 16),
-                              const SizedBox(width: 6),
-                              Text("3. Feature Entitlements (Dynamic Catalog)", style: TextStyle(color: primaryAccent, fontWeight: FontWeight.bold, fontSize: 13)),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        ...RestaurantFeatureCatalog.byCategory.entries.map((catEntry) {
-                          return Padding(
-                            padding: const EdgeInsets.only(bottom: 12),
-                            child: buildFeatureGroup(
-                              context: context,
-                              title: catEntry.key,
-                              subtitle: "Configured capabilities for ${catEntry.key}",
-                              icon: Icons.tune_rounded,
-                              accentColor: primaryAccent,
-                              children: catEntry.value.map((feat) {
-                                final isSelected = featureToggles[feat.key] ?? false;
-                                return featureChipWidget(
-                                  label: feat.label,
-                                  subtitle: feat.description,
-                                  selected: isSelected,
-                                  color: primaryAccent,
-                                  onSelected: (v) {
-                                    setDialogState(() {
-                                      featureToggles[feat.key] = v;
-                                    });
-                                  },
-                                );
-                              }).toList(),
-                            ),
-                          );
-                        }),
                       ],
                     ),
                   ),
@@ -1932,14 +1806,20 @@ class OrganizationsTab extends ConsumerStatefulWidget {
                             final pan = panController.text.trim();
                             final aadhaar = aadhaarController.text.trim();
 
-                            final finalPlan = selectedPlan.copyWith(
-                              validityDays: validityDays,
-                              maxOutlets: maxOutlets,
-                              maxDevices: maxDevices,
+                            // The subscription record matching the chosen
+                            // package, so the plan name and billing cycle stay
+                            // meaningful. Every limit and feature below comes
+                            // from the resolver, not from that record.
+                            final basePlan = _planForProfile(
+                                selection.profile, availablePlans, selectedPlan);
+                            final finalPlan = basePlan.copyWith(
+                              validityDays: selection.validityDays,
+                              maxOutlets: selection.effectiveOutlets,
+                              maxDevices: selection.effectiveDevices,
                               maxUsers: maxUsers,
                               tableCount: tableCount,
                               operatingMode: operatingMode,
-                              features: featureToggles,
+                              features: selection.resolvedFeatures,
                             );
 
                             final result = await TenantProvisioningService.provisionTenant(
@@ -1956,7 +1836,8 @@ class OrganizationsTab extends ConsumerStatefulWidget {
                               gstNo: gst.isNotEmpty ? gst : null,
                               plan: finalPlan,
                               requestId: requestId,
-                              storageMode: storageMode,
+                              storageMode: selection.storageMode,
+                              planProfile: selection.profile.id,
                             );
 
                             if (result['success'] != true) {
@@ -1968,7 +1849,7 @@ class OrganizationsTab extends ConsumerStatefulWidget {
                               AppToast.showSuccess(
                                 context,
                                 "Restaurant Onboarded Successfully",
-                                subtitle: "$orgName ($orgId) onboarded with ${selectedPlan.name}.",
+                                subtitle: "$orgName ($orgId) onboarded with ${finalPlan.name}.",
                               );
                             }
                           } catch (e) {
@@ -4304,19 +4185,23 @@ class _RegistrationRequestsTabState extends ConsumerState<RegistrationRequestsTa
       orElse: () => availablePlans.isNotEmpty ? availablePlans.first : SubscriptionPlanService.fallbackTrialPlan,
     );
 
-    int validityDays = initialTrialDays > 0 ? initialTrialDays : selectedPlan.validityDays;
-    int maxOutlets = initialMaxOutlets > 1 ? initialMaxOutlets : selectedPlan.maxOutlets;
     int maxUsers = initialMaxUsers;
-    int maxDevices = selectedPlan.maxDevices;
     int tableCount = initialTableCount;
     String operatingMode = initialOperatingMode;
-    String storageMode = StorageModes.clientsOwnSheets;
 
-    // Feature Toggles: initialize from selected plan, merged with any specific initial requested features
-    final Map<String, bool> featureToggles = Map<String, bool>.from(selectedPlan.features);
-    if (initialFeatures != null) {
-      featureToggles.addAll(initialFeatures);
-    }
+    // More than one outlet is a chain, so the applicant's request starts on the
+    // only package that can run one. The admin can change it.
+    TenantPackageSelection selection = TenantPackageSelection.forProfile(
+      initialMaxOutlets > 1 ? PlanProfile.omnichannel : PlanProfile.connected,
+      validityDays:
+          initialTrialDays > 0 ? initialTrialDays : selectedPlan.validityDays,
+      // What the applicant asked for is a starting point the admin can change;
+      // anything the package cannot run is dropped by the editor.
+      addOns: {
+        for (final e in (initialFeatures ?? const <String, bool>{}).entries)
+          if (e.value) e.key: true,
+      },
+    ).copyWith(maxOutlets: initialMaxOutlets > 1 ? initialMaxOutlets : null);
 
     bool isCreating = false;
     bool obscurePassword = true;
@@ -4503,100 +4388,53 @@ class _RegistrationRequestsTabState extends ConsumerState<RegistrationRequestsTa
                         ),
                         const SizedBox(height: 20),
 
-                        // SECTION 2: DYNAMIC PLAN ASSIGNMENT
+                        // SECTIONS 2 & 3: PACKAGE, VALIDITY AND ADD-ONS
+                        //
+                        // One editor for all three. It offers only the storage
+                        // modes the package can run, shows included features as
+                        // included rather than as switches that would not
+                        // survive the resolver, and the licence is written from
+                        // what the resolver says — so the tenant gets exactly
+                        // what is on this screen.
+                        TenantPackageEditor(
+                          value: selection,
+                          onChanged: (v) => setDialogState(() => selection = v),
+                        ),
+                        const SizedBox(height: 20),
+
+                        // Quotas the package does not decide.
                         Container(
                           padding: const EdgeInsets.symmetric(vertical: 4),
                           child: Row(
                             children: [
-                              const Icon(Icons.workspace_premium_rounded, color: primaryAccent, size: 16),
+                              const Icon(Icons.tune_rounded, color: primaryAccent, size: 16),
                               const SizedBox(width: 6),
-                              Text("2. Subscription Plan & Quotas", style: TextStyle(color: primaryAccent, fontWeight: FontWeight.bold, fontSize: 13)),
+                              Text("Other quotas", style: const TextStyle(color: primaryAccent, fontWeight: FontWeight.bold, fontSize: 13)),
                             ],
                           ),
                         ),
-                        const SizedBox(height: 10),
-                        DropdownButtonFormField<SubscriptionPlan>(
-                          initialValue: availablePlans.any((p) => p.id == selectedPlan.id)
-                              ? availablePlans.firstWhere((p) => p.id == selectedPlan.id)
-                              : selectedPlan,
-                          dropdownColor: context.surfaceColor,
-                          style: TextStyle(color: context.textPrimary, fontSize: 13),
-                          decoration: InputDecoration(
-                            labelText: "Assign Subscription Plan",
-                            labelStyle: TextStyle(color: context.textSecondary, fontSize: 13),
-                            prefixIcon: const Icon(Icons.stars_rounded, size: 18),
-                            enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: context.borderColor)),
-                            focusedBorder: const UnderlineInputBorder(borderSide: BorderSide(color: primaryAccent, width: 2)),
-                          ),
-                          items: availablePlans.map((plan) {
-                            return DropdownMenuItem<SubscriptionPlan>(
-                              value: plan,
-                              child: Text(
-                                "${plan.name} — ${plan.validityDays}d (${plan.billingCycle})",
-                                style: TextStyle(
-                                  fontWeight: plan.isDefaultTrial ? FontWeight.bold : FontWeight.normal,
-                                  color: plan.isDefaultTrial ? primaryAccent : null,
-                                ),
-                              ),
-                            );
-                          }).toList(),
-                          onChanged: (newPlan) {
-                            if (newPlan != null) {
-                              setDialogState(() {
-                                selectedPlan = newPlan;
-                                validityDays = newPlan.validityDays;
-                                maxOutlets = newPlan.maxOutlets;
-                                maxDevices = newPlan.maxDevices;
-                                maxUsers = newPlan.maxUsers;
-                                tableCount = newPlan.tableCount;
-                                operatingMode = newPlan.operatingMode;
-                                featureToggles.clear();
-                                featureToggles.addAll(newPlan.features);
-                              });
-                            }
-                          },
-                        ),
-                        const SizedBox(height: 14),
+                        const SizedBox(height: 6),
                         Row(
                           children: [
                             Expanded(
                               child: TextFormField(
-                                initialValue: validityDays.toString(),
-                                key: ValueKey('req_val_$validityDays'),
+                                initialValue: maxUsers.toString(),
                                 style: TextStyle(color: context.textPrimary),
                                 keyboardType: TextInputType.number,
                                 decoration: InputDecoration(
-                                  labelText: "Validity (Days)",
+                                  labelText: "Max Staff / Users",
                                   labelStyle: TextStyle(color: context.textSecondary, fontSize: 13),
-                                  prefixIcon: const Icon(Icons.calendar_today_rounded, size: 16),
+                                  prefixIcon: const Icon(Icons.groups_rounded, size: 16),
                                   enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: context.borderColor)),
                                   focusedBorder: const UnderlineInputBorder(borderSide: BorderSide(color: primaryAccent, width: 2)),
                                 ),
-                                onChanged: (v) => validityDays = int.tryParse(v) ?? validityDays,
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: TextFormField(
-                                initialValue: maxOutlets.toString(),
-                                key: ValueKey('req_out_$maxOutlets'),
-                                style: TextStyle(color: context.textPrimary),
-                                keyboardType: TextInputType.number,
-                                decoration: InputDecoration(
-                                  labelText: "Max Branches",
-                                  labelStyle: TextStyle(color: context.textSecondary, fontSize: 13),
-                                  prefixIcon: const Icon(Icons.store_rounded, size: 16),
-                                  enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: context.borderColor)),
-                                  focusedBorder: const UnderlineInputBorder(borderSide: BorderSide(color: primaryAccent, width: 2)),
-                                ),
-                                onChanged: (v) => maxOutlets = int.tryParse(v) ?? maxOutlets,
+                                onChanged: (v) => maxUsers = int.tryParse(v) ?? maxUsers,
                               ),
                             ),
                             const SizedBox(width: 12),
                             Expanded(
                               child: TextFormField(
                                 initialValue: tableCount.toString(),
-                                key: ValueKey('req_tab_$tableCount'),
                                 style: TextStyle(color: context.textPrimary),
                                 keyboardType: TextInputType.number,
                                 decoration: InputDecoration(
@@ -4611,72 +4449,27 @@ class _RegistrationRequestsTabState extends ConsumerState<RegistrationRequestsTa
                             ),
                           ],
                         ),
-
                         const SizedBox(height: 10),
-                        // Storage mode decides the whole shape of the tenant: an offline
-                        // store gets one device and no cloud features, whatever is
-                        // ticked below — the resolver applies that at save.
                         DropdownButtonFormField<String>(
-                          initialValue: storageMode,
+                          initialValue: operatingMode,
                           dropdownColor: context.surfaceColor,
                           style: TextStyle(color: context.textPrimary, fontSize: 13),
                           decoration: InputDecoration(
-                            labelText: "Storage Mode",
+                            labelText: "Operating Mode",
                             labelStyle: TextStyle(color: context.textSecondary, fontSize: 13),
-                            prefixIcon: const Icon(Icons.dns_outlined, size: 16),
-                            helperText: StorageModes.isOffline(storageMode)
-                                ? "Single device, billing & menu on the device. No cloud, no second screen."
-                                : "Cloud ledger, multi-device, online add-ons available.",
-                            helperStyle: TextStyle(color: context.textSecondary, fontSize: 12),
+                            prefixIcon: const Icon(Icons.room_service_rounded, size: 16),
                             enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: context.borderColor)),
-                            focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: primaryAccent, width: 2)),
+                            focusedBorder: const UnderlineInputBorder(borderSide: BorderSide(color: primaryAccent, width: 2)),
                           ),
-                          items: StorageModes.all
-                              .map((m) => DropdownMenuItem(value: m, child: Text(StorageModes.label(m))))
-                              .toList(),
+                          items: const [
+                            DropdownMenuItem(value: 'dineFirstPostpaid', child: Text("Dine-In Postpaid")),
+                            DropdownMenuItem(value: 'counterPrepaid', child: Text("Fast QSR Prepaid")),
+                            DropdownMenuItem(value: 'hybrid', child: Text("Hybrid Dynamic")),
+                          ],
                           onChanged: (v) {
-                            if (v != null) setDialogState(() => storageMode = v);
+                            if (v != null) setDialogState(() => operatingMode = v);
                           },
                         ),
-                        const SizedBox(height: 20),
-
-                        // SECTION 3: FEATURES FROM CATALOG
-                        Container(
-                          padding: const EdgeInsets.symmetric(vertical: 4),
-                          child: Row(
-                            children: [
-                              const Icon(Icons.checklist_rtl_rounded, color: primaryAccent, size: 16),
-                              const SizedBox(width: 6),
-                              Text("3. Feature Entitlements", style: TextStyle(color: primaryAccent, fontWeight: FontWeight.bold, fontSize: 13)),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        ...RestaurantFeatureCatalog.byCategory.entries.map((catEntry) {
-                          return Padding(
-                            padding: const EdgeInsets.only(bottom: 12),
-                            child: _buildGroupWidget(
-                              context: context,
-                              title: catEntry.key,
-                              subtitle: "Configured capabilities for ${catEntry.key}",
-                              icon: Icons.tune_rounded,
-                              accentColor: primaryAccent,
-                              children: catEntry.value.map((feat) {
-                                final isSelected = featureToggles[feat.key] ?? false;
-                                return _chipWidget(
-                                  label: feat.label,
-                                  selected: isSelected,
-                                  color: primaryAccent,
-                                  onSelected: (v) {
-                                    setDialogState(() {
-                                      featureToggles[feat.key] = v;
-                                    });
-                                  },
-                                );
-                              }).toList(),
-                            ),
-                          );
-                        }),
                       ],
                     ),
                   ),
@@ -4706,14 +4499,20 @@ class _RegistrationRequestsTabState extends ConsumerState<RegistrationRequestsTa
                             final pan = panController.text.trim();
                             final aadhaar = aadhaarController.text.trim();
 
-                            final finalPlan = selectedPlan.copyWith(
-                              validityDays: validityDays,
-                              maxOutlets: maxOutlets,
-                              maxDevices: maxDevices,
+                            // The subscription record matching the chosen
+                            // package, so the plan name and billing cycle stay
+                            // meaningful. Every limit and feature below comes
+                            // from the resolver, not from that record.
+                            final basePlan = _planForProfile(
+                                selection.profile, availablePlans, selectedPlan);
+                            final finalPlan = basePlan.copyWith(
+                              validityDays: selection.validityDays,
+                              maxOutlets: selection.effectiveOutlets,
+                              maxDevices: selection.effectiveDevices,
                               maxUsers: maxUsers,
                               tableCount: tableCount,
                               operatingMode: operatingMode,
-                              features: featureToggles,
+                              features: selection.resolvedFeatures,
                             );
 
                             final result = await TenantProvisioningService.provisionTenant(
@@ -4730,7 +4529,8 @@ class _RegistrationRequestsTabState extends ConsumerState<RegistrationRequestsTa
                               gstNo: gst.isNotEmpty ? gst : null,
                               plan: finalPlan,
                               requestId: requestId,
-                              storageMode: storageMode,
+                              storageMode: selection.storageMode,
+                              planProfile: selection.profile.id,
                             );
 
                             if (result['success'] != true) {
@@ -4742,7 +4542,7 @@ class _RegistrationRequestsTabState extends ConsumerState<RegistrationRequestsTa
                               AppToast.showSuccess(
                                 context,
                                 "Request Approved & Client Onboarded",
-                                subtitle: "$orgName ($orgId) onboarded with ${selectedPlan.name}.",
+                                subtitle: "$orgName ($orgId) onboarded with ${finalPlan.name}.",
                               );
                             }
                           } catch (e) {
