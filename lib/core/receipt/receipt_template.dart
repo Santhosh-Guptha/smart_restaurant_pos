@@ -64,6 +64,7 @@ BlockType _parseType(String? raw) => BlockType.values.firstWhere(
       orElse: () => BlockType.text,
     );
 
+// ignore: camel_case_types
 enum TextAlign_ { left, center, right }
 
 /// Character-cell sizes an ESC/POS printer can do. `xl` is double width and
