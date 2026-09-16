@@ -25,12 +25,15 @@ import '../restaurant/branch_management_screen.dart';
 import '../settings/staff_management_screen.dart';
 import '../restaurant/store_configuration_screen.dart';
 import '../settings/settings_sidebar_dialog.dart';
+import '../settings/plan_request_sheet.dart';
 import '../analytics/restaurant_analytics_screen.dart';
 import '../orders/restaurant_order_history_screen.dart';
 import '../expenses/expenses_screen.dart';
 import '../waiter/waiter_table_picker_screen.dart';
 import '../../core/rbac_permissions.dart';
 import '../../core/entitlements.dart';
+import '../../core/saas_models.dart';
+import '../../utils/ui_feedback.dart';
 import '../../core/cloud_gate.dart';
 
 class RestaurantHomeScreen extends ConsumerStatefulWidget {
@@ -213,6 +216,142 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
     );
   }
 
+  // ── Plan expiry (owner only) ───────────────────────────────────────────────
+
+  /// True when the owner can still do something about it: the plan is close to
+  /// its end, or already past it. `expiryWarningDays` is set per tenant by the
+  /// console, so a shop on an annual plan is not nagged for a month.
+  bool _planNeedsAttention(SaasLicense? licence) {
+    if (licence == null) return false;
+    return licence.isExpired || licence.isNearExpiry || licence.isPastDue;
+  }
+
+  /// A trial can be upgraded by the owner asking; a paid plan is a
+  /// conversation with the administrator. Neither shows a price (D5).
+  bool _isTrial(SaasLicense licence) =>
+      licence.planTier.toUpperCase().contains('TRIAL') ||
+      (licence.planProfile ?? '').toUpperCase().contains('TRIAL');
+
+  Future<void> _openPlanRequest(SaasLicense licence) async {
+    final sent = await PlanRequestSheet.show(
+      context,
+      type: licence.isExpired ? 'RENEWAL' : 'UPGRADE',
+    );
+    if (sent == true && mounted) {
+      AppToast.showSuccess(context, 'Request sent',
+          subtitle: 'Your administrator will confirm the final plan with you.');
+    }
+  }
+
+  Widget _planActionButton(BuildContext context, SaasLicense licence) {
+    final expired = licence.isExpired;
+    final trial = _isTrial(licence);
+    final color = expired ? ClassicTheme.dangerRed : ClassicTheme.warningAmber;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: TextButton.icon(
+        onPressed: () => _openPlanRequest(licence),
+        icon: Icon(trial ? Icons.bolt_rounded : Icons.support_agent_rounded,
+            size: 18, color: color),
+        label: Text(
+          trial ? 'Upgrade' : 'Contact admin',
+          style: TextStyle(
+              fontSize: 12, fontWeight: FontWeight.bold, color: color),
+        ),
+        style: TextButton.styleFrom(
+          backgroundColor: color.withValues(alpha: 0.10),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          visualDensity: VisualDensity.compact,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPlanBanner(SaasLicense licence) {
+    final expired = licence.isExpired;
+    final trial = _isTrial(licence);
+    final days = licence.daysRemaining;
+    final color = expired ? ClassicTheme.dangerRed : ClassicTheme.warningAmber;
+
+    final String headline;
+    if (expired) {
+      headline = trial ? 'Your trial has ended' : 'Your plan has ended';
+    } else if (licence.isPastDue) {
+      headline = 'Payment is past due';
+    } else {
+      headline = trial
+          ? 'Trial ends in $days day${days == 1 ? '' : 's'}'
+          : 'Plan ends in $days day${days == 1 ? '' : 's'}';
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: color.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(expired ? Icons.event_busy_rounded : Icons.schedule_rounded,
+              color: color, size: 22),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(headline,
+                    style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        color: context.textPrimary)),
+                const SizedBox(height: 3),
+                Text(
+                  // Rule 7, said out loud: whatever happens to the plan, the
+                  // till keeps working. An owner who fears losing the register
+                  // mid-service will pay under duress; that is not a business
+                  // we want to run.
+                  expired
+                      ? 'Billing keeps working on this device. Ask your administrator to '
+                          'restore the rest.'
+                      : 'Nothing stops working on the day it ends — billing carries on '
+                          'either way.',
+                  style: TextStyle(
+                      fontSize: 12, color: context.textSecondary, height: 1.4),
+                ),
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    ElevatedButton.icon(
+                      onPressed: () => _openPlanRequest(licence),
+                      icon: Icon(trial ? Icons.bolt_rounded : Icons.mail_outline_rounded,
+                          size: 16),
+                      label: Text(trial ? 'Ask for an upgrade' : 'Contact administrator',
+                          style: const TextStyle(
+                              fontSize: 12, fontWeight: FontWeight.bold)),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: color,
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        visualDensity: VisualDensity.compact,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8)),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final restaurantAuth = ref.watch(restaurantAuthProvider);
@@ -353,6 +492,10 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
           ],
         ),
         actions: [
+          // Owner only (rule 2 for roles): a waiter mid-service can do nothing
+          // about a licence, so telling them about it is noise on a busy screen.
+          if (isOwner && _planNeedsAttention(saasSession.currentLicense))
+            _planActionButton(context, saasSession.currentLicense!),
           IconButton(
             tooltip: 'User & Terminal Settings',
             icon: Icon(Icons.settings_outlined, color: context.textPrimary, size: 22),
@@ -384,6 +527,10 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
               // Google Sheets Authorization Banner (if not verified and not pure offline)
               if (_sheetAccessVerified != true && !isOwner && !isPureOffline)
                 _buildSheetAuthBanner(),
+
+              // Plan running out — owner only.
+              if (isOwner && _planNeedsAttention(saasSession.currentLicense))
+                _buildPlanBanner(saasSession.currentLicense!),
 
               // Welcome Shift Banner
               _buildWelcomeBanner(user?.fullName ?? user?.email ?? 'Partner', storeName, roleDisplayName),
