@@ -1,9 +1,9 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
+﻿import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:mailer/mailer.dart';
 import 'package:mailer/smtp_server.dart';
-
+import '../core/constants.dart';
 import '../core/entitlements.dart';
 import '../core/feature_usage.dart';
 
@@ -14,6 +14,7 @@ class SmtpConfig {
   final String username;
   final String password;
   final String fromName;
+  final bool inheritPlatform;
 
   SmtpConfig({
     required this.host,
@@ -22,6 +23,7 @@ class SmtpConfig {
     required this.username,
     required this.password,
     required this.fromName,
+    this.inheritPlatform = true,
   });
 
   factory SmtpConfig.fromMap(Map<String, dynamic> map) {
@@ -32,6 +34,7 @@ class SmtpConfig {
       username: map['username'] ?? '',
       password: map['password'] ?? '',
       fromName: map['fromName'] ?? 'SmartDine POS',
+      inheritPlatform: map['inheritPlatform'] != false,
     );
   }
 
@@ -43,6 +46,7 @@ class SmtpConfig {
       'username': username,
       'password': password,
       'fromName': fromName,
+      'inheritPlatform': inheritPlatform,
     };
   }
 
@@ -52,6 +56,43 @@ class SmtpConfig {
 
 class SmtpEmailService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+
+  /// Retrieves the effective SMTP configuration for a tenant.
+  /// If the tenant specifies custom SMTP (inheritPlatform == false) and it is configured,
+  /// returns the tenant's configuration. Otherwise falls back to platform SMTP.
+  static Future<SmtpConfig> getEffectiveSmtpConfig({String? organizationId}) async {
+    if (organizationId != null && organizationId.trim().isNotEmpty) {
+      final cleanOrgId = organizationId.trim();
+      try {
+        final doc = await _firestore.collection('organizations').doc(cleanOrgId).get();
+        if (doc.exists && doc.data() != null) {
+          final data = doc.data()!;
+          final smtpData = data['smtpConfig'];
+          if (smtpData is Map) {
+            final tenantConfig = SmtpConfig.fromMap(Map<String, dynamic>.from(smtpData));
+            if (!tenantConfig.inheritPlatform && tenantConfig.isConfigured) {
+              return tenantConfig;
+            }
+          }
+        }
+      } catch (e) {
+        debugPrint("getEffectiveSmtpConfig tenant read error: $e");
+      }
+
+      try {
+        final box = Hive.isBoxOpen('configBox') ? Hive.box('configBox') : null;
+        final cached = box?.get('smtp_config_$cleanOrgId');
+        if (cached is Map) {
+          final tenantConfig = SmtpConfig.fromMap(Map<String, dynamic>.from(cached));
+          if (!tenantConfig.inheritPlatform && tenantConfig.isConfigured) {
+            return tenantConfig;
+          }
+        }
+      } catch (_) {}
+    }
+
+    return getSmtpConfig();
+  }
 
   /// Retrieves SMTP Configuration from Firestore or Hive fallback
   static Future<SmtpConfig> getSmtpConfig() async {
@@ -89,7 +130,17 @@ class SmtpEmailService {
     );
   }
 
-  /// Updates SMTP Configuration in Firestore & local cache
+  /// Updates SMTP Configuration in Firestore & local cache.
+  ///
+  /// The Firestore write used to be wrapped in a `catch` that only
+  /// `debugPrint`ed, so a failed write still let the console report
+  /// "Configuration Saved!". The config existed on that one device's Hive and
+  /// nowhere else: every other terminal, and every OTP or onboarding mail sent
+  /// from anywhere but that device, silently kept using the old settings.
+  /// It now throws, and the caller is responsible for telling the truth.
+  ///
+  /// The local cache is still written first, so a save that fails only because
+  /// the device is offline leaves this terminal working.
   static Future<void> saveSmtpConfig(SmtpConfig config) async {
     final box = Hive.box('configBox');
     await box.put('smtp_config', config.toMap());
@@ -101,6 +152,11 @@ class SmtpEmailService {
       );
     } catch (e) {
       debugPrint("SmtpEmailService Firestore save error: $e");
+      throw Exception(
+        'Saved on this device only ΓÇö the platform copy could not be written, '
+        'so other terminals will keep using the previous SMTP settings. '
+        'Check your connection and save again. ($e)',
+      );
     }
   }
 
@@ -114,15 +170,16 @@ class SmtpEmailService {
       final message = Message()
         ..from = Address(config.username.trim(), config.fromName)
         ..recipients.add(toEmail.trim())
-        ..subject = 'SmartDine POS — SMTP Configuration Test'
+        ..subject = 'SmartDine POS ΓÇö SMTP Configuration Test'
         ..html = '''
         <div style="font-family: sans-serif; padding: 24px; color: #1e293b; background: #f8fafc; border-radius: 12px; border: 1px solid #e2e8f0;">
           <h2 style="color: #10b981; margin-top: 0;">&#10004; SMTP Connection Successful!</h2>
           <p>This test email confirms that your outgoing mail server configuration is working properly.</p>
           <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 16px 0;" />
-          <p><strong>Host:</strong> \${config.host}:\${config.port}</p>
-          <p><strong>Sender:</strong> \${config.username}</p>
-          <p><strong>Sender Name:</strong> \${config.fromName}</p>
+          <p><strong>Host:</strong> ${config.host}:${config.port}</p>
+          <p><strong>Encryption:</strong> ${config.isSsl ? 'SSL' : 'STARTTLS / none'}</p>
+          <p><strong>Sender:</strong> ${config.username}</p>
+          <p><strong>Sender Name:</strong> ${config.fromName}</p>
           <p style="color: #64748b; font-size: 12px; margin-top: 20px;">Sent from SmartDine POS Platform Administration.</p>
         </div>
         ''';
@@ -184,13 +241,13 @@ class SmtpEmailService {
               <span style="font-size: 16px; margin-right: 6px;">&#128241;</span>
               <span style="font-size: 12px; font-weight: 700; color: #1e293b;">Smart POS Android & Cloud Suite</span>
             </div>
-            <p style="margin: 3px 0 0 0; font-size: 11px; color: #64748b;">Restaurant billing, tables &amp; kitchen — online or fully offline</p>
+            <p style="margin: 3px 0 0 0; font-size: 11px; color: #64748b;">Universal Billing, Offline POS, Multi-Outlet & Customer Khata Management</p>
           </td>
         </tr>
         <tr>
           <td style="background: #f8fafc; border-radius: 8px; padding: 10px 14px;">
             <div style="font-size: 11px; color: #475569;">
-              <strong>&#9993; Official Support:</strong> <a href="mailto:santhoshbukka5@gmail.com" style="color: #2563eb; text-decoration: none; font-weight: 600;">santhoshbukka5@gmail.com</a>
+              <strong>&#9993; Official Support:</strong> <a href="mailto:$kAdminEmail" style="color: #2563eb; text-decoration: none; font-weight: 600;">$kAdminEmail</a>
             </div>
             <div style="font-size: 10px; color: #94a3b8; margin-top: 4px;">
               This is an automated system message. For immediate assistance, reply to this email or contact support.
@@ -276,6 +333,84 @@ class SmtpEmailService {
       return {'success': true, 'message': 'OTP email delivered successfully.'};
     } catch (e) {
       debugPrint("SmtpEmailService error sending OTP: $e");
+      return {'success': false, 'error': e.toString()};
+    }
+  }
+
+  // =========================================================================
+  // 1b. TEMPLATE: MASTER ADMIN 2-STEP VERIFICATION (2MFA) OTP EMAIL
+  // =========================================================================
+  static Future<Map<String, dynamic>> sendMfaLoginOtp({
+    required String recipientEmail,
+    required String clientName,
+    required String otpCode,
+  }) async {
+    final cleanEmail = recipientEmail.trim().toLowerCase();
+    if (cleanEmail.isEmpty || !cleanEmail.contains('@')) {
+      return {'success': false, 'error': 'Invalid recipient email address.'};
+    }
+
+    try {
+      final config = await getSmtpConfig();
+      if (!config.isConfigured) return {'success': false, 'error': 'SMTP Gateway not configured.'};
+
+      final smtpServer = _buildSmtpServer(config);
+      final headerHtml = _buildHeaderHtml(
+        badgeText: "Security Challenge - 2MFA",
+        badgeBg: "#fef3c7",
+        badgeColor: "#d97706",
+        title: "SmartDine Security Center",
+        subtitle: "Platform Master Admin Authentication",
+      );
+      final footerHtml = _buildFooterHtml();
+
+      final message = Message()
+        ..from = Address(config.username, config.fromName)
+        ..recipients.add(cleanEmail)
+        ..subject = '[SmartDine Security] Master Admin 2-Step Verification Code: $otpCode'
+        ..text = 'Hello $clientName,\n\nYour 6-digit Master Admin verification code is: $otpCode\n\nThis code will expire in 10 minutes.\nIf you did not attempt to sign in, please secure your administrative credentials immediately.\n\nBest regards,\nSmartDine Platform Security'
+        ..html = '''
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { font-family: 'Segoe UI', Arial, sans-serif; background-color: #f1f5f9; margin: 0; padding: 24px; }
+    .card { max-width: 520px; margin: 0 auto; background: #ffffff; border-radius: 16px; border: 1px solid #e2e8f0; padding: 32px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }
+    .greeting { color: #334155; font-size: 15px; margin-bottom: 16px; }
+    .otp-box { text-align: center; margin: 24px 0; background: #eff6ff; border: 2px dashed #2563eb; border-radius: 12px; padding: 20px; }
+    .otp-code { font-size: 36px; font-weight: 900; letter-spacing: 8px; color: #1d4ed8; font-family: monospace; }
+    .expiry { color: #dc2626; font-size: 12px; font-weight: 600; margin-top: 8px; }
+    .note { color: #64748b; font-size: 13px; line-height: 1.5; }
+    .warning { background: #fffbeb; border: 1px solid #fef3c7; border-radius: 8px; padding: 12px; margin-top: 16px; color: #92400e; font-size: 12px; line-height: 1.4; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    $headerHtml
+    <p class="greeting">Hello <strong>$clientName</strong>,</p>
+    <p class="note">A sign-in attempt to the <strong>SmartDine Master Administration Console</strong> requires two-step verification. Please enter the following 6-digit security code to verify your identity:</p>
+    
+    <div class="otp-box">
+      <div class="otp-code">$otpCode</div>
+      <div class="expiry">&#9201; Valid for 10 minutes</div>
+    </div>
+    
+    <div class="warning">
+      <strong>&#9888; Security Alert:</strong> If you did not initiate this login attempt, someone may be attempting to access the platform. Please secure your account immediately.
+    </div>
+    
+    $footerHtml
+  </div>
+</body>
+</html>
+''';
+
+      await send(message, smtpServer).timeout(const Duration(seconds: 15));
+      debugPrint("SmtpEmailService: 2MFA login OTP sent to $cleanEmail");
+      return {'success': true, 'message': '2MFA code delivered successfully.'};
+    } catch (e) {
+      debugPrint("SmtpEmailService error sending 2MFA OTP: $e");
       return {'success': false, 'error': e.toString()};
     }
   }
@@ -398,21 +533,10 @@ class SmtpEmailService {
       );
       final footerHtml = _buildFooterHtml();
 
-      // Feature breakdown, generated from the catalogue rather than written
-      // by hand.
-      //
-      // The list this replaced was inherited from the retail build: it always
-      // claimed "Inventory & Stock Management" and "Customer CRM & Khata",
-      // neither of which exists in this app, and it tested keys the resolver
-      // has never heard of (`loyaltyEnabled`, `supplierManagement`,
-      // `reportsEnabled`), so every tenant — including one with everything
-      // switched on — was told dine-in and table ordering were locked. A
-      // welcome e-mail is the first thing a new customer reads; it has to be
-      // true. Anything marked not-built in `kFeatureUsage` is left out of both
-      // lists, so we never sell what we have not written.
-      final feat = features ?? const <String, bool>{};
+      // Feature breakdown lists
       final activeList = <String>[];
       final upgradeList = <String>[];
+      final feat = features ?? {};
 
       for (final def in FeatureCatalog.all) {
         if (kFeatureUsage[def.key]?.implemented == false) continue;
@@ -430,7 +554,7 @@ class SmtpEmailService {
       final message = Message()
         ..from = Address(config.username, config.fromName)
         ..recipients.add(cleanEmail)
-        ..subject = '🎉 Congratulations! Your Smart POS Store Account is Activated'
+        ..subject = '≡ƒÄë Congratulations! Your Smart POS Store Account is Activated'
         ..text = 'Hello $clientName,\n\nYour store "$shopName" has been approved and activated!\n\nOrganization ID: $organizationId\nPlan: $planTier\nLogin Email: $cleanEmail\nDefault Password: ${defaultPassword ?? "Set by admin"}\n\nOn your first login, you will be prompted to set your private permanent password.\n\nBest regards,\nSmart POS Team'
         ..html = '''
 <!DOCTYPE html>
@@ -486,7 +610,7 @@ class SmtpEmailService {
         $upgradeFeaturesHtml
       </ul>
       <div style="margin-top: 10px; font-size: 11.5px; color: #78350f;">
-        To unlock any of these features, add more stores or expand device limits, contact support at <a href="mailto:santhoshbukka5@gmail.com" style="color: #2563eb; font-weight: bold;">santhoshbukka5@gmail.com</a>.
+        To unlock any of these features, add more stores or expand device limits, contact support at <a href="mailto:$kAdminEmail" style="color: #2563eb; font-weight: bold;">$kAdminEmail</a>.
       </div>
     </div>
     ''' : ''}
@@ -607,7 +731,7 @@ class SmtpEmailService {
 
       final message = Message()
         ..from = Address(config.username, "SmartDine Platform Alerts")
-        ..recipients.add("santhoshbukka5@gmail.com")
+        ..recipients.add(kAdminEmail)
         ..subject = '[Priority] License Renewal Requested: $orgName ($orgId)'
         ..text = 'Hello Master Admin,\n\nClient "$orgName" (ID: $orgId) has requested a license renewal for their $planTier plan.\n\nClient Email: ${clientEmail ?? "N/A"}\nPhone: ${clientPhone ?? "N/A"}\n\nPlease sign in to the Master Admin Console to approve and extend this client\'s license.\n\nSmartDine System Alert'
         ..html = '''
@@ -733,6 +857,112 @@ class SmtpEmailService {
       return {'success': true, 'message': 'Client renewal confirmation delivered.'};
     } catch (e) {
       debugPrint("SmtpEmailService error sending renewal confirmation email: $e");
+      return {'success': false, 'error': e.toString()};
+    }
+  }
+
+  // =========================================================================
+  // 7. TEMPLATE 7: DIGITAL POS BILL TAX INVOICE EMAIL (WITH PDF ATTACHMENT)
+  // =========================================================================
+  static Future<Map<String, dynamic>> sendBillInvoiceEmail({
+    required String recipientEmail,
+    required String customerName,
+    required String billNumber,
+    required String tableName,
+    required String restaurantName,
+    required double totalAmount,
+    required String paymentMode,
+    required Uint8List pdfBytes,
+    String? organizationId,
+  }) async {
+    final cleanEmail = recipientEmail.trim().toLowerCase();
+    if (cleanEmail.isEmpty || !cleanEmail.contains('@')) {
+      return {'success': false, 'error': 'Invalid recipient email address.'};
+    }
+
+    try {
+      final config = await getEffectiveSmtpConfig(organizationId: organizationId);
+      if (!config.isConfigured) {
+        return {'success': false, 'error': 'SMTP Gateway not configured.'};
+      }
+
+      final smtpServer = _buildSmtpServer(config);
+      final headerHtml = _buildHeaderHtml(
+        badgeText: "Tax Invoice ΓÇó Paid",
+        badgeBg: "#dcfce7",
+        badgeColor: "#15803d",
+        title: restaurantName,
+        subtitle: "Official Digital POS Bill Receipt",
+      );
+      final footerHtml = _buildFooterHtml();
+
+      final cleanBillId = billNumber.replaceAll(RegExp(r'[^a-zA-Z0-9_\-]'), '_');
+      final cleanCust = customerName.trim().isNotEmpty && customerName != 'Guest' && customerName != 'Dine-In Guest'
+          ? customerName.trim()
+          : 'Valued Guest';
+
+      final message = Message()
+        ..from = Address(config.username.trim(), config.fromName.isNotEmpty ? config.fromName : restaurantName)
+        ..recipients.add(cleanEmail)
+        ..subject = 'Your Tax Invoice #$billNumber from $restaurantName'
+        ..text = 'Hello $cleanCust,\n\nThank you for dining at $restaurantName!\n\nInvoice Number: $billNumber\nTable: $tableName\nTotal Amount: Rs. ${totalAmount.toStringAsFixed(2)}\nPayment Mode: $paymentMode\nStatus: PAID IN FULL\n\nPlease find your official digital POS bill Tax Invoice attached as a PDF.\n\nBest regards,\n$restaurantName'
+        ..html = '''
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { font-family: 'Segoe UI', Arial, sans-serif; background-color: #f1f5f9; margin: 0; padding: 24px; }
+    .card { max-width: 540px; margin: 0 auto; background: #ffffff; border-radius: 16px; border: 1px solid #e2e8f0; padding: 32px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }
+    .greeting { color: #1e293b; font-size: 15px; margin-bottom: 14px; }
+    .bill-box { background: #f0fdf4; border: 1.5px solid #86efac; border-radius: 12px; padding: 18px; margin: 18px 0; }
+    .bill-row { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 13px; }
+    .bill-label { color: #166534; font-weight: 600; }
+    .bill-val { color: #14532d; font-weight: bold; }
+    .total-row { border-top: 1.5px dashed #86efac; padding-top: 8px; margin-top: 8px; font-size: 15px; }
+    .attach-notice { background: #eff6ff; border-left: 4px solid #3b82f6; border-radius: 6px; padding: 12px 14px; font-size: 12px; color: #1e40af; margin-top: 16px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    $headerHtml
+    <p class="greeting">Hello <strong>$cleanCust</strong>,</p>
+    <p style="color: #475569; font-size: 13px; line-height: 1.5;">
+      Thank you for dining with us at <strong>$restaurantName</strong>. Your bill has been settled in full.
+    </p>
+
+    <div class="bill-box">
+      <div class="bill-row"><span class="bill-label">Invoice Number:</span> <span class="bill-val">$billNumber</span></div>
+      <div class="bill-row"><span class="bill-label">Table / Order:</span> <span class="bill-val">$tableName</span></div>
+      <div class="bill-row"><span class="bill-label">Payment Mode:</span> <span class="bill-val">${paymentMode.toUpperCase()}</span></div>
+      <div class="bill-row total-row">
+        <span class="bill-label" style="font-size: 14px;">Total Amount Paid:</span>
+        <span class="bill-val" style="font-size: 16px; color: #047857;">Rs. ${totalAmount.toStringAsFixed(2)}</span>
+      </div>
+    </div>
+
+    <div class="attach-notice">
+      &#128206; <strong>Attached Document:</strong> Your official print-ready Tax Invoice PDF (<code>Invoice_$cleanBillId.pdf</code>) is attached with complete itemized breakdown and tax details.
+    </div>
+
+    $footerHtml
+  </div>
+</body>
+</html>
+'''
+        ..attachments.add(
+          StreamAttachment(
+            Stream.fromIterable([pdfBytes]),
+            'application/pdf',
+            fileName: 'Invoice_$cleanBillId.pdf',
+          ),
+        );
+
+      await send(message, smtpServer).timeout(const Duration(seconds: 15));
+      debugPrint("SmtpEmailService: Bill invoice sent successfully to $cleanEmail");
+      return {'success': true, 'message': 'Bill invoice emailed successfully.'};
+    } catch (e) {
+      debugPrint("SmtpEmailService error sending bill invoice email: $e");
       return {'success': false, 'error': e.toString()};
     }
   }
