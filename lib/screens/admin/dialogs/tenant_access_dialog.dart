@@ -4,7 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/classic_theme.dart';
 import '../../../core/design_tokens.dart';
+import '../../../core/entitlements.dart';
 import '../../../utils/ui_feedback.dart';
+import '../widgets/tenant_package_editor.dart';
 
 /// Pause, restore, re-licence or close one tenant.
 ///
@@ -45,6 +47,9 @@ class _TenantAccessDialogState extends ConsumerState<TenantAccessDialog> {
   DateTime? _endDate;
   int _maxDevices = 1;
   String _planProfile = '';
+  String _storageMode = StorageModes.cloudSync;
+  Map<String, bool> _features = const {};
+  bool _changePending = false;
   DateTime? _purgeAfter;
 
   @override
@@ -68,6 +73,14 @@ class _TenantAccessDialogState extends ConsumerState<TenantAccessDialog> {
         _endDate = _asDate(l['endDate']);
         _maxDevices = (l['maxDevices'] is num) ? (l['maxDevices'] as num).toInt() : 1;
         _planProfile = (l['planProfile'] ?? l['planTier'] ?? '').toString();
+        _storageMode = (o['storageMode'] ?? StorageModes.cloudSync).toString().toUpperCase();
+        _changePending =
+            (o['pendingStorageChange'] is Map) &&
+            ((o['pendingStorageChange'] as Map)['status']?.toString() == 'PENDING');
+        _features = {
+          for (final e in (l['features'] as Map? ?? {}).entries)
+            e.key.toString(): e.value == true,
+        };
         _loading = false;
       });
     } catch (e) {
@@ -205,6 +218,133 @@ class _TenantAccessDialogState extends ConsumerState<TenantAccessDialog> {
             'Removed: ${counts.entries.map((e) => '${e.key} ${e.value}').join(', ')}');
       }, 'Tenant purged');
 
+  /// Re-package an existing tenant through the same editor onboarding uses,
+  /// and write what the resolver says — never what was typed.
+  Future<void> _changePackage() async {
+    final profile = PlanProfile.byId(_planProfile);
+    var selection = TenantPackageSelection.forProfile(
+      profile,
+      validityDays: _endDate == null
+          ? 365
+          : _endDate!.difference(DateTime.now()).inDays.clamp(14, 3650),
+      // Only genuine add-ons carry over. Applying a package normalises the
+      // tenant to that package plus what is explicitly sold on top.
+      addOns: {
+        for (final e in _features.entries)
+          if (e.value && !profile.includes(e.key)) e.key: true,
+      },
+    ).copyWith(
+      storageMode:
+          profile.allowedStorageModes.contains(_storageMode) ? _storageMode : null,
+      maxDevices: _maxDevices,
+    );
+
+    final saved = await showDialog<TenantPackageSelection>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheet) => AlertDialog(
+          backgroundColor: ctx.surfaceColor,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(DS.radiusXl),
+            side: BorderSide(color: ctx.borderColor),
+          ),
+          title: Text('Package for ${widget.orgName}',
+              style: TextStyle(
+                  fontSize: DS.fontTitle,
+                  fontWeight: FontWeight.w700,
+                  color: ctx.textPrimary)),
+          content: SizedBox(
+            width: ClassicTheme.dialogWidth(ctx, 520),
+            child: SingleChildScrollView(
+              child: TenantPackageEditor(
+                value: selection,
+                onChanged: (v) => setSheet(() => selection = v),
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: ClassicTheme.primaryAccent,
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () => Navigator.pop(ctx, selection),
+              child: const Text('Apply'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (saved == null) return;
+
+    await _run(() async {
+      final now = FieldValue.serverTimestamp();
+      final resolvedFeatures = saved.resolvedFeatures;
+      final preview = saved.resolved;
+      final batch = _fs.batch();
+
+      batch.set(_fs.collection('licenses').doc(widget.orgId), {
+        'planProfile': saved.profile.id,
+        'features': resolvedFeatures,
+        'maxDevices': saved.effectiveDevices,
+        'maxFranchises': saved.effectiveOutlets,
+        'status': 'ACTIVE',
+        'endDate': Timestamp.fromDate(DateTime.now().add(Duration(days: saved.validityDays))),
+        'updatedAt': now,
+      }, SetOptions(merge: true));
+
+      // Legacy mirror — one more release.
+      batch.set(_fs.collection('features').doc(widget.orgId), {
+        'features': resolvedFeatures,
+        'planProfile': saved.profile.id,
+        'updatedAt': now,
+        'updatedBy': 'master_admin',
+      }, SetOptions(merge: true));
+
+      // What the guest web app reads, so a switched-off add-on shows there too.
+      batch.set(_fs.collection('public_stores').doc(widget.orgId), {
+        'onlineMenuEnabled': preview.isEnabled(FeatureKeys.onlineMenu),
+        'onlineOrderingEnabled': preview.isEnabled(FeatureKeys.onlineOrderingEnabled),
+        'qrOrderingEnabled': preview.isEnabled(FeatureKeys.qrOrdering),
+        'entitlementsUpdatedAt': now,
+      }, SetOptions(merge: true));
+
+      // A different storage mode is requested, never applied here: the owner
+      // completes the migration on their device and the mode flips after the
+      // count check (FEATURE_MASTER_PLAN.md §9).
+      if (saved.storageMode != _storageMode) {
+        batch.set(_fs.collection('organizations').doc(widget.orgId), {
+          'pendingStorageChange': {
+            'from': _storageMode,
+            'to': saved.storageMode,
+            'status': 'PENDING',
+            'requestedBy': 'master_admin',
+            'requestedAt': now,
+            'steps': <String, dynamic>{},
+          },
+          'updatedAt': now,
+        }, SetOptions(merge: true));
+      }
+
+      final on = resolvedFeatures.entries.where((e) => e.value).map((e) => e.key).toList()
+        ..sort();
+      batch.set(_fs.collection('audit_logs').doc(), {
+        'action': 'TENANT_PACKAGE_CHANGED',
+        'targetOrgId': widget.orgId,
+        'targetOrgName': widget.orgName,
+        'details': 'Package ${saved.profile.id} · ${saved.effectiveDevices} device(s), '
+            '${saved.effectiveOutlets} outlet(s) · ${saved.validityDays} days'
+            '${saved.storageMode != _storageMode ? ' · storage $_storageMode → ${saved.storageMode} (requested)' : ''}'
+            ' · on: ${on.join(', ')}',
+        'by': 'master_admin',
+        'timestamp': now,
+      });
+
+      await batch.commit();
+    }, 'Package updated');
+  }
+
   Future<void> _restore() => _run(() async {
         await _fs.collection('organizations').doc(widget.orgId).set({
           'status': 'ACTIVE',
@@ -316,7 +456,7 @@ class _TenantAccessDialogState extends ConsumerState<TenantAccessDialog> {
     final suspended = _status == 'SUSPENDED';
     final deleted = _status == 'DELETED';
     final revoked = _licenceStatus == 'REVOKED';
-    final expiresIn = _endDate == null ? null : _endDate!.difference(DateTime.now()).inDays;
+    final expiresIn = _endDate?.difference(DateTime.now()).inDays;
 
     return AlertDialog(
       backgroundColor: context.surfaceColor,
@@ -380,6 +520,23 @@ class _TenantAccessDialogState extends ConsumerState<TenantAccessDialog> {
                         },
                       ),
                     ] else ...[
+                      _sectionLabel('Package'),
+                      _action(
+                        icon: Icons.inventory_2_outlined,
+                        color: ClassicTheme.primaryAccent,
+                        title: 'Change package & add-ons',
+                        subtitle: _changePending
+                            ? 'A storage-mode change is already pending for this tenant — '
+                                'finish or cancel it before changing the package again.'
+                            : 'Package, storage, limits and add-ons in one editor. Saved '
+                                'through the resolver, so the tenant gets exactly what you see.',
+                        onTap: _changePending
+                            ? () => AppToast.showWarning(context,
+                                'A storage change is already pending',
+                                subtitle: 'Cancel it from the Migrations tab first.')
+                            : _changePackage,
+                      ),
+                      const SizedBox(height: DS.space3),
                       _sectionLabel('Access'),
                       if (!suspended)
                         _action(
