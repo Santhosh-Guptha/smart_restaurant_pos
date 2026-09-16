@@ -316,7 +316,7 @@ class _TenantAccessDialogState extends ConsumerState<TenantAccessDialog> {
     final suspended = _status == 'SUSPENDED';
     final deleted = _status == 'DELETED';
     final revoked = _licenceStatus == 'REVOKED';
-    final expiresIn = _endDate == null ? null : _endDate!.difference(DateTime.now()).inDays;
+    final expiresIn = _endDate?.difference(DateTime.now()).inDays;
 
     return AlertDialog(
       backgroundColor: context.surfaceColor,
