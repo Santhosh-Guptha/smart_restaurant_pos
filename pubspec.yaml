@@ -1,6 +1,6 @@
 name: smart_restaurant_pos
 description: SmartDine - Premium Restaurant, Cafe & Bar POS Platform.
-version: 1.1.7+35
+version: 1.1.7+36
 
 environment:
   sdk: ">=3.0.0 <5.0.0"
