@@ -1,4 +1,4 @@
-﻿import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:mailer/mailer.dart';
@@ -239,9 +239,9 @@ class SmtpEmailService {
           <td style="vertical-align: top; padding-bottom: 12px;">
             <div style="display: flex; align-items: center;">
               <span style="font-size: 16px; margin-right: 6px;">&#128241;</span>
-              <span style="font-size: 12px; font-weight: 700; color: #1e293b;">Smart POS Android & Cloud Suite</span>
+              <span style="font-size: 12px; font-weight: 700; color: #1e293b;">SmartDine Restaurant POS Suite</span>
             </div>
-            <p style="margin: 3px 0 0 0; font-size: 11px; color: #64748b;">Universal Billing, Offline POS, Multi-Outlet & Customer Khata Management</p>
+            <p style="margin: 3px 0 0 0; font-size: 11px; color: #64748b;">Offline POS, Tables, Kitchen Display & Multi-Outlet Management</p>
           </td>
         </tr>
         <tr>

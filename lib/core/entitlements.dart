@@ -577,12 +577,12 @@ class PlanProfile {
       case 'OFFLINE_DINE_IN':
       case 'OFFLINE_ADDON':
       case 'DINEIN_OFFLINE':
+      case 'TRIAL':
         return offlineDineIn;
       case 'CONNECTED':
       case 'ONLINE_BASIC':
       case 'CLOUD':
       case 'STANDARD':
-      case 'TRIAL':
         return connected;
       case 'OMNICHANNEL':
       case 'ONLINE_ADDON':

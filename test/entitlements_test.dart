@@ -192,7 +192,7 @@ void main() {
       expect(PlanProfile.byId('OFFLINE_SINGLE').id, 'OFFLINE_SINGLE');
       expect(PlanProfile.byId('OFFLINE_BASIC').id, 'OFFLINE_SINGLE');
       expect(PlanProfile.forTier('ENTERPRISE_CUSTOM').id, 'OMNICHANNEL');
-      expect(PlanProfile.forTier('TRIAL').id, 'CONNECTED');
+      expect(PlanProfile.forTier('TRIAL').id, 'OFFLINE_DINE_IN');
       expect(PlanProfile.byId(null).id, 'CONNECTED');
     });
 

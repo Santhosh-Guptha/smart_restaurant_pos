@@ -195,18 +195,18 @@ class SaasLicense {
     };
   }
 
-  /// Mock/offline-fallback licence: a short Connected licence.
+  /// Mock/offline-fallback licence: a short Offline Dine-In licence.
   ///
   /// No feature map is written here on purpose — the resolver takes the
-  /// profile's baseline, so this can never drift from `PlanProfile.connected`.
+  /// profile's baseline, so this can never drift from `PlanProfile.offlineDineIn`.
   factory SaasLicense.defaultFree({int trialDays = 14, int expiryWarningDays = 3}) {
     return SaasLicense(
       planTier: 'TRIAL',
-      planProfile: 'CONNECTED',
+      planProfile: 'OFFLINE_DINE_IN',
       status: 'ACTIVE',
       maxFranchises: 1,
       maxUsers: 5,
-      maxDevices: 5,
+      maxDevices: 1,
       allowedRoles: const ['OWNER', 'MANAGER', 'BILLING', 'KITCHEN', 'WAITER'],
       features: const {},
       startDate: DateTime.now(),
