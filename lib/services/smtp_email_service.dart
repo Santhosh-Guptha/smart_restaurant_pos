@@ -153,7 +153,7 @@ class SmtpEmailService {
     } catch (e) {
       debugPrint("SmtpEmailService Firestore save error: $e");
       throw Exception(
-        'Saved on this device only ΓÇö the platform copy could not be written, '
+        'Saved on this device only \u2014 the platform copy could not be written, '
         'so other terminals will keep using the previous SMTP settings. '
         'Check your connection and save again. ($e)',
       );
@@ -170,7 +170,7 @@ class SmtpEmailService {
       final message = Message()
         ..from = Address(config.username.trim(), config.fromName)
         ..recipients.add(toEmail.trim())
-        ..subject = 'SmartDine POS ΓÇö SMTP Configuration Test'
+        ..subject = 'SmartDine POS \u2014 SMTP Configuration Test'
         ..html = '''
         <div style="font-family: sans-serif; padding: 24px; color: #1e293b; background: #f8fafc; border-radius: 12px; border: 1px solid #e2e8f0;">
           <h2 style="color: #10b981; margin-top: 0;">&#10004; SMTP Connection Successful!</h2>
@@ -554,7 +554,7 @@ class SmtpEmailService {
       final message = Message()
         ..from = Address(config.username, config.fromName)
         ..recipients.add(cleanEmail)
-        ..subject = '≡ƒÄë Congratulations! Your Smart POS Store Account is Activated'
+        ..subject = '\u{1F389} Congratulations! Your Smart POS Store Account is Activated'
         ..text = 'Hello $clientName,\n\nYour store "$shopName" has been approved and activated!\n\nOrganization ID: $organizationId\nPlan: $planTier\nLogin Email: $cleanEmail\nDefault Password: ${defaultPassword ?? "Set by admin"}\n\nOn your first login, you will be prompted to set your private permanent password.\n\nBest regards,\nSmart POS Team'
         ..html = '''
 <!DOCTYPE html>
@@ -888,7 +888,7 @@ class SmtpEmailService {
 
       final smtpServer = _buildSmtpServer(config);
       final headerHtml = _buildHeaderHtml(
-        badgeText: "Tax Invoice ΓÇó Paid",
+        badgeText: "Tax Invoice \u2022 Paid",
         badgeBg: "#dcfce7",
         badgeColor: "#15803d",
         title: restaurantName,
