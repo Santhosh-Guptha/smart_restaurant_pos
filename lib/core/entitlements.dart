@@ -470,6 +470,37 @@ class PlanProfile {
   /// Every key in the included tiers on, everything else off.
   Map<String, bool> get features => FeatureCatalog.featuresFor(tiers);
 
+  /// The storage modes a tenant on this package may run. Derived, never
+  /// stored: an offline package that could be pointed at the cloud would be
+  /// a package whose device cap and feature set mean nothing.
+  ///
+  /// The console renders exactly these and nothing else (rule 2: a mode this
+  /// package cannot use is absent, not greyed out).
+  Set<String> get allowedStorageModes => isOffline
+      ? const {StorageModes.pureOffline}
+      : const {StorageModes.cloudSync, StorageModes.clientsOwnSheets};
+
+  /// Catalogue keys this package can be sold as an extra: not already
+  /// included, and not something the package's mode or device cap forbids.
+  ///
+  /// Mirrors the hard constraints in [Entitlements], so the console can never
+  /// offer a switch the resolver would turn straight back off.
+  List<FeatureDef> get availableAddOns => FeatureCatalog.all.where((def) {
+        if (features[def.key] == true) return false;
+        if (isOffline && (def.need != FeatureNeed.none || def.tier.isOnline)) {
+          return false;
+        }
+        if (maxDevices <= 1 && def.need == FeatureNeed.secondDevice) {
+          return false;
+        }
+        return true;
+      }).toList();
+
+  /// True when [key] is part of the package itself — shown as "included",
+  /// with no switch, because turning it off here would not survive the
+  /// resolver.
+  bool includes(String key) => features[key] == true;
+
   static const PlanProfile offlineSingle = PlanProfile(
     id: 'OFFLINE_SINGLE',
     label: 'Offline counter',

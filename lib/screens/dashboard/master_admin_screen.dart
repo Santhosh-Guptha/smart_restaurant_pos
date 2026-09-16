@@ -25,6 +25,10 @@ import '../../services/tenant_provisioning_service.dart';
 import '../admin/views/admin_dashboard_view.dart';
 import '../admin/views/admin_inquiries_view.dart';
 import '../admin/views/admin_features_view.dart';
+import '../admin/views/admin_encyclopedia_view.dart';
+import '../admin/views/admin_packages_view.dart';
+import '../admin/views/admin_migrations_view.dart';
+import '../admin/dialogs/tenant_access_dialog.dart';
 
 class MasterAdminScreen extends ConsumerStatefulWidget {
   const MasterAdminScreen({super.key});
@@ -702,6 +706,9 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
                           const PlansAndFeaturesTab(),
                           const AuditLogsTab(),
                           const AppUpdatesTab(),
+                          const AdminEncyclopediaView(),
+                          const AdminPackagesView(),
+                          const AdminMigrationsView(),
                         ],
                       ),
                     ),
@@ -1077,6 +1084,55 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
                   activeIcon: Icons.system_update_alt_rounded,
                   showExpanded: showExpanded,
                   isMobile: isMobile,
+                ),
+                _buildNavItem(
+                  context,
+                  index: 7,
+                  title: "Feature Guide",
+                  icon: Icons.menu_book_outlined,
+                  activeIcon: Icons.menu_book_rounded,
+                  showExpanded: showExpanded,
+                  isMobile: isMobile,
+                ),
+                _buildNavItem(
+                  context,
+                  index: 8,
+                  title: "Packages",
+                  icon: Icons.inventory_2_outlined,
+                  activeIcon: Icons.inventory_2_rounded,
+                  showExpanded: showExpanded,
+                  isMobile: isMobile,
+                ),
+                _buildNavItem(
+                  context,
+                  index: 9,
+                  title: "Migrations",
+                  icon: Icons.swap_horiz_outlined,
+                  activeIcon: Icons.swap_horiz_rounded,
+                  showExpanded: showExpanded,
+                  isMobile: isMobile,
+                  badgeWidget: StreamBuilder<QuerySnapshot>(
+                    stream: FirebaseFirestore.instance
+                        .collection('organizations')
+                        .where('pendingStorageChange.status', isEqualTo: 'PENDING')
+                        .snapshots(),
+                    builder: (context, snap) {
+                      final n = snap.hasData ? snap.data!.docs.length : 0;
+                      if (n <= 0) return const SizedBox.shrink();
+                      return Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: ClassicTheme.infoBlue,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          '$n',
+                          style: const TextStyle(
+                              color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                        ),
+                      );
+                    },
+                  ),
                 ),
               ],
             ),
@@ -3692,6 +3748,16 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                                       icon: Icon(Icons.edit_outlined, color: primaryAccent, size: 20),
                                       tooltip: "Edit tenant profile & email",
                                       onPressed: () => _showEditOrganizationDialog(docId, name),
+                                    ),
+                                    IconButton(
+                                      icon: const Icon(Icons.admin_panel_settings_outlined,
+                                          color: ClassicTheme.warningAmber, size: 20),
+                                      tooltip: "Access, licence & closure",
+                                      onPressed: () => TenantAccessDialog.show(
+                                        context,
+                                        orgId: docId,
+                                        orgName: name,
+                                      ),
                                     ),
                                   ],
                                 ),

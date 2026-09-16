@@ -225,8 +225,13 @@ on the LAN only, give the PC a fixed IP or hostname).
 
 Choosing the mode for an existing tenant writes `pendingStorageChange` exactly
 as the other modes do. The tenant editor's dropdown gets the same fourth item.
-Hard constraints for this mode in the resolver: devices and outlets follow the
-licence (it is multi-device by design); cloud/internet keys off unless hybrid.
+Hard constraints for this mode in the resolver: devices follow the licence (it
+is multi-device by design); **outlets are pinned to 1** — a LAN database serves
+one venue, cannot be reached by other branches or by the platform admin, so the
+option is hidden when `multiOutlet` is on or the licence has more than one
+outlet, with the notice "Client network database connects over the venue's
+LAN and is available for single-outlet stores only"; cloud/internet keys off
+unless hybrid.
 
 ## 7. Entitlements
 
@@ -253,7 +258,7 @@ multi-device modes. Hard constraints:
 | Mode | maxDevices | `sharedLedger` keys | `cloud` keys |
 |---|---|---|---|
 | PURE_OFFLINE | 1 | off | off |
-| CLIENT_NETWORK_DB | licence | licence | off (hybrid: licence) |
+| CLIENT_NETWORK_DB | licence | licence | off (hybrid: licence) — **maxOutlets = 1**: one LAN is one venue; the mode is hidden when `multiOutlet` is on or outlets > 1 |
 | CLOUD_SYNC / CLIENTS_OWN_SHEETS | licence | licence | licence |
 
 `cloudSync` itself is a `cloud` key and is **off** for a LAN tenant, which is

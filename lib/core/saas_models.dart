@@ -256,6 +256,14 @@ class SaasOrganization {
   /// while `status == 'PENDING'`.
   final Map<String, dynamic>? pendingStorageChange;
 
+  /// ACTIVE · SUSPENDED · DELETED. Sign-in has always refused anything but
+  /// ACTIVE; carrying it on the model is what lets an **open** session react,
+  /// because the organisation listener already pushes every change here.
+  final String status;
+
+  /// Why the platform admin paused or closed this store, shown to the owner.
+  final String? statusReason;
+
   SaasOrganization({
     required this.id,
     required this.name,
@@ -274,7 +282,19 @@ class SaasOrganization {
     this.phone,
     this.gstin,
     this.pendingStorageChange,
+    this.status = 'ACTIVE',
+    this.statusReason,
   });
+
+  /// Paused by the platform admin. The store can still bill (rule 7); the
+  /// rest of the app is withheld until it is reactivated.
+  bool get isSuspended => status.toUpperCase() == 'SUSPENDED';
+
+  /// Closed. Soft-deleted tenants stay restorable for a window before purge.
+  bool get isDeleted => status.toUpperCase() == 'DELETED';
+
+  /// Anything that should stop the tenant reaching the normal app.
+  bool get isLocked => isSuspended || isDeleted;
 
   bool get hasPendingStorageChange =>
       pendingStorageChange != null &&
@@ -304,6 +324,8 @@ class SaasOrganization {
       phone: json['phone'] ?? json['ownerPhone'],
       gstin: json['gstin'],
       pendingStorageChange: _mapOrNull(json['pendingStorageChange']),
+      status: (json['status'] ?? 'ACTIVE').toString(),
+      statusReason: json['statusReason']?.toString(),
     );
   }
 
@@ -344,6 +366,8 @@ class SaasOrganization {
       'phone': phone,
       'gstin': gstin,
       if (pendingStorageChange != null) 'pendingStorageChange': pendingStorageChange,
+      'status': status,
+      if (statusReason != null) 'statusReason': statusReason,
     };
   }
 
@@ -366,6 +390,8 @@ class SaasOrganization {
       phone: data['phone'] ?? data['ownerPhone'],
       gstin: data['gstin'],
       pendingStorageChange: _mapOrNull(data['pendingStorageChange']),
+      status: (data['status'] ?? 'ACTIVE').toString(),
+      statusReason: data['statusReason']?.toString(),
     );
   }
 
@@ -383,6 +409,8 @@ class SaasOrganization {
       'ownerGoogleEmail': ownerGoogleEmail,
       'ownerEmail': ownerGoogleEmail,
       'isGoogleConnected': isGoogleConnected,
+      'status': status,
+      if (statusReason != null) 'statusReason': statusReason,
       'address': address,
       'upiId': upiId,
       'phone': phone,

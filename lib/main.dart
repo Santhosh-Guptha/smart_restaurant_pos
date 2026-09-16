@@ -21,6 +21,7 @@ import 'services/database_cleanup_service.dart';
 import 'services/subscription_plan_service.dart';
 import 'screens/dashboard/restaurant_home_screen.dart';
 import 'screens/migration/storage_migration_gate_screen.dart';
+import 'screens/login/tenant_locked_screen.dart';
 import 'screens/login/saas_login_screen.dart';
 import 'screens/login/saas_expired_screen.dart';
 import 'screens/login/first_login_password_screen.dart';
@@ -221,6 +222,11 @@ class SmartDineApp extends ConsumerWidget {
         homeScreen = const MasterAdminScreen();
       } else if (user.mustChangePassword) {
         homeScreen = const FirstLoginPasswordScreen();
+      } else if (saasSession.currentOrganization?.isLocked == true) {
+        // Paused or closed by the platform admin. The organisation listener
+        // pushes the status change to an open session, so this takes effect
+        // without a sign-out — and the screen still opens the till (rule 7).
+        homeScreen = const TenantLockedScreen();
       } else if (saasSession.currentOrganization?.hasPendingStorageChange == true) {
         // The platform admin asked for a storage-mode change. The owner
         // completes it here before the store runs on the new mode; staff can
