@@ -1,4 +1,4 @@
-﻿import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import '../core/subscription_plan_model.dart';
 import '../core/entitlements.dart';
@@ -9,13 +9,15 @@ class SubscriptionPlanService {
 
   /// Default fallback trial plan used if Firestore is offline or unseeded.
   ///
-  /// Mirrors the Connected profile: cloud on, online add-ons off. A trial is a
-  /// short Connected licence — it is not a fifth shape of tenant.
+  /// Mirrors the Offline Dine-In profile: pure offline, 1 device, 1 outlet,
+  /// full offline feature suite (13 features).
   static final SubscriptionPlan fallbackTrialPlan = _fromProfile(
     id: 'trial',
-    profile: PlanProfile.connected,
+    profile: PlanProfile.offlineDineIn,
     name: 'Free Trial (14 Days)',
-    description: 'Fourteen days of the Connected plan: cloud sync, analytics and every offline feature.',
+    description:
+        'Fourteen days of the Offline Dine-In plan: counter till, tables, '
+        'floor plan, kitchen tickets and reports on your device.',
     isDefaultTrial: true,
     validityDays: 14,
     billingCycle: 'TRIAL',
@@ -31,9 +33,6 @@ class SubscriptionPlanService {
   /// agreed with the platform admin, not read from a document.
   static Future<void> ensureDefaultPlansExist() async {
     try {
-      final snapshot = await _firestore.collection(_collection).limit(1).get();
-      if (snapshot.docs.isNotEmpty) return; // Already seeded
-
       final batch = _firestore.batch();
       final plans = <SubscriptionPlan>[
         fallbackTrialPlan,
@@ -41,7 +40,8 @@ class SubscriptionPlanService {
           id: 'offline_counter',
           profile: PlanProfile.offlineSingle,
           name: 'Offline Counter (Annual)',
-          description: 'One device, billing and menu on the device. No cloud, nothing to configure.',
+          description:
+              'One device, billing and menu on the device. No cloud, nothing to configure.',
           validityDays: 365,
           billingCycle: 'YEARLY',
           maxUsers: 3,
@@ -52,7 +52,8 @@ class SubscriptionPlanService {
           id: 'offline_dine_in',
           profile: PlanProfile.offlineDineIn,
           name: 'Offline Dine-In (Annual)',
-          description: 'One device with tables, running tabs, reservations, KOT slips and expenses.',
+          description:
+              'One device with tables, running tabs, reservations, KOT slips and expenses.',
           validityDays: 365,
           billingCycle: 'YEARLY',
           maxUsers: 5,
@@ -62,7 +63,8 @@ class SubscriptionPlanService {
           id: 'connected',
           profile: PlanProfile.connected,
           name: 'Connected (Annual)',
-          description: 'Cloud ledger, up to five devices, analytics. Online add-ons switched on per store.',
+          description:
+              'Cloud ledger, up to five devices, analytics. Online add-ons switched on per store.',
           validityDays: 365,
           billingCycle: 'YEARLY',
           maxUsers: 10,
@@ -72,7 +74,8 @@ class SubscriptionPlanService {
           id: 'omnichannel',
           profile: PlanProfile.omnichannel,
           name: 'Everything (Annual)',
-          description: 'Every feature: kitchen screens, waiter pads, QR ordering, online menu, outlets.',
+          description:
+              'Every feature: kitchen screens, waiter pads, QR ordering, online menu, outlets.',
           validityDays: 365,
           billingCycle: 'YEARLY',
           maxUsers: 50,
@@ -81,31 +84,51 @@ class SubscriptionPlanService {
       ];
 
       for (final plan in plans) {
-        batch.set(_firestore.collection(_collection).doc(plan.id), {
-          ...plan.toFirestore(),
-          'planProfile': _profileFor(plan.id),
-          'createdAt': FieldValue.serverTimestamp(),
-          'updatedAt': FieldValue.serverTimestamp(),
-        });
+        final profile = _planProfileFor(plan.id);
+        batch.set(
+          _firestore.collection(_collection).doc(plan.id),
+          {
+            ...plan.toFirestore(),
+            'planProfile': profile.id,
+            'storageMode': profile.storageMode,
+            'allowedStorageModes': profile.allowedStorageModes.toList(),
+            'createdAt': FieldValue.serverTimestamp(),
+            'updatedAt': FieldValue.serverTimestamp(),
+          },
+          SetOptions(merge: true),
+        );
       }
 
       await batch.commit();
-      debugPrint("✓ Successfully seeded default SmartDine subscription plans.");
+
+      // Clean up any legacy plans if they exist
+      final legacyDocIds = ['starter', 'pro', 'enterprise'];
+      for (final legacyId in legacyDocIds) {
+        try {
+          final doc = await _firestore.collection(_collection).doc(legacyId).get();
+          if (doc.exists) {
+            await _firestore.collection(_collection).doc(legacyId).delete();
+          }
+        } catch (_) {}
+      }
+
+      debugPrint("✓ Successfully seeded canonical SmartDine subscription plans.");
     } catch (e) {
       debugPrint("SubscriptionPlanService ensureDefaultPlansExist error: $e");
     }
   }
 
-  static String _profileFor(String planId) {
+  static PlanProfile _planProfileFor(String planId) {
     switch (planId) {
-      case 'offline_counter':
-        return PlanProfile.offlineSingle.id;
+      case 'trial':
       case 'offline_dine_in':
-        return PlanProfile.offlineDineIn.id;
+        return PlanProfile.offlineDineIn;
+      case 'offline_counter':
+        return PlanProfile.offlineSingle;
       case 'omnichannel':
-        return PlanProfile.omnichannel.id;
+        return PlanProfile.omnichannel;
       default:
-        return PlanProfile.connected.id;
+        return PlanProfile.connected;
     }
   }
 
