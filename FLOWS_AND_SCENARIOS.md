@@ -16,6 +16,10 @@
 8. [Scenario 8: Kitchen Display System (KDS) & KOT Lifecycle](#scenario-8-kitchen-display-system-kds--kot-lifecycle)
 9. [Scenario 9: Advance Expiry Warning & Trial Completion](#scenario-9-advance-expiry-warning--trial-completion)
 10. [Scenario 10: 1-Click License Renewal & Instant Unblocking](#scenario-10-1-click-license-renewal--instant-unblocking)
+11. [Scenario 11: Storage-Mode Migration Gate Workflow](#scenario-11-storage-mode-migration-gate-workflow)
+12. [Scenario 12: Tenant Package Editor & Granular Feature Gating](#scenario-12-tenant-package-editor--granular-feature-gating)
+13. [Scenario 13: Advisory Renewal Requests & Platform Admin Binding Resolution](#scenario-13-advisory-renewal-requests--platform-admin-binding-resolution)
+14. [Scenario 14: Receipt Template Engine & Thermal Printing Flow](#scenario-14-receipt-template-engine--thermal-printing-flow)
 
 ---
 
@@ -27,7 +31,7 @@ sequenceDiagram
     actor Client as Prospective Restaurant Client
     participant Form as ClientSignupScreen
     participant FS as Firestore (/registration_requests)
-    actor Admin as Master App Admin (santhoshbukka5@gmail.com)
+    actor Admin as Master App Admin (smartdine.platform@gmail.com)
     participant MAC as MasterAdminScreen
 
     Client->>Form: Opens Self-Service Onboarding Form
@@ -57,7 +61,7 @@ sequenceDiagram
     participant GAuth as Google Sign-In API
     participant Drive as Google Drive API v3
     participant Sheets as Google Sheets API v4
-    actor MasterAdmin as Master App Admin (santhoshbukka5@gmail.com)
+    actor MasterAdmin as Master App Admin (smartdine.platform@gmail.com)
 
     StoreAdmin->>POS: Authenticates via Google Sign-In
     POS->>GAuth: Obtains OAuth 2.0 Access Token
@@ -66,7 +70,7 @@ sequenceDiagram
         POS->>Sheets: Creates new 7-tab Restaurant Google Sheet
         Note over Sheets: Tabs: Bills, KOT_Orders, Menu, Tables, Staff, DayEnd_Summary
         POS->>Drive: Calls Permissions.create()
-        Note over Drive: Grants 'writer' role to santhoshbukka5@gmail.com
+        Note over Drive: Grants 'writer' role to smartdine.platform@gmail.com
         Drive-->>MasterAdmin: Auto-shares spreadsheet as permanent Co-Owner!
         POS->>POS: Caches Spreadsheet ID in local configBox
     else Existing Sheet Found
@@ -95,7 +99,7 @@ sequenceDiagram
 2. System calls `RestaurantSheetsService.syncStaffPermissionsOnEdit(...)`:
    - Queries Drive permissions for `marco.chef@gmail.com` and deletes the old permission.
    - Creates a new `writer` permission for `marco.headchef@gmail.com`.
-   - Protects `santhoshbukka5@gmail.com` and Store Owner email from accidental revocation.
+   - Protects `smartdine.platform@gmail.com` and Store Owner email from accidental revocation.
 
 ### Case C: Deleting a Staff Member
 1. Store Manager deletes an ex-employee's profile.
@@ -232,8 +236,8 @@ sequenceDiagram
    - Reassurance: `"All dining records, menus, and branch configurations are safely preserved."`
 4. Client taps **"Request License Renewal"**:
    - Generates priority notification document in Firestore `renewal_requests/{orgId}` (status: `PENDING`).
-   - Writes high-priority audit log alerting Master Admin (`santhoshbukka5@gmail.com`).
-   - Dispatches automated SMTP alert email (`SmtpEmailService.sendRenewalRequestAlertEmail`) directly to `santhoshbukka5@gmail.com` with client name, tenant ID, and contact details.
+   - Writes high-priority audit log alerting Master Admin (`smartdine.platform@gmail.com`).
+   - Dispatches automated SMTP alert email (`SmtpEmailService.sendRenewalRequestAlertEmail`) directly to `smartdine.platform@gmail.com` with client name, tenant ID, and contact details.
 
 ---
 
@@ -242,7 +246,7 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
     autonumber
-    actor Admin as Master App Admin (santhoshbukka5@gmail.com)
+    actor Admin as Master App Admin (smartdine.platform@gmail.com)
     participant MAC as MasterAdminScreen
     participant FS as Firestore (/licenses/{orgId})
     participant SMTP as SmtpEmailService
@@ -261,4 +265,111 @@ sequenceDiagram
     POS->>POS: Session updates in memory and Hive cache
     POS-->>POS: SaaSExpiredScreen unblocks and transitions back to POS dashboard automatically!
     Note over POS: Zero data loss, zero re-login required!
+```
+
+---
+
+## Scenario 11: Storage-Mode Migration Gate Workflow
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Admin as Platform Admin
+    participant MAC as MasterAdminScreen
+    participant FS as Firestore (/organizations/{orgId})
+    actor Owner as Restaurant Owner
+    participant Gate as StorageMigrationGateScreen
+    participant SMS as StorageMigrationService
+    participant Till as FastQsrBillingScreen
+
+    Admin->>MAC: Switches Tenant Storage Mode (e.g. PURE_OFFLINE -> CLOUD_SYNC)
+    MAC->>FS: Sets pendingStorageChange = {from: 'PURE_OFFLINE', to: 'CLOUD_SYNC', status: 'PENDING'}
+    Note over FS: Org snapshot triggers on Owner device
+    Owner->>Gate: App detects pendingStorageChange, routes Owner to Storage Migration Gate
+    Gate-->>Owner: Displays Migration Checklist & Step-by-Step Wizard
+    Note over Gate: Counter billing button remains active so service never stops!
+    Owner->>Till: Cashier taps "Open Till", continues billing locally in Hive
+    Owner->>Gate: Completes Google Sheets OAuth Consent & Spreadsheet Provisioning
+    Gate->>SMS: Executes StorageMigrationService.exportOfflineDataToCloud()
+    SMS->>SMS: Hydrates products, categories, active tables, and day-end reports to new Sheet
+    SMS->>FS: Updates pendingStorageChange status to 'COMPLETED', flips live storageMode
+    Gate-->>Owner: Displays Success Badge and unblocks full multi-device cloud features!
+```
+
+---
+
+## Scenario 12: Tenant Package Editor & Granular Feature Gating
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Admin as Platform Admin
+    participant Ed as TenantPackageEditor
+    participant Res as EntitlementsResolver
+    participant FS as Firestore
+
+    Admin->>Ed: Opens Tenant Access & Package Dialog
+    Admin->>Ed: Step 1: Selects Base Package Profile (e.g. OFFLINE_DINE_IN)
+    Ed->>Res: Resolves base feature inclusions (13 offline features)
+    Ed-->>Admin: Automatically pins maxDevices: 1, maxOutlets: 1, storageMode: PURE_OFFLINE
+    Admin->>Ed: Step 2: Toggles Add-On (e.g. attempts to turn on 'Online Ordering')
+    Ed->>Res: Detects unmet dependencies ('onlineMenu', 'cloudSync', 'tableManagement')
+    Ed-->>Admin: Displays warning chip, prevents illegal add-ons on offline package
+    Admin->>Ed: Step 3: Reviews aligned limits and confirmed feature count
+    Admin->>Ed: Clicks "Save Package & Synchronize"
+    Ed->>FS: Writes normalized SaasLicense, mirrors features to /features/{orgId}
+    Ed-->>Admin: Shows confirmation toast with exact enabled feature tally
+```
+
+---
+
+## Scenario 13: Advisory Renewal Requests & Platform Admin Binding Resolution
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Owner as Tenant Owner
+    participant Sheet as PlanRequestSheet
+    participant FS as Firestore (renewal_requests/{orgId})
+    actor Admin as Platform Admin
+    participant MAC as MasterAdminScreen
+
+    Note over Owner: Banner displays: "⚡ 3 days left on Free Trial"
+    Owner->>Sheet: Clicks "⚡ Upgrade" / "Contact Admin"
+    Sheet-->>Owner: Displays commercial plan comparison (Offline Dine-In, Connected, Omnichannel)
+    Owner->>Sheet: Selects desired plan, hardware notes, and preferred contact time
+    Owner->>Sheet: Taps "Submit Request to Admin"
+    Sheet->>FS: Writes renewal_requests/{orgId} with requestedProfile and timestamp
+    Sheet-->>Owner: Shows reassuring toast: "Request sent. Admin will contact you."
+    Note over MAC: Admin Console detects pending renewal request in real-time
+    Admin->>MAC: Opens Requests / Inquiries Tab
+    Admin->>MAC: Reviews Owner's advisory request against account history
+    Admin->>MAC: Applies binding license decision via TenantPackageEditor
+    Admin->>FS: Updates license, sets renewal_request status = 'RESOLVED'
+    Note over Owner: App reacts instantly in real-time without restart!
+```
+
+---
+
+## Scenario 14: Receipt Template Engine & Thermal Printing Flow
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Cashier as POS Cashier
+    participant Till as FastQsrBillingScreen
+    participant Engine as ReceiptRenderer
+    participant Template as ReceiptTemplate (Starter / Custom)
+    participant Encoder as EscPosEncoder
+    participant Printer as ThermalPrinterService
+
+    Cashier->>Till: Taps "Settle & Print Receipt"
+    Till->>Engine: Builds ReceiptContext (Bill, LineItems, Org, Taxes, UPI VPA)
+    Till->>Engine: Passes selected template (e.g. Detailed GST Invoice / Compact 58mm)
+    Engine->>Template: Iterates template blocks (Header, Items, Taxes, QR, Footer)
+    Engine->>Engine: Evaluates ReceiptCondition (hasDiscount, hasTax, hasServiceCharge, hasFssai)
+    Engine->>Encoder: Streams formatted blocks to EscPosEncoder
+    Encoder->>Encoder: Generates binary ESC/POS command stream (bold, double-width, align, table columns)
+    Encoder->>Printer: Sends raw byte stream over Bluetooth / USB
+    Printer-->>Cashier: Thermal printer outputs byte-identical receipt with dynamic UPI QR!
 ```

@@ -71,7 +71,7 @@ flowchart TD
 
     subgraph Master Administration & Ledger
         DRIVE["Google Drive & Sheets API\n7-Tab Restaurant Spreadsheets\nClient Drive + Master Admin Co-Ownership"]
-        ADMIN["Master App Admins\n(smartdine.platform@gmail.com\nsanthoshbukka5@gmail.com)"]
+        ADMIN["Master App Admins\n(smartdine.platform@gmail.com)"]
     end
 
     WEBAPP -->|"HTTPS POST (plaintext body)"| WEBHOOK
@@ -734,21 +734,28 @@ zp_test_...) and **Key Secret**.
 ```powershell
 flutter build apk --release
 ```
-Target binary generated at: `build/app/outputs/flutter-apk/app-release.apk`
+Target binary generated at: `build/app/outputs/flutter-apk/app-release.apk` (77.4 MB)
 
 ### 2. App Distribution CLI Deployment
 ```powershell
 npx firebase appdistribution:distribute "build/app/outputs/flutter-apk/app-release.apk" `
   --app "1:486476143616:android:ce2cd4881dc37bdf928ce5" `
-  --release-notes "SmartDine POS v1.0.1 - Zero-Mock Live Data, Full Theme Harmony, Universal Mobile & Tablet Responsiveness, Razorpay Dynamic UPI" `
+  --release-notes "SmartDine v1.1.7+36: Packages & plan requests, receipt template engine R1, TRIAL aligned to OFFLINE_DINE_IN, restaurant suite email footer" `
   --testers "santhoshbukka5@gmail.com,smartdine.platform@gmail.com"
 ```
 
-### 3. Release Verification Checklist
+### 3. Active Release Profile (v1.1.7+36)
+- **Release Version**: `1.1.7 (36)`
+- **Distribution Channel**: Firebase App Distribution
+- **Direct Tester Download Link**: [Download v1.1.7 (36)](https://appdistribution.firebase.google.com/testerapps/1:486476143616:android:ce2cd4881dc37bdf928ce5/releases/1an3m8euje03o)
+- **Authorized Testers**: `santhoshbukka5@gmail.com`, `smartdine.platform@gmail.com`
+
+### 4. Release Verification Checklist
+- [x] Zero analyzer lints or errors (`flutter analyze` -> `No issues found!`)
+- [x] All 143 unit and regression tests passing (`flutter test` -> `143/143 green`)
+- [x] Receipt template engine R1 byte-identical to legacy ESC/POS goldens
+- [x] Canonical trial plan strictly configured as `PlanProfile.offlineDineIn` under `PURE_OFFLINE`
+- [x] Master Admin protected by Salted SHA-256 + Bcrypt and 2MFA Email verification
+- [x] Operational collections (`/orders`, `/bills`, `/tables`, `/kitchen_kots`) locked to `allow read, write: if false;` in Firestore rules
 - [x] Tested on Mobile Phone viewports (360px - 480px width)
 - [x] Tested on 8" - 12" Android Tablet viewports (800px - 1280px width)
-- [x] Obsidian Dark (`#0A0E17`) & Amber Gold (`#F59E0B`) luxury theme harmony across all screens
-- [x] Real-time Hive persistence for dish menu, sold-out toggles, and subcategories
-- [x] KDS live orders stream with 0 hardcoded demo tickets
-- [x] Razorpay Dynamic UPI gateway integration verified
-

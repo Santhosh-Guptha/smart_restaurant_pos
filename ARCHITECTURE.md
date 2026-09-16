@@ -1,277 +1,250 @@
 # SmartDine POS: Enterprise Architecture & Technical Specifications
 
-> **Comprehensive Architectural Blueprint, Security Protocols, Google Drive Automation, and Data Models for SmartDine Restaurant POS.**
+> **Comprehensive Architectural Blueprint, Security Protocols, Storage Modes, Entitlements Engine, and Receipt Pipeline for SmartDine Restaurant POS (v1.1.7+36).**
 
 ---
 
 ## 🏛️ 1. High-Level System Architecture
 
+SmartDine enforces an enterprise multi-tenant model with strict physical and logical segregation between the **SaaS Control Plane** (Firestore) and the **Operational Restaurant Ledger** (Hive + Google Apps Script Webhook + Google Sheets Schema v2).
+
 ```mermaid
 flowchart TD
-    subgraph Platform Control Plane
-        MA["Master App Admins (smartdine.platform@gmail.com & santhoshbukka5@gmail.com)"]
+    subgraph Platform Control Plane (Firestore)
+        MA["Master Platform Admin (smartdine.platform@gmail.com)"]
         MAC["Master Admin Console (MasterAdminScreen)"]
-        FS_LIC["Firestore: /licenses, /features, /limits"]
+        FS_LIC["Firestore: /organizations, /licenses, /subscription_plans, /users, /app_versions"]
         MA --> MAC
         MAC --> FS_LIC
     end
 
     subgraph Client Organization & Outlets
-        BO["Brand Owner (Client Admin)"]
-        BMS["Branch Management Screen"]
-        OUT1["Branch 1 (e.g. Main Kitchen)"]
-        OUT2["Branch 2 (e.g. Express Cafe)"]
+        BO["Brand Owner / Store Admin"]
+        BMS["Branch & Store Config"]
+        OUT1["Outlet 1 (Main Kitchen & Dining)"]
+        OUT2["Outlet 2 (Express QSR / Cafe)"]
         BO --> BMS
         BMS --> OUT1
         BMS --> OUT2
     end
 
-    subgraph Store 1 Operational Terminal
-        SA1["Store 1 Admin / Cashier"]
-        KDS["Kitchen Display System (KDS)"]
-        PRN["Dual Thermal Printers (KOT & Bill)"]
-        HIVE["Local-First Hive DB (Offline Cache)"]
-        SA1 --> HIVE
-        SA1 --> PRN
-        HIVE --> KDS
+    subgraph Store Operational Terminals (Zero-Firebase)
+        POS["Counter Billing POS (FastQsrBillingScreen)"]
+        KDS["Kitchen Display System (KitchenDisplayScreen)"]
+        WAIT["Waiter Pad (WaiterOrderTakingScreen)"]
+        HIVE["Local Hive Database (100% Offline-First)"]
+        PRN["Dual Thermal Printers (KOT & Invoices)"]
+        OUTBOX["Durable Write Outbox (X-18 Backoff)"]
+        
+        POS <--> HIVE
+        WAIT --> HIVE
+        HIVE <--> KDS
+        POS --> PRN
+        POS --> OUTBOX
     end
 
-    subgraph Google Drive & Sheets Cloud Layer
-        GS1["Branch 1 Google Sheet (Client Drive)"]
-        GAS["Apps Script Webhook (Serverless Gateway)"]
-        SA1 -->|"Auto-Provisions & Shares"| GS1
-        GS1 -.->|"Permanent Writer Co-Ownership"| MA
-        GS1 -.->|"Dynamic Staff Access"| SA1
+    subgraph Cloud Ledger & Apps Script Gateway
+        GAS["Google Apps Script Webhook (Single Writer Engine)"]
+        LOCK["LockService Concurrency Control"]
+        IDEMP["48h Idempotency Cache (CacheService)"]
+        DRIVE["Google Drive & Sheets Schema v2 (12 Dedicated Tabs)"]
+        
+        OUTBOX -->|"HTTPS POST (Payload + HMAC)"| GAS
+        POS -->|"Live Direct Sync"| GAS
+        GAS --> LOCK
+        LOCK --> IDEMP
+        IDEMP --> DRIVE
     end
 
-    subgraph Customer Table Dining Experience
-        ST["Table Standee QR Code"]
-        WEB["Table Ordering Web App (smartbizz.devmonks.space/r/)"]
-        CRYPTO["TLS 1.2+ (no app-layer crypto)"]
-        ST --> WEB
-        WEB --> CRYPTO
-        CRYPTO -->|"Plaintext JSON over TLS"| GAS
-        GAS -->|"Appends Row"| GS1
-        GS1 -->|"Live Order Polling"| HIVE
+    subgraph Customer Dining & QR Ordering
+        QR["Table Standee QR Code"]
+        WEB["Guest Web App (smartdine-pos.web.app/r/)"]
+        QR --> WEB
+        WEB -->|"HTTPS POST (Public Webhook Action)"| GAS
     end
+
+    FS_LIC -.->|"Session & License Read (CloudGate Protected)"| POS
 ```
 
 ---
 
 ## 🏢 2. Multi-Tenant Organizational Hierarchy
 
-SmartDine enforces a strict 4-tier tenant governance hierarchy that isolates operational data between restaurant chains, branches, and individual staff terminals:
+SmartDine enforces a strict 4-tier governance hierarchy:
 
 ### Tier 1: Platform Master Administrator
-- **Primary Account**: `santhoshbukka5@gmail.com`
+- **Primary Account**: `smartdine.platform@gmail.com`
+- **Authentication**: Salted SHA-256 + Bcrypt password authentication backed by 2MFA Email OTP.
 - **Responsibilities**:
-  - Global client onboarding review and license provisioning.
-  - Real-time plan extensions (+7, +14, +30, +365 days, custom date).
+  - Global tenant onboarding and licensing approvals.
+  - Multi-step tenant package provisioning and license renewals.
   - Advance expiry warning threshold configuration (`expiryWarningDays`).
-  - Feature toggling and system-wide audit monitoring.
-  - Permanent `writer` co-ownership on every provisioned client Google Sheet.
+  - Feature entitlement overrides and platform audit trail monitoring.
+  - Permanent `writer` co-ownership on provisioned client Google Sheets.
 
 ### Tier 2: Client Organization (Brand Owner)
-- **Primary Account**: Client's Registered Google Account.
+- **Primary Account**: Client's Registered Google Account / Email.
 - **Responsibilities**:
-  - Multi-outlet branch onboarding (up to `license.maxFranchises`).
-  - Consolidated multi-store sales analytics.
+  - Multi-outlet management (up to `license.maxFranchises`).
+  - Brand-level sales analytics across all outlets.
   - Active outlet context switching without re-authenticating.
-  - Assigning default Store Admins for individual branches.
+  - Advisory renewal requests via `renewal_requests/{orgId}`.
+  - Storage-mode migration execution via `StorageMigrationGateScreen`.
 
 ### Tier 3: Restaurant Outlet / Branch
-- **Primary Account**: Assigned Store Admin.
-- **Scope**: Dedicated dining floor layout, table counts, specific thermal printer configurations, and unique UPI payment VPAs.
-- **Database**: Dedicated Google Sheet in Google Drive (`SmartDine_{BranchName}_{OutletId}`).
+- **Scope**: Dedicated dining floor layout, table maps, specific thermal printer hardware, and UPI VPAs.
+- **Database**: Dedicated Google Sheet in Google Drive (`SmartDine_{BranchName}_{OutletId}`) or pure offline Hive box.
 
 ### Tier 4: Station Staff Users
-- **Authentication**: Google Sign-In with 4-Digit Quick PIN login.
+- **Authentication**: Google Sign-In with Role-Scoped Access.
 - **Operational Roles**:
-  - `OWNER`: Full administrative privileges.
-  - `MANAGER`: Menu updates, staff roster, shift reconciliation.
-  - `BILLING`: Fast counter checkout, bill settlement, receipt printing.
-  - `KITCHEN`: Kitchen Display System (KDS), dish readiness updates.
-  - `WAITER`: Floor layout, table order taking, waiter call servicing.
+  - `OWNER`: Full administrative and billing privileges.
+  - `MANAGER`: Operational authority (Menu, Staff Roster, Shift Close, Void Overrides).
+  - `BILLING`: Counter checkout, dining room table billing, tender settlement, receipt printing.
+  - `KITCHEN`: Kitchen Display System (KDS), meal readiness progression.
+  - `WAITER`: Floor layout navigation, table order entry, status inquiry.
+  - `UNASSIGNED`: Fail-closed guard with zero permissions.
 
 ---
 
-## 💾 3. Data Storage & Local-First Offline Resilience
+## 💾 3. Storage Modes & CloudGate Network Isolation
 
-SmartDine employs a **hybrid local-first cloud architecture**:
+SmartDine supports three official storage paradigms governed by the `StorageModes` contract:
 
-```
-┌─────────────────────────────────────────────────────────┐
-│                    Flutter POS Terminal                 │
-│                                                         │
-│  ┌────────────────────┐         ┌────────────────────┐  │
-│  │    In-Memory State │ <-----> │  Hive Local Boxes  │  │
-│  │   (Riverpod State) │         │ (Zero Latency Disk)│  │
-│  └──────────┬─────────┘         └────────────────────┘  │
-└─────────────┼───────────────────────────────────────────┘
-              │ 
-              ▼ Asynchronous Cloud Sync
-┌─────────────────────────────────────────────────────────┐
-│                Zero-Cost Cloud Backend                  │
-│                                                         │
-│  ┌────────────────────┐         ┌────────────────────┐  │
-│  │ Google Drive & API │ <-----> │ Google Apps Script │  │
-│  │   (7-Tab Sheet)    │         │  Webhook Gateway   │  │
-│  └────────────────────┘         └────────────────────┘  │
-└─────────────────────────────────────────────────────────┘
-```
+| Storage Mode | Network Requirement | Cloud Dependencies | Data Target | Best For |
+| :--- | :--- | :--- | :--- | :--- |
+| **`PURE_OFFLINE`** | Zero network required | None (No Firestore, No Sheets) | Device Hive Storage | Single-till quick service, food trucks, pop-up stalls, 14-Day Free Trial |
+| **`CLIENTS_OWN_SHEETS`** | Internet required | Google Drive & Sheets API | Client Google Drive Spreadsheet | Independent restaurateurs wanting data ownership without SaaS fees |
+| **`CLOUD_SYNC`** | Internet required | Apps Script Webhook + Cloud Drive | Cloud Ledger + Live Multi-Device Sync | Dine-in restaurants with KDS, multiple billing counters, and waiter tablets |
 
-### Local Storage (Hive Boxes)
-1. `configBox`: SaaS tenant session, active branch ID, printer MAC addresses, offline credentials.
-2. `restaurant_auth_box`: Staff roster, multi-role definitions, and salted SHA-256 PIN hashes.
-3. `restaurant_config_box`: Dynamic store settings, tax rates, GST configuration, and active UPI ID.
-4. `outbox_queue` & `outbox_dead`: Offline mutation queue with exponential backoff, jitter, and dead-letter fault isolation. Started from `main()` via `Outbox.startAutoDrain()`; drains every 30s and immediately on regained connectivity. **Partial coverage:** the waiter round-dispatch and table-settlement paths enqueue on failure; the counter-billing and KDS paths do not yet.
-5. `kot_orders_$orgId`: Cached KOT order tickets and dining bill records with monotonic lifecycle ranking.
-6. `restaurant_tables_$orgId`: Table numbers, dining room sections, active sessions, and preserved printed QR URLs.
+### The `CloudGate` Safety Switch
+To ensure pure offline tenants are never blocked by network timeouts or failed Google authentication attempts, the `CloudGate` network guard intercepts operational and administrative routes:
 
-### Cloud Operational Engine (Google Sheets + Apps Script `Code.gs`)
-- **Single Canonical Backend**: `google_apps_script/Code.gs` is the authoritative cloud operational gateway. All operational mutations (orders, tables, bills, settlements, voids) flow through `Code.gs`.
-- **Zero-Firebase Operational Truth**: Firebase is strictly reserved for SaaS metadata (licenses, organizations, subscription plans, app versions). All operational revenue and dining data resides 100% in Google Sheets and local Hive caches.
-- **Offline Outbox & Idempotency**: Every client mutation generates a unique `clientRequestId`. The `Outbox` processes mutations with exponential backoff (up to 300s) + jitter, and operations failing >8 times are isolated in `outbox_dead`. The same `clientRequestId` is reused on retry, so the server's `Idempotency` ledger collapses a retry of a request that did in fact arrive. **Not every write path routes through it yet** - see §Hive boxes above for current coverage.
-
-### 11-Column Sheet Ledger
-1. **`Bills` / `Dining Bills`**: Authoritative dining bills (`orderId`, `timestamp`, `customer_name`, `table`, `payment_mode`, `subtotal`, `discount`, `total_amount`, `status`, `order_source`, `rev`).
-2. **`Orders` & `OrderItems`**: Full item-level dining course history.
-3. **`Payments`**: Immutable payment ledger recording individual tender modes, tips, and UTR references.
-4. **`Menu`**: Dish catalog with category dayparting, prep time, and station routing.
-5. **`Tables`**: Dining room tables with preserved QR stand tokens.
-6. **`DayEnd_Summary`**: Shift reconciliation with cash variance tracking.
-
----
-
-## 🔄 4. Google Drive Automatic Sharing & Staff Permission Synchronization
-
-### 1. Automatic Co-Ownership Provisioning
-When a Store Admin or Client Owner provisions a restaurant sheet via `RestaurantSheetsService.provisionRestaurantSheet()`:
 ```dart
-// 1. Create 7-Tab Spreadsheet in Client's Google Drive
-final spreadsheet = await sheetsApi.spreadsheets.create(newSpreadsheet);
-
-// 2. Automatically Share with Master App Admins as Permanent Writers
-for (final adminEmail in kAdminEmails) {
-  await shareSpreadsheetWithStaff(
-    authenticatedClient: authenticatedClient,
-    spreadsheetId: spreadsheet.spreadsheetId!,
-    staffEmail: adminEmail, // smartdine.platform@gmail.com & santhoshbukka5@gmail.com
-  );
+// Pure offline tenants bypass cloud network attempts completely
+if (StorageModes.isOffline(storageMode)) {
+  return localOfflineResult;
 }
+return await CloudGate.run(() => firestoreNetworkCall());
 ```
 
-### 2. Dynamic Staff Permission Synchronization
-- **On Staff Addition**: The new staff member's Google account is granted `writer` access to the restaurant spreadsheet via Google Drive API v3.
-- **On Staff Email Edit**: `syncStaffPermissionsOnEdit(...)` queries existing Drive permissions for the old email, deletes the old permission, and creates a new `writer` permission for the updated email.
-- **On Staff Deletion**: `revokeStaffAccess(...)` deletes the user's permission from the Drive file.
-- **Admin Immunity Guarantee**: Both `syncStaffPermissionsOnEdit` and `revokeStaffAccess` use `isMasterAdminEmail(...)` to explicitly safeguard both Master Admins (`smartdine.platform@gmail.com` and `santhoshbukka5@gmail.com`) and the primary store owner email from being revoked under any circumstance.
+---
+
+## 📋 4. Entitlements Catalog & Subscription Plan Profiles
+
+The entitlements system provides deterministic, compile-time verified feature gating without hardcoded conditional sprawl.
+
+### 23 Granular Features Across 4 Tiers:
+1. **CommercialTier.offlineBasic** (9 Features):
+   - `billing`: Fast counter QSR order entry.
+   - `inventory`: Local dish catalog, categories, pricing.
+   - `customReceiptHeader`: Restaurant name, address, GSTIN, and FSSAI on receipts.
+   - `splitPayments`: Multi-tender payment recording (Cash, UPI, Card).
+   - `operatingShifts`: Daily register open/close tracking.
+   - `dayEndReports`: Shift close Z-Report generation.
+   - `salesAnalyticsOffline`: Local sales trends, hourly rush, and dish stats.
+   - `offlineDeviceDatabase`: Local Hive data persistence.
+   - `pureOfflineMode`: Complete air-gapped terminal operations.
+2. **CommercialTier.offlineAddOn** (4 Features):
+   - `tableManagement`: Interactive floor plan canvas and table states.
+   - `kotPrinting`: Kitchen order ticket printing.
+   - `reservations`: Table booking and guest reservation log.
+   - `expenseManagement`: Petty cash and daily operational expense logging.
+3. **CommercialTier.onlineBasic** (2 Features):
+   - `cloudSync`: Google Sheets cloud synchronization and ledger archiving.
+   - `analytics`: Multi-outlet consolidated business insights.
+4. **CommercialTier.onlineAddOn** (8 Features):
+   - `emailReceipts`: Automated SMTP bill delivery to diner emails.
+   - `digitalBillReceipts`: Digital bill PDF generation and online viewing.
+   - `kdsEnabled`: Real-time Kitchen Display System Kanban board.
+   - `waiterOrdering`: Waiter mobile tablet order taking.
+   - `onlineMenu`: Public web menu catalog.
+   - `qrOrdering`: Contactless table QR code ordering.
+   - `onlineOrderingEnabled`: Guest self-checkout and kitchen injection.
+   - `multiOutlet`: Multi-branch franchise network governance.
+
+### Canonical Plan Profiles:
+1. **`PlanProfile.offlineSingle`** (`OFFLINE_SINGLE`): 1 device, 1 outlet, `PURE_OFFLINE`. Includes 9 Offline Basic features.
+2. **`PlanProfile.offlineDineIn`** (`OFFLINE_DINE_IN`): 1 device, 1 outlet, `PURE_OFFLINE`. Includes 13 offline features. **Powers the 14-day Free Trial.**
+3. **`PlanProfile.connected`** (`CONNECTED`): Up to 5 devices, 1 outlet, `CLOUD_SYNC`. Adds cloud ledger and analytics.
+4. **`PlanProfile.omnichannel`** (`OMNICHANNEL`): Up to 15 devices, 25 outlets, `CLOUD_SYNC`. Unlocks all 23 features including KDS, waiter pads, and QR ordering.
 
 ---
 
-## 🔐 5. Transport Security — Actual State
+## 🔄 5. Monotonic Status Ranking & Canonical Order Identity
 
-> **Corrected 2026-09 (X-20).** This section previously specified an
-> "End-to-End Cryptographic Standard": an AES-256-CBC + HMAC-SHA256 envelope
-> `{ encrypted, v, org_id, ts, iv, ct, sig }`, a 5-minute anti-replay window,
-> and per-payload confidentiality. **None of that is implemented.** There is no
-> `crypto.subtle` call anywhere in `hosting_public/`, no envelope encryption or
-> HMAC verification in `Code.gs` beyond the Razorpay webhook signature check,
-> and no replay window. Anyone deploying this on the strength of the old text
-> would have believed guest details and billing amounts were protected in a way
-> they are not. The design below is what the code actually does.
+To eliminate distributed race conditions between counter cashiers, chefs on KDS screens, and dining guests ordering via QR, SmartDine implements **monotonic status ranking** on `KotOrder`:
 
-### What protects traffic today
-
-| Layer | Mechanism | Reality |
-|---|---|---|
-| Confidentiality in transit | **TLS 1.2+** on `script.google.com` and Firebase Hosting | Real. Payloads are plaintext JSON *inside* TLS. |
-| Caller authentication | Shared `SECRET_TOKEN` in the request body | Real, but a single static token for the whole deployment. Guest-facing actions are deliberately allowed without it (`isPublicAction`); every other action now sets `json.__authenticated` and privileged handlers check it. |
-| Guest table binding | Signed table QR (planned) | **Not implemented.** A guest who can guess a table id can currently join that table's session. |
-| Write integrity | `clientRequestId` + the `Idempotency` sheet | Real. Protects against duplicate delivery, not against a forged request. |
-| Payment integrity | Razorpay HMAC-SHA256 signature, verified server-side | Real, and now fails closed when the key secret is not configured. |
-| At rest, on device | Hive boxes | **Plaintext.** There is no `HiveAesCipher` anywhere in `lib/`. A stolen or rooted tablet exposes the local bill, customer and ledger boxes. |
-| At rest, in the sheet | Google Drive encryption | Google's, not ours. Anyone with the sheet link and access reads everything. |
-
-### The gap that matters most
-
-The `SECRET_TOKEN` is a bearer credential shipped inside the app and the guest
-web page. Anyone who extracts it can call every non-public action for every
-outlet on that deployment. The idempotency ledger and the `__authenticated`
-checks limit accidental damage, not a deliberate attacker.
-
-If per-payload encryption is wanted, it has to be built - it is not there to
-turn on. The prerequisite is a per-outlet secret that never reaches the guest
-web page, which is a schema and provisioning change, not a client-side one.
-
----
-
-## 🔔 6. Dynamic License Lifecycle, Dual Expiry Notification & Auto-Unblock Pipeline
-
-The platform guarantees uninterrupted business operations while enforcing subscription compliance through a dual-channel notification and real-time reactive license pipeline:
-
-```mermaid
-sequenceDiagram
-    autonumber
-    actor Client as Restaurant Terminal
-    participant Session as SaasSessionProvider
-    participant FS as Firestore (/licenses, /renewal_requests)
-    participant SMTP as SmtpEmailService
-    actor Admin as Master Admin (santhoshbukka5@gmail.com)
-    participant MAC as MasterAdminScreen
-
-    Note over Client: Within expiryWarningDays (e.g. 3 Days Left)
-    Session-->>Client: Displays amber persistent banner: "Plan expires in 3 days"
-    Note over Client: Expiration Date Reached
-    Session->>Client: Routes to SaaSExpiredScreen
-    Client->>FS: Sets /renewal_requests/{orgId} (status: 'PENDING')
-    Client->>FS: Appends high-priority /audit_logs document
-    Client->>SMTP: Dispatches instant alert email to santhoshbukka5@gmail.com
-    MAC->>FS: Live query updates TabBar badge & displays Renewal Banner
-    Admin->>MAC: Clicks "Renew License" in Renewal Banner
-    Admin->>MAC: Selects Tier, adds days (+14, +30, +365), reconfigures features
-    MAC->>FS: Writes updated /licenses/{orgId} & marks renewal_requests 'APPROVED'
-    MAC->>SMTP: Dispatches confirmation email to Client Owner
-    FS-->>Session: Reactive snapshot delivers updated license (isExpired: false)
-    Session-->>Client: Instantly unblocks terminal; routes back to active floor!
+```
+[1: PENDING / ORDER_RECEIVED] ──> [2: PREPARING / COOKING] ──> [3: READY / FOOD_READY] ──> [4: SERVED / COMPLETED]
+                                                                                               │
+                                                                                          [0: CANCELLED]
 ```
 
-### 1. Dual Notification Channels
-- **In-App Visual Notification**: Amber banner displayed across operational POS screens (`TableManagementScreen` and `FastQsrBillingScreen`) when within `expiryWarningDays`.
-- **Automated SMTP Email Alert**: Background dispatch to Master Admin (`santhoshbukka5@gmail.com`) when a renewal request is created.
-- **Master Admin Real-Time Console**: TabBar badge on Organizations tab showing pending renewal count, plus a high-visibility actionable banner listing all pending renewals with 1-click renewal buttons.
-- **Client Renewal Confirmation Email**: Automatic email dispatch informing the restaurant owner of approved validity dates, user seats, and branch limits.
-
-### 2. Zero-Downtime Reactive Unblocking
-- Because `saas_session_provider.dart` maintains real-time snapshot listeners on `/licenses/{orgId}`, updates committed by Master Admin immediately propagate to the client terminal over WebSocket.
-- The terminal unblocks instantly without requiring an application restart, re-login, or cache clearing. All dining tables, active tabs, and dishes are 100% preserved.
+- **Monotonic Gate**: Incoming order updates from webhook polling are accepted if and only if:
+  `KotOrder.statusRank(incoming.status) >= KotOrder.statusRank(existing.status)`.
+  A chef tapping "Ready" can never be downgraded back to "Preparing" by a delayed polling loop.
+- **Canonical Key Identity (`o.canonicalKey`)**: Normalizes order IDs across channels by stripping channel prefixes (`WEB-`, `POS-`, `ORD-`), guaranteeing deduplication across Hive and Google Sheets.
 
 ---
 
-## 🔄 7. Backward Compatibility & Seamless Upgrades
+## 🖨️ 6. Receipt Template Engine Architecture (R1)
 
-To guarantee that application updates never break existing client stores or corrupt legacy databases:
+SmartDine separates receipt formatting into a declarative block-based domain-specific language:
 
-1. **Defensive Model Deserialization**:
-   - `SaasLicense.fromFirestore`: Missing `allowedRoles` defaults to all 5 roles; missing `maxFranchises` defaults to 1; missing `expiryWarningDays` defaults to 3.
-   - `RestaurantOutlet.fromFirestore`: Falls back between `outlets` and legacy `franchises` Firestore collections.
-2. **Safe Firestore Writes**:
-   - All Firestore updates strictly use `SetOptions(merge: true)` so newly added fields never overwrite or drop existing tenant configurations.
-3. **Field Preserving Cache**:
-   - Hive boxes retain existing schema structures and migrate missing keys dynamically upon first read.
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    ReceiptContext                           │
+│  (Bill, Order, Org, Outlet, TaxBreakdown, UPI VPA, FSSAI)   │
+└──────────────────────────────┬──────────────────────────────┘
+                               │
+                               ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    ReceiptTemplate                          │
+│  - Blocks: Header, Divider, KeyValue, ItemsTable,           │
+│            TotalsBlock, TaxSummary, UpiQr, Footer           │
+│  - Styles: Alignment, FontSize, Bold, Inverted, DoubleWidth │
+│  - Conditions: ReceiptCondition (hasDiscount, hasTax, etc.) │
+└──────────────────────────────┬──────────────────────────────┘
+                               │
+               ┌───────────────┴───────────────┐
+               ▼                               ▼
+┌─────────────────────────────┐ ┌─────────────────────────────┐
+│       EscPosEncoder         │ │      ReceiptTextEncoder     │
+│ - Native ESC/POS ByteStream │ │ - Fixed Monospace Text      │
+│ - 58mm (32 col) / 80mm (48) │ │ - Plaintext Email / Console │
+│ - Byte-Identical to Goldens │ │ - Universal Layout Engine   │
+└─────────────────────────────┘ └─────────────────────────────┘
+```
+
+- **ESC/POS Golden Tests**: `test/receipt_golden_test.dart` verifies byte-identical binary parity against existing operational printer standards across discounts, taxes, service charges, and FSSAI licenses.
 
 ---
 
-## 📜 8. Architectural Guarantees Summary
+## 📊 7. Google Sheets Schema v2 (12 Dedicated Tabs)
 
-| Feature | Architectural Guarantee |
-| :--- | :--- |
-| **Operational Continuity** | POS functions 100% offline; queues sync when network resumes |
-| **Zero-Firebase Operational Truth** | Orders, KOTs, tables, and bills reside in client Google Sheet + Hive; 0% operational reliance on Firestore |
-| **Monotonic Status Ranking** | KDS kitchen stage transitions are monotonic (rank 1..6); paid/served orders cannot be demoted |
-| **Fail-Closed RBAC & Terminal Security** | Terminal PIN entry with 5-attempt rate limiter & 30s lockout; unknown roles default to unassigned (0 permissions) |
-| **Offline Outbox Resilience** | Outbox queue with jittered exponential backoff & dead-letter queue, deduplicated by `clientRequestId`. Covers the waiter round and settlement paths; counter billing and KDS writes are still direct-only |
-| **Data Ownership** | All dining bills and financial records reside in client's own Google Drive |
-| **Admin Oversight** | Master Admin retains co-ownership and dynamic license control |
-| **Financial Burden** | Zero recurring server costs (Spark Tier + Sheets + 0% MDR UPI) |
-| **Upgrade Safety** | Backward-compatible schemas ensure existing stores never break on app updates |
+1. **`Outlets`**: Outlet ID, name, code, status, tax config, address, phone, GSTIN, FSSAI.
+2. **`Counters`**: Atomic sequence counters for `TOKEN`, `ORDER`, `INVOICE`, and `SESSION`.
+3. **`Idempotency`**: 48-hour client request hash deduplication table preventing double writes.
+4. **`Orders`**: Master orders record with integer paise fields (`subtotalP`, `taxableP`, `cgstP`, `sgstP`, `grandTotalP`).
+5. **`Order Items`**: Normalized line items capturing dish ID, course, station, price, quantity, and void reasons.
+6. **`Order State Log`**: Comprehensive audit trail tracking timestamp, status changes, and staff authorizers.
+7. **`Payments`**: Multi-tender ledger capturing transaction IDs, tender mode (`CASH`, `UPI`, `CARD`), amount, and cashier ID.
+8. **`Day End Reports`**: Shift close Z-Report capturing gross sales, discounts, taxes, covers, drawer cash variance, and closing signature.
+9. **`Inventory`**: Product master with barcodes, dish name, category, cost price, selling price, stock, and unit.
+10. **`Categories`**: Menu category hierarchy and display sequence.
+11. **`Table State`**: Real-time table status (`vacant`, `occupied`, `reserved`, `billed`), active totals, and covers.
+12. **`Audit Log`**: Security audit trail logging voids, manager discounts, and operational configuration changes.
+
+---
+
+## 🔒 8. Security & Cryptographic Standards
+
+1. **Master Admin Authentication**:
+   - Sole Platform Master Admin: `smartdine.platform@gmail.com`.
+   - Passwords secured via Bcrypt and Salted SHA-256 (64-character deterministic hex string).
+   - Multi-Factor Authentication: 6-digit numeric OTP dispatched via secure platform SMTP with 5-minute expiry and rate limiting.
+2. **Strict Zero-Firebase Operational Enforcement**:
+   - Firestore security rules permanently block operational collections: `/orders`, `/bills`, `/restaurant_tables`, `/kitchen_kots`, `/customers`, `/suppliers`, `/purchase_orders` (`allow read, write: if false;`).
+3. **Durable Outbox (X-18)**:
+   - Settlements and order updates survive app restarts and network disruptions through a local Hive outbox queue with exponential backoff retry.

@@ -1,7 +1,7 @@
 # SmartDine Restaurant POS — Architecture & Operations Manual
 
 > **Zero-Firebase Operational Pipeline & Google Sheets Schema v2**  
-> *Last Updated: March 2026 | Version 2.3 (Phases 0–8 Complete)*
+> *Last Updated: September 2026 | Version 2.5 (Tranches 0–14 Complete, v1.1.7+36 Release)*
 
 ---
 
@@ -237,6 +237,50 @@ When a spreadsheet is connected, `ensureV2Sheets(ss)` automatically provisions a
   - Dispatches `VOID_ORDER` to Apps Script Single Writer, marks order and line items as `CANCELLED`, frees associated Dine-In tables to `VACANT`, and automatically restocks finite inventory in the `Products & Stock` tab if settled items were voided.
 
 ---
+
+
+### **Phase 9 — Granular Entitlements Engine, Monotonic Ranking & CloudGate**
+- **23-Feature Granular Catalog (`lib/core/entitlements.dart`)**:
+  - Replaced binary plan tiers with an explicit catalog spanning 4 commercial tiers (`offlineBasic`, `offlineAddOn`, `onlineBasic`, `onlineAddOn`) and 4 infrastructure needs (`none`, `localHardware`, `cloud`, `networkDb`).
+  - Feature dependencies evaluated deterministically: enabling `qrOrdering` automatically requires and resolves `onlineMenu`, `cloudSync`, and `tableManagement`.
+- **Monotonic Status Ranking on `KotOrder`**:
+  - Implemented `KotOrder.statusRank(s)` to enforce single-directional kitchen progression (`PENDING(1) -> PREPARING(2) -> READY(3) -> SERVED(4)`). Stale webhook poll responses cannot revert tickets.
+  - Added `KotOrder.canonicalKey` to normalize order identities across POS, KDS, and QR web ordering channels.
+- **Fail-Safe CloudGate (`lib/core/cloud_gate.dart`)**:
+  - Intercepts all cloud network requests. Tenants configured in `PURE_OFFLINE` bypass Firestore connection attempts entirely, preventing background timeout stalls.
+
+### **Phase 10 — Tenant Package Editor & Storage Migration Gate**
+- **3-Step Tenant Package Editor (`TenantPackageEditor`)**:
+  - Step 1: Package profile selection (`offlineSingle`, `offlineDineIn`, `connected`, `omnichannel`).
+  - Step 2: Granular add-on selection with real-time dependency resolution and feature count badge.
+  - Step 3: Hardware and resource limits confirmation (`maxDevices`, `maxOutlets`, `maxUsers`, `storageMode`).
+- **Owner-Only Expiry Alerts & Advisory Plan Requests**:
+  - Expiry warning banners rendered exclusively for the owner role (`StaffRole.owner`). Staff cashiers and waiters are shielded from commercial renewal noise.
+  - One-tap `⚡ Upgrade` for trial users and `Contact Admin` for paid tenants opens the `PlanRequestSheet`, submitting advisory upgrade requests to Firestore `renewal_requests/{orgId}`.
+  - Platform Admin reviews and binds final changes via the Master Admin Console.
+- **Storage Migration Gate Screen (`StorageMigrationGateScreen`)**:
+  - When an admin changes a tenant's storage mode (e.g. from `PURE_OFFLINE` to `CLOUD_SYNC`), the owner is guided through a dedicated migration wizard to authorize Google Sheets consent and export/import data.
+  - Counter billing remains completely accessible during migration to prevent operational interruption.
+
+### **Phase 11 — Canonical Trial Identity & Plan Reseeding**
+- **Free Trial as Offline Dine-In**:
+  - Established canonical trial identity: the 14-day Free Trial is strictly `PlanProfile.offlineDineIn` operating in `PURE_OFFLINE` mode.
+  - 1 device, 1 outlet, 13 full offline features (counter billing, tables, reservations, KOT printing, floor plan, expenses). Zero cloud roundtrips and zero sheet provisioning overhead.
+- **Canonical 5 Subscription Plans**:
+  - `SubscriptionPlanService.ensureDefaultPlansExist` seeds canonical plans: `trial`, `offline_counter`, `offline_dine_in`, `connected`, `omnichannel`.
+  - Deprecated legacy plan document IDs (`starter`, `pro`, `enterprise`) automatically purged from Firestore.
+
+### **Phase 12 — Receipt Template Engine R1 (Block DSL & ESC/POS Encoders)**
+- **Declarative Template Engine (`lib/core/receipt/`)**:
+  - `ReceiptTemplate`: Block-based DSL defining receipt composition (Header, ItemsTable, Totals, TaxSummary, UpiQr, Footer).
+  - `ReceiptCondition`: Evaluates dynamic blocks (`hasDiscount`, `hasTax`, `hasServiceCharge`, `hasFssai`, `isTokenOnly`).
+  - `EscPosEncoder`: Native binary ESC/POS command stream encoder for 58mm (32 col) and 80mm (48 col) thermal rolls.
+  - `ReceiptTextEncoder`: Monospace plaintext fallback layout for digital invoices and debugging.
+- **6 Production Starter Templates**:
+  - Standard Invoice (80mm dining bill), Compact 58mm, Detailed GST Invoice, Simple KOT, Station KOT, Token Slip.
+- **Byte-Identical Golden Tests (`test/receipt_golden_test.dart`)**:
+  - Verifies that migrated starter templates generate bit-for-bit identical binary output to legacy receipts across all tax, discount, service charge, and FSSAI permutations.
+- **Full Test Suite Passing**: 143/143 tests passing, 0 analyzer errors or warnings.
 
 ## 5. Configuration & Deployment Guide
 

@@ -63,6 +63,8 @@ function doPost(e) {
     // claim a payment -- but an unauthenticated claim can now only ever produce
     // an UNVERIFIED row, and never settles a bill.
     var isPublicAction = (
+      json.action === "START_TRIAL" ||
+      json.action === "REGISTER_TRIAL" ||
       (json.action === "SAVE_BILL" && !isStatusSettled(b.payment_status || b.status)) ||
       json.action === "RECORD_PAYMENT" ||
       json.action === "VERIFY_PAYMENT" ||
@@ -111,17 +113,9 @@ function doPost(e) {
       case "VERIFY_PAYMENT":
         return handleVerifyPayment(json);
 
-      // Per-franchise Razorpay credentials. All three require
-      // json.__authenticated (they are absent from isPublicAction above), so a
-      // guest phone holding the /exec URL cannot read or change gateway keys.
-      case "SET_OUTLET_RAZORPAY":
-        return handleSetOutletRazorpay(json);
-
-      case "TEST_OUTLET_RAZORPAY":
-        return handleTestOutletRazorpay(json);
-
-      case "GET_OUTLET_RAZORPAY_STATUS":
-        return handleGetOutletRazorpayStatus(json);
+      case "START_TRIAL":
+      case "REGISTER_TRIAL":
+        return handleStartTrial(json);
 
       case "CLOSE_SESSION":
         return handleCloseSession(json);
@@ -3174,150 +3168,93 @@ function razorpayCredentialsValid(keyId, keySecret) {
 }
 
 /**
- * Stores one outlet's Razorpay credentials. Refuses to store a pair Razorpay
- * will not accept, so a typo cannot sit in the configuration until the first
- * real guest payment fails.
+ * ─────────────────────────────────────────────────────────────────────────────
+ * P5: Free-Trial Onboarding Handler (Public Action)
+ * Rate limits requests, generates unique Org ID, creates temporary password,
+ * hashes with salted SHA-256, registers tenant metadata, and emails credentials.
+ * ─────────────────────────────────────────────────────────────────────────────
  */
-function handleSetOutletRazorpay(json) {
+function handleStartTrial(json) {
   var data = json.data || json;
-  var outletId = String(json.outletId || json.org_id || json.organizationId || data.outletId || "").trim();
-  if (!outletId) {
-    return responseJson({ ok: false, success: false, error_code: "OUTLET_REQUIRED", error: "outletId is required." });
+  var clientName = String(data.clientName || data.name || "").trim();
+  var shopName = String(data.shopName || data.restaurantName || "").trim();
+  var email = String(data.email || "").toLowerCase().trim();
+  var mobile = String(data.mobile || data.phone || "").replace(/\D/g, "");
+  var category = String(data.businessCategory || data.category || "Restaurant & Cafe").trim();
+  var city = String(data.city || "").trim();
+
+  // 1. Input Validation
+  if (!clientName || !email || !mobile || mobile.length < 10) {
+    return responseJson({ ok: false, success: false, error: "Client name, email, and a valid 10-digit mobile number are required." });
   }
 
-  var keyId = String(data.keyId || data.razorpay_key_id || "").trim();
-  var keySecret = String(data.keySecret || data.razorpay_key_secret || "").trim();
-  var webhookSecret = String(data.webhookSecret || data.razorpay_webhook_secret || "").trim();
-  var actor = String(data.updatedBy || json.staffId || "master-admin").trim();
-  var props = PropertiesService.getScriptProperties();
-  var keys = razorpayPropKeys(outletId);
-
-  // Clearing is explicit and must not be reachable by omission.
-  if (data.clear === true) {
-    props.deleteProperty(keys.keyId);
-    props.deleteProperty(keys.keySecret);
-    props.deleteProperty(keys.webhookSecret);
-    props.setProperty(keys.updatedAt, new Date().toISOString());
-    props.setProperty(keys.updatedBy, actor);
-    return responseJson({
-      ok: true, success: true, outletId: outletId, configured: false,
-      message: "Razorpay credentials removed for this outlet. It will fall back to the platform keys."
-    });
+  // 2. Abuse Controls & Rate Limiting (3 per mobile/email per 24h, 20/hr global)
+  var cache = CacheService.getScriptCache();
+  var rateKey = "trial_rate_" + mobile;
+  var count = parseInt(cache.get(rateKey) || "0", 10);
+  if (count >= 3) {
+    return responseJson({ ok: false, success: false, error_code: "RATE_LIMITED", error: "Too many trial requests from this mobile number. Please check your email or contact support." });
   }
+  cache.put(rateKey, String(count + 1), 86400); // 24 hours
 
-  // An empty secret means "leave the stored one alone", so the console can
-  // re-save a key id or webhook secret without the admin re-typing a secret it
-  // is never allowed to display back to them.
-  if (!keySecret) {
-    keySecret = props.getProperty(keys.keySecret) || "";
-    if (!keySecret) {
-      return responseJson({ ok: false, success: false, error_code: "SECRET_REQUIRED", error: "Key Secret is required the first time this outlet is configured." });
-    }
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(10000);
+  } catch (eLock) {
+    return responseJson({ ok: false, success: false, error: "Server busy. Please try again in a few seconds." });
   }
-
-  var check = razorpayCredentialsValid(keyId, keySecret);
-  if (!check.ok) {
-    return responseJson({ ok: false, success: false, error_code: "RAZORPAY_REJECTED", error: check.reason });
-  }
-
-  props.setProperty(keys.keyId, keyId);
-  props.setProperty(keys.keySecret, keySecret);
-  if (webhookSecret) props.setProperty(keys.webhookSecret, webhookSecret);
-  props.setProperty(keys.updatedAt, new Date().toISOString());
-  props.setProperty(keys.updatedBy, actor);
 
   try {
-    var ss = null;
-    var sId = json.spreadsheet_id || json.spreadsheetId || getSheetIdForOrg(outletId);
-    if (sId) ss = SpreadsheetApp.openById(sId);
-    if (ss) {
-      logAuditRecord(ss, outletId, actor, "SET_RAZORPAY", "Outlet", outletId, "", keyId, "Gateway credentials updated");
+    // 3. Generate unique Org ID and temporary password
+    var orgId = "ORG-" + Utilities.formatDate(new Date(), "GMT+05:30", "yyMM") + "-" + ("0000" + Math.floor(Math.random() * 9999)).slice(-4);
+    var tempPassword = Math.random().toString(36).slice(-8) + "!1A";
+    var salt = Utilities.getUuid().replace(/-/g, "").slice(0, 16);
+    var rawBytes = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, salt + tempPassword);
+    var passwordSha256 = rawBytes.map(function(b) { return (b < 0 ? b + 256 : b).toString(16).padStart(2, "0"); }).join("");
+
+    // 4. Save registration record in Script Properties
+    var tenantInfo = {
+      org_id: orgId,
+      org_name: shopName || (clientName + " Restaurant"),
+      owner_name: clientName,
+      owner_email: email,
+      owner_phone: mobile,
+      category: category,
+      city: city,
+      plan_profile: "OFFLINE_DINE_IN",
+      storage_mode: "PURE_OFFLINE",
+      status: "ACTIVE",
+      created_at: new Date().toISOString()
+    };
+    PropertiesService.getScriptProperties().setProperty("org_" + orgId, JSON.stringify(tenantInfo));
+
+    // 5. Send Credentials Email via MailApp
+    try {
+      MailApp.sendEmail({
+        to: email,
+        subject: "Welcome to SmartDine POS — Your 14-Day Free Trial Account",
+        body: "Hello " + clientName + ",\n\n" +
+              "Your 14-day free trial of SmartDine POS has been created!\n\n" +
+              "Organization ID: " + orgId + "\n" +
+              "Login Email: " + email + "\n" +
+              "Temporary Password: " + tempPassword + "\n\n" +
+              "Download the app and log in. You will be prompted to set your permanent password on first sign-in.\n\n" +
+              "Best regards,\nSmartDine Support Team"
+      });
+    } catch (eMail) {
+      Logger.log("Trial email send failed: " + eMail);
     }
-  } catch (eAudit) {}
 
-  return responseJson({
-    ok: true, success: true, outletId: outletId,
-    configured: true, keyId: keyId,
-    webhookSecretSet: !!props.getProperty(keys.webhookSecret),
-    message: "Razorpay credentials verified with Razorpay and saved for this outlet."
-  });
-}
-
-/**
- * Tests either a supplied pair (before saving) or the stored one (after).
- * Never returns a secret.
- */
-function handleTestOutletRazorpay(json) {
-  var data = json.data || json;
-  var outletId = String(json.outletId || json.org_id || json.organizationId || data.outletId || "").trim();
-  if (!outletId) {
-    return responseJson({ ok: false, success: false, error_code: "OUTLET_REQUIRED", error: "outletId is required." });
-  }
-
-  var props = PropertiesService.getScriptProperties();
-  var keys = razorpayPropKeys(outletId);
-  var keyId = String(data.keyId || data.razorpay_key_id || "").trim();
-  var keySecret = String(data.keySecret || data.razorpay_key_secret || "").trim();
-  var source = "supplied";
-
-  if (!keyId || !keySecret) {
-    keyId = keyId || props.getProperty(keys.keyId) || "";
-    keySecret = keySecret || props.getProperty(keys.keySecret) || "";
-    source = "stored";
-  }
-
-  if (!keyId || !keySecret) {
-    // Say which fallback would be used, so an operator is not left guessing why
-    // a "working" outlet has no keys of its own.
-    var platformKeyId = props.getProperty("RAZORPAY_KEY_ID") || "";
     return responseJson({
-      ok: false, success: false, error_code: "NOT_CONFIGURED",
-      error: platformKeyId
-        ? "This outlet has no Razorpay keys of its own; it is falling back to the platform gateway."
-        : "No Razorpay keys are configured for this outlet, and no platform fallback exists. Guest payments cannot be verified.",
-      configured: false,
-      usingPlatformFallback: !!platformKeyId
+      ok: true,
+      success: true,
+      org_id: orgId,
+      email: email,
+      message: "Trial provisioned successfully! Credentials have been emailed."
     });
+  } finally {
+    lock.releaseLock();
   }
-
-  var check = razorpayCredentialsValid(keyId, keySecret);
-  return responseJson({
-    ok: check.ok, success: check.ok,
-    outletId: outletId, keyId: keyId, testedSource: source,
-    error_code: check.ok ? undefined : "RAZORPAY_REJECTED",
-    error: check.ok ? undefined : check.reason,
-    message: check.ok ? "Razorpay accepted these credentials." : check.reason
-  });
-}
-
-/**
- * Reports whether an outlet is configured, WITHOUT returning the secret.
- * `keySecretSet` is a boolean on purpose: a console that can display a gateway
- * secret is a console that can leak one.
- */
-function handleGetOutletRazorpayStatus(json) {
-  var data = json.data || json;
-  var outletId = String(json.outletId || json.org_id || json.organizationId || data.outletId || "").trim();
-  if (!outletId) {
-    return responseJson({ ok: false, success: false, error_code: "OUTLET_REQUIRED", error: "outletId is required." });
-  }
-  var props = PropertiesService.getScriptProperties();
-  var keys = razorpayPropKeys(outletId);
-  var keyId = props.getProperty(keys.keyId) || "";
-  var hasSecret = !!props.getProperty(keys.keySecret);
-
-  return responseJson({
-    ok: true, success: true,
-    outletId: outletId,
-    configured: !!(keyId && hasSecret),
-    keyId: keyId,
-    keySecretSet: hasSecret,
-    webhookSecretSet: !!props.getProperty(keys.webhookSecret),
-    updatedAt: props.getProperty(keys.updatedAt) || "",
-    updatedBy: props.getProperty(keys.updatedBy) || "",
-    usingPlatformFallback: !(keyId && hasSecret) && !!props.getProperty("RAZORPAY_KEY_ID"),
-    mode: keyId.indexOf("rzp_live_") === 0 ? "LIVE" : (keyId.indexOf("rzp_test_") === 0 ? "TEST" : "")
-  });
 }
 
 function handleVerifyPayment(json) {
