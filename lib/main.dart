@@ -148,7 +148,7 @@ Future<void> _bootstrapMasterDatabaseIfNeeded() async {
 }
 
 // Keep in step with pubspec.yaml `version:` — the forced-update check compares this.
-const String kCurrentAppVersion = '1.1.6';
+const String kCurrentAppVersion = '1.1.7';
 
 int _compareVersions(String v1, String v2) {
   final cleanV1 = v1.split('+').first.trim();
