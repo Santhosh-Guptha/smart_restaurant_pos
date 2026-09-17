@@ -14,15 +14,17 @@ import '../../providers/daily_token_provider.dart';
 import '../../providers/restaurant_auth_provider.dart';
 import '../../providers/saas_session_provider.dart';
 import '../../services/apps_script_backend_service.dart';
-import '../../services/kitchen_ticket_formatter.dart';
 import '../../sync/outbox.dart';
 import '../../widgets/digital_pos_bill_dialog.dart';
-import 'package:esc_pos_utils_plus/esc_pos_utils_plus.dart';
-import 'package:print_bluetooth_thermal/print_bluetooth_thermal.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import '../../core/classic_theme.dart';
 import '../../core/entitlements.dart';
 import '../../core/feature_route_guard.dart';
+import '../../core/receipt/receipt_context_builder.dart';
+import '../../core/receipt/receipt_print_service.dart';
+import '../../core/receipt/receipt_template.dart';
+import '../../providers/entitlements_provider.dart';
+import '../../services/thermal_printer_service.dart';
 
 class WaiterOrderTakingScreen extends ConsumerStatefulWidget {
   final RestaurantTable table;
@@ -1212,18 +1214,27 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                                           )
                                         else
                                           const SizedBox.shrink(),
-                                        OutlinedButton.icon(
-                                          icon: const Icon(Icons.print_outlined, size: 14),
-                                          label: Text(ord.reprintCount > 0 ? 'Reprint KOT #${ord.reprintCount + 1}' : 'Reprint KOT'),
-                                          style: OutlinedButton.styleFrom(
-                                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                            visualDensity: VisualDensity.compact,
-                                          ),
-                                          onPressed: () async {
-                                            await _reprintKot(ord);
-                                            setSheetState(() {});
-                                          },
-                                        ),
+                                        // Kitchen printing is the `dualPrinting`
+                                        // add-on, the same key the kitchen
+                                        // display gates its own print on. The
+                                        // KOT template reads `order.kotNumber`,
+                                        // which that key unlocks, so without it
+                                        // this button printed a blank header.
+                                        if (featureOn(FeatureKeys.dualPrinting))
+                                          OutlinedButton.icon(
+                                            icon: const Icon(Icons.print_outlined, size: 14),
+                                            label: Text(ord.reprintCount > 0 ? 'Reprint KOT #${ord.reprintCount + 1}' : 'Reprint KOT'),
+                                            style: OutlinedButton.styleFrom(
+                                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                              visualDensity: VisualDensity.compact,
+                                            ),
+                                            onPressed: () async {
+                                              await _reprintKot(ord);
+                                              setSheetState(() {});
+                                            },
+                                          )
+                                        else
+                                          const SizedBox.shrink(),
                                       ],
                                     ),
                                   ],
@@ -1404,22 +1415,40 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
         return;
       }
       final newReprintCount = ord.reprintCount + 1;
-      final bytes = await KitchenTicketFormatter.formatKotTicket(
-        paperSize: PaperSize.mm80,
-        profile: await CapabilityProfile.load(),
-        tokenNumber: ord.kotNumber.startsWith('#') ? ord.kotNumber : '#${ord.kotNumber}',
-        tableName: ord.tableName,
+      final ent = ref.read(entitlementsProvider);
+      final printer = ref.read(thermalPrinterProvider);
+
+      // The number is taken once, without a `#`. This screen used to add one
+      // if the stored value did not have it, the kitchen display added one
+      // too, and the counter added none — so a reprint never matched the
+      // original slip. The template introduces the number now.
+      final slip = ReceiptContextBuilder.forKotOrder(
+        ord,
         items: kitchenItems,
-        waiterName: ord.waiterName,
-        generalNotes: ord.generalNotes,
-        orderTime: ord.createdAt,
+        isReprint: true,
         reprintCount: newReprintCount,
-        courseNo: ord.courseNo,
+        enabledFeatures: {
+          for (final def in FeatureCatalog.all)
+            if (ent.isEnabled(def.key)) def.key,
+        },
+      )..values.addAll(ReceiptContextBuilder.printerOverrides(
+          customName: printer.customName,
+          customPhone: printer.customPhone,
+          customAddress: printer.customAddress,
+          customGstin: printer.customGstin,
+          customFooter: printer.customFooter,
+        ));
+
+      final result = await ReceiptPrintService.printOne(
+        orgId: _getEffectiveOrgId(),
+        kind: ReceiptKind.kot,
+        context: slip,
+        channel: ord.orderType ?? 'Dine-In',
+        paperSize: printer.paperSize,
+        send: ref.read(thermalPrinterProvider.notifier).printBytes,
       );
 
-      final isConnected = await PrintBluetoothThermal.connectionStatus;
-      if (isConnected) {
-        await PrintBluetoothThermal.writeBytes(bytes);
+      if (result.ok) {
         final orgId = _getEffectiveOrgId();
         if (Hive.isBoxOpen('configBox')) {
           final box = Hive.box('configBox');
@@ -1449,8 +1478,8 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
       } else {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Bluetooth printer not connected. Configure in Settings.'),
+            SnackBar(
+              content: Text(result.reason),
               backgroundColor: ClassicTheme.warningAmber,
             ),
           );
@@ -2057,6 +2086,15 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
           ? _tableOrders.first.id
           : 'BILL-$tNum-${DateTime.now().millisecondsSinceEpoch}';
 
+      // Read here, not at the dialog: `_tableOrders` is emptied below, before
+      // the bill is shown. `tNum` is the TABLE number and was passed as the
+      // token since this screen was written, so the settled bill showed the
+      // table where the guest's number belongs. The table's rounds carry it.
+      final settledToken = _tableOrders.isEmpty
+          ? ''
+          : ReceiptContextBuilder.normalisedToken(
+              _tableOrders.first.tokenNo, _tableOrders.first.kotNumber);
+
       final roundIds = _tableOrders.map((o) => o.id).toSet();
 
       // 2. Mark ALL orders for this table as PAID in local Hive
@@ -2233,7 +2271,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
         DigitalPosBillDialog.show(
           context,
           billNumber: primaryBillId,
-          tokenNumber: tNum,
+          tokenNumber: settledToken,
           tableName: tableName,
           items: allKotItems,
           subtotal: subtotal > 0 ? subtotal : (totalPaid - tip - serviceCharge - gst),

@@ -27,7 +27,7 @@ class PrinterLayoutMigration {
   /// before touching anything, so the common case costs one Hive read.
   ///
   /// `showCustomer` is deliberately absent. It defaults to on, but only the
-  /// order-history generator ever honoured it \u2014 the counter bill, the one
+  /// order-history generator ever honoured it — the counter bill, the one
   /// a customer is actually handed, has never printed their name or phone.
   /// Migrating it would start printing guests' phone numbers on every slip in
   /// the restaurant on the strength of a default nobody chose. The lines are
@@ -122,7 +122,7 @@ class PrinterLayoutMigration {
     bool boldItems = false,
     int feedLines = 3,
     String? invoicePrefix,
-    /// Off by default \u2014 see [hasCustomisation]. Available so the editor and
+    /// Off by default — see [hasCustomisation]. Available so the editor and
     /// a tenant who asks for it can have the lines.
     bool showCustomer = false,
   }) {

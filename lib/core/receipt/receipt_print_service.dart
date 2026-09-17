@@ -49,6 +49,27 @@ class ReceiptPrintResult {
 
   bool get ok => failed.isEmpty && error == null && printed.isNotEmpty;
   bool get printedNothing => printed.isEmpty;
+
+  /// Nothing reached the printer and nothing was refused either: every slip
+  /// asked for rendered empty. That is a template problem, not a printer
+  /// problem, and telling the user the printer refused sends them to the
+  /// wrong settings screen.
+  bool get nothingToPrint =>
+      printed.isEmpty && failed.isEmpty && error == null;
+
+  /// The best one-line cause available, for a message to the user.
+  String get reason {
+    if (error != null) return error!;
+    if (nothingToPrint) {
+      return warnings.isEmpty
+          ? 'This slip\'s template is empty. Check Settings > Receipts & slips.'
+          : warnings.first;
+    }
+    if (failed.isNotEmpty) {
+      return 'The printer did not take ${failed.first}.';
+    }
+    return 'Nothing was printed.';
+  }
 }
 
 /// Sends bytes to a printer. Kept as a function so this service has no
@@ -57,6 +78,14 @@ typedef PrinterSink = Future<bool> Function(List<int> bytes);
 
 class ReceiptPrintService {
   ReceiptPrintService._();
+
+  /// `CapabilityProfile.load()` parses a bundled asset. It never changes
+  /// within a run, and the kitchen prints one slip per station in a loop, so
+  /// it is read once and kept.
+  static CapabilityProfile? _caps;
+
+  static Future<CapabilityProfile> _profile() async =>
+      _caps ??= await CapabilityProfile.load();
 
   /// Render and print one slip.
   static Future<ReceiptPrintResult> printOne({
@@ -104,7 +133,7 @@ class ReceiptPrintService {
     try {
       final chars = charsFor(paperSize);
       final size = paperSize.trim() == '80mm' ? PaperSize.mm80 : PaperSize.mm58;
-      final caps = profile ?? await CapabilityProfile.load();
+      final caps = profile ?? await _profile();
 
       for (final kind in kinds) {
         final template =

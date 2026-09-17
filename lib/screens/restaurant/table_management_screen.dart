@@ -23,8 +23,10 @@ import '../../services/saas_crypto_service.dart';
 import '../../widgets/feature_gated_widget.dart';
 import '../waiter/waiter_order_taking_screen.dart';
 
+import '../../core/receipt/receipt_context_builder.dart';
+import '../../core/receipt/receipt_print_service.dart';
+import '../../core/receipt/receipt_template.dart';
 import '../../services/thermal_printer_service.dart';
-import '../../utils/thermal_receipt_generator.dart';
 import '../../services/restaurant_sheets_service.dart';
 import '../../services/client_ledger_cloud_router_service.dart';
 import '../../providers/restaurant_auth_provider.dart';
@@ -828,7 +830,10 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen>
               'tax_percentage': taxPct,
               'gst_amount': gstAmount,
               'cgst_amount': cgstAmount,
-              'sgst_amount': sgstAmount,
+              // Derived, not halved again: rounding each half independently
+              // let the two printed lines sum to a paise more than the tax in
+              // the total.
+              'sgst_amount': gstAmount - cgstAmount,
               'total': finalTotal,
               'total_amount': finalTotal,
               'payment_mode': p.paymentMode?.isNotEmpty == true ? p.paymentMode : 'UPI',
@@ -874,6 +879,15 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen>
   }
 }
 
+  String _receiptOrgId() {
+    final session = ref.read(saasSessionProvider);
+    return resolveOutletId(
+      userOrgId: session.currentUser?.organizationId,
+      sessionOrgId: session.currentOrganization?.id,
+      hiveBox: Hive.isBoxOpen('configBox') ? Hive.box('configBox') : null,
+    );
+  }
+
   Future<void> _autoPrintPaidBill({
     required Map<String, dynamic> billMap,
     required String customerName,
@@ -881,28 +895,61 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen>
     dynamic org,
   }) async {
     try {
-      final printerState = ref.read(thermalPrinterProvider);
-      final shopName = org?.name ?? 'Restaurant';
-      final shopPhone = org?.phone ?? '';
-      final shopAddress = org?.address ?? '';
+      final printer = ref.read(thermalPrinterProvider);
+      final ent = ref.read(entitlementsProvider);
 
-      final bytes = await ThermalReceiptGenerator.generateReceiptBytes(
-        billPayload: billMap,
-        shopName: shopName,
-        shopPhone: shopPhone,
-        shopAddress: shopAddress,
-        customerName: customerName,
-        customerPhone: customerPhone,
-        printerState: printerState,
+      // The bill map's own figures are used as they stand. This screen adds
+      // GST on top of a total it treats as a subtotal, which is a different
+      // convention from BillCalculator's — routing it through the engine
+      // changes the layout, not the arithmetic.
+      final slip = ReceiptContextBuilder.forStoredOrder(
+        {
+          ...billMap,
+          'customer_name': customerName,
+          'customer_phone': customerPhone,
+        },
+        gstRate: (billMap['tax_percentage'] as num?)?.toDouble() ??
+            (printer.taxPercentage ?? 0.0),
+        isReprint: false,
+        enabledFeatures: {
+          for (final def in FeatureCatalog.all)
+            if (ent.isEnabled(def.key)) def.key,
+        },
+      )..values.addAll(ReceiptContextBuilder.printerOverrides(
+          customName: printer.customName ?? org?.name as String?,
+          customPhone: printer.customPhone ?? org?.phone as String?,
+          customAddress: printer.customAddress ?? org?.address as String?,
+          customGstin: printer.customGstin,
+          customFooter: printer.customFooter,
+        ));
+
+      final result = await ReceiptPrintService.printOne(
+        orgId: _receiptOrgId(),
+        kind: ReceiptKind.invoice,
+        context: slip,
+        // The sync path prints QR orders, so the order's own source decides
+        // which template the owner mapped — not a hardcoded 'Dine-In'.
+        channel: (billMap['order_source'] ?? 'Dine-In').toString(),
+        paperSize: printer.paperSize,
+        send: ref.read(thermalPrinterProvider.notifier).printBytes,
       );
 
-      final success = await ref.read(thermalPrinterProvider.notifier).printBytes(bytes);
-      if (success && mounted) {
+      if (!mounted) return;
+      if (result.ok) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('🖨️ Bill Printed for ${billMap['table_name'] ?? "Table"}!'),
             backgroundColor: ClassicTheme.successEmerald,
             duration: const Duration(seconds: 3),
+          ),
+        );
+      } else {
+        // The service does not throw, so without this a refused printer or an
+        // empty template looked exactly like a successful print.
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(result.reason),
+            backgroundColor: ClassicTheme.warningAmber,
           ),
         );
       }
@@ -983,7 +1030,7 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen>
       'tax_percentage': taxPct,
       'gst_amount': gstAmount,
       'cgst_amount': gstAmount / 2.0,
-      'sgst_amount': gstAmount / 2.0,
+      'sgst_amount': gstAmount - (gstAmount / 2.0),
       'total_amount': finalTotal,
       'payment_mode': 'Dine-In Running Bill',
       'table_name': 'Table ${table.tableNumber}',

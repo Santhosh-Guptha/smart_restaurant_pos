@@ -458,6 +458,25 @@ class StarterTemplates {
         name: 'Kitchen ticket by station',
         kind: ReceiptKind.kot,
         blocks: [
+          // The reprint banner is the one line the kitchen must not lose: a
+          // ticket that looks identical to the original gets cooked twice.
+          ReceiptBlock(
+            type: BlockType.text,
+            when: 'order.isReprint && order.reprintCount > 0',
+            style: BlockStyle(align: TextAlign_.center, bold: true),
+            props: {'value': '*** DUPLICATE REPRINT #{{order.reprintCount}} ***', 'wrap': false},
+          ),
+          ReceiptBlock(
+            type: BlockType.text,
+            when: 'order.isReprint && order.reprintCount < 1',
+            style: BlockStyle(align: TextAlign_.center, bold: true),
+            props: {'value': '*** DUPLICATE REPRINT ***', 'wrap': false},
+          ),
+          ReceiptBlock(
+            type: BlockType.divider,
+            when: 'order.isReprint',
+            props: {'char': '*'},
+          ),
           ReceiptBlock(
             type: BlockType.text,
             style: BlockStyle(align: TextAlign_.center, bold: true, size: TextSize.l),
@@ -480,7 +499,9 @@ class StarterTemplates {
             props: {
               'cells': [
                 {'value': '{{order.token}}', 'width': 6},
-                {'value': '{{now | time:HH:mm}}', 'width': 6, 'align': 'right'},
+                // The punch time, not `now`: a reprint of a 40-minute-old
+                // order must not tell the kitchen it just came in.
+                {'value': '{{order.createdAt | time:HH:mm}}', 'width': 6, 'align': 'right'},
               ],
             },
           ),
@@ -489,8 +510,8 @@ class StarterTemplates {
             type: BlockType.items,
             style: BlockStyle(bold: true),
             props: {
-              'columns': ['qty', 'name'],
-              'widths': {'qty': 2, 'name': 10},
+              'columns': ['qty', 'name', 'veg'],
+              'widths': {'qty': 2, 'name': 8, 'veg': 2},
               'header': false,
               'showPrices': false,
               'showNotes': true,
@@ -498,6 +519,16 @@ class StarterTemplates {
             },
           ),
           ReceiptBlock(type: BlockType.divider),
+          ReceiptBlock(
+            type: BlockType.columns,
+            style: BlockStyle(bold: true),
+            props: {
+              'cells': [
+                {'value': 'TOTAL ITEMS', 'width': 8},
+                {'value': '{{bill.qtyCount}}', 'width': 4, 'align': 'right'},
+              ],
+            },
+          ),
           ReceiptBlock(
             type: BlockType.text,
             when: 'order.notes != ""',

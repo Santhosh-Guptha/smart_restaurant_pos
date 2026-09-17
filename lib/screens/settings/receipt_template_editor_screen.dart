@@ -96,7 +96,7 @@ class _ReceiptTemplateEditorScreenState
     _cachedProblems = problems;
   }
 
-  /// `updatedAt` is stamped by `copyWith`, once, at save time \u2014 not on
+  /// `updatedAt` is stamped by `copyWith`, once, at save time — not on
   /// every read, which would make an untouched slip look freshly edited.
   ReceiptTemplate get _draft => ReceiptTemplate(
         id: widget.template.id,
@@ -652,7 +652,7 @@ class _BlockSheetState extends State<_BlockSheet> {
                     tooltip: _showRaw ? 'Back to the simple view' : 'Advanced',
                     // Carry the edits across. Without this, switching view
                     // showed stale content and the save took whichever side
-                    // happened to be visible \u2014 quietly throwing the other
+                    // happened to be visible — quietly throwing the other
                     // away.
                     onPressed: () => setState(() {
                       if (_showRaw) {
@@ -816,7 +816,7 @@ class _BlockSheetState extends State<_BlockSheet> {
         numberProp('lines', 'Blank lines', 1);
         break;
       case BlockType.items:
-        chips('columns', const ['name', 'qty', 'rate', 'amount', 'notes', 'station'],
+        chips('columns', const ['name', 'qty', 'rate', 'amount', 'notes', 'station', 'veg'],
             const ['name', 'qty', 'amount']);
         toggle('header', 'Column headings', fallback: true);
         toggle('showNotes', 'Show item notes');

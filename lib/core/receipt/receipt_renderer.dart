@@ -87,6 +87,7 @@ const Map<String, int> _itemColumnWeights = {
   'amount': 2,
   'notes': 4,
   'station': 3,
+  'veg': 2,
 };
 
 const Map<String, String> _itemColumnHeaders = {
@@ -98,6 +99,7 @@ const Map<String, String> _itemColumnHeaders = {
   'amount': 'AMT',
   'notes': 'NOTE',
   'station': 'STN',
+  'veg': 'TYPE',
 };
 
 const Map<String, TextAlign_> _itemColumnAligns = {
@@ -109,6 +111,7 @@ const Map<String, TextAlign_> _itemColumnAligns = {
   'amount': TextAlign_.right,
   'notes': TextAlign_.left,
   'station': TextAlign_.left,
+  'veg': TextAlign_.left,
 };
 
 class ReceiptRenderer {
@@ -397,6 +400,10 @@ class ReceiptRenderer {
         return ctx.enabledFeatures.contains(PlaceholderFeatures.kds)
             ? (item['station'] ?? '').toString()
             : '';
+      // Short on purpose: the KOT is the narrowest slip the app prints and
+      // `NON-VEG` does not survive a 58mm roll once the quantity has its cell.
+      case 'veg':
+        return item['isVeg'] == false ? 'NON' : 'VEG';
       default:
         return (item[col] ?? '').toString();
     }

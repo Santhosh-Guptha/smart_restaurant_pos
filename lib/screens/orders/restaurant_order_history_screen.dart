@@ -15,8 +15,11 @@ import '../../core/restaurant_models.dart';
 import '../../providers/saas_session_provider.dart';
 import '../../providers/restaurant_auth_provider.dart';
 import '../../services/apps_script_backend_service.dart';
+import '../../core/receipt/receipt_context.dart';
+import '../../core/receipt/receipt_context_builder.dart';
+import '../../core/receipt/receipt_print_service.dart';
+import '../../core/receipt/receipt_template.dart';
 import '../../services/thermal_printer_service.dart';
-import '../../utils/thermal_receipt_generator.dart';
 import '../../sync/local_store.dart';
 
 class RestaurantOrderHistoryScreen extends ConsumerStatefulWidget {
@@ -584,44 +587,73 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
     }
   }
 
-  Future<void> _printReceipt(Map<String, dynamic> orderData) async {
-    final saasSession = ref.read(saasSessionProvider);
-    final org = saasSession.currentOrganization;
-    final printerState = ref.read(thermalPrinterProvider);
-
-    final billPayload = {
-      'bill_id': orderData['id'] ?? orderData['orderId'] ?? 'BILL',
-      'table_name': orderData['tableName'] ?? orderData['tableNumber'] ?? 'Table',
-      'subtotal_amount': orderData['subtotal'] ?? orderData['totalAmount'] ?? 0.0,
-      'total_amount': orderData['totalAmount'] ?? 0.0,
-      'payment_mode': orderData['paymentMode'] ?? 'CASH',
-      'items': (orderData['items'] as List?)?.map((it) {
-        if (it is Map) {
-          return {
-            'name': it['name'] ?? 'Item',
-            'qty': it['qty'] ?? 1,
-            'price': it['price'] ?? 0.0,
-          };
-        }
-        return {'name': 'Item', 'qty': 1, 'price': 0.0};
-      }).toList() ?? [],
+  /// Which features are on, for the placeholders that belong to one.
+  Set<String> get _receiptFeatures {
+    final ent = ref.read(entitlementsProvider);
+    return {
+      for (final def in FeatureCatalog.all)
+        if (ent.isEnabled(def.key)) def.key,
     };
+  }
 
+  /// The slip for a stored order, rendered from the owner's template.
+  ReceiptContext _slipFor(Map<String, dynamic> orderData) {
+    final printer = ref.read(thermalPrinterProvider);
+    return ReceiptContextBuilder.forStoredOrder(
+      orderData,
+      gstRate: (orderData['gst_rate'] as num?)?.toDouble() ??
+          (printer.taxPercentage ?? 5.0),
+      // Anything printed from history is a reprint by definition, and now
+      // says so on the paper.
+      isReprint: true,
+      enabledFeatures: _receiptFeatures,
+    )..values.addAll(ReceiptContextBuilder.printerOverrides(
+        customName: printer.customName,
+        customPhone: printer.customPhone,
+        customAddress: printer.customAddress,
+        customGstin: printer.customGstin,
+        customFooter: printer.customFooter,
+      ));
+  }
+
+  String _orgId() {
+    final session = ref.read(saasSessionProvider);
+    return resolveOutletId(
+      userOrgId: session.currentUser?.organizationId,
+      sessionOrgId: session.currentOrganization?.id,
+      hiveBox: Hive.isBoxOpen('configBox') ? Hive.box('configBox') : null,
+    );
+  }
+
+  Future<void> _printReceipt(Map<String, dynamic> orderData) async {
+    // The hand-built payload this replaced wrote `subtotal_amount` while the
+    // generator read `subtotal`, so every reprinted bill showed Subtotal 0.00
+    // and no tax or discount line. The builder reads the stored order itself
+    // and accepts both spellings.
     try {
-      final bytes = await ThermalReceiptGenerator.generateReceiptBytes(
-        billPayload: billPayload,
-        shopName: org?.name ?? 'My Restaurant',
-        shopPhone: saasSession.currentUser?.phone ?? '',
-        shopAddress: org?.address ?? '',
-        customerName: (orderData['customerName'] ?? 'Guest').toString(),
-        customerPhone: (orderData['customerPhone'] ?? '').toString(),
-        printerState: printerState,
+      final printer = ref.read(thermalPrinterProvider);
+      final result = await ReceiptPrintService.printOne(
+        orgId: _orgId(),
+        kind: ReceiptKind.invoice,
+        context: _slipFor(orderData),
+        channel: _normalizeOrderType(orderData),
+        paperSize: printer.paperSize,
+        send: ref.read(thermalPrinterProvider.notifier).printBytes,
       );
 
-      final success = await ref.read(thermalPrinterProvider.notifier).printBytes(bytes);
-      if (success && mounted) {
+      if (!mounted) return;
+      if (result.ok) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('🖨️ Receipt sent to thermal printer!'), backgroundColor: ClassicTheme.successEmerald),
+        );
+      } else {
+        // The service does not throw, so the catch below never sees a print
+        // failure. Without this a sleeping printer looked like a success.
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(result.reason),
+            backgroundColor: ClassicTheme.warningAmber,
+          ),
         );
       }
     } catch (e) {
@@ -633,32 +665,28 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
     }
   }
 
-  void _shareReceiptText(Map<String, dynamic> orderData) {
+  /// Share the bill as text.
+  ///
+  /// This used to be a fourth hand-written version of the receipt, which meant
+  /// a customer's WhatsApp copy could say something different from the paper
+  /// they were handed. It is the same template now, rendered to characters.
+  Future<void> _shareReceiptText(Map<String, dynamic> orderData) async {
     final saasSession = ref.read(saasSessionProvider);
-    final org = saasSession.currentOrganization;
-    final shopName = org?.name ?? 'Restaurant';
-    final billId = orderData['id'] ?? orderData['orderId'] ?? 'BILL';
-    final orderType = _normalizeOrderType(orderData);
-    final tableName = orderData['tableName'] ?? '';
-    final total = (orderData['totalAmount'] ?? 0.0).toString();
-    final items = (orderData['items'] as List?) ?? [];
+    final shopName = saasSession.currentOrganization?.name ?? 'Restaurant';
+    final billId = (orderData['id'] ?? orderData['orderId'] ?? 'BILL').toString();
 
-    String text = '🧾 *$shopName - Bill Summary*\n';
-    text += 'Invoice: #$billId\n';
-    text += 'Order Type: $orderType ${tableName.isNotEmpty ? "($tableName)" : ""}\n';
-    text += 'Customer: ${orderData['customerName'] ?? "Guest"}\n';
-    text += 'Payment Status: ${orderData['status'] ?? "PAID"} via ${orderData['paymentMode'] ?? "CASH"}\n\n';
-    text += '--- Items Ordered ---\n';
-    for (final it in items) {
-      if (it is Map) {
-        text += '• ${it['name']} x${it['qty']} - ₹${((it['price'] ?? 0) * (it['qty'] ?? 1)).toStringAsFixed(0)}\n';
-      }
-    }
-    text += '\n*Grand Total: ₹$total*\n';
-    text += 'Thank you for dining with us! 🙏';
+    final slip = await ReceiptPrintService.asText(
+      orgId: _orgId(),
+      kind: ReceiptKind.invoice,
+      context: _slipFor(orderData),
+      channel: _normalizeOrderType(orderData),
+      paperSize: ref.read(thermalPrinterProvider).paperSize,
+    );
 
     SharePlus.instance.share(ShareParams(
-      text: text,
+      // Monospaced so the columns line up in a chat window, the same way they
+      // line up on the roll.
+      text: slip.isEmpty ? 'Bill #$billId from $shopName' : '```\n$slip```',
       subject: 'Bill #$billId from $shopName',
     ));
   }

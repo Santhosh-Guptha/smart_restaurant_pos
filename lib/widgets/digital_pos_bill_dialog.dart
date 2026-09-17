@@ -1,12 +1,18 @@
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:esc_pos_utils_plus/esc_pos_utils_plus.dart';
-import 'package:print_bluetooth_thermal/print_bluetooth_thermal.dart';
 import '../core/classic_theme.dart';
 import '../core/restaurant_models.dart';
-import '../services/customer_bill_formatter.dart';
+import 'package:hive_flutter/hive_flutter.dart';
+import '../core/constants.dart';
+import '../core/entitlements.dart';
+import '../core/receipt/receipt_context_builder.dart';
+import '../core/receipt/receipt_print_service.dart';
+import '../core/receipt/receipt_template.dart';
+import '../providers/entitlements_provider.dart';
+import '../providers/saas_session_provider.dart';
 import '../services/pos_bill_pdf_service.dart';
+import '../services/thermal_printer_service.dart';
 import '../services/smtp_email_service.dart';
 
 class DigitalPosBillDialog extends ConsumerStatefulWidget {
@@ -253,12 +259,16 @@ class _DigitalPosBillDialogState extends ConsumerState<DigitalPosBillDialog> {
 
   Future<void> _thermalPrint() async {
     try {
-      final isConnected = await PrintBluetoothThermal.connectionStatus;
-      if (!isConnected) {
+      final printer = ref.read(thermalPrinterProvider);
+      // Deliberately not gated on `isConnected`. That flag is a five-second
+      // poll, and `printBytes` reconnects when a printer has gone to sleep,
+      // which is the case this most needs to survive. Only a till with no
+      // printer chosen at all is refused here.
+      if (printer.selectedMac == null || printer.selectedMac!.isEmpty) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Printer not connected. Please connect via Settings.'),
+              content: Text('Printer not set up. Please connect one via Settings.'),
               backgroundColor: ClassicTheme.warningAmber,
             ),
           );
@@ -266,37 +276,100 @@ class _DigitalPosBillDialogState extends ConsumerState<DigitalPosBillDialog> {
         return;
       }
 
-      final billBytes = await CustomerBillFormatter.formatTaxInvoice(
-        paperSize: PaperSize.mm80,
-        profile: await CapabilityProfile.load(),
-        shopName: widget.organizationName ?? 'SmartDine Restaurant',
-        shopPhone: widget.organizationPhone ?? '',
-        shopAddress: widget.organizationAddress,
-        gstin: widget.gstin,
-        fssai: widget.fssai,
-        billNumber: widget.billNumber,
-        tokenNumber: widget.tokenNumber,
-        tableName: widget.tableName,
-        items: widget.items,
-        subtotal: widget.subtotal,
-        discount: widget.discount,
-        taxPercent: widget.taxPercent,
-        serviceCharge: widget.serviceCharge,
-        totalAmount: widget.totalAmount,
-        paymentMode: widget.paymentMode,
-        roundOff: widget.roundOff,
-        cgstAmount: widget.cgstAmount,
-        sgstAmount: widget.sgstAmount,
-        cashierName: widget.cashierName ?? widget.waiterName,
+      final ent = ref.read(entitlementsProvider);
+      final session = ref.read(saasSessionProvider);
+
+      // This dialog is handed everything already computed, so the context is
+      // assembled from its own fields rather than re-read from storage. Money
+      // arrives here as rupee doubles; paise is what the engine wants.
+      int paise(double v) => (v * 100).round();
+      final slip = ReceiptContextBuilder.forStoredOrder(
+        {
+          'id': widget.billNumber,
+          'token': widget.tokenNumber,
+          'tableName': widget.tableName,
+          // No order-type field on this dialog; the table name is the only
+          // signal, and a blank one means the counter.
+          'orderType': widget.tableName.trim().isEmpty ? 'Takeaway' : 'Dine-In',
+          'staff': widget.cashierName ?? widget.waiterName ?? '',
+          'customerName': widget.customerName ?? '',
+          'customerPhone': widget.customerPhone ?? '',
+          'customerEmail': _emailCtrl.text.trim(),
+          'paymentMode': widget.paymentMode,
+          'subtotalPaise': paise(widget.subtotal),
+          'discountPaise': paise(widget.discount),
+          'serviceChargePaise': paise(widget.serviceCharge),
+          'cgstPaise': paise(widget.cgstAmount),
+          'sgstPaise': paise(widget.sgstAmount),
+          'roundOffPaise': paise(widget.roundOff),
+          'grandTotalPaise': paise(widget.totalAmount),
+          // Voided lines are shown on screen at their remaining quantity, so
+          // the slip prints the same. The old formatter printed the ordered
+          // quantity, which did not match the bill the guest was looking at.
+          'items': [
+            for (final i in widget.items)
+              {
+                'name': i.name,
+                'qty': (i.qty - i.voidedQty) > 0 ? (i.qty - i.voidedQty) : i.qty,
+                'price': i.price,
+                'notes': i.notes ?? '',
+              },
+          ],
+        },
+        gstRate: widget.taxPercent,
+        serviceChargeRate: widget.serviceChargeRate,
+        isReprint: false,
+        enabledFeatures: {
+          for (final def in FeatureCatalog.all)
+            if (ent.isEnabled(def.key)) def.key,
+        },
       );
 
-      await PrintBluetoothThermal.writeBytes(billBytes);
+      // The printer's own header fields override the store record on purpose.
+      // FSSAI is the exception: no printer setting carries it, so the number
+      // this dialog was handed only fills a gap the store box left open.
+      final storedFssai =
+          (slip.values['store.fssai'] ?? '').toString().trim();
+      slip.values.addAll(ReceiptContextBuilder.printerOverrides(
+        customName: printer.customName ?? widget.organizationName,
+        customPhone: printer.customPhone ?? widget.organizationPhone,
+        customAddress: printer.customAddress ?? widget.organizationAddress,
+        customGstin: printer.customGstin ?? widget.gstin,
+        customFooter: printer.customFooter,
+        customFssai: storedFssai.isEmpty ? widget.fssai : null,
+      ));
+
+      // The caller hands this dialog the outlet the bill belongs to; only when
+      // it did not is the session asked, which is what every other screen does.
+      final orgId = (widget.organizationId != null &&
+              widget.organizationId!.trim().isNotEmpty)
+          ? widget.organizationId!.trim()
+          : resolveOutletId(
+              userOrgId: session.currentUser?.organizationId,
+              sessionOrgId: session.currentOrganization?.id,
+              hiveBox: Hive.isBoxOpen('configBox') ? Hive.box('configBox') : null,
+            );
+
+      final result = await ReceiptPrintService.printOne(
+        orgId: orgId,
+        kind: ReceiptKind.invoice,
+        context: slip,
+        channel: widget.tableName.trim().isEmpty ? 'Takeaway' : 'Dine-In',
+        paperSize: printer.paperSize,
+        send: ref.read(thermalPrinterProvider.notifier).printBytes,
+      );
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('🖨️ Bill sent to thermal printer!'),
-            backgroundColor: ClassicTheme.successEmerald,
-          ),
+          result.ok
+              ? const SnackBar(
+                  content: Text('\u{1F5A8}\uFE0F Bill sent to thermal printer!'),
+                  backgroundColor: ClassicTheme.successEmerald,
+                )
+              : SnackBar(
+                  content: Text(result.reason),
+                  backgroundColor: ClassicTheme.warningAmber,
+                ),
         );
       }
     } catch (e) {
@@ -360,7 +433,7 @@ class _DigitalPosBillDialogState extends ConsumerState<DigitalPosBillDialog> {
                           ),
                         ),
                         Text(
-                          '${widget.tableName} • Token #${widget.tokenNumber}',
+                          '${widget.tableName} \u2022 Token ${widget.tokenNumber}',
                           style: const TextStyle(color: Colors.white70, fontSize: 12),
                         ),
                       ],

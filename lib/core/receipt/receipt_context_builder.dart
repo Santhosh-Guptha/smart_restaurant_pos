@@ -138,6 +138,125 @@ class ReceiptContextBuilder {
     );
   }
 
+  /// Build the context from a stored [KotOrder].
+  ///
+  /// The kitchen paths each had their own idea of what the number was: the
+  /// waiter reprint used `kotNumber` and prefixed a `#` if there was not one
+  /// already, the kitchen display preferred `tokenNo` and prefixed a `#`
+  /// otherwise, and the counter passed the raw token. The `#` then appeared
+  /// twice wherever something printed `Token #$token`. One convention now:
+  /// `tokenNo` when the server issued one, else `kotNumber`, and the marker
+  /// belongs to the template, not the value.
+  static ReceiptContext forKotOrder(
+    KotOrder order, {
+    List<KotItem>? items,
+    bool isReprint = false,
+    int? reprintCount,
+    double gstRate = 5.0,
+    double serviceChargeRate = 0,
+    String counterCode = '',
+    String deviceName = '',
+    Set<String> enabledFeatures = const {},
+  }) {
+    final lines = items ?? order.items;
+    final store = _store();
+    final now = DateTime.now();
+
+    int paiseOf(double? rupees) => ((rupees ?? 0) * 100).round();
+
+    final subtotalPaise = order.subtotal != null
+        ? paiseOf(order.subtotal)
+        : lines.fold<int>(0, (a, i) => a + (i.price * i.qty * 100).round());
+    final taxPaise = paiseOf(order.gst);
+    final cgstPaise = (taxPaise / 2).round();
+
+    final values = <String, Object?>{
+      ...store,
+      'order.id': order.id,
+      'order.token': normalisedToken(order.tokenNo, order.kotNumber),
+      'order.type': order.orderType ?? 'Dine-In',
+      'order.typeLabel': _typeLabel(order.orderType ?? 'Dine-In'),
+      'order.table': order.tableName,
+      'order.section': '',
+      'order.source': order.orderSource,
+      'order.createdAt': order.createdAt,
+      'order.settledAt': order.paidAt ?? order.completedAt ?? order.createdAt,
+      'order.staff': order.waiterName ?? '',
+      'order.customerName': order.customerName ?? '',
+      'order.customerPhone': order.customerPhone ?? '',
+      'order.customerEmail': '',
+      'order.notes': order.generalNotes ?? '',
+      // The KOT number is the kitchen's own running number and is NOT the
+      // token: when a counter token exists the two differ, and the staff see
+      // `kotNumber` everywhere else in the app, so the ticket shows that.
+      'order.kotNumber': order.kotNumber.startsWith('#')
+          ? order.kotNumber.substring(1).trim()
+          : order.kotNumber.trim(),
+      'order.roundLabel':
+          order.courseNo == null ? '' : 'Course ${order.courseNo}',
+      'order.isReprint': isReprint,
+      'order.reprintCount': reprintCount ?? order.reprintCount,
+
+      'bill.subtotal': subtotalPaise,
+      'bill.discount': 0,
+      'bill.discountLabel': '',
+      'bill.serviceCharge': paiseOf(order.serviceCharge),
+      'bill.serviceChargeRate': _rate(serviceChargeRate),
+      'bill.taxable': subtotalPaise + paiseOf(order.serviceCharge),
+      'bill.cgst': cgstPaise,
+      'bill.sgst': taxPaise - cgstPaise,
+      'bill.gstRate': _rate(gstRate),
+      'bill.cgstRate': (gstRate / 2).toStringAsFixed(1),
+      'bill.sgstRate': (gstRate / 2).toStringAsFixed(1),
+      'bill.roundOff': 0,
+      'bill.grandTotal': paiseOf(order.totalAmount),
+      'bill.paid': order.isPaid == true ? paiseOf(order.totalAmount) : 0,
+      'bill.change': 0,
+      'bill.balance':
+          order.isPaid == true ? 0 : paiseOf(order.totalAmount),
+      'bill.itemCount': lines.length,
+      'bill.qtyCount': _qtyCount(lines),
+
+      'payment.mode': order.paymentMode ?? '',
+      'payment.modeLabel': _modeLabel(order.paymentMode ?? ''),
+      'payment.reference': order.transactionId ?? '',
+      'payment.upiUri': _upiUri(
+        store['store.upiId']?.toString() ?? '',
+        store['store.upiName']?.toString() ?? '',
+        paiseOf(order.totalAmount),
+        order.id,
+      ),
+
+      'device.name': deviceName,
+      'device.id': order.deviceId ?? '',
+      'device.counter': counterCode,
+      'shift.name': '',
+      'shift.openedAt': null,
+      'now': now,
+    };
+
+    return ReceiptContext(
+      values: values,
+      items: [for (final i in lines) itemOf(i)],
+      payments: const [],
+      enabledFeatures: enabledFeatures,
+      currencySymbol: 'Rs. ',
+    );
+  }
+
+  /// One number, without the presentation marker.
+  ///
+  /// A `#` in the stored value is a leftover from when the slip added it by
+  /// hand; the template owns how the number is introduced now, so carrying the
+  /// marker through produced `Token ##T-0709-001` on the PDF and the
+  /// on-screen bill.
+  static String normalisedToken(String? tokenNo, String kotNumber) {
+    final raw = (tokenNo != null && tokenNo.trim().isNotEmpty)
+        ? tokenNo.trim()
+        : kotNumber.trim();
+    return raw.startsWith('#') ? raw.substring(1).trim() : raw;
+  }
+
   /// Build the context for a bill that already exists — a reprint from the
   /// order history, the table sheet, or the e-mail path.
   ///
@@ -174,7 +293,8 @@ class ReceiptContextBuilder {
         : rupeesToPaise(['subtotal', 'subtotal_amount', 'subTotal']);
     final grandPaise = order['grandTotalPaise'] is num
         ? (order['grandTotalPaise'] as num).toInt()
-        : rupeesToPaise(['grandTotal', 'total', 'total_amount', 'amount']);
+        : rupeesToPaise(
+            ['grandTotal', 'totalAmount', 'total', 'total_amount', 'amount']);
     final discountPaise = order['discountPaise'] is num
         ? (order['discountPaise'] as num).toInt()
         : rupeesToPaise(['discount', 'discount_amount']);
@@ -189,7 +309,7 @@ class ReceiptContextBuilder {
         : rupeesToPaise(['sgst', 'sgst_amount']);
     if (cgstPaise == 0 && sgstPaise == 0) {
       // Older records stored one combined tax figure.
-      final total = rupeesToPaise(['gst_amount', 'tax', 'taxAmount']);
+      final total = rupeesToPaise(['gst_amount', 'gst', 'tax', 'taxAmount']);
       cgstPaise = (total / 2).round();
       sgstPaise = total - cgstPaise;
     }
@@ -217,7 +337,8 @@ class ReceiptContextBuilder {
 
     final values = <String, Object?>{
       ...store,
-      'order.id': _str(order, ['id', 'bill_id', 'billId', 'billNumber']),
+      'order.id': _str(
+          order, ['id', 'orderId', 'order_id', 'bill_id', 'billId', 'billNumber']),
       'order.token': token.isNotEmpty ? token : kot,
       'order.type': _str(order, ['orderType', 'order_type'], fallback: 'Dine-In'),
       'order.typeLabel':
@@ -262,12 +383,12 @@ class ReceiptContextBuilder {
       'payment.mode': _str(order, ['paymentMode', 'payment_mode']),
       'payment.modeLabel': _str(order, ['paymentMode', 'payment_mode']),
       'payment.reference':
-          _str(order, ['transactionId', 'refUtr', 'utr', 'ref', 'txnRef']),
+          _str(order, ['transactionId', 'transaction_id', 'refUtr', 'utr', 'ref', 'txnRef']),
       'payment.upiUri': _upiUri(
         store['store.upiId']?.toString() ?? '',
         store['store.upiName']?.toString() ?? '',
         grandPaise,
-        _str(order, ['id', 'bill_id', 'billId']),
+        _str(order, ['id', 'orderId', 'order_id', 'bill_id', 'billId']),
       ),
 
       'device.name': deviceName,
@@ -355,6 +476,7 @@ class ReceiptContextBuilder {
     String? customAddress,
     String? customGstin,
     String? customFooter,
+    String? customFssai,
   }) {
     final out = <String, Object?>{};
     void set(String key, String? value) {
@@ -366,6 +488,10 @@ class ReceiptContextBuilder {
     set('store.address', customAddress);
     set('store.gstin', customGstin);
     set('store.footer', customFooter);
+    // No printer field carries the FSSAI number; this is here so a caller that
+    // already holds it on the org record can supply it, because the invoice
+    // hides the statutory line when the store box has never been filled in.
+    set('store.fssai', customFssai);
     return out;
   }
 

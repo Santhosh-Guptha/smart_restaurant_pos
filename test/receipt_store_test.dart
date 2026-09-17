@@ -282,6 +282,22 @@ void main() {
       }
     });
 
+    test('the spellings real screens actually produce all map to QR', () {
+      // The order-history screen says 'QR Self-Order'; the table sheet stores
+      // 'DINE_IN_QR'. Neither matched, so an owner who mapped a QR template
+      // never saw it print.
+      for (final spelling in [
+        'QR Self-Order',
+        'qr self order',
+        'QR_MENU',
+        'DINE_IN_QR',
+        'Self Order',
+      ]) {
+        expect(OrderChannel.normalise(spelling), OrderChannel.qr.id,
+            reason: spelling);
+      }
+    });
+
     test('an empty order type is treated as dine-in', () {
       expect(OrderChannel.normalise(''), OrderChannel.dineIn.id);
     });

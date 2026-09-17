@@ -335,14 +335,14 @@ void main() {
               'would have split it');
     });
 
-    test('a record using the history screen’s key spelling still works', () {
+    test("a record using the history screen's key spelling still works", () {
       final legacy = stored()
         ..remove('subtotalPaise')
         ..['subtotal_amount'] = 840.0;
       final ctx = ReceiptContextBuilder.forStoredOrder(legacy);
       expect(ctx.resolve('bill.subtotal'), 84000,
           reason: 'order history writes subtotal_amount, and the old '
-              'generator read subtotal — reprints showed 0.00');
+              'generator read subtotal \u2014 reprints showed 0.00');
     });
 
     test('items come back with rate and amount in paise', () {
@@ -350,6 +350,27 @@ void main() {
       expect(ctx.items.length, 2);
       expect(ctx.items.first['rate'], 24000);
       expect(ctx.items.first['amount'], 48000);
+    });
+
+    test('the key names a real stored order uses are all read', () {
+      // KotOrder.toMap writes `totalAmount` and `gst`, and half the app writes
+      // `orderId` rather than `id`. Each of these was missing from the alias
+      // lists, and each one silently printed a zero or a blank.
+      final real = {
+        'orderId': 'SB-99',
+        'totalAmount': 882.0,
+        'subtotal': 840.0,
+        'gst': 42.0,
+        'items': [
+          {'name': 'Dosa', 'qty': 1, 'price': 840.0},
+        ],
+      };
+      final ctx = ReceiptContextBuilder.forStoredOrder(real);
+      expect(ctx.resolve('order.id'), 'SB-99');
+      expect(ctx.resolve('bill.grandTotal'), 88200);
+      expect(ctx.resolve('bill.subtotal'), 84000);
+      expect(ctx.resolve('bill.cgst'), 2100);
+      expect(ctx.resolve('bill.sgst'), 2100);
     });
 
     test('an order with nothing in it still renders', () {

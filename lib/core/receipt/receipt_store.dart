@@ -58,6 +58,10 @@ class OrderChannel {
         return takeaway.id;
       case 'qr':
       case 'qrordering':
+      case 'qrselforder':
+      case 'qrmenu':
+      case 'selforder':
+      case 'dineinqr':
       case 'web':
       case 'online':
         return qr.id;

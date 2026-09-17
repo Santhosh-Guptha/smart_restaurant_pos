@@ -3,21 +3,23 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
-import 'package:esc_pos_utils_plus/esc_pos_utils_plus.dart';
-import 'package:print_bluetooth_thermal/print_bluetooth_thermal.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import '../../core/constants.dart';
 import '../../core/license_guard.dart';
 import '../../core/restaurant_models.dart';
 import '../../providers/restaurant_auth_provider.dart';
 import '../../providers/saas_session_provider.dart';
-import '../../services/kitchen_ticket_formatter.dart';
 import '../../services/apps_script_backend_service.dart';
 import '../../sync/local_store.dart';
 import '../../sync/outbox.dart';
 import '../../core/classic_theme.dart';
 import '../../core/entitlements.dart';
 import '../../core/feature_route_guard.dart';
+import '../../core/receipt/receipt_context_builder.dart';
+import '../../core/receipt/receipt_print_service.dart';
+import '../../core/receipt/receipt_template.dart';
+import '../../providers/entitlements_provider.dart';
+import '../../services/thermal_printer_service.dart';
 
 class KitchenDisplayScreen extends ConsumerStatefulWidget {
   const KitchenDisplayScreen({super.key});
@@ -731,27 +733,68 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen>
         return;
       }
       final newReprintCount = order.reprintCount + 1;
-      final token = (order.tokenNo != null && order.tokenNo!.isNotEmpty)
-          ? order.tokenNo!
-          : (order.kotNumber.startsWith('#') ? order.kotNumber : '#${order.kotNumber}');
-      final stationTickets = await KitchenTicketFormatter.formatStationTickets(
-        paperSize: PaperSize.mm80,
-        profile: await CapabilityProfile.load(),
-        tokenNumber: token,
-        tableName: order.tableName,
-        items: kitchenItems,
-        generalNotes: order.generalNotes,
-        orderTime: order.createdAt,
-        reprintCount: newReprintCount,
-        courseNo: order.courseNo,
-      );
+      final ent = ref.read(entitlementsProvider);
+      final printer = ref.read(thermalPrinterProvider);
+      final features = {
+        for (final def in FeatureCatalog.all)
+          if (ent.isEnabled(def.key)) def.key,
+      };
 
-      final isConnected = await PrintBluetoothThermal.connectionStatus;
-      if (isConnected) {
-        for (final bytes in stationTickets.values) {
-          await PrintBluetoothThermal.writeBytes(bytes);
+      // One ticket per station, which is the O-23 behaviour: each station
+      // tears off its own. The template is rendered once per group with only
+      // that group's items, so its station heading names the right pass.
+      //
+      // The token is taken without a `#`. This screen prefixed one when the
+      // stored value lacked it and the waiter screen did the same, so a KOT
+      // and its reprint could carry different-looking numbers for one order.
+      final byStation = <String, List<KotItem>>{};
+      for (final item in kitchenItems) {
+        final station = (item.station ?? '').trim();
+        byStation.putIfAbsent(station.isEmpty ? 'Kitchen' : station, () => [])
+            .add(item);
+      }
+
+      var allPrinted = true;
+      ReceiptPrintResult? lastResult;
+      // Which stations already tore off a ticket, so a failure half-way
+      // through says so instead of leaving the user to reprint blind and
+      // hand the same station a second copy.
+      final done = <String>[];
+      String? failedStation;
+      final kdsOrgId = _getEffectiveOrgId();
+      for (final entry in byStation.entries) {
+        final slip = ReceiptContextBuilder.forKotOrder(
+          order,
+          items: entry.value,
+          isReprint: true,
+          reprintCount: newReprintCount,
+          enabledFeatures: features,
+        )..values.addAll(ReceiptContextBuilder.printerOverrides(
+            customName: printer.customName,
+            customPhone: printer.customPhone,
+            customAddress: printer.customAddress,
+            customGstin: printer.customGstin,
+            customFooter: printer.customFooter,
+          ));
+
+        lastResult = await ReceiptPrintService.printOne(
+          orgId: kdsOrgId,
+          kind: ReceiptKind.kot,
+          context: slip,
+          channel: order.orderType ?? 'Dine-In',
+          paperSize: printer.paperSize,
+          send: ref.read(thermalPrinterProvider.notifier).printBytes,
+        );
+        if (!lastResult.ok) {
+          allPrinted = false;
+          failedStation = entry.key;
+          break;
         }
-        final orgId = _getEffectiveOrgId();
+        done.add(entry.key);
+      }
+
+      if (allPrinted) {
+        final orgId = kdsOrgId;
         if (Hive.isBoxOpen('configBox')) {
           final box = Hive.box('configBox');
           final raw = box.get('kot_orders_$orgId') as List? ?? [];
@@ -783,8 +826,12 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen>
       } else {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Bluetooth printer not connected. Configure in Settings.'),
+            SnackBar(
+              content: Text(done.isEmpty
+                  ? (lastResult?.reason ?? 'Nothing was sent to the printer.')
+                  : '${lastResult?.reason ?? 'Printing stopped'} '
+                      'Stopped at $failedStation; '
+                      '${done.join(', ')} already printed.'),
               backgroundColor: ClassicTheme.warningAmber,
               behavior: SnackBarBehavior.floating,
             ),

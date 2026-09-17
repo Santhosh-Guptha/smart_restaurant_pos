@@ -1945,7 +1945,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
   /// The kinds this order should print.
   ///
   /// The invoice always. A token slip and a restaurant copy only when the
-  /// owner has mapped one for this order type \u2014 `resolve` always returns
+  /// owner has mapped one for this order type — `resolve` always returns
   /// something, so asking for them unconditionally would hand every tenant
   /// three slips where they used to get one.
   Future<List<ReceiptKind>> _kindsFor(String channel) async {
@@ -3201,14 +3201,14 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
       // 5. Auto-Print Tax Invoice if Printer is Connected
       try {
         // The cashier's name, the store's address and its GSTIN are all in
-        // scope here and none of them used to reach the paper \u2014 only the
+        // scope here and none of them used to reach the paper — only the
         // on-screen dialog got them. The template decides now, and it sees
         // everything.
         final slip = ReceiptContextBuilder.forStoredOrder(
           {
             ...order,
             'paymentMode': paymentMode,
-            // The bill's own total, not the tender \u2014 see X-05/N-10 above.
+            // The bill's own total, not the tender — see X-05/N-10 above.
             // A partial settlement must not print a smaller bill.
             'grandTotalPaise': billGrandTotalP,
             'paidPaise': paidPaise,
