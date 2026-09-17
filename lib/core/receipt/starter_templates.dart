@@ -165,7 +165,10 @@ class StarterTemplates {
           ReceiptBlock(
             type: BlockType.totals,
             props: {
-              'rows': ['subtotal', 'discount', 'serviceCharge', 'cgst', 'sgst', 'roundOff'],
+              // `tip` hides at zero, so an untipped bill still prints exactly
+              // what CustomerBillFormatter printed — which is what the golden
+              // test pins.
+              'rows': ['subtotal', 'discount', 'serviceCharge', 'cgst', 'sgst', 'tip', 'roundOff'],
               'labelWidth': 7,
               'valueWidth': 5,
             },

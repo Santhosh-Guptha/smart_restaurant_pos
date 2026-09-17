@@ -29,6 +29,7 @@ ReceiptContext _bill({
       'order.typeLabel': 'Dine-in',
       'order.table': 'T4',
       'order.staff': 'Anita',
+      'order.createdAt': at.subtract(const Duration(minutes: 38)),
       'order.settledAt': at,
       'order.customerName': '',
       'order.notes': '',
@@ -379,6 +380,83 @@ void main() {
           _bill(features: {PlaceholderFeatures.dualPrinting}));
       expect(without, isNot(contains('TANDOOR')));
       expect(without, contains('Paneer Masala'));
+    });
+
+    test('a KOT reprint says so, loudly', () {
+      // Without this banner a reprint is byte-identical to the original and
+      // the kitchen cooks the order twice.
+      final first = _print(StarterTemplates.kotByStation,
+          _bill(features: {PlaceholderFeatures.dualPrinting}));
+      expect(first, isNot(contains('DUPLICATE')));
+
+      final again = _print(
+          StarterTemplates.kotByStation,
+          _bill(
+              reprint: true,
+              reprintCount: 2,
+              features: {PlaceholderFeatures.dualPrinting}));
+      expect(again, contains('DUPLICATE REPRINT #2'));
+
+      final firstReprint = _print(
+          StarterTemplates.kotByStation,
+          _bill(reprint: true, features: {PlaceholderFeatures.dualPrinting}));
+      expect(firstReprint, contains('DUPLICATE REPRINT'));
+      expect(firstReprint, isNot(contains('#0')));
+    });
+
+    test('a KOT prints when the order was punched, not when it was reprinted',
+        () {
+      final out = _print(
+          StarterTemplates.kotByStation,
+          _bill(reprint: true, features: {PlaceholderFeatures.dualPrinting}));
+      // 19:42 less 38 minutes. A reprint that printed `now` would tell the
+      // kitchen a 40-minute-old order just came in.
+      expect(out, contains('19:04'));
+      expect(out, isNot(contains('19:42')));
+    });
+
+    test('a KOT marks non-vegetarian lines, on the right line', () {
+      final ctx = _bill(features: {PlaceholderFeatures.dualPrinting});
+      ctx.items[0] = {...ctx.items[0], 'isVeg': true};
+      ctx.items[1] = {...ctx.items[1], 'isVeg': true};
+      ctx.items[2] = {...ctx.items[2], 'isVeg': false};
+      final layout = ReceiptRenderer.layout(StarterTemplates.kotByStation, ctx);
+      final rows = layout.lines.whereType<LayoutRow>().toList();
+
+      String vegCellOf(String item) => rows
+          .firstWhere((r) =>
+              r.cells.length >= 3 && r.cells[1].text.startsWith(item))
+          .cells[2]
+          .text
+          .trim();
+
+      expect(vegCellOf('Paneer'), 'VEG');
+      expect(vegCellOf('Masala Chai'), 'NON');
+    });
+
+    test('a line with no isVeg flag is vegetarian, not the reverse', () {
+      // `KotItem.isVeg` defaults to true, so a stored record missing the key
+      // must read the same way. It used to be `m['isVeg'] == true`, which made
+      // one order print VEG from the cart and NON from the order history.
+      final ctx = _bill(features: {PlaceholderFeatures.dualPrinting});
+      final out = _print(StarterTemplates.kotByStation, ctx);
+      expect(out, isNot(contains('NON')));
+    });
+
+    test('a tip prints between the taxes and the round-off, and only when set',
+        () {
+      final untipped = _print(StarterTemplates.classicInvoice, _bill());
+      expect(untipped, isNot(contains('Tip:')));
+
+      final ctx = _bill();
+      // 65.00, which no item line on this fixture prints, so the assertion
+      // cannot pass on a coincidence.
+      ctx.values['bill.tip'] = 6500;
+      final tipped = _print(StarterTemplates.classicInvoice, ctx);
+      expect(tipped, contains('Tip:'));
+      expect(tipped, contains('Rs. 65.00'));
+      expect(tipped.indexOf('Tip:'), greaterThan(tipped.indexOf('SGST')));
+      expect(tipped.indexOf('Tip:'), lessThan(tipped.indexOf('TOTAL AMOUNT:')));
     });
 
     test('a KOT never leaks the KOT number to a tenant without dual printing', () {

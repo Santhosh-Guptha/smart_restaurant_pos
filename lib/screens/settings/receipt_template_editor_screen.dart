@@ -828,7 +828,7 @@ class _BlockSheetState extends State<_BlockSheet> {
         chips(
             'rows',
             const [
-              'subtotal', 'discount', 'serviceCharge', 'cgst', 'sgst',
+              'subtotal', 'discount', 'serviceCharge', 'cgst', 'sgst', 'tip',
               'roundOff', 'grandTotal', 'paid', 'change', 'balance',
             ],
             const ['subtotal', 'grandTotal']);

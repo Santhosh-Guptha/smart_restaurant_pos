@@ -800,7 +800,6 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen>
             final double subtotal = p.totalAmount;
             final double gstAmount = showGst ? (subtotal * (taxPct / 100.0)) : 0.0;
             final double cgstAmount = gstAmount / 2.0;
-            final double sgstAmount = gstAmount / 2.0;
             final double finalTotal = subtotal + gstAmount;
 
             final billMap = {

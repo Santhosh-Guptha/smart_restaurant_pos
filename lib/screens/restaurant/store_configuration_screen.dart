@@ -388,6 +388,10 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
         customNotes: _printerNotesCtrl.text.trim(),
         customGstin: rGstin,
         taxPercentage: gstRate,
+        // `updateLayoutSettings` writes `invoicePrefix ?? 'INV-'`, so omitting
+        // it here reset every tenant's prefix to INV- on each save of this
+        // screen. Carried through unchanged instead.
+        invoicePrefix: ref.read(thermalPrinterProvider).invoicePrefix,
         showGst: _printerShowGst,
         showDiscount: _printerShowDiscount,
         showCustomer: _printerShowCustomer,
@@ -1287,36 +1291,30 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
               Text('Receipt Layout & Header/Footer Messages:',
                   style: TextStyle(color: context.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
               const SizedBox(height: 10),
-              _buildTextField(_printerHeaderCtrl, 'Custom Header Greeting / Tagline', Icons.subtitles_rounded),
-              const SizedBox(height: 10),
+              // The footer is the one layout field the receipt engine still
+              // reads off the printer, as `store.footer`. The header, the
+              // note, the show/hide toggles and the feed slider used to live
+              // here too; they are template properties now, and this screen
+              // could not have applied them anyway -- the one-shot migration
+              // that carried an owner's old values across has already run by
+              // the time anyone gets here, so a header typed here never
+              // reached paper.
               _buildTextField(_printerFooterCtrl, 'Custom Footer Greeting (e.g. THANK YOU! VISIT AGAIN)', Icons.favorite_rounded),
-              const SizedBox(height: 10),
-              _buildTextField(_printerNotesCtrl, 'Receipt Notes / Terms & Conditions', Icons.note_alt_rounded, maxLines: 2),
               const SizedBox(height: 14),
-              Divider(color: context.borderColor),
-              const SizedBox(height: 8),
-              _buildToggleRow('Print GST Breakdown on Receipts', _printerShowGst, (v) => setState(() => _printerShowGst = v)),
-              Divider(color: context.borderColor),
-              _buildToggleRow('Print Discount Details on Receipts', _printerShowDiscount, (v) => setState(() => _printerShowDiscount = v)),
-              Divider(color: context.borderColor),
-              _buildToggleRow('Print Customer Name & Phone on Receipts', _printerShowCustomer, (v) => setState(() => _printerShowCustomer = v)),
-              Divider(color: context.borderColor),
-              _buildToggleRow('Bold Dish Item Names on Receipts', _printerBoldItems, (v) => setState(() => _printerBoldItems = v)),
-              Divider(color: context.borderColor),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text('Bottom Paper Feed Lines: ${_printerFeedLines.toInt()}',
-                      style: TextStyle(color: context.textPrimary, fontSize: 13)),
-                  Slider(
-                    value: _printerFeedLines,
-                    min: 1.0,
-                    max: 6.0,
-                    divisions: 5,
-                    activeColor: ClassicTheme.primaryAccent,
-                    onChanged: (v) => setState(() => _printerFeedLines = v),
-                  ),
-                ],
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: context.sunkenSurface,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: context.borderColor),
+                ),
+                child: Text(
+                  'Headings, notes, which totals print, spacing and the order '
+                  'of every line are edited per slip under Settings > '
+                  'Receipts & Slips. Your existing choices were carried there '
+                  'on upgrade.',
+                  style: TextStyle(fontSize: 12, color: context.textSecondary),
+                ),
               ),
               const SizedBox(height: 14),
               ElevatedButton.icon(

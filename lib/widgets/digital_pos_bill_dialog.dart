@@ -301,6 +301,7 @@ class _DigitalPosBillDialogState extends ConsumerState<DigitalPosBillDialog> {
           'serviceChargePaise': paise(widget.serviceCharge),
           'cgstPaise': paise(widget.cgstAmount),
           'sgstPaise': paise(widget.sgstAmount),
+          'tipPaise': paise(widget.tipAmount),
           'roundOffPaise': paise(widget.roundOff),
           'grandTotalPaise': paise(widget.totalAmount),
           // Voided lines are shown on screen at their remaining quantity, so

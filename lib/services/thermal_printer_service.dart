@@ -197,6 +197,7 @@ class ThermalPrinterNotifier extends StateNotifier<PrinterState> {
     unawaited(_migrateLayoutToTemplate(
       customHeader: customHeader,
       alignHeader: alignHeader,
+      alignFooter: alignFooter,
       customNotes: customNotes,
       showGst: showGst,
       showDiscount: showDiscount,
@@ -209,6 +210,7 @@ class ThermalPrinterNotifier extends StateNotifier<PrinterState> {
   Future<void> _migrateLayoutToTemplate({
     String? customHeader,
     required String alignHeader,
+    required String alignFooter,
     String? customNotes,
     required bool showGst,
     required bool showDiscount,
@@ -227,6 +229,7 @@ class ThermalPrinterNotifier extends StateNotifier<PrinterState> {
         orgId: orgId,
         customHeader: customHeader,
         alignHeader: alignHeader,
+        alignFooter: alignFooter,
         customNotes: customNotes,
         showGst: showGst,
         showDiscount: showDiscount,

@@ -57,6 +57,9 @@ class TotalsCatalog {
     // prints one line fewer. Deliberate: a "CGST Rs. 0.00" line is noise.
     TotalsRowDef(id: 'cgst', label: 'CGST ({{bill.cgstRate}}%):', path: 'bill.cgst'),
     TotalsRowDef(id: 'sgst', label: 'SGST ({{bill.sgstRate}}%):', path: 'bill.sgst'),
+    // Between the taxes and the round-off, which is where every screen in
+    // the app already shows it.
+    TotalsRowDef(id: 'tip', label: 'Tip:', path: 'bill.tip'),
     TotalsRowDef(id: 'roundOff', label: 'Round-Off:', path: 'bill.roundOff', signed: true),
     TotalsRowDef(
         id: 'grandTotal',

@@ -66,7 +66,8 @@ class ReceiptPrintResult {
           : warnings.first;
     }
     if (failed.isNotEmpty) {
-      return 'The printer did not take ${failed.first}.';
+      return 'The printer did not take ${failed.first}. '
+          'Check it is on and in range.';
     }
     return 'Nothing was printed.';
   }

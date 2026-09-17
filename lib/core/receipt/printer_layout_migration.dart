@@ -35,6 +35,7 @@ class PrinterLayoutMigration {
   static bool hasCustomisation({
     String? customHeader,
     String? customNotes,
+    String alignFooter = 'center',
     bool showGst = true,
     bool showDiscount = true,
     bool boldItems = false,
@@ -43,6 +44,7 @@ class PrinterLayoutMigration {
   }) =>
       (customHeader ?? '').trim().isNotEmpty ||
       (customNotes ?? '').trim().isNotEmpty ||
+      alignFooter.trim().toLowerCase() != 'center' ||
       !showGst ||
       !showDiscount ||
       boldItems ||
@@ -59,6 +61,7 @@ class PrinterLayoutMigration {
     required String orgId,
     String? customHeader,
     String alignHeader = 'center',
+    String alignFooter = 'center',
     String? customNotes,
     bool showGst = true,
     bool showDiscount = true,
@@ -74,6 +77,7 @@ class PrinterLayoutMigration {
       final customised = hasCustomisation(
         customHeader: customHeader,
         customNotes: customNotes,
+        alignFooter: alignFooter,
         showGst: showGst,
         showDiscount: showDiscount,
         boldItems: boldItems,
@@ -96,6 +100,7 @@ class PrinterLayoutMigration {
         current,
         customHeader: customHeader,
         alignHeader: alignHeader,
+        alignFooter: alignFooter,
         customNotes: customNotes,
         showGst: showGst,
         showDiscount: showDiscount,
@@ -116,6 +121,7 @@ class PrinterLayoutMigration {
     ReceiptTemplate template, {
     String? customHeader,
     String alignHeader = 'center',
+    String alignFooter = 'center',
     String? customNotes,
     bool showGst = true,
     bool showDiscount = true,
@@ -142,6 +148,12 @@ class PrinterLayoutMigration {
     final lastSpacer =
         template.blocks.lastIndexWhere((b) => b.type == BlockType.spacer);
 
+    // The footer greeting is the last text block on the slip. The old
+    // generator aligned it on its own switch, and the shipped template
+    // hardcodes centre, so an owner who chose left lost it.
+    final footerIndex =
+        template.blocks.lastIndexWhere((b) => b.type == BlockType.text);
+
     for (var i = 0; i < template.blocks.length; i++) {
       final b = template.blocks[i];
       // The invoice prefix was applied to the bill number by the old
@@ -155,6 +167,16 @@ class PrinterLayoutMigration {
         blocks.add(ReceiptBlock(
           type: b.type,
           style: b.style.copyWith(bold: boldItems || b.style.bold),
+          when: b.when,
+          props: b.props,
+        ));
+        continue;
+      }
+
+      if (i == footerIndex && b.type == BlockType.text) {
+        blocks.add(ReceiptBlock(
+          type: b.type,
+          style: b.style.copyWith(align: _align(alignFooter)),
           when: b.when,
           props: b.props,
         ));
@@ -249,6 +271,7 @@ class PrinterLayoutMigration {
             'serviceCharge',
             'cgst',
             'sgst',
+            'tip',
             'roundOff',
             'grandTotal',
           ]

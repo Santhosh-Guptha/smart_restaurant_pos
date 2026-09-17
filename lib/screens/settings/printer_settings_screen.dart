@@ -1,4 +1,3 @@
-import '../../widgets/pos_receipt_live_preview.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -7,11 +6,19 @@ import 'package:share_plus/share_plus.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/thermal_printer_service.dart';
-import '../../utils/thermal_receipt_generator.dart';
-import '../../widgets/receipt_preview_dialog.dart';
 import '../../core/classic_theme.dart';
+import '../../core/constants.dart';
 import '../../core/entitlements.dart';
+import '../../core/receipt/receipt_context.dart';
+import '../../core/receipt/receipt_context_builder.dart';
+import '../../core/receipt/receipt_preview.dart';
+import '../../core/receipt/receipt_print_service.dart';
+import '../../core/receipt/receipt_renderer.dart';
+import '../../core/receipt/receipt_store.dart';
+import '../../core/receipt/receipt_template.dart';
 import '../../providers/entitlements_provider.dart';
+import '../../providers/saas_session_provider.dart';
+import 'receipts_slips_screen.dart';
 
 class PrinterSettingsScreen extends ConsumerStatefulWidget {
   const PrinterSettingsScreen({super.key});
@@ -24,17 +31,13 @@ class _PrinterSettingsScreenState extends ConsumerState<PrinterSettingsScreen> {
   late TextEditingController _nameCtrl;
   late TextEditingController _phoneCtrl;
   late TextEditingController _addressCtrl;
-  late TextEditingController _headerCtrl;
   late TextEditingController _footerCtrl;
-  late TextEditingController _notesCtrl;
 
-  String _alignHeader = 'center';
-  String _alignFooter = 'center';
-  bool _showGst = true;
-  bool _showDiscount = true;
-  bool _showCustomer = true;
-  bool _boldItems = false;
-  double _feedLines = 3.0;
+  /// This till's invoice template, read once when the screen opens. The
+  /// preview then re-renders synchronously on every keystroke, which is what
+  /// keeps it from flashing a spinner while someone types their shop name.
+  ReceiptTemplate? _invoiceTemplate;
+  bool _templateFailed = false;
 
   @override
   void initState() {
@@ -52,25 +55,15 @@ class _PrinterSettingsScreenState extends ConsumerState<PrinterSettingsScreen> {
     _nameCtrl = TextEditingController(text: pState.customName ?? defaultShopName);
     _phoneCtrl = TextEditingController(text: pState.customPhone ?? defaultShopPhone);
     _addressCtrl = TextEditingController(text: pState.customAddress ?? defaultShopAddress);
-    _headerCtrl = TextEditingController(text: pState.customHeader ?? '');
     _footerCtrl = TextEditingController(text: pState.customFooter ?? '');
-    _notesCtrl = TextEditingController(text: pState.customNotes ?? '');
-    
-    _alignHeader = pState.alignHeader;
-    _alignFooter = pState.alignFooter;
-    _showGst = pState.showGst;
-    _showDiscount = pState.showDiscount;
-    _showCustomer = pState.showCustomer;
-    _boldItems = pState.boldItems;
-    _feedLines = pState.feedLines.toDouble();
 
     // Listeners for live print preview updates
-    _nameCtrl.addListener(() => setState(() {}));
-    _phoneCtrl.addListener(() => setState(() {}));
-    _addressCtrl.addListener(() => setState(() {}));
-    _headerCtrl.addListener(() => setState(() {}));
-    _footerCtrl.addListener(() => setState(() {}));
-    _notesCtrl.addListener(() => setState(() {}));
+    _nameCtrl.addListener(_refreshPreview);
+    _phoneCtrl.addListener(_refreshPreview);
+    _addressCtrl.addListener(_refreshPreview);
+    _footerCtrl.addListener(_refreshPreview);
+
+    _loadInvoiceTemplate();
 
     // Scan automatically when entering settings if permissions are granted
     Future.microtask(() async {
@@ -86,9 +79,7 @@ class _PrinterSettingsScreenState extends ConsumerState<PrinterSettingsScreen> {
     _nameCtrl.dispose();
     _phoneCtrl.dispose();
     _addressCtrl.dispose();
-    _headerCtrl.dispose();
     _footerCtrl.dispose();
-    _notesCtrl.dispose();
     super.dispose();
   }
 
@@ -105,26 +96,36 @@ class _PrinterSettingsScreenState extends ConsumerState<PrinterSettingsScreen> {
 
   Future<void> _saveCustomization() async {
     HapticFeedback.lightImpact();
+    // Only four fields are edited here now; the rest are read back off the
+    // current state and written unchanged. `updateLayoutSettings` overwrites
+    // every key it is given, and the GSTIN, the invoice prefix and the tax
+    // percentage are not among the arguments this screen used to pass — so
+    // each Save quietly cleared the GSTIN and reset the prefix to `INV-`.
+    final s = ref.read(thermalPrinterProvider);
     await ref.read(thermalPrinterProvider.notifier).updateLayoutSettings(
-      customName: _nameCtrl.text.trim(),
-      customPhone: _phoneCtrl.text.trim(),
-      customAddress: _addressCtrl.text.trim(),
-      customHeader: _headerCtrl.text.trim(),
-      alignHeader: _alignHeader,
-      customFooter: _footerCtrl.text.trim(),
-      alignFooter: _alignFooter,
-      customNotes: _notesCtrl.text.trim(),
-      showGst: _showGst,
-      showDiscount: _showDiscount,
-      showCustomer: _showCustomer,
-      boldItems: _boldItems,
-      feedLines: _feedLines.toInt(),
-    );
+          customName: _nameCtrl.text.trim(),
+          customPhone: _phoneCtrl.text.trim(),
+          customAddress: _addressCtrl.text.trim(),
+          customFooter: _footerCtrl.text.trim(),
+          customHeader: s.customHeader,
+          alignHeader: s.alignHeader,
+          alignFooter: s.alignFooter,
+          customNotes: s.customNotes,
+          customGstin: s.customGstin,
+          invoicePrefix: s.invoicePrefix,
+          taxPercentage: s.taxPercentage,
+          showGst: s.showGst,
+          showDiscount: s.showDiscount,
+          showCustomer: s.showCustomer,
+          boldItems: s.boldItems,
+          feedLines: s.feedLines,
+        );
 
+    _refreshPreview();
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('✅ Printer layout customization saved successfully!'),
+          content: Text('Receipt header saved.'),
           backgroundColor: ClassicTheme.successEmerald,
         ),
       );
@@ -181,17 +182,9 @@ class _PrinterSettingsScreenState extends ConsumerState<PrinterSettingsScreen> {
           _nameCtrl.text = pState.customName ?? defaultShopName;
           _phoneCtrl.text = pState.customPhone ?? defaultShopPhone;
           _addressCtrl.text = pState.customAddress ?? defaultShopAddress;
-          _headerCtrl.text = pState.customHeader ?? '';
           _footerCtrl.text = pState.customFooter ?? '';
-          _notesCtrl.text = pState.customNotes ?? '';
-          _alignHeader = pState.alignHeader;
-          _alignFooter = pState.alignFooter;
-          _showGst = pState.showGst;
-          _showDiscount = pState.showDiscount;
-          _showCustomer = pState.showCustomer;
-          _boldItems = pState.boldItems;
-          _feedLines = pState.feedLines.toDouble();
         });
+        _refreshPreview();
 
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -218,81 +211,147 @@ class _PrinterSettingsScreenState extends ConsumerState<PrinterSettingsScreen> {
     }
   }
 
+  /// The sample slip, as this till's own invoice template renders it.
+  ///
+  /// The shop fields come from the form rather than from saved state, so the
+  /// owner can see an edit before committing it. Everything else — what is on
+  /// the slip and in what order — is the template, which is the point: a test
+  /// print that agrees with nothing a customer is handed is worse than none.
+  ReceiptContext _sampleSlip() {
+    final ent = ref.read(entitlementsProvider);
+    final slip = ReceiptContext.sample(enabledFeatures: {
+      for (final def in FeatureCatalog.all)
+        if (ent.isEnabled(def.key)) def.key,
+    });
+    final printer = ref.read(thermalPrinterProvider);
+    slip.values.addAll(ReceiptContextBuilder.printerOverrides(
+      customName: _nameCtrl.text.trim(),
+      customPhone: _phoneCtrl.text.trim(),
+      customAddress: _addressCtrl.text.trim(),
+      customGstin: printer.customGstin,
+      customFooter: _footerCtrl.text.trim(),
+    ));
+    return slip;
+  }
+
+  String _orgId() => resolveOutletId(
+        userOrgId: ref.read(saasSessionProvider).currentUser?.organizationId,
+        sessionOrgId: ref.read(saasSessionProvider).currentOrganization?.id,
+        hiveBox: Hive.isBoxOpen('configBox') ? Hive.box('configBox') : null,
+      );
+
+  Future<void> _loadInvoiceTemplate() async {
+    if (mounted && _templateFailed) setState(() => _templateFailed = false);
+    try {
+      final t = await ReceiptTemplateStore.resolve(_orgId(), ReceiptKind.invoice);
+      if (!mounted) return;
+      setState(() => _invoiceTemplate = t);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _templateFailed = true);
+    }
+  }
+
+  /// One `setState` per keystroke in the four header fields. The render itself
+  /// is synchronous, so the preview never drops back to a spinner.
+  void _refreshPreview() {
+    if (mounted) setState(() {});
+  }
+
+  Widget _buildLivePreview(PrinterState printerState) {
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: context.borderColor),
+      ),
+      color: context.surfaceColor,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Live Preview',
+                    style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                        color: context.textPrimary),
+                  ),
+                ),
+                Text(
+                  printerState.paperSize,
+                  style: TextStyle(fontSize: 12, color: context.textSecondary),
+                ),
+              ],
+            ),
+            const Text(
+              'Your invoice template on sample figures, fitted exactly as the '
+              'printer will fit it.',
+              style: TextStyle(fontSize: 12, color: Colors.grey),
+            ),
+            const SizedBox(height: 12),
+            if (_templateFailed)
+              Text(
+                'The preview could not be drawn. Open Receipts & Slips to '
+                'check this template.',
+                style: TextStyle(fontSize: 12, color: context.dangerColor),
+              )
+            else if (_invoiceTemplate == null)
+              const SizedBox(
+                height: 120,
+                child: Center(child: CircularProgressIndicator()),
+              )
+            else
+              Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 360),
+                  child: ReceiptPreview(
+                    layout: ReceiptRenderer.layout(
+                      _invoiceTemplate!,
+                      _sampleSlip(),
+                      paperChars: ReceiptPrintService.charsFor(
+                          printerState.paperSize),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _printTestPage(BuildContext context) async {
     final state = ref.read(thermalPrinterProvider);
-    final notifier = ref.read(thermalPrinterProvider.notifier);
 
-    if (!state.isConnected) {
+    // Not gated on `isConnected`: that flag is a five-second poll and
+    // `printBytes` reconnects a printer that has gone to sleep.
+    if (state.selectedMac == null || state.selectedMac!.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('⚠️ Printer is not connected.')),
+        const SnackBar(content: Text('No printer is set up yet.')),
       );
       return;
     }
 
-    final googleUser = ref.read(authProvider);
-    final email = googleUser?.email ?? 'offline';
-    final box = Hive.box('configBox');
-
-    final String defaultShopName = box.get('shop_name_$email', defaultValue: 'Smart Billing');
-    final String defaultShopPhone = box.get('shop_phone_$email', defaultValue: '');
-    final String defaultShopAddress = box.get('shop_address_$email', defaultValue: '');
-
-    final testReceiptPayload = {
-      'bill_id': 'TEST-PRINT-001',
-      'payment_mode': 'UPI',
-      'timestamp': DateTime.now().toIso8601String(),
-      'items': [
-        {
-          'name': 'Butter Naan',
-          'qty': 1,
-          'price': 10.0,
-          'subtotal': 10.0,
-        },
-        {
-          'name': 'Paneer Butter Masala',
-          'qty': 3,
-          'price': 15.0,
-          'subtotal': 45.0,
-        }
-      ],
-      'subtotal': 55.0,
-      'gst_amount': 2.75,
-      'discount': 5.0,
-      'total_amount': 52.75,
-    };
-
-    final currentPrinterState = state.copyWith(
-      customName: _nameCtrl.text.trim(),
-      customPhone: _phoneCtrl.text.trim(),
-      customAddress: _addressCtrl.text.trim(),
-      customHeader: _headerCtrl.text.trim(),
-      alignHeader: _alignHeader,
-      customFooter: _footerCtrl.text.trim(),
-      alignFooter: _alignFooter,
-      customNotes: _notesCtrl.text.trim(),
-      showGst: _showGst,
-      showDiscount: _showDiscount,
-      showCustomer: _showCustomer,
-      boldItems: _boldItems,
-      feedLines: _feedLines.toInt(),
+    final result = await ReceiptPrintService.printOne(
+      orgId: _orgId(),
+      kind: ReceiptKind.invoice,
+      context: _sampleSlip(),
+      paperSize: state.paperSize,
+      send: ref.read(thermalPrinterProvider.notifier).printBytes,
     );
 
-    final bytes = await ThermalReceiptGenerator.generateReceiptBytes(
-      billPayload: testReceiptPayload,
-      shopName: defaultShopName,
-      shopPhone: defaultShopPhone,
-      shopAddress: defaultShopAddress,
-      customerName: 'Guest (Preview)',
-      customerPhone: '9876543210',
-      printerState: currentPrinterState,
-    );
-
-    final success = await notifier.printBytes(bytes);
     if (mounted && context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(success ? '✅ Test page printed successfully!' : '❌ Test print failed.'),
-          backgroundColor: success ? ClassicTheme.successEmerald : ClassicTheme.dangerRed,
+          content: Text(result.ok ? 'Test page printed.' : result.reason),
+          backgroundColor: result.ok
+              ? ClassicTheme.successEmerald
+              : ClassicTheme.dangerRed,
         ),
       );
     }
@@ -428,39 +487,8 @@ class _PrinterSettingsScreenState extends ConsumerState<PrinterSettingsScreen> {
                     ),
                     const SizedBox(height: 16),
 
-                    // Header Text
-                    TextField(
-                      controller: _headerCtrl,
-                      decoration: const InputDecoration(
-                        labelText: 'Custom Shop Title / Header Prefix',
-                        hintText: 'e.g. WELCOME TO OUR SHOP (optional)',
-                        border: OutlineInputBorder(),
-                        isDense: true,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text('Title Alignment', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                        SegmentedButton<String>(
-                          segments: const [
-                            ButtonSegment(value: 'left', label: Text('Left')),
-                            ButtonSegment(value: 'center', label: Text('Center')),
-                            ButtonSegment(value: 'right', label: Text('Right')),
-                          ],
-                          selected: {_alignHeader},
-                          onSelectionChanged: (val) {
-                            setState(() {
-                              _alignHeader = val.first;
-                            });
-                          },
-                        ),
-                      ],
-                    ),
-                    const Divider(height: 24),
-
-                    // Footer Text
+                    // Footer Text. This one stays: it is the only layout field
+                    // the engine still reads off the printer, as `store.footer`.
                     TextField(
                       controller: _footerCtrl,
                       decoration: const InputDecoration(
@@ -470,174 +498,81 @@ class _PrinterSettingsScreenState extends ConsumerState<PrinterSettingsScreen> {
                         isDense: true,
                       ),
                     ),
-                    const SizedBox(height: 8),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text('Footer Alignment', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                        SegmentedButton<String>(
-                          segments: const [
-                            ButtonSegment(value: 'left', label: Text('Left')),
-                            ButtonSegment(value: 'center', label: Text('Center')),
-                            ButtonSegment(value: 'right', label: Text('Right')),
-                          ],
-                          selected: {_alignFooter},
-                          onSelectionChanged: (val) {
-                            setState(() {
-                              _alignFooter = val.first;
-                            });
-                          },
-                        ),
-                      ],
-                    ),
                     const Divider(height: 24),
 
-                    // Custom Notes / Disclaimer
-                    TextField(
-                      controller: _notesCtrl,
-                      decoration: const InputDecoration(
-                        labelText: 'Custom Note / Policy (Disclaimer)',
-                        hintText: 'e.g. Goods once sold are not returnable.',
-                        border: OutlineInputBorder(),
-                        isDense: true,
+                    // Everything that used to live here -- title and footer
+                    // alignment, the note, the show/hide switches, bold rows,
+                    // the feed slider -- is a property of the slip's template
+                    // now, editable block by block and per slip kind. The
+                    // settings an owner had configured were carried into their
+                    // invoice once, on upgrade, by PrinterLayoutMigration.
+                    // Leaving dead switches here would be worse than removing
+                    // them: a switch that does nothing is a bug report.
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: context.sunkenSurface,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: context.borderColor),
                       ),
-                    ),
-                    const Divider(height: 24),
-
-                    // Show options
-                    SwitchListTile(
-                      activeThumbColor: primaryColor,
-                      contentPadding: EdgeInsets.zero,
-                      title: const Text('Show Tax / GST Details', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
-                      value: _showGst,
-                      onChanged: (val) => setState(() => _showGst = val),
-                    ),
-                    SwitchListTile(
-                      activeThumbColor: primaryColor,
-                      contentPadding: EdgeInsets.zero,
-                      title: const Text('Show Savings / Discount Details', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
-                      value: _showDiscount,
-                      onChanged: (val) => setState(() => _showDiscount = val),
-                    ),
-                    SwitchListTile(
-                      activeThumbColor: primaryColor,
-                      contentPadding: EdgeInsets.zero,
-                      title: const Text('Show Customer Info', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
-                      value: _showCustomer,
-                      onChanged: (val) => setState(() => _showCustomer = val),
-                    ),
-                    SwitchListTile(
-                      activeThumbColor: primaryColor,
-                      contentPadding: EdgeInsets.zero,
-                      title: const Text('Bold Item List Rows', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
-                      value: _boldItems,
-                      onChanged: (val) => setState(() => _boldItems = val),
-                    ),
-
-                    const Divider(height: 24),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text('Spacing at End (Feed Lines)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
-                        Text('${_feedLines.toInt()} lines', style: TextStyle(color: primaryColor, fontWeight: FontWeight.bold)),
-                      ],
-                    ),
-                    Slider(
-                      activeColor: primaryColor,
-                      value: _feedLines,
-                      min: 1,
-                      max: 8,
-                      divisions: 7,
-                      onChanged: (val) {
-                        setState(() {
-                          _feedLines = val;
-                        });
-                      },
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(Icons.receipt_long_outlined,
+                                  size: 18, color: primaryColor),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'Slip layout moved',
+                                  style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 14,
+                                      color: context.textPrimary),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            'Headings, notes, which totals show, spacing and '
+                            'the order of every line are edited per slip in '
+                            'Receipts & Slips. Your existing settings were '
+                            'carried across.',
+                            style: TextStyle(
+                                fontSize: 12, color: context.textSecondary),
+                          ),
+                          const SizedBox(height: 10),
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: OutlinedButton.icon(
+                              // Re-read on the way back: the owner has very
+                              // likely just changed the template, and a
+                              // preview that disagrees with the test print is
+                              // the thing this screen exists to prevent.
+                              onPressed: () => Navigator.of(context)
+                                  .push(MaterialPageRoute(
+                                    builder: (_) => const ReceiptsSlipsScreen(),
+                                  ))
+                                  .then((_) => _loadInvoiceTemplate()),
+                              icon: const Icon(Icons.tune, size: 16),
+                              label: const Text('Open Receipts & Slips'),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: primaryColor,
+                                side: BorderSide(color: primaryColor),
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(10)),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
 
                     const SizedBox(height: 12),
                     Row(
                       children: [
-                        Expanded(
-                          child: OutlinedButton.icon(
-                            onPressed: () {
-                              final googleUser = ref.read(authProvider);
-                              final email = googleUser?.email ?? 'offline';
-                              final box = Hive.box('configBox');
-
-                              final String defaultShopName = box.get('shop_name_$email', defaultValue: 'Smart Billing');
-                              final String defaultShopPhone = box.get('shop_phone_$email', defaultValue: '');
-                              final String defaultShopAddress = box.get('shop_address_$email', defaultValue: '');
-
-                              final currentPrinterState = PrinterState(
-                                isConnected: printerState.isConnected,
-                                isScanning: printerState.isScanning,
-                                devices: printerState.devices,
-                                selectedMac: printerState.selectedMac,
-                                selectedName: printerState.selectedName,
-                                autoPrint: printerState.autoPrint,
-                                paperSize: printerState.paperSize,
-                                customName: _nameCtrl.text.trim(),
-                                customPhone: _phoneCtrl.text.trim(),
-                                customAddress: _addressCtrl.text.trim(),
-                                customHeader: _headerCtrl.text.trim(),
-                                alignHeader: _alignHeader,
-                                customFooter: _footerCtrl.text.trim(),
-                                alignFooter: _alignFooter,
-                                customNotes: _notesCtrl.text.trim(),
-                                showGst: _showGst,
-                                showDiscount: _showDiscount,
-                                showCustomer: _showCustomer,
-                                boldItems: _boldItems,
-                                feedLines: _feedLines.toInt(),
-                              );
-
-                              final testReceiptPayload = {
-                                'bill_id': 'PREVIEW-001',
-                                'payment_mode': 'UPI',
-                                'timestamp': DateTime.now().toIso8601String(),
-                                'items': [
-                                  {
-                                    'name': 'Butter Naan',
-                                    'qty': 1,
-                                    'price': 10.0,
-                                    'subtotal': 10.0,
-                                  },
-                                  {
-                                    'name': 'Paneer Butter Masala',
-                                    'qty': 3,
-                                    'price': 15.0,
-                                    'subtotal': 45.0,
-                                  }
-                                ],
-                                'subtotal': 55.0,
-                                'gst_amount': 2.75,
-                                'discount': 5.0,
-                                'total_amount': 52.75,
-                              };
-
-                              ReceiptPreviewDialog.show(
-                                context,
-                                billPayload: testReceiptPayload,
-                                shopName: defaultShopName,
-                                shopPhone: defaultShopPhone,
-                                shopAddress: defaultShopAddress,
-                                customerName: 'Guest (Preview)',
-                                customerPhone: '9876543210',
-                                printerState: currentPrinterState,
-                              );
-                            },
-                            icon: const Icon(Icons.visibility),
-                            label: const Text('Preview Layout'),
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: primaryColor,
-                              side: BorderSide(color: primaryColor),
-                              padding: const EdgeInsets.symmetric(vertical: 12),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
                         Expanded(
                           child: ElevatedButton.icon(
                             onPressed: _saveCustomization,
@@ -659,25 +594,11 @@ class _PrinterSettingsScreenState extends ConsumerState<PrinterSettingsScreen> {
             ),
             const SizedBox(height: 16),
 
-            // Live Print Preview Widget
-            PosReceiptLivePreview(
-              storeName: _nameCtrl.text.trim().isNotEmpty ? _nameCtrl.text.trim() : 'SmartDine Restaurant',
-              storePhone: _phoneCtrl.text.trim(),
-              storeAddress: _addressCtrl.text.trim(),
-              headerGreeting: _headerCtrl.text.trim(),
-              headerAlign: _alignHeader,
-              footerGreeting: _footerCtrl.text.trim(),
-              footerAlign: _alignFooter,
-              policyNotes: _notesCtrl.text.trim(),
-              showGst: _showGst,
-              showDiscount: _showDiscount,
-              showCustomer: _showCustomer,
-              boldItems: _boldItems,
-              feedLines: _feedLines.toInt(),
-              paperSize: printerState.paperSize,
-              isConnected: printerState.isConnected,
-              printerName: printerState.selectedName,
-            ),
+            // The real invoice, fitted by the same code the printer gets, on
+            // the paper width this till is set to. The old preview rebuilt the
+            // slip in widgets from the printer switches, so it agreed with
+            // nothing that was ever printed.
+            _buildLivePreview(printerState),
             const SizedBox(height: 16),
 
             // Backup and Restore Card (owned by backupRestore)

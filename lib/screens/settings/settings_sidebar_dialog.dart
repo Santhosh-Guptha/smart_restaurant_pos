@@ -14,8 +14,12 @@ import '../../providers/restaurant_auth_provider.dart';
 import '../../providers/saas_session_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../../services/firebase_connection_service.dart';
+import '../../core/constants.dart';
+import '../../core/receipt/receipt_context.dart';
+import '../../core/receipt/receipt_context_builder.dart';
+import '../../core/receipt/receipt_print_service.dart';
+import '../../core/receipt/receipt_template.dart';
 import '../../services/thermal_printer_service.dart';
-import '../../utils/thermal_receipt_generator.dart';
 import '../../utils/ui_feedback.dart';
 import '../restaurant/store_configuration_screen.dart';
 import '../../services/backup_service.dart';
@@ -42,43 +46,49 @@ class _SettingsSidebarDialogState extends ConsumerState<SettingsSidebarDialog> {
     _soundAlertsEnabled = box?.get('app_sound_alerts', defaultValue: true) ?? true;
   }
 
+  /// A test print is the owner's own invoice template on sample figures, so
+  /// what comes out of the printer is what a customer will be handed. It used
+  /// to be a second, hand-written layout that no bill ever used.
   Future<void> _printTestReceipt() async {
     final pState = ref.read(thermalPrinterProvider);
-    if (!pState.isConnected && pState.selectedMac == null) {
-      AppToast.showWarning(context, 'No Printer Connected', subtitle: 'Please pair and connect a thermal printer first.');
+    if (pState.selectedMac == null || pState.selectedMac!.isEmpty) {
+      AppToast.showWarning(context, 'No Printer Connected',
+          subtitle: 'Please pair and connect a thermal printer first.');
       return;
     }
 
-    final sampleBill = {
-      'bill_id': 'TEST-001',
-      'timestamp': DateTime.now().toIso8601String(),
-      'payment_mode': 'CASH',
-      'subtotal': 260.0,
-      'gst_amount': 13.0,
-      'discount': 0.0,
-      'total_amount': 273.0,
-      'items': [
-        {'name': 'Butter Naan', 'qty': 2, 'price': 40.0, 'subtotal': 80.0},
-        {'name': 'Paneer Butter Masala', 'qty': 1, 'price': 180.0, 'subtotal': 180.0},
-      ],
-    };
+    final ent = ref.read(entitlementsProvider);
+    final session = ref.read(saasSessionProvider);
 
-    final bytes = await ThermalReceiptGenerator.generateReceiptBytes(
-      billPayload: sampleBill,
-      shopName: pState.customName ?? 'SmartDine Restaurant',
-      shopPhone: pState.customPhone ?? '',
-      shopAddress: pState.customAddress ?? '',
-      customerName: 'Test Diner',
-      customerPhone: '9876543210',
-      printerState: pState,
+    final slip = ReceiptContext.sample(enabledFeatures: {
+      for (final def in FeatureCatalog.all)
+        if (ent.isEnabled(def.key)) def.key,
+    });
+    slip.values.addAll(ReceiptContextBuilder.printerOverrides(
+      customName: pState.customName,
+      customPhone: pState.customPhone,
+      customAddress: pState.customAddress,
+      customGstin: pState.customGstin,
+      customFooter: pState.customFooter,
+    ));
+
+    final result = await ReceiptPrintService.printOne(
+      orgId: resolveOutletId(
+        userOrgId: session.currentUser?.organizationId,
+        sessionOrgId: session.currentOrganization?.id,
+        hiveBox: Hive.isBoxOpen('configBox') ? Hive.box('configBox') : null,
+      ),
+      kind: ReceiptKind.invoice,
+      context: slip,
+      paperSize: pState.paperSize,
+      send: ref.read(thermalPrinterProvider.notifier).printBytes,
     );
 
-    final success = await ref.read(thermalPrinterProvider.notifier).printBytes(bytes);
     if (mounted) {
-      if (success) {
+      if (result.ok) {
         AppToast.showSuccess(context, 'Test receipt printed successfully!');
       } else {
-        AppToast.showError(context, 'Failed to print test receipt. Ensure printer is powered ON and paired.');
+        AppToast.showError(context, result.reason);
       }
     }
   }

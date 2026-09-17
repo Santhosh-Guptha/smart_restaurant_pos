@@ -107,6 +107,10 @@ class PlaceholderCatalog {
     PlaceholderDef(path: 'bill.cgstRate', label: 'CGST %', group: 'Bill', sample: 2.5),
     PlaceholderDef(path: 'bill.sgstRate', label: 'SGST %', group: 'Bill', sample: 2.5),
     PlaceholderDef(path: 'bill.taxable', label: 'Taxable value', group: 'Bill', sample: 80000),
+    // Sampled at zero, like serviceCharge and roundOff: the rest of this
+    // block foots to bill.grandTotal, and a sample tip would print a slip
+    // whose lines do not add up in every preview in the app.
+    PlaceholderDef(path: 'bill.tip', label: 'Tip', group: 'Bill', sample: 0),
     PlaceholderDef(path: 'bill.roundOff', label: 'Round-off', group: 'Bill', sample: 0),
     PlaceholderDef(path: 'bill.grandTotal', label: 'Grand total', group: 'Bill', sample: 84000),
     PlaceholderDef(path: 'bill.paid', label: 'Paid', group: 'Bill', sample: 100000),
@@ -195,11 +199,17 @@ class ReceiptContext {
   })  : values = Map<String, Object?>.from(values ?? const {}),
         items = List<Map<String, Object?>>.from(items ?? const []),
         payments = List<Map<String, Object?>>.from(payments ?? const []),
-        enabledFeatures = enabledFeatures ?? const {};
+        // Copied, not aliased: a caller that renders several slips from one
+        // feature set would otherwise hand every context the same mutable set.
+        enabledFeatures = Set<String>.from(enabledFeatures ?? const <String>{});
 
   /// A context filled from the catalogue's sample values, for the editor
   /// preview before the owner has picked a real order.
-  factory ReceiptContext.sample() {
+  ///
+  /// [enabledFeatures] lets a caller show the sample as a real tenant would
+  /// see it — a test print on a till without the KDS add-on must not print
+  /// station names the owner cannot get.
+  factory ReceiptContext.sample({Set<String>? enabledFeatures}) {
     final vals = <String, Object?>{};
     for (final d in PlaceholderCatalog.all) {
       if (d.itemScope || d.path.startsWith('items.') || d.path == 'now') continue;
@@ -220,11 +230,12 @@ class ReceiptContext {
       payments: [
         {'mode': 'UPI', 'modeLabel': 'Paid via UPI', 'amount': 84000, 'reference': 'TXN8891234'},
       ],
-      enabledFeatures: {
-        PlaceholderFeatures.kds,
-        PlaceholderFeatures.email,
-        PlaceholderFeatures.dualPrinting,
-      },
+      enabledFeatures: enabledFeatures ??
+          const {
+            PlaceholderFeatures.kds,
+            PlaceholderFeatures.email,
+            PlaceholderFeatures.dualPrinting,
+          },
     );
   }
 

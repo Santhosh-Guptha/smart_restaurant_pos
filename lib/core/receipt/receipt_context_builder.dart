@@ -35,6 +35,10 @@ class ReceiptContextBuilder {
     required List<KotItem> items,
     required BillTotals totals,
     required double gstRate,
+    /// `BillTotals` has no tip: `BillCalculator` deliberately does not compute
+    /// one, because a tip is not part of the taxable bill. A screen that
+    /// collects one passes it here so the slip's lines still foot.
+    int tipPaise = 0,
     String staff = '',
     String customerName = '',
     String customerPhone = '',
@@ -95,6 +99,7 @@ class ReceiptContextBuilder {
       // "9.0".
       'bill.cgstRate': (gstRate / 2).toStringAsFixed(1),
       'bill.sgstRate': (gstRate / 2).toStringAsFixed(1),
+      'bill.tip': tipPaise,
       'bill.roundOff': totals.roundOffPaise,
       'bill.grandTotal': totals.grandTotalPaise,
       'bill.paid': _paidPaise(payments),
@@ -208,6 +213,7 @@ class ReceiptContextBuilder {
       'bill.gstRate': _rate(gstRate),
       'bill.cgstRate': (gstRate / 2).toStringAsFixed(1),
       'bill.sgstRate': (gstRate / 2).toStringAsFixed(1),
+      'bill.tip': paiseOf(order.tipAmount),
       'bill.roundOff': 0,
       'bill.grandTotal': paiseOf(order.totalAmount),
       'bill.paid': order.isPaid == true ? paiseOf(order.totalAmount) : 0,
@@ -316,6 +322,9 @@ class ReceiptContextBuilder {
     final roundOffPaise = order['roundOffPaise'] is num
         ? (order['roundOffPaise'] as num).toInt()
         : rupeesToPaise(['roundOff', 'round_off']);
+    final tipPaise = order['tipPaise'] is num
+        ? (order['tipPaise'] as num).toInt()
+        : rupeesToPaise(['tip', 'tipAmount', 'tip_amount', 'serverTip']);
 
     final storedPaid = order['paidPaise'] is num
         ? (order['paidPaise'] as num).toInt()
@@ -369,6 +378,7 @@ class ReceiptContextBuilder {
       'bill.gstRate': _rate(gstRate),
       'bill.cgstRate': (gstRate / 2).toStringAsFixed(1),
       'bill.sgstRate': (gstRate / 2).toStringAsFixed(1),
+      'bill.tip': tipPaise,
       'bill.roundOff': roundOffPaise,
       'bill.grandTotal': grandPaise,
       // What was actually tendered, when the record says. A settled bill that
@@ -593,7 +603,7 @@ class ReceiptContextBuilder {
         'amount': (amount * 100).round(),
         'notes': (m['notes'] ?? m['note'] ?? '').toString(),
         'station': (m['station'] ?? '').toString(),
-        'isVeg': m['isVeg'] == true,
+        'isVeg': m['isVeg'] != false,
       });
     }
     return out;
