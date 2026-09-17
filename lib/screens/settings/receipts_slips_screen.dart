@@ -2,8 +2,13 @@
 ///
 /// One place to answer two questions: what does each slip look like, and which
 /// slip does each kind of order print. Everything the owner changes here is
-/// stored locally and applies to the next order; nothing on this screen needs
-/// the network.
+/// stored locally and applies to the next order, and nothing on this screen
+/// needs the network: an offline tenant edits their slips with no connection
+/// at all, which is the whole point of the offline plan.
+///
+/// A tenant with `cloudSync` also gets those edits on their other tills. The
+/// screen pulls once when it opens and pushes each change as it is made; both
+/// are best-effort and neither can fail the edit in front of the owner.
 ///
 /// Gating (FEATURE_MASTER_PLAN.md rule 1): the screen belongs to
 /// `thermalPrinting`; the token kind to `qsrBilling`; the kitchen ticket to
@@ -11,6 +16,8 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'dart:async';
+
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
@@ -19,12 +26,14 @@ import '../../core/classic_theme.dart';
 import '../../core/constants.dart';
 import '../../core/design_tokens.dart';
 import '../../core/entitlements.dart';
+import '../../core/cloud_gate.dart';
 import '../../core/feature_route_guard.dart';
 import '../../core/receipt/receipt_context.dart';
 import '../../core/receipt/receipt_preview.dart';
 import '../../core/receipt/receipt_renderer.dart';
 import '../../core/receipt/receipt_store.dart';
 import '../../core/receipt/receipt_template.dart';
+import '../../core/receipt/receipt_template_sync.dart';
 import '../../core/receipt/starter_templates.dart';
 import '../../core/responsive.dart';
 import '../../providers/saas_session_provider.dart';
@@ -63,7 +72,9 @@ class _ReceiptsSlipsScreenState extends ConsumerState<ReceiptsSlipsScreen>
       if (featureOn(FeatureKeys.dualPrinting)) ReceiptKind.kot,
     ];
     _kind = _kinds.first;
-    _load();
+    // Local first so the screen never waits on the network to draw, then the
+    // cloud copy if this tenant has one.
+    _load().then((_) => _reconcile());
   }
 
   String get _orgId {
@@ -73,6 +84,41 @@ class _ReceiptsSlipsScreenState extends ConsumerState<ReceiptsSlipsScreen>
       sessionOrgId: session.currentOrganization?.id,
       hiveBox: Hive.isBoxOpen('configBox') ? Hive.box('configBox') : null,
     );
+  }
+
+  /// True only for a tenant who has the add-on and is not in offline mode.
+  /// Everything below is a no-op otherwise, so an offline tenant never waits
+  /// on a network call to open this screen.
+  /// The feature keys this tenant has, for every preview on this screen.
+  Set<String> get _sampleFeatures => {
+        for (final def in FeatureCatalog.all)
+          if (featureOn(def.key)) def.key,
+      };
+
+  bool get _syncs =>
+      mounted && featureOn(FeatureKeys.cloudSync) && !CloudGate.offline;
+
+  /// Started, never awaited.
+  ///
+  /// A Firestore write completes on server acknowledgement and retries for as
+  /// long as it takes, so awaiting one here would leave an owner on a bad
+  /// connection staring at a list that never refreshes and an editor that
+  /// never opens. The edit has already landed in the local box by this point,
+  /// and the local box is the copy that prints.
+  void _push(Future<void> Function() body) {
+    if (!_syncs) return;
+    unawaited(body().catchError((_) {}));
+  }
+
+  /// Two-way: this till sends up anything it has that is newer, and takes
+  /// anything the cloud has that is newer. One-way would lose an edit made
+  /// while the network was down, because there is no other moment at which
+  /// that edit would ever be sent.
+  Future<void> _reconcile() async {
+    if (!_syncs) return;
+    final org = _orgId;
+    final result = await ReceiptTemplateSync.reconcile(org);
+    if (result.changedLocally && mounted) await _load();
   }
 
   Future<void> _load() async {
@@ -107,11 +153,19 @@ class _ReceiptsSlipsScreenState extends ConsumerState<ReceiptsSlipsScreen>
         ),
       ),
     );
-    if (changed == true) await _load();
+    if (changed != true) return;
+    // Read back what the editor saved rather than trusting the draft it held,
+    // so the copy that goes up is the copy that will print here.
+    final saved = await ReceiptTemplateStore.byId(_orgId, template.id);
+    if (saved != null) {
+      _push(() => ReceiptTemplateSync.pushTemplate(_orgId, saved));
+    }
+    await _load();
   }
 
   Future<void> _duplicate(ReceiptTemplate t) async {
     final copy = await ReceiptTemplateStore.duplicate(_orgId, t);
+    _push(() => ReceiptTemplateSync.pushTemplate(_orgId, copy));
     await _load();
     if (mounted) await _openEditor(copy);
   }
@@ -143,8 +197,13 @@ class _ReceiptsSlipsScreenState extends ConsumerState<ReceiptsSlipsScreen>
 
     if (isStarter) {
       await ReceiptTemplateStore.resetToStarter(_orgId, t.id);
+      final back = await ReceiptTemplateStore.byId(_orgId, t.id);
+      if (back != null) {
+        _push(() => ReceiptTemplateSync.pushTemplate(_orgId, back));
+      }
     } else {
       await ReceiptTemplateStore.delete(_orgId, t.id);
+      _push(() => ReceiptTemplateSync.pushDelete(_orgId, t.id));
     }
     await _load();
     if (mounted) {
@@ -197,6 +256,9 @@ class _ReceiptsSlipsScreenState extends ConsumerState<ReceiptsSlipsScreen>
       return;
     }
     final saved = await ReceiptTemplateStore.importAll(_orgId, parsed);
+    for (final t in saved) {
+      _push(() => ReceiptTemplateSync.pushTemplate(_orgId, t));
+    }
     await _load();
     if (mounted) {
       AppToast.showSuccess(context,
@@ -352,6 +414,8 @@ class _ReceiptsSlipsScreenState extends ConsumerState<ReceiptsSlipsScreen>
                       onChanged: (value) async {
                         await ReceiptTemplateStore.setMapping(
                             _orgId, _kind, channel.id, value);
+                        _push(() =>
+                            ReceiptTemplateSync.pushMappings(_orgId));
                         await _load();
                       },
                     ),
@@ -365,7 +429,10 @@ class _ReceiptsSlipsScreenState extends ConsumerState<ReceiptsSlipsScreen>
   }
 
   Widget _templateList(BuildContext context) {
-    final sample = ReceiptContext.sample();
+    // The tenant's own features, not the catalogue's defaults: a thumbnail
+    // that shows station names to a restaurant without the KDS add-on is
+    // advertising something they cannot switch on.
+    final sample = ReceiptContext.sample(enabledFeatures: _sampleFeatures);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,

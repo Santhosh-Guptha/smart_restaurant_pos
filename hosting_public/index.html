@@ -262,6 +262,10 @@
   .cap .tag{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;padding:3px 9px;border-radius:999px;margin-bottom:10px}
   .tag.core{color:var(--mint);background:color-mix(in srgb,var(--mint) 14%,transparent);border:1px solid color-mix(in srgb,var(--mint) 34%,transparent)}
   .tag.add{color:var(--lamp);background:color-mix(in srgb,var(--lamp) 14%,transparent);border:1px solid color-mix(in srgb,var(--lamp) 34%,transparent)}
+  /* A line that needs a paid plan. The station cards sit under a free-trial
+     call to action, so anything the trial does not include says so where it
+     is read, not in a footnote. */
+  .needs-plan{display:inline-block;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:1px 6px;border-radius:999px;margin-left:6px;white-space:nowrap;color:var(--lamp);background:color-mix(in srgb,var(--lamp) 12%,transparent);border:1px solid color-mix(in srgb,var(--lamp) 30%,transparent)}
 
   /* little screen mocks — drawn, not photographed, so they stay crisp */
   .mock{min-height:132px;border-radius:14px;background:var(--paper);color:var(--ink);padding:11px;font-size:10.5px;line-height:1.35;overflow:hidden;box-shadow:0 18px 34px -22px rgba(0,0,0,.85);transform:rotateY(-9deg) rotateX(4deg);transform-origin:right center;transition:transform .6s cubic-bezier(.2,.8,.2,1)}
@@ -376,23 +380,24 @@
     <p class="kicker rv">Built around the people on your floor</p>
     <h2 class="rv d1">Five stations.<br>One service.</h2>
     <p class="lede rv d2">Everyone sees exactly what their job needs — nothing more. Tap a card to turn it over.</p>
+    <p class="lede rv d2" style="font-size:.92em;opacity:.8">The free trial is the offline dine-in set: one device, one outlet, everything kept on that device. Lines marked <span class="needs-plan">paid plan</span> need a commercial plan.</p>
 
     <div class="stations">
       <div class="flip rv d1" tabindex="0" role="button" aria-label="Owner station — tap to see features">
         <div class="face front"><span class="num">01</span><span class="ico">🏛️</span><h3>Owner</h3><p>Know the day before anyone tells you.</p><span class="hint">Turn over ↻</span></div>
-        <div class="face back"><h3>The owner sees</h3><ul><li>Sales, top dishes and busy hours across every outlet — live</li><li>Who did what: every discount, void and refund has a name on it</li><li>Menu, prices and staff roles set once, everywhere</li><li>Each branch banks its own takings through its own UPI ID</li><li>One encrypted backup you can restore anywhere</li></ul></div>
+        <div class="face back"><h3>The owner sees</h3><ul><li>Sales, top dishes and busy hours across every outlet — live<span class="needs-plan">paid plan</span></li><li>Who did what: every discount, void and refund has a name on it</li><li>Menu, prices and staff roles set once, everywhere<span class="needs-plan">paid plan</span></li><li>Each branch banks its own takings through its own UPI ID<span class="needs-plan">paid plan</span></li><li>One encrypted backup you can restore anywhere</li></ul></div>
       </div>
       <div class="flip rv d2" tabindex="0" role="button" aria-label="Counter station — tap to see features">
         <div class="face front"><span class="num">02</span><span class="ico">🧾</span><h3>Counter</h3><p>Settle a table in two taps. Even when the network drops.</p><span class="hint">Turn over ↻</span></div>
-        <div class="face back"><h3>The counter gets</h3><ul><li>Bills that follow the table, not the waiter</li><li>Split by amount or by person; UPI, card, cash, mixed</li><li>Round-off, discounts and manager approvals built in</li><li>Receipts to the thermal printer or straight to WhatsApp</li><li>If the internet blinks, nothing is lost — it catches up on its own</li></ul></div>
+        <div class="face back"><h3>The counter gets</h3><ul><li>Bills that follow the table, not the waiter</li><li>Split by amount or by person; UPI, card, cash, mixed</li><li>Round-off, discounts and manager approvals built in</li><li>Receipts to the thermal printer, or emailed to the guest<span class="needs-plan">paid plan</span></li><li>If the internet blinks, nothing is lost — it catches up on its own<span class="needs-plan">paid plan</span></li></ul></div>
       </div>
       <div class="flip rv d3" tabindex="0" role="button" aria-label="Kitchen station — tap to see features">
         <div class="face front"><span class="num">03</span><span class="ico">🔥</span><h3>Kitchen</h3><p>New → Cooking → Ready. Loud when it should be, quiet when it shouldn't.</p><span class="hint">Turn over ↻</span></div>
-        <div class="face back"><h3>The pass gets</h3><ul><li>Tickets by station — tandoor, grill, bar — on any tablet</li><li>A bell for new orders, a timer on every ticket</li><li>Courses fire separately; a second round arrives as its own ticket</li><li>Run out of something? Mark it. Guests stop seeing it instantly</li><li>Voids reach the pass before the pan is hot</li></ul></div>
+        <div class="face back"><h3>The pass gets</h3><ul><li>Tickets by station — tandoor, grill, bar — printed at the pass, or on any tablet<span class="needs-plan">paid plan</span></li><li>A bell for new orders, a timer on every ticket<span class="needs-plan">paid plan</span></li><li>Courses fire separately; a second round arrives as its own ticket</li><li>Run out of something? Mark it. Guests stop seeing it on their phones<span class="needs-plan">paid plan</span></li><li>Voids reach the pass before the pan is hot</li></ul></div>
       </div>
       <div class="flip rv d4" tabindex="0" role="button" aria-label="Floor station — tap to see features">
         <div class="face front"><span class="num">04</span><span class="ico">🚶</span><h3>Floor</h3><p>Take the order at the table. It's in the kitchen before you walk away.</p><span class="hint">Turn over ↻</span></div>
-        <div class="face back"><h3>Waiters get</h3><ul><li>The table map: who's seated, who's waiting for a bill</li><li>Order by course; fire the mains when starters clear</li><li>Guests' own QR orders appear on the same ticket</li><li>A bell when a table calls, a nudge when a bill is requested</li><li>Settle at the table with a UPI QR — no walk to the counter</li></ul></div>
+        <div class="face back"><h3>Waiters get</h3><ul><li>The table map: who's seated, who's waiting for a bill</li><li>Order by course from the table<span class="needs-plan">paid plan</span>; fire the mains when starters clear</li><li>Guests' own QR orders appear on the same ticket<span class="needs-plan">paid plan</span></li><li>A bell when a table calls, a nudge when a bill is requested<span class="needs-plan">paid plan</span></li><li>Settle at the table with a UPI QR — no walk to the counter<span class="needs-plan">paid plan</span></li></ul></div>
       </div>
     </div>
   </div>
@@ -1006,13 +1011,13 @@
 
     <!-- Success View for Trial -->
     <div id="trialSuccessView" class="success-view" style="display:none">
-      <div class="success-ring">✓</div>
-      <h3>Request received</h3>
-      <p id="trialSuccessMsg">Thank you! Your 14-day free trial request has been submitted.</p>
-      <div class="success-box">
-        <div><strong>📋 What happens now:</strong> our team reviews your request and sets your store up. Your trial starts when they activate it, not before.</div>
-        <div style="margin-top:4px"><strong>📱 Fastest route:</strong> message us on WhatsApp below and we will set you up the same day.</div>
-        <div style="margin-top:4px"><strong>✉️ We have on file:</strong> <span id="trialClientEmailDisp"></span></div>
+      <div class="success-ring" id="trialSuccessRing">✓</div>
+      <h3 id="trialSuccessTitle">Your trial is ready</h3>
+      <p id="trialSuccessMsg">Thank you! Your 14-day free trial has been created.</p>
+      <div class="success-box" id="trialSuccessBox">
+        <div><strong>✉️ Check your inbox:</strong> we have emailed your organisation ID and a temporary password to <span id="trialClientEmailDisp"></span>. You will set your own password the first time you sign in.</div>
+        <div style="margin-top:4px"><strong>📱 Your trial includes:</strong> dine-in billing, tables, KOTs, thermal printing and your day's reports, on one device, all stored on that device. Multi-outlet, cloud sync, QR self-ordering and online reports are on the paid plans.</div>
+        <div style="margin-top:4px"><strong>🤝 Stuck?</strong> message us on WhatsApp below and we will walk you through setup the same day.</div>
       </div>
       <div class="success-actions">
         <a id="trialWhatsAppBtn" class="btn lamp" style="width:100%;justify-content:center" href="#" target="_blank" rel="noopener">Chat on WhatsApp for Instant Setup →</a>
@@ -1221,16 +1226,22 @@ async function handleTrialSubmit(e) {
     console.warn('Firestore write warning:', err);
   }
 
-  // 2. Best-effort ping to the Apps Script webhook. NOTE: the deployed script
-  //    has no handler for this action today, so it sends no e-mail — the
-  //    request reaches the team through the Firestore write above, which the
-  //    admin console lists under Inquiries & Leads. Do not advertise e-mail
-  //    on this page until a handler exists.
+  // 2. Provision the trial. The deployed script handles REGISTER_TRIAL: it
+  //    creates the organisation, generates a temporary password and emails
+  //    the credentials. It is a public action, so no secret is sent from this
+  //    page.
+  //
+  //    Posted as text/plain on purpose. A JSON content type triggers a CORS
+  //    preflight, which Apps Script does not answer, so the only way to read
+  //    the reply from a browser is to keep the request simple and follow the
+  //    redirect Apps Script issues to its own content host.
+  let provisioned = null;
+  let failure = null;
   try {
-    fetch(DEFAULT_APPS_SCRIPT_WEBHOOK, {
+    const res = await fetch(DEFAULT_APPS_SCRIPT_WEBHOOK, {
       method: 'POST',
-      mode: 'no-cors',
-      headers: { 'Content-Type': 'application/json' },
+      redirect: 'follow',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify({
         action: 'REGISTER_TRIAL',
         client_name: clientName,
@@ -1244,16 +1255,52 @@ async function handleTrialSubmit(e) {
         plan: '14-Day Free Trial'
       })
     });
-  } catch(err) {
-    console.warn('Apps script webhook warning:', err);
+    const text = await res.text();
+    try { provisioned = JSON.parse(text); } catch (_) { provisioned = null; }
+    if (provisioned && provisioned.success !== true) {
+      failure = provisioned.error_code === 'RATE_LIMITED'
+        ? 'We already have a recent trial request from this number. Check your inbox — the details may already be on their way.'
+        : (provisioned.error || 'The trial could not be created just now.');
+    }
+  } catch (err) {
+    // The lead is already recorded in Firestore above, so the team can still
+    // reach this person; only the automatic provisioning was missed.
+    console.warn('Trial provisioning warning:', err);
+    failure = null;
   }
 
-  // 3. Transition to Success View
+  // 3. Transition to the success view, saying what actually happened.
   btn.disabled = false;
   btn.innerHTML = originalText;
 
-  document.getElementById('trialSuccessMsg').innerHTML = `Hello <strong>${clientName}</strong>, your 14-day free trial request for <strong>${shopName}</strong> has been logged!`;
-  document.getElementById('trialClientEmailDisp').textContent = email;
+  const ring = document.getElementById('trialSuccessRing');
+  const title = document.getElementById('trialSuccessTitle');
+  const box = document.getElementById('trialSuccessBox');
+
+  if (failure) {
+    // A definite refusal from the server. Say so rather than showing a tick.
+    ring.textContent = '!';
+    title.textContent = 'We could not finish that';
+    document.getElementById('trialSuccessMsg').textContent = failure;
+    box.innerHTML = '<div><strong>📱 What to do:</strong> message us on WhatsApp below and we will set your trial up by hand, usually the same day.</div>';
+  } else if (provisioned && provisioned.success === true) {
+    ring.textContent = '✓';
+    title.textContent = 'Your trial is ready';
+    document.getElementById('trialSuccessMsg').innerHTML =
+      `Hello <strong>${clientName}</strong>, the 14-day trial for <strong>${shopName}</strong> is live` +
+      (provisioned.org_id ? ` under organisation ID <strong>${provisioned.org_id}</strong>` : '') + '.';
+    document.getElementById('trialClientEmailDisp').textContent = email;
+  } else {
+    // Reached the server but could not read the reply, or never reached it.
+    // The Firestore lead landed, so this is a real request either way.
+    ring.textContent = '✓';
+    title.textContent = 'Request received';
+    document.getElementById('trialSuccessMsg').innerHTML =
+      `Thank you <strong>${clientName}</strong>. Your trial request for <strong>${shopName}</strong> is logged.`;
+    box.innerHTML =
+      '<div><strong>📋 What happens now:</strong> your credentials are emailed to <strong>' + email + '</strong> once the trial is created, usually within a few minutes.</div>' +
+      '<div style="margin-top:4px"><strong>📱 Fastest route:</strong> message us on WhatsApp below and we will confirm straight away.</div>';
+  }
 
   const waMsg = encodeURIComponent(`Hi SmartDine Team, I just registered for a 14-Day Free Trial for my restaurant "${shopName}" (${businessCategory}) in ${address}. My email is ${email}. Please help me get onboarded!`);
   document.getElementById('trialWhatsAppBtn').href = `https://wa.me/917997970420?text=${waMsg}`;

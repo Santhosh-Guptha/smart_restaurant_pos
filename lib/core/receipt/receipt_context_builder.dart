@@ -439,6 +439,15 @@ class ReceiptContextBuilder {
   /// screen overwrites. Read them in that order and take the first that has
   /// something in it, so a tenant who has only ever filled in one of the three
   /// still gets their name on the slip.
+  /// The store's own details, exactly as every printed slip resolves them.
+  ///
+  /// Public so a path that does not build a whole [ReceiptContext] — the A5
+  /// invoice PDF, say — can start from the same record rather than from the
+  /// organisation document. The two used to differ, so a restaurant could be
+  /// named one thing on the paper slip and another in the emailed invoice for
+  /// the same sale.
+  static Map<String, Object?> storeDetails() => _store();
+
   static Map<String, Object?> _store() {
     final r = Hive.isBoxOpen(_storeBox) ? Hive.box(_storeBox) : null;
     final c = Hive.isBoxOpen(_configBox) ? Hive.box(_configBox) : null;

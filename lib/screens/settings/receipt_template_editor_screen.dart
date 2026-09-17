@@ -13,6 +13,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/classic_theme.dart';
 import '../../core/design_tokens.dart';
+import '../../core/entitlements.dart';
 import '../../core/receipt/escpos_encoder.dart';
 import '../../core/receipt/receipt_condition.dart';
 import '../../core/receipt/receipt_context.dart';
@@ -22,6 +23,7 @@ import '../../core/receipt/receipt_renderer.dart';
 import '../../core/receipt/receipt_store.dart';
 import '../../core/receipt/receipt_template.dart';
 import '../../core/responsive.dart';
+import '../../providers/entitlements_provider.dart';
 import '../../services/thermal_printer_service.dart';
 import '../../utils/ui_feedback.dart';
 
@@ -55,7 +57,15 @@ class _ReceiptTemplateEditorScreenState
   bool _dirty = false;
   bool _printing = false;
 
-  final ReceiptContext _sample = ReceiptContext.sample();
+  /// The preview stands in for a real bill, so it shows what this tenant's
+  /// bills can show. A placeholder owned by a feature they do not have
+  /// renders empty here exactly as it will on paper.
+  late final ReceiptContext _sample = ReceiptContext.sample(
+    enabledFeatures: {
+      for (final def in FeatureCatalog.all)
+        if (ref.read(entitlementsProvider).isEnabled(def.key)) def.key,
+    },
+  );
 
   /// Recomputed only when something changes, not on every frame.
   ReceiptLayout? _cachedLayout;

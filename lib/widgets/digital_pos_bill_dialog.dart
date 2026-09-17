@@ -173,14 +173,43 @@ class _DigitalPosBillDialogState extends ConsumerState<DigitalPosBillDialog> {
     super.dispose();
   }
 
+  /// The header a slip printed from this till carries, whichever way it goes
+  /// out. Resolved in one order everywhere: the printer's own field if the
+  /// owner set one, then the store record the slip engine reads, then what
+  /// this dialog was handed off the organisation document.
+  ///
+  /// The emailed invoice used to start at the last of those and ignore the
+  /// first two, so one sale could be printed under one trading name and
+  /// emailed under another.
+  PrinterState get _printer => ref.read(thermalPrinterProvider);
+
+  String? _resolved(String? custom, String? stored, String? fallback) {
+    for (final v in [custom, stored, fallback]) {
+      if ((v ?? '').trim().isNotEmpty) return v!.trim();
+    }
+    return null;
+  }
+
   Future<Uint8List> _getPdfBytes() async {
     if (_cachedPdfBytes != null) return _cachedPdfBytes!;
+    final printer = _printer;
+    final store = ReceiptContextBuilder.storeDetails();
+    String stored(String key) => (store[key] ?? '').toString();
+
     final bytes = await PosBillPdfService.generateInvoicePdfBytes(
-      shopName: widget.organizationName ?? 'SmartDine Restaurant',
-      shopPhone: widget.organizationPhone ?? '',
-      shopAddress: widget.organizationAddress,
-      gstin: widget.gstin,
-      fssai: widget.fssai,
+      shopName: _resolved(printer.customName, stored('store.name'),
+              widget.organizationName) ??
+          'SmartDine Restaurant',
+      shopPhone: _resolved(printer.customPhone, stored('store.phone'),
+              widget.organizationPhone) ??
+          '',
+      shopAddress: _resolved(printer.customAddress, stored('store.address'),
+          widget.organizationAddress),
+      gstin: _resolved(printer.customGstin, stored('store.gstin'), widget.gstin),
+      // The statutory line, resolved the same way as the rest: the slip
+      // prefers the store record here, so the attachment must too.
+      fssai: _resolved(null, stored('store.fssai'), widget.fssai),
+      footerText: printer.customFooter,
       billNumber: widget.billNumber,
       tokenNumber: widget.tokenNumber,
       tableName: widget.tableName,
@@ -331,11 +360,19 @@ class _DigitalPosBillDialogState extends ConsumerState<DigitalPosBillDialog> {
       // this dialog was handed only fills a gap the store box left open.
       final storedFssai =
           (slip.values['store.fssai'] ?? '').toString().trim();
+      // Same resolution as the PDF above, so the paper slip and the emailed
+      // invoice cannot name two different shops for one sale.
+      // Same order as the PDF above. The store record is already the slip's
+      // base layer, so only the printer field and the org fallback are
+      // overlaid here — passing the stored value back over itself would be a
+      // no-op anyway.
       slip.values.addAll(ReceiptContextBuilder.printerOverrides(
-        customName: printer.customName ?? widget.organizationName,
-        customPhone: printer.customPhone ?? widget.organizationPhone,
-        customAddress: printer.customAddress ?? widget.organizationAddress,
-        customGstin: printer.customGstin ?? widget.gstin,
+        customName: _resolved(printer.customName, null, widget.organizationName),
+        customPhone:
+            _resolved(printer.customPhone, null, widget.organizationPhone),
+        customAddress:
+            _resolved(printer.customAddress, null, widget.organizationAddress),
+        customGstin: _resolved(printer.customGstin, null, widget.gstin),
         customFooter: printer.customFooter,
         customFssai: storedFssai.isEmpty ? widget.fssai : null,
       ));

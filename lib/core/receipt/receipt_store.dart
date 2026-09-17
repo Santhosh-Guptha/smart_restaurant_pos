@@ -191,8 +191,33 @@ class ReceiptTemplateStore {
   static Future<ReceiptTemplate?> resetToStarter(String orgId, String id) async {
     final starter = StarterTemplates.byId(id);
     if (starter == null) return null;
-    await save(orgId, starter);
-    return starter;
+    // Stamped, like every other write. A starter is `const` with no
+    // `updatedAt`, and saving it verbatim left the tenant's copy unstamped:
+    // sync compares `updatedAt`, so an unstamped reset could neither reach
+    // the outlet's other tills nor survive their next edit.
+    final stamped = starter.copyWith();
+    await save(orgId, stamped);
+    return stamped;
+  }
+
+  /// Replace the whole mapping for one kind.
+  ///
+  /// [setMapping] edits one channel; this is for a caller that holds the map
+  /// the tenant should end up with. Clearing a channel on one till has to
+  /// reach the others, and a merge of two maps cannot express a removal.
+  static Future<void> replaceMapping(
+    String orgId,
+    ReceiptKind kind,
+    Map<String, String> channels,
+  ) async {
+    final box = await _open(orgId);
+    final clean = <String, String>{};
+    for (final e in channels.entries) {
+      final id = e.value.trim();
+      if (id.isEmpty) continue;
+      clean[OrderChannel.normalise(e.key)] = id;
+    }
+    await box.put(_mapKey(kind), jsonEncode(clean));
   }
 
   /// A copy the owner can edit freely, named so they can tell it apart.

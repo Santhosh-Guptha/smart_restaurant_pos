@@ -1972,10 +1972,10 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
   /// Silence here is the failure mode that matters: the old code swallowed
   /// every print error into a debugPrint, so a till with a sleeping printer
   /// looked exactly like a till that had printed.
-  void _reportPrint(ReceiptPrintResult result) {
+  void _reportPrint(ReceiptPrintResult result, {String what = 'Bill'}) {
     if (result.ok || !mounted) return;
     final message = result.error != null
-        ? 'Bill not printed: ${result.error}'
+        ? '$what not printed: ${result.error}'
         : result.failed.isNotEmpty
             ? 'The printer did not take the ${result.failed.first}. '
                 'Check it and reprint from Pending Bills.'
@@ -2022,7 +2022,37 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
   }
 
   // Complete Order & Real-Time Sync
+  /// True while a sale is being written. Two taps on a payment button used to
+  /// run this twice: a token is taken on the first line, so the second tap
+  /// burned a number, wrote a second order and printed a second set of slips.
+  /// The duplicate *token* was fixed inside the provider; this is the
+  /// duplicate *order*. The waiter screen has guarded on `_isSending` since it
+  /// was written — this is the same guard.
+  bool _isCompletingOrder = false;
+
   Future<void> _completeOrder({
+    required String paymentMode,
+    required bool isPaid,
+    Map<String, dynamic>? existingOrderToAppend,
+    List<Map<String, dynamic>>? splitPayments,
+  }) async {
+    if (_isCompletingOrder) return;
+    _isCompletingOrder = true;
+    try {
+      await _completeOrderInner(
+        paymentMode: paymentMode,
+        isPaid: isPaid,
+        existingOrderToAppend: existingOrderToAppend,
+        splitPayments: splitPayments,
+      );
+    } finally {
+      // Cleared whatever happened, including a throw: leaving it set would
+      // lock the till out of taking any further payment until it restarted.
+      _isCompletingOrder = false;
+    }
+  }
+
+  Future<void> _completeOrderInner({
     required String paymentMode,
     required bool isPaid,
     Map<String, dynamic>? existingOrderToAppend,
@@ -2033,15 +2063,47 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
     }
 
     final orgId = _getEffectiveOrgId();
+
+    // A second round on a bill the guest already holds keeps that bill's
+    // number. This branch used to take a fresh one: the append path never
+    // stored it, so the number was burned out of the day's series, and the
+    // guest's second slip disagreed with the first one in their hand.
+    final existingToken = existingOrderToAppend == null
+        ? ''
+        : ReceiptContextBuilder.normalisedToken(
+            existingOrderToAppend['tokenNo']?.toString(),
+            // Every spelling this file reads elsewhere. An order stored with
+            // only `tokenNumber` would otherwise fall through to a fresh
+            // number that the append branch never writes back, which is the
+            // bug this is here to close.
+            (existingOrderToAppend['kotNumber'] ??
+                    existingOrderToAppend['kot_number'] ??
+                    existingOrderToAppend['tokenNumber'] ??
+                    existingOrderToAppend['token'] ??
+                    '')
+                .toString(),
+          );
+
+    // Which round this is, for the kitchen. The guest's number stays the same
+    // across rounds on one bill — that is the point of reusing it — so the
+    // pass needs another way to tell a genuine second round from a reprint of
+    // the first. The count lives on the order and is written back below.
+    final appendRound = existingOrderToAppend == null
+        ? 0
+        : ((existingOrderToAppend['appendRounds'] as num?)?.toInt() ?? 1) + 1;
+
     // The series is kept per organisation and per counter code, so two tills
     // in one store cannot hand two customers the same number. The order type
     // is passed in case the owner's pattern uses {orderType}.
-    final token = await ref
-        .read(dailyTokenProvider.notifier)
-        .getNextToken(orgId: orgId, orderType: _orderType);
+    //
     // _orderType is 'Dine-In' or 'Takeaway'; the waiter screen passes the same
     // spelling so a bare {orderType} in the owner's pattern cannot produce two
     // different words for the same thing on one day's slips.
+    final token = existingToken.isNotEmpty
+        ? existingToken
+        : await ref
+            .read(dailyTokenProvider.notifier)
+            .getNextToken(orgId: orgId, orderType: _orderType);
     final clientRequestId = const Uuid().v4();
     final billNumber = 'SB-${DateTime.now().millisecondsSinceEpoch}-${Random().nextInt(9999).toString().padLeft(4, '0')}';
     final targetBillId = existingOrderToAppend != null ? (existingOrderToAppend['id'] ?? existingOrderToAppend['bill_id']) : billNumber;
@@ -2123,6 +2185,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
             oldOrder['cgst'] = appendedTotals.cgst;
             oldOrder['sgst'] = appendedTotals.sgst;
             oldOrder['gst_rate'] = _gstRate;
+            oldOrder['appendRounds'] = appendRound;
             oldOrder['round_off'] = appendedTotals.roundOff;
             oldOrder['totalAmount'] = appendedTotals.grandTotal;
 
@@ -2307,13 +2370,20 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
           gstRate: _gstRate,
           staff: staffName,
           kotNumber: token,
+          roundLabel: appendRound > 0 ? 'Round $appendRound' : '',
           enabledFeatures: features,
         )..values.addAll(overrides);
 
-        await _printSlips(
-          context: kitchenSlip,
-          kinds: const [ReceiptKind.kot],
-          channel: _orderType,
+        // Reported, not swallowed. A kitchen ticket that never reached the
+        // pass looks exactly like one that did unless somebody says so, and
+        // the cashier is the only person standing there to be told.
+        _reportPrint(
+          await _printSlips(
+            context: kitchenSlip,
+            kinds: const [ReceiptKind.kot],
+            channel: _orderType,
+          ),
+          what: 'Kitchen ticket',
         );
       } else if (kitchenItems.isEmpty) {
         debugPrint(
@@ -2958,6 +3028,29 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
   }
 
   Future<void> _settlePendingBill({
+    required Map<String, dynamic> order,
+    required String paymentMode,
+    required double paidAmount,
+    String? customerEmail,
+  }) async {
+    // Same guard as `_completeOrder`, for the same reason: this writes a row
+    // to the payments ledger and pushes it to the cloud, so two taps on the
+    // sheet's button recorded the money twice.
+    if (_isCompletingOrder) return;
+    _isCompletingOrder = true;
+    try {
+      await _settlePendingBillInner(
+        order: order,
+        paymentMode: paymentMode,
+        paidAmount: paidAmount,
+        customerEmail: customerEmail,
+      );
+    } finally {
+      _isCompletingOrder = false;
+    }
+  }
+
+  Future<void> _settlePendingBillInner({
     required Map<String, dynamic> order,
     required String paymentMode,
     required double paidAmount,

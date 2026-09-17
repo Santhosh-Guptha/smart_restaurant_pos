@@ -35,6 +35,10 @@ class PosBillPdfService {
     String? customerName,
     String? customerPhone,
     String? customerEmail,
+    /// The owner's footer line, the same one the printed slip carries. Left
+    /// null, the shipped greeting is used — which is what this page printed
+    /// for everyone before, regardless of what the paper said.
+    String? footerText,
     DateTime? billTime,
   }) async {
     final pdf = pw.Document();
@@ -324,7 +328,9 @@ class PosBillPdfService {
               pw.Divider(thickness: 0.5, color: PdfColors.grey300),
               pw.Center(
                 child: pw.Text(
-                  'Thank you for dining with us! Please visit again.',
+                  (footerText ?? '').trim().isNotEmpty
+                      ? footerText!.trim()
+                      : 'Thank you for dining with us! Please visit again.',
                   style: pw.TextStyle(fontSize: 8.5, fontStyle: pw.FontStyle.italic, color: PdfColors.grey700),
                 ),
               ),
