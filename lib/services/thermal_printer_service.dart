@@ -7,7 +7,10 @@ import 'package:flutter_riverpod/legacy.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:print_bluetooth_thermal/print_bluetooth_thermal.dart';
+import '../core/constants.dart';
+import '../core/receipt/printer_layout_migration.dart';
 import '../providers/auth_provider.dart';
+import '../providers/saas_session_provider.dart';
 
 class PrinterState {
   final bool isConnected;
@@ -182,6 +185,60 @@ class ThermalPrinterNotifier extends StateNotifier<PrinterState> {
       boldItems: boldItems,
       feedLines: feedLines,
     );
+
+    // Carry these settings into the tenant's invoice template, once.
+    //
+    // The slips are rendered from templates now, and nothing reads the
+    // switches above any more. Without this an owner's custom header, note,
+    // feed count, invoice prefix and tax/discount toggles would quietly stop
+    // appearing the first time they took a payment after upgrading. The
+    // migration keeps its own marker, so this costs one Hive read thereafter
+    // and does nothing on a tenant who never changed the defaults.
+    unawaited(_migrateLayoutToTemplate(
+      customHeader: customHeader,
+      alignHeader: alignHeader,
+      customNotes: customNotes,
+      showGst: showGst,
+      showDiscount: showDiscount,
+      boldItems: boldItems,
+      feedLines: feedLines,
+      invoicePrefix: invoicePrefix,
+    ));
+  }
+
+  Future<void> _migrateLayoutToTemplate({
+    String? customHeader,
+    required String alignHeader,
+    String? customNotes,
+    required bool showGst,
+    required bool showDiscount,
+    required bool boldItems,
+    required int feedLines,
+    String? invoicePrefix,
+  }) async {
+    try {
+      final session = _ref.read(saasSessionProvider);
+      final orgId = resolveOutletId(
+        userOrgId: session.currentUser?.organizationId,
+        sessionOrgId: session.currentOrganization?.id,
+        hiveBox: _configBox,
+      );
+      await PrinterLayoutMigration.run(
+        orgId: orgId,
+        customHeader: customHeader,
+        alignHeader: alignHeader,
+        customNotes: customNotes,
+        showGst: showGst,
+        showDiscount: showDiscount,
+        boldItems: boldItems,
+        feedLines: feedLines,
+        invoicePrefix: invoicePrefix,
+      );
+    } catch (e) {
+      // A failed migration leaves the tenant on the shipped template, which
+      // prints correctly. It is not a reason to stop the printer loading.
+      debugPrint('Printer layout migration skipped: $e');
+    }
   }
 
   void _startConnectionMonitor() {

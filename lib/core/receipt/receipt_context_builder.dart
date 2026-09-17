@@ -197,6 +197,13 @@ class ReceiptContextBuilder {
         ? (order['roundOffPaise'] as num).toInt()
         : rupeesToPaise(['roundOff', 'round_off']);
 
+    final storedPaid = order['paidPaise'] is num
+        ? (order['paidPaise'] as num).toInt()
+        : rupeesToPaise(['paidAmount', 'paid', 'amountPaid']);
+    // No tender recorded means the bill was settled in full; that is what
+    // every record written before payments were tracked means.
+    final paidPaise = storedPaid > 0 ? storedPaid : grandPaise;
+
     final store = _store();
     final now = DateTime.now();
     final created = _date(order, ['createdAt', 'created_at', 'timestamp']);
@@ -243,9 +250,12 @@ class ReceiptContextBuilder {
       'bill.sgstRate': (gstRate / 2).toStringAsFixed(1),
       'bill.roundOff': roundOffPaise,
       'bill.grandTotal': grandPaise,
-      'bill.paid': grandPaise,
-      'bill.change': 0,
-      'bill.balance': 0,
+      // What was actually tendered, when the record says. A settled bill that
+      // was short must show the balance rather than quietly agreeing with
+      // itself.
+      'bill.paid': paidPaise,
+      'bill.change': paidPaise > grandPaise ? paidPaise - grandPaise : 0,
+      'bill.balance': paidPaise < grandPaise ? grandPaise - paidPaise : 0,
       'bill.itemCount': items.length,
       'bill.qtyCount': _qtyCountMaps(items),
 

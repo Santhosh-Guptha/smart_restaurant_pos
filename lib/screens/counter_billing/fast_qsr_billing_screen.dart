@@ -5,8 +5,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 import 'package:hive_flutter/hive_flutter.dart';
-import 'package:esc_pos_utils_plus/esc_pos_utils_plus.dart';
-import 'package:print_bluetooth_thermal/print_bluetooth_thermal.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../core/classic_theme.dart';
@@ -16,8 +14,6 @@ import '../../core/restaurant_models.dart';
 import '../../providers/daily_token_provider.dart';
 import '../../providers/restaurant_auth_provider.dart';
 import '../../providers/saas_session_provider.dart';
-import '../../services/customer_bill_formatter.dart';
-import '../../services/kitchen_ticket_formatter.dart';
 import '../../services/apps_script_backend_service.dart';
 import '../../widgets/digital_pos_bill_dialog.dart';
 import '../../billing/bill_calculator.dart';
@@ -25,6 +21,12 @@ import '../../sync/outbox.dart';
 import '../../sync/local_store.dart';
 import '../../core/entitlements.dart';
 import '../../providers/entitlements_provider.dart';
+import '../../core/receipt/receipt_context.dart';
+import '../../core/receipt/receipt_context_builder.dart';
+import '../../core/receipt/receipt_print_service.dart';
+import '../../core/receipt/receipt_store.dart';
+import '../../core/receipt/receipt_template.dart';
+import '../../services/thermal_printer_service.dart';
 
 class FastQsrBillingScreen extends ConsumerStatefulWidget {
   final String? initialTableNumber;
@@ -1871,6 +1873,154 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
     }
   }
 
+  // ── Printing ────────────────────────────────────────────────────────────
+  //
+  // Every slip this screen produces goes through ReceiptPrintService, so the
+  // owner's template decides the layout and the notifier's auto-reconnect gets
+  // a chance when the printer has gone to sleep. The direct
+  // PrintBluetoothThermal.writeBytes calls this replaced skipped both.
+
+  /// Which features are on, for the placeholders that belong to one.
+  Set<String> get _receiptFeatures {
+    final ent = ref.read(entitlementsProvider);
+    return {
+      for (final def in FeatureCatalog.all)
+        if (ent.isEnabled(def.key)) def.key,
+    };
+  }
+
+  /// The printer's own copies of the store details, which the store settings
+  /// screen writes and the owner may have edited on the printer screen.
+  Map<String, Object?> get _printerOverrides {
+    final p = ref.read(thermalPrinterProvider);
+    return ReceiptContextBuilder.printerOverrides(
+      customName: p.customName,
+      customPhone: p.customPhone,
+      customAddress: p.customAddress,
+      customGstin: p.customGstin,
+      customFooter: p.customFooter,
+    );
+  }
+
+  int get _billCopies {
+    try {
+      final box = Hive.isBoxOpen('restaurant_config_box')
+          ? Hive.box('restaurant_config_box')
+          : null;
+      final v = box?.get('bill_copies');
+      return v is int ? v : int.tryParse('${v ?? 1}') ?? 1;
+    } catch (_) {
+      return 1;
+    }
+  }
+
+  bool _autoPrint(String key, {bool fallback = true}) {
+    try {
+      final box = Hive.isBoxOpen('restaurant_config_box')
+          ? Hive.box('restaurant_config_box')
+          : null;
+      final v = box?.get(key);
+      return v is bool ? v : fallback;
+    } catch (_) {
+      return fallback;
+    }
+  }
+
+  /// The payment reference, when there is one.
+  ///
+  /// `CustomerBillFormatter` has printed `TXN REF:` since it was written and
+  /// no call site ever passed it, so no bill has ever carried one. Split
+  /// payments are the only place a reference exists today; taking it from
+  /// there means a verified UPI settlement now shows its UTR on the paper.
+  String _transactionReference(List<Map<String, dynamic>>? payments) {
+    for (final p in payments ?? const <Map<String, dynamic>>[]) {
+      for (final key in ['refUtr', 'ref', 'utr', 'transactionId', 'txnRef']) {
+        final v = (p[key] ?? '').toString().trim();
+        if (v.isNotEmpty) return v;
+      }
+    }
+    return '';
+  }
+
+  /// The kinds this order should print.
+  ///
+  /// The invoice always. A token slip and a restaurant copy only when the
+  /// owner has mapped one for this order type \u2014 `resolve` always returns
+  /// something, so asking for them unconditionally would hand every tenant
+  /// three slips where they used to get one.
+  Future<List<ReceiptKind>> _kindsFor(String channel) async {
+    final orgId = _getEffectiveOrgId();
+    final kinds = <ReceiptKind>[];
+
+    for (final kind in const [ReceiptKind.token, ReceiptKind.restaurantCopy]) {
+      final mapping = await ReceiptTemplateStore.mapping(orgId, kind);
+      if (mapping.containsKey(OrderChannel.normalise(channel)) ||
+          mapping.containsKey('*')) {
+        kinds.add(kind);
+      }
+    }
+
+    // The bill goes between the token and the restaurant's copy, which is the
+    // order they are handed over.
+    final at = kinds.contains(ReceiptKind.token) ? 1 : 0;
+    kinds.insert(at, ReceiptKind.invoice);
+    return kinds;
+  }
+
+  /// Tell the cashier when a slip did not come out, and why.
+  ///
+  /// Silence here is the failure mode that matters: the old code swallowed
+  /// every print error into a debugPrint, so a till with a sleeping printer
+  /// looked exactly like a till that had printed.
+  void _reportPrint(ReceiptPrintResult result) {
+    if (result.ok || !mounted) return;
+    final message = result.error != null
+        ? 'Bill not printed: ${result.error}'
+        : result.failed.isNotEmpty
+            ? 'The printer did not take the ${result.failed.first}. '
+                'Check it and reprint from Pending Bills.'
+            : 'Nothing was printed \u2014 the slip is empty. '
+                'Check Settings \u2192 Receipts & Slips.';
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: ClassicTheme.warningAmber,
+      ),
+    );
+  }
+
+  /// Send one or more slips. Never throws, never blocks the sale.
+  Future<ReceiptPrintResult> _printSlips({
+    required ReceiptContext context,
+    required List<ReceiptKind> kinds,
+    required String channel,
+    Map<ReceiptKind, int> copies = const {},
+  }) async {
+    try {
+      final printer = ref.read(thermalPrinterProvider);
+      final notifier = ref.read(thermalPrinterProvider.notifier);
+      // Deliberately not gated on `isConnected`. That flag is a five-second
+      // poll, and `printBytes` reconnects when a printer has gone to sleep,
+      // which is the case this most needs to survive. Only a till with no
+      // printer chosen at all is refused here.
+      if (printer.selectedMac == null || printer.selectedMac!.isEmpty) {
+        return const ReceiptPrintResult(error: 'No printer set up');
+      }
+      return await ReceiptPrintService.printMany(
+        orgId: _getEffectiveOrgId(),
+        kinds: kinds,
+        context: context,
+        channel: channel,
+        paperSize: printer.paperSize,
+        copies: copies,
+        send: notifier.printBytes,
+      );
+    } catch (e) {
+      debugPrint('Receipt print error: $e');
+      return ReceiptPrintResult(error: e.toString());
+    }
+  }
+
   // Complete Order & Real-Time Sync
   Future<void> _completeOrder({
     required String paymentMode,
@@ -2107,61 +2257,82 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
       debugPrint('Error updating orders/tables: $e');
     }
 
-    // Auto-Print KOT Ticket to Kitchen (ONLY for items requiring kitchen prep!)
+    // The kitchen ticket and the bill are rendered from the same context, so
+    // the number on the pass and the number on the customer's copy cannot
+    // disagree.
+    //
+    // The whole block is guarded. The order is saved and paid by this point,
+    // and an exception here — a disposed widget mid-await, a bad stored item
+    // map — must not take the success dialog and the cart reset down with it.
     try {
       final kitchenItems = _cart.where((i) => i.sendsToKitchen).toList();
-      if (kitchenItems.isNotEmpty) {
-        final kotBytes = await KitchenTicketFormatter.formatKotTicket(
-          paperSize: PaperSize.mm80,
-          profile: await CapabilityProfile.load(),
-          tokenNumber: token,
-          tableName: '$tableName ($token)',
+      final billedItems = existingOrderToAppend != null
+          ? orderItemsList.map((m) => KotItem.fromMap(m)).toList()
+          : List<KotItem>.from(_cart);
+      final staffName = ref.read(restaurantAuthProvider).activeStaff?.name ?? '';
+      final features = _receiptFeatures;
+      final overrides = _printerOverrides;
+
+      final saleSlip = ReceiptContextBuilder.forSale(
+        orderId: targetBillId.toString(),
+        token: token,
+        orderType: _orderType,
+        tableName: tableName,
+        items: billedItems,
+        totals: orderTotals,
+        gstRate: _gstRate,
+        serviceChargeRate: _serviceChargeRate,
+        staff: staffName,
+        customerName: _customerNameCtrl.text.trim(),
+        customerPhone: _customerPhoneCtrl.text.trim(),
+        customerEmail: _customerEmailCtrl.text.trim(),
+        paymentMode: paymentMode,
+        paymentReference: _transactionReference(splitPayments),
+        payments: splitPayments ?? const [],
+        enabledFeatures: features,
+      )..values.addAll(overrides);
+
+      // The kitchen ticket belongs to dualPrinting (rule 1), and only ever
+      // carries what the kitchen has to cook.
+      if (kitchenItems.isNotEmpty &&
+          _autoPrint('auto_print_kot') &&
+          features.contains(FeatureKeys.dualPrinting)) {
+        final kitchenSlip = ReceiptContextBuilder.forSale(
+          orderId: targetBillId.toString(),
+          token: token,
+          orderType: _orderType,
+          tableName: tableName,
           items: kitchenItems,
+          totals: orderTotals,
+          gstRate: _gstRate,
+          staff: staffName,
+          kotNumber: token,
+          enabledFeatures: features,
+        )..values.addAll(overrides);
+
+        await _printSlips(
+          context: kitchenSlip,
+          kinds: const [ReceiptKind.kot],
+          channel: _orderType,
         );
-        final isConnected = await PrintBluetoothThermal.connectionStatus;
-        if (isConnected) {
-          await PrintBluetoothThermal.writeBytes(kotBytes);
-        }
-      } else {
-        debugPrint('All items in order are direct counter / retail. Skipping KOT print.');
+      } else if (kitchenItems.isEmpty) {
+        debugPrint(
+            'All items in order are direct counter / retail. Skipping KOT print.');
+      }
+
+      // The bill, plus a token slip and a restaurant copy only where the owner
+      // mapped one. `bill_copies` and `auto_print_bill` are honoured here for
+      // the first time — they were saved in store settings and never read.
+      if (isPaid && _autoPrint('auto_print_bill')) {
+        _reportPrint(await _printSlips(
+          context: saleSlip,
+          kinds: await _kindsFor(_orderType),
+          channel: _orderType,
+          copies: {ReceiptKind.invoice: _billCopies},
+        ));
       }
     } catch (e) {
-      debugPrint('KOT print error: $e');
-    }
-
-    // Auto-Print Customer Receipt if Paid
-    if (isPaid) {
-      try {
-        final saasSession = ref.read(saasSessionProvider);
-        final billBytes = await CustomerBillFormatter.formatTaxInvoice(
-          paperSize: PaperSize.mm80,
-          profile: await CapabilityProfile.load(),
-          shopName: saasSession.currentOrganization?.name ?? 'SmartDine Restaurant',
-          shopPhone: '',
-          billNumber: targetBillId,
-          tokenNumber: token,
-          tableName: tableName,
-          items: existingOrderToAppend != null
-              ? orderItemsList.map((m) => KotItem.fromMap(m)).toList()
-              : List.from(_cart),
-          subtotal: orderTotals.subtotal,
-          discount: orderTotals.discount,
-          taxPercent: _gstRate,
-          serviceCharge: orderTotals.serviceCharge,
-          totalAmount: orderTotals.grandTotal,
-          paymentMode: paymentMode,
-          roundOff: orderTotals.roundOff,
-          cgstAmount: orderTotals.cgst,
-          sgstAmount: orderTotals.sgst,
-          reprintCount: 0,
-        );
-        final isConnected = await PrintBluetoothThermal.connectionStatus;
-        if (isConnected) {
-          await PrintBluetoothThermal.writeBytes(billBytes);
-        }
-      } catch (e) {
-        debugPrint('Customer bill print error: $e');
-      }
+      debugPrint('Receipt print block failed after a completed sale: $e');
     }
 
     // Show Success Modal / Digital POS Bill & Reset Cart
@@ -2749,52 +2920,33 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
   }
 
   Future<void> _printPendingOrderBill(Map<String, dynamic> order) async {
-    final saasSession = ref.read(saasSessionProvider);
-    final org = saasSession.currentOrganization;
-    final orderId = (order['id'] ?? order['bill_id'] ?? 'BILL').toString();
-    final token = (order['kotNumber'] ?? order['tokenNumber'] ?? '').toString();
-    final tableName = (order['tableName'] ?? order['tableNumber'] ?? 'Table').toString();
-    final total = _num(order['totalAmount'] ?? order['total']);
-    final subtotal = order['subtotalP'] != null
-        ? (_num(order['subtotalP']) / 100.0)
-        : _num(order['subtotal'], total / (1.0 + ((_num(order['gst_rate'], _gstRate)) / 100.0)));
-    final items = _parseOrderItems(order['items']);
-
     try {
-      final billBytes = await CustomerBillFormatter.formatTaxInvoice(
-        paperSize: PaperSize.mm80,
-        profile: await CapabilityProfile.load(),
-        shopName: org?.name ?? 'SmartDine Restaurant',
-        shopPhone: '',
-        billNumber: orderId,
-        tokenNumber: token,
-        tableName: tableName,
-        items: items,
-        subtotal: subtotal,
-        discount: (order['discount'] as num?)?.toDouble() ?? 0.0,
-        taxPercent: (order['gst_rate'] as num?)?.toDouble() ?? 5.0,
-        serviceCharge: (order['service_charge'] as num?)?.toDouble() ?? 0.0,
-        totalAmount: total,
-        paymentMode: 'PENDING / PRE-BILL',
-        roundOff: (order['round_off'] as num?)?.toDouble(),
-        cgstAmount: (order['cgst'] as num?)?.toDouble(),
-        sgstAmount: (order['sgst'] as num?)?.toDouble(),
-        reprintCount: 0,
+      // A pre-bill is the estimate, not the tax invoice. The stored order
+      // carries everything the slip needs; the builder reads the key spellings
+      // this app has used over the years rather than assuming the newest.
+      final slip = ReceiptContextBuilder.forStoredOrder(
+        {...order, 'paymentMode': 'PENDING / PRE-BILL'},
+        gstRate: (order['gst_rate'] as num?)?.toDouble() ?? _gstRate,
+        serviceChargeRate: _serviceChargeRate,
+        isReprint: false,
+        enabledFeatures: _receiptFeatures,
+      )..values.addAll(_printerOverrides);
+
+      final result = await _printSlips(
+        context: slip,
+        kinds: const [ReceiptKind.invoice],
+        channel: (order['orderType'] ?? _orderType).toString(),
       );
-      final isConnected = await PrintBluetoothThermal.connectionStatus;
-      if (isConnected) {
-        await PrintBluetoothThermal.writeBytes(billBytes);
+      // `ok` means something actually reached the printer, not merely that
+      // nothing threw.
+      if (result.ok) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('🖨️ Bill sent to thermal printer!'), backgroundColor: ClassicTheme.successEmerald),
           );
         }
       } else {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Printer not connected. Please connect in Settings.'), backgroundColor: ClassicTheme.warningAmber),
-          );
-        }
+        _reportPrint(result);
       }
     } catch (e) {
       if (mounted) {
@@ -2944,6 +3096,13 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
         _pendingOrders.removeWhere((o) => targetRoundIds.contains((o['id'] ?? o['bill_id'] ?? '').toString()));
       });
 
+      // X-05/N-10: the BILL's own total, never the tender. Assigning
+      // `paidAmount` here (and grandTotalP = paidPaise below) let a short
+      // payment silently restate the bill so the shortfall was unrecoverable.
+      // Hoisted out of the cloud block because the printed slip needs it too.
+      final billGrandTotalP = _numInt(order['grandTotalP'],
+          (_num(order['totalAmount'], _num(order['total'], paidAmount)) * 100).round());
+
       // 4. Sync Bill to Google Sheets and Webhook
       if (ref.read(entitlementsProvider).isEnabled(FeatureKeys.cloudSync)) {
         try {
@@ -2952,11 +3111,6 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
             explicitId: saasSession.currentOrganization?.googleSheetId,
           );
 
-        // X-05/N-10: the BILL's own total, never the tender. Assigning
-        // `paidAmount` here (and grandTotalP = paidPaise below) let a short
-        // payment silently restate the bill so the shortfall was unrecoverable.
-        final billGrandTotalP = _numInt(order['grandTotalP'],
-            (_num(order['totalAmount'], _num(order['total'], paidAmount)) * 100).round());
         final grandTotal = billGrandTotalP / 100.0;
 
         // Record in Payments ledger
@@ -3046,31 +3200,39 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
 
       // 5. Auto-Print Tax Invoice if Printer is Connected
       try {
-        final items = _parseOrderItems(order['items']);
-        final billBytes = await CustomerBillFormatter.formatTaxInvoice(
-          paperSize: PaperSize.mm80,
-          profile: await CapabilityProfile.load(),
-          shopName: saasSession.currentOrganization?.name ?? 'SmartDine Restaurant',
-          shopPhone: '',
-          billNumber: orderId,
-          tokenNumber: tokenNumber,
-          tableName: tableName,
-          items: items,
-          subtotal: subtotal,
-          discount: (order['discount'] as num?)?.toDouble() ?? (discountP / 100.0),
-          taxPercent: (order['gst_rate'] as num?)?.toDouble() ?? 5.0,
-          serviceCharge: (order['service_charge'] as num?)?.toDouble() ?? (scP / 100.0),
-          totalAmount: paidAmount,
-          paymentMode: paymentMode,
-          roundOff: (order['round_off'] as num?)?.toDouble() ?? (roundOffP / 100.0),
-          cgstAmount: (order['cgst'] as num?)?.toDouble() ?? (cgstP / 100.0),
-          sgstAmount: (order['sgst'] as num?)?.toDouble() ?? (sgstP / 100.0),
-          reprintCount: 0,
-        );
-        final isConnected = await PrintBluetoothThermal.connectionStatus;
-        if (isConnected) {
-          await PrintBluetoothThermal.writeBytes(billBytes);
-        }
+        // The cashier's name, the store's address and its GSTIN are all in
+        // scope here and none of them used to reach the paper \u2014 only the
+        // on-screen dialog got them. The template decides now, and it sees
+        // everything.
+        final slip = ReceiptContextBuilder.forStoredOrder(
+          {
+            ...order,
+            'paymentMode': paymentMode,
+            // The bill's own total, not the tender \u2014 see X-05/N-10 above.
+            // A partial settlement must not print a smaller bill.
+            'grandTotalPaise': billGrandTotalP,
+            'paidPaise': paidPaise,
+            'subtotalPaise': subtotalP,
+            'discountPaise': discountP,
+            'serviceChargePaise': scP,
+            'cgstPaise': cgstP,
+            'sgstPaise': sgstP,
+            'roundOffPaise': roundOffP,
+            'staff': activeStaff,
+          },
+          gstRate: (order['gst_rate'] as num?)?.toDouble() ?? _gstRate,
+          serviceChargeRate: _serviceChargeRate,
+          isReprint: false,
+          enabledFeatures: _receiptFeatures,
+        )..values.addAll(_printerOverrides);
+
+        final channel = (order['orderType'] ?? 'Dine-In').toString();
+        _reportPrint(await _printSlips(
+          context: slip,
+          kinds: await _kindsFor(channel),
+          channel: channel,
+          copies: {ReceiptKind.invoice: _billCopies},
+        ));
       } catch (pErr) {
         debugPrint('Printer settlement bill error: $pErr');
       }

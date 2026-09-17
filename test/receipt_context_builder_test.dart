@@ -5,7 +5,6 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:smart_restaurant_pos/billing/bill_calculator.dart';
 import 'package:smart_restaurant_pos/core/receipt/receipt_context_builder.dart';
 import 'package:smart_restaurant_pos/core/receipt/receipt_renderer.dart';
-import 'package:smart_restaurant_pos/core/receipt/receipt_template.dart';
 import 'package:smart_restaurant_pos/core/receipt/receipt_text_encoder.dart';
 import 'package:smart_restaurant_pos/core/receipt/starter_templates.dart';
 import 'package:smart_restaurant_pos/core/restaurant_models.dart';
