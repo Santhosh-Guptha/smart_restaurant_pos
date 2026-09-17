@@ -16,8 +16,9 @@ class SubscriptionPlanService {
     profile: PlanProfile.offlineDineIn,
     name: 'Free Trial (14 Days)',
     description:
-        'Fourteen days of the Offline Dine-In plan: counter till, tables, '
-        'floor plan, kitchen tickets and reports on your device.',
+        'Fourteen days of the Offline Dine-In plan: counter till, tables and '
+        'running tabs, reservations, kitchen tickets, expenses and day-end '
+        'reports \u2014 all on one device, no internet needed.',
     isDefaultTrial: true,
     validityDays: 14,
     billingCycle: 'TRIAL',
@@ -25,14 +26,33 @@ class SubscriptionPlanService {
     tableCount: 15,
   );
 
-  /// Seeds the standard plans into Firestore if the collection is empty.
+  /// Creates the standard plans, and re-aligns the ones that already exist.
   ///
   /// One plan per [PlanProfile], features and limits taken from the profile
   /// so the console, the resolver and the seeded documents can never
   /// disagree. Prices are not stored anywhere in the product (D5): pricing is
   /// agreed with the platform admin, not read from a document.
+  ///
+  /// Two kinds of field, deliberately treated differently, because this runs
+  /// on **every app start** (`main.dart`) on **every device**:
+  ///
+  /// - The resolver owns `planProfile`, `storageMode`, `allowedStorageModes`,
+  ///   `features` and the device/outlet limits. Those are rewritten every run.
+  ///   A plan document that disagrees with its profile is how a tenant ends up
+  ///   holding a licence for something the resolver will refuse to switch on.
+  /// - Everything a human can edit in the console — name, description,
+  ///   validity, billing cycle, user and table counts — is written **only when
+  ///   the document is created**. Rewriting the whole document on every launch
+  ///   silently reverted the admin's edits the next time any till opened.
   static Future<void> ensureDefaultPlansExist() async {
     try {
+      final col = _firestore.collection(_collection);
+
+      // One read covers both jobs: which plans exist, and which legacy
+      // documents are still lying around.
+      final snapshot = await col.get();
+      final existing = {for (final d in snapshot.docs) d.id};
+
       final batch = _firestore.batch();
       final plans = <SubscriptionPlan>[
         fallbackTrialPlan,
@@ -83,36 +103,47 @@ class SubscriptionPlanService {
         ),
       ];
 
+      var created = 0;
       for (final plan in plans) {
         final profile = _planProfileFor(plan.id);
-        batch.set(
-          _firestore.collection(_collection).doc(plan.id),
-          {
+
+        // What the resolver owns. Enforced on every run.
+        final canonical = <String, dynamic>{
+          'planProfile': profile.id,
+          'storageMode': profile.storageMode,
+          'allowedStorageModes': profile.allowedStorageModes.toList(),
+          'features': profile.features,
+          'maxDevices': profile.maxDevices,
+          'maxOutlets': profile.maxOutlets,
+          'updatedAt': FieldValue.serverTimestamp(),
+        };
+
+        if (existing.contains(plan.id)) {
+          batch.set(col.doc(plan.id), canonical, SetOptions(merge: true));
+        } else {
+          created++;
+          batch.set(col.doc(plan.id), {
             ...plan.toFirestore(),
-            'planProfile': profile.id,
-            'storageMode': profile.storageMode,
-            'allowedStorageModes': profile.allowedStorageModes.toList(),
+            ...canonical,
             'createdAt': FieldValue.serverTimestamp(),
-            'updatedAt': FieldValue.serverTimestamp(),
-          },
-          SetOptions(merge: true),
-        );
+          });
+        }
+      }
+
+      // Legacy ids from the retail build. They are already in the snapshot
+      // above, so removing them costs no extra reads and no extra round trip.
+      var removed = 0;
+      for (final legacyId in const ['starter', 'pro', 'enterprise']) {
+        if (existing.contains(legacyId)) {
+          removed++;
+          batch.delete(col.doc(legacyId));
+        }
       }
 
       await batch.commit();
 
-      // Clean up any legacy plans if they exist
-      final legacyDocIds = ['starter', 'pro', 'enterprise'];
-      for (final legacyId in legacyDocIds) {
-        try {
-          final doc = await _firestore.collection(_collection).doc(legacyId).get();
-          if (doc.exists) {
-            await _firestore.collection(_collection).doc(legacyId).delete();
-          }
-        } catch (_) {}
-      }
-
-      debugPrint("✓ Successfully seeded canonical SmartDine subscription plans.");
+      debugPrint('SubscriptionPlanService: plans aligned '
+          '(created $created, removed $removed legacy).');
     } catch (e) {
       debugPrint("SubscriptionPlanService ensureDefaultPlansExist error: $e");
     }

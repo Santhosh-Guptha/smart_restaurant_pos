@@ -1779,6 +1779,16 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                     closedAt: DateTime.now(),
                   );
 
+                  // Closing the shift is what "reset every shift" means for
+                  // the token counter. It is a no-op under the other reset
+                  // rules. It runs BEFORE the upload, and is never gated on
+                  // it: the counter is local, and a Z-report that cannot reach
+                  // the cloud must not leave the till numbering from where it
+                  // left off (rule 7).
+                  await ref
+                      .read(dailyTokenProvider.notifier)
+                      .closeShift(orgId);
+
                   final ok = await AppsScriptBackendService.closeDay(
                     outletId: orgId,
                     reportData: report.toMap(),
@@ -1873,7 +1883,15 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
     }
 
     final orgId = _getEffectiveOrgId();
-    final token = await ref.read(dailyTokenProvider.notifier).getNextToken();
+    // The series is kept per organisation and per counter code, so two tills
+    // in one store cannot hand two customers the same number. The order type
+    // is passed in case the owner's pattern uses {orderType}.
+    final token = await ref
+        .read(dailyTokenProvider.notifier)
+        .getNextToken(orgId: orgId, orderType: _orderType);
+    // _orderType is 'Dine-In' or 'Takeaway'; the waiter screen passes the same
+    // spelling so a bare {orderType} in the owner's pattern cannot produce two
+    // different words for the same thing on one day's slips.
     final clientRequestId = const Uuid().v4();
     final billNumber = 'SB-${DateTime.now().millisecondsSinceEpoch}-${Random().nextInt(9999).toString().padLeft(4, '0')}';
     final targetBillId = existingOrderToAppend != null ? (existingOrderToAppend['id'] ?? existingOrderToAppend['bill_id']) : billNumber;

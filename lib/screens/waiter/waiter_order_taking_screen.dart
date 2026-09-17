@@ -754,7 +754,9 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
     // Each round is its own KOT, so each round gets its own token and id. The
     // record stores the token it was issued, so the printed slip, the KDS card
     // and the waiter's toast all agree and the daily series cannot drift.
-    final token = await ref.read(dailyTokenProvider.notifier).getNextToken();
+    final token = await ref
+        .read(dailyTokenProvider.notifier)
+        .getNextToken(orgId: orgId, orderType: 'Dine-In');
     final billNumber =
         'SB-${DateTime.now().millisecondsSinceEpoch}-${Random().nextInt(9999).toString().padLeft(4, '0')}';
     final tableName = widget.table.name.trim().isNotEmpty
