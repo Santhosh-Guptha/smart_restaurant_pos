@@ -295,6 +295,18 @@
   .cap-note p{margin:0;color:var(--fg-2);font-size:14.5px}
   .cap-note strong{color:var(--fg);font-weight:600}
 
+  /* ── modals ─────────────────────────────────────────── */
+  .modal-overlay{position:fixed;inset:0;z-index:1000;background:rgba(8,10,15,.78);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);display:none;align-items:center;justify-content:center;padding:20px;opacity:0;transition:opacity .25s ease}
+  .modal-overlay.active{display:flex !important;opacity:1}
+  .modal-box{background:var(--bg-2);border:1px solid var(--rule);border-radius:24px;width:100%;max-width:620px;max-height:90vh;overflow-y:auto;padding:32px 28px;position:relative;box-shadow:0 30px 80px -20px rgba(0,0,0,.9);transform:scale(.95);transition:transform .25s cubic-bezier(.2,.8,.2,1)}
+  .modal-overlay.active .modal-box{transform:scale(1)}
+  .modal-close{position:absolute;top:18px;right:18px;width:34px;height:34px;border-radius:50%;background:var(--bg-3);border:1px solid var(--rule);color:var(--fg);cursor:pointer;display:grid;place-items:center;font-size:16px;line-height:1;transition:background .2s,color .2s}
+  .modal-close:hover{background:var(--rule);color:var(--lamp)}
+  .modal-head{margin-bottom:20px}
+  .modal-head h3{font-family:var(--display);font-size:26px;margin:0 0 6px;color:var(--fg)}
+  .modal-head p{margin:0;color:var(--fg-2);font-size:14px;line-height:1.5}
+  .badge{display:inline-block;font-size:11.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--lamp);background:color-mix(in srgb,var(--lamp) 14%,transparent);border:1px solid color-mix(in srgb,var(--lamp) 32%,transparent);border-radius:999px;padding:3px 10px}
+
   /* ── section band reused by the capabilities panel ───── */
   .pricing{padding:100px 0}
   .plan-pill{background:color-mix(in srgb,var(--lamp) 10%,var(--bg-3));border:1px solid color-mix(in srgb,var(--lamp) 35%,transparent);border-radius:12px;padding:10px 14px;font-size:13.5px;color:var(--lamp);display:flex;align-items:center;justify-content:space-between;margin-bottom:18px}
@@ -932,7 +944,7 @@
 </script>
 
 <!-- ═══════════════ MODAL 1: FREE TRIAL REGISTRATION (MATCHES MOBILE APP) ═══════════════ -->
-<div class="modal-overlay" id="trialModal" role="dialog" aria-modal="true" aria-labelledby="trialModalTitle">
+<div class="modal-overlay" id="trialModal" role="dialog" aria-modal="true" aria-labelledby="trialModalTitle" style="display:none">
   <div class="modal-box">
     <button class="modal-close" onclick="closeModals()" aria-label="Close modal">✕</button>
     <div id="trialFormContainer">
@@ -1029,7 +1041,7 @@
 </div>
 
 <!-- ═══════════════ MODAL 2: FOR MORE DETAILS CONTACT (BASIC + BUSINESS DETAILS) ═══════════════ -->
-<div class="modal-overlay" id="contactModal" role="dialog" aria-modal="true" aria-labelledby="contactModalTitle">
+<div class="modal-overlay" id="contactModal" role="dialog" aria-modal="true" aria-labelledby="contactModalTitle" style="display:none">
   <div class="modal-box">
     <button class="modal-close" onclick="closeModals()" aria-label="Close modal">✕</button>
     <div id="contactFormContainer">
