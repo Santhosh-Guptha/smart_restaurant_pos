@@ -240,7 +240,7 @@ Follow these steps in sequence when deploying a new instance or updating an exis
     - Click **Go to SmartDine Production Webhook (unsafe)**.
     - Click **Allow**.
 15. Copy the generated **Web app URL**:
-    `https://script.google.com/macros/s/AKfycbwmwGpu3ZKMiDJjGnZAXGCrMBr0s5bootdPpjtWdh5HeWIiU4uGu9BMPV8EBhte9F9Elg/exec`
+    `https://script.google.com/macros/s/AKfycbwqdDoJo7T-EAWDGPlgahiPOgu8V6CqM4QGVoY29JcewEXCd1T4_heLF2ZEWk33aoEedw/exec`
 
 ---
 
@@ -250,14 +250,14 @@ The Webhook URL must be configured in two critical locations:
 1. **Customer Web Ordering Application**:
    File: `c:\Users\santhosh\Downloads\smart_restaurant_pos\hosting_public\r\index.html` (around Line 83):
    ```javascript
-   const DEFAULT_APPS_SCRIPT_WEBHOOK = 'https://script.google.com/macros/s/AKfycbwmwGpu3ZKMiDJjGnZAXGCrMBr0s5bootdPpjtWdh5HeWIiU4uGu9BMPV8EBhte9F9Elg/exec';
+   const DEFAULT_APPS_SCRIPT_WEBHOOK = 'https://script.google.com/macros/s/AKfycbwqdDoJo7T-EAWDGPlgahiPOgu8V6CqM4QGVoY29JcewEXCd1T4_heLF2ZEWk33aoEedw/exec';
    ```
 
 2. **Flutter POS Backend Service**:
    File: `c:\Users\santhosh\Downloads\smart_restaurant_pos\lib\services\apps_script_backend_service.dart` (around Line 10):
    ```dart
    static const String _defaultWebhookUrl =
-       'https://script.google.com/macros/s/AKfycbwmwGpu3ZKMiDJjGnZAXGCrMBr0s5bootdPpjtWdh5HeWIiU4uGu9BMPV8EBhte9F9Elg/exec';
+       'https://script.google.com/macros/s/AKfycbwqdDoJo7T-EAWDGPlgahiPOgu8V6CqM4QGVoY29JcewEXCd1T4_heLF2ZEWk33aoEedw/exec';
    ```
 
 ---
