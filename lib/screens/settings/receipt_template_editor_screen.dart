@@ -290,6 +290,7 @@ class _ReceiptTemplateEditorScreenState
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
           buildDefaultDragHandles: false,
+          // ignore: deprecated_member_use
           onReorder: (from, to) {
             _changed(() {
               final target = to > from ? to - 1 : to;
@@ -316,7 +317,7 @@ class _ReceiptTemplateEditorScreenState
       onPopInvokedWithResult: (didPop, _) async {
         if (didPop) return;
         final leave = await _confirmDiscard();
-        if (!leave || !mounted) return;
+        if (!leave || !context.mounted) return;
         Navigator.of(context).pop(false);
       },
       child: Scaffold(

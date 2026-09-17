@@ -255,6 +255,18 @@ class FeatureCatalog {
       tier: CommercialTier.offlineAddOn,
       iconCode: 'payments',
     ),
+    // Offline, by Sharon's decision of 17 Sep. Every chart, the hourly rush and
+    // the dish figures are computed from this device's Hive; the only cloud
+    // read is sibling outlets, and that already sits behind multiOutlet. It
+    // used to be an online-basic feature that needed the cloud, which meant a
+    // pure-offline store could not see its own sales.
+    FeatureDef(
+      key: FeatureKeys.analytics,
+      label: 'Sales analytics',
+      description: 'Trends by dish, hour and staff member, from this device.',
+      tier: CommercialTier.offlineAddOn,
+      iconCode: 'insights',
+    ),
 
     // ── Online basic ───────────────────────────────────────────────────────
     FeatureDef(
@@ -266,15 +278,6 @@ class FeatureCatalog {
       tier: CommercialTier.onlineBasic,
       iconCode: 'cloud_sync',
       need: FeatureNeed.cloud,
-    ),
-    FeatureDef(
-      key: FeatureKeys.analytics,
-      label: 'Sales analytics',
-      description: 'Trends by dish, hour, staff member and outlet.',
-      tier: CommercialTier.onlineBasic,
-      iconCode: 'insights',
-      need: FeatureNeed.cloud,
-      dependsOn: [FeatureKeys.cloudSync],
     ),
 
     // ── Online add-ons ─────────────────────────────────────────────────────
@@ -577,12 +580,12 @@ class PlanProfile {
       case 'OFFLINE_DINE_IN':
       case 'OFFLINE_ADDON':
       case 'DINEIN_OFFLINE':
-      case 'TRIAL':
         return offlineDineIn;
       case 'CONNECTED':
       case 'ONLINE_BASIC':
       case 'CLOUD':
       case 'STANDARD':
+      case 'TRIAL':
         return connected;
       case 'OMNICHANNEL':
       case 'ONLINE_ADDON':

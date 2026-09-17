@@ -195,6 +195,15 @@ const Map<String, FeatureUsage> kFeatureUsage = {
     screens: ['Home card: Expenses', 'Expenses'],
     controls: ['Store settings: Expense Categories tab'],
   ),
+  FeatureKeys.analytics: FeatureUsage(
+    note:
+        'Sales read back to the owner: revenue by day and by hour, the rush '
+        'pattern across the week, top dishes, category splits and average bill '
+        'value, computed from the store\'s own order records.',
+    whenOff: 'The Analytics card disappears, along with the kitchen analytics view on the KDS.',
+    screens: ['Home card: Analytics & Rush', 'Analytics'],
+    controls: ['KDS: kitchen analytics'],
+  ),
 
   // ── Online basic ──────────────────────────────────────────────────────────
   FeatureKeys.cloudSync: FeatureUsage(
@@ -214,15 +223,6 @@ const Map<String, FeatureUsage> kFeatureUsage = {
       'Staff: Google sheet access',
       'Table & menu sync to the store sheet',
     ],
-  ),
-  FeatureKeys.analytics: FeatureUsage(
-    note:
-        'Sales read back to the owner: revenue by day and by hour, the rush '
-        'pattern across the week, top dishes, category splits and average bill '
-        'value, computed from the store\'s own order records.',
-    whenOff: 'The Analytics card disappears, along with the kitchen analytics view on the KDS.',
-    screens: ['Home card: Analytics & Rush', 'Analytics'],
-    controls: ['KDS: kitchen analytics'],
   ),
 
   // ── Online add-ons ────────────────────────────────────────────────────────

@@ -123,9 +123,12 @@ void main() {
       expect(e.reasonFor(FeatureKeys.kdsEnabled), BlockReason.offlineMode);
       expect(e.reasonFor(FeatureKeys.qrOrdering), BlockReason.offlineMode);
       expect(e.reasonFor(FeatureKeys.cloudSync), BlockReason.offlineMode);
-      expect(e.reasonFor(FeatureKeys.analytics), BlockReason.offlineMode);
       // offline add-ons still resolve from the plan
       expect(e.isEnabled(FeatureKeys.tableManagement), isTrue);
+      // Analytics moved to the offline tier on 17 Sep: the charts are computed
+      // from this device's own records, so a store with no cloud can still see
+      // its own sales.
+      expect(e.isEnabled(FeatureKeys.analytics), isTrue);
     });
 
     test('the legacy pureOfflineMode flag is honoured as the mode', () {
@@ -192,7 +195,7 @@ void main() {
       expect(PlanProfile.byId('OFFLINE_SINGLE').id, 'OFFLINE_SINGLE');
       expect(PlanProfile.byId('OFFLINE_BASIC').id, 'OFFLINE_SINGLE');
       expect(PlanProfile.forTier('ENTERPRISE_CUSTOM').id, 'OMNICHANNEL');
-      expect(PlanProfile.forTier('TRIAL').id, 'OFFLINE_DINE_IN');
+      expect(PlanProfile.forTier('TRIAL').id, 'CONNECTED');
       expect(PlanProfile.byId(null).id, 'CONNECTED');
     });
 

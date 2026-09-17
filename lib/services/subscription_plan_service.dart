@@ -10,15 +10,17 @@ class SubscriptionPlanService {
   /// Default fallback trial plan used if Firestore is offline or unseeded.
   ///
   /// Mirrors the Offline Dine-In profile: pure offline, 1 device, 1 outlet,
-  /// full offline feature suite (13 features).
+  /// the full offline feature suite (14 keys, since analytics moved to the
+  /// offline tier on 17 Sep).
   static final SubscriptionPlan fallbackTrialPlan = _fromProfile(
     id: 'trial',
     profile: PlanProfile.offlineDineIn,
     name: 'Free Trial (14 Days)',
     description:
         'Fourteen days of the Offline Dine-In plan: counter till, tables and '
-        'running tabs, reservations, kitchen tickets, expenses and day-end '
-        'reports \u2014 all on one device, no internet needed.',
+        'running tabs, reservations, kitchen tickets, expenses, day-end '
+        'reports and sales analytics \u2014 all on one device, no internet '
+        'needed.',
     isDefaultTrial: true,
     validityDays: 14,
     billingCycle: 'TRIAL',

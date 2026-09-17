@@ -16,6 +16,10 @@ analyzer:
     - windows/**
     - macos/**
     - linux/**
+    # Scratch copies of delivered files, kept at the repo root for reference.
+    # They are outside lib/ so every import in them is unresolvable; a bare
+    # `flutter analyze` reported 617 errors that were all this folder.
+    - "Claude outputs/**"
 include: package:flutter_lints/flutter.yaml
 
 linter:
