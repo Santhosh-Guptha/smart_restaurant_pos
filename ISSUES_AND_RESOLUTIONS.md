@@ -335,6 +335,8 @@ When transitioning from local development to the brand-new production environmen
   - **Who has access**: `Anyone`
 - [x] Generated Web App URL:
   `https://script.google.com/macros/s/AKfycbwmwGpu3ZKMiDJjGnZAXGCrMBr0s5bootdPpjtWdh5HeWIiU4uGu9BMPV8EBhte9F9Elg/exec`
+  *(retired — this log records what was true at the time; the active URL is in
+  `DEPLOYMENT_RUNBOOK.md`.)*
 - [x] Tested and verified live (`{"status":"online","service":"SmartDine Restaurant POS Serverless Gateway"}`).
 - [x] Configured as default in `hosting_public/r/index.html` and `lib/services/apps_script_backend_service.dart`.
 

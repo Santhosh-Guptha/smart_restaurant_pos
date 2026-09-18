@@ -36,7 +36,7 @@
 8. [Dynamic Subscription Plans & Automated Provisioning](#-8-dynamic-subscription-plans--automated-provisioning)
 9. [Restaurant Menu Hierarchy, Sold-Out Toggles & Operating Shifts](#-9-restaurant-menu-hierarchy-sold-out-toggles--operating-shifts)
 10. [Advanced Time-Basis Analytics & 24-Hour Rush Heatmap](#-10-advanced-time-basis-analytics--24-hour-rush-heatmap)
-11. [Razorpay Dynamic UPI & Route Auto-Settlement Operations](#-11-razorpay-dynamic-upi--route-auto-settlement-operations)
+11. [UPI Payments (no gateway)](#-11-upi-payments-no-gateway)
 12. [Universal Mobile & Tablet Responsiveness & Zero-Mock Architecture](#-12-universal-mobile--tablet-responsiveness--zero-mock-architecture)
 13. [Firebase App Distribution Release Commands & Testing](#-13-firebase-app-distribution-release-commands--testing)
 
@@ -110,9 +110,11 @@ flowchart TD
 | **Android App ID** | `1:486476143616:android:ce2cd4881dc37bdf928ce5` | Android package `com.devmonks.smartdine` |
 | **Web App ID** | `1:486476143616:web:8bee0b3b52aa403b928ce5` | Table ordering browser client |
 | **Customer Web Ordering URL** | `https://smartdine-restaurant-pos.web.app/r/` | Live table ordering application |
-| **Serverless Webhook URL** | `https://script.google.com/macros/s/AKfycbwmwGpu3ZKMiDJjGnZAXGCrMBr0s5bootdPpjtWdh5HeWIiU4uGu9BMPV8EBhte9F9Elg/exec` | Production serverless API |
+| **Serverless Webhook URL** | `https://script.google.com/macros/s/AKfycbwZIs_n5hCtSBqkyPOVqeZZBY1XjUAv4NjYWj8O3AY2i0Fw0Rl2OV-TA-IgmlvRbo7pFQ/exec` | Production serverless API |
 | **Local Working Directory** | `c:\Users\santhosh\Downloads\smart_restaurant_pos` | Restaurant POS codebase |
 | **Protected Codebase** | `c:\Users\santhosh\Downloads\smart_kirana_shop` | **100% UNTOUCHED** original project |
+
+> **Webhook URL, 2026-09-18.** The active deployment is the one above. It is also set in `hosting_public/index.html`, `hosting_public/r/index.html` and `lib/services/apps_script_backend_service.dart`; the service keeps a list of retired URLs and overrides any of them that a device still has cached. Always publish a **new version of the existing deployment** — creating a new deployment changes this URL and every client that is not rebuilt in the same breath keeps talking to yesterday's code.
 
 ---
 
@@ -240,7 +242,7 @@ Follow these steps in sequence when deploying a new instance or updating an exis
     - Click **Go to SmartDine Production Webhook (unsafe)**.
     - Click **Allow**.
 15. Copy the generated **Web app URL**:
-    `https://script.google.com/macros/s/AKfycbwqdDoJo7T-EAWDGPlgahiPOgu8V6CqM4QGVoY29JcewEXCd1T4_heLF2ZEWk33aoEedw/exec`
+    `https://script.google.com/macros/s/AKfycbwZIs_n5hCtSBqkyPOVqeZZBY1XjUAv4NjYWj8O3AY2i0Fw0Rl2OV-TA-IgmlvRbo7pFQ/exec`
 
 ---
 
@@ -250,14 +252,14 @@ The Webhook URL must be configured in two critical locations:
 1. **Customer Web Ordering Application**:
    File: `c:\Users\santhosh\Downloads\smart_restaurant_pos\hosting_public\r\index.html` (around Line 83):
    ```javascript
-   const DEFAULT_APPS_SCRIPT_WEBHOOK = 'https://script.google.com/macros/s/AKfycbwqdDoJo7T-EAWDGPlgahiPOgu8V6CqM4QGVoY29JcewEXCd1T4_heLF2ZEWk33aoEedw/exec';
+   const DEFAULT_APPS_SCRIPT_WEBHOOK = 'https://script.google.com/macros/s/AKfycbwZIs_n5hCtSBqkyPOVqeZZBY1XjUAv4NjYWj8O3AY2i0Fw0Rl2OV-TA-IgmlvRbo7pFQ/exec';
    ```
 
 2. **Flutter POS Backend Service**:
    File: `c:\Users\santhosh\Downloads\smart_restaurant_pos\lib\services\apps_script_backend_service.dart` (around Line 10):
    ```dart
    static const String _defaultWebhookUrl =
-       'https://script.google.com/macros/s/AKfycbwqdDoJo7T-EAWDGPlgahiPOgu8V6CqM4QGVoY29JcewEXCd1T4_heLF2ZEWk33aoEedw/exec';
+       'https://script.google.com/macros/s/AKfycbwZIs_n5hCtSBqkyPOVqeZZBY1XjUAv4NjYWj8O3AY2i0Fw0Rl2OV-TA-IgmlvRbo7pFQ/exec';
    ```
 
 ---
@@ -393,7 +395,7 @@ This section contains real-world incidents, root cause analyses, and immediate r
 - **Diagnostic Protocol**:
   1. Run direct health check via curl:
      ```powershell
-     curl.exe -L "https://script.google.com/macros/s/AKfycbwmwGpu3ZKMiDJjGnZAXGCrMBr0s5bootdPpjtWdh5HeWIiU4uGu9BMPV8EBhte9F9Elg/exec"
+     curl.exe -L "https://script.google.com/macros/s/AKfycbwZIs_n5hCtSBqkyPOVqeZZBY1XjUAv4NjYWj8O3AY2i0Fw0Rl2OV-TA-IgmlvRbo7pFQ/exec"
      ```
   2. Check the Apps Script execution log:
      - Open [script.google.com](https://script.google.com) -> Select project -> Click **Executions** icon on the left navigation bar.
@@ -540,7 +542,7 @@ Run these commands from any terminal to verify system integrity:
 
 ```powershell
 # 1. Test Serverless Webhook Health
-curl.exe -L "https://script.google.com/macros/s/AKfycbwmwGpu3ZKMiDJjGnZAXGCrMBr0s5bootdPpjtWdh5HeWIiU4uGu9BMPV8EBhte9F9Elg/exec"
+curl.exe -L "https://script.google.com/macros/s/AKfycbwZIs_n5hCtSBqkyPOVqeZZBY1XjUAv4NjYWj8O3AY2i0Fw0Rl2OV-TA-IgmlvRbo7pFQ/exec"
 
 # Expected: HTTP 200 and a JSON body. The webhook does not serve a fixed
 # health banner - the previously documented
@@ -678,37 +680,44 @@ azorpayDynamicUpi, splitBill
 
 ---
 
-## ⚡ 11. Razorpay Dynamic UPI & Route Auto-Settlement Operations
+## ⚡ 11. UPI Payments (no gateway)
 
-### 1. Master Razorpay Credential Setup
-1. In the **Master Admin Console**, click the **Payment Settings (Wallet)** icon in the top AppBar.
-2. Enter the Master Razorpay **Key ID** (
-zp_live_... or 
-zp_test_...) and **Key Secret**.
-3. Save credentials. They are stored in Firestore at
-   `system_config/razorpay`.
+**Changed 2026-09-18.** SmartDine has no payment gateway and never routes
+money. Razorpay is gone from the app, the guest web app and the Apps Script
+backend, and the credentials it used are no longer read anywhere. If
+`system_config/razorpay` still exists in a project, delete it and rotate that
+key in the Razorpay dashboard: it was stored as entered, not encrypted.
 
-   > **Corrected 2026-09 (X-20).** These are stored **as entered, not
-   > encrypted**. Anyone with read access to that Firestore document holds the
-   > live Razorpay key secret. Restrict access to it accordingly, and rotate
-   > the secret in the Razorpay dashboard if the document has ever been widely
-   > readable.
+### 1. What the restaurant sets up
+One field: **Store Settings → UPI ID** (for example `owner@okhdfcbank`), or
+the organisation's `upiId`. That is the payee on every QR and every deep link.
+No key, no secret, no beneficiary account, nothing to renew.
 
-### 2. Restaurant Route Auto-Settlement Setup
-1. In the restaurant POS, open **Store Settings -> UPI & Settlement Tab**.
-2. Under **Razorpay Route Auto-Settlement**, enter:
-   - **Settlement UPI ID** (e.g. owner@okhdfcbank)
-   - **Bank Account Number & IFSC Code**
-   - **Beneficiary / Account Holder Name**
-3. Save settings. Transactions paid on table QR are routed directly to the restaurant's verified account.
+### 2. At the counter
+The cashier presses **UPI / QR** on the payment bar. A dialog shows the bill
+amount in large type and a QR encoding
+`upi://pay?pa=<store VPA>&pn=<store>&am=<exact amount>&cu=INR&tn=<table or bill>&tr=<ref>`.
+The customer scans it with any UPI app and pays the restaurant's bank
+directly. The cashier presses **Payment received** only after the credit shows
+in the restaurant's own UPI app; that is what settles and prints the bill. On a
+phone or waiter tablet the same dialog offers **Open in UPI app** instead,
+since nobody can scan the screen they are holding.
 
-### 3. Web App Dynamic UPI Experience
-- Guests on table QR tap **Pay with Razorpay**.
-- The official Razorpay Standard Checkout SDK opens natively, offering **Dynamic UPI (Google Pay, PhonePe, Paytm, CRED)**, dynamic QR code, debit/credit cards, and netbanking.
-- The handler(response) callback verifies the razorpay_payment_id instantly.
-- The system automatically sends the bill to Google Sheets / Firestore with payment_status: 'PAID' and unlocks the verified digital tax receipt. Fake static UPI query links and manual 12-digit UTR text boxes are completely eliminated.
+### 3. On the table QR (guest web app)
+The guest taps **Pay ₹… in your UPI app**, picks their app, pays, and types
+the UPI reference (UTR) back into the confirmation sheet. Split shares work the
+same way and are recorded as `PARTIAL`.
 
----
+The guest's claim is recorded **unverified** — always. There is no signature to
+check, so nothing a guest submits can settle a bill or close a table; the
+counter confirms against the bank, and only then does the guest's screen turn
+into a receipt. The server enforces this: `RECORD_PAYMENT` writes
+`verified: false` for every request that does not carry the staff secret.
+
+### 4. What the cashier must know
+A customer's success screen is not proof of payment. Screenshots are trivial to
+fake and a pending UPI transfer can still fail. Settle on the credit in your own
+app, not on the phone the customer is holding.
 
 ## 📱 12. Universal Mobile & Tablet Responsiveness & Zero-Mock Architecture
 

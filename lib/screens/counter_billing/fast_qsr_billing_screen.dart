@@ -3768,13 +3768,25 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                                         BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 8, offset: const Offset(0, 2)),
                                       ],
                                     ),
-                                    child: QrImageView(
-                                      data: upiUri,
-                                      version: QrVersions.auto,
-                                      size: 190,
-                                      gapless: true,
-                                      backgroundColor: Colors.white,
-                                    ),
+                                    child: upiUri.isEmpty
+                                        // No UPI ID configured: a QR carrying
+                                        // an empty payload looks like a QR and
+                                        // fails in the customer's app.
+                                        ? const SizedBox(
+                                            width: 190,
+                                            height: 190,
+                                            child: Center(
+                                              child: Icon(Icons.qr_code_2_rounded,
+                                                  size: 44, color: ClassicTheme.dangerRed),
+                                            ),
+                                          )
+                                        : QrImageView(
+                                            data: upiUri,
+                                            version: QrVersions.auto,
+                                            size: 190,
+                                            gapless: true,
+                                            backgroundColor: Colors.white,
+                                          ),
                                   ),
                                   const SizedBox(height: 8),
                                   Text(

@@ -1845,10 +1845,41 @@
               <div class="text-3xl font-black text-slate-900">₹${grandTotal.toFixed(2)}</div>
             </div>
 
-            <div class="p-3 bg-blue-50/80 border border-blue-100 rounded-xl text-left flex items-start gap-2 text-[11.5px] text-blue-950 mb-3">
-              <span class="text-base">💳</span>
-              <p class="leading-snug">Payment is collected by your waiter or cashier at the counter. When you are ready to settle, simply ask your server or tap below!</p>
-            </div>
+            <!-- Pay by UPI. There is no gateway: this hands the guest's own
+                 UPI app the restaurant's VPA and the exact amount, and the
+                 counter confirms the credit. -->
+            ${state.upiId ? `
+              <div class="p-3 bg-emerald-50/80 border border-emerald-100 rounded-xl text-left mb-3">
+                <div class="flex items-center justify-between mb-2">
+                  <span class="text-[11.5px] font-bold text-emerald-900">Pay now by UPI</span>
+                  <button onclick="copyUpiId()" class="text-[10.5px] font-semibold text-emerald-700 hover:text-emerald-900 flex items-center gap-1">
+                    <span class="font-mono">${esc(state.upiId)}</span> 📋
+                  </button>
+                </div>
+                <div class="grid grid-cols-3 gap-1.5 mb-2.5">
+                  ${UPI_APPS.map(a => `
+                    <button onclick="selectUpiApp('${a.id}')" class="py-1.5 px-1 rounded-lg border text-[10px] font-bold transition ${(state.selectedUpiApp || 'ANY') === a.id ? a.bg + ' ' + a.text + ' ' + a.border : 'bg-white text-slate-500 border-slate-200'}">
+                      ${a.badge} ${esc(a.name)}
+                    </button>
+                  `).join('')}
+                </div>
+                <button onclick="launchUpiPayment()" class="w-full py-3 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] text-white rounded-xl font-bold text-xs shadow-xs flex items-center justify-center gap-2 transition">
+                  <i data-lucide="smartphone" class="w-4 h-4"></i>
+                  <span>Pay ₹${grandTotal.toFixed(2)} in your UPI app</span>
+                </button>
+                <button onclick="openPaymentConfirmModal()" class="w-full mt-1.5 py-2 text-[11px] font-semibold text-emerald-800 hover:text-emerald-950 transition">
+                  Already paid? Enter your reference number
+                </button>
+                <p class="text-[10px] text-slate-500 leading-snug mt-1.5">
+                  The money goes straight to the restaurant. Your payment shows as received once the counter checks it.
+                </p>
+              </div>
+            ` : `
+              <div class="p-3 bg-blue-50/80 border border-blue-100 rounded-xl text-left flex items-start gap-2 text-[11.5px] text-blue-950 mb-3">
+                <span class="text-base">💳</span>
+                <p class="leading-snug">Payment is collected by your waiter or cashier at the counter. When you are ready to settle, simply ask your server or tap below!</p>
+              </div>
+            `}
 
             <button
               onclick="requestFinalBill()"
@@ -1865,6 +1896,46 @@
               </button>
             </div>
           </div>
+
+          <!-- Reference-number confirmation. Nothing the guest types here
+               settles the bill; it tells the counter what to look for. -->
+          ${state.paymentConfirmModalOpen ? `
+            <div class="fixed inset-0 z-50">
+              <div class="fixed inset-0 bg-black/40 backdrop-blur-xs" onclick="closePaymentConfirmModal()"></div>
+              <div class="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white rounded-t-3xl shadow-2xl p-5 z-10 text-left">
+                <div class="w-10 h-1 bg-slate-200 rounded-full mx-auto mb-3"></div>
+                <div class="flex items-center justify-between mb-1">
+                  <h3 class="text-sm font-bold text-slate-900 flex items-center gap-2">
+                    <i data-lucide="check-circle" class="w-4 h-4 text-emerald-600"></i> Confirm your payment
+                  </h3>
+                  <button onclick="closePaymentConfirmModal()" class="p-1 text-slate-400 hover:text-slate-600">
+                    <i data-lucide="x" class="w-4 h-4"></i>
+                  </button>
+                </div>
+                <p class="text-xs text-slate-500 mb-3">
+                  Paying <strong class="text-slate-800">₹${((state.payAmount && state.payAmount > 0) ? Math.min(state.payAmount, grandTotal) : grandTotal).toFixed(2)}</strong>
+                  for Table ${esc(String(state.tableNumber))}. Copy the UPI reference (UTR) from your payment app so the counter can match it.
+                </p>
+                <input
+                  id="utrInput"
+                  inputmode="numeric"
+                  autocomplete="off"
+                  placeholder="12-digit UPI reference / UTR"
+                  class="w-full px-3 py-3 rounded-xl border border-slate-300 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 outline-none text-sm font-mono tracking-wide mb-3"
+                />
+                <button
+                  onclick="confirmAndRecordPayment()"
+                  ${state.submittingPayment ? 'disabled' : ''}
+                  class="w-full py-3 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 active:scale-[0.98] text-white rounded-xl font-bold text-xs transition flex items-center justify-center gap-2"
+                >
+                  ${state.submittingPayment ? 'Sending…' : 'I have paid — tell the counter'}
+                </button>
+                <p class="text-[10px] text-slate-400 leading-snug mt-2 text-center">
+                  Your receipt appears once the restaurant confirms the money arrived.
+                </p>
+              </div>
+            </div>
+          ` : ''}
         </div>`;
 
       try { lucide.createIcons(); } catch(e) { console.warn("Lucide:", e); }
@@ -2160,8 +2231,10 @@
         return;
       }
       // Remembered so the confirmation modal records the share, not the total.
-      state.payAmount = amountToPay;
-      const uri = getUpiAppUri(state.selectedUpiApp, amountToPay);
+      // Rounded to paise: a third of ₹1000 is 333.3333..., and the UPI app is
+      // asked for ₹333.33, so that is what must be recorded too.
+      state.payAmount = Math.round(amountToPay * 100) / 100;
+      const uri = getUpiAppUri(state.selectedUpiApp, state.payAmount);
 
       upiPaymentPending = true;
       upiLaunchTimestamp = Date.now();
@@ -2203,6 +2276,9 @@
 
     function closePaymentConfirmModal() {
       state.paymentConfirmModalOpen = false;
+      // Forget the share. Otherwise a guest who backs out of a ₹250 share and
+      // later pays the whole ₹1000 bill has ₹1000 recorded as ₹250.
+      state.payAmount = 0;
       renderOrderSuccess();
     }
 
@@ -2264,6 +2340,8 @@
       }
 
       state.submittingPayment = true;
+      // Keep the sheet open while the post is in flight; it shows the disabled
+      // "Sending..." button, and closing it here would drop the UTR on a retry.
       renderOrderSuccess();
 
       try {
@@ -2280,7 +2358,10 @@
 
         // W-07: Use RECORD_PAYMENT so we update payment state without rewriting or corrupting previous rounds
         const paymentPayload = {
-          id: billDocId,
+          // handleRecordPayment keys the Payments row on this; two diners
+          // splitting one table must not write the same primary key.
+          id: billDocId + '_' + utr,
+          paymentId: billDocId + '_' + utr,
           bill_id: billDocId,
           order_id: state.orderPlaced?.orderId || state.orderPlaced?.id || billDocId,
           table: state.tableNumber,
@@ -2289,6 +2370,11 @@
           customer_phone: state.customerPhone.trim() || '',
           amount: amountPaid,
           total_amount: grandTotal,
+          // `mode` and `ref_UTR` are the names handleRecordPayment reads; the
+          // snake_case pair below is for the sheet's own columns. Sending only
+          // the latter filed every guest payment as CASH with no reference.
+          mode: 'UPI',
+          ref_UTR: utr,
           payment_mode: 'UPI (' + selectedAppObj.name + ')'
             + (isPartialSplit ? ' \u00b7 split share' : ''),
           payment_status: isPartialSplit ? 'PARTIAL' : 'PAYMENT_SUBMITTED',
@@ -2301,15 +2387,30 @@
 
         console.log('[Payment] Submitting payment verification to Google Sheet for Table', state.tableNumber, utr);
 
+        let recorded = { ok: true };
         if (state.googleSheetId || state.organizationId) {
-          await sendToGoogleSheetWebhook('RECORD_PAYMENT', paymentPayload);
+          recorded = await sendToGoogleSheetWebhook('RECORD_PAYMENT', paymentPayload);
+        }
+        // sendToGoogleSheetWebhook returns false on a bad response and on a
+        // network failure. Announcing "verifying with cashier" for a claim that
+        // reached nobody is how a guest walks out believing they are settled.
+        if (!recorded) {
+          state.submittingPayment = false;
+          state.payAmount = 0;
+          showToast(
+            'We could not reach the restaurant to record your payment. Please show this '
+            + 'reference at the counter before you leave: ' + utr,
+            'error'
+          );
+          renderOrderSuccess();
+          return;
         }
 
         // Anti-Fraud Two-Phase Verification:
         // Set state to payment_submitted (NOT paid!).
         // The green receipt is ONLY unlocked when cashier/backend confirms 'PAID'.
         state.transactionId = utr;
-        state.paymentSubmitted = !isPartialSplit;
+        state.paymentSubmitted = state.paymentSubmitted || !isPartialSplit;
         if (!isPartialSplit) state.orderStatus = 'payment_submitted';
         state.paymentConfirmModalOpen = false;
         state.submittingPayment = false;
@@ -2328,6 +2429,7 @@
 
       } catch (err) {
         state.submittingPayment = false;
+        state.payAmount = 0;
         console.error('Payment settlement failed:', err);
         showToast('Failed to record payment. Please try again or alert staff.', 'error');
         renderOrderSuccess();

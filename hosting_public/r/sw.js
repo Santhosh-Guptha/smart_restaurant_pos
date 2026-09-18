@@ -1,5 +1,5 @@
 // SmartDine Customer Web App Service Worker (W-39, W-40, W-41, W-42)
-const CACHE_VERSION = '2026.09.08-v2';
+const CACHE_VERSION = '2026.09.18-v3';
 const CACHE_NAME = 'smartbizz-menu-' + CACHE_VERSION;
 
 const STATIC_ASSETS = [
@@ -7,8 +7,7 @@ const STATIC_ASSETS = [
   '/r/index.html',
   '/r/manifest.json',
   'https://cdn.tailwindcss.com',
-  'https://unpkg.com/lucide@latest',
-  'https://checkout.razorpay.com/v1/checkout.js'
+  'https://unpkg.com/lucide@latest'
 ];
 
 const OFFLINE_PAGE = '/r/index.html';
@@ -90,7 +89,6 @@ self.addEventListener('fetch', (event) => {
     url.hostname.includes('gstatic.com') ||
     url.hostname.includes('unpkg.com') ||
     url.hostname.includes('cdn.tailwindcss.com') ||
-    url.hostname.includes('checkout.razorpay.com') ||
     url.pathname.match(/\.(js|css|png|jpg|jpeg|svg|gif|woff2?)$/)
   ) {
     event.respondWith(
