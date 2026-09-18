@@ -36,8 +36,22 @@ class UnifiedClientLead {
     required this.rawData,
   });
 
+  /// Still needs a human. `PROVISIONING` is here on purpose: the web page
+  /// sets it for the seconds a trial takes to create, and if the browser dies
+  /// in that window the lead must not vanish from every list.
   bool get isPending =>
-      status == 'PENDING' || status == 'NEW_INQUIRY' || status == 'NEW';
+      status == 'PENDING' ||
+      status == 'NEW_INQUIRY' ||
+      status == 'NEW' ||
+      status == 'PROVISIONING';
+
+  /// The organisation this lead became, when it has. Set by the console's
+  /// provisioner and by the web trial handler alike; an onboard button on a
+  /// lead that already has one would create a second tenant for one person.
+  String get organizationId =>
+      (rawData['organizationId'] ?? rawData['org_id'] ?? '').toString().trim();
+
+  bool get isOnboarded => organizationId.isNotEmpty;
 
   static DateTime? parseDateTime(dynamic v) {
     if (v == null) return null;

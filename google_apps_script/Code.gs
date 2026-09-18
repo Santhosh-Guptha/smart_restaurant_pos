@@ -3176,12 +3176,18 @@ function razorpayCredentialsValid(keyId, keySecret) {
  */
 function handleStartTrial(json) {
   var data = json.data || json;
-  var clientName = String(data.clientName || data.name || "").trim();
-  var shopName = String(data.shopName || data.restaurantName || "").trim();
+  // Both spellings. The marketing site posts snake_case (client_name,
+  // shop_name, business_category); the app and older callers post camelCase.
+  // Reading only camelCase made this handler refuse every web submission with
+  // "client name is required" -- and the page, posting no-cors, never saw it.
+  var clientName = String(data.client_name || data.clientName || data.name || "").trim();
+  var shopName = String(data.shop_name || data.shopName || data.restaurantName || "").trim();
   var email = String(data.email || "").toLowerCase().trim();
+  // Digits only, and the last ten of them, so "+91 98765 43210" is accepted.
   var mobile = String(data.mobile || data.phone || "").replace(/\D/g, "");
-  var category = String(data.businessCategory || data.category || "Restaurant & Cafe").trim();
-  var city = String(data.city || "").trim();
+  if (mobile.length > 10) mobile = mobile.slice(-10);
+  var category = String(data.business_category || data.businessCategory || data.category || "Restaurant & Cafe").trim();
+  var city = String(data.city || data.address || "").trim();
 
   // 1. Input Validation
   if (!clientName || !email || !mobile || mobile.length < 10) {
@@ -3205,43 +3211,190 @@ function handleStartTrial(json) {
   }
 
   try {
-    // 3. Generate unique Org ID and temporary password
-    var orgId = "ORG-" + Utilities.formatDate(new Date(), "GMT+05:30", "yyMM") + "-" + ("0000" + Math.floor(Math.random() * 9999)).slice(-4);
+    // ── What this must produce ──────────────────────────────────────────
+    // The same six documents the admin console's TenantProvisioningService
+    // writes, in the same shape, so the customer can open the app and sign in
+    // with the credentials in the e-mail. The previous version of this handler
+    // wrote a JSON blob to Script Properties and a SHA-256 hash the app never
+    // reads; every trial it "provisioned" received credentials that could not
+    // log in, and the lead it left behind in the console was the only real
+    // record of the customer.
+
+    // 3. A registered e-mail is a registered e-mail. Say so; do not make a
+    //    second account for the same person.
+    var existing = fsQueryEq_("users", "email", email, 1);
+    if (existing.length > 0) {
+      return responseJson({
+        ok: false, success: false, error_code: "EMAIL_EXISTS",
+        error: "An account with this e-mail already exists. Please sign in, or use Forgot password."
+      });
+    }
+
+    // 4. The trial plan, as the console has it, so an admin edit applies here.
+    var plan = trialPlan_();
+
+    // 5. Ids. Org id in the console's own format; user id and username as the
+    //    console makes them, username de-duplicated the same way.
+    var orgId = uniqueOrgId_();
+    var userId = "usr_" + Date.now();
+    var username = email.split("@")[0].replace(/[^a-zA-Z0-9._-]/g, "_");
+    if (fsQueryEq_("users", "username", username, 1).length > 0) {
+      username = username + "_" + String(Date.now()).slice(-5);
+    }
+
     var tempPassword = Math.random().toString(36).slice(-8) + "!1A";
-    var salt = Utilities.getUuid().replace(/-/g, "").slice(0, 16);
-    var rawBytes = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, salt + tempPassword);
-    var passwordSha256 = rawBytes.map(function(b) { return (b < 0 ? b + 256 : b).toString(16).padStart(2, "0"); }).join("");
+    var passwordHash = bcryptHash_(tempPassword);
 
-    // 4. Save registration record in Script Properties
-    var tenantInfo = {
-      org_id: orgId,
-      org_name: shopName || (clientName + " Restaurant"),
-      owner_name: clientName,
-      owner_email: email,
-      owner_phone: mobile,
-      category: category,
-      city: city,
-      plan_profile: "OFFLINE_DINE_IN",
-      storage_mode: "PURE_OFFLINE",
+    var now = new Date();
+    var endDate = new Date(now.getTime() + plan.validityDays * 86400000);
+    var orgName = shopName || (clientName + " Restaurant");
+
+    // 6. The documents. Written in the order the console writes them, and
+    //    if any write fails the whole thing throws: half a tenant is worse
+    //    than none, because the customer can then neither log in nor be
+    //    onboarded by hand without a cleanup first.
+    fsSet_("organizations/" + orgId, {
+      id: orgId,
+      name: orgName,
+      appName: orgName,
+      clientName: clientName,
+      businessCategory: category,
+      phone: mobile,
+      email: email,
+      ownerGoogleEmail: email,
+      ownerEmail: email,
+      ownerUserId: userId,
+      ownerUsername: username,
+      tableCount: plan.tableCount,
+      operatingMode: plan.operatingMode,
+      aadhaar: "",
+      pan: "",
+      gstNo: String(data.gst_no || data.gstNo || "").toUpperCase(),
+      address: String(data.address || city || ""),
+      settlementUpiId: "",
       status: "ACTIVE",
-      created_at: new Date().toISOString()
-    };
-    PropertiesService.getScriptProperties().setProperty("org_" + orgId, JSON.stringify(tenantInfo));
+      storageMode: plan.storageMode,
+      backendType: "LOCAL",
+      provisionedBy: "WEB_TRIAL",
+      createdAt: now,
+      updatedAt: now
+    });
 
-    // 5. Send Credentials Email via MailApp
+    fsSet_("users/" + userId, {
+      id: userId,
+      username: username,
+      email: email,
+      fullName: clientName,
+      phone: mobile,
+      passwordHash: passwordHash,
+      role: "OWNER",
+      organizationId: orgId,
+      // The e-mailed password is temporary; the app's first-login screen
+      // makes them choose their own before anything else.
+      mustChangePassword: true,
+      status: "ACTIVE",
+      createdAt: now,
+      updatedAt: now
+    });
+
+    fsSet_("licenses/" + orgId, {
+      planTier: plan.billingCycle,
+      planName: plan.name,
+      planProfile: plan.planProfile,
+      status: "ACTIVE",
+      storageMode: plan.storageMode,
+      startDate: now,
+      endDate: endDate,
+      maxFranchises: plan.maxOutlets,
+      maxUsers: plan.maxUsers,
+      maxDevices: plan.maxDevices,
+      allowedRoles: plan.allowedRoles,
+      features: plan.features,
+      expiryWarningDays: 3,
+      createdAt: now,
+      updatedAt: now
+    });
+
+    // Legacy mirrors, read by builds that predate the resolver.
+    fsSet_("features/" + orgId, { features: plan.features, planProfile: plan.planProfile, updatedAt: now });
+    fsSet_("limits/" + orgId, { maxFranchises: plan.maxOutlets, maxUsers: plan.maxUsers, maxDevices: plan.maxDevices, updatedAt: now });
+
+    var outletName = orgName + " (Main Branch)";
+    var outletId = fsCreate_("outlets", {
+      organizationId: orgId,
+      name: outletName,
+      storeAdminEmail: email,
+      storeAdminName: clientName,
+      tableCount: plan.tableCount,
+      operatingMode: plan.operatingMode,
+      address: String(data.address || city || "Main Outlet"),
+      phone: mobile,
+      settlementUpiId: "",
+      isActive: true,
+      createdAt: now,
+      updatedAt: now
+    });
+    fsMerge_("outlets/" + outletId, { id: outletId });
+    fsSet_("franchises/" + outletId, {
+      id: outletId,
+      organizationId: orgId,
+      name: outletName,
+      storeAdminEmail: email,
+      location: String(data.address || city || "Main Outlet"),
+      address: String(data.address || city || ""),
+      phone: mobile,
+      category: category,
+      status: "ACTIVE",
+      is_active: true,
+      createdAt: now,
+      updatedAt: now
+    });
+
+    // 7. The lead the web page filed a moment ago. Marked approved with the
+    //    organisation, so the console lists it under Converted rather than
+    //    Pending, and an admin does not onboard the same customer twice.
+    var requestId = String(data.request_id || data.requestId || "").trim();
+    if (requestId) {
+      try {
+        fsMerge_("registration_requests/" + requestId, {
+          status: "APPROVED",
+          organizationId: orgId,
+          provisionedBy: "WEB_TRIAL",
+          approvedAt: now,
+          updatedAt: now
+        });
+      } catch (eLead) {
+        // The tenant exists; a stale lead is a nuisance, not a failure.
+        Logger.log("Trial lead update skipped: " + eLead);
+      }
+    }
+
+    // 8. Kept for the parts of this script that route by tenant.
+    PropertiesService.getScriptProperties().setProperty("org_" + orgId, JSON.stringify({
+      org_id: orgId, org_name: orgName, owner_name: clientName, owner_email: email,
+      owner_phone: mobile, category: category, city: city,
+      plan_profile: plan.planProfile, storage_mode: plan.storageMode,
+      status: "ACTIVE", created_at: now.toISOString()
+    }));
+
+    // 9. Credentials. Sent only once every document is in place.
+    var mailed = true;
     try {
       MailApp.sendEmail({
         to: email,
         subject: "Welcome to SmartDine POS — Your 14-Day Free Trial Account",
         body: "Hello " + clientName + ",\n\n" +
-              "Your 14-day free trial of SmartDine POS has been created!\n\n" +
+              "Your 14-day free trial of SmartDine POS is ready.\n\n" +
               "Organization ID: " + orgId + "\n" +
               "Login Email: " + email + "\n" +
               "Temporary Password: " + tempPassword + "\n\n" +
-              "Download the app and log in. You will be prompted to set your permanent password on first sign-in.\n\n" +
+              "Open the app and sign in. You will be asked to set your own password on first sign-in.\n\n" +
+              "Your trial is the Offline Dine-In plan: billing, tables, running tabs, kitchen tickets, " +
+              "receipt printing and day-end reports, on one device, with everything kept on that device.\n\n" +
               "Best regards,\nSmartDine Support Team"
       });
     } catch (eMail) {
+      mailed = false;
       Logger.log("Trial email send failed: " + eMail);
     }
 
@@ -3249,12 +3402,100 @@ function handleStartTrial(json) {
       ok: true,
       success: true,
       org_id: orgId,
+      user_id: userId,
       email: email,
-      message: "Trial provisioned successfully! Credentials have been emailed."
+      mailed: mailed,
+      message: mailed
+        ? "Trial provisioned. Credentials have been e-mailed."
+        : "Trial provisioned, but the e-mail could not be sent. Support can resend the credentials."
     });
+  } catch (e) {
+    Logger.log("handleStartTrial failed: " + e);
+    return responseJson({ ok: false, success: false, error_code: "PROVISION_FAILED", error: "The trial could not be created: " + String(e && e.message || e) });
   } finally {
     lock.releaseLock();
   }
+}
+
+/**
+ * The default trial plan as the console keeps it, with the shipped fallback
+ * when the document is missing. Mirrors SubscriptionPlanService.getDefaultTrialPlan.
+ *
+ * Offline invariants are re-applied whatever the document says: the trial is
+ * one device, one outlet, no cloud, and the app's resolver would clamp an
+ * odd document the same way when it loads.
+ */
+function trialPlan_() {
+  var doc = null;
+  try {
+    var hits = fsQueryEq_("subscription_plans", "isDefaultTrial", true, 1);
+    if (hits.length > 0) doc = hits[0].data;
+    if (!doc) doc = fsGet_("subscription_plans/trial");
+  } catch (e) {
+    Logger.log("trial plan read failed, using fallback: " + e);
+  }
+  doc = doc || {};
+
+  var features = (doc.features && typeof doc.features === "object") ? doc.features : {};
+  var offlineKeys = [
+    "billing", "qsrBilling", "menuManagement", "thermalPrinting", "storeConfiguration",
+    "dayEndReports", "staffManagement", "backupRestore",
+    "dineInBilling", "tableManagement", "reservations", "dualPrinting", "expenseManagement", "analytics"
+  ];
+  var cloudKeys = [
+    "cloudSync", "emailReceipts", "kdsEnabled", "waiterOrdering", "onlineMenu",
+    "qrOrdering", "onlineOrderingEnabled", "multiOutlet", "inventoryEnabled"
+  ];
+  var aligned = {};
+  offlineKeys.forEach(function (k) { aligned[k] = features[k] === undefined ? true : !!features[k]; });
+  cloudKeys.forEach(function (k) { aligned[k] = false; });
+  aligned.pureOfflineMode = true;
+
+  return {
+    name: String(doc.name || "Free Trial (14 Days)"),
+    billingCycle: String(doc.billingCycle || "TRIAL"),
+    planProfile: "OFFLINE_DINE_IN",
+    storageMode: "PURE_OFFLINE",
+    validityDays: Number(doc.validityDays) > 0 ? Number(doc.validityDays) : 14,
+    maxUsers: Number(doc.maxUsers) > 0 ? Number(doc.maxUsers) : 5,
+    maxOutlets: 1,
+    maxDevices: 1,
+    tableCount: Number(doc.tableCount) >= 0 ? Number(doc.tableCount) : 15,
+    operatingMode: String(doc.operatingMode || "dineFirstPostpaid"),
+    // The console's spelling for an offline plan: no floor or pass roles on a
+    // one-device tenant, and the counter role is BILLING, not CASHIER.
+    allowedRoles: Array.isArray(doc.allowedRoles) && doc.allowedRoles.length
+      ? doc.allowedRoles.map(String)
+      : ["OWNER", "MANAGER", "BILLING"],
+    features: aligned
+  };
+}
+
+
+/**
+ * Run once from the editor after pasting the three files. Proves the pieces
+ * are wired -- bcrypt hashes and verifies, Firestore answers -- without
+ * creating anything. Writes nothing.
+ */
+function smokeTestTrialProvisioning() {
+  var hash = bcryptHash_("smoke-test");
+  if (!bcryptCheck_("smoke-test", hash)) throw new Error("bcrypt round-trip failed");
+  if (bcryptCheck_("wrong", hash)) throw new Error("bcrypt accepted a wrong password");
+  var plan = trialPlan_();
+  Logger.log("bcrypt OK (" + hash.slice(0, 7) + "...). Trial plan: " + plan.name + ", " + plan.validityDays + " days, " + Object.keys(plan.features).length + " feature keys.");
+  var probe = fsGet_("subscription_plans/trial");
+  Logger.log("Firestore reachable: " + (probe ? "trial plan document found" : "no trial document (fallback plan will be used)"));
+  return "OK";
+}
+
+/** ORG + yy + four digits, as TenantProvisioningService.generateUniqueOrgId, checked against Firestore. */
+function uniqueOrgId_() {
+  for (var attempt = 0; attempt < 6; attempt++) {
+    var yy = String(new Date().getFullYear()).slice(-2);
+    var id = "ORG" + yy + String(1000 + Math.floor(Math.random() * 9000));
+    if (!fsGet_("organizations/" + id)) return id;
+  }
+  throw new Error("Could not allocate a unique organisation id");
 }
 
 function handleVerifyPayment(json) {

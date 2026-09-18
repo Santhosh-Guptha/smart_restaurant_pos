@@ -1212,9 +1212,14 @@ async function handleTrialSubmit(e) {
 
   const nowIso = new Date().toISOString();
 
-  // 1. Direct Firestore REST Save to registration_requests
+  // 1. File the lead first, so the request survives whatever happens next.
+  //    It goes in as PROVISIONING, not PENDING: the trial handler marks it
+  //    APPROVED with the organisation id when it succeeds, and this page sets
+  //    it back to PENDING if it does not -- so the console's Pending list
+  //    holds exactly the people who still need a human.
+  let leadId = null;
   try {
-    await fetch(`${FIRESTORE_BASE}/registration_requests`, {
+    const leadRes = await fetch(`${FIRESTORE_BASE}/registration_requests`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1228,14 +1233,32 @@ async function handleTrialSubmit(e) {
           referralSource: { stringValue: referralSource },
           gstNo: { stringValue: gstNo },
           planTier: { stringValue: 'FREE_TRIAL_14_DAYS' },
-          status: { stringValue: 'PENDING' },
+          status: { stringValue: 'PROVISIONING' },
           source: { stringValue: 'WEBSITE_PORTAL' },
           createdAt: { stringValue: nowIso }
         }
       })
     });
+    const leadDoc = await leadRes.json();
+    if (leadDoc && leadDoc.name) leadId = String(leadDoc.name).split('/').pop();
   } catch(err) {
     console.warn('Firestore write warning:', err);
+  }
+
+  // Hand the lead back to a human. Used when provisioning did not happen.
+  async function leadBackToPending(reason) {
+    if (!leadId) return;
+    try {
+      await fetch(`${FIRESTORE_BASE}/registration_requests/${leadId}?updateMask.fieldPaths=status&updateMask.fieldPaths=provisionError&updateMask.fieldPaths=updatedAt`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fields: {
+          status: { stringValue: 'PENDING' },
+          provisionError: { stringValue: String(reason || '').slice(0, 300) },
+          updatedAt: { stringValue: new Date().toISOString() }
+        } })
+      });
+    } catch (e) { console.warn('Lead status update warning:', e); }
   }
 
   // 2. Provision the trial. The deployed script handles REGISTER_TRIAL: it
@@ -1264,7 +1287,8 @@ async function handleTrialSubmit(e) {
         address: address,
         referral_source: referralSource,
         gst_no: gstNo,
-        plan: '14-Day Free Trial'
+        plan: '14-Day Free Trial',
+        request_id: leadId || ''
       })
     });
     const text = await res.text();
@@ -1272,13 +1296,18 @@ async function handleTrialSubmit(e) {
     if (provisioned && provisioned.success !== true) {
       failure = provisioned.error_code === 'RATE_LIMITED'
         ? 'We already have a recent trial request from this number. Check your inbox — the details may already be on their way.'
-        : (provisioned.error || 'The trial could not be created just now.');
+        : provisioned.error_code === 'EMAIL_EXISTS'
+          ? 'There is already an account for this e-mail. Open the app and sign in, or use Forgot password.'
+          : (provisioned.error || 'The trial could not be created just now.');
     }
   } catch (err) {
     // The lead is already recorded in Firestore above, so the team can still
     // reach this person; only the automatic provisioning was missed.
     console.warn('Trial provisioning warning:', err);
     failure = null;
+  }
+  if (!(provisioned && provisioned.success === true)) {
+    await leadBackToPending(failure || (provisioned ? 'Unreadable reply from the trial handler' : 'Trial handler unreachable'));
   }
 
   // 3. Transition to the success view, saying what actually happened.
@@ -1302,6 +1331,12 @@ async function handleTrialSubmit(e) {
       `Hello <strong>${clientName}</strong>, the 14-day trial for <strong>${shopName}</strong> is live` +
       (provisioned.org_id ? ` under organisation ID <strong>${provisioned.org_id}</strong>` : '') + '.';
     document.getElementById('trialClientEmailDisp').textContent = email;
+    if (provisioned.mailed === false) {
+      // The account exists but the credentials e-mail did not go out. Say so,
+      // and point at WhatsApp, where the team can resend them.
+      box.innerHTML =
+        '<div><strong>\u26a0\ufe0f One thing:</strong> your account was created, but the e-mail with your temporary password could not be sent. Message us on WhatsApp below quoting organisation ID <strong>' + (provisioned.org_id || '') + '</strong> and we will send it straight away.</div>';
+    }
   } else {
     // Reached the server but could not read the reply, or never reached it.
     // The Firestore lead landed, so this is a real request either way.
@@ -1309,9 +1344,10 @@ async function handleTrialSubmit(e) {
     title.textContent = 'Request received';
     document.getElementById('trialSuccessMsg').innerHTML =
       `Thank you <strong>${clientName}</strong>. Your trial request for <strong>${shopName}</strong> is logged.`;
+    // The lead is back with the team as PENDING, so this is now true.
     box.innerHTML =
-      '<div><strong>📋 What happens now:</strong> your credentials are emailed to <strong>' + email + '</strong> once the trial is created, usually within a few minutes.</div>' +
-      '<div style="margin-top:4px"><strong>📱 Fastest route:</strong> message us on WhatsApp below and we will confirm straight away.</div>';
+      '<div><strong>📋 What happens now:</strong> the team sets your trial up by hand and e-mails your credentials to <strong>' + email + '</strong>, usually within a business day.</div>' +
+      '<div style="margin-top:4px"><strong>📱 Fastest route:</strong> message us on WhatsApp below and we will do it while you wait.</div>';
   }
 
   const waMsg = encodeURIComponent(`Hi SmartDine Team, I just registered for a 14-Day Free Trial for my restaurant "${shopName}" (${businessCategory}) in ${address}. My email is ${email}. Please help me get onboarded!`);

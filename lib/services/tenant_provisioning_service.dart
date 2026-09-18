@@ -234,7 +234,12 @@ class TenantProvisioningService {
             'approvedAt': FieldValue.serverTimestamp(),
             'updatedAt': FieldValue.serverTimestamp(),
           });
-        } catch (_) {}
+        } catch (e) {
+          // The tenant exists; the lead is bookkeeping. But a lead that stays
+          // PENDING after an approval is exactly what an admin reports as
+          // "still showing in leads", so it must not fail in silence.
+          debugPrint('Lead $requestId not marked approved: $e');
+        }
         try {
           await _firestore.collection('business_inquiries').doc(requestId).update({
             'status': 'CONVERTED',

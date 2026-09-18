@@ -675,21 +675,47 @@ class _AdminInquiriesViewState extends ConsumerState<AdminInquiriesView> {
                       child: const Text('Mark Contacted', style: TextStyle(fontSize: 12)),
                       onPressed: () => _updateLeadStatus(lead, 'CONTACTED'),
                     ),
-                  ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: ClassicTheme.successEmerald,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  if (lead.isOnboarded)
+                    // Already a tenant -- by the web trial handler or by an
+                    // earlier approval. Onboarding again would make a second
+                    // organisation for the same person and trip the
+                    // duplicate-e-mail guard on the way.
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: ClassicTheme.successEmerald.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: ClassicTheme.successEmerald.withValues(alpha: 0.4)),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.verified_rounded, size: 15, color: ClassicTheme.successEmerald),
+                          const SizedBox(width: 6),
+                          Text(
+                            'Onboarded \u00b7 ${lead.organizationId}',
+                            style: const TextStyle(
+                                fontSize: 12, fontWeight: FontWeight.bold, color: ClassicTheme.successEmerald),
+                          ),
+                        ],
+                      ),
+                    )
+                  else
+                    ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: ClassicTheme.successEmerald,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
+                      icon: const Icon(Icons.person_add_alt_1_rounded, size: 15),
+                      label: const Text('Onboard as Tenant', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                      onPressed: () {
+                        if (widget.onOnboardLead != null) {
+                          widget.onOnboardLead!(lead);
+                        }
+                      },
                     ),
-                    icon: const Icon(Icons.person_add_alt_1_rounded, size: 15),
-                    label: const Text('Onboard as Tenant', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                    onPressed: () {
-                      if (widget.onOnboardLead != null) {
-                        widget.onOnboardLead!(lead);
-                      }
-                    },
-                  ),
                 ],
               ),
             ],
