@@ -21,6 +21,8 @@ import '../../sync/outbox.dart';
 import '../../sync/local_store.dart';
 import '../../core/entitlements.dart';
 import '../../providers/entitlements_provider.dart';
+import '../../core/upi_payment.dart';
+import 'widgets/upi_qr_payment_sheet.dart';
 import '../../core/receipt/receipt_context.dart';
 import '../../core/receipt/receipt_context_builder.dart';
 import '../../core/receipt/receipt_print_service.dart';
@@ -1140,8 +1142,20 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                           padding: const EdgeInsets.symmetric(vertical: 14),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                         ),
-                        onPressed: () {
+                        onPressed: () async {
+                          // Show the customer the QR for this exact amount and
+                          // settle only when the cashier says the money landed.
+                          final amountPaise = _payableTotalPaise(existingOrderToAppend);
                           Navigator.pop(ctx);
+                          final received = await UpiQrPaymentSheet.show(
+                            context,
+                            upiId: _getDefaultUpiId(),
+                            payeeName: ref.read(saasSessionProvider).currentOrganization?.name ?? 'Restaurant',
+                            amountPaise: amountPaise,
+                            tableName: _selectedTable,
+                            billNumber: (existingOrderToAppend?['orderId'] ?? '').toString(),
+                          );
+                          if (!received || !mounted) return;
                           _completeOrder(paymentMode: 'UPI', isPaid: true, existingOrderToAppend: existingOrderToAppend);
                         },
                       ),
@@ -1199,8 +1213,13 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
   /// wrote the combined total and marked the bill PAID -- so entering the cart
   /// amount satisfied the "no underpayment" gate and closed a larger bill short.
   /// This mirrors the combined calculation `_completeOrder` performs.
-  double _payableTotal(Map<String, dynamic>? existingOrderToAppend) {
-    if (existingOrderToAppend == null) return _grandTotal;
+  double _payableTotal(Map<String, dynamic>? existingOrderToAppend) =>
+      _payableTotalPaise(existingOrderToAppend) / 100.0;
+
+  /// The same number in paise, for anything that must be exact to the last
+  /// paisa \u2014 the UPI amount the customer's app will show, above all.
+  int _payableTotalPaise(Map<String, dynamic>? existingOrderToAppend) {
+    if (existingOrderToAppend == null) return _billTotals.grandTotalPaise;
 
     final oldItems = (existingOrderToAppend['items'] as List?) ?? [];
     final combined = <BillLine>[];
@@ -1224,7 +1243,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
         taxRateBps: (_gstRate * 100).round(),
       ));
     }
-    if (combined.isEmpty) return _grandTotal;
+    if (combined.isEmpty) return _billTotals.grandTotalPaise;
 
     return BillCalculator.compute(
       lines: combined,
@@ -1233,7 +1252,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
       taxMode: TaxMode.exclusive,
       roundOffEnabled: true,
       defaultTaxRateBps: (_gstRate * 100).round(),
-    ).grandTotal;
+    ).grandTotalPaise;
   }
 
   void _showSplitPaymentModal({required bool isDineIn, Map<String, dynamic>? existingOrderToAppend}) {
@@ -3710,7 +3729,13 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                             final shopName = saasSession.currentOrganization?.name ?? 'Restaurant';
                             final cleanTable = tableName.replaceAll(RegExp(r'[^0-9]'), '');
                             final note = cleanTable.isNotEmpty ? 'Table $cleanTable Bill' : 'Bill $orderId';
-                            final upiUri = 'upi://pay?pa=$upiId&pn=${Uri.encodeComponent(shopName)}&am=${total.toStringAsFixed(2)}&cu=INR&tn=${Uri.encodeComponent(note)}';
+                            final upiUri = UpiPayment.buildUri(
+                              upiId: upiId,
+                              payeeName: shopName,
+                              amountPaise: (total * 100).round(),
+                              note: note,
+                              transactionRef: orderId,
+                            );
 
                             return Container(
                               width: double.infinity,
