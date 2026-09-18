@@ -29,6 +29,8 @@ import '../../core/receipt/receipt_print_service.dart';
 import '../../core/receipt/receipt_store.dart';
 import '../../core/receipt/receipt_template.dart';
 import '../../services/thermal_printer_service.dart';
+import '../../services/whatsapp_notification_service.dart';
+import '../billing/widgets/item_modifier_dialog.dart';
 
 class FastQsrBillingScreen extends ConsumerStatefulWidget {
   final String? initialTableNumber;
@@ -429,7 +431,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
     return idx >= 0 ? _cart[idx].qty.toInt() : 0;
   }
 
-  void _addToCart(Map<String, dynamic> item) {
+  void _addToCart(Map<String, dynamic> item, {List<ItemModifierOption>? customModifiers}) {
     final isAvail = item['isAvailable'] != false && item['is_available'] != false && ((item['stock'] as num?)?.toInt() ?? -1) != 0;
     if (!isAvail) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -467,25 +469,58 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
 
     HapticFeedback.selectionClick();
     setState(() {
-      final existingIndex = _cart.indexWhere((c) => c.productId == item['id']);
+      final mods = customModifiers ?? const <ItemModifierOption>[];
+      final modSummary = mods.map((m) => m.name).join(', ');
+
+      final existingIndex = _cart.indexWhere((c) =>
+          c.productId == item['id'] &&
+          c.modifiersSummary == modSummary);
+
       if (existingIndex >= 0) {
         final existing = _cart[existingIndex];
         _cart[existingIndex] = existing.copyWith(qty: existing.qty + 1);
       } else {
         final sendsToKitchen = item['sendsToKitchen'] != false;
+        final basePrice = (item['price'] as num?)?.toDouble() ?? 0.0;
+        final delta = mods.fold<double>(0.0, (sum, m) => sum + m.priceDelta);
+
         _cart.add(
           KotItem(
             productId: item['id']?.toString() ?? UniqueKey().toString(),
             name: item['name']?.toString() ?? 'Dish',
-            price: (item['price'] as num?)?.toDouble() ?? 0.0,
+            price: basePrice + delta,
             qty: 1,
             isVeg: item['isVeg'] != false,
             sendsToKitchen: sendsToKitchen,
             kitchenStatus: sendsToKitchen ? 'PENDING' : 'SERVED',
+            selectedModifiers: mods,
           ),
         );
       }
     });
+  }
+
+  Future<void> _customizeAndAddToCart(Map<String, dynamic> item) async {
+    final itemName = (item['name'] ?? 'Dish').toString();
+    final basePrice = (item['price'] as num?)?.toDouble() ?? 0.0;
+
+    List<ItemModifierGroup>? groups;
+    if (item['modifierGroups'] is List && (item['modifierGroups'] as List).isNotEmpty) {
+      groups = (item['modifierGroups'] as List)
+          .map((g) => ItemModifierGroup.fromMap(Map<String, dynamic>.from(g as Map)))
+          .toList();
+    }
+
+    final selected = await ItemModifierDialog.show(
+      context: context,
+      itemName: itemName,
+      basePrice: basePrice,
+      modifierGroups: groups,
+    );
+
+    if (selected != null) {
+      _addToCart(item, customModifiers: selected);
+    }
   }
 
   void _decrementCartItem(String itemId) {
@@ -507,9 +542,9 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
   BillTotals get _billTotals {
     final lines = _cart.map((i) => BillLine(
       productId: i.productId,
-      name: i.name,
+      name: i.displayNameWithModifiers,
       qty: i.qty.toDouble(),
-      unitPaise: (i.price * 100).round(),
+      unitPaise: (i.unitPriceWithModifiers * 100).round(),
       taxRateBps: (_gstRate * 100).round(),
     )).toList();
 
@@ -1237,9 +1272,9 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
     for (final cartItem in _cart) {
       combined.add(BillLine(
         productId: cartItem.productId,
-        name: cartItem.name,
+        name: cartItem.displayNameWithModifiers,
         qty: cartItem.qty.toDouble(),
-        unitPaise: (cartItem.price * 100).round(),
+        unitPaise: (cartItem.unitPriceWithModifiers * 100).round(),
         taxRateBps: (_gstRate * 100).round(),
       ));
     }
@@ -1816,11 +1851,82 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                     spreadsheetId: sheetId,
                   );
 
+                  // Automated WhatsApp Day-End Z-Report Dispatch
+                  final topSeller = WhatsAppNotificationService.deriveTopSeller(settledOrders);
+                  final ownerPhone = saasSession.currentOrganization?.phone ??
+                      saasSession.currentUser?.phone ??
+                      (Hive.isBoxOpen('configBox') ? Hive.box('configBox').get('owner_phone', defaultValue: '')?.toString() ?? '' : '');
+
+                  final upiTotal = (byMode['UPI'] ?? byMode['QR'] ?? 0) / 100.0;
+                  final cashTotal = (byMode['CASH'] ?? 0) / 100.0;
+                  final cardTotal = (byMode['CARD'] ?? 0) / 100.0;
+                  final netTotal = report.netPaise / 100.0;
+
+                  String? dayEndWaMsg;
+                  if (ownerPhone.isNotEmpty) {
+                    WhatsAppNotificationService.instance.sendDayEndReport(
+                      phone: ownerPhone,
+                      storeName: saasSession.currentOrganization?.name ?? 'Store',
+                      orgId: orgId,
+                      businessDate: bDate,
+                      closedBy: activeStaff?.name ?? 'Counter Cashier',
+                      billsCount: settledOrders.length,
+                      totalAmount: netTotal,
+                      upiAmount: upiTotal,
+                      cashAmount: cashTotal,
+                      cardAmount: cardTotal,
+                      topSellerName: topSeller.key,
+                      topSellerCount: topSeller.value,
+                      gross: report.grossPaise / 100.0,
+                      discounts: report.discountPaise / 100.0,
+                      taxes: (report.taxPaise + report.serviceChargePaise) / 100.0,
+                      cashDeclared: report.cashDeclaredPaise / 100.0,
+                      variance: report.variancePaise / 100.0,
+                    ).then((res) {
+                      debugPrint('Day-end WhatsApp webhook dispatched: $res');
+                    }).catchError((err) {
+                      debugPrint('Day-end WhatsApp webhook error: $err');
+                    });
+
+                    dayEndWaMsg = WhatsAppNotificationService.formatDayEndReportMessage(
+                      storeName: saasSession.currentOrganization?.name ?? 'Store',
+                      orgId: orgId,
+                      businessDate: bDate,
+                      closedBy: activeStaff?.name ?? 'Counter Cashier',
+                      billsCount: settledOrders.length,
+                      totalAmount: netTotal,
+                      upiAmount: upiTotal,
+                      cashAmount: cashTotal,
+                      cardAmount: cardTotal,
+                      topSellerName: topSeller.key,
+                      topSellerCount: topSeller.value,
+                      gross: report.grossPaise / 100.0,
+                      discounts: report.discountPaise / 100.0,
+                      taxes: (report.taxPaise + report.serviceChargePaise) / 100.0,
+                      cashDeclared: report.cashDeclaredPaise / 100.0,
+                      variance: report.variancePaise / 100.0,
+                    );
+                  }
+
                   if (ctx.mounted) {
                     ScaffoldMessenger.of(ctx).showSnackBar(
                       SnackBar(
-                        content: Text(ok ? '✅ Shift closed successfully! Z-Report saved to Sheets.' : '⚠️ Shift closed locally (sync queued).'),
+                        content: Text(ok
+                            ? '✅ Shift closed! Z-Report saved & WhatsApp sent.'
+                            : '⚠️ Shift closed locally (sync queued).'),
                         backgroundColor: ok ? ClassicTheme.successEmerald : ClassicTheme.warningAmber,
+                        action: (ownerPhone.isNotEmpty && dayEndWaMsg != null)
+                            ? SnackBarAction(
+                                label: 'WhatsApp',
+                                textColor: Colors.white,
+                                onPressed: () {
+                                  WhatsAppNotificationService.launchWhatsAppChat(
+                                    phone: ownerPhone,
+                                    message: dayEndWaMsg!,
+                                  );
+                                },
+                              )
+                            : null,
                       ),
                     );
                   }
@@ -2134,12 +2240,16 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
     List<Map<String, dynamic>> orderItemsList = _cart.map((i) => {
       'id': i.productId,
       'productId': i.productId,
-      'name': i.name,
+      'name': i.displayNameWithModifiers,
+      'rawName': i.name,
       'qty': i.qty,
-      'price': i.price,
+      'price': i.unitPriceWithModifiers,
+      'basePrice': i.price,
       'isVeg': i.isVeg,
       'sendsToKitchen': i.sendsToKitchen,
       'kitchenStatus': i.sendsToKitchen ? 'PENDING' : 'SERVED',
+      'selectedModifiers': i.selectedModifiers.map((m) => m.toMap()).toList(),
+      'modifiersSummary': i.modifiersSummary,
     }).toList();
 
     try {
@@ -5037,57 +5147,91 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                                                       child: Text('Unavailable', style: TextStyle(color: context.textSecondary, fontSize: 12)),
                                                     )
                                                   else if (qtyInCart == 0)
-                                                    ElevatedButton.icon(
-                                                      style: ElevatedButton.styleFrom(
-                                                        backgroundColor: ClassicTheme.primaryAccent,
-                                                        foregroundColor: Colors.white,
-                                                        elevation: 0,
-                                                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                                      ),
-                                                      icon: const Icon(Icons.add_rounded, size: 16),
-                                                      label: const Text('Add', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-                                                      onPressed: () => _addToCart(item),
+                                                    Row(
+                                                      mainAxisSize: MainAxisSize.min,
+                                                      children: [
+                                                        IconButton(
+                                                          icon: const Icon(Icons.tune_rounded, size: 18, color: ClassicTheme.infoBlue),
+                                                          tooltip: 'Customize (Spice, Add-ons, Portion)',
+                                                          visualDensity: VisualDensity.compact,
+                                                          padding: EdgeInsets.zero,
+                                                          constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                                                          onPressed: () => _customizeAndAddToCart(item),
+                                                        ),
+                                                        const SizedBox(width: 4),
+                                                        ElevatedButton.icon(
+                                                          style: ElevatedButton.styleFrom(
+                                                            backgroundColor: ClassicTheme.primaryAccent,
+                                                            foregroundColor: Colors.white,
+                                                            elevation: 0,
+                                                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                                          ),
+                                                          icon: const Icon(Icons.add_rounded, size: 16),
+                                                          label: const Text('Add', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                                                          onPressed: () {
+                                                            if (item['modifierGroups'] != null && (item['modifierGroups'] as List).isNotEmpty) {
+                                                              _customizeAndAddToCart(item);
+                                                            } else {
+                                                              _addToCart(item);
+                                                            }
+                                                          },
+                                                        ),
+                                                      ],
                                                     )
                                                   else
-                                                    Container(
-                                                      decoration: BoxDecoration(
-                                                        color: ClassicTheme.primaryAccent.withValues(alpha: 0.12),
-                                                        borderRadius: BorderRadius.circular(8),
-                                                        border: Border.all(color: ClassicTheme.primaryAccent.withValues(alpha: 0.5)),
-                                                      ),
-                                                      child: Row(
-                                                        mainAxisSize: MainAxisSize.min,
-                                                        children: [
-                                                          InkWell(
-                                                            onTap: () => _decrementCartItem(itemId),
-                                                            borderRadius: BorderRadius.circular(6),
-                                                            child: Padding(
-                                                              padding: EdgeInsets.all(6.0),
-                                                              child: Icon(Icons.remove_rounded, size: 16, color: ClassicTheme.primaryAccent),
-                                                            ),
+                                                    Row(
+                                                      mainAxisSize: MainAxisSize.min,
+                                                      children: [
+                                                        IconButton(
+                                                          icon: const Icon(Icons.tune_rounded, size: 18, color: ClassicTheme.infoBlue),
+                                                          tooltip: 'Customize (Spice, Add-ons, Portion)',
+                                                          visualDensity: VisualDensity.compact,
+                                                          padding: EdgeInsets.zero,
+                                                          constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
+                                                          onPressed: () => _customizeAndAddToCart(item),
+                                                        ),
+                                                        const SizedBox(width: 2),
+                                                        Container(
+                                                          decoration: BoxDecoration(
+                                                            color: ClassicTheme.primaryAccent.withValues(alpha: 0.12),
+                                                            borderRadius: BorderRadius.circular(8),
+                                                            border: Border.all(color: ClassicTheme.primaryAccent.withValues(alpha: 0.5)),
                                                           ),
-                                                          Padding(
-                                                            padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                                                            child: Text(
-                                                              '$qtyInCart',
-                                                              style: TextStyle(
-                                                                fontWeight: FontWeight.bold,
-                                                                fontSize: 13,
-                                                                color: ClassicTheme.primaryAccent,
+                                                          child: Row(
+                                                            mainAxisSize: MainAxisSize.min,
+                                                            children: [
+                                                              InkWell(
+                                                                onTap: () => _decrementCartItem(itemId),
+                                                                borderRadius: BorderRadius.circular(6),
+                                                                child: Padding(
+                                                                  padding: EdgeInsets.all(6.0),
+                                                                  child: Icon(Icons.remove_rounded, size: 16, color: ClassicTheme.primaryAccent),
+                                                                ),
                                                               ),
-                                                            ),
+                                                              Padding(
+                                                                padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                                                                child: Text(
+                                                                  '$qtyInCart',
+                                                                  style: TextStyle(
+                                                                    fontWeight: FontWeight.bold,
+                                                                    fontSize: 13,
+                                                                    color: ClassicTheme.primaryAccent,
+                                                                  ),
+                                                                ),
+                                                              ),
+                                                              InkWell(
+                                                                onTap: () => _addToCart(item),
+                                                                borderRadius: BorderRadius.circular(6),
+                                                                child: Padding(
+                                                                  padding: EdgeInsets.all(6.0),
+                                                                  child: Icon(Icons.add_rounded, size: 16, color: ClassicTheme.primaryAccent),
+                                                                ),
+                                                              ),
+                                                            ],
                                                           ),
-                                                          InkWell(
-                                                            onTap: () => _addToCart(item),
-                                                            borderRadius: BorderRadius.circular(6),
-                                                            child: Padding(
-                                                              padding: EdgeInsets.all(6.0),
-                                                              child: Icon(Icons.add_rounded, size: 16, color: ClassicTheme.primaryAccent),
-                                                            ),
-                                                          ),
-                                                        ],
-                                                      ),
+                                                        ),
+                                                      ],
                                                     ),
                                                 ],
                                               ),

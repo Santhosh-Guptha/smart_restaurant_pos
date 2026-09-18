@@ -529,6 +529,116 @@ class DiningSession {
   }
 }
 
+class ItemModifierOption {
+  final String id;
+  final String name; // e.g. "Mild", "Medium", "Spicy", "Extra Cheese", "Double Patty", "Half", "Full"
+  final double priceDelta; // e.g. 0.0, 30.0, 60.0
+  final String? groupName; // e.g. "Spice Level", "Add-ons", "Portion Size"
+
+  const ItemModifierOption({
+    required this.id,
+    required this.name,
+    this.priceDelta = 0.0,
+    this.groupName,
+  });
+
+  Map<String, dynamic> toMap() => {
+    'id': id,
+    'name': name,
+    'priceDelta': priceDelta,
+    if (groupName != null) 'groupName': groupName,
+  };
+
+  factory ItemModifierOption.fromMap(Map<String, dynamic> map) => ItemModifierOption(
+    id: (map['id'] ?? map['name'] ?? '').toString(),
+    name: (map['name'] ?? '').toString(),
+    priceDelta: (map['priceDelta'] as num?)?.toDouble() ?? (map['price'] as num?)?.toDouble() ?? 0.0,
+    groupName: map['groupName']?.toString(),
+  );
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ItemModifierOption &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          name == other.name;
+
+  @override
+  int get hashCode => id.hashCode ^ name.hashCode;
+}
+
+class ItemModifierGroup {
+  final String id;
+  final String title; // "Spice Level", "Add-ons", "Portion Size"
+  final bool isMultiSelect;
+  final bool isRequired;
+  final List<ItemModifierOption> options;
+
+  const ItemModifierGroup({
+    required this.id,
+    required this.title,
+    this.isMultiSelect = false,
+    this.isRequired = false,
+    required this.options,
+  });
+
+  Map<String, dynamic> toMap() => {
+    'id': id,
+    'title': title,
+    'isMultiSelect': isMultiSelect,
+    'isRequired': isRequired,
+    'options': options.map((o) => o.toMap()).toList(),
+  };
+
+  factory ItemModifierGroup.fromMap(Map<String, dynamic> map) => ItemModifierGroup(
+    id: (map['id'] ?? map['title'] ?? '').toString(),
+    title: (map['title'] ?? map['name'] ?? '').toString(),
+    isMultiSelect: map['isMultiSelect'] == true,
+    isRequired: map['isRequired'] == true,
+    options: ((map['options'] as List?) ?? [])
+        .map((o) => ItemModifierOption.fromMap(Map<String, dynamic>.from(o as Map)))
+        .toList(),
+  );
+
+  /// Standard presets for quick restaurant configuration
+  static List<ItemModifierGroup> get standardPresets => [
+    const ItemModifierGroup(
+      id: 'portion_size',
+      title: 'Portion Size',
+      isMultiSelect: false,
+      isRequired: true,
+      options: [
+        ItemModifierOption(id: 'portion_half', name: 'Half Portion', priceDelta: 0.0, groupName: 'Portion Size'),
+        ItemModifierOption(id: 'portion_full', name: 'Full Portion', priceDelta: 60.0, groupName: 'Portion Size'),
+      ],
+    ),
+    const ItemModifierGroup(
+      id: 'spice_level',
+      title: 'Spice Level',
+      isMultiSelect: false,
+      isRequired: false,
+      options: [
+        ItemModifierOption(id: 'spice_mild', name: 'Mild', priceDelta: 0.0, groupName: 'Spice Level'),
+        ItemModifierOption(id: 'spice_medium', name: 'Medium', priceDelta: 0.0, groupName: 'Spice Level'),
+        ItemModifierOption(id: 'spice_spicy', name: 'Spicy 🌶️', priceDelta: 0.0, groupName: 'Spice Level'),
+      ],
+    ),
+    const ItemModifierGroup(
+      id: 'addons',
+      title: 'Add-ons & Extras',
+      isMultiSelect: true,
+      isRequired: false,
+      options: [
+        ItemModifierOption(id: 'addon_extra_cheese', name: 'Extra Cheese', priceDelta: 30.0, groupName: 'Add-ons & Extras'),
+        ItemModifierOption(id: 'addon_double_patty', name: 'Double Patty', priceDelta: 60.0, groupName: 'Add-ons & Extras'),
+        ItemModifierOption(id: 'addon_extra_butter', name: 'Extra Butter', priceDelta: 20.0, groupName: 'Add-ons & Extras'),
+        ItemModifierOption(id: 'addon_mayo', name: 'Garlic Mayo Dip', priceDelta: 25.0, groupName: 'Add-ons & Extras'),
+      ],
+    ),
+  ];
+}
+
 class KotItem {
   final String? lineId;
   final String productId;
@@ -548,8 +658,24 @@ class KotItem {
   final String? voidedBy;
   final bool sendsToKitchen;
   final int? seatNo;
+  final List<ItemModifierOption> selectedModifiers;
 
   String get id => productId;
+
+  String get modifiersSummary {
+    if (selectedModifiers.isEmpty) return '';
+    return selectedModifiers.map((m) => m.name).join(', ');
+  }
+
+  String get displayNameWithModifiers {
+    if (selectedModifiers.isEmpty) return name;
+    return '$name ($modifiersSummary)';
+  }
+
+  double get unitPriceWithModifiers {
+    final modifierDelta = selectedModifiers.fold<double>(0.0, (sum, m) => sum + m.priceDelta);
+    return price + modifierDelta;
+  }
 
   KotItem({
     this.lineId,
@@ -570,6 +696,7 @@ class KotItem {
     this.voidedBy,
     this.sendsToKitchen = true,
     this.seatNo,
+    this.selectedModifiers = const [],
   });
 
   Map<String, dynamic> toMap() {
@@ -593,7 +720,8 @@ class KotItem {
       'sendsToKitchen': sendsToKitchen,
       'seatNo': seatNo,
       'seat_no': seatNo,
-      'subtotal': price * qty,
+      'selectedModifiers': selectedModifiers.map((m) => m.toMap()).toList(),
+      'subtotal': unitPriceWithModifiers * qty,
     };
   }
 
@@ -620,6 +748,9 @@ class KotItem {
       voidedBy: map['voidedBy']?.toString(),
       sendsToKitchen: map['sendsToKitchen'] != false,
       seatNo: (map['seatNo'] as num?)?.toInt() ?? (map['seat_no'] as num?)?.toInt(),
+      selectedModifiers: ((map['selectedModifiers'] as List?) ?? (map['modifiers'] as List?) ?? [])
+          .map((m) => ItemModifierOption.fromMap(Map<String, dynamic>.from(m as Map)))
+          .toList(),
     );
   }
 
@@ -642,6 +773,7 @@ class KotItem {
     String? voidedBy,
     bool? sendsToKitchen,
     int? seatNo,
+    List<ItemModifierOption>? selectedModifiers,
   }) {
     return KotItem(
       lineId: lineId ?? this.lineId,
@@ -662,6 +794,7 @@ class KotItem {
       voidedBy: voidedBy ?? this.voidedBy,
       sendsToKitchen: sendsToKitchen ?? this.sendsToKitchen,
       seatNo: seatNo ?? this.seatNo,
+      selectedModifiers: selectedModifiers ?? this.selectedModifiers,
     );
   }
 }
@@ -1162,6 +1295,7 @@ class RestaurantMenuItem {
   final String? description;
   final String? imageUrl;
   final bool sendsToKitchen;
+  final List<ItemModifierGroup> modifierGroups;
 
   const RestaurantMenuItem({
     required this.id,
@@ -1181,6 +1315,7 @@ class RestaurantMenuItem {
     this.description,
     this.imageUrl,
     this.sendsToKitchen = true,
+    this.modifierGroups = const [],
   });
 
   /// Evaluates whether the dish is currently orderable based on stock & time-window.
@@ -1236,6 +1371,7 @@ class RestaurantMenuItem {
       'description': description,
       'imageUrl': imageUrl,
       'sendsToKitchen': sendsToKitchen,
+      'modifierGroups': modifierGroups.map((m) => m.toMap()).toList(),
       'updatedAt': DateTime.now().toIso8601String(),
     };
   }
@@ -1261,6 +1397,9 @@ class RestaurantMenuItem {
       description: map['description']?.toString(),
       imageUrl: map['imageUrl']?.toString(),
       sendsToKitchen: map['sendsToKitchen'] != false,
+      modifierGroups: ((map['modifierGroups'] as List?) ?? (map['modifiers'] as List?) ?? [])
+          .map((m) => ItemModifierGroup.fromMap(Map<String, dynamic>.from(m as Map)))
+          .toList(),
     );
   }
 
@@ -1282,6 +1421,7 @@ class RestaurantMenuItem {
     String? description,
     String? imageUrl,
     bool? sendsToKitchen,
+    List<ItemModifierGroup>? modifierGroups,
   }) {
     return RestaurantMenuItem(
       id: id ?? this.id,
@@ -1301,6 +1441,7 @@ class RestaurantMenuItem {
       description: description ?? this.description,
       imageUrl: imageUrl ?? this.imageUrl,
       sendsToKitchen: sendsToKitchen ?? this.sendsToKitchen,
+      modifierGroups: modifierGroups ?? this.modifierGroups,
     );
   }
 }

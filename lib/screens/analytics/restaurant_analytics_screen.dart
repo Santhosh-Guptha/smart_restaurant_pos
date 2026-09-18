@@ -49,6 +49,7 @@ class _RestaurantAnalyticsScreenState
   List<Map<String, dynamic>> _dayOfWeekData = [];
   List<Map<String, dynamic>> _topSubcategories = [];
   int _totalTransactionsCount = 0;
+  Map<String, double> _paymentSplit = {'UPI': 0.0, 'CASH': 0.0, 'CARD': 0.0};
 
   @override
   void initState() {
@@ -446,6 +447,22 @@ class _RestaurantAnalyticsScreenState
 
       perStoreList.sort((a, b) => (b['revenue'] as double).compareTo(a['revenue'] as double));
 
+      // 8. Payment Tender Breakdown
+      double upiRev = 0.0;
+      double cashRev = 0.0;
+      double cardRev = 0.0;
+      for (final t in filtered) {
+        final mode = (t['paymentMode'] ?? t['payment_mode'] ?? t['paymentMethod'] ?? '').toString().toUpperCase();
+        final amt = ((t['grandTotal'] ?? t['totalAmount'] ?? t['subtotal'] ?? 0.0) as num).toDouble();
+        if (mode.contains('CASH')) {
+          cashRev += amt;
+        } else if (mode.contains('CARD')) {
+          cardRev += amt;
+        } else {
+          upiRev += amt;
+        }
+      }
+
       if (mounted) {
         setState(() {
           _hourlyData = hourly;
@@ -453,6 +470,7 @@ class _RestaurantAnalyticsScreenState
           _dayOfWeekData = dayOfWeek;
           _topSubcategories = sortedSubcats.take(6).toList();
           _perStoreData = perStoreList;
+          _paymentSplit = {'UPI': upiRev, 'CASH': cashRev, 'CARD': cardRev};
           _totalTransactionsCount = filtered.length;
         });
       }
@@ -1516,64 +1534,253 @@ class _RestaurantAnalyticsScreenState
       (prev, s) => max(prev, (s['revenue'] as double)),
     );
 
+    final totalFranchiseGmv = _perStoreData.fold<double>(
+      0.0,
+      (prev, s) => prev + (s['revenue'] as double),
+    );
+
+    final activeBranchesCount = _perStoreData.where((s) => (s['orders'] as int) > 0).length;
+
+    // Session and license quota
+    final saasSession = ref.watch(saasSessionProvider);
+    final license = saasSession.currentLicense;
+    final planTier = license?.planTier ?? 'ACTIVE';
+    final daysRemaining = license?.daysRemaining ?? 30;
+    final maxFranchises = license?.maxFranchises ?? _availableOutlets.length;
+
+    // Payment tender totals
+    final upiAmt = _paymentSplit['UPI'] ?? 0.0;
+    final cashAmt = _paymentSplit['CASH'] ?? 0.0;
+    final cardAmt = _paymentSplit['CARD'] ?? 0.0;
+    final tenderTotal = upiAmt + cashAmt + cardAmt;
+    final upiPct = tenderTotal > 0 ? (upiAmt / tenderTotal * 100).round() : 0;
+    final cashPct = tenderTotal > 0 ? (cashAmt / tenderTotal * 100).round() : 0;
+    final cardPct = tenderTotal > 0 ? (cardAmt / tenderTotal * 100).round() : 0;
+
     return Container(
       margin: const EdgeInsets.only(bottom: 20),
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         color: context.surfaceColor,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(18),
         border: Border.all(color: context.borderColor),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // ── Executive Header & License Quota ──────────────────────
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(6),
-                    decoration: BoxDecoration(
-                      color: amberAccent.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Icon(Icons.leaderboard_rounded, color: amberAccent, size: 18),
-                  ),
-                  const SizedBox(width: 10),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Store Performance Comparison',
-                        style: TextStyle(
-                          color: context.textPrimary,
-                          fontSize: 14,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      Text(
-                        'Live revenue and order throughput across selected outlets',
-                        style: TextStyle(color: context.textSecondary, fontSize: 12),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: amberAccent.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(8),
+                  color: amberAccent.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(10),
                 ),
-                child: Text(
-                  '${_perStoreData.length} Outlets',
-                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: amberAccent),
+                child: const Icon(Icons.account_balance_rounded, color: amberAccent, size: 22),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Text(
+                          'Franchise Financial Cockpit',
+                          style: TextStyle(
+                            color: context.textPrimary,
+                            fontSize: 15,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: ClassicTheme.tintInfo,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: const Text(
+                            'Client Admin',
+                            style: TextStyle(fontSize: 10, color: ClassicTheme.infoBlue, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Aggregated multi-branch performance for ${saasSession.currentOrganization?.name ?? "Franchise Stores"}',
+                      style: TextStyle(color: context.textSecondary, fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+              // License Quota Countdown Badge
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: license?.isNearExpiry == true
+                      ? ClassicTheme.tintWarning
+                      : ClassicTheme.tintSuccess,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: license?.isNearExpiry == true
+                        ? ClassicTheme.warningAmber
+                        : ClassicTheme.successEmerald,
+                    width: 0.8,
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      '$planTier PLAN',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w900,
+                        color: license?.isNearExpiry == true ? ClassicTheme.warningAmber : ClassicTheme.successEmerald,
+                      ),
+                    ),
+                    Text(
+                      '$daysRemaining days left',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        color: context.textPrimary,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
           ),
           const SizedBox(height: 16),
+
+          // ── Franchise GMV & Quota Banner ──────────────────────────
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  amberAccent.withValues(alpha: 0.08),
+                  ClassicTheme.infoBlue.withValues(alpha: 0.04),
+                ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: amberAccent.withValues(alpha: 0.2)),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                Column(
+                  children: [
+                    Text('TOTAL FRANCHISE GMV', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: context.textSecondary)),
+                    const SizedBox(height: 4),
+                    Text('₹ ${totalFranchiseGmv.toStringAsFixed(0)}', style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w900, color: emeraldAccent)),
+                  ],
+                ),
+                Container(width: 1, height: 32, color: context.borderColor),
+                Column(
+                  children: [
+                    Text('ACTIVE OUTLETS', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: context.textSecondary)),
+                    const SizedBox(height: 4),
+                    Text('$activeBranchesCount / ${_availableOutlets.length}', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: context.textPrimary)),
+                  ],
+                ),
+                Container(width: 1, height: 32, color: context.borderColor),
+                Column(
+                  children: [
+                    Text('LICENSE QUOTA', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: context.textSecondary)),
+                    const SizedBox(height: 4),
+                    Text('${_availableOutlets.length} / $maxFranchises Stores', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: ClassicTheme.infoBlue)),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // ── Multi-Branch Payment Mode Splits ──────────────────────
+          Text(
+            'Franchise Tender Splits (UPI / Cash / Card)',
+            style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: context.textPrimary),
+          ),
+          const SizedBox(height: 8),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(6),
+            child: SizedBox(
+              height: 10,
+              child: Row(
+                children: [
+                  if (upiPct > 0)
+                    Expanded(
+                      flex: upiPct,
+                      child: Container(color: ClassicTheme.infoBlue),
+                    ),
+                  if (cashPct > 0)
+                    Expanded(
+                      flex: cashPct,
+                      child: Container(color: emeraldAccent),
+                    ),
+                  if (cardPct > 0)
+                    Expanded(
+                      flex: cardPct,
+                      child: Container(color: amberAccent),
+                    ),
+                  if (tenderTotal == 0)
+                    Expanded(
+                      child: Container(color: context.borderColor),
+                    ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  Container(width: 8, height: 8, decoration: const BoxDecoration(color: ClassicTheme.infoBlue, shape: BoxShape.circle)),
+                  const SizedBox(width: 4),
+                  Text('UPI: ₹${upiAmt.toStringAsFixed(0)} ($upiPct%)', style: TextStyle(fontSize: 11.5, color: context.textSecondary, fontWeight: FontWeight.w600)),
+                ],
+              ),
+              Row(
+                children: [
+                  Container(width: 8, height: 8, decoration: const BoxDecoration(color: emeraldAccent, shape: BoxShape.circle)),
+                  const SizedBox(width: 4),
+                  Text('Cash: ₹${cashAmt.toStringAsFixed(0)} ($cashPct%)', style: TextStyle(fontSize: 11.5, color: context.textSecondary, fontWeight: FontWeight.w600)),
+                ],
+              ),
+              Row(
+                children: [
+                  Container(width: 8, height: 8, decoration: const BoxDecoration(color: amberAccent, shape: BoxShape.circle)),
+                  const SizedBox(width: 4),
+                  Text('Card: ₹${cardAmt.toStringAsFixed(0)} ($cardPct%)', style: TextStyle(fontSize: 11.5, color: context.textSecondary, fontWeight: FontWeight.w600)),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+
+          // ── Branch Performance Comparison Matrix ──────────────────
+          Text(
+            'Branch Comparison & Ranking',
+            style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: context.textPrimary),
+          ),
+          const SizedBox(height: 12),
           ListView.separated(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
@@ -1586,6 +1793,7 @@ class _RestaurantAnalyticsScreenState
               final aov = store['aov'] as double;
               final peak = store['peakHour'] as String;
               final progress = maxRevenue > 0 ? (rev / maxRevenue).clamp(0.0, 1.0) : 0.0;
+              final sharePct = totalFranchiseGmv > 0 ? ((rev / totalFranchiseGmv) * 100).toStringAsFixed(1) : '0';
 
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1621,6 +1829,18 @@ class _RestaurantAnalyticsScreenState
                           fontWeight: FontWeight.bold,
                           fontSize: 14,
                           color: emeraldAccent,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                        decoration: BoxDecoration(
+                          color: ClassicTheme.tintInfo,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          '$sharePct%',
+                          style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: ClassicTheme.infoBlue),
                         ),
                       ),
                     ],

@@ -1259,6 +1259,30 @@ class AppsScriptBackendService {
     return null;
   }
 
+  /// Dispatches an automated WhatsApp notification via Webhook
+  static Future<Map<String, dynamic>> sendWhatsAppNotification({
+    required String phone,
+    required String message,
+    String? type,
+    String? orgId,
+    Map<String, dynamic>? metadata,
+  }) async {
+    try {
+      final res = await _postToWebhook({
+        'action': 'SEND_WHATSAPP_NOTIFICATION',
+        'phone': phone,
+        'message': message,
+        'type': type ?? 'GENERAL',
+        'org_id': orgId ?? '',
+        'metadata': metadata ?? {},
+      });
+      return res ?? {'success': true, 'dispatched': true};
+    } catch (e) {
+      debugPrint("AppsScriptBackendService.sendWhatsAppNotification error: $e");
+      return {'success': false, 'error': e.toString()};
+    }
+  }
+
   static bool _isValidUrl(String url) {
     return url.startsWith('https://script.google.com') && !url.contains('YOUR_APPS_SCRIPT_ID');
   }

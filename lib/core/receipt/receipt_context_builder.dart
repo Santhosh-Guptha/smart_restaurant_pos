@@ -422,12 +422,13 @@ class ReceiptContextBuilder {
 
   /// One line item, in the shape the `items` block reads.
   static Map<String, Object?> itemOf(KotItem i) => {
-        'name': i.name,
+        'name': i.displayNameWithModifiers,
         'qty': i.qty,
         'unit': i.unit,
-        'rate': (i.price * 100).round(),
-        'amount': (i.price * i.qty * 100).round(),
+        'rate': (i.unitPriceWithModifiers * 100).round(),
+        'amount': (i.unitPriceWithModifiers * i.qty * 100).round(),
         'notes': i.notes ?? '',
+        'modifiers': i.modifiersSummary,
         'station': i.station ?? '',
         'isVeg': i.isVeg,
       };
@@ -604,13 +605,26 @@ class ReceiptContextBuilder {
       final amount = m.containsKey('amount')
           ? _num(m, ['amount'])
           : price * qty;
+      String name = (m['name'] ?? m['itemName'] ?? '').toString();
+      final modifiers = m['selectedModifiers'] ?? m['modifiers'];
+      String modSummary = '';
+      if (modifiers is List && modifiers.isNotEmpty) {
+        final modNames = modifiers.map((mod) => (mod is Map ? (mod['name'] ?? '') : mod.toString())).where((n) => n.toString().isNotEmpty).join(', ');
+        if (modNames.isNotEmpty) {
+          modSummary = modNames;
+          if (!name.contains('(')) {
+            name = '$name ($modNames)';
+          }
+        }
+      }
       out.add({
-        'name': (m['name'] ?? m['itemName'] ?? '').toString(),
+        'name': name,
         'qty': qty,
         'unit': (m['unit'] ?? '').toString(),
         'rate': (price * 100).round(),
         'amount': (amount * 100).round(),
         'notes': (m['notes'] ?? m['note'] ?? '').toString(),
+        'modifiers': modSummary,
         'station': (m['station'] ?? '').toString(),
         'isVeg': m['isVeg'] != false,
       });

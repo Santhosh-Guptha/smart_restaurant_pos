@@ -20,6 +20,7 @@ import '../../core/receipt/receipt_print_service.dart';
 import '../../core/receipt/receipt_template.dart';
 import '../../providers/entitlements_provider.dart';
 import '../../services/thermal_printer_service.dart';
+import '../../services/kds_voice_announcer.dart';
 
 class KitchenDisplayScreen extends ConsumerStatefulWidget {
   const KitchenDisplayScreen({super.key});
@@ -164,8 +165,7 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen>
         }
 
         if (newlyArrived.isNotEmpty) {
-          SystemSound.play(SystemSoundType.alert);
-          HapticFeedback.heavyImpact();
+          KdsVoiceAnnouncer.instance.announceNewOrders(newlyArrived);
           if (mounted) {
             final kotTokens = newlyArrived.map((o) => o.kotNumber).join(', ');
             ScaffoldMessenger.of(context).showSnackBar(
@@ -843,6 +843,93 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen>
     }
   }
 
+  void _showAudioSettingsDialog() {
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setModalState) {
+          final announcer = KdsVoiceAnnouncer.instance;
+          return AlertDialog(
+            backgroundColor: context.surfaceColor,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: BorderSide(color: context.borderColor),
+            ),
+            title: Row(
+              children: [
+                const Icon(Icons.volume_up_rounded, color: ClassicTheme.infoBlue),
+                const SizedBox(width: 10),
+                Text('KDS Audio & Voice Alerts', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: context.textPrimary)),
+              ],
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SwitchListTile.adaptive(
+                  title: Text('Kitchen Bell Chime', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: context.textPrimary)),
+                  subtitle: Text('Play distinct acoustic alert on incoming orders', style: TextStyle(fontSize: 12, color: context.textSecondary)),
+                  value: announcer.isChimeEnabled,
+                  activeTrackColor: ClassicTheme.infoBlue,
+                  onChanged: (v) {
+                    announcer.isChimeEnabled = v;
+                    setModalState(() {});
+                  },
+                ),
+                const Divider(),
+                SwitchListTile.adaptive(
+                  title: Text('Voice Order Announcer (TTS)', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: context.textPrimary)),
+                  subtitle: Text('Read Table number and dishes aloud for chefs', style: TextStyle(fontSize: 12, color: context.textSecondary)),
+                  value: announcer.isTtsEnabled,
+                  activeTrackColor: ClassicTheme.infoBlue,
+                  onChanged: (v) {
+                    announcer.isTtsEnabled = v;
+                    setModalState(() {});
+                  },
+                ),
+                const SizedBox(height: 12),
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.play_arrow_rounded, size: 18),
+                  label: const Text('Test Voice Announcement'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: ClassicTheme.infoBlue,
+                    side: const BorderSide(color: ClassicTheme.infoBlue),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                  onPressed: () {
+                    announcer.announceNewOrders([
+                      KotOrder(
+                        id: 'DEMO_KOT',
+                        kotNumber: 'KOT-101',
+                        organizationId: _getEffectiveOrgId(),
+                        tableId: 't4',
+                        tableName: 'Table 4',
+                        totalAmount: 540,
+                        items: [
+                          KotItem(productId: '1', name: 'Chicken Biryani', qty: 2, price: 250),
+                          KotItem(productId: '2', name: 'Butter Naan', qty: 1, price: 40),
+                        ],
+                        createdAt: DateTime.now(),
+                      ),
+                    ]);
+                  },
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  setState(() {});
+                },
+                child: const Text('Done', style: TextStyle(fontWeight: FontWeight.bold)),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final activeStaff = ref.watch(restaurantAuthProvider).activeStaff;
@@ -924,6 +1011,20 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen>
             tooltip: 'Kitchen Analytics',
             onPressed: _showKitchenAnalyticsModal,
             icon: const Icon(Icons.analytics_rounded, color: ClassicTheme.infoBlue, size: 24),
+          ),
+          // Audio & Voice Alerts Button
+          IconButton(
+            tooltip: 'Audio & Voice Alerts',
+            onPressed: _showAudioSettingsDialog,
+            icon: Icon(
+              KdsVoiceAnnouncer.instance.isVoiceOrChimeEnabled
+                  ? Icons.volume_up_rounded
+                  : Icons.volume_off_rounded,
+              color: KdsVoiceAnnouncer.instance.isVoiceOrChimeEnabled
+                  ? ClassicTheme.infoBlue
+                  : context.textSecondary,
+              size: 24,
+            ),
           ),
           // View Mode Toggle (Multi-Column Board vs Single-Stage Tabs)
           IconButton(
@@ -1735,6 +1836,30 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen>
                                   fontSize: 12,
                                   fontStyle: FontStyle.italic,
                                 ),
+                              ),
+                            ),
+                          if (item.selectedModifiers.isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 4),
+                              child: Wrap(
+                                spacing: 4,
+                                runSpacing: 3,
+                                children: item.selectedModifiers.map((mod) => Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: ClassicTheme.tintInfo,
+                                    borderRadius: BorderRadius.circular(4),
+                                    border: Border.all(color: ClassicTheme.infoBlue.withValues(alpha: 0.4), width: 0.8),
+                                  ),
+                                  child: Text(
+                                    mod.name,
+                                    style: const TextStyle(
+                                      color: ClassicTheme.infoBlue,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                )).toList(),
                               ),
                             ),
                         ],

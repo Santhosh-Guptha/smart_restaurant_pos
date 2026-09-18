@@ -7,6 +7,7 @@ import '../core/entitlements.dart';
 import '../core/saas_models.dart';
 import 'apps_script_backend_service.dart';
 import 'smtp_email_service.dart';
+import 'whatsapp_notification_service.dart';
 
 class TenantProvisioningService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -291,6 +292,22 @@ class TenantProvisioningService {
         debugPrint("Background welcome email send warning: $e");
         return <String, dynamic>{};
       });
+
+      // 12b. Dispatch Automated WhatsApp Welcome & Credentials Notification
+      if (cleanMobile.isNotEmpty) {
+        WhatsAppNotificationService.instance.sendWelcomeCredentials(
+          phone: cleanMobile,
+          clientName: cleanName,
+          shopName: cleanShopName,
+          orgId: orgId,
+          username: cleanUsername,
+          password: rawPassword,
+          planName: plan.name,
+        ).catchError((e) {
+          debugPrint("Background welcome WhatsApp send warning: $e");
+          return <String, dynamic>{};
+        });
+      }
 
       // 13. Audit Log Entry
       try {
