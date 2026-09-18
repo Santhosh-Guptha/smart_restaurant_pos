@@ -23,7 +23,6 @@
       }
     }
   </script>
-  <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
   <script src="https://unpkg.com/lucide@latest"></script>
   <style>
     * { -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
@@ -175,7 +174,9 @@
       paymentConfirmModalOpen: false,
       paymentReceipt: null,
       orderPollingTimer: null,
-      razorpayKeyId: 'rzp_test_51placeholder',
+      // Amount the guest is paying right now: the whole bill, or one share
+      // of a split. Zero means the full outstanding total.
+      payAmount: 0,
       settlementUpiId: '',
       operatingHours: null,
       isKitchenClosed: false,
@@ -2135,246 +2136,32 @@
 
 
     // =========================================================================
-    //  Razorpay Dynamic UPI & Route Settlement Integration
+    //  Payments
     // =========================================================================
-    function initiateRazorpayPayment(customAmount = null) {
-      const amountToPay = customAmount || getGrandTotal();
-      if (amountToPay <= 0) {
-        showToast('No balance due to pay.', 'info');
-        return;
-      }
-
-      const razorpayKey = state.razorpayKeyId || 'rzp_test_51placeholder';
-      const primaryKot = state.orderPlaced?.kotNumber || ('KOT-' + Math.floor(1000 + Math.random() * 9000));
-
-      const options = {
-        key: razorpayKey,
-        amount: Math.round(amountToPay * 100), // in paise
-        currency: "INR",
-        name: state.restaurant?.name || "SmartDine Restaurant",
-        description: `Table ${state.tableNumber} Dining Bill (${primaryKot})`,
-        image: "/assets/logo.png",
-        prefill: {
-          name: state.customerName || `Table ${state.tableNumber} Guest`,
-          contact: state.customerPhone || ""
-        },
-        notes: {
-          table: String(state.tableNumber),
-          orgId: state.organizationId || "",
-          kot: primaryKot,
-          settlementUpiId: state.settlementUpiId || state.upiId || "",
-          platform: "SmartDine Web QR"
-        },
-        theme: {
-          color: "#F59E0B"
-        },
-        handler: async function (response) {
-          console.log("[Razorpay] Payment Success Handler:", response);
-          await handleSuccessfulPayment(
-            response.razorpay_payment_id,
-            response.razorpay_order_id || ('RZP_ORD_' + Date.now()),
-            response.razorpay_signature || 'verified_checkout',
-            amountToPay
-          );
-        },
-        modal: {
-          ondismiss: function () {
-            console.log("[Razorpay] Checkout modal dismissed by user");
-            showToast('Payment window closed.', 'info');
-          }
-        }
-      };
-
-      try {
-        if (typeof Razorpay === 'undefined') {
-          showToast('Loading Razorpay secure gateway...', 'info');
-          const script = document.createElement('script');
-          script.src = 'https://checkout.razorpay.com/v1/checkout.js';
-          script.onload = () => {
-            const rzp = new Razorpay(options);
-            rzp.on('payment.failed', function (resp) {
-              console.error("[Razorpay] Payment Failed:", resp.error);
-              showToast(`Payment failed: ${resp.error.description || 'Transaction declined'}`, 'error');
-            });
-            rzp.open();
-          };
-          script.onerror = () => showToast('Failed to load Razorpay. Please pay at counter.', 'error');
-          document.head.appendChild(script);
-          return;
-        }
-
-        const rzp = new Razorpay(options);
-        rzp.on('payment.failed', function (resp) {
-          console.error("[Razorpay] Payment Failed:", resp.error);
-          showToast(`Payment failed: ${resp.error.description || 'Transaction declined'}`, 'error');
-        });
-        rzp.open();
-      } catch (err) {
-        console.error("[Razorpay] Checkout initialization error:", err);
-        showToast('Failed to start Razorpay payment. Please pay at counter.', 'error');
-      }
-    }
-
-    async function handleSuccessfulPayment(paymentId, orderId, signature, amountPaid) {
-      state.submittingPayment = true;
-      renderOrderSuccess();
-
-      try {
-        // X-01/W-29: the signature verdict decides what we may claim. This used
-        // to fire and ignore the result, then post a settled SAVE_BILL -- which
-        // the server now (correctly) rejects as unauthenticated, while the app
-        // announced "Payment Verified" and printed a receipt for money that was
-        // recorded nowhere.
-        let serverVerified = null;
-        if (signature && (state.googleSheetId || state.organizationId)) {
-          try {
-            const vRes = await sendToGoogleSheetWebhook('VERIFY_PAYMENT', {
-              razorpay_payment_id: paymentId,
-              razorpay_order_id: orderId,
-              razorpay_signature: signature
-            });
-            serverVerified = !!(vRes && vRes.verified === true);
-          } catch (vErr) {
-            console.warn('[Razorpay] Server verification notice:', vErr);
-            serverVerified = false;
-          }
-        }
-
-        const primaryKot = state.orderPlaced?.kotNumber || ('KOT-' + Math.floor(1000 + Math.random() * 9000));
-        const billDocId = 'BILL_' + primaryKot;
-        const allItems = getAllItemsAcrossRounds();
-        const grandTotal = getGrandTotal();
-        const isPartialSplit = amountPaid < (grandTotal - 0.5);
-
-        if (isPartialSplit) {
-          // W-04: Record partial split payment without marking table bill PAID
-          const partialPayload = {
-            bill_id: billDocId,
-            order_id: state.orderPlaced?.orderId || state.orderPlaced?.id || billDocId,
-            table: state.tableNumber,
-            table_name: 'Table ' + state.tableNumber,
-            amount: amountPaid,
-            total_amount: grandTotal,
-            payment_mode: 'Razorpay Split Share',
-            payment_status: 'PARTIAL',
-            transaction_id: paymentId,
-            razorpay_payment_id: paymentId,
-            razorpay_order_id: orderId,
-            razorpay_signature: signature,
-            customer_name: state.customerName.trim() || ('Guest (Table ' + state.tableNumber + ')'),
-            customer_phone: state.customerPhone.trim() || '',
-            timestamp: new Date().toISOString()
-          };
-
-          if (state.googleSheetId || state.organizationId) {
-            await sendToGoogleSheetWebhook('RECORD_PAYMENT', partialPayload);
-          }
-
-          state.submittingPayment = false;
-          state.paymentConfirmModalOpen = false;
-          const remaining = Math.max(0, grandTotal - amountPaid);
-          showToast(`Your share of ₹${amountPaid.toFixed(2)} paid! Table remaining: ₹${remaining.toFixed(2)} 🎉`, 'success');
-          renderOrderSuccess();
-          syncOrdersFromGoogleSheet();
-          return;
-        }
-
-        // X-01: full payment is recorded through RECORD_PAYMENT, never through a
-        // settled SAVE_BILL. The guest browser holds no secret, so a settled
-        // SAVE_BILL is rejected outright; and only the server may decide that a
-        // payment is verified. We keep `items` out of a payment payload so it can
-        // never rewrite an order row (W-07).
-        const billPayload = {
-          bill_id: billDocId,
-          order_id: state.orderPlaced?.orderId || state.orderPlaced?.id || billDocId,
-          invoiceNo: state.orderPlaced?.orderId || state.orderPlaced?.id || billDocId,
-          table: state.tableNumber,
-          table_name: 'Table ' + state.tableNumber,
-          customer_name: state.customerName.trim() || ('Table ' + state.tableNumber),
-          customer_phone: state.customerPhone.trim() || '',
-          amount: amountPaid,
-          amountP: Math.round(amountPaid * 100),
-          total_amount: grandTotal,
-          mode: 'RAZORPAY',
-          payment_mode: 'Razorpay Dynamic UPI / Card',
-          payment_status: 'PAID',
-          transaction_id: paymentId,
-          upi_reference: paymentId,
-          gatewayId: paymentId,
-          razorpay_payment_id: paymentId,
-          razorpay_order_id: orderId,
-          razorpay_signature: signature,
-          timestamp: new Date().toISOString(),
-          paid_at: new Date().toISOString(),
-          paid_by: state.customerName.trim()
-        };
-
-        let recorded = null;
-        if (state.googleSheetId || state.organizationId) {
-          recorded = await sendToGoogleSheetWebhook('RECORD_PAYMENT', billPayload);
-        }
-
-        const acceptedByServer = !!(recorded && (recorded.success === true || recorded.ok === true));
-        const verifiedByServer = acceptedByServer && recorded.verified === true;
-
-        if (!acceptedByServer) {
-          // The money may well have left the guest's account, so say exactly that
-          // rather than printing a receipt the restaurant has no record of.
-          state.submittingPayment = false;
-          state.paymentConfirmModalOpen = false;
-          showToast(
-            'Your payment went through with the gateway but the restaurant could not record it. ' +
-            'Please show this screen to the counter before leaving. Ref: ' + paymentId,
-            'error'
-          );
-          renderOrderSuccess();
-          return;
-        }
-
-        state.transactionId = paymentId;
-        state.paymentSubmitted = true;
-        state.orderStatus = verifiedByServer ? 'paid' : 'payment_submitted';
-        state.paymentReceipt = Object.assign({}, billPayload, {
-          verified: verifiedByServer,
-          payment_status: verifiedByServer ? 'PAID' : 'PAYMENT_SUBMITTED'
-        });
-        state.paymentConfirmModalOpen = false;
-        state.submittingPayment = false;
-
-        const key = state.sessionId ? ('session_' + state.sessionId) : (state.tableToken || state.googleSheetId || 'default');
-        try {
-          localStorage.setItem('sb_receipt_' + key, JSON.stringify({
-            ...billPayload,
-            savedAt: Date.now()
-          }));
-        } catch (_) {}
-
-        showToast(
-          verifiedByServer
-            ? 'Payment verified. Thank you! 🎉'
-            : 'Payment received — the counter will confirm it shortly. Ref: ' + paymentId,
-          'success'
-        );
-        renderOrderSuccess();
-        syncOrdersFromGoogleSheet();
-      } catch (e) {
-        console.error("[Razorpay] Post-payment handling error:", e);
-        state.submittingPayment = false;
-        showToast('Payment recorded. Generating receipt...', 'info');
-        renderOrderSuccess();
-      }
-    }
+    // There is no payment gateway. The restaurant is paid directly: the guest
+    // opens their own UPI app through a deep link (or scans the QR), then types
+    // the reference number back in, and the counter confirms it. Nothing here
+    // can mark a bill paid -- see confirmAndRecordPayment.
 
     let upiPaymentPending = false;
     let upiLaunchTimestamp = 0;
 
-    function launchUpiPayment() {
+    function launchUpiPayment(customAmount = null) {
       if (!state.upiId) {
         showToast('Store UPI ID not configured. Please pay at counter.', 'info');
         return;
       }
       const grandTotal = getGrandTotal();
-      const uri = getUpiAppUri(state.selectedUpiApp, grandTotal);
+      const amountToPay = (customAmount && customAmount > 0)
+        ? Math.min(customAmount, grandTotal)
+        : grandTotal;
+      if (amountToPay <= 0) {
+        showToast('No balance due to pay.', 'info');
+        return;
+      }
+      // Remembered so the confirmation modal records the share, not the total.
+      state.payAmount = amountToPay;
+      const uri = getUpiAppUri(state.selectedUpiApp, amountToPay);
 
       upiPaymentPending = true;
       upiLaunchTimestamp = Date.now();
@@ -2481,6 +2268,12 @@
 
       try {
         const grandTotal = getGrandTotal();
+        // A split share pays part of the table. Recording it as PARTIAL keeps the
+        // table open; only the counter closes a bill.
+        const amountPaid = (state.payAmount && state.payAmount > 0)
+          ? Math.min(state.payAmount, grandTotal)
+          : grandTotal;
+        const isPartialSplit = amountPaid < (grandTotal - 0.5);
         const selectedAppObj = UPI_APPS.find(a => a.id === state.selectedUpiApp) || UPI_APPS[0];
         const primaryKot = state.orderPlaced?.kotNumber || ('KOT-' + Math.floor(1000 + Math.random() * 9000));
         const billDocId = 'BILL_' + primaryKot;
@@ -2494,10 +2287,11 @@
           table_name: 'Table ' + state.tableNumber,
           customer_name: state.customerName.trim() || ('Table ' + state.tableNumber),
           customer_phone: state.customerPhone.trim() || '',
-          amount: grandTotal,
+          amount: amountPaid,
           total_amount: grandTotal,
-          payment_mode: 'UPI (' + selectedAppObj.name + ')',
-          payment_status: 'PAYMENT_SUBMITTED',
+          payment_mode: 'UPI (' + selectedAppObj.name + ')'
+            + (isPartialSplit ? ' \u00b7 split share' : ''),
+          payment_status: isPartialSplit ? 'PARTIAL' : 'PAYMENT_SUBMITTED',
           transaction_id: utr,
           upi_reference: utr,
           timestamp: new Date().toISOString(),
@@ -2515,12 +2309,18 @@
         // Set state to payment_submitted (NOT paid!).
         // The green receipt is ONLY unlocked when cashier/backend confirms 'PAID'.
         state.transactionId = utr;
-        state.paymentSubmitted = true;
-        state.orderStatus = 'payment_submitted';
+        state.paymentSubmitted = !isPartialSplit;
+        if (!isPartialSplit) state.orderStatus = 'payment_submitted';
         state.paymentConfirmModalOpen = false;
         state.submittingPayment = false;
+        state.payAmount = 0;
 
-        showToast('Payment submitted! Verifying with cashier... ⏳', 'info');
+        showToast(
+          isPartialSplit
+            ? `Your share of \u20b9${amountPaid.toFixed(2)} was submitted. Table remaining: \u20b9${Math.max(0, grandTotal - amountPaid).toFixed(2)}`
+            : 'Payment submitted! Verifying with cashier... ⏳',
+          'info'
+        );
         renderOrderSuccess();
 
         // Trigger immediate background sync check
@@ -2683,12 +2483,11 @@
     function payMyEqualShare() {
       const grandTotal = getGrandTotal();
       const count = state.splitPeopleCount || 2;
-      const share = grandTotal / count;
-      initiateRazorpayPayment(share);
+      launchUpiPayment(grandTotal / count);
     }
 
     function payGuestShare(amt) {
-      initiateRazorpayPayment(amt);
+      launchUpiPayment(amt);
     }
 
     function shareEqualSplitWhatsApp() {
@@ -3985,22 +3784,6 @@
         }
       }
 
-      // Background non-blocking fetch for Razorpay Key ID
-      (async () => {
-        try {
-          let rzpUrl = `${DEFAULT_APPS_SCRIPT_WEBHOOK}?action=GET_PAYMENT_CONFIG`;
-          if (state.organizationId) rzpUrl += `&org=${encodeURIComponent(state.organizationId)}`;
-          const rzpResp = await fetch(rzpUrl);
-          if (rzpResp.ok) {
-            const rzpDoc = await rzpResp.json();
-            const rKey = rzpDoc.razorpay_key_id || rzpDoc.keyId || rzpDoc.key;
-            if (rKey && rKey.trim().length > 0 && !String(rKey).includes('placeholder')) {
-              state.razorpayKeyId = rKey.trim();
-              console.log('[Init] Configured Razorpay Key ID in background:', state.razorpayKeyId);
-            }
-          }
-        } catch (_) {}
-      })();
 
       try {
         state.menuItems = await loadMenu();
@@ -4115,7 +3898,6 @@
     window.confirmResetSession = confirmResetSession;
     window.selectUpiApp = selectUpiApp;
     window.launchUpiPayment = launchUpiPayment;
-    window.initiateRazorpayPayment = initiateRazorpayPayment;
     window.openPaymentConfirmModal = openPaymentConfirmModal;
     window.closePaymentConfirmModal = closePaymentConfirmModal;
     window.toggleUpiQr = toggleUpiQr;

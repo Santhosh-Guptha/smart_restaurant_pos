@@ -344,8 +344,8 @@ void main() {
         );
 
     test('an unverified payment covering the bill is NOT paid', () {
-      // RECORD_PAYMENT accepts guest-submitted payments and marks them
-      // verified: false when the Razorpay signature is missing or invalid.
+      // RECORD_PAYMENT accepts guest-submitted payments and always marks them
+      // verified: false -- with no gateway, only the counter can confirm one.
       // Treating that as settled lets a guest close their own table by
       // claiming to have paid.
       final status = computePaymentStatus(

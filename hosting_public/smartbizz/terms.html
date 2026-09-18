@@ -123,9 +123,9 @@
     <li>Complying with local food safety, liquor licensing, labor laws, and commercial hospitality regulations.</li>
   </ul>
 
-  <h2>4. Payment Settlements & External UPI Gateways</h2>
-  <p>SmartDine facilitates direct on-table and counter payments by encoding standard NPCI-compliant UPI links (such as <code>upi://pay?pa=...</code>) and integrating with payment hardware or Razorpay web checkout.</p>
-  <p>All funds transfer directly from the customer's bank account to your merchant bank account. DevMonks does not hold your funds in escrow, does not charge intermediary transaction surcharges, and is not liable for customer chargebacks or banking network downtimes.</p>
+  <h2>4. Payment Settlements</h2>
+  <p>SmartDine does not process payments and is not a payment gateway. It encodes standard NPCI-compliant UPI links (such as <code>upi://pay?pa=...</code>) and renders them as QR codes, and it records the payments your staff confirm.</p>
+  <p>All funds transfer directly from the customer's bank account to your merchant bank account. DevMonks never touches, holds or routes your money, does not charge intermediary transaction surcharges, and is not liable for customer chargebacks or banking network downtimes. A payment a diner claims in the guest app is recorded as unconfirmed until your counter verifies it against your own bank or UPI app.</p>
 
   <h2>5. Offline Operation & System Clock Integrity</h2>
   <p>SmartDine incorporates offline resilience to ensure shifts continue during broadband outages. To prevent cashier fraud and maintain sequential invoice auditing, the application requires your physical tablet to maintain a valid network-synchronized system clock. Deliberately rolling back system time to backdate sales triggers tamper safeguards.</p>

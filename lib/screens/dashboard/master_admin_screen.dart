@@ -2885,6 +2885,10 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                                 .collection('public_stores')
                                 .doc(orgId)
                                 .set({
+                              // The product has no payment gateway. These two
+                              // legacy fields are cleared on every save so a
+                              // guest app built before the removal cannot read
+                              // a stale key out of a tenant's public document.
                               'isRazorpayEnabled': false,
                               'razorpayKeyId': '',
                               'updatedAt': FieldValue.serverTimestamp(),

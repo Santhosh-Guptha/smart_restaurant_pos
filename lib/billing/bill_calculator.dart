@@ -390,11 +390,12 @@ enum DerivedPaymentStatus {
 /// Derives payment state from the Payments ledger.
 ///
 /// Unverified payments deliberately cannot produce `paid`. `RECORD_PAYMENT`
-/// accepts guest-submitted payments and marks them `verified: false` when the
-/// Razorpay signature is absent or does not validate; counting those toward a
-/// settled bill would let a guest close their own table by claiming to have
-/// paid. They are surfaced as `awaitingVerification` so the counter sees the
-/// claim without the bill being written off.
+/// accepts guest-submitted payments and always marks them `verified: false` --
+/// there is no payment gateway, so nothing a guest can present proves a
+/// transfer. Counting those toward a settled bill would let a guest close their
+/// own table by claiming to have paid. They are surfaced as
+/// `awaitingVerification` so the counter sees the claim without the bill being
+/// written off, and the counter confirms against its own bank or UPI app.
 DerivedPaymentStatus computePaymentStatus({
   required int grandTotalPaise,
   required List<PaymentRecord> payments,

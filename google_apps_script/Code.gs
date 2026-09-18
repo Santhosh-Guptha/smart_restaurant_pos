@@ -50,7 +50,8 @@ function doPost(e) {
   try {
     const json = JSON.parse(e.postData.contents);
     
-    // Security verification: allow customer non-settled SAVE_BILL, RECORD_PAYMENT, VERIFY_PAYMENT, CLOSE_SESSION, SERVICE_REQUEST, CALL_WAITER without exposing master secret
+    // Security verification: allow customer non-settled SAVE_BILL, RECORD_PAYMENT,
+    // SERVICE_REQUEST and CALL_WAITER without exposing the master secret
     var b = json.data || json.bill || {};
 
     // Whether this request carried the staff secret. Handlers MUST consult this
@@ -58,16 +59,16 @@ function doPost(e) {
     json.__authenticated = (json.secret === SECRET_TOKEN);
 
     // X-02: CLOSE_SESSION was public, which let anyone with the /exec URL and an
-    // org id close every occupied table mid-service. RECORD_PAYMENT and
-    // VERIFY_PAYMENT stay reachable by the guest app -- a diner must be able to
-    // claim a payment -- but an unauthenticated claim can now only ever produce
-    // an UNVERIFIED row, and never settles a bill.
+    // org id close every occupied table mid-service. RECORD_PAYMENT stays
+    // reachable by the guest app -- a diner must be able to claim a payment --
+    // but an unauthenticated claim can only ever produce an UNVERIFIED row, and
+    // never settles a bill. There is no gateway and therefore nothing a guest
+    // can present that would make their own claim verified; only the counter can.
     var isPublicAction = (
       json.action === "START_TRIAL" ||
       json.action === "REGISTER_TRIAL" ||
       (json.action === "SAVE_BILL" && !isStatusSettled(b.payment_status || b.status)) ||
       json.action === "RECORD_PAYMENT" ||
-      json.action === "VERIFY_PAYMENT" ||
       json.action === "SERVICE_REQUEST" ||
       json.action === "CALL_WAITER" ||
       json.action === "DISMISS_SERVICE_REQUEST" ||
@@ -109,9 +110,6 @@ function doPost(e) {
       case "DISMISS_SERVICE_REQUEST":
       case "RESOLVE_WAITER_CALL":
         return handleDismissServiceRequest(json);
-
-      case "VERIFY_PAYMENT":
-        return handleVerifyPayment(json);
 
       case "START_TRIAL":
       case "REGISTER_TRIAL":
@@ -1441,14 +1439,6 @@ function doGet(e) {
       }
     }
     return responseJson({ success: false, error: "SLUG_NOT_FOUND" });
-  }
-
-  // W-06 & W-29: Server-side payment configuration
-  if (params.action === "GET_PAYMENT_CONFIG") {
-    if (!orgId) return responseJson({ success: false, error: "org parameter is required" });
-    var props = PropertiesService.getScriptProperties();
-    var keyId = props.getProperty("razorpay_key_id_" + orgId.trim()) || props.getProperty("RAZORPAY_KEY_ID") || "rzp_test_51placeholder";
-    return responseJson({ success: true, razorpay_key_id: keyId });
   }
 
   var tenantInfo = getTenantInfo(orgId);
@@ -2962,23 +2952,15 @@ function handleRecordPayment(json) {
     var tipP = parseInt(data.tipP || data.tipPaise || 0, 10);
     if (!tipP && (data.tip || data.tip_amount || data.tipAmount)) tipP = Math.round(Number(data.tip_amount || data.tipAmount || data.tip) * 100);
     var refUtr = data.refUtr || data.ref_UTR || data.utr || data.ref || "";
-    var gatewayId = data.gatewayId || data.razorpay_payment_id || "";
+    var gatewayId = data.gatewayId || "";
     var byGuest = (json.__authenticated !== true);
 
     // X-01/X-02: NEVER trust a caller's `verified` claim. A staff client (which
-    // holds the secret) is trusted; a guest browser is not -- its claim is only
-    // verified when the Razorpay signature checks out server-side, otherwise the
-    // row is written UNVERIFIED for the cashier to confirm.
-    var sigOrderId = String(data.razorpay_order_id || data.orderId || data.order_id || "").trim();
-    var signature = String(data.signature || data.razorpay_signature || "").trim();
-    var verified;
-    if (!byGuest) {
-      verified = data.verified !== false;
-    } else if (signature) {
-      verified = (razorpaySignatureValid(outletId, sigOrderId, gatewayId, signature) === true);
-    } else {
-      verified = false;
-    }
+    // holds the secret) is trusted; a guest browser is not. With no payment
+    // gateway there is nothing a guest can present that proves a transfer, so a
+    // guest claim is ALWAYS written UNVERIFIED and the counter confirms it
+    // against the bank app. That is the whole verification model now.
+    var verified = byGuest ? false : (data.verified !== false);
     var byStaffId = data.byStaffId || data.staffId || "";
     var atStr = data.at || new Date().toISOString();
     var voidedBy = data.voidedBy || "";
@@ -3087,83 +3069,6 @@ function handleCloseDay(json) {
     return responseJson({ ok: false, success: false, error: String(err) });
   } finally {
     try { lock.releaseLock(); } catch(e) {}
-  }
-}
-
-/**
- * Verifies a Razorpay payment signature.
- * Returns true (valid), false (invalid or incomplete), or null when no secret is
- * configured for the outlet -- callers MUST treat null as "cannot verify", never
- * as "verified".
- */
-function razorpaySignatureValid(orgId, orderId, paymentId, signature) {
-  var props = PropertiesService.getScriptProperties();
-  var keySecret = props.getProperty("razorpay_key_secret_" + String(orgId || "").trim()) ||
-                  props.getProperty("RAZORPAY_KEY_SECRET");
-  if (!keySecret) return null;
-  if (!orderId || !paymentId || !signature) return false;
-  try {
-    var raw = Utilities.computeHmacSha256Signature(String(orderId) + "|" + String(paymentId), keySecret);
-    var expected = raw.map(function (bb) {
-      return ("0" + (bb & 0xFF).toString(16)).slice(-2);
-    }).join("");
-    return expected.toLowerCase() === String(signature).toLowerCase();
-  } catch (e) {
-    return false;
-  }
-}
-
-/**
- * Script Property keys for one outlet's gateway credentials. The secret lives
- * ONLY in Script Properties - server-side, never returned by any action, and
- * deliberately not in Firestore, where `system_config/razorpay` was readable by
- * anyone with access to that document.
- */
-function razorpayPropKeys(orgId) {
-  var id = String(orgId || "").trim();
-  return {
-    keyId: "razorpay_key_id_" + id,
-    keySecret: "razorpay_key_secret_" + id,
-    webhookSecret: "razorpay_webhook_secret_" + id,
-    updatedAt: "razorpay_updated_at_" + id,
-    updatedBy: "razorpay_updated_by_" + id
-  };
-}
-
-/**
- * Validates a key pair against Razorpay itself. A key that merely looks
- * well-formed is worthless - the only proof is a call Razorpay accepts.
- * Returns { ok: true } or { ok: false, reason: <operator-readable> }.
- */
-function razorpayCredentialsValid(keyId, keySecret) {
-  if (!keyId || !keySecret) {
-    return { ok: false, reason: "Key ID and Key Secret are both required." };
-  }
-  if (String(keyId).indexOf("rzp_") !== 0) {
-    return { ok: false, reason: "Key ID should start with rzp_live_ or rzp_test_." };
-  }
-  try {
-    // The cheapest authenticated read Razorpay offers. 200 proves the pair is
-    // valid and active; 401 proves it is not.
-    var res = UrlFetchApp.fetch("https://api.razorpay.com/v1/payments?count=1", {
-      method: "get",
-      muteHttpExceptions: true,
-      headers: {
-        Authorization: "Basic " + Utilities.base64Encode(keyId + ":" + keySecret)
-      }
-    });
-    var code = res.getResponseCode();
-    if (code === 200) return { ok: true };
-    if (code === 401) {
-      return { ok: false, reason: "Razorpay rejected these credentials (401). Check the Key ID and Key Secret, and that the key is active." };
-    }
-    if (code === 400) {
-      // A malformed query still authenticates, so 400 means the pair was accepted.
-      return { ok: true };
-    }
-    return { ok: false, reason: "Razorpay returned HTTP " + code + ". Try again, or check the key's status in the Razorpay dashboard." };
-  } catch (e) {
-    return { ok: false, reason: "Could not reach Razorpay: " + e };
   }
 }
 
@@ -3539,35 +3444,6 @@ function uniqueOrgId_() {
     if (!fsGet_("organizations/" + id)) return id;
   }
   throw new Error("Could not allocate a unique organisation id");
-}
-
-function handleVerifyPayment(json) {
-  var p = json.data || json;
-  var paymentId = String(p.payment_id || p.razorpay_payment_id || p.paymentId || "").trim();
-  var orderId = String(p.order_id || p.razorpay_order_id || p.orderId || "").trim();
-  var signature = String(p.signature || p.razorpay_signature || "").trim();
-  var orgId = String(json.org_id || json.org || p.org_id || p.org || "").trim();
-
-  // X-02: fail CLOSED. This used to return {verified:true} when no secret was
-  // configured, so an outlet that had not set one accepted any signature.
-  var valid = razorpaySignatureValid(orgId, orderId, paymentId, signature);
-  if (valid === null) {
-    return responseJson({
-      success: false,
-      verified: false,
-      error_code: "NO_SECRET_CONFIGURED",
-      message: "Razorpay key secret is not configured for this outlet; payments cannot be verified."
-    });
-  }
-  if (valid === true) {
-    return responseJson({ success: true, verified: true });
-  }
-  return responseJson({
-    success: false,
-    verified: false,
-    error_code: "INVALID_SIGNATURE",
-    message: "Razorpay payment signature mismatch."
-  });
 }
 
 function handleCloseSession(json) {
