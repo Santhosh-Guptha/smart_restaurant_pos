@@ -41,6 +41,16 @@ class MasterAdminScreen extends ConsumerStatefulWidget {
 class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with SingleTickerProviderStateMixin {
   late TabController _tabController;
   int _selectedNavIndex = 0;
+
+  /// The views visited, oldest first, so Back retraces the path.
+  ///
+  /// This screen is one route holding an `IndexedStack`: opening a card swaps
+  /// the index rather than pushing, and for a platform admin it is also the
+  /// *home* route (`main.dart` builds it as `homeScreen`). So a back gesture
+  /// had nothing to pop but the screen itself, and Android closed the app
+  /// mid-session. Back now walks this list and only leaves from the dashboard.
+  final List<int> _navHistory = <int>[0];
+
   bool _isSidebarExpanded = true;
   StreamSubscription<QuerySnapshot>? _regRequestsSub;
   StreamSubscription<QuerySnapshot>? _inquiriesSub;
@@ -657,12 +667,76 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
     );
   }
 
+  /// Switch views. Every path into the `IndexedStack` goes through here so
+  /// the history cannot drift from what is on screen.
+  void _goToNav(int index) {
+    if (index == _selectedNavIndex) return;
+    setState(() {
+      _selectedNavIndex = index;
+      // Revisiting a view already behind us rewinds to it rather than growing
+      // the list, so Back never walks a loop the admin did not take.
+      final seen = _navHistory.indexOf(index);
+      if (seen >= 0) {
+        _navHistory.removeRange(seen + 1, _navHistory.length);
+      } else {
+        _navHistory.add(index);
+      }
+    });
+  }
+
+  /// Back: one step along the path, and only then out of the console.
+  Future<void> _handleBack() async {
+    if (_navHistory.length > 1) {
+      setState(() {
+        _navHistory.removeLast();
+        _selectedNavIndex = _navHistory.last;
+      });
+      return;
+    }
+
+    // At the dashboard. If something pushed this screen, go back to it.
+    if (Navigator.of(context).canPop()) {
+      Navigator.of(context).pop();
+      return;
+    }
+
+    // Otherwise this is the home route and leaving means closing the console.
+    // Worth asking: an admin halfway through onboarding a tenant should not
+    // lose the screen to a stray edge swipe.
+    final leave = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Close the console?'),
+        content: const Text(
+            'You are on the dashboard, so going back closes SmartDine.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Stay')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text('Close', style: TextStyle(color: ctx.dangerColor)),
+          ),
+        ],
+      ),
+    );
+    if (leave == true) await SystemNavigator.pop();
+  }
+
   @override
   Widget build(BuildContext context) {
     final isMobile = MediaQuery.of(context).size.width < 850;
     final sidebarContent = _buildSidebarContent(context, isMobile: isMobile);
 
-    return Scaffold(
+    return PopScope(
+      // Never automatic: the whole point is that popping this route is what
+      // used to close the app. `_handleBack` decides what Back means here.
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) return;
+        await _handleBack();
+      },
+      child: Scaffold(
       backgroundColor: context.canvasColor,
       drawer: isMobile ? Drawer(backgroundColor: context.surfaceColor, child: SafeArea(child: sidebarContent)) : null,
       body: SafeArea(
@@ -686,8 +760,8 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
                         index: _selectedNavIndex,
                         children: [
                           AdminDashboardView(
-                            onNavigateToInquiries: () => setState(() => _selectedNavIndex = 1),
-                            onNavigateToTenants: () => setState(() => _selectedNavIndex = 2),
+                            onNavigateToInquiries: () => _goToNav(1),
+                            onNavigateToTenants: () => _goToNav(2),
                           ),
                           AdminInquiriesView(
                             onOnboardLead: (lead) {
@@ -719,6 +793,7 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
             ),
           ],
         ),
+      ),
       ),
     );
   }
@@ -1264,7 +1339,7 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
         child: InkWell(
           borderRadius: BorderRadius.circular(8),
           onTap: () {
-            setState(() => _selectedNavIndex = index);
+            _goToNav(index);
             if (isMobile) Navigator.of(context).pop();
           },
           child: Container(
