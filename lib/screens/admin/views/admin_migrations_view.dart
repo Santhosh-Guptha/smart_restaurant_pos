@@ -6,6 +6,7 @@ import '../../../core/classic_theme.dart';
 import '../../../core/design_tokens.dart';
 import '../../../core/entitlements.dart';
 import '../../../core/responsive.dart';
+import '../../../services/license_migration_service.dart';
 import '../../../utils/ui_feedback.dart';
 
 /// Every storage-mode change in flight, as the owners' devices report it.
@@ -52,19 +53,21 @@ class AdminMigrationsView extends ConsumerWidget {
             return const Center(child: CircularProgressIndicator());
           }
           final docs = snap.data!.docs;
-          if (docs.isEmpty) {
-            return _message(
-              context,
-              Icons.done_all_rounded,
-              'No migrations in flight',
-              'Ask for one from a tenant\'s Features tab or its editor. It will '
-                  'appear here the moment it is requested, and update itself as '
-                  'the owner works through it.',
-            );
-          }
           return ListView(
             padding: EdgeInsets.fromLTRB(gutter, DS.space4, gutter, DS.space10),
             children: [
+              const _PackagePlanSnapCard(),
+              const SizedBox(height: DS.space6),
+              if (docs.isEmpty)
+                _message(
+                  context,
+                  Icons.done_all_rounded,
+                  'No storage migrations in flight',
+                  'Ask for one from a tenant\'s Features tab or its editor. It will '
+                      'appear here the moment it is requested, and update itself as '
+                      'the owner works through it.',
+                )
+              else ...[
               Text(
                 '${docs.length} migration${docs.length == 1 ? '' : 's'} in flight',
                 style: TextStyle(
@@ -82,6 +85,7 @@ class AdminMigrationsView extends ConsumerWidget {
               ),
               const SizedBox(height: DS.space4),
               ...docs.map((d) => _card(context, d)),
+              ],
             ],
           );
         },
@@ -327,7 +331,7 @@ class AdminMigrationsView extends ConsumerWidget {
             style: TextStyle(color: ctx.textPrimary, fontSize: DS.fontTitle)),
         content: Text(
           'The store stays on its current mode. Anything already migrated is '
-          'harmless — records were copied, never moved — and the owner returns '
+          'harmless \u2014 records were copied, never moved \u2014 and the owner returns '
           'to the normal app.',
           style: TextStyle(color: ctx.textSecondary, fontSize: DS.fontCaption, height: 1.5),
         ),
@@ -420,5 +424,192 @@ class AdminMigrationsView extends ConsumerWidget {
     if (diff.inMinutes < 60) return '${diff.inMinutes} min ago';
     if (diff.inHours < 24) return '${diff.inHours} h ago';
     return '${diff.inDays} d ago';
+  }
+}
+
+/// Give every pre-package licence a package and a plan, without changing
+/// what any tenant has. Dry run first; the report is shown before anything
+/// is written.
+class _PackagePlanSnapCard extends StatefulWidget {
+  const _PackagePlanSnapCard();
+
+  @override
+  State<_PackagePlanSnapCard> createState() => _PackagePlanSnapCardState();
+}
+
+class _PackagePlanSnapCardState extends State<_PackagePlanSnapCard> {
+  LicenseSnapReport? _report;
+  bool _busy = false;
+
+  Future<void> _dryRun() async {
+    setState(() => _busy = true);
+    try {
+      final r = await LicenseMigrationService.plan();
+      if (mounted) setState(() => _report = r);
+    } catch (e) {
+      if (mounted) AppToast.showError(context, e, title: 'Could not read licences');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _apply() async {
+    final r = _report;
+    if (r == null || r.rows.isEmpty) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Assign ${r.rows.length} licence${r.rows.length == 1 ? '' : 's'}?'),
+        content: Text(
+          'Each tenant is put on the package and plan shown. ${r.newPackages} custom package'
+          '${r.newPackages == 1 ? '' : 's'} and ${r.newPlans} custom plan${r.newPlans == 1 ? '' : 's'} '
+          'will be created so nobody loses a feature. No feature, date or limit on any licence changes.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: ClassicTheme.primaryAccent, foregroundColor: Colors.white),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Assign'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    setState(() => _busy = true);
+    try {
+      final n = await LicenseMigrationService.apply(r);
+      if (!mounted) return;
+      AppToast.showSuccess(context, 'Assigned $n licence${n == 1 ? '' : 's'}');
+      await _dryRun();
+    } catch (e) {
+      if (mounted) AppToast.showError(context, e);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final r = _report;
+    return Container(
+      padding: const EdgeInsets.all(DS.space4),
+      decoration: BoxDecoration(
+        color: context.surfaceColor,
+        borderRadius: BorderRadius.circular(DS.radiusLg),
+        border: Border.all(color: context.borderColor),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.inventory_2_outlined, color: ClassicTheme.primaryAccent, size: 20),
+              const SizedBox(width: DS.space2),
+              Expanded(
+                child: Text('Packages and plans for existing tenants',
+                    style: TextStyle(fontSize: DS.fontBodyLg, fontWeight: FontWeight.w700, color: context.textPrimary)),
+              ),
+              if (_busy) const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
+            ],
+          ),
+          const SizedBox(height: DS.space2),
+          Text(
+            'Licences written before packages existed carry their features directly. This gives each one '
+            'a package and a plan: an exact match where one exists, otherwise a custom copy made from the '
+            'licence itself, so nothing switches off for anyone. Dry run first.',
+            style: TextStyle(fontSize: DS.fontCaption, color: context.textSecondary, height: 1.45),
+          ),
+          const SizedBox(height: DS.space3),
+          if (r != null) ...[
+            Text(
+              r.rows.isEmpty
+                  ? 'Nothing to do: all ${r.alreadyDone} licence${r.alreadyDone == 1 ? '' : 's'} already have a package and a plan.'
+                  : '${r.rows.length} to assign \u00b7 ${r.alreadyDone} already done \u00b7 '
+                      '${r.newPackages} custom package${r.newPackages == 1 ? '' : 's'} and ${r.newPlans} custom plan${r.newPlans == 1 ? '' : 's'} would be created'
+                      '${r.skipped.isEmpty ? '' : ' \u00b7 ${r.skipped.length} skipped'}',
+              style: TextStyle(fontSize: DS.fontCaption, fontWeight: FontWeight.w600, color: context.textPrimary),
+            ),
+            if (r.rows.isNotEmpty) ...[
+              const SizedBox(height: DS.space2),
+              Container(
+                constraints: const BoxConstraints(maxHeight: 260),
+                decoration: BoxDecoration(
+                  color: context.sunkenSurface,
+                  borderRadius: BorderRadius.circular(DS.radiusMd),
+                  border: Border.all(color: context.borderColor),
+                ),
+                child: ListView.separated(
+                  shrinkWrap: true,
+                  padding: const EdgeInsets.all(DS.space2),
+                  itemCount: r.rows.length,
+                  separatorBuilder: (_, __) => Divider(height: 1, color: context.borderColor),
+                  itemBuilder: (_, i) {
+                    final row = r.rows[i];
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(vertical: DS.space1 + 2, horizontal: DS.space1),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            flex: 3,
+                            child: Text('${row.orgName}  \u00b7  ${row.orgId}',
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(fontSize: DS.fontMicro, color: context.textPrimary)),
+                          ),
+                          Expanded(
+                            flex: 3,
+                            child: Text(
+                              '${row.package.name}${row.packageIsNew ? ' (new)' : ''}',
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                  fontSize: DS.fontMicro,
+                                  color: row.packageIsNew ? ClassicTheme.warningAmber : context.textSecondary),
+                            ),
+                          ),
+                          Expanded(
+                            flex: 3,
+                            child: Text(
+                              '${row.plan.name}${row.planIsNew ? ' (new)' : ''}',
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                  fontSize: DS.fontMicro,
+                                  color: row.planIsNew ? ClassicTheme.warningAmber : context.textSecondary),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+            if (r.skipped.isNotEmpty) ...[
+              const SizedBox(height: DS.space2),
+              Text(r.skipped.join('\n'),
+                  style: const TextStyle(fontSize: DS.fontMicro, color: ClassicTheme.warningAmber)),
+            ],
+            const SizedBox(height: DS.space3),
+          ],
+          Row(
+            children: [
+              OutlinedButton.icon(
+                onPressed: _busy ? null : _dryRun,
+                icon: const Icon(Icons.search_rounded, size: 16),
+                label: Text(r == null ? 'Dry run' : 'Run again'),
+              ),
+              const SizedBox(width: DS.space2),
+              if (r != null && r.rows.isNotEmpty)
+                ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                      backgroundColor: ClassicTheme.primaryAccent, foregroundColor: Colors.white),
+                  onPressed: _busy ? null : _apply,
+                  icon: const Icon(Icons.check_rounded, size: 16),
+                  label: Text('Assign ${r.rows.length}'),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 }

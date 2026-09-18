@@ -3,136 +3,121 @@ import 'package:flutter/material.dart';
 import '../../../core/classic_theme.dart';
 import '../../../core/design_tokens.dart';
 import '../../../core/entitlements.dart';
-import '../../../core/feature_usage.dart';
+import '../../../core/license_composer.dart';
+import '../../../core/package_model.dart';
 import '../../../core/saas_models.dart';
+import '../../../core/subscription_plan_model.dart';
+import '../../../services/package_service.dart';
+import '../../../services/subscription_plan_service.dart';
 
-/// One tenant's commercial shape: package, storage, limits, validity, add-ons.
+/// One tenant's commercial shape: **one package and one plan**.
 ///
-/// Deliberately a value object with no Firestore in it. The onboarding dialog,
-/// the licence editor and the client's own upgrade request all build one of
-/// these and hand it to whatever writes; there is exactly one place the maths
-/// happens, so the console and the app cannot disagree about what was sold.
+/// The package says what they can do (features, storage mode); the plan says
+/// how much and for how long (days, outlets, devices, staff, roles). Nothing
+/// is ticked per feature any more — that was the model this replaces, and
+/// every consumer of this object (onboard, approve, edit, the client's own
+/// upgrade request) still reads the same derived answers off it:
+/// [resolvedFeatures], [effectiveDevices], [effectiveOutlets], [storageMode],
+/// [profile], [validityDays]. They are computed through [LicenseComposer], the
+/// same function that writes the licence, so a preview cannot flatter a save.
 class TenantPackageSelection {
-  final PlanProfile profile;
-  final String storageMode;
-  final int maxDevices;
-  final int maxOutlets;
-  final int validityDays;
+  final TenantPackage package;
+  final SubscriptionPlan plan;
 
-  /// Add-ons the admin switched on, on top of the package. Only keys the
-  /// package does not already include ever appear here.
-  final Map<String, bool> addOns;
+  /// The organisation's storage mode today, for an existing tenant. Within
+  /// the cloud family a package keeps whichever of `CLOUD_SYNC` and
+  /// `CLIENTS_OWN_SHEETS` the tenant already runs; only a change of family is
+  /// a change of mode. Null for a tenant that does not exist yet.
+  final String? currentStorageMode;
 
-  const TenantPackageSelection({
-    required this.profile,
-    required this.storageMode,
-    required this.maxDevices,
-    required this.maxOutlets,
-    required this.validityDays,
-    this.addOns = const {},
-  });
+  const TenantPackageSelection({required this.package, required this.plan, this.currentStorageMode});
 
+  /// The shape older call sites build: a profile and a term. Resolved to the
+  /// starter package of that profile and a plan of that length.
   factory TenantPackageSelection.forProfile(
     PlanProfile profile, {
     int validityDays = 365,
     Map<String, bool> addOns = const {},
-  }) =>
-      TenantPackageSelection(
-        profile: profile,
-        storageMode: profile.storageMode,
-        maxDevices: profile.maxDevices,
-        maxOutlets: profile.maxOutlets,
-        validityDays: validityDays,
-        addOns: Map<String, bool>.from(addOns),
-      );
-
-  TenantPackageSelection copyWith({
-    PlanProfile? profile,
-    String? storageMode,
-    int? maxDevices,
-    int? maxOutlets,
-    int? validityDays,
-    Map<String, bool>? addOns,
-  }) =>
-      TenantPackageSelection(
-        profile: profile ?? this.profile,
-        storageMode: storageMode ?? this.storageMode,
-        maxDevices: maxDevices ?? this.maxDevices,
-        maxOutlets: maxOutlets ?? this.maxOutlets,
-        validityDays: validityDays ?? this.validityDays,
-        addOns: addOns ?? this.addOns,
-      );
-
-  /// Switching package resets everything the package owns, and keeps only the
-  /// add-ons the new package can actually run — an offline package cannot
-  /// inherit the kitchen display someone ticked on the online one.
-  TenantPackageSelection withProfile(PlanProfile next) {
-    final keepable = next.availableAddOns.map((d) => d.key).toSet();
-    return TenantPackageSelection(
-      profile: next,
-      storageMode: next.allowedStorageModes.contains(storageMode)
-          ? storageMode
-          : next.storageMode,
-      maxDevices: next.maxDevices,
-      maxOutlets: next.maxOutlets,
-      validityDays: validityDays,
-      addOns: {
-        for (final e in addOns.entries)
-          if (keepable.contains(e.key) && e.value) e.key: true,
-      },
-    );
+    SubscriptionPlan? plan,
+  }) {
+    final pkg = TenantPackage.fromProfile(profile);
+    // No plan given: a stand-in with an empty id. It is never written — the
+    // editor replaces it with a real plan document as soon as the list loads,
+    // and a request that never got that far sends an empty planId, which the
+    // console reads as "not chosen".
+    final p = plan ??
+        SubscriptionPlanService.fallbackTrialPlan.copyWith(
+          id: '',
+          name: '$validityDays days',
+          validityDays: validityDays,
+          billingCycle: validityDays >= 365 ? 'YEARLY' : 'MONTHLY',
+          maxOutlets: profile.maxOutlets,
+          maxDevices: profile.maxDevices,
+          isDefaultTrial: false,
+        );
+    return TenantPackageSelection(package: pkg, plan: p);
   }
 
-  /// The licence the app would read, built exactly as `provisionTenant` builds
-  /// it, so the preview cannot flatter the save.
-  SaasLicense get probe => SaasLicense(
-        planTier: profile.id,
-        planProfile: profile.id,
-        status: 'ACTIVE',
-        maxFranchises: maxOutlets,
-        maxUsers: 99,
-        maxDevices: maxDevices,
-        features: {...profile.features, ...addOns},
-        startDate: DateTime.now(),
-        endDate: DateTime.now().add(Duration(days: validityDays)),
+  TenantPackageSelection copyWith({TenantPackage? package, SubscriptionPlan? plan}) =>
+      TenantPackageSelection(
+        package: package ?? this.package,
+        plan: plan ?? this.plan,
+        currentStorageMode: currentStorageMode,
       );
 
-  Entitlements get resolved =>
-      Entitlements.fromLicense(probe, storageMode: storageMode);
+  ComposedLicense get composed =>
+      LicenseComposer.compose(package, plan, currentStorageMode: currentStorageMode);
 
-  /// Every catalogue key with the answer the resolver gives. This is what gets
-  /// written; nothing is stored that the app would then ignore.
-  Map<String, bool> get resolvedFeatures => {
-        for (final def in FeatureCatalog.all) def.key: resolved.isEnabled(def.key),
-        FeatureKeys.pureOfflineMode: resolved.isPureOffline,
-      };
+  // ── the contract the four consumers read ────────────────────────────────
 
-  /// Devices and outlets after the mode's hard constraints — offline pins both
-  /// to one however many were typed.
-  int get effectiveDevices => resolved.maxDevices;
-  int get effectiveOutlets => resolved.maxOutlets;
+  String get packageId => package.id;
+  String get planId => plan.id;
 
-  List<FeatureDef> get sellableAddOns => profile.availableAddOns
-      .where((d) => kFeatureUsage[d.key]?.implemented ?? true)
-      .toList();
+  PlanProfile get profile => package.nearestProfile;
+  String get storageMode => composed.storageMode;
+  int get validityDays => plan.validityDays;
+  int get maxDevices => plan.maxDevices;
+  int get maxOutlets => plan.maxOutlets;
 
-  int get onCount =>
-      FeatureCatalog.all.where((d) => resolved.isEnabled(d.key)).length;
+  /// Kept for the request sheet, which used to send the ticked extras. A
+  /// package has no extras any more; what it has is in [resolvedFeatures].
+  Map<String, bool> get addOns => const {};
+
+  SaasLicense get probe => SaasLicense(
+        planTier: plan.billingCycle,
+        planProfile: profile.id,
+        status: 'ACTIVE',
+        maxFranchises: plan.maxOutlets,
+        maxUsers: plan.maxUsers,
+        maxDevices: plan.maxDevices,
+        allowedRoles: plan.allowedRoles,
+        features: Map<String, bool>.from(package.features),
+        startDate: DateTime.now(),
+        endDate: DateTime.now().add(Duration(days: plan.validityDays)),
+      );
+
+  Entitlements get resolved => Entitlements.fromLicense(probe, storageMode: package.storageMode);
+
+  Map<String, bool> get resolvedFeatures => composed.features;
+  int get effectiveDevices => composed.maxDevices;
+  int get effectiveOutlets => composed.maxOutlets;
+  List<String> get effectiveRoles => composed.allowedRoles;
+
+  int get onCount => FeatureCatalog.all.where((d) => composed.features[d.key] == true).length;
 }
 
-/// Package → validity → add-ons, in that order.
+/// Package, then plan, then what that adds up to.
 ///
-/// Each step narrows the next: the package decides which storage modes exist
-/// at all, and the package plus the device cap decide which add-ons can be
-/// sold. Anything the tenant could not run is absent rather than disabled
-/// (FEATURE_MASTER_PLAN.md rule 2) — with one exception, an add-on blocked
-/// only by a dependency, which stays visible and says what to switch on first.
-class TenantPackageEditor extends StatelessWidget {
+/// Both lists come from Firestore, with the code's starters as the fallback
+/// when it is unreachable — a client on an offline tenant asking for an
+/// upgrade still sees the four shipped packages.
+class TenantPackageEditor extends StatefulWidget {
   final TenantPackageSelection value;
   final ValueChanged<TenantPackageSelection> onChanged;
 
-  /// True in the client's own upgrade request: they choose a package and
-  /// add-ons, the platform admin decides the limits.
+  /// The client's own upgrade request: they choose a package and a plan, the
+  /// platform admin decides anything else. Nothing here is editable beyond
+  /// those two choices in either mode, so the flag only changes the copy.
   final bool limitsReadOnly;
 
   /// Hidden while re-packaging an existing tenant whose dates are managed on
@@ -147,385 +132,207 @@ class TenantPackageEditor extends StatelessWidget {
     this.showValidity = true,
   });
 
-  static const _validities = <int, String>{
-    14: '14 days',
-    30: '1 month',
-    90: '3 months',
-    180: '6 months',
-    365: '1 year',
-  };
+  @override
+  State<TenantPackageEditor> createState() => _TenantPackageEditorState();
+}
+
+class _TenantPackageEditorState extends State<TenantPackageEditor> {
+  late Future<(List<TenantPackage>, List<SubscriptionPlan>)> _lists;
+
+  @override
+  void initState() {
+    super.initState();
+    _lists = _load();
+  }
+
+  Future<(List<TenantPackage>, List<SubscriptionPlan>)> _load() async {
+    var packages = await PackageService.getAll();
+    var plans = await SubscriptionPlanService.getAllPlans();
+    if (plans.isEmpty) plans = [SubscriptionPlanService.fallbackTrialPlan];
+    plans.sort((a, b) {
+      if (a.isDefaultTrial != b.isDefaultTrial) return a.isDefaultTrial ? -1 : 1;
+      final d = a.validityDays.compareTo(b.validityDays);
+      return d != 0 ? d : a.name.compareTo(b.name);
+    });
+
+    // The value handed in may name a package or plan by id that the lists
+    // know better (an admin's edit since the caller built it). Prefer the
+    // list's copy so the preview shows what will actually be written.
+    //
+    // A package the list does not have is a custom one made for this tenant
+    // and not yet saved: show it, selected, so Apply can save it. A plan the
+    // list does not have is either the same (a `plan_custom_` snap) or a
+    // stand-in with no id; the stand-in is replaced by a real plan, because a
+    // planId that is not a document must never be written.
+    final pkg = packages.where((p) => p.id == widget.value.package.id).firstOrNull;
+    if (pkg == null) packages = [...packages, widget.value.package];
+    var plan = plans.where((p) => p.id == widget.value.plan.id).firstOrNull;
+    if (plan == null) {
+      if (widget.value.plan.id.isNotEmpty) {
+        plans = [...plans, widget.value.plan];
+      } else {
+        // Nearest real plan by length, never the trial unless it is all there is.
+        final real = plans.where((p) => !p.isDefaultTrial).toList();
+        final pool = real.isEmpty ? plans : real;
+        plan = pool.reduce((a, b) => (a.validityDays - widget.value.plan.validityDays).abs() <=
+                (b.validityDays - widget.value.plan.validityDays).abs()
+            ? a
+            : b);
+      }
+    }
+    if ((pkg != null && pkg != widget.value.package) || (plan != null && plan != widget.value.plan)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) widget.onChanged(widget.value.copyWith(package: pkg, plan: plan));
+      });
+    }
+    return (packages, plans);
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _step(context, 1, 'Package'),
-        _packageStep(context),
-        const SizedBox(height: DS.space5),
-        if (showValidity) ...[
-          _step(context, 2, 'Validity'),
-          _validityStep(context),
-          const SizedBox(height: DS.space5),
-        ],
-        _step(context, showValidity ? 3 : 2, 'Add-ons'),
-        _addOnStep(context),
-      ],
+    return FutureBuilder(
+      future: _lists,
+      builder: (context, snap) {
+        if (!snap.hasData) {
+          return const Padding(
+            padding: EdgeInsets.all(DS.space6),
+            child: Center(child: CircularProgressIndicator()),
+          );
+        }
+        final (packages, plans) = snap.data!;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _step(context, 1, 'Package', 'What they can do'),
+            ...packages.map((p) => _packageCard(context, p)),
+            const SizedBox(height: DS.space5),
+            _step(context, 2, 'Plan', 'How much, and for how long'),
+            ...plans.map((p) => _planCard(context, p)),
+            const SizedBox(height: DS.space5),
+            _step(context, 3, 'What they get', null),
+            _summary(context),
+          ],
+        );
+      },
     );
   }
 
-  // ── Step 1 ────────────────────────────────────────────────────────────────
+  // ── cards ───────────────────────────────────────────────────────────────
 
-  Widget _packageStep(BuildContext context) {
-    final modes = value.profile.allowedStorageModes.toList();
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        ...PlanProfile.all.map((p) {
-          final selected = p.id == value.profile.id;
-          return Padding(
-            padding: const EdgeInsets.only(bottom: DS.space2),
-            child: InkWell(
-              borderRadius: BorderRadius.circular(DS.radiusMd),
-              onTap: () => onChanged(value.withProfile(p)),
-              child: Container(
-                padding: const EdgeInsets.all(DS.space3),
-                decoration: BoxDecoration(
-                  color: selected
-                      ? ClassicTheme.primaryAccent.withValues(alpha: 0.07)
-                      : Colors.transparent,
-                  borderRadius: BorderRadius.circular(DS.radiusMd),
-                  border: Border.all(
-                    color: selected ? ClassicTheme.primaryAccent : context.borderColor,
-                    width: selected ? 1.5 : 1,
-                  ),
-                ),
-                child: Row(
+  Widget _packageCard(BuildContext context, TenantPackage p) {
+    final selected = p.id == widget.value.package.id;
+    final on = p.enabledKeys.length;
+    return _card(
+      context,
+      selected: selected,
+      onTap: () => widget.onChanged(widget.value.copyWith(package: p)),
+      title: p.name,
+      trailing: '$on feature${on == 1 ? '' : 's'} \u00b7 ${StorageModes.label(p.storageMode)}',
+      body: p.description,
+      badge: p.isStarter ? null : 'Custom',
+    );
+  }
+
+  Widget _planCard(BuildContext context, SubscriptionPlan p) {
+    final selected = p.id == widget.value.plan.id;
+    final roles = p.allowedRoles.map(_roleLabel).join(', ');
+    return _card(
+      context,
+      selected: selected,
+      onTap: () => widget.onChanged(widget.value.copyWith(plan: p)),
+      title: p.name,
+      trailing: _term(p.validityDays),
+      body: '${p.maxOutlets} outlet${p.maxOutlets == 1 ? '' : 's'} \u00b7 '
+          '${p.maxDevices} device${p.maxDevices == 1 ? '' : 's'} \u00b7 '
+          '${p.maxUsers} staff \u00b7 $roles',
+      badge: p.isDefaultTrial ? 'Trial' : null,
+    );
+  }
+
+  Widget _card(
+    BuildContext context, {
+    required bool selected,
+    required VoidCallback onTap,
+    required String title,
+    required String trailing,
+    required String body,
+    String? badge,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: DS.space2),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(DS.radiusMd),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.all(DS.space3),
+          decoration: BoxDecoration(
+            color: selected ? ClassicTheme.primaryAccent.withValues(alpha: 0.07) : Colors.transparent,
+            borderRadius: BorderRadius.circular(DS.radiusMd),
+            border: Border.all(
+              color: selected ? ClassicTheme.primaryAccent : context.borderColor,
+              width: selected ? 1.5 : 1,
+            ),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                selected ? Icons.radio_button_checked_rounded : Icons.radio_button_unchecked_rounded,
+                size: 20,
+                color: selected ? ClassicTheme.primaryAccent : context.textMuted,
+              ),
+              const SizedBox(width: DS.space3),
+              Expanded(
+                child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(
-                      selected
-                          ? Icons.radio_button_checked_rounded
-                          : Icons.radio_button_unchecked_rounded,
-                      size: 20,
-                      color: selected ? ClassicTheme.primaryAccent : context.textMuted,
-                    ),
-                    const SizedBox(width: DS.space3),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Text(p.label,
-                                    style: TextStyle(
-                                        fontSize: DS.fontBody,
-                                        fontWeight: FontWeight.w700,
-                                        color: context.textPrimary)),
-                              ),
-                              Text(
-                                '${p.maxDevices} dev · ${p.maxOutlets} outlet${p.maxOutlets == 1 ? '' : 's'}',
-                                style: TextStyle(
-                                    fontSize: DS.fontMicro, color: context.textSecondary),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 2),
-                          Text(p.description,
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(title,
                               style: TextStyle(
-                                  fontSize: DS.fontMicro,
-                                  color: context.textSecondary,
-                                  height: 1.4)),
+                                  fontSize: DS.fontBody, fontWeight: FontWeight.w700, color: context.textPrimary)),
+                        ),
+                        if (badge != null) ...[
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                            decoration: BoxDecoration(
+                              color: ClassicTheme.warningAmber.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: Text(badge,
+                                style: const TextStyle(
+                                    fontSize: 10, fontWeight: FontWeight.w700, color: ClassicTheme.warningAmber)),
+                          ),
+                          const SizedBox(width: DS.space2),
                         ],
-                      ),
+                        Text(trailing, style: TextStyle(fontSize: DS.fontMicro, color: context.textSecondary)),
+                      ],
                     ),
+                    const SizedBox(height: 2),
+                    Text(body,
+                        style: TextStyle(fontSize: DS.fontMicro, color: context.textSecondary, height: 1.4)),
                   ],
                 ),
               ),
-            ),
-          );
-        }),
-        const SizedBox(height: DS.space3),
-        Text('STORAGE',
-            style: TextStyle(
-                fontSize: DS.fontMicro,
-                fontWeight: FontWeight.w700,
-                letterSpacing: 0.6,
-                color: context.textSecondary)),
-        const SizedBox(height: DS.space2),
-        // Only the modes this package can run. An offline package shows one
-        // option, and the cloud is not rendered at all.
-        Wrap(
-          spacing: DS.space2,
-          runSpacing: DS.space2,
-          children: modes.map((m) {
-            final selected = m == value.storageMode;
-            return ChoiceChip(
-              label: Text(StorageModes.label(m),
-                  style: TextStyle(
-                      fontSize: DS.fontMicro,
-                      color: selected ? Colors.white : context.textPrimary)),
-              selected: selected,
-              selectedColor: ClassicTheme.primaryAccent,
-              backgroundColor: context.surfaceColor,
-              side: BorderSide(color: context.borderColor),
-              onSelected: (_) => onChanged(value.copyWith(storageMode: m)),
-            );
-          }).toList(),
-        ),
-        if (modes.length == 1) ...[
-          const SizedBox(height: DS.space2),
-          Text(
-            value.profile.isOffline
-                ? 'Offline packages run on the device only — there is no other option to give.'
-                : 'This package runs on one storage mode.',
-            style: TextStyle(fontSize: DS.fontMicro, color: context.textSecondary),
-          ),
-        ],
-        const SizedBox(height: DS.space3),
-        _limits(context),
-      ],
-    );
-  }
-
-  Widget _limits(BuildContext context) {
-    final pinned = value.resolved.isPureOffline;
-    return Row(
-      children: [
-        Expanded(
-          child: _counter(
-            context,
-            label: 'Devices',
-            current: value.effectiveDevices,
-            enabled: !limitsReadOnly && !pinned,
-            min: 1,
-            max: value.profile.maxDevices,
-            onChanged: (v) => onChanged(value.copyWith(maxDevices: v)),
-          ),
-        ),
-        const SizedBox(width: DS.space3),
-        Expanded(
-          child: _counter(
-            context,
-            label: 'Outlets',
-            current: value.effectiveOutlets,
-            enabled: !limitsReadOnly && !pinned && value.profile.maxOutlets > 1,
-            min: 1,
-            max: value.profile.maxOutlets,
-            onChanged: (v) => onChanged(value.copyWith(maxOutlets: v)),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _counter(
-    BuildContext context, {
-    required String label,
-    required int current,
-    required bool enabled,
-    required int min,
-    required int max,
-    required ValueChanged<int> onChanged,
-  }) =>
-      Container(
-        padding: const EdgeInsets.symmetric(horizontal: DS.space3, vertical: DS.space2),
-        decoration: BoxDecoration(
-          color: enabled ? context.inputFill : context.sunkenSurface,
-          borderRadius: BorderRadius.circular(DS.radiusMd),
-          border: Border.all(color: context.borderColor),
-        ),
-        child: Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(label,
-                      style: TextStyle(fontSize: DS.fontMicro, color: context.textSecondary)),
-                  Text('$current',
-                      style: TextStyle(
-                          fontSize: DS.fontBodyLg,
-                          fontWeight: FontWeight.w700,
-                          color: context.textPrimary)),
-                ],
-              ),
-            ),
-            if (enabled) ...[
-              IconButton(
-                visualDensity: VisualDensity.compact,
-                icon: const Icon(Icons.remove_circle_outline_rounded, size: 20),
-                onPressed: current > min ? () => onChanged(current - 1) : null,
-              ),
-              IconButton(
-                visualDensity: VisualDensity.compact,
-                icon: const Icon(Icons.add_circle_outline_rounded, size: 20),
-                onPressed: current < max ? () => onChanged(current + 1) : null,
-              ),
-            ],
-          ],
-        ),
-      );
-
-  // ── Step 2 ────────────────────────────────────────────────────────────────
-
-  Widget _validityStep(BuildContext context) => Wrap(
-        spacing: DS.space2,
-        runSpacing: DS.space2,
-        children: _validities.entries.map((e) {
-          final selected = e.key == value.validityDays;
-          return ChoiceChip(
-            label: Text(e.value,
-                style: TextStyle(
-                    fontSize: DS.fontMicro,
-                    color: selected ? Colors.white : context.textPrimary)),
-            selected: selected,
-            selectedColor: ClassicTheme.primaryAccent,
-            backgroundColor: context.surfaceColor,
-            side: BorderSide(color: context.borderColor),
-            onSelected: (_) => onChanged(value.copyWith(validityDays: e.key)),
-          );
-        }).toList(),
-      );
-
-  // ── Step 3 ────────────────────────────────────────────────────────────────
-
-  Widget _addOnStep(BuildContext context) {
-    final included = FeatureCatalog.all.where((d) => value.profile.includes(d.key)).toList();
-    final sellable = value.sellableAddOns;
-    final resolved = value.resolved;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Container(
-          padding: const EdgeInsets.all(DS.space3),
-          decoration: BoxDecoration(
-            color: ClassicTheme.successEmerald.withValues(alpha: 0.07),
-            borderRadius: BorderRadius.circular(DS.radiusMd),
-            border: Border.all(color: ClassicTheme.successEmerald.withValues(alpha: 0.25)),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  const Icon(Icons.check_circle_rounded,
-                      size: 16, color: ClassicTheme.successEmerald),
-                  const SizedBox(width: DS.space2),
-                  Text('${included.length} included in this package',
-                      style: const TextStyle(
-                          fontSize: DS.fontCaption,
-                          fontWeight: FontWeight.w700,
-                          color: ClassicTheme.successEmerald)),
-                ],
-              ),
-              const SizedBox(height: DS.space2),
-              Text(
-                included.map((d) => d.label).join(' · '),
-                style: TextStyle(
-                    fontSize: DS.fontMicro, color: context.textPrimary, height: 1.45),
-              ),
             ],
           ),
-        ),
-        if (sellable.isEmpty) ...[
-          const SizedBox(height: DS.space3),
-          Text(
-            'Everything this package can run is already included.',
-            style: TextStyle(fontSize: DS.fontCaption, color: context.textSecondary),
-          ),
-        ] else ...[
-          const SizedBox(height: DS.space3),
-          ...sellable.map((def) => _addOnRow(context, def, resolved)),
-        ],
-        const SizedBox(height: DS.space4),
-        _summary(context),
-      ],
-    );
-  }
-
-  Widget _addOnRow(BuildContext context, FeatureDef def, Entitlements resolved) {
-    final on = value.addOns[def.key] == true;
-    // A dependency that is not satisfied is the one case where the switch
-    // stays visible: hiding it would leave the admin wondering where it went.
-    final blocker = on ? null : _unmetDependency(def);
-    final enabled = blocker == null;
-
-    return Padding(
-      padding: const EdgeInsets.only(bottom: DS.space2),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: DS.space3, vertical: DS.space2),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(DS.radiusMd),
-          border: Border.all(color: context.borderColor),
-        ),
-        child: Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(def.label,
-                      style: TextStyle(
-                        fontSize: DS.fontBody,
-                        fontWeight: FontWeight.w600,
-                        color: enabled ? context.textPrimary : context.textMuted,
-                      )),
-                  const SizedBox(height: 2),
-                  Text(
-                    blocker == null
-                        ? def.description
-                        : 'Switch on ${FeatureCatalog.find(blocker)?.label ?? blocker} first.',
-                    style: TextStyle(
-                      fontSize: DS.fontMicro,
-                      color: blocker == null ? context.textSecondary : ClassicTheme.warningAmber,
-                      height: 1.4,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: DS.space2),
-            Switch(
-              value: on,
-              activeThumbColor: ClassicTheme.primaryAccent,
-              onChanged: enabled
-                  ? (v) {
-                      final next = Map<String, bool>.from(value.addOns);
-                      if (v) {
-                        next[def.key] = true;
-                      } else {
-                        next.remove(def.key);
-                        // Anything that depended on it goes too — the resolver
-                        // would do this anyway; doing it here means the admin
-                        // sees it happen instead of discovering it on save.
-                        for (final k in FeatureCatalog.dependants(def.key)) {
-                          next.remove(k);
-                        }
-                      }
-                      onChanged(value.copyWith(addOns: next));
-                    }
-                  : null,
-            ),
-          ],
         ),
       ),
     );
   }
 
-  /// The first dependency of [def] that this selection does not satisfy.
-  String? _unmetDependency(FeatureDef def) {
-    final resolved = value.resolved;
-    for (final dep in def.dependsOn) {
-      if (!resolved.isEnabled(dep)) return dep;
-    }
-    return null;
-  }
+  // ── summary ─────────────────────────────────────────────────────────────
 
   Widget _summary(BuildContext context) {
-    final resolved = value.resolved;
+    final c = widget.value.composed;
+    final clampedDevices = c.maxDevices != widget.value.plan.maxDevices;
+    final clampedOutlets = c.maxOutlets != widget.value.plan.maxOutlets;
+    final droppedRoles = widget.value.plan.allowedRoles
+        .map((r) => r.toUpperCase())
+        .where((r) => !c.allowedRoles.contains(r))
+        .toList();
+
     return Container(
       padding: const EdgeInsets.all(DS.space3),
       decoration: BoxDecoration(
@@ -536,28 +343,42 @@ class TenantPackageEditor extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('THE TENANT WILL GET',
-              style: TextStyle(
-                  fontSize: DS.fontMicro,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.6,
-                  color: context.textSecondary)),
+          Wrap(
+            spacing: DS.space3,
+            runSpacing: DS.space2,
+            children: [
+              _stat(context, '${widget.value.onCount}', 'features on'),
+              _stat(context, '${c.maxDevices}', 'device${c.maxDevices == 1 ? '' : 's'}'),
+              _stat(context, '${c.maxOutlets}', 'outlet${c.maxOutlets == 1 ? '' : 's'}'),
+              _stat(context, '${c.maxUsers}', 'staff'),
+              _stat(context, StorageModes.label(c.storageMode), 'storage'),
+              if (widget.showValidity) _stat(context, _date(c.endDate), 'ends'),
+            ],
+          ),
           const SizedBox(height: DS.space2),
           Text(
-            '${value.onCount} of ${FeatureCatalog.all.length} features · '
-            '${value.effectiveDevices} device${value.effectiveDevices == 1 ? '' : 's'} · '
-            '${value.effectiveOutlets} outlet${value.effectiveOutlets == 1 ? '' : 's'} · '
-            '${StorageModes.label(value.storageMode)}'
-            '${showValidity ? ' · ${value.validityDays} days' : ''}',
-            style: TextStyle(
-                fontSize: DS.fontCaption, color: context.textPrimary, height: 1.45),
+            'Roles: ${c.allowedRoles.map(_roleLabel).join(', ')}',
+            style: TextStyle(fontSize: DS.fontMicro, color: context.textSecondary),
           ),
-          if (resolved.isPureOffline &&
-              (value.maxDevices > 1 || value.maxOutlets > 1)) ...[
+          if (clampedDevices || clampedOutlets || droppedRoles.isNotEmpty) ...[
             const SizedBox(height: DS.space2),
             Text(
-              'Offline stores are one device and one outlet whatever is typed above.',
-              style: TextStyle(fontSize: DS.fontMicro, color: ClassicTheme.warningAmber),
+              [
+                if (clampedDevices)
+                  'The plan allows ${widget.value.plan.maxDevices} devices, but an offline package runs on one.',
+                if (clampedOutlets)
+                  'The plan allows ${widget.value.plan.maxOutlets} outlets, but an offline package runs at one.',
+                if (droppedRoles.isNotEmpty)
+                  '${droppedRoles.map(_roleLabel).join(' and ')} need a second device, so they are not on this licence.',
+              ].join(' '),
+              style: const TextStyle(fontSize: DS.fontMicro, color: ClassicTheme.warningAmber, height: 1.4),
+            ),
+          ],
+          if (widget.limitsReadOnly) ...[
+            const SizedBox(height: DS.space2),
+            Text(
+              'Limits and dates are set by the platform team when they approve this.',
+              style: TextStyle(fontSize: DS.fontMicro, color: context.textMuted),
             ),
           ],
         ],
@@ -565,27 +386,66 @@ class TenantPackageEditor extends StatelessWidget {
     );
   }
 
-  Widget _step(BuildContext context, int n, String title) => Padding(
-        padding: const EdgeInsets.only(bottom: DS.space3),
+  Widget _stat(BuildContext context, String value, String label) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(value,
+              style: TextStyle(fontSize: DS.fontBody, fontWeight: FontWeight.w700, color: context.textPrimary)),
+          Text(label, style: TextStyle(fontSize: DS.fontMicro, color: context.textSecondary)),
+        ],
+      );
+
+  Widget _step(BuildContext context, int n, String title, String? hint) => Padding(
+        padding: const EdgeInsets.only(bottom: DS.space2),
         child: Row(
           children: [
-            CircleAvatar(
-              radius: 11,
-              backgroundColor: ClassicTheme.primaryAccent,
+            Container(
+              width: 22,
+              height: 22,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(color: ClassicTheme.primaryAccentIndigo, shape: BoxShape.circle),
               child: Text('$n',
-                  style: const TextStyle(
-                    fontSize: DS.fontMicro,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.white,
-                  )),
+                  style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w800)),
             ),
             const SizedBox(width: DS.space2),
             Text(title,
-                style: TextStyle(
-                    fontSize: DS.fontBodyLg,
-                    fontWeight: FontWeight.w700,
-                    color: context.textPrimary)),
+                style: TextStyle(fontSize: DS.fontBody, fontWeight: FontWeight.w800, color: context.textPrimary)),
+            if (hint != null) ...[
+              const SizedBox(width: DS.space2),
+              Text(hint, style: TextStyle(fontSize: DS.fontMicro, color: context.textMuted)),
+            ],
           ],
         ),
       );
+
+  static String _roleLabel(String r) {
+    switch (r.toUpperCase()) {
+      case 'OWNER':
+        return 'Owner';
+      case 'MANAGER':
+        return 'Manager';
+      case 'BILLING':
+        return 'Cashier';
+      case 'WAITER':
+        return 'Waiter';
+      case 'KITCHEN':
+        return 'Kitchen';
+      default:
+        return r;
+    }
+  }
+
+  static String _term(int days) {
+    if (days == 14) return '14 days';
+    if (days == 30) return '1 month';
+    if (days == 90) return '3 months';
+    if (days == 180) return '6 months';
+    if (days == 365) return '1 year';
+    if (days >= 36500) return 'Lifetime';
+    return '$days days';
+  }
+
+  static String _date(DateTime d) =>
+      '${d.day.toString().padLeft(2, '0')}-${d.month.toString().padLeft(2, '0')}-${d.year}';
 }

@@ -5,6 +5,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/classic_theme.dart';
 import '../../../core/design_tokens.dart';
 import '../../../core/entitlements.dart';
+import '../../../core/package_model.dart';
+import '../../../core/saas_models.dart';
+import '../../../core/subscription_plan_model.dart';
+import '../../../services/license_migration_service.dart';
+import '../../../services/package_service.dart';
+import '../../../services/smtp_email_service.dart';
+import '../../../services/subscription_plan_service.dart';
 import '../../../utils/ui_feedback.dart';
 import '../widgets/tenant_package_editor.dart';
 
@@ -24,12 +31,18 @@ class TenantAccessDialog extends ConsumerStatefulWidget {
   final String orgId;
   final String orgName;
 
-  const TenantAccessDialog({super.key, required this.orgId, required this.orgName});
+  /// Open straight into the package/plan editor as a renewal: the term is
+  /// restarted from today whatever the plan, and a pending renewal request
+  /// for this tenant is closed when the licence is written.
+  final bool renew;
 
-  static Future<void> show(BuildContext context, {required String orgId, required String orgName}) =>
+  const TenantAccessDialog({super.key, required this.orgId, required this.orgName, this.renew = false});
+
+  static Future<void> show(BuildContext context,
+          {required String orgId, required String orgName, bool renew = false}) =>
       showDialog(
         context: context,
-        builder: (_) => TenantAccessDialog(orgId: orgId, orgName: orgName),
+        builder: (_) => TenantAccessDialog(orgId: orgId, orgName: orgName, renew: renew),
       );
 
   @override
@@ -47,10 +60,17 @@ class _TenantAccessDialogState extends ConsumerState<TenantAccessDialog> {
   DateTime? _endDate;
   int _maxDevices = 1;
   String _planProfile = '';
+  String _packageId = '';
+  String _planId = '';
   String _storageMode = StorageModes.cloudSync;
-  Map<String, bool> _features = const {};
   bool _changePending = false;
   DateTime? _purgeAfter;
+  Map<String, dynamic> _licenceRaw = const {};
+  String _ownerEmail = '';
+
+  /// The tenant's own PENDING renewal request, when there is one.
+  Map<String, dynamic>? _renewal;
+  bool _autoOpened = false;
 
   @override
   void initState() {
@@ -62,10 +82,15 @@ class _TenantAccessDialogState extends ConsumerState<TenantAccessDialog> {
     try {
       final org = await _fs.collection('organizations').doc(widget.orgId).get();
       final lic = await _fs.collection('licenses').doc(widget.orgId).get();
+      final ren = await _fs.collection('renewal_requests').doc(widget.orgId).get();
       final o = org.data() ?? {};
       final l = lic.data() ?? {};
+      final r = ren.data();
       if (!mounted) return;
       setState(() {
+        _licenceRaw = l;
+        _ownerEmail = (o['ownerEmail'] ?? o['email'] ?? '').toString();
+        _renewal = (r != null && r['status']?.toString() == 'PENDING') ? r : null;
         _status = (o['status'] ?? 'ACTIVE').toString().toUpperCase();
         _statusReason = (o['statusReason'] ?? '').toString();
         _purgeAfter = _asDate(o['purgeAfter']);
@@ -73,16 +98,20 @@ class _TenantAccessDialogState extends ConsumerState<TenantAccessDialog> {
         _endDate = _asDate(l['endDate']);
         _maxDevices = (l['maxDevices'] is num) ? (l['maxDevices'] as num).toInt() : 1;
         _planProfile = (l['planProfile'] ?? l['planTier'] ?? '').toString();
+        _packageId = (l['packageId'] ?? '').toString();
+        _planId = (l['planId'] ?? '').toString();
         _storageMode = (o['storageMode'] ?? StorageModes.cloudSync).toString().toUpperCase();
         _changePending =
             (o['pendingStorageChange'] is Map) &&
             ((o['pendingStorageChange'] as Map)['status']?.toString() == 'PENDING');
-        _features = {
-          for (final e in (l['features'] as Map? ?? {}).entries)
-            e.key.toString(): e.value == true,
-        };
         _loading = false;
       });
+      if (widget.renew && !_autoOpened && mounted) {
+        _autoOpened = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _changePackage(renew: true);
+        });
+      }
     } catch (e) {
       if (mounted) {
         setState(() => _loading = false);
@@ -220,24 +249,58 @@ class _TenantAccessDialogState extends ConsumerState<TenantAccessDialog> {
 
   /// Re-package an existing tenant through the same editor onboarding uses,
   /// and write what the resolver says — never what was typed.
-  Future<void> _changePackage() async {
-    final profile = PlanProfile.byId(_planProfile);
-    var selection = TenantPackageSelection.forProfile(
-      profile,
-      validityDays: _endDate == null
-          ? 365
-          : _endDate!.difference(DateTime.now()).inDays.clamp(14, 3650),
-      // Only genuine add-ons carry over. Applying a package normalises the
-      // tenant to that package plus what is explicitly sold on top.
-      addOns: {
-        for (final e in _features.entries)
-          if (e.value && !profile.includes(e.key)) e.key: true,
-      },
-    ).copyWith(
-      storageMode:
-          profile.allowedStorageModes.contains(_storageMode) ? _storageMode : null,
-      maxDevices: _maxDevices,
-    );
+  ///
+  /// Where the picker starts matters, because "Apply" writes the whole
+  /// licence: a licence that already names a package and a plan starts on
+  /// them; one written before packages existed is snapped to the package and
+  /// plan it *behaves like* (or a custom copy of itself), exactly as the
+  /// migration would, so Apply with nothing changed changes nothing. A
+  /// pending renewal request from the owner overrides both: the picker opens
+  /// on what they asked for, and the admin decides.
+  Future<void> _changePackage({bool renew = false}) async {
+    final packages = await PackageService.getAll();
+    var plans = await SubscriptionPlanService.getAllPlans();
+    if (plans.isEmpty) plans = [SubscriptionPlanService.fallbackTrialPlan];
+
+    TenantPackage? pkg = packages.where((p) => p.id == _packageId).firstOrNull;
+    SubscriptionPlan? plan = plans.where((p) => p.id == _planId).firstOrNull;
+    LicenseSnapPlan? snapped;
+    if (pkg == null || plan == null) {
+      SaasLicense? lic;
+      try {
+        if (_licenceRaw.isNotEmpty) lic = SaasLicense.fromFirestore(_licenceRaw);
+      } catch (_) {}
+      if (lic != null) {
+        snapped = LicenseMigrationService.snapOne(
+          orgId: widget.orgId,
+          orgName: widget.orgName,
+          license: lic,
+          storageMode: _storageMode,
+          packages: packages,
+          plans: plans,
+        );
+        pkg ??= snapped.package;
+        plan ??= snapped.plan;
+      }
+    }
+    pkg ??= packages.firstOrNull ?? TenantPackage.fromProfile(PlanProfile.offlineDineIn);
+    plan ??= plans.first;
+
+    // The owner's request, when there is one and it names things that exist.
+    final req = _renewal;
+    final reqPkgId = (req?['requestedPackageId'] ?? '').toString();
+    final reqPlanId = (req?['requestedPlanId'] ?? '').toString();
+    final reqPkg = packages.where((p) => p.id == reqPkgId).firstOrNull;
+    final reqPlan = plans.where((p) => p.id == reqPlanId).firstOrNull;
+    if (reqPkg != null) pkg = reqPkg;
+    if (reqPlan != null) plan = reqPlan;
+    final reqNote = (req?['note'] ?? '').toString().trim();
+
+    var selection = TenantPackageSelection(package: pkg, plan: plan, currentStorageMode: _storageMode);
+    // Only the renew actions restart the term and close the owner's request;
+    // "Change package or plan" with a request pending just starts on it.
+    final isRenewal = renew;
+    if (!mounted) return;
 
     final saved = await showDialog<TenantPackageSelection>(
       context: context,
@@ -248,7 +311,7 @@ class _TenantAccessDialogState extends ConsumerState<TenantAccessDialog> {
             borderRadius: BorderRadius.circular(DS.radiusXl),
             side: BorderSide(color: ctx.borderColor),
           ),
-          title: Text('Package for ${widget.orgName}',
+          title: Text(isRenewal ? 'Renew ${widget.orgName}' : 'Package for ${widget.orgName}',
               style: TextStyle(
                   fontSize: DS.fontTitle,
                   fontWeight: FontWeight.w700,
@@ -256,9 +319,41 @@ class _TenantAccessDialogState extends ConsumerState<TenantAccessDialog> {
           content: SizedBox(
             width: ClassicTheme.dialogWidth(ctx, 520),
             child: SingleChildScrollView(
-              child: TenantPackageEditor(
-                value: selection,
-                onChanged: (v) => setSheet(() => selection = v),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (req != null)
+                    _note(
+                      ctx,
+                      icon: Icons.mark_email_unread_outlined,
+                      color: ClassicTheme.warningAmber,
+                      text: 'The owner asked for '
+                          '${reqPkg?.name ?? (reqPkgId.isEmpty ? 'their current package' : reqPkgId)}'
+                          ' \u00b7 ${reqPlan?.name ?? (reqPlanId.isEmpty ? 'their current plan' : reqPlanId)}'
+                          '${reqNote.isEmpty ? '' : '. \u201c$reqNote\u201d'}',
+                    )
+                  else if (snapped != null && (snapped.packageIsNew || snapped.planIsNew))
+                    _note(
+                      ctx,
+                      icon: Icons.info_outline_rounded,
+                      color: ClassicTheme.infoBlue,
+                      text: 'This licence predates packages. It is shown on '
+                          '${snapped.packageIsNew ? 'a custom package' : 'the package'} and '
+                          '${snapped.planIsNew ? 'a custom plan' : 'the plan'} it matches today; '
+                          'Apply records that without changing what the tenant has.',
+                    ),
+                  if (isRenewal)
+                    _note(
+                      ctx,
+                      icon: Icons.event_repeat_rounded,
+                      color: ClassicTheme.successEmerald,
+                      text: 'Renewal: the term restarts today for the length of the chosen plan.',
+                    ),
+                  TenantPackageEditor(
+                    value: selection,
+                    onChanged: (v) => setSheet(() => selection = v),
+                  ),
+                ],
               ),
             ),
           ),
@@ -270,7 +365,7 @@ class _TenantAccessDialogState extends ConsumerState<TenantAccessDialog> {
                 foregroundColor: Colors.white,
               ),
               onPressed: () => Navigator.pop(ctx, selection),
-              child: const Text('Apply'),
+              child: Text(isRenewal ? 'Renew' : 'Apply'),
             ),
           ],
         ),
@@ -278,19 +373,50 @@ class _TenantAccessDialogState extends ConsumerState<TenantAccessDialog> {
     );
     if (saved == null) return;
 
+    // A custom package or plan made for this tenant exists only in memory
+    // until the licence that points at it is written; write it first so the
+    // licence never names a document that is not there.
+    final packageIsNew = !packages.any((p) => p.id == saved.package.id);
+    final planIsNew = !plans.any((p) => p.id == saved.plan.id);
+
     await _run(() async {
+      if (packageIsNew) await PackageService.save(saved.package);
+      if (planIsNew) await SubscriptionPlanService.savePlan(saved.plan);
+
       final now = FieldValue.serverTimestamp();
-      final resolvedFeatures = saved.resolvedFeatures;
+      final composed = saved.composed;
+      final resolvedFeatures = composed.features;
       final preview = saved.resolved;
       final batch = _fs.batch();
 
+      // The term. A renewal or a genuinely different plan starts a new term
+      // today; re-packaging mid-term keeps the dates as they are, and a
+      // licence that never named a plan is not "changing" it by being
+      // recorded on the one it matches. A revoked or expired licence stays
+      // revoked or expired unless this is a renewal.
+      final planChanged = _planId.isNotEmpty && saved.planId != _planId;
+      final newTerm = isRenewal || planChanged;
+      final endDate = newTerm || _endDate == null
+          ? DateTime.now().add(Duration(days: saved.validityDays))
+          : _endDate!;
+
       batch.set(_fs.collection('licenses').doc(widget.orgId), {
+        'packageId': saved.packageId,
+        'planId': saved.planId,
+        'packageName': saved.package.name,
+        'planName': saved.plan.name,
+        'planTier': saved.plan.billingCycle,
         'planProfile': saved.profile.id,
+        'storageMode': composed.storageMode,
         'features': resolvedFeatures,
-        'maxDevices': saved.effectiveDevices,
-        'maxFranchises': saved.effectiveOutlets,
-        'status': 'ACTIVE',
-        'endDate': Timestamp.fromDate(DateTime.now().add(Duration(days: saved.validityDays))),
+        'maxDevices': composed.maxDevices,
+        'maxFranchises': composed.maxOutlets,
+        'maxUsers': composed.maxUsers,
+        'allowedRoles': composed.allowedRoles,
+        if (isRenewal) 'status': 'ACTIVE',
+        if (newTerm) 'startDate': Timestamp.fromDate(DateTime.now()),
+        'endDate': Timestamp.fromDate(endDate),
+        if (isRenewal) 'lastRenewedAt': now,
         'updatedAt': now,
       }, SetOptions(merge: true));
 
@@ -310,14 +436,16 @@ class _TenantAccessDialogState extends ConsumerState<TenantAccessDialog> {
         'entitlementsUpdatedAt': now,
       }, SetOptions(merge: true));
 
-      // A different storage mode is requested, never applied here: the owner
-      // completes the migration on their device and the mode flips after the
-      // count check (FEATURE_MASTER_PLAN.md §9).
-      if (saved.storageMode != _storageMode) {
+      // A different storage *family* is requested, never applied here: the
+      // owner completes the migration on their device and the mode flips
+      // after the count check (FEATURE_MASTER_PLAN.md §9). Within the cloud
+      // family the tenant keeps the mode they have.
+      final modeChange = composed.storageMode != _storageMode;
+      if (modeChange) {
         batch.set(_fs.collection('organizations').doc(widget.orgId), {
           'pendingStorageChange': {
             'from': _storageMode,
-            'to': saved.storageMode,
+            'to': composed.storageMode,
             'status': 'PENDING',
             'requestedBy': 'master_admin',
             'requestedAt': now,
@@ -327,23 +455,90 @@ class _TenantAccessDialogState extends ConsumerState<TenantAccessDialog> {
         }, SetOptions(merge: true));
       }
 
-      final on = resolvedFeatures.entries.where((e) => e.value).map((e) => e.key).toList()
-        ..sort();
+      if (isRenewal) {
+        batch.set(_fs.collection('organizations').doc(widget.orgId), {
+          'status': 'ACTIVE',
+          'lastRenewedAt': now,
+          'updatedAt': now,
+        }, SetOptions(merge: true));
+        if (req != null) {
+          batch.set(_fs.collection('renewal_requests').doc(widget.orgId), {
+            'status': 'APPROVED',
+            'approvedAt': now,
+            'approvedPackageId': saved.packageId,
+            'approvedPlanId': saved.planId,
+          }, SetOptions(merge: true));
+        }
+      }
+
+      final on = resolvedFeatures.entries.where((e) => e.value).map((e) => e.key).toList()..sort();
       batch.set(_fs.collection('audit_logs').doc(), {
-        'action': 'TENANT_PACKAGE_CHANGED',
+        'action': isRenewal ? 'LICENSE_RENEWED' : 'TENANT_PACKAGE_CHANGED',
+        'actionType': isRenewal ? 'LICENSE_RENEWED' : 'TENANT_PACKAGE_CHANGED',
         'targetOrgId': widget.orgId,
+        'organizationId': widget.orgId,
         'targetOrgName': widget.orgName,
-        'details': 'Package ${saved.profile.id} · ${saved.effectiveDevices} device(s), '
-            '${saved.effectiveOutlets} outlet(s) · ${saved.validityDays} days'
-            '${saved.storageMode != _storageMode ? ' · storage $_storageMode → ${saved.storageMode} (requested)' : ''}'
-            ' · on: ${on.join(', ')}',
+        'organizationName': widget.orgName,
+        'details': '${saved.package.name} \u00b7 ${saved.plan.name} \u00b7 '
+            '${composed.maxDevices} device(s), ${composed.maxOutlets} outlet(s), ${composed.maxUsers} staff'
+            '${newTerm ? ' \u00b7 until ${_fmt(endDate)}' : ''}'
+            '${modeChange ? ' \u00b7 storage $_storageMode \u2192 ${composed.storageMode} (requested)' : ''}'
+            '${packageIsNew ? ' \u00b7 custom package saved' : ''}'
+            '${planIsNew ? ' \u00b7 custom plan saved' : ''}'
+            ' \u00b7 on: ${on.join(', ')}',
         'by': 'master_admin',
         'timestamp': now,
+        if (isRenewal) 'priority': 'HIGH',
       });
 
       await batch.commit();
-    }, 'Package updated');
+
+      if (isRenewal && _ownerEmail.contains('@')) {
+        // Best effort; the licence is already written.
+        try {
+          await SmtpEmailService.sendLicenseRenewedEmail(
+            recipientEmail: _ownerEmail,
+            orgName: widget.orgName,
+            planTier: saved.plan.name,
+            validUntil: endDate,
+            maxUsers: composed.maxUsers,
+            maxFranchises: composed.maxOutlets,
+          );
+        } catch (e) {
+          debugPrint('Renewal e-mail not sent: $e');
+        }
+      }
+    }, isRenewal ? 'Licence renewed' : 'Package updated');
   }
+
+  /// The first value that is a non-empty string; the request sheet writes
+  /// `''` rather than omitting a field, so `??` alone is not enough.
+  static String _firstNonEmpty(List<dynamic> values, String fallback) {
+    for (final v in values) {
+      final s = (v ?? '').toString().trim();
+      if (s.isNotEmpty) return s;
+    }
+    return fallback;
+  }
+
+  Widget _note(BuildContext ctx, {required IconData icon, required Color color, required String text}) =>
+      Container(
+        margin: const EdgeInsets.only(bottom: DS.space3),
+        padding: const EdgeInsets.all(DS.space3),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.10),
+          borderRadius: BorderRadius.circular(DS.radiusMd),
+          border: Border.all(color: color.withValues(alpha: 0.35)),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(icon, size: 16, color: color),
+            const SizedBox(width: DS.space2),
+            Expanded(child: Text(text, style: TextStyle(fontSize: DS.fontMicro, color: ctx.textPrimary))),
+          ],
+        ),
+      );
 
   Future<void> _restore() => _run(() async {
         await _fs.collection('organizations').doc(widget.orgId).set({
@@ -520,21 +715,46 @@ class _TenantAccessDialogState extends ConsumerState<TenantAccessDialog> {
                         },
                       ),
                     ] else ...[
-                      _sectionLabel('Package'),
+                      _sectionLabel('Package & plan'),
+                      if (_renewal != null)
+                        _action(
+                          icon: Icons.mark_email_unread_outlined,
+                          color: ClassicTheme.warningAmber,
+                          title: 'Review renewal request',
+                          subtitle: 'The owner asked for '
+                              '${_firstNonEmpty([_renewal!['requestedPackageName'], _renewal!['requestedPackageId']], 'their package')}'
+                              ' \u00b7 ${_firstNonEmpty([_renewal!['requestedPlanName'], _renewal!['requestedPlanId']], 'their plan')}. '
+                              'Opens the editor on that choice; Renew restarts the term today.',
+                          onTap: _changePending
+                              ? () => AppToast.showWarning(context, 'A storage change is already pending',
+                                  subtitle: 'Cancel it from the Migrations tab first.')
+                              : () => _changePackage(renew: true),
+                        ),
                       _action(
                         icon: Icons.inventory_2_outlined,
                         color: ClassicTheme.primaryAccent,
-                        title: 'Change package & add-ons',
+                        title: 'Change package or plan',
                         subtitle: _changePending
-                            ? 'A storage-mode change is already pending for this tenant — '
+                            ? 'A storage-mode change is already pending for this tenant \u2014 '
                                 'finish or cancel it before changing the package again.'
-                            : 'Package, storage, limits and add-ons in one editor. Saved '
-                                'through the resolver, so the tenant gets exactly what you see.',
+                            : 'What they can do (package) and for how long, how many outlets, '
+                                'devices and staff (plan). Saved through the resolver, so the '
+                                'tenant gets exactly what you see.',
                         onTap: _changePending
                             ? () => AppToast.showWarning(context,
                                 'A storage change is already pending',
                                 subtitle: 'Cancel it from the Migrations tab first.')
-                            : _changePackage,
+                            : () => _changePackage(),
+                      ),
+                      _action(
+                        icon: Icons.event_repeat_rounded,
+                        color: ClassicTheme.successEmerald,
+                        title: 'Renew licence',
+                        subtitle: 'Keep or change the package and plan; the term restarts today.',
+                        onTap: _changePending
+                            ? () => AppToast.showWarning(context, 'A storage change is already pending',
+                                subtitle: 'Cancel it from the Migrations tab first.')
+                            : () => _changePackage(renew: true),
                       ),
                       const SizedBox(height: DS.space3),
                       _sectionLabel('Access'),

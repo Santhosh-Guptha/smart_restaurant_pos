@@ -3230,8 +3230,9 @@ function handleStartTrial(json) {
       });
     }
 
-    // 4. The trial plan, as the console has it, so an admin edit applies here.
-    var plan = trialPlan_();
+    // 4. The trial licence: default package for the category + the default
+    //    trial plan, as the console has them, so an admin edit applies here.
+    var plan = trialPlan_(category);
 
     // 5. Ids. Org id in the console's own format; user id and username as the
     //    console makes them, username de-duplicated the same way.
@@ -3298,6 +3299,9 @@ function handleStartTrial(json) {
     });
 
     fsSet_("licenses/" + orgId, {
+      packageId: plan.packageId,
+      planId: plan.planId,
+      packageName: plan.packageName,
       planTier: plan.billingCycle,
       planName: plan.name,
       planProfile: plan.planProfile,
@@ -3418,25 +3422,41 @@ function handleStartTrial(json) {
 }
 
 /**
- * The default trial plan as the console keeps it, with the shipped fallback
- * when the document is missing. Mirrors SubscriptionPlanService.getDefaultTrialPlan.
+ * The trial licence, composed the way the console composes every licence:
+ * one *package* (what the tenant can do: features + storage mode) and one
+ * *plan* (for how long, how many outlets, devices and staff, which roles).
+ * Mirrors LicenseComposer.compose in lib/core/license_composer.dart.
  *
- * Offline invariants are re-applied whatever the document says: the trial is
- * one device, one outlet, no cloud, and the app's resolver would clamp an
- * odd document the same way when it loads.
+ *  - package: packages/<Verticals.defaultPackageFor(category)>, which is
+ *    OFFLINE_DINE_IN for every category today. Seeded when the platform
+ *    console opens; a code fallback stands in if the document is missing.
+ *  - plan: the subscription_plans document flagged isDefaultTrial, else
+ *    subscription_plans/trial, else a 14-day fallback.
+ *
+ * The clamps are the resolver's: an offline package means one device, one
+ * outlet, no cloud or online-tier key, and no waiter or kitchen role.
  */
-function trialPlan_() {
-  var doc = null;
+function trialPlan_(businessCategory) {
+  var packageId = "OFFLINE_DINE_IN"; // Verticals.defaultPackageFor(any category)
+  var pkg = null;
+  var planDoc = null;
+  // Blank unless a plan document was actually read: a planId on a licence
+  // must always name a document that exists.
+  var planId = "";
+  try {
+    pkg = fsGet_("packages/" + packageId);
+  } catch (e) {
+    Logger.log("package read failed, using fallback: " + e);
+  }
   try {
     var hits = fsQueryEq_("subscription_plans", "isDefaultTrial", true, 1);
-    if (hits.length > 0) doc = hits[0].data;
-    if (!doc) doc = fsGet_("subscription_plans/trial");
+    if (hits.length > 0) { planDoc = hits[0].data; planId = String(hits[0].id || ""); }
+    if (!planDoc) { planDoc = fsGet_("subscription_plans/trial"); if (planDoc) planId = "trial"; }
   } catch (e) {
     Logger.log("trial plan read failed, using fallback: " + e);
   }
-  doc = doc || {};
+  planDoc = planDoc || {};
 
-  var features = (doc.features && typeof doc.features === "object") ? doc.features : {};
   var offlineKeys = [
     "billing", "qsrBilling", "menuManagement", "thermalPrinting", "storeConfiguration",
     "dayEndReports", "staffManagement", "backupRestore",
@@ -3446,28 +3466,51 @@ function trialPlan_() {
     "cloudSync", "emailReceipts", "kdsEnabled", "waiterOrdering", "onlineMenu",
     "qrOrdering", "onlineOrderingEnabled", "multiOutlet", "inventoryEnabled"
   ];
-  var aligned = {};
-  offlineKeys.forEach(function (k) { aligned[k] = features[k] === undefined ? true : !!features[k]; });
-  cloudKeys.forEach(function (k) { aligned[k] = false; });
-  aligned.pureOfflineMode = true;
+
+  // Package: features and storage mode. Fallback = the OFFLINE_DINE_IN starter.
+  var storageMode = String((pkg && pkg.storageMode) || "PURE_OFFLINE").toUpperCase();
+  var offline = storageMode === "PURE_OFFLINE";
+  var pkgFeatures = (pkg && pkg.features && typeof pkg.features === "object") ? pkg.features : null;
+  var features = {};
+  offlineKeys.forEach(function (k) { features[k] = pkgFeatures ? pkgFeatures[k] === true : true; });
+  cloudKeys.forEach(function (k) { features[k] = (!offline && pkgFeatures) ? pkgFeatures[k] === true : false; });
+  features.pureOfflineMode = offline;
+
+  // Plan: term, outlets, devices, staff, roles.
+  var maxDevices = Number(planDoc.maxDevices) > 0 ? Number(planDoc.maxDevices) : 1;
+  var maxOutlets = Number(planDoc.maxOutlets) > 0 ? Number(planDoc.maxOutlets) : 1;
+  if (offline) { maxDevices = 1; maxOutlets = 1; }
+
+  var allRoles = ["OWNER", "MANAGER", "BILLING", "WAITER", "KITCHEN"];
+  var secondDevice = { WAITER: true, KITCHEN: true };
+  var wanted = Array.isArray(planDoc.allowedRoles) && planDoc.allowedRoles.length
+    ? planDoc.allowedRoles.map(function (r) { return String(r).trim().toUpperCase(); })
+    : ["OWNER", "MANAGER", "BILLING"];
+  var roles = allRoles.filter(function (r) {
+    if (r === "OWNER") return true;
+    if (wanted.indexOf(r) < 0) return false;
+    if (maxDevices <= 1 && secondDevice[r]) return false;
+    return true;
+  });
 
   return {
-    name: String(doc.name || "Free Trial (14 Days)"),
-    billingCycle: String(doc.billingCycle || "TRIAL"),
-    planProfile: "OFFLINE_DINE_IN",
-    storageMode: "PURE_OFFLINE",
-    validityDays: Number(doc.validityDays) > 0 ? Number(doc.validityDays) : 14,
-    maxUsers: Number(doc.maxUsers) > 0 ? Number(doc.maxUsers) : 5,
-    maxOutlets: 1,
-    maxDevices: 1,
-    tableCount: Number(doc.tableCount) >= 0 ? Number(doc.tableCount) : 15,
-    operatingMode: String(doc.operatingMode || "dineFirstPostpaid"),
-    // The console's spelling for an offline plan: no floor or pass roles on a
-    // one-device tenant, and the counter role is BILLING, not CASHIER.
-    allowedRoles: Array.isArray(doc.allowedRoles) && doc.allowedRoles.length
-      ? doc.allowedRoles.map(String)
-      : ["OWNER", "MANAGER", "BILLING"],
-    features: aligned
+    // Only when the document was read; the seeded starter has this id, and a
+    // licence must never point at a document that is not there.
+    packageId: pkg ? packageId : "",
+    packageName: String((pkg && pkg.name) || "Offline dine-in"),
+    planId: planId,
+    name: String(planDoc.name || "Free Trial (14 Days)"),
+    billingCycle: String(planDoc.billingCycle || "TRIAL"),
+    planProfile: offline ? "OFFLINE_DINE_IN" : "CONNECTED",
+    storageMode: storageMode,
+    validityDays: Number(planDoc.validityDays) > 0 ? Number(planDoc.validityDays) : 14,
+    maxUsers: Number(planDoc.maxUsers) > 0 ? Number(planDoc.maxUsers) : 5,
+    maxOutlets: maxOutlets,
+    maxDevices: maxDevices,
+    tableCount: Number(planDoc.tableCount) >= 0 ? Number(planDoc.tableCount) : 15,
+    operatingMode: String(planDoc.operatingMode || "dineFirstPostpaid"),
+    allowedRoles: roles,
+    features: features
   };
 }
 

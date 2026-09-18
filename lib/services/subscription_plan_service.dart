@@ -28,24 +28,17 @@ class SubscriptionPlanService {
     tableCount: 15,
   );
 
-  /// Creates the standard plans, and re-aligns the ones that already exist.
+  /// Creates the standard plans when they are missing. Never rewrites one
+  /// that exists.
   ///
-  /// One plan per [PlanProfile], features and limits taken from the profile
-  /// so the console, the resolver and the seeded documents can never
-  /// disagree. Prices are not stored anywhere in the product (D5): pricing is
-  /// agreed with the platform admin, not read from a document.
+  /// One plan per [PlanProfile] to start from. Prices are not stored anywhere
+  /// in the product (D5): pricing is agreed with the platform admin, not read
+  /// from a document.
   ///
-  /// Two kinds of field, deliberately treated differently, because this runs
-  /// on **every app start** (`main.dart`) on **every device**:
-  ///
-  /// - The resolver owns `planProfile`, `storageMode`, `allowedStorageModes`,
-  ///   `features` and the device/outlet limits. Those are rewritten every run.
-  ///   A plan document that disagrees with its profile is how a tenant ends up
-  ///   holding a licence for something the resolver will refuse to switch on.
-  /// - Everything a human can edit in the console — name, description,
-  ///   validity, billing cycle, user and table counts — is written **only when
-  ///   the document is created**. Rewriting the whole document on every launch
-  ///   silently reverted the admin's edits the next time any till opened.
+  /// This runs on **every app start** (`main.dart`) on **every device**, so it
+  /// must be idempotent and must not fight the console: a plan's term,
+  /// outlets, devices, staff and roles are the admin's to edit on the Plans
+  /// screen, and features live on the package, not here.
   static Future<void> ensureDefaultPlansExist() async {
     try {
       final col = _firestore.collection(_collection);
@@ -105,31 +98,24 @@ class SubscriptionPlanService {
         ),
       ];
 
+      // Create-if-missing only. A plan is the platform admin's document —
+      // term, outlets, devices, staff, roles — and the Plans screen edits it;
+      // rewriting any of it on launch would revert those edits the next time
+      // a till opened. Features and storage mode belong to the *package*
+      // since 18 Sep 2026; the copies written here at creation are legacy
+      // fields older builds tolerate, and nothing reads them to decide.
       var created = 0;
       for (final plan in plans) {
+        if (existing.contains(plan.id)) continue;
+        created++;
         final profile = _planProfileFor(plan.id);
-
-        // What the resolver owns. Enforced on every run.
-        final canonical = <String, dynamic>{
+        batch.set(col.doc(plan.id), {
+          ...plan.toFirestore(),
           'planProfile': profile.id,
           'storageMode': profile.storageMode,
           'allowedStorageModes': profile.allowedStorageModes.toList(),
-          'features': profile.features,
-          'maxDevices': profile.maxDevices,
-          'maxOutlets': profile.maxOutlets,
-          'updatedAt': FieldValue.serverTimestamp(),
-        };
-
-        if (existing.contains(plan.id)) {
-          batch.set(col.doc(plan.id), canonical, SetOptions(merge: true));
-        } else {
-          created++;
-          batch.set(col.doc(plan.id), {
-            ...plan.toFirestore(),
-            ...canonical,
-            'createdAt': FieldValue.serverTimestamp(),
-          });
-        }
+          'createdAt': FieldValue.serverTimestamp(),
+        });
       }
 
       // Legacy ids from the retail build. They are already in the snapshot
@@ -142,9 +128,9 @@ class SubscriptionPlanService {
         }
       }
 
-      await batch.commit();
+      if (created > 0 || removed > 0) await batch.commit();
 
-      debugPrint('SubscriptionPlanService: plans aligned '
+      debugPrint('SubscriptionPlanService: plans checked '
           '(created $created, removed $removed legacy).');
     } catch (e) {
       debugPrint("SubscriptionPlanService ensureDefaultPlansExist error: $e");

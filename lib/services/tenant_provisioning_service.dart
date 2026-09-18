@@ -39,6 +39,10 @@ class TenantProvisioningService {
     String? settlementUpiId,
     String? username,
     String? planProfile,
+    /// Which package and plan composed [plan]. Recorded on the licence so the
+    /// console can show and re-apply them; the app never reads either.
+    String? packageId,
+    String? planId,
   }) async {
     final cleanEmail = email.trim().toLowerCase();
 
@@ -157,6 +161,8 @@ class TenantProvisioningService {
       // 6. Create License Document
       final endDate = DateTime.now().add(Duration(days: plan.validityDays));
       await _firestore.collection('licenses').doc(orgId).set({
+        if (packageId != null && packageId.isNotEmpty) 'packageId': packageId,
+        if (planId != null && planId.isNotEmpty) 'planId': planId,
         'planTier': plan.billingCycle,
         'planName': plan.name,
         'planProfile': profile.id,

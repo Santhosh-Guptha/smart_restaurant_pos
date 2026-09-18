@@ -49,6 +49,13 @@ service cloud.firestore {
       allow read, write: if true;
     }
 
+    // Packages: what a tenant can do. Read by every till (the package picker
+    // in the upgrade sheet) and written by the platform console and the
+    // Apps Script trial handler. Same open rule as subscription_plans.
+    match /packages/{packageId} {
+      allow read, write: if true;
+    }
+
     match /device_registry/{deviceId} {
       allow read, write: if true;
     }

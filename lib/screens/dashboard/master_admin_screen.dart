@@ -18,8 +18,10 @@ import '../../core/constants.dart';
 import '../../utils/ui_feedback.dart';
 import '../../core/classic_theme.dart';
 import '../../core/entitlements.dart';
+import '../../core/package_model.dart';
 import '../../providers/theme_provider.dart';
 import '../../core/subscription_plan_model.dart';
+import '../../services/package_service.dart';
 import '../../services/subscription_plan_service.dart';
 import '../../services/tenant_provisioning_service.dart';
 import '../admin/views/admin_dashboard_view.dart';
@@ -27,6 +29,7 @@ import '../admin/views/admin_inquiries_view.dart';
 import '../admin/views/admin_features_view.dart';
 import '../admin/views/admin_encyclopedia_view.dart';
 import '../admin/views/admin_packages_view.dart';
+import '../admin/views/admin_plans_view.dart';
 import '../admin/views/admin_migrations_view.dart';
 import '../admin/dialogs/tenant_access_dialog.dart';
 import '../admin/widgets/tenant_package_editor.dart';
@@ -63,6 +66,11 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
     super.initState();
     _tabController = TabController(length: 5, vsync: this);
     _listenForIncomingRequests();
+    // The four starter packages, kept in step with the resolver's profiles.
+    // Seeded from the console only: every till re-aligning platform
+    // documents on cold start was waste, and the tills fall back to the
+    // in-code starters when the collection is empty anyway.
+    unawaited(PackageService.ensureStarters());
   }
 
   void _listenForIncomingRequests() {
@@ -778,7 +786,7 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
                           ),
                           const OrganizationsTab(),
                           const AdminFeaturesView(),
-                          const PlansAndFeaturesTab(),
+                          const AdminPlansView(),
                           const AuditLogsTab(),
                           const AppUpdatesTab(),
                           const AdminEncyclopediaView(),
@@ -1137,9 +1145,9 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
                 _buildNavItem(
                   context,
                   index: 4,
-                  title: "Plan Catalog",
-                  icon: Icons.layers_outlined,
-                  activeIcon: Icons.layers_rounded,
+                  title: "Plans",
+                  icon: Icons.calendar_month_outlined,
+                  activeIcon: Icons.calendar_month_rounded,
                   showExpanded: showExpanded,
                   isMobile: isMobile,
                 ),
@@ -1380,31 +1388,6 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
 }
 
 // --- TAB 1: ORGANIZATIONS MANAGEMENT ---
-/// The seeded subscription record that goes with a package.
-///
-/// The package (a [PlanProfile]) decides what the tenant can do; the
-/// subscription record only supplies the human-facing plan name and billing
-/// cycle. Keeping them matched means an "Offline counter" tenant is not filed
-/// under "Connected (Annual)" in the billing list. Falls back to whatever was
-/// selected when a tenant is on an older, hand-made plan.
-SubscriptionPlan _planForProfile(
-  PlanProfile profile,
-  List<SubscriptionPlan> available,
-  SubscriptionPlan fallback,
-) {
-  const idForProfile = <String, String>{
-    'OFFLINE_SINGLE': 'offline_counter',
-    'OFFLINE_DINE_IN': 'offline_dine_in',
-    'CONNECTED': 'connected',
-    'OMNICHANNEL': 'omnichannel',
-  };
-  final wanted = idForProfile[profile.id];
-  if (wanted == null) return fallback;
-  for (final plan in available) {
-    if (plan.id == wanted) return plan;
-  }
-  return fallback;
-}
 
 class OrganizationsTab extends ConsumerStatefulWidget {
   const OrganizationsTab({super.key});
@@ -1536,16 +1519,18 @@ class OrganizationsTab extends ConsumerStatefulWidget {
       orElse: () => availablePlans.isNotEmpty ? availablePlans.first : SubscriptionPlanService.fallbackTrialPlan,
     );
 
-    int maxUsers = selectedPlan.maxUsers;
     int tableCount = selectedPlan.tableCount;
     String operatingMode = selectedPlan.operatingMode;
 
-    // Package, storage, limits, validity and add-ons in one value object that
-    // resolves itself, so nothing below can read a half-configured licence.
-    TenantPackageSelection selection = TenantPackageSelection.forProfile(
-      PlanProfile.connected,
-      validityDays: selectedPlan.validityDays,
-    );
+    // A package and a plan, in one value object that composes itself, so
+    // nothing below can read a half-configured licence. Starts on what a new
+    // restaurant most often is: the trial package for its category, on the
+    // default trial plan.
+    final startPackage = (await PackageService.getById(Verticals.defaultPackageFor(businessCategory))) ??
+        TenantPackage.fromProfile(PlanProfile.offlineDineIn);
+    if (!context.mounted) return;
+    TenantPackageSelection selection =
+        TenantPackageSelection(package: startPackage, plan: selectedPlan);
 
     // Feature Toggles: populated dynamically from the selected plan
     bool isCreating = false;
@@ -1799,18 +1784,17 @@ class OrganizationsTab extends ConsumerStatefulWidget {
                         Row(
                           children: [
                             Expanded(
-                              child: TextFormField(
-                                initialValue: maxUsers.toString(),
-                                style: TextStyle(color: context.textPrimary),
-                                keyboardType: TextInputType.number,
+                              // Staff count is the plan's to decide, so it is
+                              // shown here and edited on the Plans screen.
+                              child: InputDecorator(
                                 decoration: InputDecoration(
-                                  labelText: "Max Staff / Users",
+                                  labelText: "Max Staff / Users (from plan)",
                                   labelStyle: TextStyle(color: context.textSecondary, fontSize: 13),
                                   prefixIcon: const Icon(Icons.groups_rounded, size: 16),
                                   enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: context.borderColor)),
-                                  focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: primaryAccent, width: 2)),
                                 ),
-                                onChanged: (v) => maxUsers = int.tryParse(v) ?? maxUsers,
+                                child: Text('${selection.plan.maxUsers}',
+                                    style: TextStyle(color: context.textPrimary)),
                               ),
                             ),
                             const SizedBox(width: 12),
@@ -1885,15 +1869,17 @@ class OrganizationsTab extends ConsumerStatefulWidget {
                             // package, so the plan name and billing cycle stay
                             // meaningful. Every limit and feature below comes
                             // from the resolver, not from that record.
-                            final basePlan = _planForProfile(
-                                selection.profile, availablePlans, selectedPlan);
-                            final finalPlan = basePlan.copyWith(
-                              validityDays: selection.validityDays,
+                            // The selection *is* a package and a plan now.
+                            // What is written is their composition, so the
+                            // preview the admin just looked at and the licence
+                            // the till reads are the same numbers.
+                            final finalPlan = selection.plan.copyWith(
                               maxOutlets: selection.effectiveOutlets,
                               maxDevices: selection.effectiveDevices,
-                              maxUsers: maxUsers,
+                              maxUsers: selection.plan.maxUsers,
                               tableCount: tableCount,
                               operatingMode: operatingMode,
+                              allowedRoles: selection.effectiveRoles,
                               features: selection.resolvedFeatures,
                             );
 
@@ -1913,6 +1899,8 @@ class OrganizationsTab extends ConsumerStatefulWidget {
                               requestId: requestId,
                               storageMode: selection.storageMode,
                               planProfile: selection.profile.id,
+                              packageId: selection.packageId,
+                              planId: selection.planId,
                             );
 
                             if (result['success'] != true) {
@@ -1967,505 +1955,13 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
     OrganizationsTab.showOnboardOrganizationDialog(context);
   }
 
-  void _showRenewLicenseDialog(String orgId, String orgName) {
-    bool isLoading = true;
-    bool isSaving = false;
-    bool isDataLoaded = false;
-
-    String planTier = 'TRIAL';
-    DateTime endDate = DateTime.now().add(const Duration(days: 14));
-    int expiryWarningDays = 3;
-    int maxUsers = 5;
-    int maxFranchises = 1;
-    List<String> allowedRoles = ['OWNER', 'MANAGER', 'BILLING', 'KITCHEN', 'WAITER'];
-
-    // Restaurant Feature Toggles
-    bool qsrBilling = true;
-    bool tableManagement = true;
-    bool kdsEnabled = true;
-    bool qrOrdering = true;
-    bool dualPrinting = true;
-    bool recipeInventory = true;
-    bool dayEndReports = true;
-    bool multiOutlet = false;
-
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) {
-          final primaryAccent = context.isDark ? ClassicTheme.infoBlue : ClassicTheme.infoBlue;
-
-          if (!isDataLoaded) {
-            isDataLoaded = true;
-            Future.microtask(() async {
-              try {
-                final licDoc = await _firestore.collection('licenses').doc(orgId).get();
-                if (licDoc.exists) {
-                  final lData = licDoc.data()!;
-                  planTier = lData['planTier'] ?? 'TRIAL';
-                  expiryWarningDays = lData['expiryWarningDays'] is num ? (lData['expiryWarningDays'] as num).toInt() : 3;
-                  maxUsers = lData['maxUsers'] is num ? (lData['maxUsers'] as num).toInt() : 5;
-                  maxFranchises = lData['maxFranchises'] is num ? (lData['maxFranchises'] as num).toInt() : 1;
-                  if (lData['allowedRoles'] is List) {
-                    allowedRoles = List<String>.from((lData['allowedRoles'] as List).map((e) => e.toString().toUpperCase()));
-                  }
-                  if (lData['endDate'] is Timestamp) {
-                    endDate = (lData['endDate'] as Timestamp).toDate();
-                  } else if (lData['endDate'] is String) {
-                    endDate = DateTime.tryParse(lData['endDate']) ?? endDate;
-                  }
-                  if (endDate.isBefore(DateTime.now())) {
-                    endDate = DateTime.now().add(const Duration(days: 14));
-                  }
-                }
-
-                final featDoc = await _firestore.collection('features').doc(orgId).get();
-                if (featDoc.exists) {
-                  final fData = Map<String, dynamic>.from(featDoc.data()?['features'] ?? {});
-                  qsrBilling = fData['qsrBilling'] ?? fData['billing'] ?? true;
-                  tableManagement = fData['tableManagement'] ?? true;
-                  kdsEnabled = fData['kdsEnabled'] ?? true;
-                  qrOrdering = fData['qrOrdering'] ?? fData['onlineOrderingEnabled'] ?? true;
-                  dualPrinting = fData['dualPrinting'] ?? true;
-                  recipeInventory = fData['recipeInventory'] ?? fData['inventoryEnabled'] ?? true;
-                  dayEndReports = fData['dayEndReports'] ?? fData['reportsEnabled'] ?? true;
-                  multiOutlet = fData['multiOutlet'] ?? (maxFranchises > 1);
-                }
-              } catch (e) {
-                debugPrint("Error reading license for renewal: $e");
-              } finally {
-                if (ctx.mounted) {
-                  setDialogState(() => isLoading = false);
-                }
-              }
-            });
-          }
-
-          final daysLeft = endDate.difference(DateTime.now()).inDays.clamp(0, 99999);
-
-          return AlertDialog(
-            backgroundColor: context.surfaceColor,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-              side: BorderSide(color: context.borderColor),
-            ),
-            title: Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: ClassicTheme.successEmerald.withValues(alpha: 0.15),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(Icons.card_membership_rounded, color: ClassicTheme.successEmerald, size: 22),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text("Renew / Configure License", style: TextStyle(color: context.textPrimary, fontWeight: FontWeight.bold, fontSize: 16)),
-                      Text("$orgName (ID: $orgId)", style: TextStyle(color: context.textSecondary, fontSize: 12)),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            content: ConstrainedBox(
-              constraints: BoxConstraints(
-                maxWidth: min(560, MediaQuery.of(ctx).size.width * 0.92),
-              ),
-              child: isLoading
-                  ? SizedBox(
-                      height: 240,
-                      child: Center(child: CircularProgressIndicator(color: primaryAccent)),
-                    )
-                  : SingleChildScrollView(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text("Subscription Plan & Validity", style: TextStyle(color: context.textPrimary, fontWeight: FontWeight.bold, fontSize: 13)),
-                          const SizedBox(height: 8),
-                          Row(
-                            children: [
-                              Expanded(
-                                flex: 2,
-                                child: DropdownButtonFormField<String>(
-                                  initialValue: planTier,
-                                  dropdownColor: context.surfaceColor,
-                                  style: TextStyle(color: context.textPrimary, fontSize: 13, fontWeight: FontWeight.bold),
-                                  decoration: ClassicTheme.inputDecorationFor(context, labelText: "Plan Tier"),
-                                  items: const [
-                                    DropdownMenuItem(value: 'TRIAL', child: Text("Free Trial")),
-                                    DropdownMenuItem(value: 'MONTHLY', child: Text("Monthly Active")),
-                                    DropdownMenuItem(value: 'YEARLY', child: Text("Annual Paid")),
-                                    DropdownMenuItem(value: 'LIFETIME', child: Text("Lifetime Enterprise")),
-                                  ],
-                                  onChanged: (val) {
-                                    if (val != null) {
-                                      setDialogState(() {
-                                        planTier = val;
-                                        if (val == 'MONTHLY') {
-                                          endDate = DateTime.now().add(const Duration(days: 30));
-                                        } else if (val == 'YEARLY') {
-                                          endDate = DateTime.now().add(const Duration(days: 365));
-                                        } else if (val == 'LIFETIME') {
-                                          endDate = DateTime.now().add(const Duration(days: 36500));
-                                        }
-                                      });
-                                    }
-                                  },
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                flex: 2,
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                                  decoration: BoxDecoration(
-                                    color: context.isDark ? Colors.white.withValues(alpha: 0.05) : Colors.black.withValues(alpha: 0.04),
-                                    borderRadius: BorderRadius.circular(8),
-                                    border: Border.all(color: context.borderColor),
-                                  ),
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text("Expires On", style: TextStyle(color: context.textSecondary, fontSize: 12)),
-                                      const SizedBox(height: 2),
-                                      Text(
-                                        "${endDate.day}/${endDate.month}/${endDate.year} ($daysLeft days)",
-                                        style: const TextStyle(color: ClassicTheme.successEmerald, fontWeight: FontWeight.bold, fontSize: 12),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 10),
-                          Text("Quick Extend Duration:", style: TextStyle(color: context.textSecondary, fontSize: 12, fontWeight: FontWeight.w600)),
-                          const SizedBox(height: 6),
-                          Wrap(
-                            spacing: 8,
-                            runSpacing: 6,
-                            children: [
-                              ActionChip(
-                                label: const Text("+7 Days", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                                onPressed: () => setDialogState(() => endDate = DateTime.now().add(const Duration(days: 7))),
-                              ),
-                              ActionChip(
-                                label: const Text("+14 Days", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                                onPressed: () => setDialogState(() => endDate = DateTime.now().add(const Duration(days: 14))),
-                              ),
-                              ActionChip(
-                                label: const Text("+30 Days", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                                onPressed: () => setDialogState(() => endDate = DateTime.now().add(const Duration(days: 30))),
-                              ),
-                              ActionChip(
-                                label: const Text("+1 Year", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                                onPressed: () => setDialogState(() => endDate = DateTime.now().add(const Duration(days: 365))),
-                              ),
-                              ActionChip(
-                                avatar: const Icon(Icons.calendar_today, size: 14),
-                                label: const Text("Pick Date", style: TextStyle(fontSize: 12)),
-                                onPressed: () async {
-                                  final picked = await showDatePicker(
-                                    context: context,
-                                    initialDate: endDate,
-                                    firstDate: DateTime.now(),
-                                    lastDate: DateTime.now().add(const Duration(days: 36500)),
-                                  );
-                                  if (picked != null) {
-                                    setDialogState(() => endDate = picked);
-                                  }
-                                },
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 16),
-                          Text("Advance Expiry Notice", style: TextStyle(color: context.textPrimary, fontWeight: FontWeight.bold, fontSize: 13)),
-                          const SizedBox(height: 4),
-                          Text(
-                            "Notify administrators and display in-app reminder before subscription ends.",
-                            style: TextStyle(color: context.textSecondary, fontSize: 12),
-                          ),
-                          const SizedBox(height: 8),
-                          DropdownButtonFormField<int>(
-                            initialValue: expiryWarningDays,
-                            dropdownColor: context.surfaceColor,
-                            style: TextStyle(color: context.textPrimary, fontSize: 13, fontWeight: FontWeight.bold),
-                            decoration: ClassicTheme.inputDecorationFor(context, labelText: "Alert Ahead of Expiry"),
-                            items: const [
-                              DropdownMenuItem(value: 1, child: Text("1 Day in Advance")),
-                              DropdownMenuItem(value: 3, child: Text("3 Days in Advance (Recommended)")),
-                              DropdownMenuItem(value: 5, child: Text("5 Days in Advance")),
-                              DropdownMenuItem(value: 7, child: Text("7 Days in Advance")),
-                              DropdownMenuItem(value: 14, child: Text("14 Days in Advance")),
-                            ],
-                            onChanged: (val) {
-                              if (val != null) setDialogState(() => expiryWarningDays = val);
-                            },
-                          ),
-                          const SizedBox(height: 16),
-                          Text("Operational Limits & Quotas", style: TextStyle(color: context.textPrimary, fontWeight: FontWeight.bold, fontSize: 13)),
-                          const SizedBox(height: 8),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: DropdownButtonFormField<int>(
-                                  initialValue: maxUsers,
-                                  dropdownColor: context.surfaceColor,
-                                  style: TextStyle(color: context.textPrimary, fontSize: 13, fontWeight: FontWeight.bold),
-                                  decoration: ClassicTheme.inputDecorationFor(context, labelText: "Max Staff Users"),
-                                  items: const [
-                                    DropdownMenuItem(value: 3, child: Text("3 Users (Starter)")),
-                                    DropdownMenuItem(value: 5, child: Text("5 Users (Standard)")),
-                                    DropdownMenuItem(value: 10, child: Text("10 Users (Busy)")),
-                                    DropdownMenuItem(value: 20, child: Text("20 Users (Large)")),
-                                    DropdownMenuItem(value: 50, child: Text("50 Users (Chain)")),
-                                    DropdownMenuItem(value: 100, child: Text("100 Users (Enterprise)")),
-                                  ],
-                                  onChanged: (val) {
-                                    if (val != null) setDialogState(() => maxUsers = val);
-                                  },
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: DropdownButtonFormField<int>(
-                                  initialValue: maxFranchises,
-                                  dropdownColor: context.surfaceColor,
-                                  style: TextStyle(color: context.textPrimary, fontSize: 13, fontWeight: FontWeight.bold),
-                                  decoration: ClassicTheme.inputDecorationFor(context, labelText: "Max Outlets"),
-                                  items: const [
-                                    DropdownMenuItem(value: 1, child: Text("1 Store (Single)")),
-                                    DropdownMenuItem(value: 3, child: Text("3 Branches")),
-                                    DropdownMenuItem(value: 5, child: Text("5 Branches")),
-                                    DropdownMenuItem(value: 10, child: Text("10 Branches")),
-                                    DropdownMenuItem(value: 25, child: Text("25 Branches")),
-                                  ],
-                                  onChanged: (val) {
-                                    if (val != null) {
-                                      setDialogState(() {
-                                        maxFranchises = val;
-                                        if (val > 1) multiOutlet = true;
-                                      });
-                                    }
-                                  },
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 16),
-                          Text("Permitted Roles for this Organization", style: TextStyle(color: context.textPrimary, fontWeight: FontWeight.bold, fontSize: 13)),
-                          const SizedBox(height: 6),
-                          Wrap(
-                            spacing: 8,
-                            runSpacing: 6,
-                            children: [
-                              for (final role in ['OWNER', 'MANAGER', 'BILLING', 'KITCHEN', 'WAITER'])
-                                FilterChip(
-                                  label: Text(
-                                    role == 'OWNER' ? 'Owner / Admin' :
-                                    role == 'MANAGER' ? 'Store Manager' :
-                                    role == 'BILLING' ? 'Cashier / Billing' :
-                                    role == 'KITCHEN' ? 'Kitchen Chef' : 'Table Captain / Waiter',
-                                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: allowedRoles.contains(role) ? primaryAccent : null),
-                                  ),
-                                  selected: allowedRoles.contains(role),
-                                  selectedColor: primaryAccent.withValues(alpha: 0.15),
-                                  onSelected: (selected) {
-                                    setDialogState(() {
-                                      if (selected) {
-                                        if (!allowedRoles.contains(role)) allowedRoles.add(role);
-                                      } else {
-                                        if (role != 'OWNER') allowedRoles.remove(role);
-                                      }
-                                    });
-                                  },
-                                ),
-                            ],
-                          ),
-                          const SizedBox(height: 16),
-                          Text("Dynamic Feature Toggles (Real-Time Propagation)", style: TextStyle(color: context.textPrimary, fontWeight: FontWeight.bold, fontSize: 13)),
-                          const SizedBox(height: 4),
-                          Text("Changes reflect on client POS terminals instantly without app restarts.", style: TextStyle(color: context.textSecondary, fontSize: 12)),
-                          const SizedBox(height: 8),
-                          Wrap(
-                            spacing: 8,
-                            runSpacing: 6,
-                            children: [
-                              FilterChip(
-                                label: const Text("Fast QSR Billing", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                                selected: qsrBilling,
-                                onSelected: (val) => setDialogState(() => qsrBilling = val),
-                              ),
-                              FilterChip(
-                                label: const Text("Dine-In Tables", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                                selected: tableManagement,
-                                onSelected: (val) => setDialogState(() => tableManagement = val),
-                              ),
-                              FilterChip(
-                                label: const Text("Kitchen Screen (KDS)", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                                selected: kdsEnabled,
-                                onSelected: (val) => setDialogState(() => kdsEnabled = val),
-                              ),
-                              FilterChip(
-                                label: const Text("Table QR Menu", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                                selected: qrOrdering,
-                                onSelected: (val) => setDialogState(() => qrOrdering = val),
-                              ),
-                              FilterChip(
-                                label: const Text("Dual KOT Printing", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                                selected: dualPrinting,
-                                onSelected: (val) => setDialogState(() => dualPrinting = val),
-                              ),
-                              FilterChip(
-                                label: const Text("Recipe Inventory", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                                selected: recipeInventory,
-                                onSelected: (val) => setDialogState(() => recipeInventory = val),
-                              ),
-                              FilterChip(
-                                label: const Text("Day-End Summary", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                                selected: dayEndReports,
-                                onSelected: (val) => setDialogState(() => dayEndReports = val),
-                              ),
-                              FilterChip(
-                                label: const Text("Multi-Branch Hierarchy", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                                selected: multiOutlet,
-                                onSelected: (val) => setDialogState(() => multiOutlet = val),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-            ),
-            actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-            actions: [
-              TextButton(
-                onPressed: isSaving ? null : () => Navigator.pop(ctx),
-                child: Text("Cancel", style: TextStyle(color: context.textSecondary)),
-              ),
-              ElevatedButton.icon(
-                onPressed: isSaving
-                    ? null
-                    : () async {
-                        setDialogState(() => isSaving = true);
-                        try {
-                          final featuresMap = {
-                            'billing': qsrBilling,
-                            'qsrBilling': qsrBilling,
-                            'tableManagement': tableManagement,
-                            'kdsEnabled': kdsEnabled,
-                            'qrOrdering': qrOrdering,
-                            'onlineOrderingEnabled': qrOrdering,
-                            'dualPrinting': dualPrinting,
-                            'recipeInventory': recipeInventory,
-                            'inventoryEnabled': recipeInventory,
-                            'dayEndReports': dayEndReports,
-                            'reportsEnabled': dayEndReports,
-                            'multiOutlet': multiOutlet,
-                            'expenseManagement': true,
-                          };
-
-                          final now = FieldValue.serverTimestamp();
-
-                          await _firestore.collection('licenses').doc(orgId).set({
-                            'planTier': planTier,
-                            'status': 'ACTIVE',
-                            'maxFranchises': maxFranchises,
-                            'maxUsers': maxUsers,
-                            'maxDevices': 3,
-                            'allowedRoles': allowedRoles,
-                            'features': featuresMap,
-                            'startDate': Timestamp.now(),
-                            'endDate': Timestamp.fromDate(endDate),
-                            'expiryWarningDays': expiryWarningDays,
-                            'lastRenewedAt': now,
-                          }, SetOptions(merge: true));
-
-                          await _firestore.collection('features').doc(orgId).set({
-                            'features': featuresMap,
-                            'updatedAt': now,
-                          }, SetOptions(merge: true));
-
-                          await _firestore.collection('limits').doc(orgId).set({
-                            'maxFranchises': maxFranchises,
-                            'maxUsers': maxUsers,
-                            'maxDevices': 3,
-                          }, SetOptions(merge: true));
-
-                          await _firestore.collection('organizations').doc(orgId).set({
-                            'status': 'ACTIVE',
-                            'lastRenewedAt': now,
-                          }, SetOptions(merge: true));
-
-                          try {
-                            await _firestore.collection('renewal_requests').doc(orgId).set({
-                              'status': 'APPROVED',
-                              'approvedAt': now,
-                            }, SetOptions(merge: true));
-                          } catch (_) {}
-
-                          try {
-                            final orgDoc = await _firestore.collection('organizations').doc(orgId).get();
-                            final clientEmail = orgDoc.data()?['ownerEmail'] as String? ?? orgDoc.data()?['email'] as String?;
-                            if (clientEmail != null && clientEmail.isNotEmpty) {
-                              SmtpEmailService.sendLicenseRenewedEmail(
-                                recipientEmail: clientEmail,
-                                orgName: orgName,
-                                planTier: planTier,
-                                validUntil: endDate,
-                                maxUsers: maxUsers,
-                                maxFranchises: maxFranchises,
-                              );
-                            }
-                          } catch (_) {}
-
-                          await _firestore.collection('audit_logs').add({
-                            'actionType': 'LICENSE_RENEWED',
-                            'organizationId': orgId,
-                            'organizationName': orgName,
-                            'details': 'Master Admin renewed license for $orgName ($orgId): plan=$planTier, validUntil=${endDate.toIso8601String().split('T')[0]}, warningDays=$expiryWarningDays, allowedRoles=$allowedRoles',
-                            'timestamp': now,
-                            'priority': 'HIGH',
-                          });
-
-                          if (ctx.mounted) {
-                            Navigator.pop(ctx);
-                            if (mounted) {
-                              AppToast.showSuccess(
-                                context,
-                                "License Updated Successfully!",
-                                subtitle: "Client POS terminals will reflect the renewed subscription in real-time.",
-                              );
-                            }
-                          }
-                        } catch (e) {
-                          setDialogState(() => isSaving = false);
-                          if (ctx.mounted && mounted) {
-                            AppToast.showError(context, "Failed to update license: $e");
-                          }
-                        }
-                      },
-                icon: isSaving
-                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                    : const Icon(Icons.check_circle_rounded, size: 16),
-                label: Text(isSaving ? "Saving..." : "Save & Activate License", style: const TextStyle(fontWeight: FontWeight.bold)),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: ClassicTheme.successEmerald,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                ),
-              ),
-            ],
-          );
-        },
-      ),
-    );
-  }
+  /// Renewals go through the same package-and-plan editor as every other
+  /// licence change, opened as a renewal: the owner's request (if any) seeds
+  /// the picker, the term restarts today, and the request is closed when the
+  /// licence is written. The per-feature tick-box dialog that used to live
+  /// here wrote limits and keys the resolver does not read.
+  void _showRenewLicenseDialog(String orgId, String orgName) =>
+      TenantAccessDialog.show(context, orgId: orgId, orgName: orgName, renew: true);
 
   void _showEditOrganizationDialog(String orgId, String orgName) {
     final formKey = GlobalKey<FormState>();
@@ -3560,6 +3056,9 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                       final rOrgId = rData['organizationId'] ?? doc.id;
                       final rOrgName = rData['organizationName'] ?? rOrgId;
                       final rTier = rData['previousPlanTier'] ?? 'TRIAL';
+                      final rPkg = (rData['requestedPackageName'] ?? rData['requestedPackageId'] ?? '').toString();
+                      final rPlan = (rData['requestedPlanName'] ?? rData['requestedPlanId'] ?? '').toString();
+                      final rAsked = [rPkg, rPlan].where((x) => x.isNotEmpty).join(' \u00b7 ');
                       return Container(
                         margin: const EdgeInsets.only(top: 6),
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -3581,7 +3080,9 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                                     overflow: TextOverflow.ellipsis,
                                   ),
                                   Text(
-                                    "Tenant: $rOrgId  •  Previous: $rTier",
+                                    rAsked.isEmpty
+                                        ? "Tenant: $rOrgId  \u2022  Previous: $rTier"
+                                        : "Tenant: $rOrgId  \u2022  Asked for: $rAsked",
                                     style: TextStyle(color: context.textSecondary, fontSize: 12),
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
@@ -4236,6 +3737,10 @@ class _RegistrationRequestsTabState extends ConsumerState<RegistrationRequestsTa
     String initialOperatingMode = 'dineFirstPostpaid',
     List<String>? initialRoles,
     Map<String, bool>? initialFeatures,
+    /// What the applicant asked for, when they asked in package/plan terms
+    /// (the app's upgrade sheet does). The editor snaps to these documents.
+    String initialPackageId = '',
+    String initialPlanId = '',
   }) async {
     final availablePlans = await SubscriptionPlanService.getAllPlans();
     if (!context.mounted) return;
@@ -4260,23 +3765,25 @@ class _RegistrationRequestsTabState extends ConsumerState<RegistrationRequestsTa
       orElse: () => availablePlans.isNotEmpty ? availablePlans.first : SubscriptionPlanService.fallbackTrialPlan,
     );
 
-    int maxUsers = initialMaxUsers;
+    // `initialMaxUsers` is still accepted from older callers, but the staff
+    // cap is the plan's since 18 Sep 2026 and is not editable here.
     int tableCount = initialTableCount;
     String operatingMode = initialOperatingMode;
 
-    // More than one outlet is a chain, so the applicant's request starts on the
-    // only package that can run one. The admin can change it.
-    TenantPackageSelection selection = TenantPackageSelection.forProfile(
-      initialMaxOutlets > 1 ? PlanProfile.omnichannel : PlanProfile.connected,
-      validityDays:
-          initialTrialDays > 0 ? initialTrialDays : selectedPlan.validityDays,
-      // What the applicant asked for is a starting point the admin can change;
-      // anything the package cannot run is dropped by the editor.
-      addOns: {
-        for (final e in (initialFeatures ?? const <String, bool>{}).entries)
-          if (e.value) e.key: true,
-      },
-    ).copyWith(maxOutlets: initialMaxOutlets > 1 ? initialMaxOutlets : null);
+    // A package and a plan. The applicant's own request names both when it
+    // came from the app's upgrade sheet; a web lead names neither, and starts
+    // on the trial package for its category with the default trial plan.
+    // More than one outlet asked for is a chain, so it starts on the only
+    // starter that can run one. The admin can change any of it.
+    final startPackage = (await PackageService.getById(initialPackageId)) ??
+        (await PackageService.getById(initialMaxOutlets > 1
+            ? PlanProfile.omnichannel.id
+            : Verticals.defaultPackageFor(category))) ??
+        TenantPackage.fromProfile(PlanProfile.offlineDineIn);
+    final startPlan = availablePlans.where((p) => p.id == initialPlanId).firstOrNull ?? selectedPlan;
+    if (!context.mounted) return;
+    TenantPackageSelection selection =
+        TenantPackageSelection(package: startPackage, plan: startPlan);
 
     bool isCreating = false;
     bool obscurePassword = true;
@@ -4492,18 +3999,17 @@ class _RegistrationRequestsTabState extends ConsumerState<RegistrationRequestsTa
                         Row(
                           children: [
                             Expanded(
-                              child: TextFormField(
-                                initialValue: maxUsers.toString(),
-                                style: TextStyle(color: context.textPrimary),
-                                keyboardType: TextInputType.number,
+                              // Staff count is the plan's to decide, so it is
+                              // shown here and edited on the Plans screen.
+                              child: InputDecorator(
                                 decoration: InputDecoration(
-                                  labelText: "Max Staff / Users",
+                                  labelText: "Max Staff / Users (from plan)",
                                   labelStyle: TextStyle(color: context.textSecondary, fontSize: 13),
                                   prefixIcon: const Icon(Icons.groups_rounded, size: 16),
                                   enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: context.borderColor)),
-                                  focusedBorder: const UnderlineInputBorder(borderSide: BorderSide(color: primaryAccent, width: 2)),
                                 ),
-                                onChanged: (v) => maxUsers = int.tryParse(v) ?? maxUsers,
+                                child: Text('${selection.plan.maxUsers}',
+                                    style: TextStyle(color: context.textPrimary)),
                               ),
                             ),
                             const SizedBox(width: 12),
@@ -4578,15 +4084,17 @@ class _RegistrationRequestsTabState extends ConsumerState<RegistrationRequestsTa
                             // package, so the plan name and billing cycle stay
                             // meaningful. Every limit and feature below comes
                             // from the resolver, not from that record.
-                            final basePlan = _planForProfile(
-                                selection.profile, availablePlans, selectedPlan);
-                            final finalPlan = basePlan.copyWith(
-                              validityDays: selection.validityDays,
+                            // The selection *is* a package and a plan now.
+                            // What is written is their composition, so the
+                            // preview the admin just looked at and the licence
+                            // the till reads are the same numbers.
+                            final finalPlan = selection.plan.copyWith(
                               maxOutlets: selection.effectiveOutlets,
                               maxDevices: selection.effectiveDevices,
-                              maxUsers: maxUsers,
+                              maxUsers: selection.plan.maxUsers,
                               tableCount: tableCount,
                               operatingMode: operatingMode,
+                              allowedRoles: selection.effectiveRoles,
                               features: selection.resolvedFeatures,
                             );
 
@@ -4606,6 +4114,8 @@ class _RegistrationRequestsTabState extends ConsumerState<RegistrationRequestsTa
                               requestId: requestId,
                               storageMode: selection.storageMode,
                               planProfile: selection.profile.id,
+                              packageId: selection.packageId,
+                              planId: selection.planId,
                             );
 
                             if (result['success'] != true) {
@@ -5071,6 +4581,8 @@ class _RegistrationRequestsTabState extends ConsumerState<RegistrationRequestsTa
                     initialFeatures: (request.rawData['requestedFeatures'] is Map)
                         ? Map<String, bool>.from((request.rawData['requestedFeatures'] as Map).map((k, v) => MapEntry(k.toString(), v == true)))
                         : null,
+                    initialPackageId: (request.rawData['requestedPackageId'] ?? '').toString(),
+                    initialPlanId: (request.rawData['requestedPlanId'] ?? '').toString(),
                   );
                 },
                 icon: const Icon(Icons.rocket_launch_rounded, size: 16),
@@ -5647,572 +5159,6 @@ class _RegistrationRequestsTabState extends ConsumerState<RegistrationRequestsTa
             const SizedBox(width: 4),
             const Icon(Icons.verified_rounded, size: 12, color: ClassicTheme.successEmerald),
           ],
-        ],
-      ),
-    );
-  }
-}
-
-
-
-
-
-// =============================================================================
-//  TAB 5: PLANS & FEATURES MANAGEMENT TAB
-// =============================================================================
-class PlansAndFeaturesTab extends ConsumerStatefulWidget {
-  const PlansAndFeaturesTab({super.key});
-
-  @override
-  ConsumerState<PlansAndFeaturesTab> createState() => _PlansAndFeaturesTabState();
-}
-
-class _PlansAndFeaturesTabState extends ConsumerState<PlansAndFeaturesTab> {
-  void _showPlanEditorDialog(BuildContext context, [SubscriptionPlan? existing]) {
-    final formKey = GlobalKey<FormState>();
-    final nameCtrl = TextEditingController(text: existing?.name ?? '');
-    final descCtrl = TextEditingController(text: existing?.description ?? '');
-    final daysCtrl = TextEditingController(text: (existing?.validityDays ?? 365).toString());
-    // D5: prices are not stored in the product; the field stays 0 and is not shown.
-    final priceCtrl = TextEditingController(text: '0');
-    final outletsCtrl = TextEditingController(text: (existing?.maxOutlets ?? 1).toString());
-    final usersCtrl = TextEditingController(text: (existing?.maxUsers ?? 5).toString());
-    final devicesCtrl = TextEditingController(text: (existing?.maxDevices ?? 3).toString());
-    final tablesCtrl = TextEditingController(text: (existing?.tableCount ?? 15).toString());
-
-    String billingCycle = existing?.billingCycle ?? 'YEARLY';
-    String operatingMode = existing?.operatingMode ?? 'dineFirstPostpaid';
-    bool isDefaultTrial = existing?.isDefaultTrial ?? false;
-
-    // Feature toggles initialize from catalog
-    final Map<String, bool> featureToggles = {};
-    for (final feat in RestaurantFeatureCatalog.allFeatures) {
-      featureToggles[feat.key] = existing?.features[feat.key] ?? false;
-    }
-
-    bool isSaving = false;
-
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) {
-          final primaryAccent = ClassicTheme.warningAmber;
-          return AlertDialog(
-            backgroundColor: context.surfaceColor,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(20),
-              side: BorderSide(color: context.borderColor),
-            ),
-            title: Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(color: primaryAccent.withValues(alpha: 0.15), shape: BoxShape.circle),
-                  child: Icon(existing == null ? Icons.add_box_rounded : Icons.edit_note_rounded, color: primaryAccent, size: 22),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    existing == null ? "Create Subscription Plan" : "Edit Plan: ${existing.name}",
-                    style: TextStyle(color: context.textPrimary, fontWeight: FontWeight.bold, fontSize: 17),
-                  ),
-                ),
-              ],
-            ),
-            content: SizedBox(
-              width: ClassicTheme.dialogWidth(context, 650),
-              height: 540,
-              child: Form(
-                key: formKey,
-                child: SingleChildScrollView(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Basic Info
-                      Text("Plan Details", style: TextStyle(color: primaryAccent, fontSize: 13, fontWeight: FontWeight.bold)),
-                      const SizedBox(height: 10),
-                      Row(
-                        children: [
-                          Expanded(
-                            flex: 3,
-                            child: TextFormField(
-                              controller: nameCtrl,
-                              style: TextStyle(color: context.textPrimary, fontSize: 13),
-                              decoration: ClassicTheme.inputDecorationFor(context, hintText: "Plan Name (e.g. Pro Dining)", labelText: "Plan Name *"),
-                              validator: (v) => v == null || v.trim().isEmpty ? "Required" : null,
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            flex: 2,
-                            child: DropdownButtonFormField<String>(
-                              initialValue: billingCycle,
-                              isExpanded: true,
-                              dropdownColor: context.surfaceColor,
-                              style: TextStyle(color: context.textPrimary, fontSize: 13),
-                              decoration: ClassicTheme.inputDecorationFor(context, labelText: "Cycle *"),
-                              items: ['TRIAL', 'MONTHLY', 'YEARLY', 'LIFETIME', 'CUSTOM'].map((c) => DropdownMenuItem(
-                                value: c,
-                                child: Text(c, style: TextStyle(color: context.textPrimary, fontSize: 12)),
-                              )).toList(),
-                              onChanged: (v) => setDialogState(() => billingCycle = v!),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      TextFormField(
-                        controller: descCtrl,
-                        maxLines: 2,
-                        style: TextStyle(color: context.textPrimary, fontSize: 13),
-                        decoration: ClassicTheme.inputDecorationFor(context, hintText: "Brief summary of plan entitlements", labelText: "Description"),
-                      ),
-                      const SizedBox(height: 14),
-
-                      // Duration (pricing is agreed off-product — D5)
-                      Row(
-                        children: [
-                          Expanded(
-                            child: TextFormField(
-                              controller: daysCtrl,
-                              keyboardType: TextInputType.number,
-                              style: TextStyle(color: context.textPrimary, fontSize: 13),
-                              decoration: ClassicTheme.inputDecorationFor(context, hintText: "e.g. 14 or 365", labelText: "Duration (Days) *"),
-                              validator: (v) => v == null || v.trim().isEmpty ? "Required" : null,
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: DropdownButtonFormField<String>(
-                              initialValue: operatingMode,
-                              isExpanded: true,
-                              dropdownColor: context.surfaceColor,
-                              style: TextStyle(color: context.textPrimary, fontSize: 13),
-                              decoration: ClassicTheme.inputDecorationFor(context, labelText: "Service Mode"),
-                              items: [
-                                const DropdownMenuItem(value: 'dineFirstPostpaid', child: Text('Dine First, Pay Later', style: TextStyle(fontSize: 12))),
-                                const DropdownMenuItem(value: 'payFirstQSR', child: Text('Pay First (QSR)', style: TextStyle(fontSize: 12))),
-                                const DropdownMenuItem(value: 'hybrid', child: Text('Hybrid Mode', style: TextStyle(fontSize: 12))),
-                              ],
-                              onChanged: (v) => setDialogState(() => operatingMode = v!),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
-
-                      // Quotas & Limits
-                      Text("Quotas & Limits", style: TextStyle(color: primaryAccent, fontSize: 13, fontWeight: FontWeight.bold)),
-                      const SizedBox(height: 10),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: TextFormField(
-                              controller: outletsCtrl,
-                              keyboardType: TextInputType.number,
-                              style: TextStyle(color: context.textPrimary, fontSize: 13),
-                              decoration: ClassicTheme.inputDecorationFor(context, hintText: "Max Outlets", labelText: "Outlets"),
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: TextFormField(
-                              controller: usersCtrl,
-                              keyboardType: TextInputType.number,
-                              style: TextStyle(color: context.textPrimary, fontSize: 13),
-                              decoration: ClassicTheme.inputDecorationFor(context, hintText: "Max Staff Users", labelText: "Staff Users"),
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: TextFormField(
-                              controller: devicesCtrl,
-                              keyboardType: TextInputType.number,
-                              style: TextStyle(color: context.textPrimary, fontSize: 13),
-                              decoration: ClassicTheme.inputDecorationFor(context, hintText: "Max Terminals", labelText: "Terminals"),
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: TextFormField(
-                              controller: tablesCtrl,
-                              keyboardType: TextInputType.number,
-                              style: TextStyle(color: context.textPrimary, fontSize: 13),
-                              decoration: ClassicTheme.inputDecorationFor(context, hintText: "Tables", labelText: "Tables"),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
-
-                      // Default Trial Flag
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: isDefaultTrial ? ClassicTheme.successEmerald.withValues(alpha: 0.1) : context.surfaceColor,
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: isDefaultTrial ? ClassicTheme.successEmerald.withValues(alpha: 0.3) : context.borderColor),
-                        ),
-                        child: SwitchListTile(
-                          contentPadding: EdgeInsets.zero,
-                          title: const Text("Use as Default Free Trial for New Signups", style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
-                          subtitle: const Text("New restaurants selecting 'Start Free Trial' will immediately receive this plan.", style: TextStyle(fontSize: 12)),
-                          value: isDefaultTrial,
-                          activeThumbColor: ClassicTheme.successEmerald,
-                          onChanged: (v) => setDialogState(() => isDefaultTrial = v),
-                        ),
-                      ),
-                      const SizedBox(height: 18),
-
-                      // Grouped Feature Toggles
-                      Text("Included Features (Feature Matrix)", style: TextStyle(color: primaryAccent, fontSize: 13, fontWeight: FontWeight.bold)),
-                      const SizedBox(height: 8),
-                      ...RestaurantFeatureCatalog.groupedFeatures.entries.map((entry) {
-                        return Container(
-                          margin: const EdgeInsets.only(bottom: 12),
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: context.surfaceColor,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: context.borderColor),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(entry.key, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: context.textPrimary)),
-                              const SizedBox(height: 8),
-                              Wrap(
-                                spacing: 8,
-                                runSpacing: 8,
-                                children: entry.value.map((feat) {
-                                  final isChecked = featureToggles[feat.key] ?? false;
-                                  return FilterChip(
-                                    label: Text(feat.label),
-                                    selected: isChecked,
-                                    selectedColor: primaryAccent.withValues(alpha: 0.2),
-                                    backgroundColor: context.canvasColor,
-                                    labelStyle: TextStyle(
-                                      color: isChecked ? primaryAccent : context.textSecondary,
-                                      fontWeight: isChecked ? FontWeight.bold : FontWeight.normal,
-                                      fontSize: 12,
-                                    ),
-                                    side: BorderSide(color: isChecked ? primaryAccent : context.borderColor),
-                                    onSelected: (val) {
-                                      setDialogState(() => featureToggles[feat.key] = val);
-                                    },
-                                  );
-                                }).toList(),
-                              ),
-                            ],
-                          ),
-                        );
-                      }),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx),
-                child: Text("Cancel", style: TextStyle(color: context.textSecondary)),
-              ),
-              ElevatedButton(
-                onPressed: isSaving ? null : () async {
-                  if (!formKey.currentState!.validate()) return;
-                  setDialogState(() => isSaving = true);
-
-                  try {
-                    final planId = existing?.id ?? 'plan_${DateTime.now().millisecondsSinceEpoch}';
-                    final newPlan = SubscriptionPlan(
-                      id: planId,
-                      name: nameCtrl.text.trim(),
-                      description: descCtrl.text.trim(),
-                      isDefaultTrial: isDefaultTrial,
-                      validityDays: int.tryParse(daysCtrl.text.trim()) ?? 365,
-                      price: double.tryParse(priceCtrl.text.trim()) ?? 0.0,
-                      billingCycle: billingCycle,
-                      maxOutlets: int.tryParse(outletsCtrl.text.trim()) ?? 1,
-                      maxUsers: int.tryParse(usersCtrl.text.trim()) ?? 5,
-                      maxDevices: int.tryParse(devicesCtrl.text.trim()) ?? 3,
-                      tableCount: int.tryParse(tablesCtrl.text.trim()) ?? 15,
-                      operatingMode: operatingMode,
-                      features: featureToggles,
-                    );
-
-                    await SubscriptionPlanService.savePlan(newPlan);
-                    if (isDefaultTrial) {
-                      await SubscriptionPlanService.setDefaultTrialPlan(planId);
-                    }
-
-                    if (ctx.mounted) {
-                      Navigator.pop(ctx);
-                      AppToast.showSuccess(context, "Subscription Plan Saved");
-                    }
-                  } catch (e) {
-                    setDialogState(() => isSaving = false);
-                    if (ctx.mounted) AppToast.showError(context, e.toString());
-                  }
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: primaryAccent,
-                  foregroundColor: Colors.black,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                ),
-                child: isSaving
-                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black))
-                    : const Text("Save Plan", style: TextStyle(fontWeight: FontWeight.bold)),
-              ),
-            ],
-          );
-        },
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final primaryAccent = ClassicTheme.warningAmber;
-
-    return StreamBuilder<List<SubscriptionPlan>>(
-      stream: SubscriptionPlanService.getAllPlansStream(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
-        }
-
-        final plans = snapshot.data ?? [SubscriptionPlanService.fallbackTrialPlan];
-
-        return Scaffold(
-          backgroundColor: context.canvasColor,
-          body: Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Top Header Bar
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          "Subscription Plans & Feature Bundles",
-                          style: TextStyle(color: context.textPrimary, fontWeight: FontWeight.bold, fontSize: 18),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          "Configure dynamic plans, feature matrices, quotas, and designate default trial access",
-                          style: TextStyle(color: context.textSecondary, fontSize: 12),
-                        ),
-                      ],
-                    ),
-                    ElevatedButton.icon(
-                      onPressed: () => _showPlanEditorDialog(context),
-                      icon: const Icon(Icons.add_rounded, size: 18),
-                      label: const Text("Create New Plan", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: primaryAccent,
-                        foregroundColor: Colors.black,
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-
-                // Grid of Plans
-                Expanded(
-                  child: ListView.separated(
-                    itemCount: plans.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 14),
-                    itemBuilder: (context, idx) {
-                      final plan = plans[idx];
-                      final isTrial = plan.isDefaultTrial;
-
-                      return Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: context.surfaceColor,
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(
-                            color: isTrial ? primaryAccent.withValues(alpha: 0.5) : context.borderColor,
-                            width: isTrial ? 1.5 : 1,
-                          ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.04),
-                              blurRadius: 10,
-                              offset: const Offset(0, 4),
-                            ),
-                          ],
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Row(
-                                  children: [
-                                    Icon(
-                                      isTrial ? Icons.star_rounded : Icons.card_membership_rounded,
-                                      color: isTrial ? primaryAccent : ClassicTheme.infoBlue,
-                                      size: 24,
-                                    ),
-                                    const SizedBox(width: 10),
-                                    Text(
-                                      plan.name,
-                                      style: TextStyle(color: context.textPrimary, fontWeight: FontWeight.bold, fontSize: 16),
-                                    ),
-                                    const SizedBox(width: 10),
-                                    if (isTrial)
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                        decoration: BoxDecoration(
-                                          color: primaryAccent.withValues(alpha: 0.15),
-                                          borderRadius: BorderRadius.circular(6),
-                                        ),
-                                        child: Text(
-                                          "⭐ DEFAULT FREE TRIAL",
-                                          style: TextStyle(color: primaryAccent, fontWeight: FontWeight.bold, fontSize: 12),
-                                        ),
-                                      ),
-                                  ],
-                                ),
-                                Row(
-                                  children: [
-                                    Text(
-                                      "${plan.validityDays} Days",
-                                      style: TextStyle(color: context.textPrimary, fontWeight: FontWeight.bold, fontSize: 16),
-                                    ),
-                                    Text(
-                                      "  ·  ${plan.billingCycle}",
-                                      style: TextStyle(color: context.textSecondary, fontSize: 12),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ),
-                            if (plan.description.isNotEmpty) ...[
-                              const SizedBox(height: 6),
-                              Text(plan.description, style: TextStyle(color: context.textSecondary, fontSize: 12)),
-                            ],
-                            const SizedBox(height: 12),
-
-                            // Quota Chips
-                            Wrap(
-                              spacing: 8,
-                              runSpacing: 6,
-                              children: [
-                                _quotaPill(Icons.storefront_rounded, "${plan.maxOutlets} Outlet${plan.maxOutlets > 1 ? 's' : ''}", context),
-                                _quotaPill(Icons.people_alt_rounded, "${plan.maxUsers} Staff", context),
-                                _quotaPill(Icons.devices_rounded, "${plan.maxDevices} Terminals", context),
-                                _quotaPill(Icons.table_restaurant_rounded, "${plan.tableCount} Tables", context),
-                                _quotaPill(Icons.schedule_rounded, "${plan.validityDays} Days Validity", context),
-                              ],
-                            ),
-                            const SizedBox(height: 12),
-
-                            // Enabled Feature Chips
-                            Text("Included Features:", style: TextStyle(color: context.textSecondary, fontSize: 12, fontWeight: FontWeight.w600)),
-                            const SizedBox(height: 6),
-                            Wrap(
-                              spacing: 6,
-                              runSpacing: 6,
-                              children: plan.features.entries.where((e) => e.value == true).map((e) {
-                                final featDef = RestaurantFeatureCatalog.allFeatures.firstWhere(
-                                  (f) => f.key == e.key,
-                                  orElse: () => RestaurantFeatureItem(key: e.key, label: e.key, description: '', category: '', iconCode: ''),
-                                );
-                                return Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                  decoration: BoxDecoration(
-                                    color: primaryAccent.withValues(alpha: 0.08),
-                                    borderRadius: BorderRadius.circular(6),
-                                    border: Border.all(color: primaryAccent.withValues(alpha: 0.2)),
-                                  ),
-                                  child: Text(
-                                    featDef.label,
-                                    style: TextStyle(fontSize: 12, color: context.textPrimary, fontWeight: FontWeight.w500),
-                                  ),
-                                );
-                              }).toList(),
-                            ),
-                            const SizedBox(height: 14),
-
-                            // Actions Row
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.end,
-                              children: [
-                                if (!isTrial)
-                                  TextButton.icon(
-                                    onPressed: () async {
-                                      await SubscriptionPlanService.setDefaultTrialPlan(plan.id);
-                                      if (context.mounted) AppToast.showSuccess(context, "Set '${plan.name}' as default trial");
-                                    },
-                                    icon: const Icon(Icons.star_border_rounded, size: 16),
-                                    label: const Text("Make Default Trial", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                                    style: TextButton.styleFrom(foregroundColor: primaryAccent),
-                                  ),
-                                const SizedBox(width: 8),
-                                OutlinedButton.icon(
-                                  onPressed: () => _showPlanEditorDialog(context, plan),
-                                  icon: const Icon(Icons.edit_outlined, size: 16),
-                                  label: const Text("Edit Plan", style: TextStyle(fontSize: 12)),
-                                  style: OutlinedButton.styleFrom(
-                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                    side: BorderSide(color: context.borderColor),
-                                  ),
-                                ),
-                                if (!isTrial) ...[
-                                  const SizedBox(width: 8),
-                                  IconButton(
-                                    icon: const Icon(Icons.delete_outline_rounded, color: ClassicTheme.dangerRed, size: 20),
-                                    tooltip: "Delete Plan",
-                                    onPressed: () async {
-                                      try {
-                                        await SubscriptionPlanService.deletePlan(plan.id);
-                                        if (context.mounted) AppToast.showSuccess(context, "Plan deleted");
-                                      } catch (e) {
-                                        if (context.mounted) AppToast.showError(context, e.toString());
-                                      }
-                                    },
-                                  ),
-                                ],
-                              ],
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _quotaPill(IconData icon, String label, BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: context.canvasColor,
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: context.borderColor),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 13, color: context.textSecondary),
-          const SizedBox(width: 4),
-          Text(label, style: TextStyle(fontSize: 12, color: context.textPrimary, fontWeight: FontWeight.w600)),
         ],
       ),
     );

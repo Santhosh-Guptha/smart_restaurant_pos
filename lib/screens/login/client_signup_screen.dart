@@ -3,6 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../core/classic_theme.dart';
+import '../../core/entitlements.dart';
+import '../../core/license_composer.dart';
+import '../../core/package_model.dart';
+import '../../services/package_service.dart';
 import '../../services/otp_verification_service.dart';
 import '../../services/smtp_email_service.dart';
 import '../../services/subscription_plan_service.dart';
@@ -237,7 +241,14 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
         // =====================================================================
         //  INSTANT FREE TRIAL ACTIVATION (NO MANUAL ADMIN APPROVAL REQUIRED!)
         // =====================================================================
+        // The trial is a package and a plan like every other licence: the
+        // starter package for this business category, on the default trial
+        // plan, composed the same way the console composes them.
         final trialPlan = await SubscriptionPlanService.getDefaultTrialPlan();
+        final trialPackage =
+            (await PackageService.getById(Verticals.defaultPackageFor(_businessCategory))) ??
+                TenantPackage.fromProfile(PlanProfile.offlineDineIn);
+        final composed = LicenseComposer.compose(trialPackage, trialPlan);
 
         final res = await TenantProvisioningService.provisionTenant(
           clientName: clientName,
@@ -245,9 +256,19 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
           email: email,
           mobile: mobile,
           rawPassword: password,
-          plan: trialPlan,
+          plan: trialPlan.copyWith(
+            maxOutlets: composed.maxOutlets,
+            maxDevices: composed.maxDevices,
+            maxUsers: composed.maxUsers,
+            allowedRoles: composed.allowedRoles,
+            features: composed.features,
+          ),
           category: _businessCategory,
           mustChangePassword: false,
+          storageMode: composed.storageMode,
+          planProfile: trialPackage.nearestProfile.id,
+          packageId: trialPackage.id,
+          planId: trialPlan.id,
         );
 
         if (mounted) {

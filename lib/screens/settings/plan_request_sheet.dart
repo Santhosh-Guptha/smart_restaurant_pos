@@ -7,7 +7,6 @@ import '../../core/constants.dart';
 import '../../core/design_tokens.dart';
 import '../../core/entitlements.dart';
 import '../../core/responsive.dart';
-import '../../providers/entitlements_provider.dart';
 import '../../providers/saas_session_provider.dart';
 import '../../utils/ui_feedback.dart';
 import '../admin/widgets/tenant_package_editor.dart';
@@ -50,24 +49,15 @@ class _PlanRequestSheetState extends ConsumerState<PlanRequestSheet> {
   void initState() {
     super.initState();
     final session = ref.read(saasSessionProvider);
-    final ent = ref.read(entitlementsProvider);
     final licence = session.currentLicense;
 
     // Start from what they have, so the sheet reads as "change this" rather
     // than "choose from scratch".
     final current = PlanProfile.byId(licence?.planProfile ?? licence?.planTier);
-    _selection = TenantPackageSelection.forProfile(
-      current,
-      validityDays: 365,
-      addOns: {
-        for (final def in FeatureCatalog.all)
-          if (ent.isEnabled(def.key) && !current.includes(def.key)) def.key: true,
-      },
-    ).copyWith(
-      storageMode: current.allowedStorageModes.contains(ent.storageMode)
-          ? ent.storageMode
-          : null,
-    );
+    // A package and a plan now, not a profile plus ticked extras. The editor
+    // loads both lists and snaps this to the matching documents once it has
+    // them; until then the starter of their current profile stands in.
+    _selection = TenantPackageSelection.forProfile(current, validityDays: 365);
   }
 
   @override
@@ -92,6 +82,13 @@ class _PlanRequestSheetState extends ConsumerState<PlanRequestSheet> {
         'organizationName': org.name,
         'type': widget.type,
         'status': 'PENDING',
+        // The two ids are what the console's approval card reads. The older
+        // fields stay so a console build that predates packages still shows
+        // something sensible.
+        'requestedPackageId': _selection.packageId,
+        'requestedPlanId': _selection.planId,
+        'requestedPackageName': _selection.package.name,
+        'requestedPlanName': _selection.planId.isEmpty ? '' : _selection.plan.name,
         'requestedProfile': _selection.profile.id,
         'requestedStorageMode': _selection.storageMode,
         'requestedAddOns': _selection.addOns.keys.toList()..sort(),
@@ -109,8 +106,8 @@ class _PlanRequestSheetState extends ConsumerState<PlanRequestSheet> {
         'targetOrgId': org.id,
         'organizationId': org.id,
         'organizationName': org.name,
-        'details': '${widget.type} requested: ${_selection.profile.label}'
-            '${_selection.addOns.isEmpty ? '' : ' + ${_selection.addOns.length} add-on(s)'}',
+        'details': '${widget.type} requested: ${_selection.package.name}'
+            '${_selection.planId.isEmpty ? '' : ' \u00b7 ${_selection.plan.name}'}',
         'by': user?.email ?? 'owner',
         'priority': 'HIGH',
         'timestamp': now,
