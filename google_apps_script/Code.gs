@@ -67,6 +67,8 @@ function doPost(e) {
     var isPublicAction = (
       json.action === "START_TRIAL" ||
       json.action === "REGISTER_TRIAL" ||
+      json.action === "SEND_WHATSAPP_NOTIFICATION" ||
+      json.action === "WHATSAPP_NOTIFICATION" ||
       (json.action === "SAVE_BILL" && !isStatusSettled(b.payment_status || b.status)) ||
       json.action === "RECORD_PAYMENT" ||
       json.action === "SERVICE_REQUEST" ||
@@ -184,6 +186,10 @@ function doPost(e) {
       case "VOID_LINE":
       case "CANCEL_LINE":
         return handleVoidLine(json);
+
+      case "SEND_WHATSAPP_NOTIFICATION":
+      case "WHATSAPP_NOTIFICATION":
+        return handleSendWhatsAppNotification(json);
 
       default:
         return responseJson({ success: false, error: "Unknown action: " + action });
@@ -841,6 +847,10 @@ function persistV2Order(ss, orgId, billId, cleanId, tokenNo, tableName, cTable, 
         var itemQty = parseFloat(it.qty || it.quantity) || 1;
         var itemPriceP = Math.round((parseFloat(it.price || it.unitPrice || 0) || 0) * 100);
         var lineTotalP = Math.round(itemQty * itemPriceP);
+        var modSummary = it.modifiersSummary || (Array.isArray(it.selectedModifiers) ? it.selectedModifiers.map(function(m) { return m.name; }).join(', ') : (Array.isArray(it.modifiers) ? it.modifiers.map(function(m) { return m.name; }).join(', ') : ''));
+        var itemNotes = String(it.notes || it.instructions || "").trim();
+        var combinedNotes = modSummary ? (itemNotes ? (itemNotes + " | " + modSummary) : modSummary) : itemNotes;
+
         var lineRow = [
           lineId,
           billId,
@@ -852,7 +862,7 @@ function persistV2Order(ss, orgId, billId, cleanId, tokenNo, tableName, cTable, 
           lineTotalP,
           Math.round((parseFloat(b.gst_rate || b.gstRate) || 5) * 100),
           String(it.station || b.station || "Main Kitchen").trim(),
-          String(it.notes || it.instructions || "").trim(),
+          combinedNotes,
           isSettled ? "SERVED" : String(it.kitchenStatus || b.kitchenStatus || "PENDING").toUpperCase(),
           // Preserve any void already recorded against this line.
           prevLine ? prevLine.voidedQty : 0,
@@ -4846,3 +4856,88 @@ function handleRefundPayment(json) {
     try { lock.releaseLock(); } catch(e) {}
   }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Automated WhatsApp Notification Webhook Handler
+// Handles WELCOME_CREDENTIALS, DAY_END_Z_REPORT, and transactional notifications
+// ─────────────────────────────────────────────────────────────────────────────
+function handleSendWhatsAppNotification(json) {
+  var data = json.data || json;
+  var phone = String(data.phone || json.phone || "").trim();
+  var message = String(data.message || json.message || "").trim();
+  var type = String(data.type || json.type || "GENERAL").trim();
+  var orgId = String(data.org_id || data.orgId || json.org_id || json.orgId || "").trim();
+  var metadata = data.metadata || json.metadata || {};
+
+  if (!phone || !message) {
+    return responseJson({ success: false, ok: false, error: "Phone number and message are required." });
+  }
+
+  // 1. Check if external WhatsApp gateway is configured in Script Properties
+  var gatewayDispatched = false;
+  var gatewayError = null;
+  try {
+    var props = PropertiesService.getScriptProperties();
+    var gatewayUrl = props.getProperty("WHATSAPP_GATEWAY_URL");
+    var gatewayToken = props.getProperty("WHATSAPP_API_TOKEN") || props.getProperty("WHATSAPP_TOKEN");
+    if (gatewayUrl) {
+      var payload = {
+        phone: phone,
+        message: message,
+        type: type,
+        orgId: orgId,
+        metadata: metadata
+      };
+      var headers = { "Content-Type": "application/json" };
+      if (gatewayToken) {
+        headers["Authorization"] = "Bearer " + gatewayToken;
+      }
+      var res = UrlFetchApp.fetch(gatewayUrl, {
+        method: "post",
+        contentType: "application/json",
+        headers: headers,
+        payload: JSON.stringify(payload),
+        muteHttpExceptions: true
+      });
+      if (res.getResponseCode() >= 200 && res.getResponseCode() < 300) {
+        gatewayDispatched = true;
+      } else {
+        gatewayError = "Gateway returned status " + res.getResponseCode();
+      }
+    }
+  } catch (eGw) {
+    gatewayError = eGw.toString();
+  }
+
+  // 2. Audit log into restaurant's Google Sheet if spreadsheet is accessible
+  try {
+    var sId = json.spreadsheet_id || json.spreadsheetId || (orgId ? getSheetIdForOrg(orgId) : null);
+    if (sId) {
+      var ss = SpreadsheetApp.openById(sId);
+      if (ss) {
+        logAuditRecord(
+          ss,
+          orgId,
+          "WHATSAPP_WEBHOOK",
+          "SEND_WHATSAPP_NOTIFICATION",
+          type,
+          phone,
+          "",
+          message.substring(0, 250),
+          gatewayDispatched ? "Dispatched via Gateway" : (gatewayError ? ("Logged (Gateway error: " + gatewayError + ")") : "Logged to Audit")
+        );
+      }
+    }
+  } catch (eAudit) {}
+
+  return responseJson({
+    success: true,
+    ok: true,
+    dispatched: true,
+    gateway_sent: gatewayDispatched,
+    phone: phone,
+    type: type,
+    message: "WhatsApp notification processed successfully."
+  });
+}
+
