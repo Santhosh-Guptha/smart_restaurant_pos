@@ -9,7 +9,7 @@ import '../core/cloud_gate.dart';
 /// for automated Multi-Tenant Organization, Outlet, and Spreadsheet management.
 class AppsScriptBackendService {
   static const String _defaultWebhookUrl =
-      'https://script.google.com/macros/s/AKfycbwqdDoJo7T-EAWDGPlgahiPOgu8V6CqM4QGVoY29JcewEXCd1T4_heLF2ZEWk33aoEedw/exec';
+      'https://script.google.com/macros/s/AKfycbwZIs_n5hCtSBqkyPOVqeZZBY1XjUAv4NjYWj8O3AY2i0Fw0Rl2OV-TA-IgmlvRbo7pFQ/exec';
   static const String _secretToken = "SMART_POS_SECURE_TOKEN_2026";
 
 
@@ -19,7 +19,8 @@ class AppsScriptBackendService {
     if (stored == null ||
         stored.toString().isEmpty ||
         stored.toString().contains('AKfycbxIAGxL_Chf3xMKfpqMyJ8fHkYq990x') ||
-        stored.toString().contains('AKfycbwmwGpu3ZKMiDJjGnZAXGCrMBr0s5bootd')) {
+        stored.toString().contains('AKfycbwmwGpu3ZKMiDJjGnZAXGCrMBr0s5bootd') ||
+        stored.toString().contains('AKfycbwqdDoJo7T-EAWDGPlgahiPOgu8V6CqM4QGVoY29JcewEXCd1T4_heLF2ZEWk33aoEedw')) {
       return _defaultWebhookUrl;
     }
     return stored.toString();
