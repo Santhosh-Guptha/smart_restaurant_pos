@@ -376,6 +376,20 @@ When transitioning from local development to the brand-new production environmen
 
 ---
 
+### Issue 23: Offline Hive Cache Session Persistence for Purged/Deleted Clients
+- **Problem**: Even after permanently purging a tenant and its user accounts from Cloud Firestore, devices and Web PWA browsers already logged in (`smartbizz.devmonks.space/pos/`) continued to open and operate.
+  1. In `saas_session_provider.dart`, the real-time listener `_orgListener` contained `if (!orgSnapshot.exists) return;`, ignoring document deletion in Firestore and allowing the open browser/device terminal to stay active indefinitely.
+  2. In `refreshSessionFromFirestore()`, when `orgDoc.exists` or `userDoc.exists` was false, the state update fell back to `updatedOrg ?? state.currentOrganization` and `updatedUser ?? state.currentUser`, retaining the old cached Hive profile instead of clearing the session.
+  3. In `_init()`, `refreshSessionFromFirestore()` was dispatched un-awaited in the background, allowing the dashboard UI to render immediately from cached Hive keys.
+- **Resolution**:
+  - In `saas_session_provider.dart`:
+    1. Real-time `_orgListener` and newly added `_userListener` explicitly detect `!snapshot.exists` or `status: 'DELETED'/'INACTIVE'` and immediately execute `await clearSession()`.
+    2. `refreshSessionFromFirestore()` verifies that both the organization document and user document exist in Firestore; if either is missing, it immediately evicts the session via `await clearSession()`.
+    3. `_init()` awaits `refreshSessionFromFirestore()` during boot/refresh, preventing purged tenants from launching from stale local cache.
+  - Rebuilt Flutter Web release (`flutter build web --release --base-href "/pos/"`) and deployed live to Firebase Hosting (`smartdine-pos.web.app` and `smartbizz.devmonks.space/pos/`).
+
+---
+
 ### Step 2: Google Apps Script Webhook Deployment
 - [x] Logged into [script.google.com](https://script.google.com) with production account `smartdine.platform@gmail.com`.
 - [x] Deployed `google_apps_script/Code.gs` as Web App (the canonical production operational gateway):

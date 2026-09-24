@@ -313,6 +313,10 @@ When a spreadsheet is connected, `ensureV2Sheets(ss)` automatically provisions a
   - Dialog now automatically closes with success toast immediately upon purge completion.
   - Added "Purge permanently now" directly under the "Close" section in `TenantAccessDialog` without requiring a prior soft-delete.
   - Added direct "Purge Tenant" icon button (`delete_forever_rounded`), "Store Closed — Pending Permanent Purge" warning banner, and "Purge Now" button to organization cards in `MasterAdminScreen`.
+- **Client Session Eviction & Real-Time Invalidation (`saas_session_provider.dart`)**:
+  - `_orgListener` and `_userListener` detect when a tenant or user document is deleted or status set to `DELETED`/`INACTIVE` in Firestore and immediately trigger `clearSession()`.
+  - `refreshSessionFromFirestore()` verifies document existence in Firestore during initialization, preventing terminals from continuing to operate from stale offline Hive cache.
+  - Web POS release deployed to Firebase Hosting (`smartdine-pos.web.app` and `smartbizz.devmonks.space/pos/`).
 
 ## 5. Configuration & Deployment Guide
 

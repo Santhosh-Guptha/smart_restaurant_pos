@@ -118,6 +118,7 @@ class SaasSessionNotifier extends StateNotifier<SaasSessionState> {
   StreamSubscription<DocumentSnapshot>? _licenseListener;
   StreamSubscription<DocumentSnapshot>? _featuresListener;
   StreamSubscription<DocumentSnapshot>? _orgListener;
+  StreamSubscription<DocumentSnapshot>? _userListener;
 
   SaasSessionNotifier(this._ref) : super(SaasSessionState(isInitializing: true)) {
     initFuture = initSession();
@@ -198,8 +199,8 @@ class SaasSessionNotifier extends StateNotifier<SaasSessionState> {
           _setupRealtimeListeners(org.id);
           await _initializeSaaSLocalProfile(user.email, org.name);
 
-          // Eagerly refresh in background from Firestore to get any updated limits/details
-          refreshSessionFromFirestore();
+          // Eagerly refresh from Firestore to get any updated limits/details, or evict if deleted
+          await refreshSessionFromFirestore();
         } else {
           await clearSession();
         }
@@ -230,6 +231,12 @@ class SaasSessionNotifier extends StateNotifier<SaasSessionState> {
       SaasUser? updatedUser;
       if (userDoc.exists) {
         final userData = userDoc.data()!;
+        final userStatus = (userData['status'] ?? 'ACTIVE').toString().toUpperCase();
+        if (userStatus == 'DELETED' || userStatus == 'INACTIVE') {
+          debugPrint("🚨 User $userId is marked $userStatus in Firestore. Evicting session...");
+          await clearSession();
+          return;
+        }
         updatedUser = SaasUser(
           id: userId,
           email: userData['email'] ?? state.currentUser!.email,
@@ -240,6 +247,10 @@ class SaasSessionNotifier extends StateNotifier<SaasSessionState> {
           mustChangePassword: userData['mustChangePassword'] == true,
         );
         await box.put('saas_user', jsonEncode(updatedUser.toJson()));
+      } else if (userId != 'usr_master_admin') {
+        debugPrint("🚨 User $userId does not exist in Firestore. Evicting session...");
+        await clearSession();
+        return;
       }
 
       // 2. Fetch Organization
@@ -257,6 +268,10 @@ class SaasSessionNotifier extends StateNotifier<SaasSessionState> {
           final orgData = orgDoc.data()!;
           updatedOrg = SaasOrganization.fromFirestore(orgData, orgId);
           await box.put('saas_org', jsonEncode(updatedOrg.toJson()));
+        } else {
+          debugPrint("🚨 Organization $orgId does not exist in Firestore. Evicting session...");
+          await clearSession();
+          return;
         }
       }
 
@@ -322,13 +337,11 @@ class SaasSessionNotifier extends StateNotifier<SaasSessionState> {
       }
 
       // 4. Update memory state
-      if (updatedOrg != null) {
-        await box.put('pure_offline_mode', updatedOrg.storageMode == 'PURE_OFFLINE');
-      }
+      await box.put('pure_offline_mode', updatedOrg.storageMode == 'PURE_OFFLINE');
 
       state = SaasSessionState(
         currentUser: updatedUser ?? state.currentUser,
-        currentOrganization: updatedOrg ?? state.currentOrganization,
+        currentOrganization: updatedOrg,
         currentLicense: updatedLicense ?? state.currentLicense,
         activeFranchiseId: state.activeFranchiseId,
         isMockMode: false,
@@ -1875,7 +1888,12 @@ class SaasSessionNotifier extends StateNotifier<SaasSessionState> {
       });
 
       _orgListener = firestore.collection('organizations').doc(orgId).snapshots().listen((orgSnapshot) async {
-        if (!orgSnapshot.exists || !mounted) return;
+        if (!mounted) return;
+        if (!orgSnapshot.exists) {
+          debugPrint("🚨 [Realtime] Organization $orgId was deleted from Firestore. Terminating session...");
+          await clearSession();
+          return;
+        }
         try {
           final orgData = orgSnapshot.data()!;
           final newOrg = SaasOrganization.fromFirestore(orgData, orgId);
@@ -1895,6 +1913,29 @@ class SaasSessionNotifier extends StateNotifier<SaasSessionState> {
       }, onError: (e) {
         debugPrint("Realtime org details listener error: $e");
       });
+
+      final currentUserId = state.currentUser?.id;
+      if (currentUserId != null && currentUserId != 'usr_master_admin') {
+        _userListener = firestore.collection('users').doc(currentUserId).snapshots().listen((userSnapshot) async {
+          if (!mounted) return;
+          if (!userSnapshot.exists) {
+            debugPrint("🚨 [Realtime] User $currentUserId was deleted from Firestore. Terminating session...");
+            await clearSession();
+            return;
+          }
+          final uData = userSnapshot.data();
+          if (uData != null) {
+            final uStatus = (uData['status'] ?? 'ACTIVE').toString().toUpperCase();
+            if (uStatus == 'DELETED' || uStatus == 'INACTIVE') {
+              debugPrint("🚨 [Realtime] User $currentUserId is marked $uStatus. Terminating session...");
+              await clearSession();
+              return;
+            }
+          }
+        }, onError: (e) {
+          debugPrint("Realtime user listener error: $e");
+        });
+      }
     } catch (e) {
       debugPrint("Failed to setup realtime listeners (probably Firebase not initialized): $e");
     }
@@ -1904,6 +1945,7 @@ class SaasSessionNotifier extends StateNotifier<SaasSessionState> {
     _licenseListener?.cancel();
     _featuresListener?.cancel();
     _orgListener?.cancel();
+    _userListener?.cancel();
   }
 
   /// Switches active restaurant branch / outlet context
