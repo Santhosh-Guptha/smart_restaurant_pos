@@ -439,12 +439,16 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
                                             password: passwordController.text.trim(),
                                             fromName: fromNameController.text.trim().isNotEmpty ? fromNameController.text.trim() : 'SmartDine POS',
                                           );
-                                          await SmtpEmailService.sendTestEmail(
+                                          final ok = await SmtpEmailService.sendTestEmail(
                                             toEmail: testEmailController.text.trim(),
                                             config: cfg,
                                           );
                                           if (ctx.mounted && mounted) {
-                                            AppToast.showSuccess(context, "Test email sent successfully to ${testEmailController.text.trim()}!");
+                                            if (ok) {
+                                              AppToast.showSuccess(context, "Test email sent successfully to ${testEmailController.text.trim()}!");
+                                            } else {
+                                              AppToast.showError(context, "Test email could not be delivered. Please verify settings.");
+                                            }
                                           }
                                         } catch (e) {
                                           if (ctx.mounted && mounted) {
@@ -1516,6 +1520,41 @@ class OrganizationsTab extends ConsumerStatefulWidget {
     );
   }
 
+  static const List<String> standardCategories = [
+    'Restaurant & Cafe',
+    'Fast Food / QSR',
+    'Fine Dining & Bar',
+    'Bakery & Sweets',
+    'Food Court / Kiosk',
+    'Cloud Kitchen / Delivery',
+    'Pizzeria / Italian',
+    'Coffee House / Tea Lounge',
+    'Other Hospitality',
+    'Kirana / Grocery Store',
+    'Supermarket / Departmental Store',
+    'Pharmacy / Medical Store',
+    'General Retail / Fashion / Electronics',
+  ];
+
+  static String canonicalizeCategory(String? cat) {
+    if (cat == null || cat.trim().isEmpty) return 'Restaurant & Cafe';
+    final clean = cat.trim();
+    if (standardCategories.contains(clean)) return clean;
+    final v = Verticals.forCategory(clean);
+    switch (v) {
+      case Verticals.supermarket:
+        return 'Supermarket / Departmental Store';
+      case Verticals.kirana:
+        return 'Kirana / Grocery Store';
+      case Verticals.pharmacy:
+        return 'Pharmacy / Medical Store';
+      case Verticals.retail:
+        return 'General Retail / Fashion / Electronics';
+      default:
+        return 'Restaurant & Cafe';
+    }
+  }
+
   static String _getEntityLabel(String cat) {
     final v = Verticals.forCategory(cat);
     switch (v) {
@@ -1553,41 +1592,7 @@ class OrganizationsTab extends ConsumerStatefulWidget {
 
     final formKey = GlobalKey<FormState>();
 
-    final validCategories = const [
-      'Restaurant & Cafe',
-      'Fast Food / QSR',
-      'Fine Dining & Bar',
-      'Bakery & Sweets',
-      'Food Court / Kiosk',
-      'Cloud Kitchen / Delivery',
-      'Pizzeria / Italian',
-      'Coffee House / Tea Lounge',
-      'Other Hospitality',
-      'Kirana / Grocery Store',
-      'Supermarket / Departmental Store',
-      'Pharmacy / Medical Store',
-      'General Retail / Fashion / Electronics',
-    ];
-
-    String businessCategory = 'Restaurant & Cafe';
-    if (initialCategory != null && initialCategory.trim().isNotEmpty) {
-      if (validCategories.contains(initialCategory.trim())) {
-        businessCategory = initialCategory.trim();
-      } else {
-        final v = Verticals.forCategory(initialCategory);
-        if (v == Verticals.supermarket) {
-          businessCategory = 'Supermarket / Departmental Store';
-        } else if (v == Verticals.kirana) {
-          businessCategory = 'Kirana / Grocery Store';
-        } else if (v == Verticals.pharmacy) {
-          businessCategory = 'Pharmacy / Medical Store';
-        } else if (v == Verticals.retail) {
-          businessCategory = 'General Retail / Fashion / Electronics';
-        } else {
-          businessCategory = 'Restaurant & Cafe';
-        }
-      }
-    }
+    String businessCategory = canonicalizeCategory(initialCategory);
 
     final entityLabel = _getEntityLabel(businessCategory);
 
@@ -1605,25 +1610,48 @@ class OrganizationsTab extends ConsumerStatefulWidget {
     final ownerEmailController = TextEditingController(text: initialEmail ?? '');
     final ownerPasswordController = TextEditingController(text: '123456');
 
-    // Selected Dynamic Subscription Plan: Match initialPlanId if provided
+    final isRestaurantInitial = Verticals.forCategory(businessCategory) == Verticals.restaurant;
+
+    // Selected Dynamic Subscription Plan: Match initialPlanId or initialPackageId if provided
     SubscriptionPlan selectedPlan;
+    bool matchesNonRestaurant(SubscriptionPlan p) =>
+        p.id.toLowerCase() == 'offline_counter' ||
+        p.id.toLowerCase() == 'offline_single' ||
+        p.name.toLowerCase().contains('counter');
+
     if (initialPlanId != null && initialPlanId.trim().isNotEmpty) {
       final targetPlanId = initialPlanId.trim().toLowerCase();
+      final normalizedId = targetPlanId == 'offline_single' ? 'offline_counter' : targetPlanId;
       selectedPlan = availablePlans.firstWhere(
-        (p) => p.id.toLowerCase() == targetPlanId,
+        (p) => p.id.toLowerCase() == normalizedId || p.id.toLowerCase() == targetPlanId,
         orElse: () => availablePlans.firstWhere(
-          (p) => p.isDefaultTrial,
+          (p) => initialPackageId != null &&
+              initialPackageId.trim().isNotEmpty &&
+              (p.id.toLowerCase() == initialPackageId.trim().toLowerCase() ||
+                  (initialPackageId.trim().toLowerCase() == 'offline_single' && p.id.toLowerCase() == 'offline_counter')),
+          orElse: () => availablePlans.firstWhere(
+            (p) => isRestaurantInitial ? p.isDefaultTrial : matchesNonRestaurant(p),
+            orElse: () => availablePlans.isNotEmpty ? availablePlans.first : SubscriptionPlanService.fallbackTrialPlan,
+          ),
+        ),
+      );
+    } else if (initialPackageId != null && initialPackageId.trim().isNotEmpty) {
+      final targetPkg = initialPackageId.trim().toLowerCase();
+      final normalizedPkg = targetPkg == 'offline_single' ? 'offline_counter' : targetPkg;
+      selectedPlan = availablePlans.firstWhere(
+        (p) => p.id.toLowerCase() == normalizedPkg || p.id.toLowerCase() == targetPkg,
+        orElse: () => availablePlans.firstWhere(
+          (p) => isRestaurantInitial ? p.isDefaultTrial : matchesNonRestaurant(p),
           orElse: () => availablePlans.isNotEmpty ? availablePlans.first : SubscriptionPlanService.fallbackTrialPlan,
         ),
       );
     } else {
       selectedPlan = availablePlans.firstWhere(
-        (p) => p.isDefaultTrial,
+        (p) => isRestaurantInitial ? p.isDefaultTrial : matchesNonRestaurant(p),
         orElse: () => availablePlans.isNotEmpty ? availablePlans.first : SubscriptionPlanService.fallbackTrialPlan,
       );
     }
 
-    final isRestaurantInitial = Verticals.forCategory(businessCategory) == Verticals.restaurant;
     int tableCount = isRestaurantInitial ? selectedPlan.tableCount : 0;
     String operatingMode = isRestaurantInitial ? selectedPlan.operatingMode : 'counterPrepaid';
 
@@ -1632,9 +1660,17 @@ class OrganizationsTab extends ConsumerStatefulWidget {
         ? initialPackageId.trim()
         : Verticals.defaultPackageFor(businessCategory);
 
-    final startPackage = (await PackageService.getById(pkgIdToUse)) ??
+    var startPackage = (await PackageService.getById(pkgIdToUse)) ??
         (await PackageService.getById(Verticals.defaultPackageFor(businessCategory))) ??
         TenantPackage.fromProfile(PlanProfile.offlineSingle);
+
+    // If not a restaurant, never start on offline dine-in
+    if (!isRestaurantInitial && startPackage.id == PlanProfile.offlineDineIn.id) {
+      final fallbackPkg = await PackageService.getById(Verticals.defaultPackageFor(businessCategory));
+      if (fallbackPkg != null) {
+        startPackage = fallbackPkg;
+      }
+    }
     if (!context.mounted) return;
     TenantPackageSelection selection =
         TenantPackageSelection(package: startPackage, plan: selectedPlan);
@@ -2338,7 +2374,7 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                     final data = orgDoc.data() ?? {};
                     nameController.text = data['name'] ?? orgName;
                     ownerNameController.text = data['ownerName'] ?? '';
-                    businessCategory = data['businessCategory'] ?? 'Restaurant & Cafe';
+                    businessCategory = OrganizationsTab.canonicalizeCategory(data['businessCategory'] ?? data['category']);
                     mobileController.text = data['mobile'] ?? data['phone'] ?? '';
                     aadhaarController.text = data['aadhaar'] ?? '';
                     panController.text = data['pan'] ?? '';
@@ -2543,17 +2579,10 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                                         enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: context.borderColor)),
                                         focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: primaryAccent, width: 2)),
                                       ),
-                                      items: const [
-                                        DropdownMenuItem(value: 'Restaurant & Cafe', child: Text('Restaurant & Cafe')),
-                                        DropdownMenuItem(value: 'Supermarket / Retail', child: Text('Supermarket / Retail')),
-                                        DropdownMenuItem(value: 'Bakery & Sweets', child: Text('Bakery & Sweets')),
-                                        DropdownMenuItem(value: 'Clothing & Apparel', child: Text('Clothing & Apparel')),
-                                        DropdownMenuItem(value: 'Electronics & Mobile', child: Text('Electronics & Mobile')),
-                                        DropdownMenuItem(value: 'Pharmacy & Medical', child: Text('Pharmacy & Medical')),
-                                        DropdownMenuItem(value: 'Hardware & Electrical', child: Text('Hardware & Electrical')),
-                                        DropdownMenuItem(value: 'General Store', child: Text('General Store')),
-                                        DropdownMenuItem(value: 'Other Business', child: Text('Other Business')),
-                                      ],
+                                      items: OrganizationsTab.standardCategories.map((c) => DropdownMenuItem(
+                                        value: c,
+                                        child: Text(c),
+                                      )).toList(),
                                       onChanged: (v) {
                                         if (v != null) {
                                           setDialogState(() => businessCategory = v);
@@ -3087,12 +3116,16 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                                                   fromName: smtpFromNameController.text.trim().isNotEmpty ? smtpFromNameController.text.trim() : nameController.text.trim(),
                                                   inheritPlatform: false,
                                                 );
-                                                await SmtpEmailService.sendTestEmail(
+                                                final ok = await SmtpEmailService.sendTestEmail(
                                                   toEmail: smtpTestEmailController.text.trim(),
                                                   config: cfg,
                                                 );
                                                 if (context.mounted) {
-                                                  AppToast.showSuccess(context, "Test email sent successfully to ${smtpTestEmailController.text.trim()}!");
+                                                  if (ok) {
+                                                    AppToast.showSuccess(context, "Test email sent successfully to ${smtpTestEmailController.text.trim()}!");
+                                                  } else {
+                                                    AppToast.showError(context, "Test email could not be delivered. Please verify settings.");
+                                                  }
                                                 }
                                               } catch (e) {
                                                 if (context.mounted) {
@@ -4155,6 +4188,7 @@ class UnifiedClientRequest {
   });
 
   bool get isTrial => requestType == 'FREE_TRIAL';
+  bool get isCommercialLead => requestType == 'PLAN_INQUIRY';
   bool get isPending => status == 'PENDING' || status == 'NEW_INQUIRY';
 }
 
@@ -4178,13 +4212,6 @@ class _RegistrationRequestsTabState extends ConsumerState<RegistrationRequestsTa
     super.dispose();
   }
 
-  String _generateUniqueOrgId() {
-    final now = DateTime.now();
-    final year = now.year.toString().substring(2);
-    final randomDigits = 1000 + Random().nextInt(9000);
-    return "ORG$year$randomDigits";
-  }
-
   void _showOnboardDialogFromRequest({
     required String requestId,
     required String clientName,
@@ -4203,425 +4230,23 @@ class _RegistrationRequestsTabState extends ConsumerState<RegistrationRequestsTa
     String initialOperatingMode = 'dineFirstPostpaid',
     List<String>? initialRoles,
     Map<String, bool>? initialFeatures,
-    /// What the applicant asked for, when they asked in package/plan terms
-    /// (the app's upgrade sheet does). The editor snaps to these documents.
     String initialPackageId = '',
     String initialPlanId = '',
-  }) async {
-    final availablePlans = await SubscriptionPlanService.getAllPlans();
-    if (!context.mounted) return;
-
-    final formKey = GlobalKey<FormState>();
-
-    final orgIdController = TextEditingController(text: _generateUniqueOrgId());
-    final ownerNameController = TextEditingController(text: clientName);
-    final nameController = TextEditingController(text: shopName.isNotEmpty ? shopName : "$clientName Restaurant");
-    String businessCategory = category.isNotEmpty ? category : 'Restaurant & Cafe';
-    final mobileController = TextEditingController(text: mobile);
-    final aadhaarController = TextEditingController(text: initialAadhaar);
-    final panController = TextEditingController(text: initialPan);
-    final gstController = TextEditingController(text: initialGst);
-    final addressController = TextEditingController(text: initialAddress);
-    final ownerEmailController = TextEditingController(text: email);
-    final ownerPasswordController = TextEditingController(text: '123456');
-
-    // Default plan matches trial or first available
-    SubscriptionPlan selectedPlan = availablePlans.firstWhere(
-      (p) => initialTrialDays > 0 ? p.isDefaultTrial : !p.isDefaultTrial,
-      orElse: () => availablePlans.isNotEmpty ? availablePlans.first : SubscriptionPlanService.fallbackTrialPlan,
-    );
-
-    // `initialMaxUsers` is still accepted from older callers, but the staff
-    // cap is the plan's since 18 Sep 2026 and is not editable here.
-    int tableCount = initialTableCount;
-    String operatingMode = initialOperatingMode;
-
-    // A package and a plan. The applicant's own request names both when it
-    // came from the app's upgrade sheet; a web lead names neither, and starts
-    // on the trial package for its category with the default trial plan.
-    // More than one outlet asked for is a chain, so it starts on the only
-    // starter that can run one. The admin can change any of it.
-    final startPackage = (await PackageService.getById(initialPackageId)) ??
-        (await PackageService.getById(initialMaxOutlets > 1
-            ? PlanProfile.omnichannel.id
-            : Verticals.defaultPackageFor(category))) ??
-        TenantPackage.fromProfile(PlanProfile.offlineDineIn);
-    final startPlan = availablePlans.where((p) => p.id == initialPlanId).firstOrNull ?? selectedPlan;
-    if (!context.mounted) return;
-    TenantPackageSelection selection =
-        TenantPackageSelection(package: startPackage, plan: startPlan);
-
-    bool isCreating = false;
-    bool obscurePassword = true;
-
-    if (!mounted) return;
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            const primaryAccent = ClassicTheme.successEmerald;
-            return AlertDialog(
-              backgroundColor: context.surfaceColor,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-                side: BorderSide(color: context.borderColor),
-              ),
-              title: Row(
-                children: [
-                  const Icon(Icons.verified_user_rounded, color: primaryAccent, size: 24),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      "Approve & Onboard Restaurant Request",
-                      style: TextStyle(color: context.textPrimary, fontWeight: FontWeight.bold, fontSize: 17),
-                    ),
-                  ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: primaryAccent.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: const Text(
-                      "Request Approval",
-                      style: TextStyle(color: primaryAccent, fontSize: 12, fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                ],
-              ),
-              content: SizedBox(
-                width: ClassicTheme.dialogWidth(context, 650),
-                child: SingleChildScrollView(
-                  child: Form(
-                    key: formKey,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        // SECTION 1: IDENTITY
-                        Container(
-                          padding: const EdgeInsets.symmetric(vertical: 4),
-                          child: Row(
-                            children: [
-                              const Icon(Icons.restaurant_rounded, color: primaryAccent, size: 16),
-                              const SizedBox(width: 6),
-                              Text("1. Applicant Identity", style: TextStyle(color: primaryAccent, fontWeight: FontWeight.bold, fontSize: 13)),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        Row(
-                          children: [
-                            Expanded(
-                              flex: 2,
-                              child: TextFormField(
-                                controller: orgIdController,
-                                style: TextStyle(color: context.textPrimary, fontWeight: FontWeight.bold),
-                                decoration: InputDecoration(
-                                  labelText: "Organization ID *",
-                                  labelStyle: TextStyle(color: context.textSecondary, fontSize: 13),
-                                  prefixIcon: const Icon(Icons.tag_rounded, size: 18),
-                                  enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: context.borderColor)),
-                                  focusedBorder: const UnderlineInputBorder(borderSide: BorderSide(color: primaryAccent, width: 2)),
-                                ),
-                                validator: (v) => (v == null || v.trim().isEmpty) ? "Required" : null,
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              flex: 3,
-                              child: TextFormField(
-                                controller: nameController,
-                                style: TextStyle(color: context.textPrimary),
-                                decoration: InputDecoration(
-                                  labelText: "Restaurant Name *",
-                                  labelStyle: TextStyle(color: context.textSecondary, fontSize: 13),
-                                  prefixIcon: const Icon(Icons.storefront_rounded, size: 18),
-                                  enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: context.borderColor)),
-                                  focusedBorder: const UnderlineInputBorder(borderSide: BorderSide(color: primaryAccent, width: 2)),
-                                ),
-                                validator: (v) => (v == null || v.trim().isEmpty) ? "Required" : null,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 10),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: TextFormField(
-                                controller: ownerNameController,
-                                style: TextStyle(color: context.textPrimary),
-                                decoration: InputDecoration(
-                                  labelText: "Owner Name *",
-                                  labelStyle: TextStyle(color: context.textSecondary, fontSize: 13),
-                                  prefixIcon: const Icon(Icons.person_outline_rounded, size: 18),
-                                  enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: context.borderColor)),
-                                  focusedBorder: const UnderlineInputBorder(borderSide: BorderSide(color: primaryAccent, width: 2)),
-                                ),
-                                validator: (v) => (v == null || v.trim().isEmpty) ? "Required" : null,
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: TextFormField(
-                                controller: mobileController,
-                                style: TextStyle(color: context.textPrimary),
-                                keyboardType: TextInputType.phone,
-                                decoration: InputDecoration(
-                                  labelText: "Mobile *",
-                                  labelStyle: TextStyle(color: context.textSecondary, fontSize: 13),
-                                  prefixIcon: const Icon(Icons.phone_android_rounded, size: 18),
-                                  enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: context.borderColor)),
-                                  focusedBorder: const UnderlineInputBorder(borderSide: BorderSide(color: primaryAccent, width: 2)),
-                                ),
-                                validator: (v) => (v == null || v.trim().isEmpty) ? "Required" : null,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 10),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: TextFormField(
-                                controller: ownerEmailController,
-                                style: TextStyle(color: context.textPrimary),
-                                keyboardType: TextInputType.emailAddress,
-                                decoration: InputDecoration(
-                                  labelText: "Login Email *",
-                                  labelStyle: TextStyle(color: context.textSecondary, fontSize: 13),
-                                  prefixIcon: const Icon(Icons.alternate_email_rounded, size: 18),
-                                  enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: context.borderColor)),
-                                  focusedBorder: const UnderlineInputBorder(borderSide: BorderSide(color: primaryAccent, width: 2)),
-                                ),
-                                validator: (v) => (v == null || !v.contains('@')) ? "Valid email required" : null,
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: TextFormField(
-                                controller: ownerPasswordController,
-                                obscureText: obscurePassword,
-                                style: TextStyle(color: context.textPrimary),
-                                decoration: InputDecoration(
-                                  labelText: "Assign Password *",
-                                  labelStyle: TextStyle(color: context.textSecondary, fontSize: 13),
-                                  prefixIcon: const Icon(Icons.lock_outline_rounded, size: 18),
-                                  suffixIcon: IconButton(
-                                    icon: Icon(obscurePassword ? Icons.visibility_off_rounded : Icons.visibility_rounded, size: 18),
-                                    onPressed: () => setDialogState(() => obscurePassword = !obscurePassword),
-                                  ),
-                                  enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: context.borderColor)),
-                                  focusedBorder: const UnderlineInputBorder(borderSide: BorderSide(color: primaryAccent, width: 2)),
-                                ),
-                                validator: (v) => (v == null || v.length < 6) ? "Min 6 characters" : null,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 10),
-                        TextFormField(
-                          controller: addressController,
-                          style: TextStyle(color: context.textPrimary),
-                          decoration: InputDecoration(
-                            labelText: "Physical Address",
-                            labelStyle: TextStyle(color: context.textSecondary, fontSize: 13),
-                            prefixIcon: const Icon(Icons.location_on_outlined, size: 18),
-                            enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: context.borderColor)),
-                            focusedBorder: const UnderlineInputBorder(borderSide: BorderSide(color: primaryAccent, width: 2)),
-                          ),
-                        ),
-                        const SizedBox(height: 20),
-
-                        // SECTIONS 2 & 3: PACKAGE, VALIDITY AND ADD-ONS
-                        //
-                        // One editor for all three. It offers only the storage
-                        // modes the package can run, shows included features as
-                        // included rather than as switches that would not
-                        // survive the resolver, and the licence is written from
-                        // what the resolver says — so the tenant gets exactly
-                        // what is on this screen.
-                        TenantPackageEditor(
-                          value: selection,
-                          onChanged: (v) => setDialogState(() => selection = v),
-                        ),
-                        const SizedBox(height: 20),
-
-                        // Quotas the package does not decide.
-                        Container(
-                          padding: const EdgeInsets.symmetric(vertical: 4),
-                          child: Row(
-                            children: [
-                              const Icon(Icons.tune_rounded, color: primaryAccent, size: 16),
-                              const SizedBox(width: 6),
-                              Text("Other quotas", style: const TextStyle(color: primaryAccent, fontWeight: FontWeight.bold, fontSize: 13)),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        Row(
-                          children: [
-                            Expanded(
-                              // Staff count is the plan's to decide, so it is
-                              // shown here and edited on the Plans screen.
-                              child: InputDecorator(
-                                decoration: InputDecoration(
-                                  labelText: "Max Staff / Users (from plan)",
-                                  labelStyle: TextStyle(color: context.textSecondary, fontSize: 13),
-                                  prefixIcon: const Icon(Icons.groups_rounded, size: 16),
-                                  enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: context.borderColor)),
-                                ),
-                                child: Text('${selection.plan.maxUsers}',
-                                    style: TextStyle(color: context.textPrimary)),
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: TextFormField(
-                                initialValue: tableCount.toString(),
-                                style: TextStyle(color: context.textPrimary),
-                                keyboardType: TextInputType.number,
-                                decoration: InputDecoration(
-                                  labelText: "Table Quota",
-                                  labelStyle: TextStyle(color: context.textSecondary, fontSize: 13),
-                                  prefixIcon: const Icon(Icons.table_restaurant_rounded, size: 16),
-                                  enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: context.borderColor)),
-                                  focusedBorder: const UnderlineInputBorder(borderSide: BorderSide(color: primaryAccent, width: 2)),
-                                ),
-                                onChanged: (v) => tableCount = int.tryParse(v) ?? tableCount,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 10),
-                        DropdownButtonFormField<String>(
-                          initialValue: operatingMode,
-                          dropdownColor: context.surfaceColor,
-                          style: TextStyle(color: context.textPrimary, fontSize: 13),
-                          decoration: InputDecoration(
-                            labelText: "Operating Mode",
-                            labelStyle: TextStyle(color: context.textSecondary, fontSize: 13),
-                            prefixIcon: const Icon(Icons.room_service_rounded, size: 16),
-                            enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: context.borderColor)),
-                            focusedBorder: const UnderlineInputBorder(borderSide: BorderSide(color: primaryAccent, width: 2)),
-                          ),
-                          items: const [
-                            DropdownMenuItem(value: 'dineFirstPostpaid', child: Text("Dine-In Postpaid")),
-                            DropdownMenuItem(value: 'counterPrepaid', child: Text("Fast QSR Prepaid")),
-                            DropdownMenuItem(value: 'hybrid', child: Text("Hybrid Dynamic")),
-                          ],
-                          onChanged: (v) {
-                            if (v != null) setDialogState(() => operatingMode = v);
-                          },
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: isCreating ? null : () => Navigator.pop(context),
-                  child: Text("Cancel", style: TextStyle(color: context.textSecondary)),
-                ),
-                ElevatedButton(
-                  onPressed: isCreating
-                      ? null
-                      : () async {
-                          if (!formKey.currentState!.validate()) return;
-                          setDialogState(() => isCreating = true);
-
-                          try {
-                            final orgId = orgIdController.text.trim();
-                            final orgName = nameController.text.trim();
-                            final ownerName = ownerNameController.text.trim();
-                            final email = ownerEmailController.text.trim().toLowerCase();
-                            final rawPassword = ownerPasswordController.text;
-                            final mobile = mobileController.text.trim();
-                            final address = addressController.text.trim();
-                            final gst = gstController.text.trim();
-                            final pan = panController.text.trim();
-                            final aadhaar = aadhaarController.text.trim();
-
-                            // The subscription record matching the chosen
-                            // package, so the plan name and billing cycle stay
-                            // meaningful. Every limit and feature below comes
-                            // from the resolver, not from that record.
-                            // The selection *is* a package and a plan now.
-                            // What is written is their composition, so the
-                            // preview the admin just looked at and the licence
-                            // the till reads are the same numbers.
-                            final finalPlan = selection.plan.copyWith(
-                              maxOutlets: selection.effectiveOutlets,
-                              maxDevices: selection.effectiveDevices,
-                              maxUsers: selection.plan.maxUsers,
-                              tableCount: tableCount,
-                              operatingMode: operatingMode,
-                              allowedRoles: selection.effectiveRoles,
-                              features: selection.resolvedFeatures,
-                            );
-
-                            final result = await TenantProvisioningService.provisionTenant(
-                              customOrgId: orgId,
-                              shopName: orgName,
-                              clientName: ownerName,
-                              email: email,
-                              rawPassword: rawPassword,
-                              mobile: mobile,
-                              category: businessCategory,
-                              address: address.isNotEmpty ? address : null,
-                              aadhaar: aadhaar.isNotEmpty ? aadhaar : null,
-                              pan: pan.isNotEmpty ? pan : null,
-                              gstNo: gst.isNotEmpty ? gst : null,
-                              plan: finalPlan,
-                              requestId: requestId,
-                              storageMode: selection.storageMode,
-                              planProfile: selection.profile.id,
-                              packageId: selection.packageId,
-                              planId: selection.planId,
-                            );
-
-                            if (result['success'] != true) {
-                              throw Exception(result['message'] ?? "Approval onboarding failed");
-                            }
-
-                            if (context.mounted) {
-                              Navigator.pop(context);
-                              AppToast.showSuccess(
-                                context,
-                                "Request Approved & Client Onboarded",
-                                subtitle: "$orgName ($orgId) onboarded with ${finalPlan.name}.",
-                              );
-                            }
-                          } catch (e) {
-                            setDialogState(() => isCreating = false);
-                            if (context.mounted) {
-                              AppToast.showError(context, e, title: "Approval Failed");
-                            }
-                          }
-                        },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: primaryAccent,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                  ),
-                  child: isCreating
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                        )
-                      : const Text("Approve & Onboard", style: TextStyle(fontWeight: FontWeight.bold)),
-                ),
-              ],
-            );
-          },
-        );
-      },
+  }) {
+    OrganizationsTab.showOnboardOrganizationDialog(
+      context,
+      initialName: clientName,
+      initialShopName: shopName,
+      initialCategory: category,
+      initialEmail: email,
+      initialMobile: mobile,
+      initialAadhaar: initialAadhaar,
+      initialPan: initialPan,
+      initialGst: initialGst,
+      initialAddress: initialAddress,
+      requestId: requestId,
+      initialPackageId: initialPackageId,
+      initialPlanId: initialPlanId,
     );
   }
 
@@ -4677,12 +4302,12 @@ class _RegistrationRequestsTabState extends ConsumerState<RegistrationRequestsTa
               Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: (isTrial ? ClassicTheme.successEmerald : ClassicTheme.secondaryAccent).withValues(alpha: 0.12),
+                  color: (!request.isCommercialLead ? ClassicTheme.successEmerald : ClassicTheme.secondaryAccent).withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Icon(
-                  isTrial ? Icons.storefront_rounded : Icons.business_center_rounded,
-                  color: isTrial ? ClassicTheme.successEmerald : ClassicTheme.secondaryAccent,
+                  !request.isCommercialLead ? Icons.storefront_rounded : Icons.business_center_rounded,
+                  color: !request.isCommercialLead ? ClassicTheme.successEmerald : ClassicTheme.secondaryAccent,
                   size: 22,
                 ),
               ),
@@ -4994,8 +4619,8 @@ class _RegistrationRequestsTabState extends ConsumerState<RegistrationRequestsTa
               child: Text("Close", style: TextStyle(color: context.textSecondary)),
             ),
 
-            // Actions for Free Trial Request
-            if (isTrial && request.status == 'PENDING') ...[
+            // Actions for Registration Request (Trial, Paid Package, or Enterprise)
+            if (!request.isCommercialLead && request.status == 'PENDING') ...[
               OutlinedButton.icon(
                 onPressed: () async {
                   Navigator.pop(ctx);
@@ -5062,7 +4687,7 @@ class _RegistrationRequestsTabState extends ConsumerState<RegistrationRequestsTa
             ],
 
             // Actions for Commercial Plan Inquiry
-            if (!isTrial && (request.status == 'NEW_INQUIRY' || request.status == 'PENDING')) ...[
+            if (request.isCommercialLead && (request.status == 'NEW_INQUIRY' || request.status == 'PENDING')) ...[
               OutlinedButton.icon(
                 onPressed: () async {
                   Navigator.pop(ctx);
@@ -5128,7 +4753,7 @@ class _RegistrationRequestsTabState extends ConsumerState<RegistrationRequestsTa
               ),
             ],
 
-            if (!isTrial && request.status == 'CONTACTED') ...[
+            if (request.isCommercialLead && request.status == 'CONTACTED') ...[
               ElevatedButton.icon(
                 onPressed: () {
                   Navigator.pop(ctx);
@@ -5281,20 +4906,47 @@ class _RegistrationRequestsTabState extends ConsumerState<RegistrationRequestsTa
                       for (var doc in regSnapshot.data!.docs) {
                         final d = doc.data() as Map<String, dynamic>;
                         final created = (d['createdAt'] as Timestamp?)?.toDate();
+                        final rawPlan = d['requestedPlan']?.toString().trim() ?? d['plan']?.toString().trim() ?? '';
+                        final isEnterprise = rawPlan.toUpperCase() == 'ENTERPRISE_CUSTOM' ||
+                            d['isEnterprise'] == true ||
+                            rawPlan.toLowerCase().contains('enterprise');
+                        final isPaidPkg = rawPlan.isNotEmpty &&
+                            rawPlan != 'free_trial' &&
+                            rawPlan != 'trial' &&
+                            !isEnterprise;
+
+                        final String planLabel;
+                        if (d['requestedPlanLabel'] != null && d['requestedPlanLabel'].toString().isNotEmpty) {
+                          planLabel = d['requestedPlanLabel'].toString();
+                        } else if (isEnterprise) {
+                          planLabel = 'Enterprise / Custom Setup';
+                        } else if (isPaidPkg) {
+                          final prof = PlanProfile.byId(rawPlan);
+                          planLabel = prof.label;
+                        } else {
+                          planLabel = '14-Day Free Trial';
+                        }
+
+                        final reqType = isEnterprise
+                            ? 'ENTERPRISE'
+                            : (isPaidPkg ? 'PAID_PACKAGE' : 'FREE_TRIAL');
+
+                        final cat = OrganizationsTab.canonicalizeCategory(d['businessCategory'] ?? d['category']);
+
                         trialList.add(UnifiedClientRequest(
                           id: doc.id,
-                          requestType: 'FREE_TRIAL',
+                          requestType: reqType,
                           clientName: d['clientName'] ?? 'Unknown Client',
                           shopName: d['shopName'] ?? '',
-                          businessCategory: d['businessCategory'] ?? 'Restaurant & Cafe',
+                          businessCategory: cat,
                           email: d['email'] ?? '',
                           mobile: d['mobile'] ?? d['phone'] ?? '',
                           cityOrAddress: d['address'] ?? d['city'] ?? '',
                           referralSource: d['referralSource'] ?? 'Direct',
-                          selectedPlan: '14-Day Free Trial',
-                          outlets: "${d['requestedStoreCount'] ?? 1} Outlet",
-                          stations: "${d['requestedMaxUsers'] ?? 5} Staff / Terminals",
-                          notes: d['notes'] ?? d['requirements'] ?? '',
+                          selectedPlan: planLabel,
+                          outlets: isEnterprise ? 'Multi-Outlet / Chain' : "${d['requestedStoreCount'] ?? 1} Outlet",
+                          stations: isEnterprise ? 'Enterprise Multi-Till' : "${d['requestedMaxUsers'] ?? 5} Staff / Terminals",
+                          notes: d['notes'] ?? d['requirements'] ?? (isEnterprise ? 'Enterprise custom setup requested' : ''),
                           status: (d['status'] ?? 'PENDING').toString().toUpperCase(),
                           createdAt: created,
                           rawData: d,

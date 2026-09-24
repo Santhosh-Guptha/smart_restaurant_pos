@@ -6,6 +6,7 @@ import 'package:mailer/smtp_server.dart';
 import '../core/constants.dart';
 import '../core/entitlements.dart';
 import '../core/feature_usage.dart';
+import 'apps_script_backend_service.dart';
 
 class SmtpConfig {
   final String host;
@@ -161,6 +162,66 @@ class SmtpEmailService {
   }
 
   /// Sends a test email to verify SMTP configuration
+
+  /// Universal email dispatcher that routes through native SMTP on mobile/desktop,
+  /// or through Google Apps Script webhook on Flutter Web (and as an SMTP fallback).
+  static Future<Map<String, dynamic>> _dispatchEmail({
+    required String recipientEmail,
+    required String subject,
+    required String plainText,
+    required String htmlContent,
+    String? fromName,
+    String? organizationId,
+  }) async {
+    final cleanEmail = recipientEmail.trim().toLowerCase();
+    if (cleanEmail.isEmpty || !cleanEmail.contains('@')) {
+      return {'success': false, 'error': 'Invalid recipient email address.'};
+    }
+
+    // 1. If running on native platforms (Android, Windows, etc.), try direct SMTP first
+    if (!kIsWeb) {
+      try {
+        final config = await getEffectiveSmtpConfig(organizationId: organizationId);
+        if (config.isConfigured) {
+          final smtpServer = _buildSmtpServer(config);
+          final message = Message()
+            ..from = Address(config.username, fromName ?? config.fromName)
+            ..recipients.add(cleanEmail)
+            ..subject = subject
+            ..text = plainText
+            ..html = htmlContent;
+
+          await send(message, smtpServer).timeout(const Duration(seconds: 12));
+          debugPrint("SmtpEmailService: Email sent via SMTP to $cleanEmail");
+          return {'success': true, 'message': 'Email delivered via SMTP.'};
+        }
+      } catch (e) {
+        debugPrint("SmtpEmailService: SMTP send failed ($e). Falling back to Apps Script webhook...");
+      }
+    }
+
+    // 2. On Flutter Web (or if SMTP failed/unconfigured on native), dispatch via Apps Script Webhook
+    try {
+      final res = await AppsScriptBackendService.sendEmail(
+        to: cleanEmail,
+        subject: subject,
+        text: plainText,
+        html: htmlContent,
+        fromName: fromName ?? 'Smart POS',
+      );
+      if (res['success'] == true) {
+        debugPrint("SmtpEmailService: Email delivered via Cloud Webhook to $cleanEmail");
+        return {'success': true, 'message': 'Email delivered via Webhook.'};
+      } else {
+        debugPrint("SmtpEmailService: Webhook delivery returned note: ${res['error']}");
+        return res;
+      }
+    } catch (e) {
+      debugPrint("SmtpEmailService: Webhook dispatch error: $e");
+      return {'success': false, 'error': e.toString()};
+    }
+  }
+
   static Future<bool> sendTestEmail({
     required String toEmail,
     required SmtpConfig config,
@@ -958,9 +1019,24 @@ class SmtpEmailService {
           ),
         );
 
-      await send(message, smtpServer).timeout(const Duration(seconds: 15));
-      debugPrint("SmtpEmailService: Bill invoice sent successfully to $cleanEmail");
-      return {'success': true, 'message': 'Bill invoice emailed successfully.'};
+      if (!kIsWeb) {
+        try {
+          await send(message, smtpServer).timeout(const Duration(seconds: 15));
+          debugPrint("SmtpEmailService: Bill invoice sent successfully via SMTP to $cleanEmail");
+          return {'success': true, 'message': 'Bill invoice emailed successfully.'};
+        } catch (e) {
+          debugPrint("SmtpEmailService SMTP bill invoice send note: $e");
+        }
+      }
+
+      return await _dispatchEmail(
+        recipientEmail: cleanEmail,
+        subject: 'Your Tax Invoice #$billNumber from $restaurantName',
+        plainText: 'Hello $cleanCust,\n\nThank you for dining at $restaurantName!\n\nInvoice Number: $billNumber\nTable: $tableName\nTotal Amount: Rs. ${totalAmount.toStringAsFixed(2)}\nPayment Mode: $paymentMode\nStatus: PAID IN FULL\n\nBest regards,\n$restaurantName',
+        htmlContent: message.html ?? '',
+        fromName: restaurantName,
+        organizationId: organizationId,
+      );
     } catch (e) {
       debugPrint("SmtpEmailService error sending bill invoice email: $e");
       return {'success': false, 'error': e.toString()};

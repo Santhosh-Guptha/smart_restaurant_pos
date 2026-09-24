@@ -606,6 +606,10 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
                     : "Store";
         final effectiveShopName = shopName.isNotEmpty ? shopName : "$clientName $fallbackSuffix";
 
+        final effectivePlanId = profile.id == PlanProfile.offlineSingle.id
+            ? 'offline_counter'
+            : profile.id.toLowerCase();
+
         final reqRef = _firestore.collection('registration_requests').doc();
         await reqRef.set({
           'id': reqRef.id,
@@ -619,7 +623,7 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
           'requestedPlan': _selectedOption,
           'requestedPlanLabel': profile.label,
           'requestedPackageId': profile.id,
-          'requestedPlanId': profile.id.toLowerCase(),
+          'requestedPlanId': effectivePlanId,
           'isEnterprise': false,
           'createdAt': FieldValue.serverTimestamp(),
           'updatedAt': FieldValue.serverTimestamp(),
@@ -1032,7 +1036,16 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
                                   value: c,
                                   child: Text(c, style: TextStyle(fontSize: 12, color: context.textPrimary), overflow: TextOverflow.ellipsis),
                                 )).toList(),
-                                onChanged: (v) => setState(() => _businessCategory = v!),
+                                onChanged: (v) {
+                                  if (v != null) {
+                                    setState(() {
+                                      _businessCategory = v;
+                                      if (_vertical != Verticals.restaurant && _selectedOption == PlanProfile.offlineDineIn.id) {
+                                        _selectedOption = 'free_trial';
+                                      }
+                                    });
+                                  }
+                                },
                               ),
                             ],
                           ),
@@ -1115,8 +1128,13 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
                       subtitle: _freeTrialSubtitle,
                     ),
                     const SizedBox(height: 8),
-                    // --- 4 Package cards ---
-                    ...PlanProfile.all.map((profile) {
+                    // --- Package cards relevant to vertical ---
+                    ...PlanProfile.all.where((profile) {
+                      if (_vertical != Verticals.restaurant && profile.id == PlanProfile.offlineDineIn.id) {
+                        return false;
+                      }
+                      return true;
+                    }).map((profile) {
                       final features = _filteredFeaturesFor(profile, _vertical);
                       return Padding(
                         padding: const EdgeInsets.only(bottom: 8),

@@ -130,6 +130,12 @@ function doPost(e) {
       case "SEND_OTP_EMAIL":
         return handleSendOtpEmail(json);
 
+      case "SEND_EMAIL":
+      case "SEND_REGISTRATION_EMAIL":
+      case "SEND_APPROVAL_EMAIL":
+      case "SEND_REJECTION_EMAIL":
+        return handleSendEmail(json);
+
       case "MIGRATE_V2_DATA":
         var ssMig = null;
         var sId = json.spreadsheet_id || json.spreadsheetId;
@@ -2981,6 +2987,37 @@ function handleSendOtpEmail(p) {
     return responseJson({ success: true, message: "Email sent successfully to " + email });
   } catch (err) {
     return responseJson({ success: false, error: "Failed to send email: " + err.toString() });
+  }
+}
+
+function handleSendEmail(p) {
+  var to = String(p.to || p.email || p.recipientEmail || "").trim().toLowerCase();
+  var subject = String(p.subject || "").trim();
+  var body = String(p.text || p.body || "");
+  var htmlBody = String(p.html || p.htmlBody || "");
+  var fromName = String(p.from_name || p.fromName || p.name || "Smart POS Platform").trim();
+
+  if (!to || !to.includes("@")) {
+    return responseJson({ success: false, error: "Invalid or missing recipient email." });
+  }
+  if (!subject) {
+    return responseJson({ success: false, error: "Missing email subject." });
+  }
+
+  try {
+    var mailOpts = {
+      to: to,
+      subject: subject,
+      body: body.length > 0 ? body : (htmlBody.length > 0 ? "Please view this message in an HTML-compatible email client." : "No content."),
+      name: fromName
+    };
+    if (htmlBody.length > 0) {
+      mailOpts.htmlBody = htmlBody;
+    }
+    MailApp.sendEmail(mailOpts);
+    return responseJson({ success: true, message: "Email delivered successfully to " + to });
+  } catch (err) {
+    return responseJson({ success: false, error: "MailApp failed: " + err.toString() });
   }
 }
 

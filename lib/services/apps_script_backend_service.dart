@@ -9,7 +9,7 @@ import '../core/cloud_gate.dart';
 /// for automated Multi-Tenant Organization, Outlet, and Spreadsheet management.
 class AppsScriptBackendService {
   static const String _defaultWebhookUrl =
-      'https://script.google.com/macros/s/AKfycbwZIs_n5hCtSBqkyPOVqeZZBY1XjUAv4NjYWj8O3AY2i0Fw0Rl2OV-TA-IgmlvRbo7pFQ/exec';
+      'https://script.google.com/macros/s/AKfycbwqdDoJo7T-EAWDGPlgahiPOgu8V6CqM4QGVoY29JcewEXCd1T4_heLF2ZEWk33aoEedw/exec';
   static const String _secretToken = "SMART_POS_SECURE_TOKEN_2026";
 
 
@@ -20,7 +20,7 @@ class AppsScriptBackendService {
         stored.toString().isEmpty ||
         stored.toString().contains('AKfycbxIAGxL_Chf3xMKfpqMyJ8fHkYq990x') ||
         stored.toString().contains('AKfycbwmwGpu3ZKMiDJjGnZAXGCrMBr0s5bootd') ||
-        stored.toString().contains('AKfycbwqdDoJo7T-EAWDGPlgahiPOgu8V6CqM4QGVoY29JcewEXCd1T4_heLF2ZEWk33aoEedw')) {
+        stored.toString().contains('AKfycbwZIs_n5hCtSBqkyPOVqeZZBY1XjUAv4NjYWj8O3AY2i0Fw0Rl2OV-TA-IgmlvRbo7pFQ')) {
       return _defaultWebhookUrl;
     }
     return stored.toString();
@@ -429,10 +429,68 @@ class AppsScriptBackendService {
         timeout: const Duration(seconds: 15),
       );
 
-      return res.statusCode >= 200 && res.statusCode < 300;
+      if (res.statusCode >= 200 && res.statusCode < 300) {
+        try {
+          final data = jsonDecode(res.body);
+          if (data is Map && data['success'] == false) return false;
+        } catch (_) {}
+        return true;
+      }
+      return false;
     } catch (e) {
       debugPrint("AppsScriptBackendService sendOtpEmail error: $e");
       return false;
+    }
+  }
+
+  /// 6b. Send Generic HTML / Text Email via Google Apps Script Webhook
+  /// Highly reliable zero-cost delivery used across Flutter Web and mobile fallback.
+  static Future<Map<String, dynamic>> sendEmail({
+    required String to,
+    required String subject,
+    required String text,
+    String? html,
+    String? fromName,
+  }) async {
+    try {
+      final url = getWebhookUrl();
+      if (!_isValidUrl(url)) return {'success': false, 'error': 'Invalid webhook URL.'};
+
+      final res = await postWithRedirects(
+        Uri.parse(url),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'secret': _secretToken,
+          'action': 'SEND_EMAIL',
+          'to': to.trim(),
+          'subject': subject.trim(),
+          'text': text.trim(),
+          'html': html ?? '',
+          'from_name': fromName ?? 'Smart POS',
+        }),
+        timeout: const Duration(seconds: 15),
+      );
+
+      if (res.statusCode >= 200 && res.statusCode < 300) {
+        try {
+          final data = jsonDecode(res.body);
+          if (data is Map) {
+            if (data['success'] == true) {
+              return {'success': true, 'message': data['message'] ?? 'Email delivered successfully.'};
+            }
+            if (data['error'] != null) {
+              return {'success': false, 'error': data['error']};
+            }
+          }
+        } catch (_) {
+          return {'success': true, 'message': 'Email delivered.'};
+        }
+        return {'success': true, 'message': 'Email delivered.'};
+      }
+      return {'success': false, 'error': 'HTTP ${res.statusCode}: ${res.body}'};
+    } catch (e) {
+      debugPrint("AppsScriptBackendService sendEmail error: $e");
+      return {'success': false, 'error': e.toString()};
     }
   }
 
