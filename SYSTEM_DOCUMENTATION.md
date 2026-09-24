@@ -299,6 +299,21 @@ When a spreadsheet is connected, `ensureV2Sheets(ss)` automatically provisions a
   - Step 1 (`public_stores` doc) and Step 3 (`/products` query) now reliably extract and render dish images with high performance.
   - `google_apps_script/Code.gs` updated in `GET_MENU` with `imageIdx` detection for Google Sheets image columns.
 
+### **Phase 14 — Multi-Tenant Purging & Lifecycle Hardening**
+- **Comprehensive Cascade Purge Engine (`TenantPurgeService` in `lib/services/tenant_purge_service.dart`)**:
+  - Eliminates orphaned records across all collections by querying both `organizationId` and `orgId` across: `users`, `staff_users`, `outlets`, `device_registry`, `products`, `expenses`, `registration_requests`, and `business_inquiries`.
+  - Cleans subcollections recursively, including `organizations/{orgId}/receipt_templates`.
+  - Direct document deletion across 12 targets: `organizations`, `licenses`, `features`, `limits`, `public_stores`, `renewal_requests`, `franchises`, `branding`, `excel_configs`, `firebase_configs`, `outlets/{orgId}`, and `outlets/outlet_{orgId}`.
+  - Direct owner deletion via `ownerUserId` with absolute Master Admin immunity (`usr_master_admin`, `isMasterAdminEmail()`, `MASTER_ADMIN`).
+  - Clears `email_otps` and invalidates local Hive `configBox` cache for the purged tenant.
+- **Firestore Security Rules Hardening (`firestore.rules`)**:
+  - Added explicit collection access rules for `match /branding/{brandingId}` to prevent 403 Forbidden errors during tenant configuration and purge operations.
+- **Dialog & UI Resurrection Bug Fix (`TenantAccessDialog`, `MasterAdminScreen`)**:
+  - Suppressed broken `_load()` cycle in `TenantAccessDialog` that reverted status to `ACTIVE` upon deletion of `organizations/{orgId}`.
+  - Dialog now automatically closes with success toast immediately upon purge completion.
+  - Added "Purge permanently now" directly under the "Close" section in `TenantAccessDialog` without requiring a prior soft-delete.
+  - Added direct "Purge Tenant" icon button (`delete_forever_rounded`), "Store Closed — Pending Permanent Purge" warning banner, and "Purge Now" button to organization cards in `MasterAdminScreen`.
+
 ## 5. Configuration & Deployment Guide
 
 ### **A. Google Apps Script Webhook Setup**

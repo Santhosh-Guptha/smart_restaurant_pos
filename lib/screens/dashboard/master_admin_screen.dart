@@ -24,6 +24,7 @@ import '../../core/subscription_plan_model.dart';
 import '../../services/package_service.dart';
 import '../../services/subscription_plan_service.dart';
 import '../../services/tenant_provisioning_service.dart';
+import '../../services/tenant_purge_service.dart';
 import '../admin/views/admin_dashboard_view.dart';
 import '../admin/views/admin_inquiries_view.dart';
 import '../admin/views/admin_features_view.dart';
@@ -2032,6 +2033,99 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
   void _showRenewLicenseDialog(String orgId, String orgName) =>
       TenantAccessDialog.show(context, orgId: orgId, orgName: orgName, renew: true);
 
+  Future<void> _confirmAndPurgeTenant(String orgId, String orgName) async {
+    final confirmCtrl = TextEditingController();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: context.surfaceColor,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(color: context.borderColor),
+        ),
+        title: Row(
+          children: [
+            const Icon(Icons.warning_amber_rounded, color: ClassicTheme.dangerRed, size: 28),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Purge $orgName permanently?',
+                style: TextStyle(color: context.textPrimary, fontWeight: FontWeight.bold, fontSize: 16),
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'This will PERMANENTLY remove this tenant ($orgId) and all associated documents '
+              '(license, outlets, users, products, expenses, and configuration) from Cloud Firestore.\n\n'
+              'Type "Purge" to confirm permanent deletion:',
+              style: TextStyle(color: context.textPrimary, fontSize: 13, height: 1.4),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: confirmCtrl,
+              autofocus: true,
+              style: TextStyle(color: context.textPrimary, fontWeight: FontWeight.bold),
+              decoration: InputDecoration(
+                hintText: 'Type Purge',
+                hintStyle: TextStyle(color: context.textSecondary),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Cancel', style: TextStyle(color: context.textSecondary)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: ClassicTheme.dangerRed,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            onPressed: () {
+              if (confirmCtrl.text.trim().toLowerCase() == 'purge') {
+                Navigator.pop(ctx, true);
+              } else {
+                AppToast.showWarning(context, 'Please type "Purge" to confirm');
+              }
+            },
+            child: const Text('Purge Permanently'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && mounted) {
+      AppToast.showInfo(context, 'Purging $orgName from Firestore...');
+      try {
+        final res = await TenantPurgeService.purgeTenant(
+          orgId: orgId,
+          orgName: orgName,
+        );
+        if (mounted) {
+          if (res['success'] == true) {
+            AppToast.showSuccess(
+              context,
+              '$orgName permanently purged (${res['deletedCount']} records removed)',
+            );
+          } else {
+            AppToast.showError(context, res['message'] ?? 'Purge failed');
+          }
+        }
+      } catch (e) {
+        if (mounted) AppToast.showError(context, 'Failed to purge: $e');
+      }
+    }
+  }
+
   void _showEditOrganizationDialog(String orgId, String orgName) {
     final formKey = GlobalKey<FormState>();
 
@@ -3306,10 +3400,52 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                                         orgName: name,
                                       ),
                                     ),
+                                    IconButton(
+                                      icon: const Icon(Icons.delete_forever_rounded,
+                                          color: ClassicTheme.dangerRed, size: 20),
+                                      tooltip: "Permanently Purge Tenant from Firestore",
+                                      onPressed: () => _confirmAndPurgeTenant(docId, name),
+                                    ),
                                   ],
                                 ),
                               ],
                             ),
+                            if (status == 'DELETED') ...[
+                              const SizedBox(height: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: ClassicTheme.dangerRed.withValues(alpha: 0.12),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: ClassicTheme.dangerRed.withValues(alpha: 0.3)),
+                                ),
+                                child: Row(
+                                  children: [
+                                    const Icon(Icons.warning_amber_rounded, color: ClassicTheme.dangerRed, size: 16),
+                                    const SizedBox(width: 8),
+                                    const Expanded(
+                                      child: Text(
+                                        "Store Closed (Soft-Deleted) — Pending Permanent Purge",
+                                        style: TextStyle(color: ClassicTheme.dangerRed, fontWeight: FontWeight.bold, fontSize: 12),
+                                      ),
+                                    ),
+                                    ElevatedButton.icon(
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: ClassicTheme.dangerRed,
+                                        foregroundColor: Colors.white,
+                                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                        minimumSize: Size.zero,
+                                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                                      ),
+                                      icon: const Icon(Icons.delete_forever_rounded, size: 14),
+                                      label: const Text("Purge Now", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                                      onPressed: () => _confirmAndPurgeTenant(docId, name),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
                             const SizedBox(height: 8),
                             Wrap(
                               spacing: 6,
@@ -3511,6 +3647,18 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                                   label: const Text("Settings", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
                                   onPressed: () => _showEditOrganizationDialog(docId, name),
                                 ),
+                                if (status == 'DELETED')
+                                  ElevatedButton.icon(
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: ClassicTheme.dangerRed,
+                                      foregroundColor: Colors.white,
+                                      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                    ),
+                                    icon: const Icon(Icons.delete_forever_rounded, size: 15),
+                                    label: const Text("Purge Permanently", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                                    onPressed: () => _confirmAndPurgeTenant(docId, name),
+                                  ),
                               ],
                             ),
                           ],

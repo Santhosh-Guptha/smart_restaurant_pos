@@ -1,7 +1,7 @@
 # SmartDine POS — Project Context
 
 > **Last updated**: 2026-09-24  
-> **Version**: 1.2.0+47 (pubspec) · `kCurrentAppVersion = '1.2.0'` (forced-update gate — synced ✅)  
+> **Version**: 1.2.0+48 (pubspec) · `kCurrentAppVersion = '1.2.0'` (forced-update gate — synced ✅)  
 > **Branch**: `feature/ux-entitlements-v2`  
 > **Package name**: `smart_restaurant_pos`
 
@@ -491,9 +491,27 @@ Each tenant org maps to a **private Google Spreadsheet** in Drive. Apps Script p
 | **Web PWA (Firebase)** | `https://smartdine-pos.web.app/pos/` | `flutter build web --release --base-href "/pos/"` → `firebase deploy --only hosting` | ✅ Live |
 | **Web PWA (Custom Domain)** | `https://smartbizz.devmonks.space/pos/` | Custom domain DNS rewrite mapped to Firebase Hosting site `smartdine-pos` | ✅ Live |
 | **Windows Desktop (.exe)** | `SmartDine.exe` (Root & `releases/SmartDine-Desktop.exe`) | Compiled C# Standalone Launcher (`csc.exe /target:winexe /win32icon:app_icon.ico`) with internal `HttpListener` on port 8090 | ✅ Ready |
-| **Customer QR Menu** | `https://smartdine-pos.web.app/r/` or `https://smartbizz.devmonks.space/r/` | Static Web App served from `hosting_public/r/` with live Firestore table sync | ✅ Live |
-| **Tablet / iPad** | Browser or APK (Responsive) | `LayoutBuilder` + responsive breakpoints, auto-scales on screens ≥ 768px | ✅ Ready |
-| **Android APK** | `releases/SmartDine-v1.2.0-48.apk` | `flutter build apk --release` (on standby pending user web/desktop verification) | ⏳ Pending User Sign-Off |
+| **Android APK** | `build/app/outputs/flutter-apk/app-release.apk` | `flutter build apk --release` → Firebase App Distribution | ✅ Releasing v1.2.0+48 |
+
+---
+
+## 15. SaaS Tenant Lifecycle & Permanent Purge Engine
+
+- **Comprehensive Purge Service (`lib/services/tenant_purge_service.dart`)**:
+  - Automatically queries both `organizationId` and `orgId` across: `users`, `staff_users`, `outlets`, `device_registry`, `products`, `expenses`, `registration_requests`, and `business_inquiries`.
+  - Cleans subcollections: `organizations/{orgId}/receipt_templates`.
+  - Directly deletes documents from: `organizations`, `licenses`, `features`, `limits`, `public_stores`, `renewal_requests`, `franchises`, `branding`, `excel_configs`, `firebase_configs`, `outlets/{orgId}`, and `outlets/outlet_{orgId}`.
+  - Cleans owner account via `ownerUserId` and removes pending `email_otps`.
+  - Master Admin accounts (`usr_master_admin`, `isMasterAdminEmail()`, `MASTER_ADMIN`) are strictly protected with immunity guards.
+  - Automatically invalidates local Hive `configBox` cache for the purged tenant.
+- **Master Admin UI (`lib/screens/dashboard/master_admin_screen.dart`)**:
+  - Direct "Purge Tenant" icon button on all organization cards with confirmation dialog.
+  - Distinct warning banner for soft-deleted stores (`status == 'DELETED'`) with 1-click "Purge Now".
+- **Tenant Access Dialog (`lib/screens/admin/dialogs/tenant_access_dialog.dart`)**:
+  - Offers both "Close this store (Soft Delete)" and "Purge permanently now" directly.
+  - Dismisses immediately upon successful purge with clear toast feedback.
+- **Firestore Security Rules**:
+  - Added explicit rules for `/branding/{brandingId}` to prevent 403 Forbidden errors during tenant configuration and purge.
 
 ---
 

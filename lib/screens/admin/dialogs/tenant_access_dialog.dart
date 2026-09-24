@@ -12,6 +12,7 @@ import '../../../services/license_migration_service.dart';
 import '../../../services/package_service.dart';
 import '../../../services/smtp_email_service.dart';
 import '../../../services/subscription_plan_service.dart';
+import '../../../services/tenant_purge_service.dart';
 import '../../../utils/ui_feedback.dart';
 import '../widgets/tenant_package_editor.dart';
 
@@ -202,50 +203,32 @@ class _TenantAccessDialogState extends ConsumerState<TenantAccessDialog> {
             'Closed; restorable until ${_fmt(purge)}${reason.isEmpty ? '' : ' · $reason'}');
       }, 'Store closed — restorable for 30 days');
 
-  /// Removes the tenant's documents. Runs as batched Firestore deletes from
-  /// the console — an authenticated admin can do this directly, so there is no
-  /// reason to pay for a server round trip. Audit rows are deliberately kept.
-  Future<void> _purge() => _run(() async {
-        final counts = <String, int>{};
-
-        Future<void> deleteQuery(String collection) async {
-          final snap = await _fs
-              .collection(collection)
-              .where('organizationId', isEqualTo: widget.orgId)
-              .get();
-          if (snap.docs.isEmpty) return;
-          for (var i = 0; i < snap.docs.length; i += 400) {
-            final batch = _fs.batch();
-            for (final doc in snap.docs.skip(i).take(400)) {
-              batch.delete(doc.reference);
-            }
-            await batch.commit();
-          }
-          counts[collection] = snap.docs.length;
-        }
-
-        for (final c in ['users', 'staff_users', 'outlets', 'device_registry']) {
-          await deleteQuery(c);
-        }
-
-        final byId = [
-          'licenses',
-          'features',
-          'limits',
-          'public_stores',
-          'renewal_requests',
-          'organizations',
-        ];
-        final batch = _fs.batch();
-        for (final c in byId) {
-          batch.delete(_fs.collection(c).doc(widget.orgId));
-        }
-        await batch.commit();
-        counts['by id'] = byId.length;
-
-        await _audit('TENANT_PURGED',
-            'Removed: ${counts.entries.map((e) => '${e.key} ${e.value}').join(', ')}');
-      }, 'Tenant purged');
+  /// Permanently purges all tenant records across all Firestore collections.
+  Future<void> _purge() async {
+    setState(() => _busy = true);
+    try {
+      final res = await TenantPurgeService.purgeTenant(
+        orgId: widget.orgId,
+        orgName: widget.orgName,
+      );
+      if (!mounted) return;
+      if (res['success'] == true) {
+        AppToast.showSuccess(
+          context,
+          '${widget.orgName} permanently purged (${res['deletedCount']} records removed)',
+        );
+        Navigator.of(context).pop(true);
+      } else {
+        AppToast.showError(context, res['message'] ?? 'Purge failed');
+        setState(() => _busy = false);
+      }
+    } catch (e) {
+      if (mounted) {
+        AppToast.showError(context, e, title: 'Purge failed');
+        setState(() => _busy = false);
+      }
+    }
+  }
 
   /// Re-package an existing tenant through the same editor onboarding uses,
   /// and write what the resolver says — never what was typed.
@@ -818,7 +801,7 @@ class _TenantAccessDialogState extends ConsumerState<TenantAccessDialog> {
                       _action(
                         icon: Icons.archive_outlined,
                         color: ClassicTheme.dangerRed,
-                        title: 'Close this store',
+                        title: 'Close this store (Soft Delete)',
                         subtitle:
                             'Hides the tenant and blocks sign-in, but deletes nothing for '
                             '30 days — you can reopen it at any time in that window.',
@@ -833,6 +816,23 @@ class _TenantAccessDialogState extends ConsumerState<TenantAccessDialog> {
                             'Close store',
                           );
                           if (ok) await _softDelete(reason);
+                        },
+                      ),
+                      _action(
+                        icon: Icons.delete_forever_rounded,
+                        color: ClassicTheme.dangerRed,
+                        title: 'Purge permanently now',
+                        subtitle:
+                            'Immediately deletes the organisation, licence, staff, outlets, and data '
+                            'from Cloud Firestore. Audit history is kept. Cannot be undone.',
+                        onTap: () async {
+                          final ok = await _confirmTyped(
+                            'Purge ${widget.orgName} permanently?',
+                            'This permanently removes every record for this tenant immediately '
+                                'from Cloud Firestore. There is no undo.',
+                            'Purge',
+                          );
+                          if (ok) await _purge();
                         },
                       ),
                     ],

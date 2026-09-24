@@ -356,6 +356,26 @@ When transitioning from local development to the brand-new production environmen
 
 ---
 
+### Issue 22: Tenant Deletion, Permanent Purging & UI Status Resurrection
+- **Problem**: When deleting or purging a tenant:
+  1. Closing a store ("Close this store") was a soft-delete marking `status: 'DELETED'` with a 30-day grace period; documents remained in Firestore by design.
+  2. In `TenantAccessDialog`, the previous `_purge()` implementation invoked `_load()` after batch deletion. Because `organizations/{orgId}` had been deleted, `_load()` received `null` and defaulted `_status = (o['status'] ?? 'ACTIVE')` back to `'ACTIVE'`, leaving the dialog open and displaying the store as active.
+  3. Purge operations in the old dialog only targeted 4 collections, leaving orphaned records across `outlets`, `products`, `expenses`, `registration_requests`, `branding`, and `receipt_templates`.
+  4. The `branding` collection rule was missing from `firestore.rules`, causing permission errors when attempting to delete or access branding records.
+  5. The Master Admin organization list lacked a direct "Purge Tenant" action, leaving soft-deleted organizations visible with active launch/outlets buttons.
+- **Resolution**:
+  - Implemented comprehensive `TenantPurgeService` (`lib/services/tenant_purge_service.dart`) performing cascading deletions across all 8 query collections (matching both `organizationId` and `orgId`), subcollections (`organizations/{orgId}/receipt_templates`), 12 direct document targets (`organizations`, `licenses`, `features`, `limits`, `public_stores`, `renewal_requests`, `franchises`, `branding`, `excel_configs`, `firebase_configs`, `outlets/{orgId}`, and `outlets/outlet_{orgId}`), owner user documents by `ownerUserId`, and `email_otps`.
+  - Added strict Master Admin immunity guarding `usr_master_admin`, `isMasterAdminEmail()`, and role `'MASTER_ADMIN'` from purge.
+  - Added `branding` collection rules to `firestore.rules` and deployed them live to Firebase.
+  - Fixed `TenantAccessDialog` to call `TenantPurgeService.purgeTenant(...)`, eliminate the broken `_load()` cycle, and automatically pop the dialog with a confirmation toast on success.
+  - Added "Purge permanently now" directly under the "Close" section in `TenantAccessDialog`, removing the requirement to soft-delete first.
+  - Enhanced `MasterAdminScreen` organization cards with:
+    1. A direct "Purge Tenant" icon button (`delete_forever_rounded`) with confirmation prompt.
+    2. A prominent "Store Closed (Soft-Deleted) — Pending Permanent Purge" banner with an immediate "Purge Now" button.
+    3. A "Purge Permanently" button in the bottom action bar when soft-deleted.
+
+---
+
 ### Step 2: Google Apps Script Webhook Deployment
 - [x] Logged into [script.google.com](https://script.google.com) with production account `smartdine.platform@gmail.com`.
 - [x] Deployed `google_apps_script/Code.gs` as Web App (the canonical production operational gateway):
