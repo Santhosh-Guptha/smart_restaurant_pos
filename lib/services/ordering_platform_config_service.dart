@@ -19,8 +19,15 @@ class OrderingPlatformConfigService {
         final stored = box.get(_hiveKey);
         if (stored != null && stored.toString().trim().isNotEmpty) {
           final url = stored.toString().trim();
-          // Ensure URL points to permanent smartdine-pos.web.app
-          if (!url.contains('smartdine-pos.web.app')) {
+          // Ensure URL points to an authorized platform domain (both custom and Firebase domains)
+          final isAllowedDomain = url.contains('smartdine-pos.web.app') ||
+              url.contains('smartdine-pos.firebaseapp.com') ||
+              url.contains('smartdine-restaurant-pos.web.app') ||
+              url.contains('smartdine-restaurant-pos.firebaseapp.com') ||
+              url.contains('smartbizz.devmonks.space') ||
+              url.contains('devmonks.space') ||
+              url.contains('localhost');
+          if (!isAllowedDomain) {
             box.put(_hiveKey, kRestaurantWebOrderingBaseUrl);
             return kRestaurantWebOrderingBaseUrl;
           }

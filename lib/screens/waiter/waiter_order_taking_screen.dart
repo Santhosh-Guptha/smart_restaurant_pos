@@ -801,6 +801,8 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
         'price': price,
         'rate': price,
         'isVeg': it['isVeg'] != false,
+        'isTaxExempt': it['isTaxExempt'] == true || it['is_tax_exempt'] == true,
+        'is_tax_exempt': it['isTaxExempt'] == true || it['is_tax_exempt'] == true,
         'sendsToKitchen': sendsToKitchen,
         'courseNo': currentCourse,
         'course_no': currentCourse,
@@ -815,8 +817,15 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
       0.0,
       (sum, item) => sum + (((item['price'] as num?)?.toDouble() ?? 0.0) * ((item['qty'] as num?)?.toDouble() ?? 1.0)),
     );
+    final taxableSubtotal = newRoundItemsList
+        .where((item) => item['isTaxExempt'] != true && item['is_tax_exempt'] != true)
+        .fold<double>(
+          0.0,
+          (sum, item) => sum + (((item['price'] as num?)?.toDouble() ?? 0.0) * ((item['qty'] as num?)?.toDouble() ?? 1.0)),
+        );
     final roundServiceCharge = roundSubtotal * (_storeServiceChargeRate / 100);
-    final roundGst = (roundSubtotal + roundServiceCharge) * (_storeGstRate / 100);
+    final taxableSc = roundSubtotal > 0 ? (roundServiceCharge * (taxableSubtotal / roundSubtotal)) : 0.0;
+    final roundGst = (taxableSubtotal + taxableSc) * (_storeGstRate / 100);
     final roundTotalAmount = roundSubtotal + roundServiceCharge + roundGst;
 
     // Integer-paise components so the server does not have to re-derive the tax
@@ -824,11 +833,11 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
     // CGST 27.50 and a 143.00 "round-off" on a 1,298.00 bill at an 18% store.
     final roundSubtotalP = (roundSubtotal * 100).round();
     final roundScP = (roundServiceCharge * 100).round();
-    final roundTaxableP = roundSubtotalP + roundScP;
+    final roundTaxableP = (taxableSubtotal * 100).round() + (taxableSc * 100).round();
     final roundGstP = (roundGst * 100).round();
     final roundCgstP = (roundGstP / 2).round();
     final roundSgstP = roundGstP - roundCgstP;
-    final roundGrandTotalP = roundTaxableP + roundGstP;
+    final roundGrandTotalP = (roundTotalAmount * 100).round();
 
     final clientRequestId = const Uuid().v4();
 
@@ -1363,17 +1372,23 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
             m['items'] = rawItems;
             // Recalculate totals
             double sub = 0.0;
+            double taxableSub = 0.0;
             for (final rim in rawItems) {
               if (rim is Map) {
                 final vQty = (rim['voidedQty'] as num?)?.toDouble() ?? 0.0;
                 final qty = (rim['qty'] as num?)?.toDouble() ?? 0.0;
                 final activeQty = (qty - vQty).clamp(0.0, 999.0);
                 final p = (rim['price'] as num?)?.toDouble() ?? 0.0;
-                sub += p * activeQty;
+                final lineTotal = p * activeQty;
+                sub += lineTotal;
+                if (rim['isTaxExempt'] != true && rim['is_tax_exempt'] != true) {
+                  taxableSub += lineTotal;
+                }
               }
             }
             final sc = sub * (_storeServiceChargeRate / 100);
-            final gst = (sub + sc) * (_storeGstRate / 100);
+            final taxableSc = sub > 0 ? (sc * (taxableSub / sub)) : 0.0;
+            final gst = (taxableSub + taxableSc) * (_storeGstRate / 100);
             m['subtotal'] = sub;
             m['serviceCharge'] = sc;
             m['service_charge'] = sc;
@@ -1519,8 +1534,12 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
       backgroundColor: Colors.transparent,
       builder: (ctx) => StatefulBuilder(
         builder: (context, setModalState) {
+          final double taxableSubtotal = allItems
+              .where((item) => !item.isTaxExempt)
+              .fold<double>(0.0, (prev, item) => prev + (item.price * item.qty));
           final double scAmt = includeServiceCharge ? (tableSubtotal * (_storeServiceChargeRate / 100)) : 0.0;
-          final double gstAmt = (tableSubtotal + scAmt) * (_storeGstRate / 100);
+          final double taxableSc = tableSubtotal > 0 ? (scAmt * (taxableSubtotal / tableSubtotal)) : 0.0;
+          final double gstAmt = (taxableSubtotal + taxableSc) * (_storeGstRate / 100);
           final double totalPayable = tableSubtotal + scAmt + gstAmt + _selectedTip;
 
           final saasSession = ref.read(saasSessionProvider);
@@ -2076,6 +2095,8 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
             'price': it.price,
             'notes': it.notes,
             'isVeg': it.isVeg,
+            'isTaxExempt': it.isTaxExempt,
+            'is_tax_exempt': it.isTaxExempt,
             'courseNo': it.courseNo,
             'station': it.station,
           });
@@ -2716,6 +2737,22 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                                                 ),
                                               ),
                                               const SizedBox(width: 10),
+
+                                              // Dish Thumbnail (Optional)
+                                              if (item['imageUrl'] != null && item['imageUrl'].toString().trim().isNotEmpty) ...[
+                                                ClipRRect(
+                                                  borderRadius: BorderRadius.circular(6),
+                                                  child: Image.network(
+                                                    item['imageUrl'].toString().trim(),
+                                                    width: 36,
+                                                    height: 36,
+                                                    fit: BoxFit.cover,
+                                                    errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 8),
+                                              ],
+
                                               Expanded(
                                                 child: Column(
                                                   crossAxisAlignment: CrossAxisAlignment.start,

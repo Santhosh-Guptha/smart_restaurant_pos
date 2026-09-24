@@ -33,6 +33,9 @@ import '../admin/views/admin_plans_view.dart';
 import '../admin/views/admin_migrations_view.dart';
 import '../admin/dialogs/tenant_access_dialog.dart';
 import '../admin/widgets/tenant_package_editor.dart';
+import 'restaurant_home_screen.dart';
+import '../restaurant/branch_management_screen.dart';
+import '../settings/staff_management_screen.dart';
 
 class MasterAdminScreen extends ConsumerStatefulWidget {
   const MasterAdminScreen({super.key});
@@ -733,6 +736,14 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
 
   @override
   Widget build(BuildContext context) {
+    final saasSession = ref.watch(saasSessionProvider);
+    final user = saasSession.currentUser;
+    final bool isMaster = (user?.role.toUpperCase() == 'MASTER_ADMIN') ||
+        isMasterAdminEmail(user?.email);
+    if (!isMaster) {
+      return const RestaurantHomeScreen();
+    }
+
     final isMobile = MediaQuery.of(context).size.width < 850;
     final sidebarContent = _buildSidebarContent(context, isMobile: isMobile);
 
@@ -809,7 +820,7 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
   Widget _buildTopBar(BuildContext context, {required bool isMobile}) {
     final screenWidth = MediaQuery.of(context).size.width;
     final isCompact = screenWidth < 950;
-    final isVeryCompact = screenWidth < 650;
+    final isVeryCompact = screenWidth < 800;
 
     final sectionTitles = [
       ("Dashboard & SaaS Analytics", "Live platform metrics, active tenants & pending alerts"),
@@ -878,6 +889,26 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
             ),
           ),
           const SizedBox(width: 6),
+          ElevatedButton.icon(
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const RestaurantHomeScreen()),
+              );
+            },
+            icon: const Icon(Icons.restaurant_menu_rounded, size: 14),
+            label: Text(
+              isVeryCompact ? "POS Demo" : "Showcase Demo POS",
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+            ),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: ClassicTheme.successEmerald,
+              foregroundColor: Colors.white,
+              padding: EdgeInsets.symmetric(horizontal: isVeryCompact ? 8 : 14, vertical: isVeryCompact ? 6 : 8),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+          ),
+          SizedBox(width: isVeryCompact ? 2 : 6),
           ElevatedButton.icon(
             onPressed: () => OrganizationsTab.showOnboardOrganizationDialog(context),
             icon: const Icon(Icons.add_business_rounded, size: 14),
@@ -1232,11 +1263,12 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
               children: [
                 Consumer(
                   builder: (context, ref, _) {
-                    final isDark = ref.watch(themeModeProvider) == ThemeMode.dark;
+                    ref.watch(themeModeProvider);
+                    final isDark = context.isDark;
                     return InkWell(
                       borderRadius: BorderRadius.circular(8),
                       onTap: () {
-                        ref.read(themeModeProvider.notifier).toggleTheme();
+                        ref.read(themeModeProvider.notifier).toggleTheme(context.isDark);
                         HapticFeedback.lightImpact();
                       },
                       child: Padding(
@@ -1555,7 +1587,7 @@ class OrganizationsTab extends ConsumerStatefulWidget {
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
-                      "Onboard New Restaurant Client",
+                      "Onboard New Client / Tenant",
                       style: TextStyle(color: context.textPrimary, fontWeight: FontWeight.bold, fontSize: 17),
                     ),
                   ),
@@ -1581,14 +1613,14 @@ class OrganizationsTab extends ConsumerStatefulWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        // SECTION 1: RESTAURANT & OWNER IDENTITY
+                        // SECTION 1: STORE & OWNER IDENTITY
                         Container(
                           padding: const EdgeInsets.symmetric(vertical: 4),
                           child: Row(
                             children: [
                               Icon(Icons.storefront_rounded, color: primaryAccent, size: 16),
                               const SizedBox(width: 6),
-                              Text("1. Restaurant & Owner Identity", style: TextStyle(color: primaryAccent, fontWeight: FontWeight.bold, fontSize: 13)),
+                              Text("1. Store & Owner Identity", style: TextStyle(color: primaryAccent, fontWeight: FontWeight.bold, fontSize: 13)),
                             ],
                           ),
                         ),
@@ -1617,9 +1649,9 @@ class OrganizationsTab extends ConsumerStatefulWidget {
                                 controller: nameController,
                                 style: TextStyle(color: context.textPrimary),
                                 decoration: InputDecoration(
-                                  labelText: "Restaurant / Brand Name *",
+                                  labelText: "Store / Brand Name *",
                                   labelStyle: TextStyle(color: context.textSecondary, fontSize: 13),
-                                  prefixIcon: const Icon(Icons.restaurant_rounded, size: 18),
+                                  prefixIcon: const Icon(Icons.storefront_rounded, size: 18),
                                   enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: context.borderColor)),
                                   focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: primaryAccent, width: 2)),
                                 ),
@@ -1627,6 +1659,43 @@ class OrganizationsTab extends ConsumerStatefulWidget {
                               ),
                             ),
                           ],
+                        ),
+                        const SizedBox(height: 10),
+                        DropdownButtonFormField<String>(
+                          initialValue: businessCategory,
+                          dropdownColor: context.surfaceColor,
+                          style: TextStyle(color: context.textPrimary, fontSize: 13),
+                          decoration: InputDecoration(
+                            labelText: "Business Category & Vertical *",
+                            labelStyle: TextStyle(color: context.textSecondary, fontSize: 13),
+                            prefixIcon: const Icon(Icons.category_rounded, size: 18),
+                            enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: context.borderColor)),
+                            focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: primaryAccent, width: 2)),
+                          ),
+                          items: const [
+                            DropdownMenuItem(value: 'Restaurant & Cafe', child: Text("Restaurant & Cafe")),
+                            DropdownMenuItem(value: 'Fast Food / QSR', child: Text("Fast Food / QSR")),
+                            DropdownMenuItem(value: 'Fine Dining & Bar', child: Text("Fine Dining & Bar")),
+                            DropdownMenuItem(value: 'Bakery & Sweets', child: Text("Bakery & Sweets")),
+                            DropdownMenuItem(value: 'Food Court / Kiosk', child: Text("Food Court / Kiosk")),
+                            DropdownMenuItem(value: 'Cloud Kitchen / Delivery', child: Text("Cloud Kitchen / Delivery")),
+                            DropdownMenuItem(value: 'Pizzeria / Italian', child: Text("Pizzeria / Italian")),
+                            DropdownMenuItem(value: 'Coffee House / Tea Lounge', child: Text("Coffee House / Tea Lounge")),
+                            DropdownMenuItem(value: 'Other Hospitality', child: Text("Other Hospitality")),
+                            DropdownMenuItem(value: 'Kirana / Grocery Store', child: Text("Kirana / Grocery Store (Retail)")),
+                            DropdownMenuItem(value: 'Supermarket / Departmental Store', child: Text("Supermarket / Departmental Store")),
+                            DropdownMenuItem(value: 'Pharmacy / Medical Store', child: Text("Pharmacy / Medical Store")),
+                            DropdownMenuItem(value: 'General Retail / Fashion / Electronics', child: Text("General Retail / Electronics")),
+                          ],
+                          onChanged: (val) async {
+                            if (val == null) return;
+                            setDialogState(() => businessCategory = val);
+                            final pkgId = Verticals.defaultPackageFor(val);
+                            final pkg = await PackageService.getById(pkgId);
+                            if (pkg != null) {
+                              setDialogState(() => selection = selection.copyWith(package: pkg));
+                            }
+                          },
                         ),
                         const SizedBox(height: 10),
                         Row(
@@ -1712,7 +1781,7 @@ class OrganizationsTab extends ConsumerStatefulWidget {
                           controller: addressController,
                           style: TextStyle(color: context.textPrimary),
                           decoration: InputDecoration(
-                            labelText: "Restaurant Physical Address",
+                            labelText: "Store Physical Address",
                             labelStyle: TextStyle(color: context.textSecondary, fontSize: 13),
                             prefixIcon: const Icon(Icons.location_on_outlined, size: 18),
                             enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: context.borderColor)),
@@ -2987,9 +3056,13 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                "Registered Organizations",
-                style: TextStyle(color: context.textPrimary, fontSize: 18, fontWeight: FontWeight.bold),
+              Flexible(
+                child: Text(
+                  "Registered Organizations",
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: context.textPrimary, fontSize: 18, fontWeight: FontWeight.bold),
+                ),
               ),
               ElevatedButton.icon(
                 onPressed: _showAddOrganizationDialog,
@@ -3201,6 +3274,19 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
                                     IconButton(
+                                      icon: const Icon(Icons.play_circle_fill_rounded, color: ClassicTheme.infoBlue, size: 22),
+                                      tooltip: "Showcase / Launch POS for $name",
+                                      onPressed: () async {
+                                        await ref.read(saasSessionProvider.notifier).switchOrganizationForMasterAdmin(docId);
+                                        if (context.mounted) {
+                                          Navigator.push(
+                                            context,
+                                            MaterialPageRoute(builder: (_) => const RestaurantHomeScreen()),
+                                          );
+                                        }
+                                      },
+                                    ),
+                                    IconButton(
                                       icon: const Icon(Icons.card_membership_rounded, color: ClassicTheme.successEmerald, size: 20),
                                       tooltip: "Edit License & Plan Entitlements",
                                       onPressed: () => _showRenewLicenseDialog(docId, name),
@@ -3341,7 +3427,7 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                                     return const SizedBox.shrink();
                                   },
                                 ),
-                                _infoBadge(Icons.category_outlined, category),
+                                 _infoBadge(Icons.category_outlined, category),
                                 _infoBadge(Icons.cloud_sync_outlined, storageMode == 'CLIENTS_OWN_SHEETS' ? "Cloud Database" : storageMode),
                                 if (aadhaar.isNotEmpty)
                                   _infoBadge(Icons.badge_outlined, "Aadhaar: $aadhaar"),
@@ -3349,6 +3435,82 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                                   _infoBadge(Icons.credit_card_outlined, "PAN: $pan"),
                                 if (gst.isNotEmpty)
                                   _infoBadge(Icons.receipt_long_outlined, "GST: $gst"),
+                              ],
+                            ),
+                            Divider(color: context.borderColor, height: 20),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              children: [
+                                ElevatedButton.icon(
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: ClassicTheme.primaryAccentIndigo,
+                                    foregroundColor: Colors.white,
+                                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                  ),
+                                  icon: const Icon(Icons.rocket_launch_rounded, size: 15),
+                                  label: const Text("Launch Store POS", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                                  onPressed: () async {
+                                    await ref.read(saasSessionProvider.notifier).switchOrganizationForMasterAdmin(docId);
+                                    if (context.mounted) {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(builder: (_) => const RestaurantHomeScreen()),
+                                      );
+                                    }
+                                  },
+                                ),
+                                OutlinedButton.icon(
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: ClassicTheme.warningAmber,
+                                    side: const BorderSide(color: ClassicTheme.warningAmber),
+                                    padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                  ),
+                                  icon: const Icon(Icons.storefront_rounded, size: 15),
+                                  label: const Text("Outlets", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                                  onPressed: () async {
+                                    await ref.read(saasSessionProvider.notifier).switchOrganizationForMasterAdmin(docId);
+                                    if (context.mounted) {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(builder: (_) => BranchManagementScreen(initialOrgId: docId)),
+                                      );
+                                    }
+                                  },
+                                ),
+                                OutlinedButton.icon(
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: ClassicTheme.infoBlue,
+                                    side: const BorderSide(color: ClassicTheme.infoBlue),
+                                    padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                  ),
+                                  icon: const Icon(Icons.people_alt_rounded, size: 15),
+                                  label: const Text("Staff & PINs", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                                  onPressed: () async {
+                                    await ref.read(saasSessionProvider.notifier).switchOrganizationForMasterAdmin(docId);
+                                    if (context.mounted) {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(builder: (_) => StaffManagementScreen(initialOrgId: docId)),
+                                      );
+                                    }
+                                  },
+                                ),
+                                OutlinedButton.icon(
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: context.textPrimary,
+                                    side: BorderSide(color: context.borderColor),
+                                    padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                  ),
+                                  icon: const Icon(Icons.settings_outlined, size: 15),
+                                  label: const Text("Settings", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                                  onPressed: () => _showEditOrganizationDialog(docId, name),
+                                ),
                               ],
                             ),
                           ],
@@ -3445,7 +3607,7 @@ class AuditLogsTab extends StatelessWidget {
                         title: Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Text(action, style: TextStyle(color: primaryAccent, fontWeight: FontWeight.bold, fontSize: 13)),
+                            Flexible(child: Text(action, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: primaryAccent, fontWeight: FontWeight.bold, fontSize: 13))),
                             Text(timestamp, style: TextStyle(color: context.textSecondary, fontSize: 12)),
                           ],
                         ),

@@ -86,7 +86,11 @@ class AppsScriptBackendService {
     final httpClient = client ?? http.Client();
     final shouldClose = client == null;
     try {
-      var response = await httpClient.post(uri, headers: headers, body: body).timeout(timeout);
+      final effectiveHeaders = Map<String, String>.from(headers ?? {});
+      if (kIsWeb && effectiveHeaders['Content-Type'] == 'application/json') {
+        effectiveHeaders['Content-Type'] = 'text/plain';
+      }
+      var response = await httpClient.post(uri, headers: effectiveHeaders, body: body).timeout(timeout);
       int redirects = 0;
       while ((response.statusCode == 301 ||
               response.statusCode == 302 ||
@@ -312,6 +316,7 @@ class AppsScriptBackendService {
       );
 
       if (res.statusCode >= 200 && res.statusCode < 300) {
+        invalidateOrdersRev(outletId);
         try {
           final decoded = jsonDecode(res.body);
           if (decoded is Map<String, dynamic>) return decoded;
@@ -443,6 +448,26 @@ class AppsScriptBackendService {
       if (!_isValidUrl(url)) return false;
       if (spreadsheetId.isEmpty || spreadsheetId.startsWith('sheet_ORG')) return true;
 
+      // On Web, use GET to avoid browser CORS redirect issues on POST
+      if (kIsWeb) {
+        try {
+          final getUri = Uri.parse(url).replace(queryParameters: {
+            'action': 'REGISTER_TENANT',
+            'secret': _secretToken,
+            'org_id': orgId.trim(),
+            'spreadsheet_id': spreadsheetId.trim(),
+            'org_name': orgName ?? '',
+            'upi_id': upiId ?? '',
+          });
+          final getRes = await getWithRedirects(getUri, timeout: const Duration(seconds: 12));
+          if (getRes.statusCode >= 200 && getRes.statusCode < 300) {
+            return true;
+          }
+        } catch (eGet) {
+          debugPrint("AppsScriptBackendService registerTenant GET error: $eGet");
+        }
+      }
+
       final res = await postWithRedirects(
         Uri.parse(url),
         headers: {'Content-Type': 'application/json'},
@@ -460,6 +485,11 @@ class AppsScriptBackendService {
       return res.statusCode >= 200 && res.statusCode < 300;
     } catch (e) {
       debugPrint("AppsScriptBackendService registerTenant error: $e");
+      // On web, if browser blocks cross-origin webhook redirect, but the sheet
+      // was already created in Google Drive via Google Drive API, do not fail
+      if (kIsWeb && spreadsheetId.isNotEmpty) {
+        return true;
+      }
       return false;
     }
   }
@@ -1250,6 +1280,15 @@ class AppsScriptBackendService {
       if (res.statusCode >= 200 && res.statusCode < 300) {
         final decoded = jsonDecode(res.body);
         if (decoded is Map<String, dynamic>) {
+          final action = bodyWithSecret['action']?.toString();
+          if (action == 'SAVE_BILL' || action == 'VOID_ORDER' || action == 'CLEAR_TABLE' ||
+              action == 'SET_TABLE_STATUS' || action == 'RECORD_PAYMENT' || action == 'MOVE_TABLE' ||
+              action == 'MERGE_TABLES' || action == 'CANCEL_RESERVATION' || action == 'CLOSE_DAY') {
+            final org = bodyWithSecret['outletId'] ?? bodyWithSecret['outlet_id'] ?? bodyWithSecret['org_id'] ?? bodyWithSecret['org'];
+            if (org != null && org.toString().isNotEmpty) {
+              invalidateOrdersRev(org.toString());
+            }
+          }
           return decoded;
         }
       }

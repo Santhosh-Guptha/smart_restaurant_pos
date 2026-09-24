@@ -17,9 +17,18 @@
     "ignore": [
       "firebase.json",
       "**/.*",
-      "**/node_modules/**"
+      "**/node_modules/**",
+      "**/*.exe"
     ],
     "rewrites": [
+      {
+        "source": "/pos",
+        "destination": "/pos/index.html"
+      },
+      {
+        "source": "/pos/**",
+        "destination": "/pos/index.html"
+      },
       {
         "source": "/r",
         "destination": "/r/index.html"

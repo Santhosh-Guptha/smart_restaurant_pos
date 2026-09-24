@@ -1,4 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'constants.dart';
+import 'package_model.dart';
 
 /// Helper to parse DateTime fields from both Firestore Timestamp objects and ISO8601 string caches
 DateTime _parseDateTime(dynamic value, {DateTime? fallback}) {
@@ -24,6 +26,7 @@ class SaasLicense {
   final DateTime startDate;
   final DateTime endDate;
   final int expiryWarningDays;
+  final String vertical;
 
   SaasLicense({
     required this.planTier,
@@ -37,7 +40,11 @@ class SaasLicense {
     required this.startDate,
     required this.endDate,
     this.expiryWarningDays = 3,
+    this.maxTables = 15,
+    this.vertical = Verticals.restaurant,
   });
+
+  final int maxTables;
 
   SaasLicense copyWith({
     String? planTier,
@@ -51,6 +58,8 @@ class SaasLicense {
     DateTime? startDate,
     DateTime? endDate,
     int? expiryWarningDays,
+    int? maxTables,
+    String? vertical,
   }) {
     return SaasLicense(
       planTier: planTier ?? this.planTier,
@@ -64,6 +73,8 @@ class SaasLicense {
       startDate: startDate ?? this.startDate,
       endDate: endDate ?? this.endDate,
       expiryWarningDays: expiryWarningDays ?? this.expiryWarningDays,
+      maxTables: maxTables ?? this.maxTables,
+      vertical: vertical ?? this.vertical,
     );
   }
 
@@ -140,6 +151,8 @@ class SaasLicense {
       startDate: _parseDateTime(json['startDate']),
       endDate: _parseDateTime(json['endDate'], fallback: DateTime.now()),
       expiryWarningDays: json['expiryWarningDays'] is num ? (json['expiryWarningDays'] as num).toInt() : 3,
+      maxTables: (json['maxTables'] ?? json['tableCount'] ?? 15) as int,
+      vertical: json['vertical']?.toString() ?? Verticals.restaurant,
     );
   }
 
@@ -156,6 +169,8 @@ class SaasLicense {
       'startDate': startDate.toIso8601String(),
       'endDate': endDate.toIso8601String(),
       'expiryWarningDays': expiryWarningDays,
+      'maxTables': maxTables,
+      'vertical': vertical,
     };
   }
 
@@ -176,6 +191,8 @@ class SaasLicense {
       startDate: _parseDateTime(data['startDate']),
       endDate: _parseDateTime(data['endDate'], fallback: DateTime.now()),
       expiryWarningDays: data['expiryWarningDays'] is num ? (data['expiryWarningDays'] as num).toInt() : 3,
+      maxTables: (data['maxTables'] ?? data['tableCount'] ?? 15) as int,
+      vertical: data['vertical']?.toString() ?? Verticals.restaurant,
     );
   }
 
@@ -192,6 +209,7 @@ class SaasLicense {
       'startDate': Timestamp.fromDate(startDate),
       'endDate': Timestamp.fromDate(endDate),
       'expiryWarningDays': expiryWarningDays,
+      'vertical': vertical,
     };
   }
 
@@ -199,7 +217,7 @@ class SaasLicense {
   ///
   /// No feature map is written here on purpose — the resolver takes the
   /// profile's baseline, so this can never drift from `PlanProfile.offlineDineIn`.
-  factory SaasLicense.defaultFree({int trialDays = 14, int expiryWarningDays = 3}) {
+  factory SaasLicense.defaultFree({int trialDays = 14, int expiryWarningDays = 3, String vertical = Verticals.restaurant}) {
     return SaasLicense(
       planTier: 'TRIAL',
       planProfile: 'OFFLINE_DINE_IN',
@@ -212,11 +230,12 @@ class SaasLicense {
       startDate: DateTime.now(),
       endDate: DateTime.now().add(Duration(days: trialDays)),
       expiryWarningDays: expiryWarningDays,
+      vertical: vertical,
     );
   }
 
   /// Mock licence with everything on: the Omnichannel profile.
-  factory SaasLicense.proMock() {
+  factory SaasLicense.proMock({String vertical = Verticals.restaurant}) {
     return SaasLicense(
       planTier: 'YEARLY',
       planProfile: 'OMNICHANNEL',
@@ -228,6 +247,7 @@ class SaasLicense {
       features: const {},
       startDate: DateTime.now(),
       endDate: DateTime.now().add(const Duration(days: 365)),
+      vertical: vertical,
     );
   }
 }
@@ -263,6 +283,10 @@ class SaasOrganization {
 
   /// Why the platform admin paused or closed this store, shown to the owner.
   final String? statusReason;
+  final int tableCount;
+  final String operatingMode;
+  final String vertical;
+  final String? businessCategory;
 
   SaasOrganization({
     required this.id,
@@ -284,6 +308,10 @@ class SaasOrganization {
     this.pendingStorageChange,
     this.status = 'ACTIVE',
     this.statusReason,
+    this.tableCount = 15,
+    this.operatingMode = 'dineFirstPostpaid',
+    this.vertical = Verticals.restaurant,
+    this.businessCategory,
   });
 
   /// Paused by the platform admin. The store can still bill (rule 7); the
@@ -306,6 +334,20 @@ class SaasOrganization {
   String? get ownerEmail => ownerGoogleEmail;
 
   factory SaasOrganization.fromJson(Map<String, dynamic> json) {
+    final rawCategory = json['businessCategory']?.toString() ?? json['category']?.toString();
+    final rawVertical = json['vertical']?.toString().trim();
+    String resolvedVertical = Verticals.restaurant;
+    if (rawCategory != null && rawCategory.trim().isNotEmpty) {
+      final v = Verticals.forCategory(rawCategory);
+      if (v != Verticals.restaurant) {
+        resolvedVertical = v;
+      } else if (rawVertical != null && rawVertical.isNotEmpty) {
+        resolvedVertical = Verticals.forCategory(rawVertical);
+      }
+    } else if (rawVertical != null && rawVertical.isNotEmpty) {
+      resolvedVertical = Verticals.forCategory(rawVertical);
+    }
+
     return SaasOrganization(
       id: json['id'] ?? '',
       name: json['name'] ?? '',
@@ -326,6 +368,10 @@ class SaasOrganization {
       pendingStorageChange: _mapOrNull(json['pendingStorageChange']),
       status: (json['status'] ?? 'ACTIVE').toString(),
       statusReason: json['statusReason']?.toString(),
+      tableCount: (json['tableCount'] ?? json['table_count'] ?? 15) as int,
+      operatingMode: (json['operatingMode'] ?? json['operating_mode'] ?? 'dineFirstPostpaid').toString(),
+      vertical: resolvedVertical,
+      businessCategory: rawCategory,
     );
   }
 
@@ -368,10 +414,28 @@ class SaasOrganization {
       if (pendingStorageChange != null) 'pendingStorageChange': pendingStorageChange,
       'status': status,
       if (statusReason != null) 'statusReason': statusReason,
+      'tableCount': tableCount,
+      'operatingMode': operatingMode,
+      'vertical': vertical,
+      if (businessCategory != null) 'businessCategory': businessCategory,
     };
   }
 
   factory SaasOrganization.fromFirestore(Map<String, dynamic> data, String docId) {
+    final rawCategory = data['businessCategory']?.toString() ?? data['category']?.toString();
+    final rawVertical = data['vertical']?.toString().trim();
+    String resolvedVertical = Verticals.restaurant;
+    if (rawCategory != null && rawCategory.trim().isNotEmpty) {
+      final v = Verticals.forCategory(rawCategory);
+      if (v != Verticals.restaurant) {
+        resolvedVertical = v;
+      } else if (rawVertical != null && rawVertical.isNotEmpty) {
+        resolvedVertical = Verticals.forCategory(rawVertical);
+      }
+    } else if (rawVertical != null && rawVertical.isNotEmpty) {
+      resolvedVertical = Verticals.forCategory(rawVertical);
+    }
+
     return SaasOrganization(
       id: docId,
       name: data['name'] ?? '',
@@ -392,6 +456,10 @@ class SaasOrganization {
       pendingStorageChange: _mapOrNull(data['pendingStorageChange']),
       status: (data['status'] ?? 'ACTIVE').toString(),
       statusReason: data['statusReason']?.toString(),
+      tableCount: (data['tableCount'] ?? data['table_count'] ?? 15) as int,
+      operatingMode: (data['operatingMode'] ?? data['operating_mode'] ?? 'dineFirstPostpaid').toString(),
+      vertical: resolvedVertical,
+      businessCategory: rawCategory,
     );
   }
 
@@ -415,6 +483,10 @@ class SaasOrganization {
       'upiId': upiId,
       'phone': phone,
       'gstin': gstin,
+      'tableCount': tableCount,
+      'operatingMode': operatingMode,
+      'vertical': vertical,
+      if (businessCategory != null) 'businessCategory': businessCategory,
     };
   }
 }
@@ -444,8 +516,34 @@ class SaasUser {
     this.phone,
   });
 
-  bool get isMasterAdmin => role == 'MASTER_ADMIN';
-  bool get isClient => role != 'MASTER_ADMIN';
+  SaasUser copyWith({
+    String? id,
+    String? email,
+    String? username,
+    String? fullName,
+    String? role,
+    String? organizationId,
+    String? franchiseId,
+    bool? mustChangePassword,
+    String? businessCategory,
+    String? phone,
+  }) {
+    return SaasUser(
+      id: id ?? this.id,
+      email: email ?? this.email,
+      username: username ?? this.username,
+      fullName: fullName ?? this.fullName,
+      role: role ?? this.role,
+      organizationId: organizationId ?? this.organizationId,
+      franchiseId: franchiseId ?? this.franchiseId,
+      mustChangePassword: mustChangePassword ?? this.mustChangePassword,
+      businessCategory: businessCategory ?? this.businessCategory,
+      phone: phone ?? this.phone,
+    );
+  }
+
+  bool get isMasterAdmin => role.toUpperCase() == 'MASTER_ADMIN' || isMasterAdminEmail(email);
+  bool get isClient => !isMasterAdmin;
 
   factory SaasUser.fromJson(Map<String, dynamic> json) {
     return SaasUser(
@@ -674,6 +772,7 @@ class ClientOnboardingRequest {
   final String email;
   final String mobile;
   final String businessCategory;
+  final String vertical;
   final String? referralSource;
   final String? address;
   final int requestedTrialDays; // 7, 14, 30
@@ -693,6 +792,7 @@ class ClientOnboardingRequest {
     required this.email,
     required this.mobile,
     this.businessCategory = 'Restaurant & Cafe',
+    String? vertical,
     this.referralSource,
     this.address,
     this.requestedTrialDays = 14,
@@ -711,7 +811,8 @@ class ClientOnboardingRequest {
     },
     this.status = 'PENDING',
     DateTime? createdAt,
-  }) : createdAt = createdAt ?? DateTime.now();
+  }) : vertical = vertical ?? Verticals.forCategory(businessCategory),
+       createdAt = createdAt ?? DateTime.now();
 
   factory ClientOnboardingRequest.fromFirestore(Map<String, dynamic> data, String docId) {
     final roles = data['requestedRoles'] is List
@@ -735,6 +836,7 @@ class ClientOnboardingRequest {
       email: data['email'] ?? '',
       mobile: data['mobile'] ?? '',
       businessCategory: data['businessCategory'] ?? 'Restaurant & Cafe',
+      vertical: data['vertical']?.toString() ?? Verticals.forCategory(data['businessCategory']),
       referralSource: data['referralSource'],
       address: data['address'],
       requestedTrialDays: (data['requestedTrialDays'] ?? 14) as int,
@@ -756,6 +858,7 @@ class ClientOnboardingRequest {
       'email': email,
       'mobile': mobile,
       'businessCategory': businessCategory,
+      'vertical': vertical,
       'referralSource': referralSource,
       'address': address,
       'requestedTrialDays': requestedTrialDays,

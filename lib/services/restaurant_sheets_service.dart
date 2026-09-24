@@ -16,6 +16,87 @@ class RestaurantSheetsService {
     return box.get(keySheetId) as String?;
   }
 
+  /// Uploads a menu dish image to the restaurant's connected Google Drive in a dedicated folder.
+  /// Sets public reader permission and returns the direct Google Edge CDN thumbnail URL.
+  static Future<Map<String, dynamic>> uploadDishImageToDrive({
+    required http.Client authenticatedClient,
+    required List<int> imageBytes,
+    required String dishId,
+    String? mimeType,
+  }) async {
+    try {
+      final driveApi = drive.DriveApi(authenticatedClient);
+
+      // 1. Check or create "SmartDine_Menu_Images" folder in Google Drive
+      String folderId;
+      final folderQuery =
+          "mimeType = 'application/vnd.google-apps.folder' and name = 'SmartDine_Menu_Images' and trashed = false";
+      final folderList = await driveApi.files.list(q: folderQuery, spaces: 'drive');
+
+      if (folderList.files != null && folderList.files!.isNotEmpty) {
+        folderId = folderList.files!.first.id!;
+      } else {
+        final newFolder = await driveApi.files.create(
+          drive.File(
+            name: 'SmartDine_Menu_Images',
+            mimeType: 'application/vnd.google-apps.folder',
+            description: 'Public menu item images for SmartDine POS and QR ordering',
+          ),
+        );
+        folderId = newFolder.id!;
+      }
+
+      // 2. Upload the compressed image file into the folder
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final effectiveMime = mimeType ?? 'image/jpeg';
+      final fileMetadata = drive.File(
+        name: 'dish_${dishId}_$timestamp.jpg',
+        parents: [folderId],
+        description: 'Menu dish image for dish: $dishId',
+      );
+
+      final media = drive.Media(
+        Stream<List<int>>.value(imageBytes),
+        imageBytes.length,
+        contentType: effectiveMime,
+      );
+
+      final uploadedFile = await driveApi.files.create(
+        fileMetadata,
+        uploadMedia: media,
+      );
+
+      final fileId = uploadedFile.id;
+      if (fileId == null || fileId.isEmpty) {
+        throw Exception('Failed to obtain uploaded Google Drive file ID.');
+      }
+
+      // 3. Grant public read permission ("anyone" with role "reader")
+      await driveApi.permissions.create(
+        drive.Permission(
+          type: 'anyone',
+          role: 'reader',
+        ),
+        fileId,
+      );
+
+      // 4. Construct high-speed Edge CDN thumbnail URL (Google lh3 edge cache)
+      final cdnUrl = 'https://lh3.googleusercontent.com/d/$fileId=s400';
+
+      return {
+        'success': true,
+        'fileId': fileId,
+        'imageUrl': cdnUrl,
+      };
+    } catch (e) {
+      debugPrint('Error uploading dish image to Drive: $e');
+      return {
+        'success': false,
+        'error': e.toString(),
+      };
+    }
+  }
+
   static Future<Map<String, dynamic>> shareSpreadsheetWithStaff({
     required http.Client authenticatedClient,
     required String spreadsheetId,
@@ -157,6 +238,7 @@ class RestaurantSheetsService {
           'Available From',
           'Available To',
           'Is Time Restricted',
+          'Image URL',
         ],
         'Dining Bills': [
           'Bill ID',
@@ -405,7 +487,7 @@ class RestaurantSheetsService {
           valueInputOption: 'USER_ENTERED',
           data: [
             sheets.ValueRange(
-              range: "'Menu & Modifiers'!A1:H1",
+              range: "'Menu & Modifiers'!A1:L1",
               values: [
                 [
                   'Dish ID',
@@ -416,6 +498,10 @@ class RestaurantSheetsService {
                   'Prep Time (Mins)',
                   'Kitchen Station',
                   'Is Available',
+                  'Available From',
+                  'Available To',
+                  'Is Time Restricted',
+                  'Image URL',
                 ]
               ],
             ),
@@ -551,11 +637,12 @@ class RestaurantSheetsService {
           dish['price'] ?? 0.0,
           dish['isVeg'] == true ? 'Veg' : 'Non-Veg',
           dish['prepTime'] ?? 15,
+          dish['station'] ?? 'Main Kitchen',
           dish['isAvailable'] == true ? 'Available' : 'Sold Out',
-          '',
           dish['availableFrom'] ?? '',
           dish['availableTo'] ?? '',
           dish['isTimeRestricted'] == true ? 'Yes' : 'No',
+          dish['imageUrl'] ?? '',
         ]);
       }
 
@@ -564,7 +651,7 @@ class RestaurantSheetsService {
         await api.spreadsheets.values.clear(
           sheets.ClearValuesRequest(),
           sheetId,
-          "'Menu & Modifiers'!A2:K1000",
+          "'Menu & Modifiers'!A2:L1000",
         );
       } catch (_) {}
 

@@ -35,6 +35,13 @@ class _SaaSLoginScreenState extends ConsumerState<SaaSLoginScreen> {
   int _resendCooldown = 0;
   Timer? _cooldownTimer;
 
+  // Device Limit State
+  bool _isDeviceLimitStep = false;
+  bool _isForceLoggingOut = false;
+  String _deviceLimitOrgId = '';
+  int _deviceCount = 0;
+  int _deviceCap = 0;
+
   @override
   void initState() {
     super.initState();
@@ -102,6 +109,17 @@ class _SaaSLoginScreenState extends ConsumerState<SaaSLoginScreen> {
           "Security code dispatched to $email",
           subtitle: "Two-Step Verification",
         );
+      } else if (res != null && res.startsWith('DEVICE_LIMIT:')) {
+        // Format: DEVICE_LIMIT:orgId:currentCount:cap
+        final parts = res.split(':');
+        setState(() {
+          _isLoggingIn = false;
+          _isDeviceLimitStep = true;
+          _deviceLimitOrgId = parts.length > 1 ? parts[1] : '';
+          _deviceCount = parts.length > 2 ? int.tryParse(parts[2]) ?? 0 : 0;
+          _deviceCap = parts.length > 3 ? int.tryParse(parts[3]) ?? 1 : 1;
+          _errorMessage = null;
+        });
       } else {
         setState(() {
           _isLoggingIn = false;
@@ -183,6 +201,63 @@ class _SaaSLoginScreenState extends ConsumerState<SaaSLoginScreen> {
     });
   }
 
+  Future<void> _handleForceLogout() async {
+    setState(() {
+      _isForceLoggingOut = true;
+      _errorMessage = null;
+    });
+
+    try {
+      await ref.read(authProvider.notifier).forceLogoutOtherDevices(_deviceLimitOrgId);
+      if (!mounted) return;
+
+      AppToast.showSuccess(
+        context,
+        "All other devices have been logged out",
+        subtitle: "Signing you in...",
+      );
+
+      // Reset device limit state and retry login
+      setState(() {
+        _isDeviceLimitStep = false;
+        _isForceLoggingOut = false;
+        _isLoggingIn = true;
+      });
+
+      final res = await ref.read(authProvider.notifier).loginSaaS(
+            _emailController.text.trim(),
+            _passwordController.text,
+            rememberMe: _rememberMe,
+          );
+
+      if (mounted) {
+        setState(() {
+          _isLoggingIn = false;
+          if (res != null) {
+            _errorMessage = res;
+            AppToast.showError(context, res, title: "Login Failed");
+          }
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isForceLoggingOut = false;
+          _errorMessage = "Failed to log out other devices. Please try again.";
+        });
+        AppToast.showError(context, "Failed to log out other devices", title: "Error");
+      }
+    }
+  }
+
+  void _cancelDeviceLimit() {
+    setState(() {
+      _isDeviceLimitStep = false;
+      _isForceLoggingOut = false;
+      _errorMessage = null;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -193,13 +268,13 @@ class _SaaSLoginScreenState extends ConsumerState<SaaSLoginScreen> {
         actions: [
           Consumer(
             builder: (context, ref, _) {
-              final mode = ref.watch(themeModeProvider);
-              final isDark = mode == ThemeMode.dark;
+              ref.watch(themeModeProvider);
+              final isDark = context.isDark;
               return IconButton(
                 icon: Icon(isDark ? Icons.light_mode_outlined : Icons.dark_mode_outlined, color: context.textPrimary),
                 tooltip: isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode',
                 onPressed: () {
-                  ref.read(themeModeProvider.notifier).toggleTheme();
+                  ref.read(themeModeProvider.notifier).toggleTheme(context.isDark);
                   HapticFeedback.lightImpact();
                 },
               );
@@ -261,7 +336,9 @@ class _SaaSLoginScreenState extends ConsumerState<SaaSLoginScreen> {
                       boxShadow: ClassicTheme.cardShadow(context.isDark),
                     ),
                     padding: const EdgeInsets.all(24.0),
-                    child: _isMfaStep
+                    child: _isDeviceLimitStep
+                        ? _buildDeviceLimitView(context)
+                        : _isMfaStep
                         ? _buildMfaView(context)
                         : Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -281,7 +358,7 @@ class _SaaSLoginScreenState extends ConsumerState<SaaSLoginScreen> {
                                       Expanded(
                                         child: Text(
                                           _errorMessage!,
-                                          style: const TextStyle(color: ClassicTheme.textPrimary, fontSize: 13),
+                                          style: TextStyle(color: context.textPrimary, fontSize: 13),
                                         ),
                                       ),
                                     ],
@@ -399,7 +476,7 @@ class _SaaSLoginScreenState extends ConsumerState<SaaSLoginScreen> {
                   const SizedBox(height: 16),
 
                   // Footer Actions
-                  if (_isMfaStep)
+                  if (_isMfaStep || _isDeviceLimitStep)
                     Padding(
                       padding: const EdgeInsets.symmetric(vertical: 8),
                       child: Row(
@@ -408,7 +485,9 @@ class _SaaSLoginScreenState extends ConsumerState<SaaSLoginScreen> {
                           Icon(Icons.lock_outline_rounded, size: 14, color: context.textSecondary),
                           const SizedBox(width: 6),
                           Text(
-                            "Secured with Two-Factor Authentication",
+                            _isDeviceLimitStep
+                                ? "Device sessions managed securely"
+                                : "Secured with Two-Factor Authentication",
                             style: TextStyle(color: context.textSecondary, fontSize: 12),
                           ),
                         ],
@@ -419,7 +498,7 @@ class _SaaSLoginScreenState extends ConsumerState<SaaSLoginScreen> {
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         Text(
-                          "New retail business? ",
+                          "New business or restaurant? ",
                           style: TextStyle(color: context.textSecondary, fontSize: 13),
                         ),
                         GestureDetector(
@@ -430,7 +509,7 @@ class _SaaSLoginScreenState extends ConsumerState<SaaSLoginScreen> {
                             );
                           },
                           child: Text(
-                            "Register Store",
+                            "Register Here",
                             style: TextStyle(
                               color: ClassicTheme.primaryAccent,
                               fontWeight: FontWeight.bold,
@@ -447,6 +526,126 @@ class _SaaSLoginScreenState extends ConsumerState<SaaSLoginScreen> {
           ),
         ),
       ),
+    );
+  }
+  Widget _buildDeviceLimitView(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Center(
+          child: Container(
+            width: 58,
+            height: 58,
+            decoration: BoxDecoration(
+              color: ClassicTheme.warningAmber.withValues(alpha: 0.15),
+              shape: BoxShape.circle,
+              border: Border.all(color: ClassicTheme.warningAmber.withValues(alpha: 0.4)),
+            ),
+            child: Icon(
+              Icons.devices_other_rounded,
+              size: 30,
+              color: ClassicTheme.warningAmber,
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        Center(
+          child: Text(
+            "Device Limit Reached",
+            style: TextStyle(
+              color: context.textPrimary,
+              fontSize: 20,
+              fontWeight: FontWeight.w800,
+              letterSpacing: -0.3,
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Center(
+          child: Text(
+            _deviceCap <= 1
+                ? "Your plan supports only 1 device and it's already in use."
+                : "Your plan supports $_deviceCap devices and $_deviceCount are already registered.",
+            style: TextStyle(
+              color: context.textSecondary,
+              fontSize: 13,
+              height: 1.5,
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Center(
+          child: Text(
+            "If you no longer have access to those devices, you can log them out remotely.",
+            style: TextStyle(
+              color: context.textSecondary,
+              fontSize: 12.5,
+              height: 1.5,
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ),
+        const SizedBox(height: 20),
+
+        if (_errorMessage != null) ...[
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: ClassicTheme.dangerRed.withValues(alpha: 0.15),
+              border: Border.all(color: ClassicTheme.dangerRed.withValues(alpha: 0.4)),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.error_outline, color: ClassicTheme.dangerRed, size: 20),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    _errorMessage!,
+                    style: TextStyle(color: context.textPrimary, fontSize: 13),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+        ],
+
+        // Log out from other devices button
+        SizedBox(
+          width: double.infinity,
+          height: 48,
+          child: ElevatedButton.icon(
+            onPressed: _isForceLoggingOut ? null : _handleForceLogout,
+            icon: _isForceLoggingOut
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5),
+                  )
+                : const Icon(Icons.logout_rounded, size: 18),
+            label: Text(
+              _isForceLoggingOut ? "Logging out devices..." : "Log Out From Other Devices",
+              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+            ),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: ClassicTheme.dangerRed,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+          ),
+        ),
+        const SizedBox(height: 14),
+
+        // Back to login
+        TextButton.icon(
+          onPressed: _isForceLoggingOut ? null : _cancelDeviceLimit,
+          icon: const Icon(Icons.arrow_back, size: 16),
+          label: const Text("Back to Login", style: TextStyle(fontSize: 13)),
+          style: TextButton.styleFrom(foregroundColor: context.textSecondary),
+        ),
+      ],
     );
   }
 
@@ -507,12 +706,16 @@ class _SaaSLoginScreenState extends ConsumerState<SaaSLoginScreen> {
               children: [
                 Icon(Icons.mail_outline_rounded, size: 14, color: ClassicTheme.primaryAccent),
                 const SizedBox(width: 6),
-                Text(
-                  _mfaEmail,
-                  style: TextStyle(
-                    color: context.textPrimary,
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w700,
+                Flexible(
+                  child: Text(
+                    _mfaEmail,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: context.textPrimary,
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                 ),
               ],
@@ -536,7 +739,7 @@ class _SaaSLoginScreenState extends ConsumerState<SaaSLoginScreen> {
                 Expanded(
                   child: Text(
                     _errorMessage!,
-                    style: const TextStyle(color: ClassicTheme.textPrimary, fontSize: 13),
+                    style: TextStyle(color: context.textPrimary, fontSize: 13),
                   ),
                 ),
               ],

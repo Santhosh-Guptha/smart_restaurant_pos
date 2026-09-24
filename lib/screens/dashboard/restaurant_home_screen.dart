@@ -1,3 +1,4 @@
+import 'dart:async';
 import '../../providers/dashboard_layout_provider.dart';
 import '../../providers/entitlements_provider.dart';
 import 'package:flutter/material.dart';
@@ -8,6 +9,7 @@ import 'package:http/http.dart' as http;
 
 import 'package:flutter/services.dart';
 import '../../core/classic_theme.dart';
+import '../../core/constants.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/restaurant_auth_provider.dart';
 import '../../providers/saas_session_provider.dart';
@@ -16,6 +18,9 @@ import '../../services/client_ledger_cloud_router_service.dart';
 import '../../services/apps_script_backend_service.dart';
 import '../../widgets/google_sheets_setup_gate_dialog.dart';
 import '../../widgets/feature_gated_widget.dart';
+import '../../providers/theme_provider.dart';
+import '../../core/vertical_labels.dart';
+import '../../core/package_model.dart';
 
 import '../counter_billing/fast_qsr_billing_screen.dart';
 import '../restaurant/table_management_screen.dart';
@@ -30,6 +35,9 @@ import '../analytics/restaurant_analytics_screen.dart';
 import '../orders/restaurant_order_history_screen.dart';
 import '../expenses/expenses_screen.dart';
 import '../waiter/waiter_table_picker_screen.dart';
+import '../retail/barcode_billing_screen.dart';
+import '../retail/customer_khata_screen.dart';
+import 'master_admin_screen.dart';
 import '../../core/rbac_permissions.dart';
 import '../../core/entitlements.dart';
 import '../../core/saas_models.dart';
@@ -47,6 +55,8 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
   bool _isCheckingSheets = false;
   bool? _sheetAccessVerified;
   String _sheetCheckMessage = '';
+  int _tenantOutletCount = 1;
+  StreamSubscription<QuerySnapshot>? _outletCountSub;
 
   @override
   void initState() {
@@ -55,13 +65,38 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
       // The resolver (storage mode → legacy flag → profile) decides whether this
       // tenant is offline; the licence flag alone is no longer the authority.
       final isPureOffline = ref.read(entitlementsProvider).isPureOffline;
-      if (!isPureOffline) {
+      final saasSession = ref.read(saasSessionProvider);
+      final isMaster = saasSession.currentUser?.role.toUpperCase() == 'MASTER_ADMIN' ||
+          isMasterAdminEmail(saasSession.currentUser?.email);
+
+      final orgId = saasSession.currentUser?.organizationId ?? saasSession.currentOrganization?.id ?? '';
+      if (orgId.isNotEmpty && orgId != 'SYSTEM_ADMIN') {
+        _outletCountSub = FirebaseFirestore.instance
+            .collection('outlets')
+            .where('organizationId', isEqualTo: orgId)
+            .snapshots()
+            .listen((snap) {
+          if (mounted) {
+            setState(() {
+              _tenantOutletCount = snap.docs.length;
+            });
+          }
+        });
+      }
+
+      if (!isPureOffline && !isMaster) {
         await GoogleSheetsSetupGateDialog.showIfRequired(context, ref);
       }
       if (mounted) {
         _checkGoogleSheetsAccess();
       }
     });
+  }
+
+  @override
+  void dispose() {
+    _outletCountSub?.cancel();
+    super.dispose();
   }
 
   Future<void> _checkGoogleSheetsAccess() async {
@@ -79,9 +114,9 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
     final org = saasSession.currentOrganization;
     final orgId = user?.organizationId ?? org?.id ?? 'ORG_DEFAULT';
 
-    // Owners have implicit access once Google Sign-In is active
+    // Owners & Master Admin have implicit access once Google Sign-In is active or in Demo mode
     final role = user?.role.toUpperCase() ?? 'OWNER';
-    if (role == 'OWNER' || role == 'MASTER_ADMIN') {
+    if (role == 'OWNER' || role == 'CLIENT' || role == 'MASTER_ADMIN' || isMasterAdminEmail(user?.email)) {
       setState(() {
         _sheetAccessVerified = true;
         _sheetCheckMessage = 'Owner Master Database Active';
@@ -360,59 +395,95 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
     final user = saasSession.currentUser;
     final org = saasSession.currentOrganization;
 
-    // Fail-closed role resolution: prefer authenticated activeStaff, fallback to SaaS user, else unassigned
-    final StaffRole effectiveRole = activeStaff?.role ??
-        (user != null ? StaffRoleExtension.fromKey(user.role) : StaffRole.unassigned);
-    final String roleStr = effectiveRole.key;
-    final storeName = org?.name ?? org?.appName ?? 'SmartDine Restaurant';
+    final bool isMasterAdmin = (user?.role.toUpperCase() == 'MASTER_ADMIN') ||
+        isMasterAdminEmail(user?.email) ||
+        isMasterAdminEmail(restaurantAuth.googleEmail);
 
-    // Determine role permissions (fail-closed)
-    final bool isOwner = effectiveRole == StaffRole.owner;
-    final bool isManager = effectiveRole == StaffRole.manager;
-    final bool isBilling = effectiveRole == StaffRole.billing;
-    final bool isKitchen = effectiveRole == StaffRole.kitchen;
-    final bool isWaiter = effectiveRole == StaffRole.waiter;
+    // Fail-closed role resolution: prefer authenticated activeStaff, fallback to SaaS user, else unassigned
+    final StaffRole effectiveRole = isMasterAdmin
+        ? StaffRole.owner
+        : (activeStaff?.role ??
+            (user != null ? StaffRoleExtension.fromKey(user.role) : StaffRole.unassigned));
+    final String roleStr = effectiveRole.key;
+    final ent = ref.watch(entitlementsProvider);
+    final storeName = org?.name ?? org?.appName ?? VerticalLabels.of(ent.vertical).dashboardBrandFallback;
+    final activeOutletName = Hive.isBoxOpen('configBox')
+        ? (Hive.box('configBox').get('current_outlet_name') as String?)
+        : null;
+    final outletText = (activeOutletName != null && activeOutletName.isNotEmpty)
+        ? ' • $activeOutletName'
+        : '';
+    final String fullStoreDisplayName = '$storeName$outletText';
+
+    // Determine role permissions (Master Admin has all permissions active for client demo showcases)
+    final bool isOwner = isMasterAdmin || effectiveRole == StaffRole.owner;
+    final bool isManager = isMasterAdmin || effectiveRole == StaffRole.manager;
+    final bool isBilling = isMasterAdmin || effectiveRole == StaffRole.billing;
+    final bool isKitchen = isMasterAdmin || effectiveRole == StaffRole.kitchen;
+    final bool isWaiter = isMasterAdmin || effectiveRole == StaffRole.waiter;
+
+    // Check if user is locked to an outlet or allowed to switch branches
+    final bool isStaffLockedToOutlet = user?.franchiseId != null && user!.franchiseId!.isNotEmpty;
+    final bool canSwitchBranch = isMasterAdmin || 
+        (!isStaffLockedToOutlet && (isOwner || isManager) && (saasSession.currentLicense?.maxFranchises ?? 1) > 1 && _tenantOutletCount > 1);
 
     // Feature enablement, resolved from the tenant's plan. A card whose feature
     // is not in the plan is absent from the dashboard entirely — the filtering
     // happens in `DashboardCardMeta.isAllowedFor`, so there is no second list
     // of booleans here to drift out of step with it.
-    final ent = ref.watch(entitlementsProvider);
 
-    // Role permission flags for each card
-    final bool roleBilling = isOwner || isManager || isBilling;
-    final bool roleTables = isOwner || isManager || isBilling || isWaiter;
-    final bool roleKds = isOwner || isManager || isKitchen;
-    final bool roleMenu = isOwner || isManager;
-    final bool roleOutlets = isOwner;
-    final bool roleStaff = isOwner || isManager;
-    final bool roleStoreConfig = isOwner || isManager;
-    final bool roleAnalytics = isOwner || isManager;
-    final bool roleOrders = isOwner || isManager || isBilling;
-    final bool roleExpenses = isOwner || isManager;
-    final bool roleWaiter = isOwner || isManager || isWaiter;
+    // Role permission flags for each card (Master Admin has all cards unlocked for client demo pitch)
+    final bool roleBilling = isMasterAdmin || isOwner || isManager || isBilling;
+    final bool roleTables = isMasterAdmin || isOwner || isManager || isBilling || isWaiter;
+    final bool roleKds = isMasterAdmin || isOwner || isManager || isKitchen;
+    final bool roleMenu = isMasterAdmin || isOwner || isManager;
+    final bool roleOutlets = isMasterAdmin || isOwner;
+    final bool roleStaff = isMasterAdmin || isOwner || isManager;
+    final bool roleStoreConfig = isMasterAdmin || isOwner || isManager;
+    final bool roleAnalytics = isMasterAdmin || isOwner || isManager;
+    final bool roleOrders = isMasterAdmin || isOwner || isManager || isBilling;
+    final bool roleExpenses = isMasterAdmin || isOwner || isManager;
+    final bool roleWaiter = isMasterAdmin || isOwner || isManager || isWaiter;
 
     final bool isPureOffline = ent.isPureOffline;
 
-    final String roleDisplayName = activeStaff != null
-        ? '${activeStaff.name} (${activeStaff.role.displayName})'
-        : isOwner
-            ? 'Restaurant Owner (Master Admin)'
-            : isManager
-                ? 'Store Manager'
-                : isBilling
-                    ? 'Billing & Cashier'
-                    : isKitchen
-                        ? 'Kitchen Chef (KDS)'
-                        : isWaiter
-                            ? 'Floor Captain / Waiter'
-                            : 'Unassigned Staff';
+    final String roleDisplayName = isMasterAdmin
+        ? 'Master Admin (Demo Showcase)'
+        : (activeStaff != null
+            ? '${activeStaff.name} (${activeStaff.role.displayName})'
+            : isOwner
+                ? VerticalLabels.of(ent.vertical).ownerRoleLabel
+                : isManager
+                    ? VerticalLabels.of(ent.vertical).managerRoleLabel
+                    : isBilling
+                        ? VerticalLabels.of(ent.vertical).billingRoleLabel
+                        : isKitchen
+                            ? (ent.vertical == Verticals.restaurant ? 'Kitchen Chef (KDS)' : 'Stock / Warehouse')
+                            : isWaiter
+                                ? (ent.vertical == Verticals.restaurant ? 'Floor Captain / Waiter' : 'Floor Staff')
+                                : 'Unassigned Staff');
 
     return Scaffold(
       backgroundColor: context.canvasColor,
       appBar: AppBar(
         backgroundColor: context.surfaceColor,
         elevation: 0,
+        leading: (Navigator.canPop(context) || isMasterAdmin)
+            ? IconButton(
+                tooltip: isMasterAdmin ? 'Back to Master Admin' : 'Back',
+                icon: const Icon(Icons.arrow_back_rounded),
+                onPressed: () {
+                  if (Navigator.canPop(context)) {
+                    Navigator.pop(context);
+                  } else {
+                    Navigator.pushReplacement(
+                      context,
+                      MaterialPageRoute(builder: (_) => const MasterAdminScreen()),
+                    );
+                  }
+                },
+              )
+            : null,
         title: Row(
           children: [
             Container(
@@ -421,61 +492,108 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
                 color: ClassicTheme.warningAmber.withValues(alpha: 0.15),
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: const Icon(Icons.restaurant_rounded, color: ClassicTheme.warningAmber, size: 22),
+              child: Icon(
+                ent.vertical == Verticals.restaurant
+                    ? Icons.restaurant_rounded
+                    : (ent.vertical == Verticals.pharmacy
+                        ? Icons.local_pharmacy_rounded
+                        : Icons.storefront_rounded),
+                color: ClassicTheme.warningAmber,
+                size: 22,
+              ),
             ),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    storeName,
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: context.textPrimary,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: isOwner ? ClassicTheme.warningAmber.withValues(alpha: 0.15) : ClassicTheme.infoBlue.withValues(alpha: 0.15),
+                  canSwitchBranch
+                      ? InkWell(
+                          onTap: () => _showStoreSwitcherModal(context, ref),
                           borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Text(
-                          roleDisplayName,
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 2),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Flexible(
+                                  child: Text(
+                                    fullStoreDisplayName,
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                      color: context.textPrimary,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                                Icon(Icons.unfold_more_rounded, size: 16, color: context.textSecondary),
+                              ],
+                            ),
+                          ),
+                        )
+                      : Text(
+                          fullStoreDisplayName,
                           style: TextStyle(
-                            fontSize: 12,
+                            fontSize: 16,
                             fontWeight: FontWeight.bold,
-                            color: isOwner ? ClassicTheme.warningAmber : ClassicTheme.infoBlue,
+                            color: context.textPrimary,
                           ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: isMasterAdmin
+                                ? ClassicTheme.primaryAccentIndigo.withValues(alpha: 0.15)
+                                : (isOwner ? ClassicTheme.warningAmber.withValues(alpha: 0.15) : ClassicTheme.infoBlue.withValues(alpha: 0.15)),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            roleDisplayName,
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: isMasterAdmin
+                                  ? ClassicTheme.primaryAccentIndigo
+                                  : (isOwner ? ClassicTheme.warningAmber : ClassicTheme.infoBlue),
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
                       ),
                       const SizedBox(width: 6),
                       if (isPureOffline)
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: ClassicTheme.successEmerald.withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(6),
-                            border: Border.all(color: ClassicTheme.successEmerald.withValues(alpha: 0.3)),
-                          ),
-                          child: const Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.offline_pin_rounded, size: 11, color: ClassicTheme.successEmerald),
-                              SizedBox(width: 4),
-                              Text(
-                                'Pure Offline Station',
-                                style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: ClassicTheme.successEmerald),
-                              ),
-                            ],
+                        Flexible(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: ClassicTheme.successEmerald.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(color: ClassicTheme.successEmerald.withValues(alpha: 0.3)),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: const [
+                                Icon(Icons.offline_pin_rounded, size: 11, color: ClassicTheme.successEmerald),
+                                SizedBox(width: 4),
+                                Flexible(
+                                  child: Text(
+                                    'Pure Offline Station',
+                                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: ClassicTheme.successEmerald),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         )
                       else
@@ -492,10 +610,65 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
           ],
         ),
         actions: [
+          if (isMasterAdmin)
+            MediaQuery.of(context).size.width < 640
+                ? IconButton(
+                    tooltip: 'Back to Master Admin',
+                    icon: Icon(Icons.admin_panel_settings_rounded, color: ClassicTheme.primaryAccentIndigo, size: 22),
+                    onPressed: () {
+                      if (Navigator.canPop(context)) {
+                        Navigator.pop(context);
+                      } else {
+                        Navigator.pushReplacement(
+                          context,
+                          MaterialPageRoute(builder: (_) => const MasterAdminScreen()),
+                        );
+                      }
+                    },
+                  )
+                : Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+                    child: ElevatedButton.icon(
+                      onPressed: () {
+                        if (Navigator.canPop(context)) {
+                          Navigator.pop(context);
+                        } else {
+                          Navigator.pushReplacement(
+                            context,
+                            MaterialPageRoute(builder: (_) => const MasterAdminScreen()),
+                          );
+                        }
+                      },
+                      icon: const Icon(Icons.admin_panel_settings_rounded, size: 16),
+                      label: const Text(
+                        'Back to Admin',
+                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: ClassicTheme.primaryAccentIndigo,
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
+                    ),
+                  ),
           // Owner only (rule 2 for roles): a waiter mid-service can do nothing
           // about a licence, so telling them about it is noise on a busy screen.
-          if (isOwner && _planNeedsAttention(saasSession.currentLicense))
+          if (isOwner && !isMasterAdmin && _planNeedsAttention(saasSession.currentLicense))
             _planActionButton(context, saasSession.currentLicense!),
+          IconButton(
+            tooltip: context.isDark ? 'Switch to Light Theme' : 'Switch to Dark Theme',
+            icon: Icon(
+              context.isDark ? Icons.light_mode_outlined : Icons.dark_mode_outlined,
+              color: context.isDark ? ClassicTheme.warningAmber : context.textSecondary,
+              size: 22,
+            ),
+            onPressed: () {
+              ref.read(themeModeProvider.notifier).toggleTheme(context.isDark);
+              HapticFeedback.lightImpact();
+            },
+          ),
           IconButton(
             tooltip: 'User & Terminal Settings',
             icon: Icon(Icons.settings_outlined, color: context.textPrimary, size: 22),
@@ -524,6 +697,94 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
             child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // Active Store & Outlet Indicator Banner
+              Container(
+                width: double.infinity,
+                margin: const EdgeInsets.only(bottom: 12),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                  color: context.isDark ? ClassicTheme.cardSurfaceDark : const Color(0xFFF0FDF4),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: ClassicTheme.successEmerald.withValues(alpha: 0.3)),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: ClassicTheme.successEmerald.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(Icons.storefront_rounded, color: ClassicTheme.successEmerald, size: 18),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'OPERATING STORE CONTEXT',
+                            style: TextStyle(
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 0.8,
+                              color: context.textSecondary,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            fullStoreDisplayName,
+                            style: TextStyle(
+                              fontSize: 13.5,
+                              fontWeight: FontWeight.bold,
+                              color: context.isDark ? Colors.white : const Color(0xFF065F46),
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (canSwitchBranch)
+                      ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: ClassicTheme.successEmerald,
+                          foregroundColor: Colors.white,
+                          elevation: 0,
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        ),
+                        icon: const Icon(Icons.swap_horiz_rounded, size: 16),
+                        label: Text(
+                          isMasterAdmin ? 'Switch Store' : 'Switch Branch',
+                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                        ),
+                        onPressed: () => _showStoreSwitcherModal(context, ref),
+                      )
+                    else
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: ClassicTheme.successEmerald.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: ClassicTheme.successEmerald.withValues(alpha: 0.3)),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.lock_outline_rounded, size: 12, color: ClassicTheme.successEmerald),
+                            SizedBox(width: 4),
+                            Text(
+                              'Allocated Store',
+                              style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: ClassicTheme.successEmerald),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+
               // Google Sheets Authorization Banner (if not verified and not pure offline)
               if (_sheetAccessVerified != true && !isOwner && !isPureOffline)
                 _buildSheetAuthBanner(),
@@ -540,23 +801,25 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Workstation Operations',
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.bold,
-                          color: context.textPrimary,
-                          letterSpacing: 0.3,
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Workstation Operations',
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.bold,
+                            color: context.textPrimary,
+                            letterSpacing: 0.3,
+                          ),
                         ),
-                      ),
-                      Text(
-                        isOwner ? 'Master Admin Console' : 'Assigned Role Access',
-                        style: TextStyle(fontSize: 12, color: context.textSecondary),
-                      ),
-                    ],
+                        Text(
+                          isOwner ? 'Master Admin Console' : 'Assigned Role Access',
+                          style: TextStyle(fontSize: 12, color: context.textSecondary),
+                        ),
+                      ],
+                    ),
                   ),
                   TextButton.icon(
                     style: TextButton.styleFrom(
@@ -582,12 +845,13 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
               // Responsive Feature Cards Grid (Powered by DashboardLayoutProvider)
               Consumer(
                 builder: (context, ref, _) {
-                  final layoutState = ref.watch(dashboardLayoutProvider);
+                  final layoutState = ref.watch(dashboardLayoutProvider(ent.vertical));
                   final entitlements = ref.watch(entitlementsProvider);
                   final allowedCards = kAllDashboardCards.where((c) {
                     return c.isAllowedFor(
                       entitlements: entitlements,
                       role: roleStr,
+                      vertical: ent.vertical,
                     );
                   }).toList();
                   final allowedCardIds = allowedCards.map((c) => c.id).toSet();
@@ -627,7 +891,7 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
                     builder: (context, constraints) {
                       final width = constraints.maxWidth;
                       final int crossAxisCount = width > 900 ? 4 : (width > 550 ? 3 : 2);
-                      final double childAspectRatio = width > 550 ? 1.25 : 1.15;
+                      final double childAspectRatio = width > 550 ? 1.25 : 1.08;
 
                       return Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -733,6 +997,8 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
                                                     fontSize: 13,
                                                     fontWeight: FontWeight.w600,
                                                   ),
+                                                  maxLines: 1,
+                                                  overflow: TextOverflow.ellipsis,
                                                 ),
                                                 Text(
                                                   card.subtitle,
@@ -807,6 +1073,19 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
                                            Navigator.push(context, MaterialPageRoute(builder: (_) => const WaiterTablePickerScreen()));
                                          }
                                          break;
+                                       case 'barcode_billing':
+                                         if (roleBilling) {
+                                           Navigator.push(context, MaterialPageRoute(builder: (_) => const BarcodeBillingScreen()));
+                                         }
+                                         break;
+                                       case 'customer_khata':
+                                         Navigator.push(context, MaterialPageRoute(builder: (_) => const CustomerKhataScreen()));
+                                         break;
+                                       case 'stock':
+                                         if (roleMenu) {
+                                           Navigator.push(context, MaterialPageRoute(builder: (_) => const RestaurantMenuManagementScreen()));
+                                         }
+                                         break;
                                      }
                                    },
                                  ),
@@ -843,6 +1122,7 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
     bool roleAnalytics,
     [bool roleOrders = true, bool roleExpenses = true, bool roleWaiter = true]
   ) {
+    final vertical = ref.read(currentVerticalProvider);
     switch (id) {
       case 'counter_billing':
         if (!roleBilling) return null;
@@ -851,9 +1131,9 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
           featureLabel: 'Counter POS Billing',
           onTap: null,
           child: _buildFeatureCard(
-            title: 'Counter Billing',
-            subtitle: 'Fast QSR & instant tokens',
-            badge: 'POS Desk',
+            title: VerticalLabels.of(vertical).counterBillingTitle,
+            subtitle: VerticalLabels.of(vertical).counterBillingSubtitle,
+            badge: vertical == Verticals.restaurant ? 'POS Desk' : 'Counter',
             icon: Icons.point_of_sale_rounded,
             accentColor: ClassicTheme.warningAmber,
             onTap: () => Navigator.push(
@@ -883,8 +1163,8 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
       case 'orders_history':
         if (!roleOrders) return null;
         return _buildFeatureCard(
-          title: 'Order History',
-          subtitle: 'All bills, modes & online orders',
+          title: VerticalLabels.of(vertical).ordersHistoryTitle,
+          subtitle: VerticalLabels.of(vertical).ordersHistorySubtitle,
           badge: 'Live Ledger',
           icon: Icons.receipt_long_rounded,
           accentColor: ClassicTheme.secondaryAccent,
@@ -918,10 +1198,12 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
           featureLabel: 'Menu Configuration',
           onTap: null,
           child: _buildFeatureCard(
-            title: 'Menu Config',
-            subtitle: 'Dishes, prices & categories',
+            title: VerticalLabels.of(vertical).menuScreenTitle,
+            subtitle: VerticalLabels.of(vertical).menuScreenSubtitle,
             badge: 'Dynamic',
-            icon: Icons.restaurant_menu_rounded,
+            icon: vertical == Verticals.restaurant
+                ? Icons.restaurant_menu_rounded
+                : Icons.inventory_2_rounded,
             accentColor: ClassicTheme.secondaryAccent,
             onTap: () => Navigator.push(
               context,
@@ -1037,6 +1319,59 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
             ),
           ),
         );
+      case 'barcode_billing':
+        if (!roleBilling) return null;
+        return FeatureGatedCard(
+          featureKey: FeatureKeys.barcodeBilling,
+          featureLabel: 'Barcode Billing Desk',
+          onTap: null,
+          child: _buildFeatureCard(
+            title: 'Barcode Billing',
+            subtitle: 'Scan & bill products fast',
+            badge: 'POS',
+            icon: Icons.qr_code_scanner_rounded,
+            accentColor: ClassicTheme.infoBlue,
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const BarcodeBillingScreen()),
+            ),
+          ),
+        );
+      case 'customer_khata':
+        return FeatureGatedCard(
+          featureKey: FeatureKeys.customerKhata,
+          featureLabel: 'Customer Khata (Ledger)',
+          onTap: null,
+          child: _buildFeatureCard(
+            title: 'Customer Khata',
+            subtitle: 'Credit & payment history',
+            badge: 'Ledger',
+            icon: Icons.account_balance_wallet_rounded,
+            accentColor: ClassicTheme.warningAmber,
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const CustomerKhataScreen()),
+            ),
+          ),
+        );
+      case 'stock':
+        if (!roleMenu) return null;
+        return FeatureGatedCard(
+          featureKey: FeatureKeys.stockManagement,
+          featureLabel: 'Stock Manager',
+          onTap: null,
+          child: _buildFeatureCard(
+            title: 'Stock Manager',
+            subtitle: 'Levels, units & reorders',
+            badge: 'Inventory',
+            icon: Icons.inventory_2_rounded,
+            accentColor: ClassicTheme.successEmerald,
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const RestaurantMenuManagementScreen()),
+            ),
+          ),
+        );
       default:
         return null;
     }
@@ -1054,16 +1389,16 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
       builder: (ctx) {
         return Consumer(
           builder: (context, ref, _) {
-            final layoutState = ref.watch(dashboardLayoutProvider);
-            final layoutNotifier = ref.read(dashboardLayoutProvider.notifier);
+            final entitlements = ref.watch(entitlementsProvider);
+            final layoutState = ref.watch(dashboardLayoutProvider(entitlements.vertical));
+            final layoutNotifier = ref.read(dashboardLayoutProvider(entitlements.vertical).notifier);
             final saasSession = ref.watch(saasSessionProvider);
             final userRole = saasSession.currentUser?.role ?? 'OWNER';
-
-            final entitlements = ref.watch(entitlementsProvider);
             final allowedCards = kAllDashboardCards.where((c) {
               return c.isAllowedFor(
                 entitlements: entitlements,
                 role: userRole,
+                vertical: entitlements.vertical,
               );
             }).toList();
             final allowedCardIds = allowedCards.map((c) => c.id).toSet();
@@ -1105,23 +1440,27 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                "Customize Dashboard",
-                                style: TextStyle(
-                                  color: context.textPrimary,
-                                  fontSize: 17,
-                                  fontWeight: FontWeight.bold,
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  "Customize Dashboard",
+                                  style: TextStyle(
+                                    color: context.textPrimary,
+                                    fontSize: 17,
+                                    fontWeight: FontWeight.bold,
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                "Screen cards • Dropdown cards • Tap to reorder or hide",
-                                style: TextStyle(color: context.textSecondary, fontSize: 12),
-                              ),
-                            ],
+                                const SizedBox(height: 2),
+                                Text(
+                                  "Screen cards • Dropdown cards • Tap to reorder or hide",
+                                  style: TextStyle(color: context.textSecondary, fontSize: 12),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ],
+                            ),
                           ),
                           TextButton.icon(
                             onPressed: () {
@@ -1470,90 +1809,400 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
   }) {
     return Material(
       color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
+      child: ClipRRect(
         borderRadius: BorderRadius.circular(16),
-        splashColor: accentColor.withValues(alpha: 0.12),
-        highlightColor: accentColor.withValues(alpha: 0.06),
-        child: Container(
-          padding: const EdgeInsets.all(13),
-          decoration: BoxDecoration(
-            color: context.surfaceColor,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: context.borderColor),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.02),
-                blurRadius: 6,
-                offset: const Offset(0, 2),
-              ),
-            ],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(9),
-                    decoration: BoxDecoration(
-                      color: accentColor.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(16),
+          splashColor: accentColor.withValues(alpha: 0.12),
+          highlightColor: accentColor.withValues(alpha: 0.06),
+          child: Container(
+            padding: const EdgeInsets.all(13),
+            decoration: BoxDecoration(
+              color: context.surfaceColor,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: context.borderColor),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.02),
+                  blurRadius: 6,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(9),
+                      decoration: BoxDecoration(
+                        color: accentColor.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(icon, color: accentColor, size: 22),
                     ),
-                    child: Icon(icon, color: accentColor, size: 22),
-                  ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: accentColor.withValues(alpha: 0.10),
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: accentColor.withValues(alpha: 0.25)),
+                    const SizedBox(width: 8),
+                    Flexible(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: accentColor.withValues(alpha: 0.10),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: accentColor.withValues(alpha: 0.25)),
+                        ),
+                        child: Text(
+                          badge,
+                          style: TextStyle(
+                            color: accentColor,
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
                     ),
-                    child: Text(
-                      badge,
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
                       style: TextStyle(
-                        color: accentColor,
-                        fontSize: 12,
+                        color: context.textPrimary,
+                        fontSize: 13.5,
                         fontWeight: FontWeight.bold,
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: TextStyle(
-                      color: context.textPrimary,
-                      fontSize: 13.5,
-                      fontWeight: FontWeight.bold,
+                    const SizedBox(height: 3),
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        color: context.textSecondary,
+                        fontSize: 12,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 3),
-                  Text(
-                    subtitle,
-                    style: TextStyle(
-                      color: context.textSecondary,
-                      fontSize: 12,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-              ),
-            ],
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
       ),
     );
+  }
+
+  void _showStoreSwitcherModal(BuildContext context, WidgetRef ref) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (modalCtx) {
+        final saasSession = ref.watch(saasSessionProvider);
+        final currentOrgId = saasSession.currentOrganization?.id ?? '';
+        final currentOutletId = saasSession.assignedOutletId ?? '';
+        final isMasterAdmin = saasSession.currentUser?.role.toUpperCase() == 'MASTER_ADMIN' ||
+            isMasterAdminEmail(saasSession.currentUser?.email);
+
+        return Container(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(modalCtx).size.height * 0.75,
+          ),
+          decoration: BoxDecoration(
+            color: modalCtx.surfaceColor,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+            border: Border.all(color: modalCtx.borderColor),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Header
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                decoration: BoxDecoration(
+                  border: Border(bottom: BorderSide(color: modalCtx.borderColor)),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: ClassicTheme.primaryAccentIndigo.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Icon(Icons.storefront_rounded, color: ClassicTheme.primaryAccentIndigo, size: 22),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            isMasterAdmin ? 'Switch Store / Outlet Context' : 'Switch Branch Context',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: modalCtx.textPrimary,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            isMasterAdmin
+                                ? 'Select any managed store across the platform'
+                                : 'Select an active outlet for ${saasSession.currentOrganization?.name ?? "your business"}',
+                            style: TextStyle(fontSize: 12, color: modalCtx.textSecondary),
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      icon: Icon(Icons.close_rounded, color: modalCtx.textSecondary),
+                      onPressed: () => Navigator.pop(modalCtx),
+                    ),
+                  ],
+                ),
+              ),
+
+              // Store List
+              Expanded(
+                child: FutureBuilder<List<Map<String, dynamic>>>(
+                  future: _fetchAvailableStoresAndOutlets(ref, isMasterAdmin, currentOrgId),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const Center(
+                        child: Padding(
+                          padding: EdgeInsets.all(32.0),
+                          child: CircularProgressIndicator(),
+                        ),
+                      );
+                    }
+                    if (snapshot.hasError) {
+                      return Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(24.0),
+                          child: Text('Error loading stores: ${snapshot.error}', style: TextStyle(color: modalCtx.textSecondary)),
+                        ),
+                      );
+                    }
+                    final stores = snapshot.data ?? [];
+                    if (stores.isEmpty) {
+                      return Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(24.0),
+                          child: Text('No stores available to switch.', style: TextStyle(color: modalCtx.textSecondary)),
+                        ),
+                      );
+                    }
+
+                    return ListView.separated(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      itemCount: stores.length,
+                      separatorBuilder: (_, __) => const SizedBox(height: 8),
+                      itemBuilder: (context, index) {
+                        final store = stores[index];
+                        final SaasOrganization org = store['org'] as SaasOrganization;
+                        final List<Map<String, dynamic>> outlets = List<Map<String, dynamic>>.from(store['outlets'] ?? []);
+                        final bool isOrgActive = org.id == currentOrgId;
+
+                        return Container(
+                          decoration: BoxDecoration(
+                            color: isOrgActive
+                                ? ClassicTheme.primaryAccentIndigo.withValues(alpha: 0.05)
+                                : modalCtx.canvasColor,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: isOrgActive ? ClassicTheme.primaryAccentIndigo.withValues(alpha: 0.4) : modalCtx.borderColor,
+                              width: isOrgActive ? 1.5 : 1,
+                            ),
+                          ),
+                          child: Theme(
+                            data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+                            child: ExpansionTile(
+                              initiallyExpanded: isOrgActive || stores.length == 1,
+                              leading: Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: isOrgActive
+                                      ? ClassicTheme.primaryAccentIndigo.withValues(alpha: 0.15)
+                                      : modalCtx.surfaceColor,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Icon(
+                                  Icons.store_rounded,
+                                  color: isOrgActive ? ClassicTheme.primaryAccentIndigo : modalCtx.textSecondary,
+                                  size: 20,
+                                ),
+                              ),
+                              title: Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      org.name,
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 14.5,
+                                        color: modalCtx.textPrimary,
+                                      ),
+                                    ),
+                                  ),
+                                  if (isOrgActive)
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: ClassicTheme.successEmerald.withValues(alpha: 0.15),
+                                        borderRadius: BorderRadius.circular(6),
+                                      ),
+                                      child: const Text(
+                                        'ACTIVE',
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.bold,
+                                          color: ClassicTheme.successEmerald,
+                                        ),
+                                      ),
+                                    ),
+                                ],
+                              ),
+                              subtitle: Text(
+                                '${org.storageMode} • ${outlets.isEmpty ? "Primary Store" : "${outlets.length} outlet(s)"}',
+                                style: TextStyle(fontSize: 11.5, color: modalCtx.textSecondary),
+                              ),
+                              children: [
+                                if (outlets.isNotEmpty)
+                                  ...outlets.map((outlet) {
+                                    final outletId = outlet['id'] as String;
+                                    final outletName = outlet['name'] as String? ?? 'Branch';
+                                    final isOutletActive = isOrgActive && (currentOutletId == outletId || (currentOutletId.isEmpty && outletId.contains(org.id)));
+
+                                    return ListTile(
+                                      contentPadding: const EdgeInsets.only(left: 36, right: 16),
+                                      dense: true,
+                                      leading: Icon(
+                                        isOutletActive ? Icons.radio_button_checked_rounded : Icons.radio_button_unchecked_rounded,
+                                        color: isOutletActive ? ClassicTheme.successEmerald : modalCtx.textSecondary,
+                                        size: 18,
+                                      ),
+                                      title: Text(
+                                        outletName,
+                                        style: TextStyle(
+                                          fontSize: 13,
+                                          fontWeight: isOutletActive ? FontWeight.bold : FontWeight.normal,
+                                          color: isOutletActive ? ClassicTheme.successEmerald : modalCtx.textPrimary,
+                                        ),
+                                      ),
+                                      subtitle: (outlet['address'] != null && outlet['address'].toString().isNotEmpty)
+                                          ? Text(outlet['address'].toString(), style: TextStyle(fontSize: 11, color: modalCtx.textSecondary))
+                                          : null,
+                                      trailing: isOutletActive
+                                          ? Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                              decoration: BoxDecoration(
+                                                color: ClassicTheme.successEmerald.withValues(alpha: 0.15),
+                                                borderRadius: BorderRadius.circular(6),
+                                              ),
+                                              child: const Text('CURRENT', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: ClassicTheme.successEmerald)),
+                                            )
+                                          : null,
+                                      onTap: () async {
+                                        Navigator.pop(modalCtx);
+                                        await ref.read(saasSessionProvider.notifier).switchStoreContext(
+                                          org: org,
+                                          outletId: outletId,
+                                        );
+                                        if (context.mounted) {
+                                          _handleRefresh();
+                                          AppToast.showSuccess(context, "Switched to ${org.name} ($outletName)");
+                                        }
+                                      },
+                                    );
+                                  })
+                                else
+                                  ListTile(
+                                    contentPadding: const EdgeInsets.only(left: 36, right: 16),
+                                    dense: true,
+                                    leading: Icon(
+                                      isOrgActive ? Icons.check_circle_rounded : Icons.radio_button_unchecked_rounded,
+                                      color: isOrgActive ? ClassicTheme.successEmerald : modalCtx.textSecondary,
+                                      size: 18,
+                                    ),
+                                    title: Text(
+                                      'Primary Station / Till',
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: isOrgActive ? FontWeight.bold : FontWeight.normal,
+                                        color: isOrgActive ? ClassicTheme.successEmerald : modalCtx.textPrimary,
+                                      ),
+                                    ),
+                                    onTap: () async {
+                                      Navigator.pop(modalCtx);
+                                      await ref.read(saasSessionProvider.notifier).switchStoreContext(
+                                        org: org,
+                                        outletId: null,
+                                      );
+                                      if (context.mounted) {
+                                        _handleRefresh();
+                                        AppToast.showSuccess(context, "Switched to ${org.name}");
+                                      }
+                                    },
+                                  ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Future<List<Map<String, dynamic>>> _fetchAvailableStoresAndOutlets(WidgetRef ref, bool isMasterAdmin, String currentOrgId) async {
+    final firestore = FirebaseFirestore.instance;
+    final List<Map<String, dynamic>> results = [];
+
+    try {
+      if (isMasterAdmin) {
+        final orgsSnap = await firestore.collection('organizations').get();
+        for (final doc in orgsSnap.docs) {
+          if (doc.id == 'SYSTEM_ADMIN') continue;
+          final org = SaasOrganization.fromFirestore(doc.data(), doc.id);
+          final outletsSnap = await firestore.collection('outlets').where('organizationId', isEqualTo: doc.id).get();
+          final outlets = outletsSnap.docs.map((o) => {'id': o.id, ...o.data()}).toList();
+          results.add({
+            'org': org,
+            'outlets': outlets,
+          });
+        }
+      } else {
+        final orgSnap = await firestore.collection('organizations').doc(currentOrgId).get();
+        if (orgSnap.exists) {
+          final org = SaasOrganization.fromFirestore(orgSnap.data()!, orgSnap.id);
+          final outletsSnap = await firestore.collection('outlets').where('organizationId', isEqualTo: currentOrgId).get();
+          final outlets = outletsSnap.docs.map((o) => {'id': o.id, ...o.data()}).toList();
+          results.add({
+            'org': org,
+            'outlets': outlets,
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint("Error fetching stores/outlets: $e");
+    }
+    return results;
   }
 }

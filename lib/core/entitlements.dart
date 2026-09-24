@@ -43,6 +43,11 @@ class FeatureKeys {
   static const String multiOutlet = 'multiOutlet';
   static const String inventoryEnabled = 'inventoryEnabled';
 
+  // ── Retail / Kirana features ──────────────────────────────────────────
+  static const String barcodeBilling    = 'barcodeBilling';
+  static const String customerKhata     = 'customerKhata';
+  static const String stockManagement   = 'stockManagement';
+
   /// Legacy flag. Offline is now an operating mode derived from the
   /// organisation's `storageMode`; this key is honoured as an alias for one
   /// release so tenants saved before the change keep resolving correctly.
@@ -114,6 +119,10 @@ class FeatureDef {
 
   final String iconCode;
 
+  /// Which verticals this feature applies to.
+  /// Empty set = universal (applies to ALL verticals).
+  final Set<String> verticals;
+
   const FeatureDef({
     required this.key,
     required this.label,
@@ -122,6 +131,7 @@ class FeatureDef {
     required this.iconCode,
     this.need = FeatureNeed.none,
     this.dependsOn = const [],
+    this.verticals = const {},  // empty = universal
   });
 
   /// Derived from the tier, never stored separately, so the two cannot drift.
@@ -160,6 +170,7 @@ class FeatureCatalog {
       tier: CommercialTier.offlineBasic,
       iconCode: 'point_of_sale',
       dependsOn: [FeatureKeys.billing],
+      verticals: {'restaurant'},
     ),
     FeatureDef(
       key: FeatureKeys.menuManagement,
@@ -222,6 +233,7 @@ class FeatureCatalog {
       tier: CommercialTier.offlineAddOn,
       iconCode: 'table_bar',
       dependsOn: [FeatureKeys.billing],
+      verticals: {'restaurant'},
     ),
     FeatureDef(
       key: FeatureKeys.tableManagement,
@@ -231,6 +243,7 @@ class FeatureCatalog {
           'checkout, seating, cleaning, blocking, moving and merging tables.',
       tier: CommercialTier.offlineAddOn,
       iconCode: 'table_restaurant',
+      verticals: {'restaurant'},
     ),
     FeatureDef(
       key: FeatureKeys.reservations,
@@ -239,6 +252,7 @@ class FeatureCatalog {
       tier: CommercialTier.offlineAddOn,
       iconCode: 'event_seat',
       dependsOn: [FeatureKeys.tableManagement],
+      verticals: {'restaurant'},
     ),
     FeatureDef(
       key: FeatureKeys.dualPrinting,
@@ -247,6 +261,7 @@ class FeatureCatalog {
       tier: CommercialTier.offlineAddOn,
       iconCode: 'local_printshop',
       dependsOn: [FeatureKeys.thermalPrinting],
+      verticals: {'restaurant'},
     ),
     FeatureDef(
       key: FeatureKeys.expenseManagement,
@@ -299,6 +314,7 @@ class FeatureCatalog {
       tier: CommercialTier.onlineAddOn,
       iconCode: 'soup_kitchen',
       need: FeatureNeed.secondDevice,
+      verticals: {'restaurant'},
     ),
     FeatureDef(
       key: FeatureKeys.waiterOrdering,
@@ -308,6 +324,7 @@ class FeatureCatalog {
       iconCode: 'hail',
       need: FeatureNeed.secondDevice,
       dependsOn: [FeatureKeys.tableManagement, FeatureKeys.dineInBilling],
+      verticals: {'restaurant'},
     ),
     FeatureDef(
       key: FeatureKeys.onlineMenu,
@@ -317,6 +334,7 @@ class FeatureCatalog {
       iconCode: 'qr_code_2',
       need: FeatureNeed.cloud,
       dependsOn: [FeatureKeys.cloudSync],
+      verticals: {'restaurant'},
     ),
     FeatureDef(
       key: FeatureKeys.qrOrdering,
@@ -326,6 +344,7 @@ class FeatureCatalog {
       iconCode: 'qr_code_scanner',
       need: FeatureNeed.cloud,
       dependsOn: [FeatureKeys.onlineMenu, FeatureKeys.tableManagement],
+      verticals: {'restaurant'},
     ),
     FeatureDef(
       key: FeatureKeys.onlineOrderingEnabled,
@@ -335,6 +354,7 @@ class FeatureCatalog {
       iconCode: 'delivery_dining',
       need: FeatureNeed.cloud,
       dependsOn: [FeatureKeys.onlineMenu],
+      verticals: {'restaurant'},
     ),
     FeatureDef(
       key: FeatureKeys.multiOutlet,
@@ -353,6 +373,38 @@ class FeatureCatalog {
       iconCode: 'inventory_2',
       need: FeatureNeed.cloud,
       dependsOn: [FeatureKeys.menuManagement],
+    ),
+
+    // ── Retail / kirana add-ons ───────────────────────────────────────────
+    FeatureDef(
+      key: FeatureKeys.barcodeBilling,
+      label: 'Barcode billing',
+      description:
+          'Scan barcodes to add items to the bill and manage barcode-based '
+          'inventory.',
+      tier: CommercialTier.offlineAddOn,
+      iconCode: 'barcode_reader',
+      verticals: {'kirana', 'supermarket', 'pharmacy', 'retail'},
+    ),
+    FeatureDef(
+      key: FeatureKeys.customerKhata,
+      label: 'Customer khata',
+      description:
+          'Credit ledger per customer: record dues, payments and running '
+          'balances.',
+      tier: CommercialTier.offlineAddOn,
+      iconCode: 'menu_book',
+      verticals: {'kirana', 'pharmacy', 'retail'},
+    ),
+    FeatureDef(
+      key: FeatureKeys.stockManagement,
+      label: 'Stock management',
+      description:
+          'Track quantities on hand, set reorder levels and record purchase '
+          'entries.',
+      tier: CommercialTier.offlineAddOn,
+      iconCode: 'inventory',
+      verticals: {'kirana', 'supermarket', 'pharmacy', 'retail'},
     ),
   ];
 
@@ -606,6 +658,7 @@ class PlanProfile {
 enum BlockReason {
   none,
   notInPlan,
+  verticalMismatch,
   offlineMode,
   singleDevice,
   dependency,
@@ -619,6 +672,7 @@ enum BlockReason {
 ///   1. Platform admin              → on
 ///   2. Unknown key                 → on (a typo must never hide a button)
 ///   3. Offline-basic key           → on (billing survives everything)
+///   3.5 Vertical mismatch          → off (wrong line of business)
 ///   4. Licence inactive            → off
 ///   5. Hard constraint             → off (offline mode / single device)
 ///   6. Explicit tenant toggle
@@ -634,6 +688,10 @@ class Entitlements {
   final int maxOutlets;
   final bool isMasterAdmin;
 
+  /// The tenant's line of business. Used to filter features tagged for
+  /// specific verticals. Defaults to `'restaurant'` for backward compatibility.
+  final String vertical;
+
   const Entitlements({
     required this.profile,
     required this.explicit,
@@ -642,6 +700,7 @@ class Entitlements {
     required this.maxDevices,
     required this.maxOutlets,
     this.isMasterAdmin = false,
+    this.vertical = 'restaurant',
   });
 
   /// Before a licence has loaded, or offline from a cold cache: the
@@ -682,6 +741,7 @@ class Entitlements {
     bool isMasterAdmin = false,
     String? storageMode,
     String? profileId,
+    String vertical = 'restaurant',
   }) {
     if (isMasterAdmin) return Entitlements.platformAdmin;
     if (license == null) return Entitlements.grace;
@@ -710,6 +770,7 @@ class Entitlements {
       storageMode: mode,
       maxDevices: offline ? 1 : licenceDevices,
       maxOutlets: offline ? 1 : licenceOutlets,
+      vertical: vertical,
     );
   }
 
@@ -737,6 +798,11 @@ class Entitlements {
 
     // Rule 3: the core is never off.
     if (def.tier == CommercialTier.offlineBasic) return BlockReason.none;
+
+    // Rule 3.5: wrong line of business.
+    if (def.verticals.isNotEmpty && !def.verticals.contains(vertical)) {
+      return BlockReason.verticalMismatch;
+    }
 
     // Rule 4.
     if (!licenceActive) return BlockReason.licenceInactive;
@@ -798,6 +864,8 @@ class Entitlements {
       case BlockReason.notInPlan:
         return '$label is not part of this store\'s plan. Your platform '
             'administrator can add it.';
+      case BlockReason.verticalMismatch:
+        return '$label is not available for this type of business.';
     }
   }
 
@@ -809,6 +877,9 @@ class Entitlements {
   /// the app will refuse.
   List<FeatureDef> togglableFor() => FeatureCatalog.all.where((f) {
         if (!f.isAddOn) return false;
+        if (f.verticals.isNotEmpty && !f.verticals.contains(vertical)) {
+          return false;
+        }
         if (isPureOffline &&
             (f.need != FeatureNeed.none || f.tier.isOnline)) {
           return false;
@@ -829,6 +900,7 @@ class Entitlements {
     String? storageMode,
     int? maxDevices,
     int? maxOutlets,
+    String? vertical,
   }) =>
       Entitlements(
         profile: profile ?? this.profile,
@@ -838,5 +910,6 @@ class Entitlements {
         maxDevices: maxDevices ?? this.maxDevices,
         maxOutlets: maxOutlets ?? this.maxOutlets,
         isMasterAdmin: isMasterAdmin,
+        vertical: vertical ?? this.vertical,
       );
 }

@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:bcrypt/bcrypt.dart';
 import '../core/subscription_plan_model.dart';
 import '../core/entitlements.dart';
+import '../core/package_model.dart';
 import '../core/saas_models.dart';
 import 'apps_script_backend_service.dart';
 import 'smtp_email_service.dart';
@@ -46,6 +47,8 @@ class TenantProvisioningService {
     String? planId,
   }) async {
     final cleanEmail = email.trim().toLowerCase();
+    final cleanCategory = category?.trim().isNotEmpty == true ? category!.trim() : 'Restaurant & Cafe';
+    final vertical = Verticals.forCategory(cleanCategory);
 
     // ── Entitlement alignment ─────────────────────────────────────────────
     // The licence is written through the same resolver the app reads with, so
@@ -67,8 +70,9 @@ class TenantProvisioningService {
       features: Map<String, bool>.from(plan.features),
       startDate: DateTime.now(),
       endDate: DateTime.now().add(Duration(days: plan.validityDays)),
+      vertical: vertical,
     );
-    final resolved = Entitlements.fromLicense(probe, storageMode: resolvedMode);
+    final resolved = Entitlements.fromLicense(probe, storageMode: resolvedMode, vertical: vertical);
     final alignedFeatures = <String, bool>{
       for (final def in FeatureCatalog.all) def.key: resolved.isEnabled(def.key),
       FeatureKeys.pureOfflineMode: resolved.isPureOffline,
@@ -78,7 +82,6 @@ class TenantProvisioningService {
     storageMode = resolvedMode;
     final cleanName = clientName.trim();
     final cleanShopName = shopName.trim().isNotEmpty ? shopName.trim() : "$cleanName Restaurant";
-    final cleanCategory = category?.trim().isNotEmpty == true ? category!.trim() : 'Restaurant & Cafe';
     final cleanMobile = mobile.trim();
     final candidateUsername = (username != null && username.trim().isNotEmpty)
         ? username.trim().toLowerCase().replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '')
@@ -123,6 +126,7 @@ class TenantProvisioningService {
         'appName': cleanShopName,
         'clientName': cleanName,
         'businessCategory': cleanCategory,
+        'vertical': vertical,
         'phone': cleanMobile,
         'email': cleanEmail,
         'ownerGoogleEmail': cleanEmail,
@@ -153,6 +157,7 @@ class TenantProvisioningService {
         'passwordHash': hashedPassword,
         'role': 'OWNER',
         'organizationId': orgId,
+        'businessCategory': cleanCategory,
         'mustChangePassword': mustChangePassword,
         'status': 'ACTIVE',
         'createdAt': FieldValue.serverTimestamp(),
@@ -169,6 +174,7 @@ class TenantProvisioningService {
         'planProfile': profile.id,
         'status': 'ACTIVE',
         'storageMode': storageMode,
+        'vertical': vertical,
         'startDate': FieldValue.serverTimestamp(),
         'endDate': Timestamp.fromDate(endDate),
         'maxFranchises': alignedOutlets,
@@ -196,9 +202,9 @@ class TenantProvisioningService {
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
-      // 8. Create Primary Outlet
-      final outletDoc = _firestore.collection('outlets').doc();
-      final String primaryOutletId = outletDoc.id;
+      // 8. Create Primary Outlet (canonical deterministic ID to prevent duplicates)
+      final String primaryOutletId = 'outlet_$orgId';
+      final outletDoc = _firestore.collection('outlets').doc(primaryOutletId);
 
       await outletDoc.set({
         'id': primaryOutletId,
@@ -232,7 +238,24 @@ class TenantProvisioningService {
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
-      // 10. If this stemmed from a registration request or business inquiry, mark it accordingly
+      // 10. Initialize public_stores document for instant website ordering
+      await _firestore.collection('public_stores').doc(orgId).set({
+        'id': orgId,
+        'organizationId': orgId,
+        'name': cleanShopName,
+        'phone': cleanMobile,
+        'address': address?.trim().isNotEmpty == true ? address!.trim() : 'Main Outlet',
+        'tableCount': plan.tableCount,
+        'upiId': settlementUpiId?.trim() ?? '',
+        'operatingMode': plan.operatingMode,
+        'googleSheetId': '',
+        'googleSheetUrl': '',
+        'status': 'ACTIVE',
+        'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+
+      // 11. If this stemmed from a registration request or business inquiry, mark it accordingly
       if (requestId != null && requestId.isNotEmpty) {
         try {
           await _firestore.collection('registration_requests').doc(requestId).update({
@@ -257,7 +280,7 @@ class TenantProvisioningService {
         } catch (_) {}
       }
 
-      // 11. Asynchronously provision Google Sheet in the background
+      // 12. Asynchronously provision Google Sheet in the background
       AppsScriptBackendService.createOutlet(
         orgId: orgId,
         outletId: primaryOutletId,
@@ -272,6 +295,22 @@ class TenantProvisioningService {
             'sheet_url': sheetUrl,
             'updatedAt': FieldValue.serverTimestamp(),
           });
+          _firestore.collection('outlets').doc(primaryOutletId).update({
+            'googleSheetId': sheetId,
+            'googleSheetUrl': sheetUrl,
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+          _firestore.collection('organizations').doc(orgId).update({
+            'googleSheetId': sheetId,
+            'googleSheetUrl': sheetUrl,
+            'spreadsheetId': sheetId,
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+          _firestore.collection('public_stores').doc(orgId).set({
+            'googleSheetId': sheetId,
+            'googleSheetUrl': sheetUrl,
+            'updatedAt': FieldValue.serverTimestamp(),
+          }, SetOptions(merge: true));
         }
       }).catchError((err) {
         debugPrint("Background Google Sheet allocation warning: $err");

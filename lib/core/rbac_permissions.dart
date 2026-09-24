@@ -1,5 +1,7 @@
 import 'dart:convert';
 import 'package:crypto/crypto.dart';
+import 'vertical_labels.dart';
+import 'package_model.dart';
 
 // SmartDine Role-Based Access Control (RBAC)
 // Enforces permissions across Owner, Manager, Billing Cashier, Kitchen Chef, and Waiter.
@@ -36,6 +38,8 @@ extension StaffRoleExtension on StaffRole {
   static StaffRole fromKey(String? key) {
     switch (key?.toUpperCase()) {
       case 'OWNER':
+      case 'CLIENT':
+      case 'STORE_ADMIN':
       case 'MASTER_ADMIN':
         return StaffRole.owner;
       case 'MANAGER':
@@ -80,6 +84,35 @@ extension StaffRoleExtension on StaffRole {
 
   bool get canAccessSettings =>
       this == StaffRole.owner || this == StaffRole.manager;
+
+  /// Vertical-aware display name for a role, using dynamic labels.
+  static String displayNameForVertical(StaffRole role, String vertical) {
+    final labels = VerticalLabels.of(vertical);
+    switch (role) {
+      case StaffRole.owner:      return labels.ownerRoleLabel;
+      case StaffRole.manager:    return labels.managerRoleLabel;
+      case StaffRole.billing:    return labels.billingRoleLabel;
+      case StaffRole.kitchen:    return labels.kitchenRoleLabel;
+      case StaffRole.waiter:     return labels.waiterRoleLabel;
+      case StaffRole.unassigned: return 'Unassigned';
+    }
+  }
+
+  /// Returns the set of verticals where this role is meaningful.
+  /// An empty set means the role is available in ALL verticals.
+  static Set<String> allowedVerticalsFor(StaffRole role) {
+    switch (role) {
+      case StaffRole.kitchen: return {Verticals.restaurant};
+      case StaffRole.waiter:  return {Verticals.restaurant};
+      default:                return {};  // all verticals
+    }
+  }
+
+  /// Whether this role should be shown in the staff management UI for the given vertical.
+  static bool isRoleVisibleFor(StaffRole role, String vertical) {
+    final allowed = allowedVerticalsFor(role);
+    return allowed.isEmpty || allowed.contains(vertical);
+  }
 }
 
 class StaffMember {

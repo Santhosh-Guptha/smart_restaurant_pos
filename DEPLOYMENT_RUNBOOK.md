@@ -226,7 +226,7 @@ Follow these steps in sequence when deploying a new instance or updating an exis
 3. Click **New project** (+ button on left).
 4. Title the project: `SmartDine Production Webhook`.
 5. In the file editor, select `Code.gs` and erase all contents.
-6. Open `c:\Users\santhosh\Downloads\smart_restaurant_pos\scripts\sheets_backend_webhook.js` in your editor, copy the entire content, and paste it into `Code.gs`.
+6. Open `google_apps_script/Code.gs`, copy the contents, and paste into `Code.gs`. Also add files `firestore` and `bcrypt` pasting contents from `google_apps_script/firestore.gs` and `google_apps_script/bcrypt.gs` as detailed in `google_apps_script/DEPLOY.md`.
 7. Click the **Save** icon (disk icon).
 8. Click **Deploy -> New deployment** (blue button top-right).
 9. Click the gear icon next to "Select type" and choose **Web app**.
@@ -243,6 +243,17 @@ Follow these steps in sequence when deploying a new instance or updating an exis
     - Click **Allow**.
 15. Copy the generated **Web app URL**:
     `https://script.google.com/macros/s/AKfycbwZIs_n5hCtSBqkyPOVqeZZBY1XjUAv4NjYWj8O3AY2i0Fw0Rl2OV-TA-IgmlvRbo7pFQ/exec`
+
+> [!CAUTION]
+> **Updating an Existing Deployment (Preserving Webhook URL)**:
+> If the Webhook has already been deployed, **NEVER click "New deployment"**. Creating a new deployment generates a new Web App URL, breaking all existing POS terminals and web ordering endpoints. Instead, always follow these update steps:
+> 1. In Apps Script, open `Code.gs` and update the code with the latest changes from `google_apps_script/Code.gs`.
+> 2. Click the **Save** disk icon.
+> 3. Click **Deploy -> Manage deployments**.
+> 4. Click the **Pencil (Edit)** icon on the active deployment.
+> 5. In the **Version** dropdown, select **New version**.
+> 6. Click **Deploy**.
+> The existing `/exec` URL remains unchanged while running the latest code.
 
 ---
 
@@ -753,10 +764,10 @@ npx firebase appdistribution:distribute "build/app/outputs/flutter-apk/app-relea
   --testers "santhoshbukka5@gmail.com,smartdine.platform@gmail.com"
 ```
 
-### 3. Active Release Profile (v1.1.7+36)
-- **Release Version**: `1.1.7 (36)`
+### 3. Active Release Profile (v1.2.0+44)
+- **Release Version**: `1.2.0 (44)`
 - **Distribution Channel**: Firebase App Distribution
-- **Direct Tester Download Link**: [Download v1.1.7 (36)](https://appdistribution.firebase.google.com/testerapps/1:486476143616:android:ce2cd4881dc37bdf928ce5/releases/1an3m8euje03o)
+- **Direct Tester Download Link**: [Download v1.2.0 (44)](https://appdistribution.firebase.google.com/testerapps/1:486476143616:android:ce2cd4881dc37bdf928ce5/releases/21j1r5bj855eg)
 - **Authorized Testers**: `santhoshbukka5@gmail.com`, `smartdine.platform@gmail.com`
 
 ### 4. Release Verification Checklist

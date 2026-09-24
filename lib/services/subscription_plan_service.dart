@@ -24,7 +24,7 @@ class SubscriptionPlanService {
     isDefaultTrial: true,
     validityDays: 14,
     billingCycle: 'TRIAL',
-    maxUsers: 5,
+    maxUsers: 1,
     tableCount: 15,
   );
 
@@ -178,9 +178,11 @@ class SubscriptionPlanService {
       maxDevices: profile.maxDevices,
       tableCount: tableCount,
       operatingMode: operatingMode,
-      allowedRoles: profile.isOffline
-          ? const ['OWNER', 'MANAGER', 'BILLING']
-          : const ['OWNER', 'MANAGER', 'BILLING', 'KITCHEN', 'WAITER'],
+      allowedRoles: id == 'trial'
+          ? const ['OWNER']
+          : (profile.isOffline
+              ? const ['OWNER', 'MANAGER', 'BILLING']
+              : const ['OWNER', 'MANAGER', 'BILLING', 'KITCHEN', 'WAITER']),
       features: features,
     );
   }

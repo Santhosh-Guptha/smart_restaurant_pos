@@ -1261,7 +1261,7 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen>
                     width: colWidth,
                     margin: EdgeInsets.only(right: index < stages.length - 1 ? 12 : 0),
                     decoration: BoxDecoration(
-                      color: isHovered ? stageBg.withValues(alpha: 0.6) : Colors.white,
+                      color: isHovered ? stageBg.withValues(alpha: 0.6) : context.surfaceColor,
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(
                         color: isHovered ? stageColor : context.borderColor,

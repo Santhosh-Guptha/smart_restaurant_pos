@@ -201,15 +201,15 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       builder: (ctx) => AlertDialog(
         backgroundColor: context.surfaceColor,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Row(
+        title: Row(
           children: [
-            Icon(Icons.warning_amber_rounded, color: ClassicTheme.warningAmber, size: 28),
-            SizedBox(width: 10),
+            const Icon(Icons.warning_amber_rounded, color: ClassicTheme.warningAmber, size: 28),
+            const SizedBox(width: 10),
             Expanded(
               child: Text(
                 'Local Mode — Important Disclaimer',
                 style: TextStyle(
-                  color: Colors.white,
+                  color: context.textPrimary,
                   fontSize: 16,
                   fontWeight: FontWeight.bold,
                 ),
@@ -228,10 +228,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(color: ClassicTheme.warningAmber.withValues(alpha: 0.3)),
               ),
-              child: const Column(
+              child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
+                  const Text(
                     '⚠️ NO CLOUD BACKUP',
                     style: TextStyle(
                       color: ClassicTheme.warningAmber,
@@ -239,18 +239,18 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       fontSize: 13,
                     ),
                   ),
-                  SizedBox(height: 8),
+                  const SizedBox(height: 8),
                   Text(
                     'In Local Mode, all your data (products, bills, customers, expenses) is stored ONLY on this device.',
-                    style: TextStyle(color: Colors.white70, fontSize: 12, height: 1.5),
+                    style: TextStyle(color: context.textSecondary, fontSize: 12, height: 1.5),
                   ),
                 ],
               ),
             ),
             const SizedBox(height: 16),
-            const Text(
+            Text(
               'By continuing, you acknowledge that:',
-              style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 12),
+              style: TextStyle(color: context.textPrimary, fontWeight: FontWeight.w600, fontSize: 12),
             ),
             const SizedBox(height: 10),
             _buildDisclaimerPoint(Icons.cloud_off, 'No data will be synced to the cloud.'),
@@ -266,9 +266,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           TextButton(
             key: const Key('btn_offline_cancel'),
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text(
+            child: Text(
               'Cancel',
-              style: TextStyle(color: Colors.white54, fontWeight: FontWeight.w600),
+              style: TextStyle(color: context.textMuted, fontWeight: FontWeight.w600),
             ),
           ),
           ElevatedButton.icon(
@@ -300,12 +300,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(icon, color: Colors.white38, size: 16),
+        Icon(icon, color: context.textMuted, size: 16),
         const SizedBox(width: 8),
         Expanded(
           child: Text(
             text,
-            style: const TextStyle(color: Colors.white60, fontSize: 12, height: 1.4),
+            style: TextStyle(color: context.textSecondary, fontSize: 12, height: 1.4),
           ),
         ),
       ],

@@ -67,6 +67,7 @@ function doPost(e) {
     var isPublicAction = (
       json.action === "START_TRIAL" ||
       json.action === "REGISTER_TRIAL" ||
+      json.action === "SUBMIT_INQUIRY" ||
       json.action === "SEND_WHATSAPP_NOTIFICATION" ||
       json.action === "WHATSAPP_NOTIFICATION" ||
       (json.action === "SAVE_BILL" && !isStatusSettled(b.payment_status || b.status)) ||
@@ -362,9 +363,32 @@ function cleanTableId(t) {
 }
 
 
-function isStatusSettled(status) {
+function isStatusPaid(status) {
   var s = String(status || "").toUpperCase().trim();
   return s === "PAID" || s === "SUCCESS" || s === "COMPLETED" || s === "SETTLED";
+}
+
+function isStatusVoided(status) {
+  var s = String(status || "").toUpperCase().trim();
+  return s === "CANCELLED" || s === "VOIDED" || s === "VOID" || s === "REFUNDED" || s === "DELETED";
+}
+
+function isStatusSettled(status) {
+  var s = String(status || "").toUpperCase().trim();
+  return isStatusPaid(s) || isStatusVoided(s);
+}
+
+function isOrderInactive(status) {
+  return isStatusSettled(status);
+}
+
+/** Canonical tenant and outlet identifier resolver across all payload permutations */
+function resolveTenantId(data, json) {
+  var d = data || {};
+  var j = json || {};
+  var id = String(d.outlet_id || d.outletId || d.org_id || d.orgId || d.org ||
+                  j.outletId || j.outlet_id || j.org_id || j.orgId || j.org || j.organizationId || "").trim();
+  return id;
 }
 
 function getOrCreateBillsSheet(ss) {
@@ -1402,7 +1426,7 @@ function handleGetDelta(params) {
 
 function doGet(e) {
   var params = (e && e.parameter) ? e.parameter : {};
-  var orgId = params.org || params.org_id || "";
+  var orgId = String(params.outlet_id || params.outletId || params.outlet || params.org || params.org_id || "").trim();
   var sheetId = params.sheet || params.spreadsheet_id || "";
 
   // Resolve private Google Sheet ID from server-side tenant registry if not explicitly passed
@@ -1411,6 +1435,9 @@ function doGet(e) {
   }
 
   // Adaptive delta sync protocol (§3.2, §6.2)
+  if (params.action === "REGISTER_TENANT") {
+    return handleRegisterTenant(params);
+  }
   if (params.action === "GET_DELTA" || params.action === "FETCH_DELTA") {
     return handleGetDelta(params);
   }
@@ -1463,7 +1490,7 @@ function doGet(e) {
       if (data && data.length > 1) {
         var headers = data[0].map(function(h) { return String(h || "").trim().toLowerCase(); });
         var nameIdx = -1, priceIdx = -1, catIdx = -1, vegIdx = -1, descIdx = -1, idIdx = -1, availIdx = -1;
-        var subCatIdx = -1, restrictIdx = -1, fromIdx = -1, toIdx = -1, daysIdx = -1;
+        var subCatIdx = -1, restrictIdx = -1, fromIdx = -1, toIdx = -1, daysIdx = -1, imageIdx = -1;
         headers.forEach(function(h, idx) {
           if (h.indexOf("name") !== -1 || h.indexOf("dish") !== -1 || h.indexOf("item") !== -1) nameIdx = idx;
           if (h.indexOf("selling") !== -1 || h.indexOf("retail") !== -1 || (h.indexOf("price") !== -1 && h.indexOf("purchase") === -1 && h.indexOf("cost") === -1) || h.indexOf("mrp") !== -1 || h.indexOf("rate") !== -1) {
@@ -1484,6 +1511,7 @@ function doGet(e) {
           if (h.indexOf("availablefrom") !== -1 || h.indexOf("available_from") !== -1 || h.indexOf("from_time") !== -1) fromIdx = idx;
           if (h.indexOf("availableto") !== -1 || h.indexOf("available_to") !== -1 || h.indexOf("to_time") !== -1) toIdx = idx;
           if (h.indexOf("days") !== -1 || h.indexOf("available_days") !== -1) daysIdx = idx;
+          if (h.indexOf("image") !== -1 || h.indexOf("photo") !== -1 || h.indexOf("img") !== -1 || h.indexOf("pic") !== -1) imageIdx = idx;
         });
 
         if (nameIdx === -1) nameIdx = 1;
@@ -1545,7 +1573,8 @@ function doGet(e) {
             isTimeRestricted: isRestricted,
             availableFrom: availFrom,
             availableTo: availTo,
-            availableDays: availDays
+            availableDays: availDays,
+            imageUrl: (imageIdx !== -1 && row[imageIdx]) ? String(row[imageIdx]).trim() : ""
           });
         }
       }
@@ -1633,8 +1662,8 @@ function doGet(e) {
               var co = cachedList[cIdx];
               var cNormId = cleanOrderId(co.id || co.orderId || "");
               var coKitchen = String(co.kitchenStatus || co.kitchen_status || "").toUpperCase().trim();
-              var coKitchenServed = (coKitchen === "SERVED" || coKitchen === "COMPLETED");
-              if (!cNormId || (isStatusSettled(co.status) && (coKitchenServed || !coKitchen)) || (settledIds.indexOf(cNormId) !== -1 && coKitchenServed)) {
+              var isInactive = isStatusSettled(co.status) || isStatusVoided(coKitchen) || (settledIds.indexOf(cNormId) !== -1);
+              if (!cNormId || isInactive) {
                 continue;
               }
               // Filter out test orders!
@@ -1708,8 +1737,8 @@ function doGet(e) {
                 if (!rawStatus) rawStatus = deriveLegacyStatus(rowKitchenStatus, rowPaymentStatus);
                 if (!rawStatus) rawStatus = "ORDER_RECEIVED";
 
-                // If this order is settled, NEVER return to active table session!
-                if (isStatusSettled(rawStatus) || settledIds.indexOf(rawId) !== -1) {
+                // If this order is settled or voided, NEVER return to active table session!
+                if (isStatusSettled(rawStatus) || isStatusVoided(rowKitchenStatus) || isStatusVoided(rowPaymentStatus) || settledIds.indexOf(rawId) !== -1) {
                   continue;
                 }
 
@@ -1719,6 +1748,13 @@ function doGet(e) {
                 }
 
                 var rawDate = dateIdx !== -1 ? String(row[dateIdx] || "").trim() : "";
+                // Live active table sessions never span beyond 24 hours (prevents past days' stale rows from occupying tables)
+                if (params.action !== "GET_ORDER_HISTORY" && params.action !== "FETCH_ORDER_HISTORY" && rawDate) {
+                  var rowTs = Date.parse(rawDate);
+                  if (!isNaN(rowTs) && (Date.now() - rowTs) > 86400000) {
+                    continue;
+                  }
+                }
                 var rawMode = modeIdx !== -1 ? String(row[modeIdx] || "").trim() : "";
                 var rawName = nameIdx !== -1 ? String(row[nameIdx] || "").trim() : "";
                 if (rawName.toLowerCase().indexOf("table") === 0 || 
@@ -2006,7 +2042,7 @@ function handleSaveBill(data) {
 
   try {
     let spreadsheetId = data.spreadsheet_id || data.spreadsheetId;
-    const orgId = String(data.org_id || data.orgId || data.org || data.outlet_id || data.outletId || "").trim();
+    const orgId = resolveTenantId(data, data.data || data.bill || {});
 
     // Resolve spreadsheetId from tenant registry if omitted by client
     if ((!spreadsheetId || spreadsheetId.indexOf("sheet_") === 0) && orgId) {
@@ -2457,23 +2493,48 @@ function handleClearTable(data) {
   }
 
   try {
-    var orgId = String(data.org_id || data.org || data.outlet_id || "").trim();
+    var orgId = resolveTenantId(data, data);
     var table = data.table_name || data.table || data.table_number || "";
     var cTable = cleanTableId(table);
+    var rev = 0;
 
     if (orgId && cTable) {
+      rev = getAndBumpRev(orgId);
       try {
         var props = PropertiesService.getScriptProperties();
 
         var cacheKey = "recent_orders_" + orgId.trim();
         var rawCached = props.getProperty(cacheKey);
+        var clearedOrderIds = [];
         if (rawCached) {
           var cachedOrders = [];
           try { cachedOrders = JSON.parse(rawCached); } catch (e) { cachedOrders = []; }
           cachedOrders = cachedOrders.filter(function(co) {
-            return cleanTableId(co.table || co.tableName) !== cTable;
+            if (cleanTableId(co.table || co.tableName) === cTable) {
+              var cid = cleanOrderId(co.id || co.orderId);
+              if (cid) clearedOrderIds.push(cid);
+              return false;
+            }
+            return true;
           });
           props.setProperty(cacheKey, JSON.stringify(cachedOrders));
+        }
+
+        // Add cleared orders to settled_orders_ so subsequent doGet calls never restore them
+        if (clearedOrderIds.length > 0) {
+          var settledKey = "settled_orders_" + orgId.trim();
+          var rawSettled = props.getProperty(settledKey);
+          var settledList = [];
+          if (rawSettled) {
+            try { settledList = JSON.parse(rawSettled); } catch(e) {}
+          }
+          for (var ci = 0; ci < clearedOrderIds.length; ci++) {
+            if (settledList.indexOf(clearedOrderIds[ci]) === -1) {
+              settledList.push(clearedOrderIds[ci]);
+            }
+          }
+          if (settledList.length > 500) settledList = settledList.slice(-500);
+          props.setProperty(settledKey, JSON.stringify(settledList));
         }
 
         var waiterKey = "waiter_alerts_" + orgId.trim();
@@ -2491,7 +2552,6 @@ function handleClearTable(data) {
             var ss = SpreadsheetApp.openById(sId);
             if (ss) {
               ensureV2Sheets(ss);
-              var rev = getAndBumpRev(orgId);
               var sSheet = ss.getSheetByName("Sessions");
               if (sSheet && sSheet.getLastRow() > 1) {
                 var sData = sSheet.getDataRange().getValues();
@@ -2524,9 +2584,7 @@ function handleClearTable(data) {
       } catch(e) {}
     }
 
-    // Task 0.5: Clearing table resets in-memory cache and marks table VACANT. It NEVER marks unpaid Sheet rows as PAID!
-
-    return responseJson({ success: true, message: "Table " + table + " cache and session cleared successfully." });
+    return responseJson({ success: true, rev: rev, table: table, message: "Table " + table + " cache and session cleared successfully." });
   } finally {
     try { lock.releaseLock(); } catch(e) {}
   }
@@ -2937,7 +2995,7 @@ function handleRecordPayment(json) {
   try {
     var clientRequestId = json.clientRequestId || json.client_request_id;
     var data = json.data || json.payment || json;
-    var outletId = String(json.outletId || json.org_id || json.organizationId || data.outletId || "").trim();
+    var outletId = resolveTenantId(data, json);
     var sId = json.spreadsheet_id || json.spreadsheetId || getSheetIdForOrg(outletId);
 
     var ss = null;
@@ -2987,6 +3045,77 @@ function handleRecordPayment(json) {
       }
     }
 
+    var targetOrderId = cleanOrderId(data.orderId || invoiceNo || data.billId || "");
+
+    // When payment is recorded, synchronize status across Bills and Orders ledgers and purge memory cache
+    if (verified && targetOrderId) {
+      if (ss) {
+        // 1. Update legacy Dining Bills sheet if present
+        var legacySheet = ss.getSheetByName("Dining Bills") || ss.getSheetByName("Bills");
+        if (legacySheet && legacySheet.getLastRow() >= 2) {
+          ensureBillStatusColumns(legacySheet);
+          var lData = legacySheet.getDataRange().getValues();
+          for (var li = 1; li < lData.length; li++) {
+            var lId = cleanOrderId(lData[li][0]);
+            if (lId === targetOrderId) {
+              var lCols = resolveBillColumns(lData[0].map(function(h) { return String(h || "").trim().toLowerCase(); }));
+              if (lCols.paymentStatusIdx !== -1) {
+                legacySheet.getRange(li + 1, lCols.paymentStatusIdx + 1).setValue("PAID");
+              }
+              if (lCols.statusIdx !== -1) {
+                legacySheet.getRange(li + 1, lCols.statusIdx + 1).setValue("PAID");
+              }
+              if (lCols.modeIdx !== -1 && mode) {
+                legacySheet.getRange(li + 1, lCols.modeIdx + 1).setValue(mode);
+              }
+              break;
+            }
+          }
+        }
+
+        // 2. Update Orders sheet if present
+        var oSheet = ss.getSheetByName("Orders");
+        if (oSheet && oSheet.getLastRow() >= 2) {
+          var oData = oSheet.getDataRange().getValues();
+          for (var oi = 1; oi < oData.length; oi++) {
+            if (cleanOrderId(oData[oi][0]) === targetOrderId) {
+              oSheet.getRange(oi + 1, 10).setValue("SERVED");
+              oSheet.getRange(oi + 1, 13).setValue(atStr);
+              oSheet.getRange(oi + 1, 27).setValue(rev);
+              break;
+            }
+          }
+        }
+      }
+
+      // 3. Update memory caches: add to settled_orders_ and purge from recent_orders_
+      try {
+        var props = PropertiesService.getScriptProperties();
+        var settledKey = "settled_orders_" + outletId;
+        var rawSettled = props.getProperty(settledKey);
+        var settledList = [];
+        if (rawSettled) {
+          try { settledList = JSON.parse(rawSettled); } catch(e) {}
+        }
+        if (settledList.indexOf(targetOrderId) === -1) {
+          settledList.push(targetOrderId);
+          if (settledList.length > 500) settledList = settledList.slice(-500);
+          props.setProperty(settledKey, JSON.stringify(settledList));
+        }
+
+        var cacheKey = "recent_orders_" + outletId;
+        var rawCached = props.getProperty(cacheKey);
+        if (rawCached) {
+          var cachedOrders = [];
+          try { cachedOrders = JSON.parse(rawCached); } catch(e) {}
+          cachedOrders = cachedOrders.filter(function(co) {
+            return cleanOrderId(co.id || co.orderId) !== targetOrderId;
+          });
+          props.setProperty(cacheKey, JSON.stringify(cachedOrders));
+        }
+      } catch(ePayMem) {}
+    }
+
     var res = {
       ok: true,
       success: true,
@@ -3020,7 +3149,7 @@ function handleCloseDay(json) {
   try {
     var clientRequestId = json.clientRequestId || json.client_request_id;
     var data = json.data || json.report || json;
-    var outletId = String(json.outletId || json.org_id || json.organizationId || data.outletId || "").trim();
+    var outletId = resolveTenantId(data, json);
     var sId = json.spreadsheet_id || json.spreadsheetId || getSheetIdForOrg(outletId);
 
     var ss = null;
@@ -3063,6 +3192,12 @@ function handleCloseDay(json) {
         ]);
       }
     }
+
+    try {
+      var props = PropertiesService.getScriptProperties();
+      props.deleteProperty("recent_orders_" + outletId);
+      props.deleteProperty("waiter_alerts_" + outletId);
+    } catch(eClear) {}
 
     var res = {
       ok: true,
@@ -3163,7 +3298,8 @@ function handleStartTrial(json) {
 
     var now = new Date();
     var endDate = new Date(now.getTime() + plan.validityDays * 86400000);
-    var orgName = shopName || (clientName + " Restaurant");
+    var defaultSuffix = (category && (category.indexOf("Kirana") >= 0 || category.indexOf("Supermarket") >= 0 || category.indexOf("Pharmacy") >= 0 || category.indexOf("Retail") >= 0)) ? " Store" : " Restaurant";
+    var orgName = shopName || (clientName + defaultSuffix);
 
     // 6. The documents. Written in the order the console writes them, and
     //    if any write fails the whole thing throws: half a tenant is worse
@@ -3308,7 +3444,7 @@ function handleStartTrial(json) {
               "Login Email: " + email + "\n" +
               "Temporary Password: " + tempPassword + "\n\n" +
               "Open the app and sign in. You will be asked to set your own password on first sign-in.\n\n" +
-              "Your trial is the Offline Dine-In plan: billing, tables, running tabs, kitchen tickets, " +
+              "Your trial is the " + plan.packageName + " plan: " + (plan.planProfile === "OFFLINE_SINGLE" ? "counter billing, inventory, " : "billing, tables, running tabs, kitchen tickets, ") +
               "receipt printing and day-end reports, on one device, with everything kept on that device.\n\n" +
               "Best regards,\nSmartDine Support Team"
       });
@@ -3352,7 +3488,10 @@ function handleStartTrial(json) {
  * outlet, no cloud or online-tier key, and no waiter or kitchen role.
  */
 function trialPlan_(businessCategory) {
-  var packageId = "OFFLINE_DINE_IN"; // Verticals.defaultPackageFor(any category)
+  var cat = String(businessCategory || "").trim();
+  var isRetail = cat.indexOf("Kirana") >= 0 || cat.indexOf("Supermarket") >= 0 || cat.indexOf("Pharmacy") >= 0 || cat.indexOf("Retail") >= 0;
+  var packageId = isRetail ? "OFFLINE_SINGLE" : "OFFLINE_DINE_IN";
+  var isRetailSingle = (packageId === "OFFLINE_SINGLE");
   var pkg = null;
   var planDoc = null;
   // Blank unless a plan document was actually read: a planId on a licence
@@ -3372,7 +3511,10 @@ function trialPlan_(businessCategory) {
   }
   planDoc = planDoc || {};
 
-  var offlineKeys = [
+  var offlineKeys = isRetailSingle ? [
+    "billing", "qsrBilling", "menuManagement", "thermalPrinting", "storeConfiguration",
+    "dayEndReports", "staffManagement", "backupRestore"
+  ] : [
     "billing", "qsrBilling", "menuManagement", "thermalPrinting", "storeConfiguration",
     "dayEndReports", "staffManagement", "backupRestore",
     "dineInBilling", "tableManagement", "reservations", "dualPrinting", "expenseManagement", "analytics"
@@ -3412,18 +3554,18 @@ function trialPlan_(businessCategory) {
     // Only when the document was read; the seeded starter has this id, and a
     // licence must never point at a document that is not there.
     packageId: pkg ? packageId : "",
-    packageName: String((pkg && pkg.name) || "Offline dine-in"),
+    packageName: String((pkg && pkg.name) || (isRetailSingle ? "Offline counter" : "Offline dine-in")),
     planId: planId,
     name: String(planDoc.name || "Free Trial (14 Days)"),
     billingCycle: String(planDoc.billingCycle || "TRIAL"),
-    planProfile: offline ? "OFFLINE_DINE_IN" : "CONNECTED",
+    planProfile: offline ? (isRetailSingle ? "OFFLINE_SINGLE" : "OFFLINE_DINE_IN") : "CONNECTED",
     storageMode: storageMode,
     validityDays: Number(planDoc.validityDays) > 0 ? Number(planDoc.validityDays) : 14,
     maxUsers: Number(planDoc.maxUsers) > 0 ? Number(planDoc.maxUsers) : 5,
     maxOutlets: maxOutlets,
     maxDevices: maxDevices,
-    tableCount: Number(planDoc.tableCount) >= 0 ? Number(planDoc.tableCount) : 15,
-    operatingMode: String(planDoc.operatingMode || "dineFirstPostpaid"),
+    tableCount: isRetailSingle ? 0 : (Number(planDoc.tableCount) >= 0 ? Number(planDoc.tableCount) : 15),
+    operatingMode: isRetailSingle ? "counterPrepaid" : String(planDoc.operatingMode || "dineFirstPostpaid"),
     allowedRoles: roles,
     features: features
   };
@@ -3534,7 +3676,7 @@ function handleSetTableStatus(json) {
   try {
     var clientRequestId = json.clientRequestId || json.client_request_id;
     var data = json.data || json;
-    var outletId = String(json.outletId || json.org_id || json.organizationId || data.outletId || "").trim();
+    var outletId = resolveTenantId(data, json);
     var sId = json.spreadsheet_id || json.spreadsheetId || getSheetIdForOrg(outletId);
     var tableId = String(data.tableId || data.table || data.tableNumber || "").trim();
     var newStatus = String(data.status || data.tableStatus || "VACANT").toUpperCase().trim();
@@ -3608,7 +3750,7 @@ function handleSetTableStatus(json) {
           ]);
         }
 
-        // Close active session in Sessions sheet if vacating
+        // Close active session in Sessions sheet if vacating, and purge table orders from memory
         if (newStatus === "VACANT") {
           var sSheet = ss.getSheetByName("Sessions");
           if (sSheet && sSheet.getLastRow() > 1) {
@@ -3625,6 +3767,50 @@ function handleSetTableStatus(json) {
               }
             }
           }
+
+          // Purge memory cache and mark orders on this table as settled
+          try {
+            var props = PropertiesService.getScriptProperties();
+            var cacheKey = "recent_orders_" + outletId;
+            var rawCached = props.getProperty(cacheKey);
+            var vacatedOrderIds = [];
+            if (rawCached) {
+              var cachedOrders = JSON.parse(rawCached);
+              cachedOrders = cachedOrders.filter(function(co) {
+                if (cleanTableId(co.table || co.tableName) === cTable) {
+                  var cid = cleanOrderId(co.id || co.orderId);
+                  if (cid) vacatedOrderIds.push(cid);
+                  return false;
+                }
+                return true;
+              });
+              props.setProperty(cacheKey, JSON.stringify(cachedOrders));
+            }
+
+            if (vacatedOrderIds.length > 0) {
+              var settledKey = "settled_orders_" + outletId;
+              var rawSettled = props.getProperty(settledKey);
+              var settledList = [];
+              if (rawSettled) {
+                try { settledList = JSON.parse(rawSettled); } catch(e) {}
+              }
+              for (var vi = 0; vi < vacatedOrderIds.length; vi++) {
+                if (settledList.indexOf(vacatedOrderIds[vi]) === -1) {
+                  settledList.push(vacatedOrderIds[vi]);
+                }
+              }
+              if (settledList.length > 500) settledList = settledList.slice(-500);
+              props.setProperty(settledKey, JSON.stringify(settledList));
+            }
+
+            var waiterKey = "waiter_alerts_" + outletId;
+            var rawWaiters = props.getProperty(waiterKey);
+            if (rawWaiters) {
+              var wList = JSON.parse(rawWaiters);
+              wList = wList.filter(function(w) { return cleanTableId(w.table || w.tableName) !== cTable; });
+              props.setProperty(waiterKey, JSON.stringify(wList));
+            }
+          } catch(eMem) {}
         }
       }
 
@@ -3861,7 +4047,7 @@ function handleMoveTable(json) {
 
   try {
     var data = json.data || json;
-    var outletId = String(json.outletId || json.org_id || data.outletId || "").trim();
+    var outletId = resolveTenantId(data, json);
     var sId = json.spreadsheet_id || json.spreadsheetId || getSheetIdForOrg(outletId);
     var fromTable = String(data.fromTableId || data.fromTable || "").trim();
     var toTable = String(data.toTableId || data.toTable || "").trim();
@@ -3974,7 +4160,7 @@ function handleMergeTables(json) {
 
   try {
     var data = json.data || json;
-    var outletId = String(json.outletId || json.org_id || data.outletId || "").trim();
+    var outletId = resolveTenantId(data, json);
     var sId = json.spreadsheet_id || json.spreadsheetId || getSheetIdForOrg(outletId);
     var sourceTables = data.sourceTableIds || data.sources || [];
     var targetTable = String(data.targetTableId || data.target || "").trim();
@@ -4370,7 +4556,7 @@ function handleVoidOrder(json) {
 
   try {
     var data = json.data || json;
-    var outletId = String(json.outletId || json.org_id || data.outletId || "").trim();
+    var outletId = resolveTenantId(data, json);
     var sId = json.spreadsheet_id || json.spreadsheetId || getSheetIdForOrg(outletId);
     var ss = null;
     if (sId) {
@@ -4551,6 +4737,35 @@ function handleVoidOrder(json) {
     // 6. Log to Audit tab
     logAuditRecord(ss, outletId, authorizedBy, "VOID_ORDER", "Order", orderId, oldStatus, "CANCELLED", reason);
 
+    // 7. Update memory cache and settled record immediately so poll requests do not return voided order
+    try {
+      var props = PropertiesService.getScriptProperties();
+      // Record voided order ID in settled_orders_
+      var settledKey = "settled_orders_" + outletId;
+      var rawSettled = props.getProperty(settledKey);
+      var settledList = [];
+      if (rawSettled) {
+        try { settledList = JSON.parse(rawSettled); } catch(e) {}
+      }
+      if (settledList.indexOf(orderId) === -1) {
+        settledList.push(orderId);
+        if (settledList.length > 500) settledList = settledList.slice(-500);
+        props.setProperty(settledKey, JSON.stringify(settledList));
+      }
+
+      // Purge voided order from recent_orders_
+      var cacheKey = "recent_orders_" + outletId;
+      var rawCached = props.getProperty(cacheKey);
+      if (rawCached) {
+        var cachedOrders = [];
+        try { cachedOrders = JSON.parse(rawCached); } catch(e) {}
+        cachedOrders = cachedOrders.filter(function(co) {
+          return cleanOrderId(co.id || co.orderId) !== orderId;
+        });
+        props.setProperty(cacheKey, JSON.stringify(cachedOrders));
+      }
+    } catch (eVoidMem) {}
+
     return responseJson({
       ok: true,
       success: true,
@@ -4721,7 +4936,7 @@ function handleRefundPayment(json) {
   try {
     var clientRequestId = json.clientRequestId || json.client_request_id;
     var data = json.data || json;
-    var outletId = String(json.outletId || json.org_id || json.organizationId || data.outletId || "").trim();
+    var outletId = resolveTenantId(data, json);
     var sId = json.spreadsheet_id || json.spreadsheetId || getSheetIdForOrg(outletId);
     var originalPaymentId = String(data.paymentId || data.originalPaymentId || "").trim();
     var billId = String(data.billId || data.orderId || "").trim();
@@ -4941,3 +5156,79 @@ function handleSendWhatsAppNotification(json) {
   });
 }
 
+
+
+function handleSubmitInquiry(json) {
+  var p = json.data || json;
+  var name = p.name || p.client_name || "Merchant";
+  var email = p.email || "";
+  var phone = p.phone || p.mobile || "";
+  var city = p.city || "";
+  var brand = p.brand_name || p.shop_name || "Retail Brand";
+  var model = p.business_model || p.category || "Retail / Restaurant";
+  var outlets = p.outlets_count || p.outlets || "1";
+  var stations = p.stations_count || p.stations || "Standard";
+  var plan = p.selected_plan || p.plan || "Commercial Plan";
+  var reqs = p.requirements || p.notes || "None specified";
+
+  var adminEmail = PropertiesService.getScriptProperties().getProperty("admin_email") || "smartdine.platform@gmail.com";
+
+  // 1. Send Admin Notification Email
+  try {
+    var adminSubject = "💼 Commercial Plan Inquiry: " + brand + " (" + plan + " - " + model + ")";
+    var adminHtml = '<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:24px;border:1px solid #e2e8f0;border-radius:12px;background:#ffffff;">' +
+      '<div style="background:#0f172a;color:#ffffff;padding:16px 20px;border-radius:8px;margin-bottom:20px;">' +
+        '<h2 style="margin:0;font-size:20px;">💼 Commercial Plan Inquiry</h2>' +
+        '<p style="margin:4px 0 0;font-size:13px;opacity:0.9;">Plan of Interest: <strong>' + plan + '</strong></p>' +
+      '</div>' +
+      '<table style="width:100%;border-collapse:collapse;font-size:14px;">' +
+        '<tr style="background:#f8fafc;"><td colspan="2" style="padding:8px 12px;font-weight:bold;color:#1e293b;">👤 Contact Details</td></tr>' +
+        '<tr><td style="padding:8px 12px;color:#64748b;width:160px;">Contact Person:</td><td style="color:#0f172a;font-weight:bold;">' + name + '</td></tr>' +
+        '<tr><td style="padding:8px 12px;color:#64748b;">Email Address:</td><td style="color:#0f172a;">' + email + '</td></tr>' +
+        '<tr><td style="padding:8px 12px;color:#64748b;">Phone / WhatsApp:</td><td style="color:#0f172a;">' + phone + '</td></tr>' +
+        '<tr><td style="padding:8px 12px;color:#64748b;">Location / City:</td><td style="color:#0f172a;">' + city + '</td></tr>' +
+        '<tr style="background:#f8fafc;"><td colspan="2" style="padding:8px 12px;font-weight:bold;color:#1e293b;">🏢 Business Scope</td></tr>' +
+        '<tr><td style="padding:8px 12px;color:#64748b;">Brand / Shop Name:</td><td style="color:#0f172a;font-weight:bold;">' + brand + '</td></tr>' +
+        '<tr><td style="padding:8px 12px;color:#64748b;">Industry / Trade:</td><td style="color:#0f172a;">' + model + '</td></tr>' +
+        '<tr><td style="padding:8px 12px;color:#64748b;">Number of Outlets:</td><td style="color:#0f172a;font-weight:bold;">' + outlets + '</td></tr>' +
+        '<tr><td style="padding:8px 12px;color:#64748b;">Counters / Stations:</td><td style="color:#0f172a;">' + stations + '</td></tr>' +
+        '<tr><td style="padding:8px 12px;color:#64748b;">Selected Tier:</td><td style="color:#2563eb;font-weight:bold;">' + plan + '</td></tr>' +
+        '<tr><td style="padding:8px 12px;color:#64748b;">Specific Requirements:</td><td style="color:#0f172a;">' + reqs + '</td></tr>' +
+      '</table>' +
+    '</div>';
+
+    MailApp.sendEmail({
+      to: adminEmail,
+      subject: adminSubject,
+      htmlBody: adminHtml,
+      name: "Smart POS Commercial Desk"
+    });
+  } catch(e) {
+    Logger.log("Inquiry admin email error: " + e);
+  }
+
+  // 2. Send Confirmation Email to Client
+  if (email) {
+    try {
+      var clientSubject = "Thank You for Contacting Smart POS — We Have Received Your Requirements";
+      var clientHtml = '<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:24px;border:1px solid #e2e8f0;border-radius:12px;background:#ffffff;">' +
+        '<h2 style="color:#0f172a;margin-top:0;">Thank You for Your Interest in Smart POS</h2>' +
+        '<p style="color:#475569;font-size:15px;">Hello <strong>' + name + '</strong>,</p>' +
+        '<p style="color:#475569;font-size:14px;">We have received your commercial inquiry for <strong>' + brand + '</strong> (' + plan + ').</p>' +
+        '<p style="color:#475569;font-size:14px;">Our commercial desk will connect with you within <strong>2 to 4 business hours</strong> with a customized quote and deployment plan.</p>' +
+        '<p style="color:#64748b;font-size:13px;">Immediate assistance? Contact us at <a href="mailto:' + adminEmail + '">' + adminEmail + '</a> or WhatsApp <a href="https://wa.me/917997970420">+91 7997970420</a>.</p>' +
+      '</div>';
+
+      MailApp.sendEmail({
+        to: email,
+        subject: clientSubject,
+        htmlBody: clientHtml,
+        name: "Smart POS Commercial Sales"
+      });
+    } catch(e) {
+      Logger.log("Inquiry client email error: " + e);
+    }
+  }
+
+  return responseJson({ success: true, message: "Inquiry received successfully." });
+}

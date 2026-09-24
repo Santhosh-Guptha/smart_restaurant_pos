@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:image_picker/image_picker.dart';
 import '../../core/restaurant_models.dart';
 import '../../core/constants.dart';
 import '../../providers/saas_session_provider.dart';
@@ -13,6 +14,8 @@ import '../../services/apps_script_backend_service.dart';
 import '../../core/classic_theme.dart';
 import '../../core/cloud_gate.dart';
 import '../../core/entitlements.dart';
+import '../../core/package_model.dart';
+import '../../core/vertical_labels.dart';
 import '../../providers/entitlements_provider.dart';
 
 class RestaurantMenuManagementScreen extends ConsumerStatefulWidget {
@@ -25,6 +28,9 @@ class RestaurantMenuManagementScreen extends ConsumerStatefulWidget {
 
 class _RestaurantMenuManagementScreenState
     extends ConsumerState<RestaurantMenuManagementScreen> {
+  late final String _vertical;
+  VerticalLabels get _vl => VerticalLabels.of(_vertical);
+
   String _selectedCategory = 'All';
   String _selectedSubcategory = 'All';
   String _searchQuery = '';
@@ -45,6 +51,7 @@ class _RestaurantMenuManagementScreenState
   @override
   void initState() {
     super.initState();
+    _vertical = ref.read(entitlementsProvider).vertical;
     _loadCategoriesFromHive();
     _loadDishesFromHive();
     _loadStationsFromHive();
@@ -380,6 +387,7 @@ class _RestaurantMenuManagementScreenState
           final cat = (item['category'] ?? 'Main Course').toString().trim();
           final isVeg = item['isVeg'] != false;
           final isAvail = item['available'] != false && item['is_available'] != false;
+          final isExempt = item['isTaxExempt'] == true || item['is_tax_exempt'] == true;
           final desc = (item['description'] ?? '').toString();
 
           final existingIdx = _dishes.indexWhere((d) {
@@ -392,6 +400,10 @@ class _RestaurantMenuManagementScreenState
             _dishes[existingIdx]['price'] = price;
             _dishes[existingIdx]['isAvailable'] = isAvail;
             _dishes[existingIdx]['is_available'] = isAvail;
+            if (item['isTaxExempt'] != null || item['is_tax_exempt'] != null) {
+              _dishes[existingIdx]['isTaxExempt'] = isExempt;
+              _dishes[existingIdx]['is_tax_exempt'] = isExempt;
+            }
             if (desc.isNotEmpty) _dishes[existingIdx]['description'] = desc;
             updatedCount++;
           } else {
@@ -407,6 +419,8 @@ class _RestaurantMenuManagementScreenState
               'sendsToKitchen': true,
               'isAvailable': isAvail,
               'is_available': isAvail,
+              'isTaxExempt': isExempt,
+              'is_tax_exempt': isExempt,
               'isTimeRestricted': false,
               'description': desc,
             });
@@ -972,12 +986,106 @@ class _RestaurantMenuManagementScreenState
     final toTimeCtrl = TextEditingController(text: existing?['availableTo'] ?? '23:30');
     final subcatCtrl = TextEditingController(text: existing?['subcategory'] ?? '');
 
+    // Retail & Grocery controllers
+    final barcodeCtrl = TextEditingController(text: existing?['barcode']?.toString() ?? '');
+    final skuCtrl = TextEditingController(text: existing?['sku']?.toString() ?? '');
+    final unitCtrl = TextEditingController(text: existing?['unit']?.toString() ?? 'pcs');
+    final mrpCtrl = TextEditingController(text: existing?['mrp'] != null ? existing!['mrp'].toString() : '');
+    final stockCtrl = TextEditingController(
+      text: (existing?['stockQuantity'] ?? existing?['stock_quantity']) != null
+          ? (existing?['stockQuantity'] ?? existing?['stock_quantity']).toString()
+          : '',
+    );
+
+    // Image controller & upload state
+    final imageUrlCtrl = TextEditingController(text: existing?['imageUrl']?.toString() ?? '');
+    bool isUploadingImage = false;
+    String? uploadStatusText;
+
     String category = existing?['category'] ?? (_categoriesWithSubs.isNotEmpty ? _categoriesWithSubs.keys.first : 'Main Course');
     String station = existing?['station'] ?? (_stations.isNotEmpty ? _stations.first.name : 'Main Kitchen');
     bool sendsToKitchen = existing?['sendsToKitchen'] ?? true;
     bool isVeg = existing?['isVeg'] ?? true;
     bool isAvailable = existing?['isAvailable'] ?? true;
     bool isTimeRestricted = existing?['isTimeRestricted'] ?? false;
+    bool isTaxExempt = existing?['isTaxExempt'] == true || existing?['is_tax_exempt'] == true;
+
+    Future<void> pickAndUpload(ImageSource source, StateSetter setDialogState) async {
+      try {
+        final picker = ImagePicker();
+        final picked = await picker.pickImage(
+          source: source,
+          maxWidth: 600,
+          maxHeight: 600,
+          imageQuality: 80,
+        );
+        if (picked == null) return;
+
+        setDialogState(() {
+          isUploadingImage = true;
+          uploadStatusText = 'Compressing & uploading to Drive...';
+        });
+
+        final bytes = await picked.readAsBytes();
+        final authClient = ref.read(restaurantAuthProvider.notifier).authenticatedHttpClient;
+
+        if (authClient != null) {
+          final dishId = existing?['id'] ?? 'dish_${DateTime.now().millisecondsSinceEpoch}';
+          final result = await RestaurantSheetsService.uploadDishImageToDrive(
+            authenticatedClient: authClient,
+            imageBytes: bytes,
+            dishId: dishId.toString(),
+            mimeType: picked.mimeType ?? 'image/jpeg',
+          );
+
+          if (!mounted) return;
+
+          if (result['success'] == true && result['imageUrl'] != null) {
+            setDialogState(() {
+              imageUrlCtrl.text = result['imageUrl'] as String;
+              isUploadingImage = false;
+              uploadStatusText = null;
+            });
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Photo uploaded to Google Drive!'),
+                backgroundColor: ClassicTheme.successEmerald,
+                duration: Duration(seconds: 2),
+              ),
+            );
+          } else {
+            setDialogState(() {
+              isUploadingImage = false;
+              uploadStatusText = null;
+            });
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Upload failed: ${result['error'] ?? "Unknown error"}'),
+                backgroundColor: ClassicTheme.dangerRed,
+              ),
+            );
+          }
+        } else {
+          if (!mounted) return;
+          setDialogState(() {
+            isUploadingImage = false;
+            uploadStatusText = null;
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Google account not connected. Please connect Google Drive in Settings or paste an image URL.'),
+              backgroundColor: ClassicTheme.warningAmber,
+            ),
+          );
+        }
+      } catch (e) {
+        setDialogState(() {
+          isUploadingImage = false;
+          uploadStatusText = null;
+        });
+        debugPrint('Image pick/upload error: $e');
+      }
+    }
 
     showDialog(
       context: context,
@@ -1004,7 +1112,7 @@ class _RestaurantMenuManagementScreenState
                 ),
                 const SizedBox(width: 10),
                 Text(
-                  existing == null ? 'Add New Food Item' : 'Edit Food Item',
+                  existing == null ? 'Add New ${_vl.itemSingular}' : 'Edit ${_vl.itemSingular}',
                   style: TextStyle(color: context.textPrimary, fontWeight: FontWeight.bold, fontSize: 16),
                 ),
               ],
@@ -1016,13 +1124,202 @@ class _RestaurantMenuManagementScreenState
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    // ── Photo / Image Selector Card ──
+                    Container(
+                      margin: const EdgeInsets.only(bottom: 14),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: context.isDark ? ClassicTheme.cardSurfaceDark : context.canvasColor,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: context.borderColor),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                'Item Photo (Customer QR & Web Menu)',
+                                style: TextStyle(
+                                  color: context.textPrimary,
+                                  fontSize: 12.5,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              if (imageUrlCtrl.text.isNotEmpty)
+                                InkWell(
+                                  onTap: () => setDialogState(() => imageUrlCtrl.clear()),
+                                  child: const Padding(
+                                    padding: EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(Icons.close_rounded, size: 14, color: ClassicTheme.dangerRed),
+                                        SizedBox(width: 2),
+                                        Text('Remove', style: TextStyle(fontSize: 11, color: ClassicTheme.dangerRed, fontWeight: FontWeight.bold)),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+
+                          if (isUploadingImage)
+                            Container(
+                              height: 85,
+                              alignment: Alignment.center,
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  const SizedBox(
+                                    width: 22,
+                                    height: 22,
+                                    child: CircularProgressIndicator(strokeWidth: 2, color: ClassicTheme.infoBlue),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    uploadStatusText ?? 'Uploading...',
+                                    style: TextStyle(fontSize: 11, color: context.textSecondary),
+                                  ),
+                                ],
+                              ),
+                            )
+                          else if (imageUrlCtrl.text.trim().isNotEmpty) ...[
+                            Row(
+                              children: [
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(10),
+                                  child: Image.network(
+                                    imageUrlCtrl.text.trim(),
+                                    width: 70,
+                                    height: 70,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, __, ___) => Container(
+                                      width: 70,
+                                      height: 70,
+                                      color: context.inputFill,
+                                      child: const Icon(Icons.broken_image_rounded, size: 28, color: Colors.grey),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      const Row(
+                                        children: [
+                                          Icon(Icons.check_circle_rounded, size: 14, color: ClassicTheme.successEmerald),
+                                          SizedBox(width: 4),
+                                          Text(
+                                            'Google Drive CDN Linked',
+                                            style: TextStyle(
+                                              color: ClassicTheme.successEmerald,
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        imageUrlCtrl.text.trim(),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(fontSize: 10.5, color: context.textSecondary),
+                                      ),
+                                      const SizedBox(height: 6),
+                                      Row(
+                                        children: [
+                                          OutlinedButton.icon(
+                                            onPressed: () => pickAndUpload(ImageSource.camera, setDialogState),
+                                            icon: const Icon(Icons.camera_alt_rounded, size: 13),
+                                            label: const Text('Camera', style: TextStyle(fontSize: 11)),
+                                            style: OutlinedButton.styleFrom(
+                                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                              minimumSize: Size.zero,
+                                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 6),
+                                          OutlinedButton.icon(
+                                            onPressed: () => pickAndUpload(ImageSource.gallery, setDialogState),
+                                            icon: const Icon(Icons.photo_library_rounded, size: 13),
+                                            label: const Text('Gallery', style: TextStyle(fontSize: 11)),
+                                            style: OutlinedButton.styleFrom(
+                                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                              minimumSize: Size.zero,
+                                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ] else ...[
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: OutlinedButton.icon(
+                                    onPressed: () => pickAndUpload(ImageSource.camera, setDialogState),
+                                    icon: const Icon(Icons.photo_camera_rounded, size: 16),
+                                    label: const Text('Take Photo', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                                    style: OutlinedButton.styleFrom(
+                                      foregroundColor: ClassicTheme.infoBlue,
+                                      side: BorderSide(color: context.borderColor),
+                                      padding: const EdgeInsets.symmetric(vertical: 10),
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: OutlinedButton.icon(
+                                    onPressed: () => pickAndUpload(ImageSource.gallery, setDialogState),
+                                    icon: const Icon(Icons.photo_library_rounded, size: 16),
+                                    label: const Text('Choose File', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                                    style: OutlinedButton.styleFrom(
+                                      foregroundColor: ClassicTheme.infoBlue,
+                                      side: BorderSide(color: context.borderColor),
+                                      padding: const EdgeInsets.symmetric(vertical: 10),
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            TextField(
+                              controller: imageUrlCtrl,
+                              style: TextStyle(color: context.textPrimary, fontSize: 12),
+                              decoration: InputDecoration(
+                                hintText: 'Or paste image URL (https://...)',
+                                hintStyle: TextStyle(color: context.textSecondary, fontSize: 11),
+                                prefixIcon: const Icon(Icons.link_rounded, size: 16),
+                                filled: true,
+                                fillColor: context.inputFill,
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: context.borderColor)),
+                                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: context.borderColor)),
+                              ),
+                              onChanged: (_) => setDialogState(() {}),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
                     TextField(
                       controller: nameCtrl,
                       style: TextStyle(color: context.textPrimary, fontSize: 13),
                       decoration: InputDecoration(
-                        labelText: 'Dish Name *',
+                        labelText: _vl.itemNameLabel,
                         labelStyle: TextStyle(color: context.textSecondary, fontSize: 12),
-                        hintText: 'e.g. Butter Chicken, Garlic Naan',
+                        hintText: _vl.itemNameHint,
                         hintStyle: TextStyle(color: context.textSecondary, fontSize: 12),
                         filled: true,
                         fillColor: context.inputFill,
@@ -1040,7 +1337,7 @@ class _RestaurantMenuManagementScreenState
                             keyboardType: const TextInputType.numberWithOptions(decimal: true),
                             style: TextStyle(color: context.textPrimary, fontSize: 13),
                             decoration: InputDecoration(
-                              labelText: 'Price (₹) *',
+                              labelText: 'Selling Price (₹) *',
                               labelStyle: TextStyle(color: context.textSecondary, fontSize: 12),
                               hintText: 'e.g. 240',
                               hintStyle: TextStyle(color: context.textSecondary, fontSize: 12),
@@ -1052,26 +1349,159 @@ class _RestaurantMenuManagementScreenState
                           ),
                         ),
                         const SizedBox(width: 12),
-                        Expanded(
-                          child: TextField(
-                            controller: prepCtrl,
-                            keyboardType: TextInputType.number,
-                            style: TextStyle(color: context.textPrimary, fontSize: 13),
-                            decoration: InputDecoration(
-                              labelText: 'Prep Time (Mins)',
-                              labelStyle: TextStyle(color: context.textSecondary, fontSize: 12),
-                              hintText: 'e.g. 15',
-                              hintStyle: TextStyle(color: context.textSecondary, fontSize: 12),
-                              filled: true,
-                              fillColor: context.inputFill,
-                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: context.borderColor)),
-                              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: context.borderColor)),
+                        if (_vertical == Verticals.restaurant)
+                          Expanded(
+                            child: TextField(
+                              controller: prepCtrl,
+                              keyboardType: TextInputType.number,
+                              style: TextStyle(color: context.textPrimary, fontSize: 13),
+                              decoration: InputDecoration(
+                                labelText: 'Prep Time (Mins)',
+                                labelStyle: TextStyle(color: context.textSecondary, fontSize: 12),
+                                hintText: 'e.g. 15',
+                                hintStyle: TextStyle(color: context.textSecondary, fontSize: 12),
+                                filled: true,
+                                fillColor: context.inputFill,
+                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: context.borderColor)),
+                                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: context.borderColor)),
+                              ),
+                            ),
+                          )
+                        else
+                          Expanded(
+                            child: TextField(
+                              controller: mrpCtrl,
+                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                              style: TextStyle(color: context.textPrimary, fontSize: 13),
+                              decoration: InputDecoration(
+                                labelText: 'MRP (₹)',
+                                labelStyle: TextStyle(color: context.textSecondary, fontSize: 12),
+                                hintText: 'e.g. 250',
+                                hintStyle: TextStyle(color: context.textSecondary, fontSize: 12),
+                                filled: true,
+                                fillColor: context.inputFill,
+                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: context.borderColor)),
+                                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: context.borderColor)),
+                              ),
                             ),
                           ),
-                        ),
                       ],
                     ),
                     const SizedBox(height: 12),
+
+                    // Retail / Kirana: Barcode & SKU Row
+                    if (_vertical != Verticals.restaurant) ...[
+                      Row(
+                        children: [
+                          Expanded(
+                            flex: 3,
+                            child: TextField(
+                              controller: barcodeCtrl,
+                              style: TextStyle(color: context.textPrimary, fontSize: 13),
+                              decoration: InputDecoration(
+                                labelText: 'Barcode (EAN / UPC)',
+                                labelStyle: TextStyle(color: context.textSecondary, fontSize: 12),
+                                hintText: 'Scan or type barcode',
+                                prefixIcon: const Icon(Icons.qr_code_scanner_rounded, size: 18),
+                                hintStyle: TextStyle(color: context.textSecondary, fontSize: 12),
+                                filled: true,
+                                fillColor: context.inputFill,
+                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: context.borderColor)),
+                                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: context.borderColor)),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          IconButton(
+                            tooltip: 'Generate Random Barcode',
+                            icon: const Icon(Icons.auto_fix_high_rounded, color: ClassicTheme.infoBlue, size: 20),
+                            onPressed: () {
+                              final generated = '890${DateTime.now().millisecondsSinceEpoch.toString().substring(3)}';
+                              setDialogState(() => barcodeCtrl.text = generated);
+                            },
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            flex: 2,
+                            child: TextField(
+                              controller: skuCtrl,
+                              style: TextStyle(color: context.textPrimary, fontSize: 13),
+                              decoration: InputDecoration(
+                                labelText: 'SKU / Code',
+                                labelStyle: TextStyle(color: context.textSecondary, fontSize: 12),
+                                hintText: 'e.g. ITEM-01',
+                                hintStyle: TextStyle(color: context.textSecondary, fontSize: 12),
+                                filled: true,
+                                fillColor: context.inputFill,
+                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: context.borderColor)),
+                                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: context.borderColor)),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+
+                      // Unit & Stock Quantity Row
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 12),
+                              decoration: BoxDecoration(
+                                color: context.inputFill,
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(color: context.borderColor),
+                              ),
+                              child: DropdownButtonHideUnderline(
+                                child: DropdownButton<String>(
+                                  value: ['pcs', 'kg', 'g', 'pack', 'bottle', 'box', 'strip', 'liter', 'ml'].contains(unitCtrl.text)
+                                      ? unitCtrl.text
+                                      : 'pcs',
+                                  isExpanded: true,
+                                  dropdownColor: context.surfaceColor,
+                                  style: TextStyle(color: context.textPrimary, fontSize: 13),
+                                  items: const [
+                                    DropdownMenuItem(value: 'pcs', child: Text('Pieces (pcs)')),
+                                    DropdownMenuItem(value: 'kg', child: Text('Kilogram (kg)')),
+                                    DropdownMenuItem(value: 'g', child: Text('Gram (g)')),
+                                    DropdownMenuItem(value: 'pack', child: Text('Packet / Bag')),
+                                    DropdownMenuItem(value: 'bottle', child: Text('Bottle')),
+                                    DropdownMenuItem(value: 'box', child: Text('Box / Carton')),
+                                    DropdownMenuItem(value: 'strip', child: Text('Strip (Med)')),
+                                    DropdownMenuItem(value: 'liter', child: Text('Liter (L)')),
+                                  ],
+                                  onChanged: (val) {
+                                    if (val != null) {
+                                      setDialogState(() => unitCtrl.text = val);
+                                    }
+                                  },
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: TextField(
+                              controller: stockCtrl,
+                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                              style: TextStyle(color: context.textPrimary, fontSize: 13),
+                              decoration: InputDecoration(
+                                labelText: 'Opening Stock Qty',
+                                labelStyle: TextStyle(color: context.textSecondary, fontSize: 12),
+                                hintText: 'e.g. 50',
+                                hintStyle: TextStyle(color: context.textSecondary, fontSize: 12),
+                                filled: true,
+                                fillColor: context.inputFill,
+                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: context.borderColor)),
+                                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: context.borderColor)),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                    ],
 
                     // Category dropdown
                     Row(
@@ -1394,58 +1824,133 @@ class _RestaurantMenuManagementScreenState
                     const SizedBox(height: 12),
 
                     // Veg / Non-Veg & Immediate Stock
-                    Row(
-                      children: [
-                        Expanded(
-                          child: InkWell(
-                            onTap: () => setDialogState(() => isVeg = !isVeg),
-                            borderRadius: BorderRadius.circular(10),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
-                              decoration: BoxDecoration(
-                                color: isVeg
-                                    ? (context.isDark ? const Color(0xFF064E3B) : ClassicTheme.tintSuccess)
-                                    : (context.isDark ? const Color(0xFF450A0A) : ClassicTheme.tintDanger),
-                                borderRadius: BorderRadius.circular(10),
-                                border: Border.all(color: isVeg ? ClassicTheme.successEmerald : ClassicTheme.dangerRed),
-                              ),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(Icons.eco, color: isVeg ? ClassicTheme.successEmerald : ClassicTheme.dangerRed, size: 16),
-                                  const SizedBox(width: 6),
-                                  Text(isVeg ? 'Vegetarian' : 'Non-Veg', style: TextStyle(color: isVeg ? ClassicTheme.successEmerald : ClassicTheme.dangerRed, fontWeight: FontWeight.bold, fontSize: 12)),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: InkWell(
-                            onTap: () => setDialogState(() => isAvailable = !isAvailable),
-                            borderRadius: BorderRadius.circular(10),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
-                              decoration: BoxDecoration(
-                                color: isAvailable
-                                    ? (context.isDark ? ClassicTheme.infoBlue : ClassicTheme.tintInfo)
-                                    : (context.isDark ? ClassicTheme.cardSurfaceDark : context.inputFill),
-                                borderRadius: BorderRadius.circular(10),
-                                border: Border.all(color: isAvailable ? ClassicTheme.infoBlue : context.borderColor),
-                              ),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(isAvailable ? Icons.check_circle_outline : Icons.block, color: isAvailable ? ClassicTheme.infoBlue : context.textSecondary, size: 16),
-                                  const SizedBox(width: 6),
-                                  Text(isAvailable ? 'In Stock' : 'Sold Out', style: TextStyle(color: isAvailable ? ClassicTheme.infoBlue : context.textSecondary, fontWeight: FontWeight.bold, fontSize: 12)),
-                                ],
+                    if (_vertical == Verticals.restaurant) ...[
+                      Row(
+                        children: [
+                          Expanded(
+                            child: InkWell(
+                              onTap: () => setDialogState(() => isVeg = !isVeg),
+                              borderRadius: BorderRadius.circular(10),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+                                decoration: BoxDecoration(
+                                  color: isVeg
+                                      ? (context.isDark ? const Color(0xFF064E3B) : ClassicTheme.tintSuccess)
+                                      : (context.isDark ? const Color(0xFF450A0A) : ClassicTheme.tintDanger),
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(color: isVeg ? ClassicTheme.successEmerald : ClassicTheme.dangerRed),
+                                ),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(Icons.eco, color: isVeg ? ClassicTheme.successEmerald : ClassicTheme.dangerRed, size: 16),
+                                    const SizedBox(width: 6),
+                                    Text(isVeg ? 'Vegetarian' : 'Non-Veg', style: TextStyle(color: isVeg ? ClassicTheme.successEmerald : ClassicTheme.dangerRed, fontWeight: FontWeight.bold, fontSize: 12)),
+                                  ],
+                                ),
                               ),
                             ),
                           ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: InkWell(
+                              onTap: () => setDialogState(() => isAvailable = !isAvailable),
+                              borderRadius: BorderRadius.circular(10),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+                                decoration: BoxDecoration(
+                                  color: isAvailable
+                                      ? (context.isDark ? ClassicTheme.infoBlue : ClassicTheme.tintInfo)
+                                      : (context.isDark ? ClassicTheme.cardSurfaceDark : context.inputFill),
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(color: isAvailable ? ClassicTheme.infoBlue : context.borderColor),
+                                ),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(isAvailable ? Icons.check_circle_outline : Icons.block, color: isAvailable ? ClassicTheme.infoBlue : context.textSecondary, size: 16),
+                                    const SizedBox(width: 6),
+                                    Text(isAvailable ? 'In Stock' : 'Sold Out', style: TextStyle(color: isAvailable ? ClassicTheme.infoBlue : context.textSecondary, fontWeight: FontWeight.bold, fontSize: 12)),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ] else ...[
+                      InkWell(
+                        onTap: () => setDialogState(() => isAvailable = !isAvailable),
+                        borderRadius: BorderRadius.circular(10),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+                          decoration: BoxDecoration(
+                            color: isAvailable
+                                ? (context.isDark ? ClassicTheme.infoBlue : ClassicTheme.tintInfo)
+                                : (context.isDark ? ClassicTheme.cardSurfaceDark : context.inputFill),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: isAvailable ? ClassicTheme.infoBlue : context.borderColor),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(isAvailable ? Icons.check_circle_outline : Icons.block, color: isAvailable ? ClassicTheme.infoBlue : context.textSecondary, size: 16),
+                              const SizedBox(width: 6),
+                              Text(isAvailable ? 'In Stock' : 'Sold Out', style: TextStyle(color: isAvailable ? ClassicTheme.infoBlue : context.textSecondary, fontWeight: FontWeight.bold, fontSize: 12)),
+                            ],
+                          ),
                         ),
-                      ],
+                      ),
+                    ],
+                    const SizedBox(height: 14),
+
+                    // Tax Exemption Toggle
+                    InkWell(
+                      onTap: () => setDialogState(() => isTaxExempt = !isTaxExempt),
+                      borderRadius: BorderRadius.circular(10),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+                        decoration: BoxDecoration(
+                          color: isTaxExempt
+                              ? (context.isDark ? ClassicTheme.cardSurfaceDark : ClassicTheme.tintWarning)
+                              : (context.isDark ? ClassicTheme.cardSurfaceDark : context.inputFill),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: isTaxExempt ? ClassicTheme.warningAmber : context.borderColor),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(isTaxExempt ? Icons.money_off_rounded : Icons.receipt_long_rounded,
+                                color: isTaxExempt ? ClassicTheme.warningAmber : context.textSecondary, size: 18),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    isTaxExempt ? 'Tax Exempt (0% GST)' : 'Taxable Item (Standard GST)',
+                                    style: TextStyle(
+                                      color: isTaxExempt ? ClassicTheme.warningAmber : context.textPrimary,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                  Text(
+                                    isTaxExempt
+                                        ? 'This item is excluded from GST on all bills'
+                                        : 'Standard store tax rate will be applied at checkout',
+                                    style: TextStyle(color: context.textSecondary, fontSize: 11),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Switch.adaptive(
+                              value: isTaxExempt,
+                              activeThumbColor: ClassicTheme.warningAmber,
+                              onChanged: (val) => setDialogState(() => isTaxExempt = val),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
                     const SizedBox(height: 14),
 
@@ -1540,7 +2045,7 @@ class _RestaurantMenuManagementScreenState
 
                   if (name.isEmpty || price <= 0) {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Please enter a valid dish name and price.')),
+                      SnackBar(content: Text('Please enter a valid ${_vl.itemSingular.toLowerCase()} name and price.')),
                     );
                     return;
                   }
@@ -1564,8 +2069,17 @@ class _RestaurantMenuManagementScreenState
                     'sendsToKitchen': sendsToKitchen,
                     'isAvailable': isAvailable,
                     'isTimeRestricted': isTimeRestricted,
+                    'isTaxExempt': isTaxExempt,
+                    'is_tax_exempt': isTaxExempt,
                     'availableFrom': fromTimeCtrl.text.trim(),
                     'availableTo': toTimeCtrl.text.trim(),
+                    'barcode': barcodeCtrl.text.trim().isNotEmpty ? barcodeCtrl.text.trim() : existing?['barcode'],
+                    'sku': skuCtrl.text.trim().isNotEmpty ? skuCtrl.text.trim() : existing?['sku'],
+                    'unit': unitCtrl.text.trim().isNotEmpty ? unitCtrl.text.trim() : (existing?['unit'] ?? 'pcs'),
+                    'mrp': double.tryParse(mrpCtrl.text.trim()) ?? (existing?['mrp'] as num?)?.toDouble(),
+                    'stockQuantity': double.tryParse(stockCtrl.text.trim()) ?? (existing?['stockQuantity'] ?? existing?['stock_quantity'] as num?)?.toDouble(),
+                    'stock_quantity': double.tryParse(stockCtrl.text.trim()) ?? (existing?['stockQuantity'] ?? existing?['stock_quantity'] as num?)?.toDouble(),
+                    'imageUrl': imageUrlCtrl.text.trim().isNotEmpty ? imageUrlCtrl.text.trim() : existing?['imageUrl'],
                   };
 
                   setState(() {
@@ -1587,7 +2101,7 @@ class _RestaurantMenuManagementScreenState
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                   elevation: 0,
                 ),
-                child: Text(existing == null ? 'Add Food Item' : 'Save Changes', style: const TextStyle(fontWeight: FontWeight.bold)),
+                child: Text(existing == null ? 'Add ${_vl.itemSingular}' : 'Save Changes', style: const TextStyle(fontWeight: FontWeight.bold)),
               ),
             ],
           );
@@ -1768,11 +2282,11 @@ class _RestaurantMenuManagementScreenState
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              'Menu Configurations',
+              _vl.menuScreenTitle,
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: context.textPrimary),
             ),
             Text(
-              _cloudOn ? '${_dishes.length} dishes • Auto Syncing' : '${_dishes.length} dishes • Saved on this device',
+              _cloudOn ? '${_dishes.length} ${_vl.itemPlural.toLowerCase()} • Auto Syncing' : '${_dishes.length} ${_vl.itemPlural.toLowerCase()} • Saved on this device',
               style: TextStyle(fontSize: 12, color: context.textSecondary, fontWeight: FontWeight.w500),
             ),
           ],
@@ -1840,7 +2354,7 @@ class _RestaurantMenuManagementScreenState
                   children: [
                     const Icon(Icons.cloud_sync_rounded, size: 18, color: ClassicTheme.successEmerald),
                     const SizedBox(width: 10),
-                    Text('Sync Menu to Cloud', style: TextStyle(fontSize: 13, color: context.textPrimary)),
+                    Text('Sync to Cloud', style: TextStyle(fontSize: 13, color: context.textPrimary)),
                   ],
                 ),
               ),
@@ -1878,9 +2392,9 @@ class _RestaurantMenuManagementScreenState
           child: ElevatedButton.icon(
             onPressed: () => _showAddEditDishModal(),
             icon: const Icon(Icons.add_circle_outline_rounded, size: 22),
-            label: const Text(
-              'Add Food Item',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            label: Text(
+              'Add ${_vl.itemSingular}',
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
             ),
             style: ElevatedButton.styleFrom(
               backgroundColor: ClassicTheme.infoBlue,
@@ -1909,16 +2423,20 @@ class _RestaurantMenuManagementScreenState
                         shape: BoxShape.circle,
                         border: Border.all(color: ClassicTheme.infoBlue.withValues(alpha: 0.2)),
                       ),
-                      child: const Icon(Icons.restaurant_menu_rounded, size: 48, color: ClassicTheme.infoBlue),
+                      child: Icon(
+                        _vertical == Verticals.restaurant ? Icons.restaurant_menu_rounded : Icons.inventory_2_outlined,
+                        size: 48,
+                        color: ClassicTheme.infoBlue,
+                      ),
                     ),
                     const SizedBox(height: 20),
                     Text(
-                      'No Menu Items Configured',
+                      'No ${_vl.itemPlural} Configured',
                       style: TextStyle(color: context.textPrimary, fontSize: 18, fontWeight: FontWeight.bold),
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'Build your restaurant menu. Add your authentic dishes and categories to make them available for POS billing and online table QR ordering.',
+                      _vl.emptyMenuDescription,
                       textAlign: TextAlign.center,
                       style: TextStyle(color: context.textSecondary, fontSize: 13, height: 1.4),
                     ),
@@ -1931,7 +2449,7 @@ class _RestaurantMenuManagementScreenState
                         ElevatedButton.icon(
                           onPressed: () => _showAddEditDishModal(),
                           icon: const Icon(Icons.add_rounded, size: 18),
-                          label: const Text('Add Food Item', style: TextStyle(fontWeight: FontWeight.bold)),
+                          label: Text('Add ${_vl.itemSingular}', style: const TextStyle(fontWeight: FontWeight.bold)),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: ClassicTheme.infoBlue,
                             foregroundColor: Colors.white,
@@ -1976,7 +2494,7 @@ class _RestaurantMenuManagementScreenState
                     onChanged: (v) => setState(() => _searchQuery = v),
                     style: TextStyle(color: context.textPrimary, fontSize: 13),
                     decoration: InputDecoration(
-                      hintText: 'Search dishes, categories...',
+                      hintText: 'Search ${_vl.itemPlural.toLowerCase()}, categories...',
                       hintStyle: TextStyle(color: context.textSecondary, fontSize: 13),
                       prefixIcon: Icon(Icons.search_rounded, color: context.textSecondary, size: 20),
                       filled: true,
@@ -2065,7 +2583,7 @@ class _RestaurantMenuManagementScreenState
                               child: ConstrainedBox(
                                 constraints: BoxConstraints(minHeight: constraints.maxHeight),
                                 child: Center(
-                                  child: Text('No dishes match your search or filter.', style: TextStyle(color: context.textSecondary, fontSize: 13)),
+                                  child: Text('No ${_vl.itemPlural.toLowerCase()} match your search or filter.', style: TextStyle(color: context.textSecondary, fontSize: 13)),
                                 ),
                               ),
                             ),
@@ -2103,21 +2621,38 @@ class _RestaurantMenuManagementScreenState
                                 ),
                                 child: Row(
                                   children: [
-                                    // Veg / Non-Veg icon
-                                    Container(
-                                      padding: const EdgeInsets.all(4),
-                                      decoration: BoxDecoration(
-                                        color: dish['isVeg'] == true ? ClassicTheme.tintSuccess : ClassicTheme.tintDanger,
-                                        borderRadius: BorderRadius.circular(6),
-                                        border: Border.all(color: dish['isVeg'] == true ? ClassicTheme.successEmerald : ClassicTheme.dangerRed),
+                                    // Veg / Non-Veg icon (restaurants only)
+                                    if (_vertical == Verticals.restaurant) ...[
+                                      Container(
+                                        padding: const EdgeInsets.all(4),
+                                        decoration: BoxDecoration(
+                                          color: dish['isVeg'] == true ? ClassicTheme.tintSuccess : ClassicTheme.tintDanger,
+                                          borderRadius: BorderRadius.circular(6),
+                                          border: Border.all(color: dish['isVeg'] == true ? ClassicTheme.successEmerald : ClassicTheme.dangerRed),
+                                        ),
+                                        child: Icon(
+                                          Icons.circle,
+                                          color: dish['isVeg'] == true ? ClassicTheme.successEmerald : ClassicTheme.dangerRed,
+                                          size: 8,
+                                        ),
                                       ),
-                                      child: Icon(
-                                        Icons.circle,
-                                        color: dish['isVeg'] == true ? ClassicTheme.successEmerald : ClassicTheme.dangerRed,
-                                        size: 8,
+                                      const SizedBox(width: 12),
+                                    ],
+
+                                    // Optional Dish Photo Thumbnail
+                                    if (dish['imageUrl'] != null && dish['imageUrl'].toString().trim().isNotEmpty) ...[
+                                      ClipRRect(
+                                        borderRadius: BorderRadius.circular(8),
+                                        child: Image.network(
+                                          dish['imageUrl'].toString().trim(),
+                                          width: 44,
+                                          height: 44,
+                                          fit: BoxFit.cover,
+                                          errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                                        ),
                                       ),
-                                    ),
-                                    const SizedBox(width: 12),
+                                      const SizedBox(width: 10),
+                                    ],
 
                                     // Dish details
                                     Expanded(
@@ -2169,7 +2704,7 @@ class _RestaurantMenuManagementScreenState
                                                   style: const TextStyle(color: ClassicTheme.infoBlue, fontSize: 12, fontWeight: FontWeight.w600),
                                                 ),
                                               ),
-                                              if (dish['sendsToKitchen'] == false) ...[
+                                              if (_vertical == Verticals.restaurant && dish['sendsToKitchen'] == false) ...[
                                                 const SizedBox(width: 6),
                                                 Container(
                                                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -2199,6 +2734,57 @@ class _RestaurantMenuManagementScreenState
                                                     color: isTimeAvail ? ClassicTheme.warningAmber : ClassicTheme.dangerRed,
                                                     fontSize: 12,
                                                     fontWeight: FontWeight.w500,
+                                                  ),
+                                                ),
+                                              ],
+                                              if (dish['isTaxExempt'] == true || dish['is_tax_exempt'] == true) ...[
+                                                const SizedBox(width: 6),
+                                                Container(
+                                                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                                  decoration: BoxDecoration(
+                                                    color: ClassicTheme.warningAmber.withValues(alpha: 0.15),
+                                                    borderRadius: BorderRadius.circular(4),
+                                                    border: Border.all(color: ClassicTheme.warningAmber.withValues(alpha: 0.4)),
+                                                  ),
+                                                  child: const Text(
+                                                    'Tax Exempt',
+                                                    style: TextStyle(color: ClassicTheme.warningAmber, fontSize: 10, fontWeight: FontWeight.bold),
+                                                  ),
+                                                ),
+                                              ],
+                                              if (_vertical != Verticals.restaurant && dish['barcode'] != null && dish['barcode'].toString().isNotEmpty) ...[
+                                                const SizedBox(width: 6),
+                                                Container(
+                                                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                                  decoration: BoxDecoration(
+                                                    color: context.inputFill,
+                                                    borderRadius: BorderRadius.circular(4),
+                                                    border: Border.all(color: context.borderColor),
+                                                  ),
+                                                  child: Row(
+                                                    mainAxisSize: MainAxisSize.min,
+                                                    children: [
+                                                      const Icon(Icons.qr_code_2_rounded, size: 11, color: ClassicTheme.infoBlue),
+                                                      const SizedBox(width: 3),
+                                                      Text(
+                                                        '${dish['barcode']}',
+                                                        style: TextStyle(color: context.textSecondary, fontSize: 10),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ),
+                                              ],
+                                              if (_vertical != Verticals.restaurant && (dish['stockQuantity'] != null || dish['stock_quantity'] != null)) ...[
+                                                const SizedBox(width: 6),
+                                                Container(
+                                                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                                  decoration: BoxDecoration(
+                                                    color: ClassicTheme.tintSuccess,
+                                                    borderRadius: BorderRadius.circular(4),
+                                                  ),
+                                                  child: Text(
+                                                    'Stock: ${(dish['stockQuantity'] ?? dish['stock_quantity'])} ${dish['unit'] ?? 'pcs'}',
+                                                    style: const TextStyle(color: ClassicTheme.successEmerald, fontSize: 10, fontWeight: FontWeight.bold),
                                                   ),
                                                 ),
                                               ],

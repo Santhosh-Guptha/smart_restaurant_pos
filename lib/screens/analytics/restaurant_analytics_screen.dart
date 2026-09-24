@@ -84,13 +84,31 @@ class _RestaurantAnalyticsScreenState
 
   Future<void> _initTenantOutlets() async {
     final saasSession = ref.read(saasSessionProvider);
+    final user = saasSession.currentUser;
     final org = saasSession.currentOrganization;
     final orgId = org?.id ?? 'default';
     final orgName = org?.name ?? 'Main Store';
 
-    final outlets = <Map<String, String>>[
-      {'id': orgId, 'name': orgName},
-    ];
+    // If staff user is locked to an outlet, ONLY show that allocated outlet
+    if (user?.franchiseId != null && user!.franchiseId!.isNotEmpty) {
+      final assignedId = user.franchiseId!;
+      final outlets = <Map<String, String>>[
+        {'id': assignedId, 'name': orgName},
+      ];
+      if (mounted) {
+        setState(() {
+          _availableOutlets = outlets;
+          _singleSelectedOutletId = assignedId;
+          _multiSelectedOutletIds.clear();
+          _multiSelectedOutletIds.add(assignedId);
+          _scopeMode = StoreScopeMode.individual;
+        });
+        _computeLiveAnalytics();
+      }
+      return;
+    }
+
+    final outlets = <Map<String, String>>[];
 
     // Sibling outlets only exist for multiOutlet tenants; the lookup runs
     // through the cloud gate so an offline tenant never reaches Firestore.
@@ -101,7 +119,7 @@ class _RestaurantAnalyticsScreenState
             .where('organizationId', isEqualTo: orgId)
             .get());
     try {
-      if (snap != null) {
+      if (snap != null && snap.docs.isNotEmpty) {
         for (final doc in snap.docs) {
           final data = doc.data();
           final id = doc.id;
@@ -112,6 +130,11 @@ class _RestaurantAnalyticsScreenState
         }
       }
     } catch (_) {}
+
+    // Fallback to primary store if no outlet documents exist yet
+    if (outlets.isEmpty) {
+      outlets.add({'id': orgId, 'name': orgName});
+    }
 
     if (mounted) {
       setState(() {
@@ -175,7 +198,12 @@ class _RestaurantAnalyticsScreenState
       for (final oId in activeOutletIds) {
         final Map<String, Map<String, dynamic>> outletOrdersMap = {};
 
-        final rawOrders = box.get('kot_orders_$oId');
+        dynamic rawOrders = box.get('kot_orders_$oId');
+        if ((rawOrders == null || (rawOrders is List && rawOrders.isEmpty)) && oId.startsWith('outlet_')) {
+          rawOrders = box.get('kot_orders_${oId.replaceFirst('outlet_', '')}');
+        } else if ((rawOrders == null || (rawOrders is List && rawOrders.isEmpty)) && !oId.startsWith('outlet_')) {
+          rawOrders = box.get('kot_orders_outlet_$oId');
+        }
         if (rawOrders is List) {
           for (final it in rawOrders) {
             if (it is Map) {
@@ -189,7 +217,12 @@ class _RestaurantAnalyticsScreenState
           }
         }
 
-        final rawBills = box.get('bills_$oId');
+        dynamic rawBills = box.get('bills_$oId');
+        if ((rawBills == null || (rawBills is List && rawBills.isEmpty)) && oId.startsWith('outlet_')) {
+          rawBills = box.get('bills_${oId.replaceFirst('outlet_', '')}');
+        } else if ((rawBills == null || (rawBills is List && rawBills.isEmpty)) && !oId.startsWith('outlet_')) {
+          rawBills = box.get('bills_outlet_$oId');
+        }
         if (rawBills is List) {
           for (final it in rawBills) {
             if (it is Map) {
@@ -1404,6 +1437,10 @@ class _RestaurantAnalyticsScreenState
   }
 
   Widget _buildStoreScopeSelector() {
+    final saasSession = ref.watch(saasSessionProvider);
+    final orgName = saasSession.currentOrganization?.name ?? 'Main Store';
+    final hasMultipleOutlets = _availableOutlets.length > 1;
+
     return Container(
       margin: const EdgeInsets.only(bottom: 14),
       padding: const EdgeInsets.all(12),
@@ -1415,49 +1452,110 @@ class _RestaurantAnalyticsScreenState
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              const Icon(Icons.store_mall_directory_rounded, size: 18, color: amberAccent),
-              const SizedBox(width: 8),
-              Text(
-                'Store Scope',
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.bold,
-                  color: context.textPrimary,
+          if (hasMultipleOutlets)
+            Row(
+              children: [
+                const Icon(Icons.store_mall_directory_rounded, size: 18, color: amberAccent),
+                const SizedBox(width: 8),
+                Text(
+                  'Branch Scope',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                    color: context.textPrimary,
+                  ),
                 ),
-              ),
-              const Spacer(),
-              SegmentedButton<StoreScopeMode>(
-                segments: const [
-                  ButtonSegment(
-                    value: StoreScopeMode.all,
-                    label: Text('All Stores', style: TextStyle(fontSize: 12)),
-                    icon: Icon(Icons.domain_rounded, size: 14),
+                const Spacer(),
+                SegmentedButton<StoreScopeMode>(
+                  segments: const [
+                    ButtonSegment(
+                      value: StoreScopeMode.all,
+                      label: Text('All Branches', style: TextStyle(fontSize: 12)),
+                      icon: Icon(Icons.domain_rounded, size: 14),
+                    ),
+                    ButtonSegment(
+                      value: StoreScopeMode.individual,
+                      label: Text('Individual', style: TextStyle(fontSize: 12)),
+                      icon: Icon(Icons.storefront_rounded, size: 14),
+                    ),
+                    ButtonSegment(
+                      value: StoreScopeMode.selected,
+                      label: Text('Selected', style: TextStyle(fontSize: 12)),
+                      icon: Icon(Icons.checklist_rounded, size: 14),
+                    ),
+                  ],
+                  selected: {_scopeMode},
+                  onSelectionChanged: (set) {
+                    setState(() => _scopeMode = set.first);
+                    _computeLiveAnalytics();
+                  },
+                  style: const ButtonStyle(
+                    visualDensity: VisualDensity.compact,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
-                  ButtonSegment(
-                    value: StoreScopeMode.individual,
-                    label: Text('Individual', style: TextStyle(fontSize: 12)),
-                    icon: Icon(Icons.storefront_rounded, size: 14),
-                  ),
-                  ButtonSegment(
-                    value: StoreScopeMode.selected,
-                    label: Text('Selected', style: TextStyle(fontSize: 12)),
-                    icon: Icon(Icons.checklist_rounded, size: 14),
-                  ),
-                ],
-                selected: {_scopeMode},
-                onSelectionChanged: (set) {
-                  setState(() => _scopeMode = set.first);
-                  _computeLiveAnalytics();
-                },
-                style: const ButtonStyle(
-                  visualDensity: VisualDensity.compact,
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 ),
-              ),
-            ],
-          ),
+              ],
+            )
+          else
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: amberAccent.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(Icons.storefront_rounded, size: 18, color: amberAccent),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'OPERATING STORE CONTEXT',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 0.8,
+                          color: context.textSecondary,
+                        ),
+                      ),
+                      const SizedBox(height: 1),
+                      Text(
+                        _availableOutlets.isNotEmpty ? (_availableOutlets.first['name'] ?? orgName) : orgName,
+                        style: TextStyle(
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.bold,
+                          color: context.textPrimary,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: ClassicTheme.successEmerald.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: ClassicTheme.successEmerald.withValues(alpha: 0.3)),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.lock_outline_rounded, size: 12, color: ClassicTheme.successEmerald),
+                      SizedBox(width: 4),
+                      Text(
+                        'Allocated Store',
+                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: ClassicTheme.successEmerald),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           if (_scopeMode == StoreScopeMode.individual && _availableOutlets.isNotEmpty) ...[
             const SizedBox(height: 10),
             SingleChildScrollView(

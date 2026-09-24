@@ -250,9 +250,8 @@ class RestaurantTable {
     this.currentOrderSource,
   });
 
-  /// Returns the secure clean QR menu URL with tamper-proof HMAC table signature
   String get qrMenuUrl {
-    if (qrUrl != null && qrUrl!.isNotEmpty && qrUrl!.contains('smartdine-pos.web.app')) return qrUrl!;
+    if (qrUrl != null && qrUrl!.isNotEmpty && (qrUrl!.contains('smartdine-pos.web.app') || qrUrl!.contains('smartbizz.devmonks.space') || qrUrl!.contains('devmonks.space') || qrUrl!.contains('firebaseapp.com'))) return qrUrl!;
     final storeParam = (storeId != null && storeId!.isNotEmpty) ? '&store=$storeId' : '';
     final sig = SaasCryptoService.generateTableSignature(
       orgId: organizationId,
@@ -659,6 +658,7 @@ class KotItem {
   final bool sendsToKitchen;
   final int? seatNo;
   final List<ItemModifierOption> selectedModifiers;
+  final bool isTaxExempt;
 
   String get id => productId;
 
@@ -697,6 +697,7 @@ class KotItem {
     this.sendsToKitchen = true,
     this.seatNo,
     this.selectedModifiers = const [],
+    this.isTaxExempt = false,
   });
 
   Map<String, dynamic> toMap() {
@@ -722,6 +723,8 @@ class KotItem {
       'seat_no': seatNo,
       'selectedModifiers': selectedModifiers.map((m) => m.toMap()).toList(),
       'subtotal': unitPriceWithModifiers * qty,
+      'isTaxExempt': isTaxExempt,
+      'is_tax_exempt': isTaxExempt,
     };
   }
 
@@ -751,6 +754,7 @@ class KotItem {
       selectedModifiers: ((map['selectedModifiers'] as List?) ?? (map['modifiers'] as List?) ?? [])
           .map((m) => ItemModifierOption.fromMap(Map<String, dynamic>.from(m as Map)))
           .toList(),
+      isTaxExempt: map['isTaxExempt'] == true || map['is_tax_exempt'] == true,
     );
   }
 
@@ -774,6 +778,7 @@ class KotItem {
     bool? sendsToKitchen,
     int? seatNo,
     List<ItemModifierOption>? selectedModifiers,
+    bool? isTaxExempt,
   }) {
     return KotItem(
       lineId: lineId ?? this.lineId,
@@ -795,6 +800,7 @@ class KotItem {
       sendsToKitchen: sendsToKitchen ?? this.sendsToKitchen,
       seatNo: seatNo ?? this.seatNo,
       selectedModifiers: selectedModifiers ?? this.selectedModifiers,
+      isTaxExempt: isTaxExempt ?? this.isTaxExempt,
     );
   }
 }
@@ -1296,6 +1302,17 @@ class RestaurantMenuItem {
   final String? imageUrl;
   final bool sendsToKitchen;
   final List<ItemModifierGroup> modifierGroups;
+  final bool isTaxExempt;
+
+  // Retail & Grocery Extension Fields (Optional / Backward Compatible)
+  final String? barcode;          // EAN/UPC barcode
+  final String? sku;              // Stock keeping unit
+  final String? unit;             // e.g. 'pcs', 'kg', 'g', 'pack', 'box', 'strip'
+  final double? stockQuantity;    // Current stock count
+  final double? lowStockThreshold; // Alert threshold
+  final double? mrp;              // Maximum retail price
+  final double? costPrice;        // Purchase/wholesale cost price
+  final String? hsnCode;          // GST HSN commodity code
 
   const RestaurantMenuItem({
     required this.id,
@@ -1316,6 +1333,15 @@ class RestaurantMenuItem {
     this.imageUrl,
     this.sendsToKitchen = true,
     this.modifierGroups = const [],
+    this.isTaxExempt = false,
+    this.barcode,
+    this.sku,
+    this.unit = 'pcs',
+    this.stockQuantity,
+    this.lowStockThreshold,
+    this.mrp,
+    this.costPrice,
+    this.hsnCode,
   });
 
   /// Evaluates whether the dish is currently orderable based on stock & time-window.
@@ -1372,6 +1398,16 @@ class RestaurantMenuItem {
       'imageUrl': imageUrl,
       'sendsToKitchen': sendsToKitchen,
       'modifierGroups': modifierGroups.map((m) => m.toMap()).toList(),
+      'isTaxExempt': isTaxExempt,
+      'is_tax_exempt': isTaxExempt,
+      'barcode': barcode,
+      'sku': sku,
+      'unit': unit,
+      'stockQuantity': stockQuantity,
+      'lowStockThreshold': lowStockThreshold,
+      'mrp': mrp,
+      'costPrice': costPrice,
+      'hsnCode': hsnCode,
       'updatedAt': DateTime.now().toIso8601String(),
     };
   }
@@ -1400,6 +1436,15 @@ class RestaurantMenuItem {
       modifierGroups: ((map['modifierGroups'] as List?) ?? (map['modifiers'] as List?) ?? [])
           .map((m) => ItemModifierGroup.fromMap(Map<String, dynamic>.from(m as Map)))
           .toList(),
+      isTaxExempt: map['isTaxExempt'] == true || map['is_tax_exempt'] == true,
+      barcode: map['barcode']?.toString(),
+      sku: map['sku']?.toString(),
+      unit: map['unit']?.toString() ?? 'pcs',
+      stockQuantity: (map['stockQuantity'] as num?)?.toDouble() ?? (map['stock_quantity'] as num?)?.toDouble(),
+      lowStockThreshold: (map['lowStockThreshold'] as num?)?.toDouble() ?? (map['low_stock_threshold'] as num?)?.toDouble(),
+      mrp: (map['mrp'] as num?)?.toDouble(),
+      costPrice: (map['costPrice'] as num?)?.toDouble() ?? (map['cost_price'] as num?)?.toDouble(),
+      hsnCode: map['hsnCode']?.toString() ?? map['hsn_code']?.toString(),
     );
   }
 
@@ -1422,6 +1467,15 @@ class RestaurantMenuItem {
     String? imageUrl,
     bool? sendsToKitchen,
     List<ItemModifierGroup>? modifierGroups,
+    bool? isTaxExempt,
+    String? barcode,
+    String? sku,
+    String? unit,
+    double? stockQuantity,
+    double? lowStockThreshold,
+    double? mrp,
+    double? costPrice,
+    String? hsnCode,
   }) {
     return RestaurantMenuItem(
       id: id ?? this.id,
@@ -1442,6 +1496,15 @@ class RestaurantMenuItem {
       imageUrl: imageUrl ?? this.imageUrl,
       sendsToKitchen: sendsToKitchen ?? this.sendsToKitchen,
       modifierGroups: modifierGroups ?? this.modifierGroups,
+      isTaxExempt: isTaxExempt ?? this.isTaxExempt,
+      barcode: barcode ?? this.barcode,
+      sku: sku ?? this.sku,
+      unit: unit ?? this.unit,
+      stockQuantity: stockQuantity ?? this.stockQuantity,
+      lowStockThreshold: lowStockThreshold ?? this.lowStockThreshold,
+      mrp: mrp ?? this.mrp,
+      costPrice: costPrice ?? this.costPrice,
+      hsnCode: hsnCode ?? this.hsnCode,
     );
   }
 }

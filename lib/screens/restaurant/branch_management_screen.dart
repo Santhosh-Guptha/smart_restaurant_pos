@@ -13,10 +13,12 @@ import '../../services/table_qr_pdf_service.dart';
 import '../../services/ordering_platform_config_service.dart';
 import '../../core/entitlements.dart';
 import '../../core/feature_route_guard.dart';
+import '../../core/constants.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class BranchManagementScreen extends ConsumerStatefulWidget {
-  const BranchManagementScreen({super.key});
+  final String? initialOrgId;
+  const BranchManagementScreen({super.key, this.initialOrgId});
 
   @override
   ConsumerState<BranchManagementScreen> createState() =>
@@ -45,17 +47,17 @@ class _BranchManagementScreenState
       showDialog(
         context: context,
         builder: (ctx) => AlertDialog(
-          backgroundColor: ClassicTheme.cardSurfaceDark,
+          backgroundColor: context.surfaceColor,
           shape:
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-          title: const Row(
+          title: Row(
             children: [
-              Icon(Icons.lock_outline_rounded, color: ClassicTheme.warningAmber, size: 24),
-              SizedBox(width: 10),
+              const Icon(Icons.lock_outline_rounded, color: ClassicTheme.warningAmber, size: 24),
+              const SizedBox(width: 10),
               Text(
                 'Branch Limit Reached',
                 style:
-                    TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                    TextStyle(color: context.textPrimary, fontWeight: FontWeight.bold),
               ),
             ],
           ),
@@ -96,7 +98,7 @@ class _BranchManagementScreenState
       barrierDismissible: false,
       builder: (dialogCtx) => StatefulBuilder(
         builder: (dialogCtx, setDialogState) => AlertDialog(
-          backgroundColor: ClassicTheme.cardSurfaceDark,
+          backgroundColor: context.surfaceColor,
           shape:
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
           title: Row(
@@ -111,11 +113,11 @@ class _BranchManagementScreenState
                     color: ClassicTheme.warningAmber, size: 22),
               ),
               const SizedBox(width: 12),
-              const Expanded(
+              Expanded(
                 child: Text(
                   'Register Restaurant Branch',
                   style: TextStyle(
-                    color: Colors.white,
+                    color: context.textPrimary,
                     fontWeight: FontWeight.bold,
                     fontSize: 18,
                   ),
@@ -145,12 +147,12 @@ class _BranchManagementScreenState
                     const SizedBox(height: 10),
                     TextFormField(
                       controller: nameCtrl,
-                      style: const TextStyle(color: Colors.white),
+                      style: TextStyle(color: context.textPrimary),
                       decoration: InputDecoration(
                         labelText: 'Branch / Outlet Name *',
                         labelStyle: TextStyle(color: context.textSecondary),
                         hintText: 'e.g. $orgName - Downtown Branch',
-                        hintStyle: const TextStyle(color: Colors.white24),
+                        hintStyle: TextStyle(color: context.textMuted),
                         prefixIcon: const Icon(Icons.storefront_rounded,
                             color: ClassicTheme.warningAmber, size: 20),
                         filled: true,
@@ -172,7 +174,7 @@ class _BranchManagementScreenState
                           child: TextFormField(
                             controller: tableCountCtrl,
                             keyboardType: TextInputType.number,
-                            style: const TextStyle(color: Colors.white),
+                            style: TextStyle(color: context.textPrimary),
                             decoration: InputDecoration(
                               labelText: 'Dining Tables',
                               labelStyle:
@@ -202,8 +204,8 @@ class _BranchManagementScreenState
                           child: DropdownButtonFormField<String>(
                             initialValue: operatingMode,
                             dropdownColor: context.surfaceColor,
-                            style: const TextStyle(
-                                color: Colors.white, fontSize: 13),
+                            style: TextStyle(
+                                color: context.textPrimary, fontSize: 13),
                             decoration: InputDecoration(
                               labelText: 'Operating Service Flow',
                               labelStyle:
@@ -242,12 +244,12 @@ class _BranchManagementScreenState
 
                     TextFormField(
                       controller: addressCtrl,
-                      style: const TextStyle(color: Colors.white),
+                      style: TextStyle(color: context.textPrimary),
                       decoration: InputDecoration(
                         labelText: 'Outlet Address',
                         labelStyle: TextStyle(color: context.textSecondary),
                         hintText: 'Street, Landmark, City',
-                        hintStyle: const TextStyle(color: Colors.white24),
+                        hintStyle: TextStyle(color: context.textMuted),
                         prefixIcon: const Icon(Icons.location_on_outlined,
                             color: ClassicTheme.warningAmber, size: 20),
                         filled: true,
@@ -266,7 +268,7 @@ class _BranchManagementScreenState
                           child: TextFormField(
                             controller: phoneCtrl,
                             keyboardType: TextInputType.phone,
-                            style: const TextStyle(color: Colors.white),
+                            style: TextStyle(color: context.textPrimary),
                             decoration: InputDecoration(
                               labelText: 'Branch Phone',
                               labelStyle:
@@ -286,13 +288,13 @@ class _BranchManagementScreenState
                         Expanded(
                           child: TextFormField(
                             controller: upiCtrl,
-                            style: const TextStyle(color: Colors.white),
+                            style: TextStyle(color: context.textPrimary),
                             decoration: InputDecoration(
                               labelText: 'Branch UPI ID (VPA)',
                               labelStyle:
                                   TextStyle(color: context.textSecondary),
                               hintText: 'branch@upi',
-                              hintStyle: const TextStyle(color: Colors.white24),
+                              hintStyle: TextStyle(color: context.textMuted),
                               prefixIcon: const Icon(Icons.qr_code_rounded,
                                   color: ClassicTheme.warningAmber, size: 20),
                               filled: true,
@@ -503,6 +505,10 @@ class _BranchManagementScreenState
                               address.isNotEmpty ? address : branchName,
                           'address': address,
                           'phone': phone,
+                          'spreadsheet_id': sheetId,
+                          'sheet_url': sheetUrl,
+                          'googleSheetId': sheetId,
+                          'googleSheetUrl': sheetUrl,
                           'status': 'ACTIVE',
                           'is_active': true,
                           'createdAt': FieldValue.serverTimestamp(),
@@ -600,13 +606,13 @@ class _BranchManagementScreenState
       context: context,
       builder: (dialogCtx) => StatefulBuilder(
         builder: (dialogCtx, setDialogState) => AlertDialog(
-          backgroundColor: ClassicTheme.cardSurfaceDark,
+          backgroundColor: context.surfaceColor,
           shape:
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
           title: Text(
             'Edit ${outlet.name}',
-            style: const TextStyle(
-                color: Colors.white, fontWeight: FontWeight.bold),
+            style: TextStyle(
+                color: context.textPrimary, fontWeight: FontWeight.bold),
           ),
           content: SizedBox(
             width: ClassicTheme.dialogWidth(context, 500),
@@ -617,7 +623,7 @@ class _BranchManagementScreenState
                 children: [
                   TextFormField(
                     controller: nameCtrl,
-                    style: const TextStyle(color: Colors.white),
+                    style: TextStyle(color: context.textPrimary),
                     decoration: InputDecoration(
                       labelText: 'Branch Name',
                       labelStyle: TextStyle(color: context.textSecondary),
@@ -638,7 +644,7 @@ class _BranchManagementScreenState
                         child: TextFormField(
                           controller: tableCountCtrl,
                           keyboardType: TextInputType.number,
-                          style: const TextStyle(color: Colors.white),
+                          style: TextStyle(color: context.textPrimary),
                           decoration: InputDecoration(
                             labelText: 'Dining Tables',
                             labelStyle:
@@ -657,8 +663,8 @@ class _BranchManagementScreenState
                         child: DropdownButtonFormField<String>(
                           initialValue: operatingMode,
                           dropdownColor: context.surfaceColor,
-                          style: const TextStyle(
-                              color: Colors.white, fontSize: 13),
+                          style: TextStyle(
+                              color: context.textPrimary, fontSize: 13),
                           decoration: InputDecoration(
                             labelText: 'Service Flow',
                             labelStyle:
@@ -696,7 +702,7 @@ class _BranchManagementScreenState
                   const SizedBox(height: 12),
                   TextFormField(
                     controller: addressCtrl,
-                    style: const TextStyle(color: Colors.white),
+                    style: TextStyle(color: context.textPrimary),
                     decoration: InputDecoration(
                       labelText: 'Address',
                       labelStyle: TextStyle(color: context.textSecondary),
@@ -715,7 +721,7 @@ class _BranchManagementScreenState
                         child: TextFormField(
                           controller: phoneCtrl,
                           keyboardType: TextInputType.phone,
-                          style: const TextStyle(color: Colors.white),
+                          style: TextStyle(color: context.textPrimary),
                           decoration: InputDecoration(
                             labelText: 'Phone',
                             labelStyle:
@@ -733,7 +739,7 @@ class _BranchManagementScreenState
                       Expanded(
                         child: TextFormField(
                           controller: upiCtrl,
-                          style: const TextStyle(color: Colors.white),
+                          style: TextStyle(color: context.textPrimary),
                           decoration: InputDecoration(
                             labelText: 'UPI VPA',
                             labelStyle:
@@ -827,7 +833,16 @@ class _BranchManagementScreenState
     final org = saasSession.currentOrganization;
     final license = saasSession.currentLicense;
 
-    final orgId = user?.organizationId ?? org?.id ?? '';
+    final bool isMasterAdmin = (user?.role.toUpperCase() == 'MASTER_ADMIN') ||
+        isMasterAdminEmail(user?.email);
+    final orgId = (isMasterAdmin && widget.initialOrgId != null && widget.initialOrgId!.isNotEmpty)
+        ? widget.initialOrgId!
+        : (resolveOutletId(
+            userOrgId: user?.organizationId,
+            sessionOrgId: org?.id,
+          ).isNotEmpty
+              ? resolveOutletId(userOrgId: user?.organizationId, sessionOrgId: org?.id)
+              : ((org?.id.isNotEmpty == true) ? org!.id : (user?.organizationId ?? '')));
     final orgName = org?.name ?? 'Restaurant';
     final maxBranches = license?.maxFranchises ?? 3;
     final activeBranchId = saasSession.activeFranchiseId;
@@ -929,8 +944,8 @@ class _BranchManagementScreenState
                       name: data['name'] ?? 'Main Branch',
                       storeAdminEmail: data['admin_email'] ?? user?.email ?? '',
                       storeAdminName: data['admin_name'] ?? 'Store Admin',
-                      googleSheetId: data['spreadsheet_id'],
-                      googleSheetUrl: data['sheet_url'],
+                      googleSheetId: data['spreadsheet_id'] ?? data['googleSheetId'],
+                      googleSheetUrl: data['sheet_url'] ?? data['googleSheetUrl'],
                       tableCount: (data['tableCount'] ?? 10) as int,
                       operatingMode:
                           data['operatingMode'] ?? 'dineFirstPostpaid',
@@ -940,6 +955,46 @@ class _BranchManagementScreenState
                       isActive: data['is_active'] != false,
                     );
                   }).toList();
+                }
+
+                // If still empty but organization is valid, auto-heal primary outlet
+                if (outlets.isEmpty && org != null && orgId.isNotEmpty && orgId != 'ORG_DEFAULT') {
+                  final primaryOutlet = RestaurantOutlet(
+                    id: 'outlet_$orgId',
+                    organizationId: orgId,
+                    name: org.name.isNotEmpty ? '${org.name} (Main Branch)' : 'Main Branch',
+                    storeAdminEmail: org.ownerGoogleEmail ?? user?.email ?? '',
+                    storeAdminName: user?.fullName ?? 'Store Admin',
+                    googleSheetId: org.googleSheetId,
+                    googleSheetUrl: org.googleSheetUrl,
+                    tableCount: 10,
+                    operatingMode: 'dineFirstPostpaid',
+                    address: org.address ?? 'Main Branch',
+                    phone: org.phone,
+                    upiId: org.upiId,
+                    isActive: true,
+                  );
+                  outlets = [primaryOutlet];
+
+                  // Heal to Firestore in background
+                  FirebaseFirestore.instance.collection('outlets').doc('outlet_$orgId').set({
+                    'id': 'outlet_$orgId',
+                    'organizationId': orgId,
+                    'name': primaryOutlet.name,
+                    'storeAdminEmail': primaryOutlet.storeAdminEmail,
+                    'storeAdminName': primaryOutlet.storeAdminName,
+                    'googleSheetId': primaryOutlet.googleSheetId ?? '',
+                    'googleSheetUrl': '',
+                    'tableCount': primaryOutlet.tableCount,
+                    'operatingMode': primaryOutlet.operatingMode,
+                    'address': primaryOutlet.address ?? '',
+                    'phone': primaryOutlet.phone ?? '',
+                    'upiId': primaryOutlet.upiId ?? '',
+                    'isActive': true,
+                    'createdAt': FieldValue.serverTimestamp(),
+                  }, SetOptions(merge: true)).catchError((e) {
+                    debugPrint('Auto-heal outlet error: $e');
+                  });
                 }
 
                 return _buildOutletsContent(
@@ -1323,12 +1378,16 @@ class _BranchManagementScreenState
                   children: [
                     Row(
                       children: [
-                        Text(
-                          outlet.name,
-                          style: TextStyle(
-                            color: context.textPrimary,
-                            fontSize: 17,
-                            fontWeight: FontWeight.bold,
+                        Flexible(
+                          child: Text(
+                            outlet.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: context.textPrimary,
+                              fontSize: 17,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                         ),
                         if (isCurrentActive) ...[
@@ -1368,39 +1427,46 @@ class _BranchManagementScreenState
                   ],
                 ),
               ),
-              // Operating Mode Tag
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                decoration: BoxDecoration(
-                  color: modeColor.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  modeLabel,
-                  style: TextStyle(
-                    color: modeColor,
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 10),
-              // Table Count Tag
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                decoration: BoxDecoration(
-                  color: context.canvasColor,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  '${outlet.tableCount} Tables',
-                  style: TextStyle(
-                    color: context.textSecondary,
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                  ),
+              Flexible(
+                child: Wrap(
+                  spacing: 10,
+                  runSpacing: 6,
+                  children: [
+                    // Operating Mode Tag
+                    Container(
+                      padding:
+                          const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: modeColor.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        modeLabel,
+                        style: TextStyle(
+                          color: modeColor,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    // Table Count Tag
+                    Container(
+                      padding:
+                          const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: context.canvasColor,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        '${outlet.tableCount} Tables',
+                        style: TextStyle(
+                          color: context.textSecondary,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
@@ -1413,10 +1479,14 @@ class _BranchManagementScreenState
                 Icon(Icons.location_on_outlined,
                     size: 14, color: context.textSecondary),
                 const SizedBox(width: 6),
-                Text(
-                  outlet.address!,
-                  style:
-                      TextStyle(color: context.textSecondary, fontSize: 12),
+                Expanded(
+                  child: Text(
+                    outlet.address!,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style:
+                        TextStyle(color: context.textSecondary, fontSize: 12),
+                  ),
                 ),
                 if (outlet.phone != null && outlet.phone!.isNotEmpty) ...[
                   const SizedBox(width: 16),
@@ -1484,6 +1554,7 @@ class _BranchManagementScreenState
                     border: Border.all(color: ClassicTheme.warningAmber.withValues(alpha: 0.3)),
                   ),
                   child: const Row(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
                       Icon(Icons.radio_button_checked_rounded,
                           size: 16, color: ClassicTheme.warningAmber),

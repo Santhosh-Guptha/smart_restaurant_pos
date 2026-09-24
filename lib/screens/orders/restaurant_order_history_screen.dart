@@ -87,13 +87,25 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
 
   Future<void> _initOutlets() async {
     final saasSession = ref.read(saasSessionProvider);
+    final user = saasSession.currentUser;
     final currentOrgId = _getEffectiveOrgId();
     final orgName = saasSession.currentOrganization?.name ?? 'Main Store';
 
-    final outlets = <Map<String, String>>[
-      {'id': 'ALL', 'name': 'All Stores'},
-      if (currentOrgId.isNotEmpty) {'id': currentOrgId, 'name': orgName},
-    ];
+    // If staff user is locked to an outlet, ONLY show that outlet
+    if (user?.franchiseId != null && user!.franchiseId!.isNotEmpty) {
+      final assignedId = user.franchiseId!;
+      if (mounted) {
+        setState(() {
+          _availableOutlets = [
+            {'id': assignedId, 'name': orgName},
+          ];
+          _selectedOutlet = assignedId;
+        });
+      }
+      return;
+    }
+
+    final rawOutlets = <Map<String, String>>[];
 
     // Sibling outlets live in Firestore and only matter with multiOutlet.
     final snap = !_hasMultiOutlet || currentOrgId.isEmpty
@@ -103,21 +115,36 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
             .where('organizationId', isEqualTo: currentOrgId)
             .get());
     try {
-      if (snap != null) {
+      if (snap != null && snap.docs.isNotEmpty) {
         for (final doc in snap.docs) {
           final data = doc.data();
           final id = doc.id;
           final name = (data['name'] ?? id).toString();
-          if (!outlets.any((o) => o['id'] == id)) {
-            outlets.add({'id': id, 'name': name});
+          if (!rawOutlets.any((o) => o['id'] == id)) {
+            rawOutlets.add({'id': id, 'name': name});
           }
         }
       }
     } catch (_) {}
 
+    final outlets = <Map<String, String>>[];
+    if (rawOutlets.length > 1) {
+      outlets.add({'id': 'ALL', 'name': 'All Branches'});
+      outlets.addAll(rawOutlets);
+    } else if (rawOutlets.length == 1) {
+      outlets.add(rawOutlets.first);
+    } else {
+      if (currentOrgId.isNotEmpty) {
+        outlets.add({'id': currentOrgId, 'name': orgName});
+      }
+    }
+
     if (mounted) {
       setState(() {
         _availableOutlets = outlets;
+        if (outlets.isNotEmpty && !outlets.any((o) => o['id'] == _selectedOutlet)) {
+          _selectedOutlet = outlets.first['id'] ?? 'ALL';
+        }
       });
     }
   }
@@ -1150,8 +1177,8 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
                           Text(
                             _availableOutlets.firstWhere(
                               (o) => o['id'] == _selectedOutlet,
-                              orElse: () => {'name': 'All Stores'},
-                            )['name'] ?? 'All Stores',
+                              orElse: () => {'name': 'All Branches'},
+                            )['name'] ?? 'All Branches',
                             style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: ClassicTheme.warningAmber),
                           ),
                           const Icon(Icons.arrow_drop_down, size: 16, color: ClassicTheme.warningAmber),

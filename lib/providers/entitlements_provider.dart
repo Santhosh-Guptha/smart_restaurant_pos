@@ -14,6 +14,7 @@ final entitlementsProvider = Provider<Entitlements>((ref) {
   final session = ref.watch(saasSessionProvider);
   final role = (session.currentUser?.role ?? '').toUpperCase();
   final isPlatformAdmin = role == 'MASTER_ADMIN';
+  final vertical = ref.watch(currentVerticalProvider);
 
   final resolved = Entitlements.fromLicense(
     session.currentLicense,
@@ -21,6 +22,7 @@ final entitlementsProvider = Provider<Entitlements>((ref) {
     // Offline is a property of the organisation's storage mode, not a
     // feature flag. The legacy flag is still honoured inside fromLicense.
     storageMode: session.currentOrganization?.storageMode,
+    vertical: vertical,
   );
 
   // The one place the network switch is set. Everything that talks to the

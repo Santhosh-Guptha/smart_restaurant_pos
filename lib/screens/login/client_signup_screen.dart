@@ -34,7 +34,13 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
   final _confirmPasswordController = TextEditingController();
 
   String _businessCategory = 'Restaurant & Cafe';
-  bool _isFreeTrial = true; // true = Instant 14-day Free Trial, false = Custom/Enterprise request
+
+  /// Onboarding option: 'free_trial' | PlanProfile ID | 'enterprise'
+  String _selectedOption = 'free_trial';
+  bool get _isFreeTrial => _selectedOption == 'free_trial';
+  bool get _isEnterprise => _selectedOption == 'enterprise';
+  bool get _isPaidPackage => !_isFreeTrial && !_isEnterprise;
+
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
 
@@ -53,6 +59,7 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
       RegExp(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$');
 
   final List<String> _categories = const [
+    // Restaurant sub-categories
     'Restaurant & Cafe',
     'Fast Food / QSR',
     'Fine Dining & Bar',
@@ -62,6 +69,11 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
     'Pizzeria / Italian',
     'Coffee House / Tea Lounge',
     'Other Hospitality',
+    // Retail verticals
+    'Kirana / Grocery Store',
+    'Supermarket / Departmental Store',
+    'Pharmacy / Medical Store',
+    'General Retail / Fashion / Electronics',
   ];
 
   @override
@@ -115,6 +127,288 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
         if (mounted) setState(() => _resendCooldown--);
       }
     });
+  }
+
+  String get _vertical => Verticals.forCategory(_businessCategory);
+
+  IconData get _categoryHeaderIcon {
+    switch (_vertical) {
+      case Verticals.restaurant:
+        return Icons.restaurant_rounded;
+      case Verticals.kirana:
+        return Icons.storefront_rounded;
+      case Verticals.supermarket:
+        return Icons.shopping_cart_rounded;
+      case Verticals.pharmacy:
+        return Icons.local_pharmacy_rounded;
+      case Verticals.retail:
+        return Icons.shopping_bag_rounded;
+      default:
+        return Icons.storefront_rounded;
+    }
+  }
+
+  String get _categoryHeaderTitle {
+    switch (_vertical) {
+      case Verticals.restaurant:
+        return "Onboard Your Restaurant & Cafe";
+      case Verticals.kirana:
+        return "Onboard Your Kirana Store";
+      case Verticals.supermarket:
+        return "Onboard Your Supermarket";
+      case Verticals.pharmacy:
+        return "Onboard Your Pharmacy";
+      case Verticals.retail:
+        return "Onboard Your Retail Store";
+      default:
+        return "Onboard Your Business";
+    }
+  }
+
+  String get _categoryHeaderSubtitle {
+    switch (_vertical) {
+      case Verticals.restaurant:
+        return "Get instant access to POS billing, tables, KDS, and QR ordering.";
+      case Verticals.kirana:
+        return "Get instant access to barcode billing, inventory, khata, and receipts.";
+      case Verticals.supermarket:
+        return "Get instant access to fast barcode POS, stock manager, and analytics.";
+      case Verticals.pharmacy:
+        return "Get instant access to medicine billing, inventory, khata, and receipts.";
+      case Verticals.retail:
+        return "Get instant access to barcode billing, products, khata, and receipts.";
+      default:
+        return "Instant POS billing, inventory, barcode scanning & digital ordering.";
+    }
+  }
+
+  String get _storeNameFieldLabel {
+    switch (_vertical) {
+      case Verticals.restaurant:
+        return "Restaurant / Cafe Name *";
+      case Verticals.kirana:
+        return "Kirana / Grocery Store Name *";
+      case Verticals.supermarket:
+        return "Supermarket Name *";
+      case Verticals.pharmacy:
+        return "Pharmacy / Medical Store Name *";
+      case Verticals.retail:
+        return "Retail Store Name *";
+      default:
+        return "Store / Business Name *";
+    }
+  }
+
+  String get _storeNameHintText {
+    switch (_vertical) {
+      case Verticals.restaurant:
+        return "e.g. Spice Garden Bistro";
+      case Verticals.kirana:
+        return "e.g. Sri Lakshmi Kirana & General Store";
+      case Verticals.supermarket:
+        return "e.g. Fresh Choice Supermarket";
+      case Verticals.pharmacy:
+        return "e.g. MedPlus Pharmacy & Healthcare";
+      case Verticals.retail:
+        return "e.g. City Fashion & Lifestyle";
+      default:
+        return "e.g. Modern Retail Store";
+    }
+  }
+
+  String get _freeTrialSubtitle {
+    switch (_vertical) {
+      case Verticals.restaurant:
+        return "No approval required. Start using POS, tables, KDS, and printing immediately.";
+      case Verticals.kirana:
+        return "No approval required. Start using barcode billing, inventory, khata, and receipts immediately.";
+      case Verticals.supermarket:
+        return "No approval required. Start using barcode POS, inventory, and analytics immediately.";
+      case Verticals.pharmacy:
+        return "No approval required. Start using medicine billing, stock tracking, and receipts immediately.";
+      case Verticals.retail:
+        return "No approval required. Start using POS billing, product inventory, and receipts immediately.";
+      default:
+        return "No approval required. Start using POS billing, inventory, and printing immediately.";
+    }
+  }
+
+  String get _enterpriseSubtitle {
+    switch (_vertical) {
+      case Verticals.restaurant:
+        return "For multi-outlet restaurant chains needing customized franchise limits and dedicated consultation.";
+      case Verticals.kirana:
+        return "For multi-branch grocery chains needing customized store limits and dedicated consultation.";
+      case Verticals.supermarket:
+        return "For supermarket chains needing multi-store setup, central warehouse, and dedicated consultation.";
+      case Verticals.pharmacy:
+        return "For pharmacy chains needing multi-outlet inventory, batch tracking, and dedicated consultation.";
+      case Verticals.retail:
+        return "For retail franchise chains needing multi-store setup and dedicated consultation.";
+      default:
+        return "For multi-store chains needing customized franchise limits and dedicated consultation.";
+    }
+  }
+
+  String get _emailHintText {
+    switch (_vertical) {
+      case Verticals.restaurant:
+        return "owner@restaurant.com";
+      case Verticals.kirana:
+        return "owner@kiranastore.com";
+      case Verticals.supermarket:
+        return "owner@supermarket.com";
+      case Verticals.pharmacy:
+        return "owner@pharmacy.com";
+      case Verticals.retail:
+        return "owner@retailstore.com";
+      default:
+        return "owner@business.com";
+    }
+  }
+
+  String get _submitButtonLabel {
+    if (_isEnterprise) return "Submit Enterprise Request";
+    if (_isPaidPackage) return "Submit Package Request";
+    switch (_vertical) {
+      case Verticals.restaurant:
+        return "Start Free Trial & Open Restaurant 🚀";
+      case Verticals.kirana:
+        return "Start Free Trial & Open Kirana 🚀";
+      case Verticals.supermarket:
+        return "Start Free Trial & Open Supermarket 🚀";
+      case Verticals.pharmacy:
+        return "Start Free Trial & Open Pharmacy 🚀";
+      case Verticals.retail:
+        return "Start Free Trial & Open Store 🚀";
+      default:
+        return "Start Free Trial & Open Store 🚀";
+    }
+  }
+
+  /// Returns features enabled in [profile] that are relevant to [vertical].
+  static List<FeatureDef> _filteredFeaturesFor(PlanProfile profile, String vertical) {
+    final features = profile.features;
+    return features.entries
+        .where((e) => e.value) // only enabled features
+        .map((e) => FeatureCatalog.find(e.key))
+        .where((def) => def != null)
+        .cast<FeatureDef>()
+        .where((def) => def.verticals.isEmpty || def.verticals.contains(vertical))
+        .toList();
+  }
+
+  /// Icon for a PlanProfile.
+  static IconData _profileIcon(PlanProfile p) {
+    switch (p.id) {
+      case 'OFFLINE_SINGLE':
+        return Icons.point_of_sale_rounded;
+      case 'OFFLINE_DINE_IN':
+        return Icons.table_restaurant_rounded;
+      case 'CONNECTED':
+        return Icons.cloud_sync_rounded;
+      case 'OMNICHANNEL':
+        return Icons.all_inclusive_rounded;
+      default:
+        return Icons.storefront_rounded;
+    }
+  }
+
+  /// Builds a tappable option card for the plan picker.
+  Widget _buildOptionCard({
+    required String optionValue,
+    required Color primaryAccent,
+    required IconData icon,
+    required String title,
+    required Widget badge,
+    required String subtitle,
+    List<FeatureDef>? featureChips,
+    bool isFirst = false,
+    bool isLast = false,
+  }) {
+    final selected = _selectedOption == optionValue;
+    return InkWell(
+      onTap: () => setState(() => _selectedOption = optionValue),
+      borderRadius: BorderRadius.circular(14),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: selected ? primaryAccent.withValues(alpha: 0.10) : context.surfaceColor,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: selected ? primaryAccent : context.borderColor,
+            width: selected ? 1.5 : 1,
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  selected ? Icons.radio_button_checked_rounded : Icons.radio_button_off_rounded,
+                  color: selected ? primaryAccent : context.textSecondary,
+                  size: 20,
+                ),
+                const SizedBox(width: 10),
+                Icon(icon, color: selected ? primaryAccent : context.textSecondary, size: 20),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 4,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      Text(
+                        title,
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                          color: context.textPrimary,
+                        ),
+                      ),
+                      badge,
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            Padding(
+              padding: const EdgeInsets.only(left: 58),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SizedBox(height: 4),
+                  Text(
+                    subtitle,
+                    style: TextStyle(color: context.textSecondary, fontSize: 11.5, height: 1.3),
+                  ),
+                  if (featureChips != null && featureChips.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 4,
+                      children: featureChips.map((def) => Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: context.borderColor.withValues(alpha: 0.35),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          def.label,
+                          style: TextStyle(fontSize: 10, color: context.textSecondary),
+                        ),
+                      )).toList(),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _handleSendOtp() async {
@@ -284,6 +578,52 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
             AppToast.showError(context, res['message'] ?? "Account creation failed.");
           }
         }
+      } else if (_isPaidPackage) {
+        // =====================================================================
+        //  PAID PACKAGE REQUEST (SUBMITS FOR ADMIN APPROVAL)
+        // =====================================================================
+        final pendingReq = await _firestore
+            .collection('registration_requests')
+            .where('email', isEqualTo: email)
+            .where('status', isEqualTo: 'PENDING')
+            .limit(1)
+            .get();
+
+        if (pendingReq.docs.isNotEmpty) {
+          setState(() => _isSubmitting = false);
+          _showDuplicateRequestDialog(email);
+          return;
+        }
+
+        final profile = PlanProfile.byId(_selectedOption);
+        final reqRef = _firestore.collection('registration_requests').doc();
+        await reqRef.set({
+          'id': reqRef.id,
+          'clientName': clientName,
+          'shopName': shopName.isNotEmpty ? shopName : "$clientName Store",
+          'businessCategory': _businessCategory,
+          'mobile': mobile,
+          'email': email,
+          'status': 'PENDING',
+          'emailVerified': true,
+          'requestedPlan': _selectedOption,
+          'requestedPackageId': _selectedOption,
+          'createdAt': FieldValue.serverTimestamp(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+
+        SmtpEmailService.sendRegistrationSubmittedEmail(
+          recipientEmail: email,
+          clientName: clientName,
+          shopName: shopName.isNotEmpty ? shopName : "$clientName Store",
+          businessCategory: _businessCategory,
+          mobile: mobile,
+        ).catchError((_) => <String, dynamic>{});
+
+        if (mounted) {
+          setState(() => _isSubmitting = false);
+          _showPackageRequestSubmittedDialog(clientName, email, profile.label);
+        }
       } else {
         // =====================================================================
         //  CUSTOM / ENTERPRISE REQUEST (SUBMITS FOR ADMIN CONSULTATION)
@@ -353,17 +693,25 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
           children: [
             Text("🎉", style: TextStyle(fontSize: 24)),
             SizedBox(width: 10),
-            Text("Free Trial Activated!", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+            Expanded(child: Text("Free Trial Activated!", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18))),
           ],
         ),
         content: SingleChildScrollView(child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              "Welcome $clientName! Your restaurant '$shopName' is ready with 14-Day Free Trial access.",
-              style: TextStyle(color: context.textPrimary, fontSize: 13, height: 1.4),
-            ),
+            Builder(builder: (c) {
+              final vertical = Verticals.forCategory(_businessCategory);
+              final storeType = vertical == Verticals.restaurant
+                  ? 'restaurant'
+                  : vertical == Verticals.pharmacy
+                      ? 'pharmacy'
+                      : 'store';
+              return Text(
+                "Welcome $clientName! Your $storeType '$shopName' is ready with 14-Day Free Trial access.",
+                style: TextStyle(color: context.textPrimary, fontSize: 13, height: 1.4),
+              );
+            }),
             const SizedBox(height: 14),
             Container(
               padding: const EdgeInsets.all(12),
@@ -390,10 +738,18 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
               ),
             ),
             const SizedBox(height: 12),
-            Text(
-              "Full access to Counter Billing, Table Management, Kitchen KDS, and Dual Printing is now unlocked.",
-              style: TextStyle(color: context.textSecondary, fontSize: 12),
-            ),
+            Builder(builder: (c) {
+              final vertical = Verticals.forCategory(_businessCategory);
+              final highlights = vertical == Verticals.restaurant
+                  ? "Full access to Counter Billing, Table Management, Kitchen KDS, and Dual Printing is now unlocked."
+                  : vertical == Verticals.pharmacy
+                      ? "Full access to POS Billing Desk, Medicines & Stock, and Sales Reports is now unlocked."
+                      : "Full access to POS Billing Desk, Products & Stock, and Sales Reports is now unlocked.";
+              return Text(
+                highlights,
+                style: TextStyle(color: context.textSecondary, fontSize: 12),
+              );
+            }),
           ],
         )),
         actions: [
@@ -408,7 +764,45 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
             ),
-            child: const Text("Sign In to Your Restaurant Now →", style: TextStyle(fontWeight: FontWeight.bold)),
+            child: Text(
+              "Sign In to Your ${Verticals.forCategory(_businessCategory) == Verticals.restaurant ? 'Restaurant' : 'Store'} Now →",
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showPackageRequestSubmittedDialog(String clientName, String email, String packageLabel) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: context.surfaceColor,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.mark_email_read_rounded, color: ClassicTheme.warningAmber),
+            SizedBox(width: 8),
+            Expanded(child: Text("Package Request Submitted", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16))),
+          ],
+        ),
+        content: Text(
+          "Thank you $clientName! Your request for the \"${packageLabel[0].toUpperCase()}${packageLabel.substring(1)}\" plan has been submitted.\n\nOur admin team will review and activate your account at $email shortly.",
+          style: TextStyle(color: context.textPrimary, fontSize: 13, height: 1.4),
+        ),
+        actions: [
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              Navigator.pop(context);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: ClassicTheme.warningAmber,
+              foregroundColor: Colors.black,
+            ),
+            child: const Text("Return to Sign In", style: TextStyle(fontWeight: FontWeight.bold)),
           ),
         ],
       ),
@@ -563,7 +957,7 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
                                   color: primaryAccent.withValues(alpha: 0.2),
                                   borderRadius: BorderRadius.circular(12),
                                 ),
-                                child: Icon(Icons.restaurant_rounded, color: primaryAccent, size: 28),
+                                child: Icon(_categoryHeaderIcon, color: primaryAccent, size: 28),
                               ),
                             ),
                           ),
@@ -573,12 +967,12 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  "Onboard Your Restaurant & Cafe",
+                                  _categoryHeaderTitle,
                                   style: TextStyle(color: context.textPrimary, fontWeight: FontWeight.bold, fontSize: 16),
                                 ),
                                 const SizedBox(height: 2),
                                 Text(
-                                  "Get instant access to POS billing, tables, KDS, and QR ordering.",
+                                  _categoryHeaderSubtitle,
                                   style: TextStyle(color: context.textSecondary, fontSize: 12),
                                 ),
                               ],
@@ -589,35 +983,7 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
                     ),
                     const SizedBox(height: 20),
 
-                    // SECTION 1: RESTAURANT & OWNER BASICS
-                    Text("Owner Full Name *", style: TextStyle(color: context.textSecondary, fontSize: 13, fontWeight: FontWeight.w600)),
-                    const SizedBox(height: 6),
-                    TextFormField(
-                      controller: _nameController,
-                      style: TextStyle(color: context.textPrimary, fontSize: 14),
-                      decoration: ClassicTheme.inputDecorationFor(
-                        context,
-                        hintText: "e.g. Santhosh Bukka",
-                        prefixIcon: Icon(Icons.person_outline, color: context.textSecondary, size: 20),
-                      ),
-                      validator: (v) => v == null || v.trim().isEmpty ? "Full name is required" : null,
-                    ),
-                    const SizedBox(height: 16),
-
-                    Text("Restaurant / Cafe Name *", style: TextStyle(color: context.textSecondary, fontSize: 13, fontWeight: FontWeight.w600)),
-                    const SizedBox(height: 6),
-                    TextFormField(
-                      controller: _shopNameController,
-                      style: TextStyle(color: context.textPrimary, fontSize: 14),
-                      decoration: ClassicTheme.inputDecorationFor(
-                        context,
-                        hintText: "e.g. Spice Garden Bistro",
-                        prefixIcon: Icon(Icons.storefront_outlined, color: context.textSecondary, size: 20),
-                      ),
-                      validator: (v) => v == null || v.trim().isEmpty ? "Restaurant name is required" : null,
-                    ),
-                    const SizedBox(height: 16),
-
+                    // SECTION 1: BUSINESS & OWNER BASICS
                     Row(
                       children: [
                         Expanded(
@@ -668,120 +1034,105 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
                         ),
                       ],
                     ),
+                    const SizedBox(height: 16),
+
+                    Text("Owner Full Name *", style: TextStyle(color: context.textSecondary, fontSize: 13, fontWeight: FontWeight.w600)),
+                    const SizedBox(height: 6),
+                    TextFormField(
+                      controller: _nameController,
+                      style: TextStyle(color: context.textPrimary, fontSize: 14),
+                      decoration: ClassicTheme.inputDecorationFor(
+                        context,
+                        hintText: "e.g. Santhosh Bukka",
+                        prefixIcon: Icon(Icons.person_outline, color: context.textSecondary, size: 20),
+                      ),
+                      validator: (v) => v == null || v.trim().isEmpty ? "Full name is required" : null,
+                    ),
+                    const SizedBox(height: 16),
+
+                    Text(_storeNameFieldLabel, style: TextStyle(color: context.textSecondary, fontSize: 13, fontWeight: FontWeight.w600)),
+                    const SizedBox(height: 6),
+                    TextFormField(
+                      controller: _shopNameController,
+                      style: TextStyle(color: context.textPrimary, fontSize: 14),
+                      decoration: ClassicTheme.inputDecorationFor(
+                        context,
+                        hintText: _storeNameHintText,
+                        prefixIcon: Icon(Icons.storefront_outlined, color: context.textSecondary, size: 20),
+                      ),
+                      validator: (v) => v == null || v.trim().isEmpty ? "Name is required" : null,
+                    ),
                     const SizedBox(height: 20),
 
                     // SECTION 2: PLAN SELECTION
                     Text("Select Onboarding Option", style: TextStyle(color: context.textSecondary, fontSize: 13, fontWeight: FontWeight.w600)),
                     const SizedBox(height: 8),
-                    Container(
-                      decoration: BoxDecoration(
-                        color: context.surfaceColor,
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: context.borderColor),
-                      ),
-                      // Flutter 3.32+: a RadioGroup ancestor owns groupValue/onChanged
-                      // for every Radio beneath it; the per-Radio properties are deprecated.
-                      child: RadioGroup<bool>(
-                        groupValue: _isFreeTrial,
-                        onChanged: (v) => setState(() => _isFreeTrial = v ?? _isFreeTrial),
-                        child: Column(
-                        children: [
-                          // Option 1: Free Trial
-                          InkWell(
-                            onTap: () => setState(() => _isFreeTrial = true),
-                            borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-                            child: Container(
-                              padding: const EdgeInsets.all(14),
-                              decoration: BoxDecoration(
-                                color: _isFreeTrial ? primaryAccent.withValues(alpha: 0.12) : Colors.transparent,
-                                borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-                                border: _isFreeTrial ? Border.all(color: primaryAccent, width: 1.5) : null,
-                              ),
-                              child: Row(
-                                children: [
-                                  Radio<bool>(
-                                    value: true,
-                                    activeColor: primaryAccent,
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Row(
-                                          children: [
-                                            const Text(
-                                              "Start 14-Day Free Trial",
-                                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                                            ),
-                                            const SizedBox(width: 8),
-                                            Container(
-                                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                              decoration: BoxDecoration(
-                                                color: ClassicTheme.successEmerald.withValues(alpha: 0.15),
-                                                borderRadius: BorderRadius.circular(4),
-                                              ),
-                                              child: const Text(
-                                                "INSTANT ACCESS",
-                                                style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: ClassicTheme.successEmerald),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                        const SizedBox(height: 2),
-                                        Text(
-                                          "No approval required. Start using POS, tables, KDS, and printing immediately.",
-                                          style: TextStyle(color: context.textSecondary, fontSize: 12),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                          Divider(height: 1, color: context.borderColor),
-                          // Option 2: Enterprise / Custom Request
-                          InkWell(
-                            onTap: () => setState(() => _isFreeTrial = false),
-                            borderRadius: const BorderRadius.vertical(bottom: Radius.circular(16)),
-                            child: Container(
-                              padding: const EdgeInsets.all(14),
-                              decoration: BoxDecoration(
-                                color: !_isFreeTrial ? primaryAccent.withValues(alpha: 0.12) : Colors.transparent,
-                                borderRadius: const BorderRadius.vertical(bottom: Radius.circular(16)),
-                                border: !_isFreeTrial ? Border.all(color: primaryAccent, width: 1.5) : null,
-                              ),
-                              child: Row(
-                                children: [
-                                  Radio<bool>(
-                                    value: false,
-                                    activeColor: primaryAccent,
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        const Text(
-                                          "Request Custom / Enterprise Setup",
-                                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                                        ),
-                                        const SizedBox(height: 2),
-                                        Text(
-                                          "For multi-outlet restaurant chains needing customized franchise limits and dedicated consultation.",
-                                          style: TextStyle(color: context.textSecondary, fontSize: 12),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ],
+                    // --- Free Trial card ---
+                    _buildOptionCard(
+                      optionValue: 'free_trial',
+                      primaryAccent: primaryAccent,
+                      isFirst: true,
+                      icon: Icons.rocket_launch_rounded,
+                      title: "Start 14-Day Free Trial",
+                      badge: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: ClassicTheme.successEmerald.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: const Text(
+                          "INSTANT ACCESS",
+                          style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: ClassicTheme.successEmerald),
                         ),
                       ),
+                      subtitle: _freeTrialSubtitle,
+                    ),
+                    const SizedBox(height: 8),
+                    // --- 4 Package cards ---
+                    ...PlanProfile.all.map((profile) {
+                      final features = _filteredFeaturesFor(profile, _vertical);
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: _buildOptionCard(
+                          optionValue: profile.id,
+                          primaryAccent: primaryAccent,
+                          icon: _profileIcon(profile),
+                          title: profile.label[0].toUpperCase() + profile.label.substring(1),
+                          badge: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: ClassicTheme.warningAmber.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: const Text(
+                              "ADMIN APPROVAL",
+                              style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: ClassicTheme.warningAmber),
+                            ),
+                          ),
+                          subtitle: profile.description,
+                          featureChips: features,
+                        ),
+                      );
+                    }),
+                    // --- Enterprise card ---
+                    _buildOptionCard(
+                      optionValue: 'enterprise',
+                      primaryAccent: primaryAccent,
+                      isLast: true,
+                      icon: Icons.business_rounded,
+                      title: "Enterprise / Custom Setup",
+                      badge: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: ClassicTheme.warningAmber.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: const Text(
+                          "ADMIN APPROVAL",
+                          style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: ClassicTheme.warningAmber),
+                        ),
+                      ),
+                      subtitle: _enterpriseSubtitle,
                     ),
                     const SizedBox(height: 20),
 
@@ -789,7 +1140,7 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text("Email Address (Mandatory OTP Verification) *", style: TextStyle(color: context.textSecondary, fontSize: 13, fontWeight: FontWeight.w600)),
+                        Expanded(child: Text("Email Address (Mandatory OTP Verification) *", maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(color: context.textSecondary, fontSize: 13, fontWeight: FontWeight.w600))),
                         if (_isEmailVerified)
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
@@ -817,7 +1168,7 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
                             style: TextStyle(color: context.textPrimary, fontSize: 14),
                             decoration: ClassicTheme.inputDecorationFor(
                               context,
-                              hintText: "owner@restaurant.com",
+                              hintText: _emailHintText,
                               prefixIcon: Icon(Icons.email_outlined, color: context.textSecondary, size: 20),
                             ),
                             validator: (v) {
@@ -955,9 +1306,13 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
                                 children: [
                                   Icon(_isFreeTrial ? Icons.rocket_launch_rounded : Icons.send_rounded, size: 20),
                                   const SizedBox(width: 8),
-                                  Text(
-                                    _isFreeTrial ? "Start Free Trial & Open Store 🚀" : "Submit Enterprise Request",
-                                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                                  Flexible(
+                                    child: Text(
+                                      _submitButtonLabel,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                                    ),
                                   ),
                                 ],
                               ),

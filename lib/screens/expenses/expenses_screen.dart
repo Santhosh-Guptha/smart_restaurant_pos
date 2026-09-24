@@ -346,8 +346,9 @@ class _ExpensesScreenState extends ConsumerState<ExpensesScreen>
         builder: (ctx, setSheet) => Padding(
           padding: EdgeInsets.fromLTRB(
               DS.space5, DS.space5, DS.space5, MediaQuery.of(ctx).viewInsets.bottom + DS.space5),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(existing == null ? 'Add expense' : 'Edit expense',
@@ -424,6 +425,7 @@ class _ExpensesScreenState extends ConsumerState<ExpensesScreen>
                 ),
               ),
             ],
+          ),
           ),
         ),
       ),

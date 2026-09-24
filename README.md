@@ -49,6 +49,11 @@ SmartDine is built upon a **Zero-Firebase Operational Pipeline**: all high-frequ
 - **Context Switcher**: Seamlessly switch between different branch outlets without re-authenticating.
 - **Dedicated Sheet Isolation**: Each outlet maintains its own dedicated Google Sheet database while rolling up into consolidated brand analytics.
 
+### 6. Multi-Vertical Adaptive Architecture
+- **5 Supported Business Verticals**: Restaurant & Hospitality, Supermarket, Kirana & Provision, Pharmacy & Healthcare, and General Retail Store.
+- **Dynamic Thematic & Label Transformation**: Automatically tailors screens, owner labels, action cards, and terminology (`VerticalLabels`) based on the registered store category.
+- **Intelligent Module Filtering**: Suppresses hospitality-specific modules (Kitchen KDS, Tables & Floor) for supermarket and retail tenants while keeping rapid counter POS and stock management front-and-center.
+
 ---
 
 ## 🗄️ Zero-Firebase Architecture

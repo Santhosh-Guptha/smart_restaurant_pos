@@ -282,6 +282,23 @@ When a spreadsheet is connected, `ensureV2Sheets(ss)` automatically provisions a
   - Verifies that migrated starter templates generate bit-for-bit identical binary output to legacy receipts across all tax, discount, service charge, and FSSAI permutations.
 - **Full Test Suite Passing**: 143/143 tests passing, 0 analyzer errors or warnings.
 
+### **Phase 13 — Multi-Vertical Expansion & Web Menu Image Pipeline**
+- **Dynamic Business Vertical Classification (`lib/core/package_model.dart`, `lib/core/saas_models.dart`)**:
+  - `Verticals.forCategory` dynamically resolves business vertical (`restaurant`, `kirana`, `supermarket`, `pharmacy`, `retail`) from signup and master admin categories (`Supermarket / Retail`, `Kirana & Grocery`, `Pharmacy & Medical`, etc.).
+  - `SaasOrganization` stores and binds `businessCategory`, dynamically serving vertical-specific branding:
+    - Dynamic store owner role badge (`VerticalLabels.of(vertical).ownerRoleLabel` → **"Store Owner"** for supermarket/retail).
+    - Dynamic header icon (`Icons.storefront_rounded` for retail/supermarket, `Icons.local_pharmacy_rounded` for pharmacy).
+    - Dynamic card titles and descriptions (**"POS Billing Desk"**, **"Products & Stock"**).
+    - Suppresses restaurant-only cards (`Tables & Floor`, `Kitchen (KDS)`) for non-restaurant tenants.
+- **Staff Credential Management & Password Preservation (`StaffManagementScreen`)**:
+  - Login password is now optional when editing existing staff members, preventing false validation rejections.
+  - Existing passwords and bcrypt hashes are safely preserved when left unchanged.
+  - Active staff session refreshes immediately upon self-profile updates.
+- **Online Customer Web Ordering Photo Pipeline (`hosting_public/r/index.html`, `Code.gs`)**:
+  - `normalizeImageUrl` safely standardizes Google Drive sharing URLs into instant CDN URLs (`https://lh3.googleusercontent.com/d/{id}=s400`) with thumbnail fallbacks.
+  - Step 1 (`public_stores` doc) and Step 3 (`/products` query) now reliably extract and render dish images with high performance.
+  - `google_apps_script/Code.gs` updated in `GET_MENU` with `imageIdx` detection for Google Sheets image columns.
+
 ## 5. Configuration & Deployment Guide
 
 ### **A. Google Apps Script Webhook Setup**

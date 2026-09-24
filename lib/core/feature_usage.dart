@@ -315,4 +315,31 @@ const Map<String, FeatureUsage> kFeatureUsage = {
         'or promise it to a client until it has code behind it.',
     whenOff: 'Identical to on, which is the problem.',
   ),
+  FeatureKeys.barcodeBilling: FeatureUsage(
+    note:
+        'Barcode-first checkout designed for retail, grocery, supermarket, '
+        'and pharmacy. Point hardware barcode scanner or type SKU to instantly '
+        'add items to cart, compute taxes, tender cash with change calculator, '
+        'and print receipts.',
+    whenOff: 'The Barcode Billing card is hidden from the dashboard.',
+    screens: ['Barcode Billing'],
+    controls: ['Home card: Barcode Billing'],
+  ),
+  FeatureKeys.customerKhata: FeatureUsage(
+    note:
+        'Offline-first customer credit ledger (Udhar) to record sales on credit, '
+        'track running balances, enforce credit limits, record payments received, '
+        'and generate statements.',
+    whenOff: 'The Customer Khata card is hidden from the dashboard.',
+    screens: ['Customer Khata'],
+    controls: ['Home card: Customer Khata'],
+  ),
+  FeatureKeys.stockManagement: FeatureUsage(
+    note:
+        'Inventory stock counts, unit management (kg, pcs, pack, strip), '
+        'stock alerts, and retail item catalog tracking.',
+    whenOff: 'The Stock Manager card is hidden from the dashboard.',
+    screens: ['Stock Manager'],
+    controls: ['Home card: Stock Manager'],
+  ),
 };

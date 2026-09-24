@@ -207,13 +207,22 @@ class StorageMigrationService {
           await box?.put('${_hivePrefix}sheet_url_$orgId', sheetUrl);
 
           final upiId = box?.get('restaurant_upi_id', defaultValue: kDefaultMerchantVpa);
+          try {
+            await FirebaseFirestore.instance.collection('organizations').doc(orgId).set({
+              'googleSheetId': sheetId,
+              'spreadsheetId': sheetId,
+              'googleSheetUrl': sheetUrl,
+              'updatedAt': FieldValue.serverTimestamp(),
+            }, SetOptions(merge: true));
+          } catch (_) {}
+
           final registered = await AppsScriptBackendService.registerTenant(
             orgId: orgId,
             spreadsheetId: sheetId,
             orgName: orgName,
             upiId: upiId,
           );
-          if (!registered) {
+          if (!registered && !kIsWeb) {
             await _markStep(orgId, MigrationStep.provision, 'FAILED', detail: 'webhook registration failed');
             return 'The cloud webhook did not accept the new store. Check the connection and try again.';
           }

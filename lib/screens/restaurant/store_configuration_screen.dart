@@ -8,6 +8,7 @@ import '../../core/classic_theme.dart';
 import '../../core/design_tokens.dart';
 import '../../core/cloud_gate.dart';
 import '../../core/entitlements.dart';
+import '../../core/vertical_labels.dart';
 import '../../providers/entitlements_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/saas_session_provider.dart';
@@ -33,6 +34,7 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
   late final bool _hasKot;
   late final bool _hasCloud;
   late final bool _hasOnlineMenu;
+  late final String _vertical;
   bool _isSaving = false;
 
   // ── Tab 1: Store Profile & Legal ──
@@ -106,6 +108,7 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
     _hasKot = ent.isEnabled(FeatureKeys.dualPrinting);
     _hasCloud = ent.isEnabled(FeatureKeys.cloudSync);
     _hasOnlineMenu = ent.isEnabled(FeatureKeys.onlineMenu);
+    _vertical = ent.vertical;
     final tabCount = _hasExpenses ? 6 : 5;
     _tabController = TabController(
       length: tabCount,
@@ -191,7 +194,7 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
     final email = googleUser?.email ?? user?.email ?? 'offline';
 
     // 1. Profile & Legal
-    final fallbackName = org?.name ?? org?.appName ?? 'SmartDine Restaurant';
+    final fallbackName = org?.name ?? org?.appName ?? VerticalLabels.of(_vertical).dashboardBrandFallback;
     final fallbackPhone = user?.phone ?? org?.phone ?? '';
     final fallbackAddress = org?.address ?? '';
 
@@ -289,7 +292,7 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
       final email = googleUser?.email ?? user?.email ?? 'offline';
       final orgId = user?.organizationId ?? org?.id ?? 'ORG_DEFAULT';
 
-      final rName = _nameCtrl.text.trim().isNotEmpty ? _nameCtrl.text.trim() : 'SmartDine Restaurant';
+      final rName = _nameCtrl.text.trim().isNotEmpty ? _nameCtrl.text.trim() : VerticalLabels.of(_vertical).dashboardBrandFallback;
       final rBranch = _branchTitleCtrl.text.trim().isNotEmpty ? _branchTitleCtrl.text.trim() : 'Primary Store';
       final rPhone = _phoneCtrl.text.trim();
       final rAddress = _addressCtrl.text.trim();
@@ -653,7 +656,7 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: context.textPrimary),
             ),
             Text(
-              _hasExpenses ? 'Restaurant profile, taxes, payments, shifts, receipts & expenses' : 'Restaurant profile, taxes, payments, shifts & receipts',
+              _hasExpenses ? VerticalLabels.of(_vertical).storeSettingsSubtitle : VerticalLabels.of(_vertical).storeSettingsSubtitleShort,
               style: TextStyle(fontSize: 12, color: context.textSecondary),
             ),
           ],
@@ -752,11 +755,11 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildSectionHeader('Restaurant Profile & Legal Details', Icons.business_rounded),
+          _buildSectionHeader(VerticalLabels.of(_vertical).storeProfileHeader, Icons.business_rounded),
           const SizedBox(height: 12),
           _buildCard(
             children: [
-              _buildTextField(_nameCtrl, 'Restaurant / Brand Name', Icons.storefront_rounded),
+              _buildTextField(_nameCtrl, VerticalLabels.of(_vertical).storeBrandLabel, Icons.storefront_rounded),
               const SizedBox(height: 12),
               _buildTextField(_branchTitleCtrl, 'Branch Title / Tagline (e.g. Indiranagar Flagship)', Icons.branding_watermark_rounded),
               const SizedBox(height: 12),
@@ -768,7 +771,7 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
                 children: [
                   Expanded(
                     flex: 2,
-                    child: _buildTextField(_fssaiCtrl, 'FSSAI License No.', Icons.verified_user_rounded),
+                    child: _buildTextField(_fssaiCtrl, VerticalLabels.of(_vertical).licenseLabel, Icons.verified_user_rounded),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
@@ -954,7 +957,7 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
             children: [
               _buildTextField(
                 _upiIdCtrl,
-                'Primary Store UPI VPA (e.g. restaurant@okicici)',
+                VerticalLabels.of(_vertical).upiExampleHint,
                 Icons.qr_code_2_rounded,
               ),
               const SizedBox(height: 12),
@@ -1371,7 +1374,7 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildSectionHeader('Restaurant Expense Tracking Categories', Icons.receipt_long_rounded),
+          _buildSectionHeader(VerticalLabels.of(_vertical).expenseCategoryHeader, Icons.receipt_long_rounded),
           const SizedBox(height: 6),
           Text(
             'Categorize daily operating overheads (rent, groceries, vendor payments, staff advances) for accounting.',

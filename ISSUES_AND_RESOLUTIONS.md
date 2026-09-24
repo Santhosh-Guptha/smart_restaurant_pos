@@ -328,6 +328,34 @@ When transitioning from local development to the brand-new production environmen
 
 ---
 
+### Issue 19: Staff Member / User Edit Validation & Password Overwrite
+- **Problem**: When editing an existing staff member (e.g. store owner or staff), saving failed with red banner `"Please fill in Name, Username, and Login Password."` because the password field was left blank by default. Additionally, saving with an empty password risked overwriting existing hashed credentials.
+- **Resolution**:
+  - Made password input optional when editing existing staff (`if (name.isEmpty || cleanUsername.isEmpty || (existing == null && password.isEmpty))`).
+  - Added clear placeholder and helper text indicating the password is unchanged unless filled.
+  - Preserved existing password and bcrypt hash if left blank; only updated `passwordHash` in Firestore `/users` and `/staff_users` if a new password was entered.
+  - Updated `saveStaffMember` in `RestaurantAuthProvider` to immediately refresh `activeStaff` in memory if the user edited their own active record.
+
+---
+
+### Issue 20: Supermarket / Multi-Vertical Category Mismatch & Restaurant Labels
+- **Problem**: Stores registered with category `Supermarket / Retail` displayed restaurant header icons, "Restaurant Owner" badge, restaurant cards ("Tables & Floor", "Kitchen KDS"), and card titles ("Counter Billing / Fast QSR", "Menu Config").
+- **Resolution**:
+  - Enhanced `Verticals.forCategory(businessCategory)` in `lib/core/package_model.dart` with case-insensitive token and keyword matching for all supermarket, pharmacy, kirana, and general retail variations.
+  - Added `businessCategory` to `SaasOrganization` and resolved vertical dynamically from the store's category in `fromJson` and `fromFirestore`.
+  - Updated `restaurant_home_screen.dart` to use `VerticalLabels.of(vertical).ownerRoleLabel` ("Store Owner"), appropriate header icons (`Icons.storefront_rounded`), and dynamic card titles ("POS Billing Desk", "Products & Stock").
+  - Because `allowedVerticals: {Verticals.restaurant}` is set on "Tables & Floor" and "Kitchen (KDS)" cards, resolving `vertical: Verticals.supermarket` automatically suppresses them completely.
+
+---
+
+### Issue 21: Dish Images Missing in Customer Web Ordering Portal (`/r/`)
+- **Problem**: Dish images uploaded to Google Drive and linked via high-speed CDN URLs (`https://lh3.googleusercontent.com/d/...=s400`) displayed in the POS dish list but were missing in the customer web ordering portal (`/r/`).
+- **Resolution**:
+  - In `hosting_public/r/index.html`: Step 1 (`public_stores` doc loader) and Step 3 (`/products` REST fallback) mapped menu items but omitted extracting `imageUrl`. Added `imageUrl` extraction and `normalizeImageUrl` helper supporting Google Drive link variations and fallback handling.
+  - In `google_apps_script/Code.gs`: Added `imageIdx` detection in headers and included `imageUrl` in the `items.push(...)` payload for `GET_MENU`.
+
+---
+
 ### Step 2: Google Apps Script Webhook Deployment
 - [x] Logged into [script.google.com](https://script.google.com) with production account `smartdine.platform@gmail.com`.
 - [x] Deployed `google_apps_script/Code.gs` as Web App (the canonical production operational gateway):

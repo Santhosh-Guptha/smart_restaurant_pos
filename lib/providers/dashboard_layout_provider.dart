@@ -3,6 +3,7 @@ import '../core/classic_theme.dart';
 import 'package:flutter_riverpod/legacy.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import '../core/entitlements.dart';
+import '../core/package_model.dart';
 
 /// Represents a customizable card on the restaurant dashboard.
 class DashboardCardMeta {
@@ -14,6 +15,7 @@ class DashboardCardMeta {
   final Color defaultColor;
   final String? requiredFeature;
   final List<String>? allowedRoles;
+  final Set<String> allowedVerticals; // empty = all verticals
 
   const DashboardCardMeta({
     required this.id,
@@ -24,6 +26,7 @@ class DashboardCardMeta {
     required this.defaultColor,
     this.requiredFeature,
     this.allowedRoles,
+    this.allowedVerticals = const {},
   });
 
   /// Should this card exist for the person looking at the screen?
@@ -36,10 +39,18 @@ class DashboardCardMeta {
     Entitlements? entitlements,
     String? role,
     bool checkFeature = true,
+    String? vertical,
   }) {
     final normRole = role?.toUpperCase() ?? 'UNASSIGNED';
     if (normRole == 'UNASSIGNED') return false;
     if (normRole == 'MASTER_ADMIN') return true;
+
+    // Vertical check: hide cards not meant for this business type
+    if (allowedVerticals.isNotEmpty &&
+        vertical != null &&
+        !allowedVerticals.contains(vertical)) {
+      return false;
+    }
 
     if (allowedRoles != null && allowedRoles!.isNotEmpty) {
       if (!allowedRoles!.map((r) => r.toUpperCase()).contains(normRole)) {
@@ -77,6 +88,7 @@ final List<DashboardCardMeta> kAllDashboardCards = [
     defaultColor: ClassicTheme.successEmerald,
     requiredFeature: FeatureKeys.tableManagement,
     allowedRoles: ['OWNER', 'MANAGER', 'BILLING', 'CASHIER', 'WAITER', 'CAPTAIN'],
+    allowedVerticals: {Verticals.restaurant},
   ),
   DashboardCardMeta(
     id: 'orders_history',
@@ -97,6 +109,7 @@ final List<DashboardCardMeta> kAllDashboardCards = [
     defaultColor: ClassicTheme.primaryAccent,
     requiredFeature: FeatureKeys.kdsEnabled,
     allowedRoles: ['OWNER', 'MANAGER', 'KITCHEN', 'CHEF'],
+    allowedVerticals: {Verticals.restaurant},
   ),
   DashboardCardMeta(
     id: 'menu',
@@ -167,26 +180,77 @@ final List<DashboardCardMeta> kAllDashboardCards = [
     defaultColor: ClassicTheme.infoBlue,
     requiredFeature: FeatureKeys.waiterOrdering,
     allowedRoles: ['OWNER', 'MANAGER', 'WAITER'],
+    allowedVerticals: {Verticals.restaurant},
+  ),
+
+  // ── Retail / Kirana cards ─────────────────────────────────────────────
+  DashboardCardMeta(
+    id: 'barcode_billing',
+    title: 'Barcode Billing',
+    subtitle: 'Scan & bill products fast',
+    badge: 'POS',
+    icon: Icons.qr_code_scanner_rounded,
+    defaultColor: ClassicTheme.infoBlue,
+    requiredFeature: FeatureKeys.barcodeBilling,
+    allowedRoles: ['OWNER', 'MANAGER', 'BILLING', 'CASHIER'],
+    allowedVerticals: {Verticals.kirana, Verticals.supermarket, Verticals.pharmacy, Verticals.retail},
+  ),
+  DashboardCardMeta(
+    id: 'customer_khata',
+    title: 'Customer Khata',
+    subtitle: 'Credit & payment history',
+    badge: 'Ledger',
+    icon: Icons.account_balance_wallet_rounded,
+    defaultColor: ClassicTheme.warningAmber,
+    requiredFeature: FeatureKeys.customerKhata,
+    allowedRoles: ['OWNER', 'MANAGER', 'BILLING', 'CASHIER'],
+    allowedVerticals: {Verticals.kirana, Verticals.pharmacy, Verticals.retail},
+  ),
+  DashboardCardMeta(
+    id: 'stock',
+    title: 'Stock Manager',
+    subtitle: 'Levels, reorders & suppliers',
+    badge: 'Inventory',
+    icon: Icons.inventory_2_rounded,
+    defaultColor: ClassicTheme.successEmerald,
+    requiredFeature: FeatureKeys.stockManagement,
+    allowedRoles: ['OWNER', 'MANAGER'],
+    allowedVerticals: {Verticals.kirana, Verticals.supermarket, Verticals.pharmacy, Verticals.retail},
   ),
 ];
 
-/// Default primary cards pinned on screen
-const List<String> kDefaultPrimaryCardIds = [
-  'counter_billing',
-  'tables',
-  'orders_history',
-  'kds',
-  'menu',
-  'store_config',
-  'analytics',
-];
+/// Default primary cards pinned on screen — per vertical.
+List<String> defaultPrimaryCardsFor(String vertical) {
+  switch (vertical) {
+    case Verticals.restaurant:
+      return const ['counter_billing', 'tables', 'orders_history', 'kds', 'menu', 'store_config', 'analytics'];
+    case Verticals.kirana:
+    case Verticals.pharmacy:
+      return const ['barcode_billing', 'counter_billing', 'orders_history', 'menu', 'customer_khata', 'stock', 'store_config'];
+    case Verticals.supermarket:
+      return const ['barcode_billing', 'counter_billing', 'orders_history', 'menu', 'stock', 'analytics', 'store_config'];
+    case Verticals.retail:
+      return const ['barcode_billing', 'counter_billing', 'orders_history', 'menu', 'customer_khata', 'stock', 'store_config'];
+    default:
+      return const ['counter_billing', 'orders_history', 'menu', 'store_config'];
+  }
+}
 
-/// Default dropdown cards accessible via "More Tools"
+/// Default dropdown cards accessible via "More Tools" — per vertical.
+List<String> defaultDropdownCardsFor(String vertical) {
+  final primary = defaultPrimaryCardsFor(vertical).toSet();
+  return kAllDashboardCards
+      .map((c) => c.id)
+      .where((id) => !primary.contains(id))
+      .toList();
+}
+
+/// Legacy constants kept for backward compatibility.
+const List<String> kDefaultPrimaryCardIds = [
+  'counter_billing', 'tables', 'orders_history', 'kds', 'menu', 'store_config', 'analytics',
+];
 const List<String> kDefaultDropdownCardIds = [
-  'outlets',
-  'staff',
-  'expenses',
-  'waiter',
+  'outlets', 'staff', 'expenses', 'waiter',
 ];
 
 class DashboardLayoutState {
@@ -220,20 +284,22 @@ class DashboardLayoutState {
 }
 
 final dashboardLayoutProvider =
-    StateNotifierProvider<DashboardLayoutNotifier, DashboardLayoutState>((ref) {
-  return DashboardLayoutNotifier();
+    StateNotifierProvider.family<DashboardLayoutNotifier, DashboardLayoutState, String>((ref, vertical) {
+  return DashboardLayoutNotifier(vertical);
 });
 
 class DashboardLayoutNotifier extends StateNotifier<DashboardLayoutState> {
-  static const String _primaryCardsKey = 'restaurant_primary_cards_v1';
-  static const String _dropdownCardsKey = 'restaurant_dropdown_cards_v1';
-  static const String _hiddenCardsKey = 'restaurant_hidden_cards_v1';
+  final String _vertical;
 
-  DashboardLayoutNotifier()
-      : super(const DashboardLayoutState(
-          primaryCardIds: kDefaultPrimaryCardIds,
-          dropdownCardIds: kDefaultDropdownCardIds,
-          hiddenCardIds: [],
+  String get _primaryCardsKey => '${_vertical}_primary_cards_v1';
+  String get _dropdownCardsKey => '${_vertical}_dropdown_cards_v1';
+  String get _hiddenCardsKey => '${_vertical}_hidden_cards_v1';
+
+  DashboardLayoutNotifier(this._vertical)
+      : super(DashboardLayoutState(
+          primaryCardIds: defaultPrimaryCardsFor(_vertical),
+          dropdownCardIds: defaultDropdownCardsFor(_vertical),
+          hiddenCardIds: const [],
         )) {
     loadLayout();
   }
@@ -246,6 +312,8 @@ class DashboardLayoutNotifier extends StateNotifier<DashboardLayoutState> {
     final List<dynamic>? savedDropdown = box?.get(_dropdownCardsKey);
     final List<dynamic>? savedHidden = box?.get(_hiddenCardsKey);
 
+    final verticalPrimary = defaultPrimaryCardsFor(_vertical);
+
     if (savedPrimary != null || savedDropdown != null) {
       final primary = savedPrimary != null ? List<String>.from(savedPrimary) : <String>[];
       final dropdown = savedDropdown != null ? List<String>.from(savedDropdown) : <String>[];
@@ -254,7 +322,7 @@ class DashboardLayoutNotifier extends StateNotifier<DashboardLayoutState> {
       // Reconcile new cards if any
       for (final card in kAllDashboardCards) {
         if (!primary.contains(card.id) && !dropdown.contains(card.id) && !hidden.contains(card.id)) {
-          if (kDefaultPrimaryCardIds.contains(card.id)) {
+          if (verticalPrimary.contains(card.id)) {
             primary.add(card.id);
           } else {
             dropdown.add(card.id);
@@ -270,10 +338,10 @@ class DashboardLayoutNotifier extends StateNotifier<DashboardLayoutState> {
       return;
     }
 
-    state = const DashboardLayoutState(
-      primaryCardIds: kDefaultPrimaryCardIds,
-      dropdownCardIds: kDefaultDropdownCardIds,
-      hiddenCardIds: [],
+    state = DashboardLayoutState(
+      primaryCardIds: verticalPrimary,
+      dropdownCardIds: defaultDropdownCardsFor(_vertical),
+      hiddenCardIds: const [],
     );
   }
 
@@ -326,7 +394,8 @@ class DashboardLayoutNotifier extends StateNotifier<DashboardLayoutState> {
   }
 
   Future<void> restoreCard(String cardId) async {
-    if (kDefaultPrimaryCardIds.contains(cardId)) {
+    final verticalPrimary = defaultPrimaryCardsFor(_vertical);
+    if (verticalPrimary.contains(cardId)) {
       await moveToScreen(cardId);
     } else {
       await moveToDropdown(cardId);
@@ -351,12 +420,14 @@ class DashboardLayoutNotifier extends StateNotifier<DashboardLayoutState> {
 
   Future<void> resetToDefault({List<String>? allowedCardIds}) async {
     final allowed = allowedCardIds?.toSet();
+    final verticalPrimary = defaultPrimaryCardsFor(_vertical);
+    final verticalDropdown = defaultDropdownCardsFor(_vertical);
     final primary = allowed == null
-        ? List<String>.from(kDefaultPrimaryCardIds)
-        : kDefaultPrimaryCardIds.where((id) => allowed.contains(id)).toList();
+        ? List<String>.from(verticalPrimary)
+        : verticalPrimary.where((id) => allowed.contains(id)).toList();
     final dropdown = allowed == null
-        ? List<String>.from(kDefaultDropdownCardIds)
-        : kDefaultDropdownCardIds.where((id) => allowed.contains(id)).toList();
+        ? List<String>.from(verticalDropdown)
+        : verticalDropdown.where((id) => allowed.contains(id)).toList();
 
     state = DashboardLayoutState(
       primaryCardIds: primary,

@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:hive_flutter/hive_flutter.dart';
 import 'package:open_file/open_file.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:pdf/pdf.dart';
@@ -154,16 +155,44 @@ class TableQrPdfService {
     required String shopAddress,
     required int tableCount,
   }) async {
-    final count = tableCount > 0 ? tableCount : 10;
-    final tables = List.generate(count, (i) {
-      final tableNum = (i + 1).toString();
-      return RestaurantTable(
-        id: '${outletId}_T$tableNum',
-        organizationId: orgId,
-        storeId: outletId,
-        tableNumber: tableNum,
-        name: 'Table $tableNum',
-      );
+    List<RestaurantTable> tables = [];
+    try {
+      if (Hive.isBoxOpen('configBox')) {
+        final raw = Hive.box('configBox').get('restaurant_tables_$orgId');
+        if (raw is List && raw.isNotEmpty) {
+          for (final item in raw) {
+            if (item is Map) {
+              try {
+                tables.add(RestaurantTable.fromMap(Map<String, dynamic>.from(item), item['id']?.toString() ?? ''));
+              } catch (_) {}
+            }
+          }
+        }
+      }
+    } catch (_) {}
+
+    if (tables.isEmpty) {
+      final count = tableCount > 0 ? tableCount : 15;
+      tables = List.generate(count, (i) {
+        final tableNum = (i + 1).toString();
+        return RestaurantTable(
+          id: '${outletId}_T$tableNum',
+          organizationId: orgId,
+          storeId: outletId,
+          tableNumber: tableNum,
+          name: 'Table $tableNum',
+        );
+      });
+    }
+
+    tables.sort((a, b) {
+      final numA = int.tryParse(a.tableNumber.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
+      final numB = int.tryParse(b.tableNumber.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
+      if (numA != 0 && numB != 0) {
+        final cmp = numA.compareTo(numB);
+        if (cmp != 0) return cmp;
+      }
+      return a.tableNumber.compareTo(b.tableNumber);
     });
 
     return generateStandeesPdf(

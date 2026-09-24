@@ -14,7 +14,8 @@ import '../../providers/saas_session_provider.dart';
 import '../../services/restaurant_sheets_service.dart';
 
 class StaffManagementScreen extends ConsumerStatefulWidget {
-  const StaffManagementScreen({super.key});
+  final String? initialOrgId;
+  const StaffManagementScreen({super.key, this.initialOrgId});
 
   @override
   ConsumerState<StaffManagementScreen> createState() =>
@@ -235,11 +236,17 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
                   obscureText: obscurePassword,
                   style: TextStyle(color: context.textPrimary),
                   decoration: InputDecoration(
-                    labelText: 'Login Password',
+                    labelText: existing == null
+                        ? 'Login Password'
+                        : 'Login Password (Leave blank to keep unchanged)',
                     labelStyle: TextStyle(color: context.textSecondary),
-                    hintText: 'Enter staff login password',
+                    hintText: existing == null
+                        ? 'Enter staff login password'
+                        : '•••••••• (unchanged)',
                     hintStyle: TextStyle(color: context.textSecondary.withValues(alpha: 0.5)),
-                    helperText: 'Used by staff to log in on their device/tab',
+                    helperText: existing == null
+                        ? 'Used by staff to log in on their device/tab'
+                        : 'Leave empty to preserve existing password',
                     helperStyle: TextStyle(color: context.textSecondary, fontSize: 12),
                     suffixIcon: IconButton(
                       icon: Icon(
@@ -483,10 +490,12 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
                 final password = passwordCtrl.text.trim();
                 final pin = pinCtrl.text.trim();
 
-                if (name.isEmpty || cleanUsername.isEmpty || password.isEmpty) {
+                if (name.isEmpty || cleanUsername.isEmpty || (existing == null && password.isEmpty)) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Please fill in Name, Username, and Login Password.'),
+                    SnackBar(
+                      content: Text(existing == null
+                          ? 'Please fill in Name, Username, and Login Password.'
+                          : 'Please fill in Name and Username.'),
                       backgroundColor: ClassicTheme.dangerRed,
                     ),
                   );
@@ -572,6 +581,14 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
                     ? newEmail
                     : '$cleanUsername@${orgId.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '')}.pos';
 
+                final effectivePassword = password.isNotEmpty
+                    ? password
+                    : (existing?.password ?? '');
+                final effectivePin = pin.isNotEmpty
+                    ? pin
+                    : (existing?.pin.isNotEmpty == true ? existing!.pin : '1234');
+                final effectivePinHash = StaffMember.hashPin(effectivePin);
+
                 final newMember = StaffMember(
                   id: existing?.id ??
                       'STAFF_${DateTime.now().millisecondsSinceEpoch}',
@@ -580,10 +597,10 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
                   email: effectiveEmail,
                   role: role,
                   roles: selectedRoles.toList(),
-                  pin: pin.isNotEmpty ? pin : '1234',
-                  pinHash: StaffMember.hashPin(pin.isNotEmpty ? pin : '1234'),
+                  pin: effectivePin,
+                  pinHash: effectivePinHash,
                   phone: phoneCtrl.text.trim(),
-                  password: password,
+                  password: effectivePassword,
                   assignedStation: station,
                   isSheetAccessGranted: grantSheetAccess,
                   isActive: existing?.isActive ?? true,
@@ -591,59 +608,81 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
 
                 // 1. Sync staff credentials to Firestore (/users and /staff_users).
                 //    Cloud-connected tenants only; an offline till keeps staff in Hive.
-                final hashedPassword = BCrypt.hashpw(password, BCrypt.gensalt());
+                final String? newPasswordHash = password.isNotEmpty
+                    ? BCrypt.hashpw(password, BCrypt.gensalt())
+                    : null;
                 final usersDocId = existing?.id ?? 'usr_${newMember.id}';
 
                 if (hasCloud && !CloudGate.offline) {
-                try {
-                  await FirebaseFirestore.instance.collection('users').doc(usersDocId).set({
-                    'id': usersDocId,
-                    'username': cleanUsername,
-                    'email': effectiveEmail,
-                    'fullName': newMember.name,
-                    'passwordHash': hashedPassword,
-                    'role': newMember.role.key,
-                    'organizationId': orgId,
-                    'franchiseId': franchiseId,
-                    'status': 'ACTIVE',
-                    'phone': newMember.phone,
-                    'updatedAt': FieldValue.serverTimestamp(),
-                  }, SetOptions(merge: true));
-                } catch (e) {
-                  debugPrint('Firestore users sync skipped: $e');
-                }
+                  try {
+                    final userPayload = <String, dynamic>{
+                      'id': usersDocId,
+                      'username': cleanUsername,
+                      'email': effectiveEmail,
+                      'fullName': newMember.name,
+                      'role': newMember.role.key,
+                      'organizationId': orgId,
+                      'franchiseId': franchiseId,
+                      'status': 'ACTIVE',
+                      'phone': newMember.phone,
+                      'updatedAt': FieldValue.serverTimestamp(),
+                    };
+                    if (newPasswordHash != null) {
+                      userPayload['passwordHash'] = newPasswordHash;
+                    }
+                    await FirebaseFirestore.instance.collection('users').doc(usersDocId).set(
+                      userPayload,
+                      SetOptions(merge: true),
+                    );
+                  } catch (e) {
+                    debugPrint('Firestore users sync skipped: $e');
+                  }
 
-                try {
-                  await FirebaseFirestore.instance
-                      .collection('staff_users')
-                      .doc(newMember.id)
-                      .set({
-                    'id': newMember.id,
-                    'name': newMember.name,
-                    'username': cleanUsername,
-                    'email': newMember.email,
-                    'role': newMember.role.key,
-                    'roles': newMember.roles.map((r) => r.key).toList(),
-                    'password': newMember.password,
-                    'passwordHash': hashedPassword,
-                    'pin': newMember.pin,
-                    'pinHash': newMember.pinHash,
-                    'phone': newMember.phone,
-                    'organizationId': orgId,
-                    'franchiseId': franchiseId,
-                    'assignedStation': newMember.assignedStation,
-                    'isSheetAccessGranted': newMember.isSheetAccessGranted,
-                    'isActive': newMember.isActive,
-                    'updatedAt': FieldValue.serverTimestamp(),
-                  }, SetOptions(merge: true));
-                } catch (e) {
-                  debugPrint('Firestore staff sync skipped: $e');
-                }
+                  try {
+                    final staffPayload = <String, dynamic>{
+                      'id': newMember.id,
+                      'name': newMember.name,
+                      'username': cleanUsername,
+                      'email': newMember.email,
+                      'role': newMember.role.key,
+                      'roles': newMember.roles.map((r) => r.key).toList(),
+                      'pin': newMember.pin,
+                      'pinHash': newMember.pinHash,
+                      'phone': newMember.phone,
+                      'organizationId': orgId,
+                      'franchiseId': franchiseId,
+                      'assignedStation': newMember.assignedStation,
+                      'isSheetAccessGranted': newMember.isSheetAccessGranted,
+                      'isActive': newMember.isActive,
+                      'updatedAt': FieldValue.serverTimestamp(),
+                    };
+                    if (effectivePassword.isNotEmpty) {
+                      staffPayload['password'] = effectivePassword;
+                    }
+                    if (newPasswordHash != null) {
+                      staffPayload['passwordHash'] = newPasswordHash;
+                    }
+                    await FirebaseFirestore.instance
+                        .collection('staff_users')
+                        .doc(newMember.id)
+                        .set(staffPayload, SetOptions(merge: true));
+                  } catch (e) {
+                    debugPrint('Firestore staff sync skipped: $e');
+                  }
                 }
 
                 await ref
                     .read(restaurantAuthProvider.notifier)
                     .saveStaffMember(newMember);
+
+                // If editing self, also refresh session from firestore
+                final currentSaasUser = saasSession.currentUser;
+                if (currentSaasUser != null &&
+                    (currentSaasUser.id == newMember.id ||
+                     currentSaasUser.id == 'usr_${newMember.id}' ||
+                     (newMember.username != null && currentSaasUser.username?.toLowerCase() == newMember.username?.toLowerCase()))) {
+                  ref.read(saasSessionProvider.notifier).refreshSessionFromFirestore();
+                }
 
                 bool sharingSuccess = false;
                 bool attemptedShare = false;

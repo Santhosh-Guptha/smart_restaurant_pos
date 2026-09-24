@@ -69,6 +69,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
   List<Map<String, dynamic>> _pendingOrders = [];
   Timer? _pendingPollTimer;
   StreamSubscription? _hiveOrderSub;
+  StreamSubscription? _hiveTableSub;
   bool _isFetchingPendingOrders = false;
 
   double _gstRate = 5.0;
@@ -169,6 +170,13 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
             _loadPendingFromHive();
           }
         });
+        _hiveTableSub = box.watch(key: 'restaurant_tables_$orgId').listen((_) {
+          if (mounted) {
+            setState(() {
+              _loadTables();
+            });
+          }
+        });
       }
     } catch (_) {}
 
@@ -247,9 +255,17 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
       if (id.isNotEmpty) orderMap[id] = o;
     }
 
-    // Background fetch from Webhook
+    // Background fetch from Webhook with delta revision check
     try {
-      final webhookOrders = await AppsScriptBackendService.fetchOrders(orgId: orgId);
+      final res = await AppsScriptBackendService.fetchOrdersAndAlerts(
+        orgId: orgId,
+        useRevCache: true,
+      );
+      if (res['unchanged'] == true) {
+        // Server reports no changes since our last known revision
+        return;
+      }
+      final webhookOrders = res['orders'] as List<Map<String, dynamic>>? ?? [];
       bool hadChanges = false;
       for (final doc in webhookOrders) {
         try {
@@ -305,6 +321,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
     _customerEmailCtrl.dispose();
     _pendingPollTimer?.cancel();
     _hiveOrderSub?.cancel();
+    _hiveTableSub?.cancel();
     super.dispose();
   }
 
@@ -346,6 +363,23 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
     }
   }
 
+  int _resolveLicensedTableCount(String orgId) {
+    final session = ref.read(saasSessionProvider);
+    final outletId = session.activeFranchiseId ?? session.assignedOutletId;
+    if (outletId != null && outletId.isNotEmpty && Hive.isBoxOpen('configBox')) {
+      final rawOutlets = Hive.box('configBox').get('restaurant_outlets_$orgId');
+      if (rawOutlets is List) {
+        for (final o in rawOutlets) {
+          if (o is Map && (o['id'] == outletId || o['outletId'] == outletId)) {
+            final count = (o['tableCount'] as num?)?.toInt() ?? 0;
+            if (count > 0) return count;
+          }
+        }
+      }
+    }
+    return session.licensedTableCount;
+  }
+
   void _loadTables() {
     try {
       final orgId = _getEffectiveOrgId();
@@ -360,14 +394,43 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
           final s = t.toString();
           return s.toLowerCase().startsWith('table') ? s : 'Table $s';
         }).toList();
+      } else {
+        // Strict alignment: initialize based on the licensed plan count and persist to Hive
+        final targetCount = _resolveLicensedTableCount(orgId);
+        if (targetCount > 0 && box != null) {
+          final initialTables = List.generate(targetCount, (i) {
+            final num = '${i + 1}';
+            return {
+              'id': '${orgId}_T$num',
+              'organizationId': orgId,
+              'tableNumber': num,
+              'name': 'Table $num',
+              'section': 'Main Dining',
+              'capacity': 4,
+              'status': 'vacant',
+            };
+          });
+          box.put('restaurant_tables_$orgId', initialTables);
+          _availableTables = List.generate(targetCount, (i) => 'Table ${i + 1}');
+        }
       }
     } catch (_) {}
 
-    if (_availableTables.isEmpty) {
-      _availableTables = List.generate(12, (i) => 'Table ${i + 1}');
-    }
+    // Natural numeric sorting (Table 1, Table 2, ... Table 10, Table 15)
+    _availableTables.sort((a, b) {
+      final numA = int.tryParse(a.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
+      final numB = int.tryParse(b.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
+      if (numA != 0 && numB != 0) {
+        final cmp = numA.compareTo(numB);
+        if (cmp != 0) return cmp;
+      }
+      return a.compareTo(b);
+    });
+
     if (_selectedTable == null && _availableTables.isNotEmpty) {
       _selectedTable = _availableTables.first;
+    } else if (_selectedTable != null && !_availableTables.contains(_selectedTable)) {
+      _selectedTable = _availableTables.isNotEmpty ? _availableTables.first : null;
     }
   }
 
@@ -494,6 +557,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
             sendsToKitchen: sendsToKitchen,
             kitchenStatus: sendsToKitchen ? 'PENDING' : 'SERVED',
             selectedModifiers: mods,
+            isTaxExempt: item['isTaxExempt'] == true || item['is_tax_exempt'] == true,
           ),
         );
       }
@@ -545,7 +609,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
       name: i.displayNameWithModifiers,
       qty: i.qty.toDouble(),
       unitPaise: (i.unitPriceWithModifiers * 100).round(),
-      taxRateBps: (_gstRate * 100).round(),
+      taxRateBps: i.isTaxExempt ? 0 : (_gstRate * 100).round(),
     )).toList();
 
     return BillCalculator.compute(
@@ -1266,7 +1330,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
         name: (i['name'] ?? '').toString(),
         qty: (i['qty'] as num?)?.toDouble() ?? 1.0,
         unitPaise: (((i['price'] as num?)?.toDouble() ?? 0.0) * 100).round(),
-        taxRateBps: (_gstRate * 100).round(),
+        taxRateBps: (i['isTaxExempt'] == true || i['is_tax_exempt'] == true) ? 0 : (_gstRate * 100).round(),
       ));
     }
     for (final cartItem in _cart) {
@@ -1275,7 +1339,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
         name: cartItem.displayNameWithModifiers,
         qty: cartItem.qty.toDouble(),
         unitPaise: (cartItem.unitPriceWithModifiers * 100).round(),
-        taxRateBps: (_gstRate * 100).round(),
+        taxRateBps: cartItem.isTaxExempt ? 0 : (_gstRate * 100).round(),
       ));
     }
     if (combined.isEmpty) return _billTotals.grandTotalPaise;
@@ -2246,6 +2310,8 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
       'price': i.unitPriceWithModifiers,
       'basePrice': i.price,
       'isVeg': i.isVeg,
+      'isTaxExempt': i.isTaxExempt,
+      'is_tax_exempt': i.isTaxExempt,
       'sendsToKitchen': i.sendsToKitchen,
       'kitchenStatus': i.sendsToKitchen ? 'PENDING' : 'SERVED',
       'selectedModifiers': i.selectedModifiers.map((m) => m.toMap()).toList(),
@@ -2280,6 +2346,8 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                 'qty': cartItem.qty,
                 'price': cartItem.price,
                 'isVeg': cartItem.isVeg,
+                'isTaxExempt': cartItem.isTaxExempt,
+                'is_tax_exempt': cartItem.isTaxExempt,
                 'sendsToKitchen': cartItem.sendsToKitchen,
                 'kitchenStatus': cartItem.sendsToKitchen ? 'PENDING' : 'SERVED',
               });
@@ -2290,7 +2358,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
               name: (i['name'] ?? '').toString(),
               qty: (i['qty'] as num?)?.toDouble() ?? 1.0,
               unitPaise: (((i['price'] as num?)?.toDouble() ?? 0.0) * 100).round(),
-              taxRateBps: (_gstRate * 100).round(),
+              taxRateBps: (i['isTaxExempt'] == true || i['is_tax_exempt'] == true) ? 0 : (_gstRate * 100).round(),
             )).toList();
 
             final appendedTotals = BillCalculator.compute(
@@ -5088,6 +5156,21 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                                                     ),
                                                   ),
                                                   const SizedBox(width: 12),
+
+                                                  // Dish Thumbnail (Optional)
+                                                  if (item['imageUrl'] != null && item['imageUrl'].toString().trim().isNotEmpty) ...[
+                                                    ClipRRect(
+                                                      borderRadius: BorderRadius.circular(6),
+                                                      child: Image.network(
+                                                        item['imageUrl'].toString().trim(),
+                                                        width: 36,
+                                                        height: 36,
+                                                        fit: BoxFit.cover,
+                                                        errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                                                      ),
+                                                    ),
+                                                    const SizedBox(width: 10),
+                                                  ],
 
                                                   // Dish Title & Category
                                                   Expanded(

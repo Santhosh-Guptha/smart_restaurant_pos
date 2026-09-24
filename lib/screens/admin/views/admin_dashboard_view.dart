@@ -2,6 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../../core/classic_theme.dart';
+import '../../dashboard/restaurant_home_screen.dart';
+import '../../restaurant/branch_management_screen.dart';
+import '../../settings/staff_management_screen.dart';
+import '../../../providers/saas_session_provider.dart';
 
 /// SaaS Overview & Real-Time Platform Analytics Dashboard.
 class AdminDashboardView extends ConsumerWidget {
@@ -412,6 +416,16 @@ class AdminDashboardView extends ConsumerWidget {
                                 ),
                               const SizedBox(height: 20),
 
+                              // Managed Stores & Quick POS Hub
+                              _buildStoresHubSection(
+                                context,
+                                ref,
+                                orgSnap.hasData ? orgSnap.data!.docs : [],
+                                isMobile: isMobile,
+                                onNavigateToTenants: onNavigateToTenants,
+                              ),
+                              const SizedBox(height: 20),
+
                           // Live System Audit Stream Preview
                           Container(
                             padding: const EdgeInsets.all(20),
@@ -678,6 +692,286 @@ class AdminDashboardView extends ConsumerWidget {
             const Icon(Icons.chevron_right_rounded, size: 16, color: Colors.grey),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildStoresHubSection(
+    BuildContext context,
+    WidgetRef ref,
+    List<QueryDocumentSnapshot> docs, {
+    required bool isMobile,
+    VoidCallback? onNavigateToTenants,
+  }) {
+    final clientDocs = docs.where((d) => d.id != 'SYSTEM_ADMIN').toList();
+
+    return Container(
+      padding: EdgeInsets.all(isMobile ? 14 : 20),
+      decoration: BoxDecoration(
+        color: context.surfaceColor,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: context.borderColor),
+        boxShadow: ClassicTheme.cardShadow(context.isDark),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: ClassicTheme.primaryAccentIndigo.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(Icons.storefront_rounded, color: ClassicTheme.primaryAccentIndigo, size: 20),
+                  ),
+                  const SizedBox(width: 10),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Managed Restaurant Stores & POS Hub',
+                        style: TextStyle(
+                          fontSize: isMobile ? 14 : 15.5,
+                          fontWeight: FontWeight.bold,
+                          color: context.textPrimary,
+                        ),
+                      ),
+                      Text(
+                        'Launch dedicated store POS or manage branches & staff',
+                        style: TextStyle(fontSize: 11.5, color: context.textSecondary),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              if (onNavigateToTenants != null)
+                TextButton.icon(
+                  onPressed: onNavigateToTenants,
+                  icon: const Icon(Icons.arrow_forward_rounded, size: 15),
+                  label: const Text('View All Stores', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          if (clientDocs.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12.0),
+              child: Text(
+                'No client stores onboarded yet. Use "Onboard New Organization" to add one.',
+                style: TextStyle(fontSize: 13, color: context.textSecondary),
+              ),
+            )
+          else
+            ListView.separated(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: clientDocs.length.clamp(0, 5),
+              separatorBuilder: (_, __) => const SizedBox(height: 10),
+              itemBuilder: (context, index) {
+                final d = clientDocs[index];
+                final data = d.data() as Map<String, dynamic>;
+                final docId = d.id;
+                final name = data['name'] ?? 'Unnamed Store';
+                final storageMode = data['storageMode'] ?? 'CLOUD_SYNC';
+                final category = data['businessCategory'] ?? 'Restaurant';
+
+                return Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: context.canvasColor,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: context.borderColor),
+                  ),
+                  child: isMobile
+                      ? Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                const Icon(Icons.restaurant_rounded, size: 18, color: ClassicTheme.warningAmber),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    name,
+                                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: context.textPrimary),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: ClassicTheme.infoBlue.withValues(alpha: 0.15),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: Text(storageMode, style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: ClassicTheme.infoBlue)),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 10),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 6,
+                              children: [
+                                ElevatedButton.icon(
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: ClassicTheme.primaryAccentIndigo,
+                                    foregroundColor: Colors.white,
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                                  ),
+                                  icon: const Icon(Icons.rocket_launch_rounded, size: 14),
+                                  label: const Text('Launch POS', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                                  onPressed: () async {
+                                    await ref.read(saasSessionProvider.notifier).switchOrganizationForMasterAdmin(docId);
+                                    if (context.mounted) {
+                                      Navigator.push(context, MaterialPageRoute(builder: (_) => const RestaurantHomeScreen()));
+                                    }
+                                  },
+                                ),
+                                OutlinedButton.icon(
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: ClassicTheme.warningAmber,
+                                    side: const BorderSide(color: ClassicTheme.warningAmber),
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                                  ),
+                                  icon: const Icon(Icons.storefront_rounded, size: 14),
+                                  label: const Text('Outlets', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                                  onPressed: () async {
+                                    await ref.read(saasSessionProvider.notifier).switchOrganizationForMasterAdmin(docId);
+                                    if (context.mounted) {
+                                      Navigator.push(context, MaterialPageRoute(builder: (_) => BranchManagementScreen(initialOrgId: docId)));
+                                    }
+                                  },
+                                ),
+                                OutlinedButton.icon(
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: ClassicTheme.infoBlue,
+                                    side: const BorderSide(color: ClassicTheme.infoBlue),
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                                  ),
+                                  icon: const Icon(Icons.people_alt_rounded, size: 14),
+                                  label: const Text('Staff', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                                  onPressed: () async {
+                                    await ref.read(saasSessionProvider.notifier).switchOrganizationForMasterAdmin(docId);
+                                    if (context.mounted) {
+                                      Navigator.push(context, MaterialPageRoute(builder: (_) => StaffManagementScreen(initialOrgId: docId)));
+                                    }
+                                  },
+                                ),
+                              ],
+                            ),
+                          ],
+                        )
+                      : Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: ClassicTheme.warningAmber.withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: const Icon(Icons.restaurant_rounded, size: 20, color: ClassicTheme.warningAmber),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Text(
+                                        name,
+                                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14.5, color: context.textPrimary),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                        decoration: BoxDecoration(
+                                          color: ClassicTheme.infoBlue.withValues(alpha: 0.15),
+                                          borderRadius: BorderRadius.circular(4),
+                                        ),
+                                        child: Text(storageMode, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: ClassicTheme.infoBlue)),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    'ID: $docId • Category: $category',
+                                    style: TextStyle(fontSize: 11.5, color: context.textSecondary),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                ElevatedButton.icon(
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: ClassicTheme.primaryAccentIndigo,
+                                    foregroundColor: Colors.white,
+                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                  ),
+                                  icon: const Icon(Icons.rocket_launch_rounded, size: 15),
+                                  label: const Text('Launch POS', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                                  onPressed: () async {
+                                    await ref.read(saasSessionProvider.notifier).switchOrganizationForMasterAdmin(docId);
+                                    if (context.mounted) {
+                                      Navigator.push(context, MaterialPageRoute(builder: (_) => const RestaurantHomeScreen()));
+                                    }
+                                  },
+                                ),
+                                const SizedBox(width: 8),
+                                OutlinedButton.icon(
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: ClassicTheme.warningAmber,
+                                    side: const BorderSide(color: ClassicTheme.warningAmber),
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                  ),
+                                  icon: const Icon(Icons.storefront_rounded, size: 15),
+                                  label: const Text('Outlets', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                                  onPressed: () async {
+                                    await ref.read(saasSessionProvider.notifier).switchOrganizationForMasterAdmin(docId);
+                                    if (context.mounted) {
+                                      Navigator.push(context, MaterialPageRoute(builder: (_) => BranchManagementScreen(initialOrgId: docId)));
+                                    }
+                                  },
+                                ),
+                                const SizedBox(width: 8),
+                                OutlinedButton.icon(
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: ClassicTheme.infoBlue,
+                                    side: const BorderSide(color: ClassicTheme.infoBlue),
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                  ),
+                                  icon: const Icon(Icons.people_alt_rounded, size: 15),
+                                  label: const Text('Staff', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                                  onPressed: () async {
+                                    await ref.read(saasSessionProvider.notifier).switchOrganizationForMasterAdmin(docId);
+                                    if (context.mounted) {
+                                      Navigator.push(context, MaterialPageRoute(builder: (_) => StaffManagementScreen(initialOrgId: docId)));
+                                    }
+                                  },
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                );
+              },
+            ),
+        ],
       ),
     );
   }

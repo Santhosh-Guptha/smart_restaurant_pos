@@ -226,6 +226,11 @@ class AuthNotifier extends StateNotifier<ShopAccount?> {
     return await _ref.read(saasSessionProvider.notifier).resendMfaCode(email);
   }
 
+  /// Clears all device registrations for an org so a locked-out user can re-login
+  Future<void> forceLogoutOtherDevices(String organizationId) async {
+    return await _ref.read(saasSessionProvider.notifier).forceLogoutOtherDevices(organizationId);
+  }
+
   /// Logs out the current user session (SaaS & Local)
   Future<void> signOut() async {
     final box = Hive.box('configBox');
@@ -277,6 +282,8 @@ class AuthNotifier extends StateNotifier<ShopAccount?> {
   }
 
   final GoogleSignIn _googleSignIn = GoogleSignIn(
+    clientId: kIsWeb ? kGoogleClientId : null,
+    serverClientId: kGoogleClientId,
     scopes: const [
       'email',
       'https://www.googleapis.com/auth/spreadsheets',

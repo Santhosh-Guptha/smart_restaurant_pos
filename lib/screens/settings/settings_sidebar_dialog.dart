@@ -95,6 +95,7 @@ class _SettingsSidebarDialogState extends ConsumerState<SettingsSidebarDialog> {
 
   @override
   Widget build(BuildContext context) {
+    ref.watch(themeModeProvider);
     final isDesktop = MediaQuery.of(context).size.width > 700;
 
     return Dialog(
@@ -102,7 +103,10 @@ class _SettingsSidebarDialogState extends ConsumerState<SettingsSidebarDialog> {
       insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
       child: Container(
         width: ClassicTheme.dialogWidth(context, 860),
-        height: 640,
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.sizeOf(context).height * 0.88,
+          minHeight: 400,
+        ),
         decoration: BoxDecoration(
           color: context.surfaceColor,
           borderRadius: BorderRadius.circular(20),
@@ -421,7 +425,7 @@ class _SettingsSidebarDialogState extends ConsumerState<SettingsSidebarDialog> {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text('Restaurant Outlet:', style: TextStyle(fontSize: 13, color: context.textSecondary)),
-                      Text(org.name, style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: context.textPrimary)),
+                      Flexible(child: Text(org.name, maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.end, style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: context.textPrimary))),
                     ],
                   ),
                   const Divider(height: 16),
@@ -646,10 +650,11 @@ class _SettingsSidebarDialogState extends ConsumerState<SettingsSidebarDialog> {
                   onChanged: (val) => pNotifier.setAutoPrint(val),
                 ),
                 const Divider(height: 12),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text('Paper Roll Size:', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: context.textPrimary)),
+                    const SizedBox(height: 8),
                     SegmentedButton<String>(
                       segments: const [
                         ButtonSegment(value: '58mm', label: Text('58mm (2-inch)')),
@@ -1177,9 +1182,13 @@ class _SettingsSidebarDialogState extends ConsumerState<SettingsSidebarDialog> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(
-            'Terminal & User preferences persist on this device.',
-            style: TextStyle(fontSize: 12, color: context.textSecondary),
+          Expanded(
+            child: Text(
+              'Terminal & User preferences persist on this device.',
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 12, color: context.textSecondary),
+            ),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(

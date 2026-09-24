@@ -131,12 +131,20 @@ class TenantPackage {
   /// - a dependant is on only if every parent is on;
   /// - an offline package carries no cloud key and no online-tier key;
   /// - every catalogue key is present, true or false.
-  static Map<String, bool> normalise(Map<String, bool> raw, String storageMode) {
+  static Map<String, bool> normalise(
+    Map<String, bool> raw,
+    String storageMode, {
+    String vertical = 'restaurant',
+  }) {
     final offline = StorageModes.isOffline(storageMode);
     final out = <String, bool>{};
     for (final def in FeatureCatalog.all) {
       var on = raw[def.key] == true;
       if (offline && (def.need != FeatureNeed.none || def.tier.isOnline)) {
+        on = false;
+      }
+      // Strip features that belong to a different vertical.
+      if (def.verticals.isNotEmpty && !def.verticals.contains(vertical)) {
         on = false;
       }
       out[def.key] = on;
@@ -185,13 +193,14 @@ class TenantPackage {
       }
     }
     final mode = (j['storageMode'] ?? StorageModes.pureOffline).toString().toUpperCase();
+    final vert = (j['vertical'] ?? Verticals.restaurant).toString();
     return TenantPackage(
       id: id,
       name: (j['name'] ?? id).toString(),
       description: (j['description'] ?? '').toString(),
-      vertical: (j['vertical'] ?? Verticals.restaurant).toString(),
+      vertical: vert,
       storageMode: mode,
-      features: normalise(rawFeatures, mode),
+      features: normalise(rawFeatures, mode, vertical: vert),
       isStarter: j['isStarter'] == true,
       sortOrder: (j['sortOrder'] is num) ? (j['sortOrder'] as num).toInt() : 100,
       createdAt: _date(j['createdAt']),
@@ -212,19 +221,110 @@ class TenantPackage {
   }
 }
 
-/// Lines of business. One today; the field is what makes a second one a
+/// Lines of business. Five verticals; the field is what makes adding more a
 /// data change rather than a fork.
 class Verticals {
   Verticals._();
-  static const String restaurant = 'restaurant';
-  static const List<String> all = [restaurant];
+  static const String restaurant  = 'restaurant';
+  static const String kirana      = 'kirana';
+  static const String supermarket = 'supermarket';
+  static const String pharmacy    = 'pharmacy';
+  static const String retail      = 'retail';
 
-  /// Which starter package a self-serve sign-up in this business category
-  /// lands on. Both the console's onboard dialog and the web trial handler
-  /// consult this, so a category never means two different things.
+  static const List<String> all = [
+    restaurant, kirana, supermarket, pharmacy, retail,
+  ];
+
+  /// Human-readable label for a vertical.
+  static String label(String vertical) {
+    switch (vertical) {
+      case restaurant:  return 'Restaurant & Hospitality';
+      case kirana:      return 'Kirana / Grocery';
+      case supermarket: return 'Supermarket';
+      case pharmacy:    return 'Pharmacy / Medical';
+      case retail:      return 'Retail Store';
+      default:          return vertical;
+    }
+  }
+
+  /// Maps any business-category string (from signup, master admin, or Firestore) to a vertical.
+  static String forCategory(String? businessCategory) {
+    if (businessCategory == null || businessCategory.trim().isEmpty) {
+      return restaurant;
+    }
+    final clean = businessCategory.trim().toLowerCase();
+
+    // Direct matches with vertical identifiers
+    if (clean == restaurant) return restaurant;
+    if (clean == kirana) return kirana;
+    if (clean == supermarket) return supermarket;
+    if (clean == pharmacy) return pharmacy;
+    if (clean == retail) return retail;
+
+    // 1. Supermarket / Departmental Store checks
+    if (clean.contains('supermarket') || clean.contains('departmental')) {
+      return supermarket;
+    }
+
+    // 2. Pharmacy / Medical checks
+    if (clean.contains('pharmacy') ||
+        clean.contains('medical') ||
+        clean.contains('chemist') ||
+        clean.contains('drug') ||
+        clean.contains('pharma')) {
+      return pharmacy;
+    }
+
+    // 3. Kirana / Grocery checks
+    if (clean.contains('kirana') ||
+        clean.contains('grocery') ||
+        clean.contains('provision')) {
+      return kirana;
+    }
+
+    // 4. Retail / General Store / Apparel / Electronics / Hardware checks
+    if (clean.contains('clothing') ||
+        clean.contains('apparel') ||
+        clean.contains('electronics') ||
+        clean.contains('mobile') ||
+        clean.contains('hardware') ||
+        clean.contains('electrical') ||
+        clean.contains('general store') ||
+        clean.contains('fashion') ||
+        clean.contains('retail') ||
+        clean == 'other business') {
+      return retail;
+    }
+
+    // 5. Restaurant / Cafe / Dining / Bakery / Food / Hospitality checks
+    if (clean.contains('restaurant') ||
+        clean.contains('cafe') ||
+        clean.contains('bakery') ||
+        clean.contains('sweets') ||
+        clean.contains('dining') ||
+        clean.contains('fast food') ||
+        clean.contains('qsr') ||
+        clean.contains('kiosk') ||
+        clean.contains('food court') ||
+        clean.contains('food') ||
+        clean.contains('cloud kitchen') ||
+        clean.contains('kitchen') ||
+        clean.contains('pizzeria') ||
+        clean.contains('coffee') ||
+        clean.contains('tea') ||
+        clean.contains('bar') ||
+        clean.contains('hospitality')) {
+      return restaurant;
+    }
+
+    return restaurant;
+  }
+
+  /// Default package for signup. Restaurants get dine-in;
+  /// all retail verticals get offline-single (counter-first).
   static String defaultPackageFor(String? businessCategory) {
-    // Every current category is a restaurant of some shape, and the trial is
-    // the offline dine-in package by decision (Sharon, 16 Sep 2026).
-    return PlanProfile.offlineDineIn.id;
+    final v = forCategory(businessCategory);
+    if (v == restaurant) return PlanProfile.offlineDineIn.id;
+    return PlanProfile.offlineSingle.id; // retail verticals start with counter
   }
 }

@@ -163,7 +163,7 @@ class FeatureGatedButton extends ConsumerWidget {
       child: Opacity(
         opacity: 0.5,
         child: Stack(
-          clipBehavior: Clip.none,
+          clipBehavior: Clip.hardEdge,
           alignment: Alignment.center,
           children: [
             GestureDetector(
@@ -176,16 +176,37 @@ class FeatureGatedButton extends ConsumerWidget {
               child: AbsorbPointer(child: child),
             ),
             PositionedDirectional(
-              end: -4,
-              top: -4,
+              end: 8,
+              top: 8,
               child: Container(
-                padding: const EdgeInsets.all(3),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
                 decoration: BoxDecoration(
-                  color: context.warningColor,
-                  shape: BoxShape.circle,
+                  color: context.warningColor.withValues(alpha: 0.9),
+                  borderRadius: BorderRadius.circular(8),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.15),
+                      blurRadius: 4,
+                      offset: const Offset(0, 1),
+                    ),
+                  ],
                 ),
-                child: const Icon(Icons.lock_rounded,
-                    size: 11, color: Colors.white),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.lock_rounded, size: 11, color: Colors.white),
+                    SizedBox(width: 3),
+                    Text(
+                      'PRO',
+                      style: TextStyle(
+                        fontSize: 9.5,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ],

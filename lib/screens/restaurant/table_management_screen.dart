@@ -238,9 +238,27 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen>
   // =========================================================================
   //  Hive Local Storage for Tables & KOT Orders (Zero Firebase Costs)
   // =========================================================================
+  int _resolveLicensedTableCount(String orgId) {
+    final session = ref.read(saasSessionProvider);
+    final outletId = session.activeFranchiseId ?? session.assignedOutletId;
+    if (outletId != null && outletId.isNotEmpty && Hive.isBoxOpen('configBox')) {
+      final rawOutlets = Hive.box('configBox').get('restaurant_outlets_$orgId');
+      if (rawOutlets is List) {
+        for (final o in rawOutlets) {
+          if (o is Map && (o['id'] == outletId || o['outletId'] == outletId)) {
+            final count = (o['tableCount'] as num?)?.toInt() ?? 0;
+            if (count > 0) return count;
+          }
+        }
+      }
+    }
+    return session.licensedTableCount;
+  }
+
   void _loadTablesFromHive(String orgId, String shopName) {
     final box = Hive.box('configBox');
     final raw = box.get('restaurant_tables_$orgId');
+    final targetCount = _resolveLicensedTableCount(orgId);
 
     List<RestaurantTable> loaded = [];
     if (raw is List && raw.isNotEmpty) {
@@ -253,29 +271,59 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen>
       }
     }
 
-    // Default 6 tables if none exist yet
     if (loaded.isEmpty) {
-      loaded = List.generate(6, (index) {
-        final num = '${index + 1}';
-        final token = const Uuid().v4();
-        final qrUrl = _buildQrUrl(num, shopName, orgId);
-        return RestaurantTable(
-          id: '${orgId}_T$num',
-          organizationId: orgId,
-          tableNumber: num,
-          name: 'Table $num',
-          section: 'Main Dining',
-          capacity: 4,
-          status: TableStatus.vacant,
-          token: token,
-          qrUrl: qrUrl,
-        );
-      });
-      box.put('restaurant_tables_$orgId', loaded.map((t) => t.toMap()).toList());
+      if (targetCount > 0) {
+        loaded = List.generate(targetCount, (index) {
+          final num = '${index + 1}';
+          final token = const Uuid().v4();
+          final qrUrl = _buildQrUrl(num, shopName, orgId);
+          return RestaurantTable(
+            id: '${orgId}_T$num',
+            organizationId: orgId,
+            tableNumber: num,
+            name: 'Table $num',
+            section: 'Main Dining',
+            capacity: 4,
+            status: TableStatus.vacant,
+            token: token,
+            qrUrl: qrUrl,
+          );
+        });
+        box.put('restaurant_tables_$orgId', loaded.map((t) => t.toMap()).toList());
+      }
     } else {
+      bool needsPersist = false;
+
+      // Auto-align legacy default tables (e.g. 6) to full licensed count (e.g. 15)
+      if (loaded.length < targetCount && loaded.length <= 6) {
+        final existingNums = loaded.map((t) {
+          final digits = t.tableNumber.replaceAll(RegExp(r'[^0-9]'), '');
+          return int.tryParse(digits) ?? 0;
+        }).toSet();
+
+        for (int i = 1; i <= targetCount; i++) {
+          if (!existingNums.contains(i)) {
+            final num = '$i';
+            final token = const Uuid().v4();
+            final qrUrl = _buildQrUrl(num, shopName, orgId);
+            loaded.add(RestaurantTable(
+              id: '${orgId}_T$num',
+              organizationId: orgId,
+              tableNumber: num,
+              name: 'Table $num',
+              section: 'Main Dining',
+              capacity: 4,
+              status: TableStatus.vacant,
+              token: token,
+              qrUrl: qrUrl,
+            ));
+            needsPersist = true;
+          }
+        }
+      }
+
       // Preserve existing non-empty QR URLs so physical printed QR stands remain valid.
       // Only generate if missing, and persist back if any table was updated.
-      bool needsPersist = false;
       loaded = loaded.map((t) {
         if (t.qrUrl == null || t.qrUrl!.isEmpty) {
           needsPersist = true;
@@ -288,6 +336,17 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen>
         box.put('restaurant_tables_$orgId', loaded.map((t) => t.toMap()).toList());
       }
     }
+
+    // Natural numeric sorting (Table 1, Table 2, ... Table 10, Table 15)
+    loaded.sort((a, b) {
+      final numA = int.tryParse(a.tableNumber.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
+      final numB = int.tryParse(b.tableNumber.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
+      if (numA != 0 && numB != 0) {
+        final cmp = numA.compareTo(numB);
+        if (cmp != 0) return cmp;
+      }
+      return a.tableNumber.compareTo(b.tableNumber);
+    });
 
     setState(() {
       _tables = loaded;
@@ -798,7 +857,10 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen>
         if (!exists) {
           try {
             final double subtotal = p.totalAmount;
-            final double gstAmount = showGst ? (subtotal * (taxPct / 100.0)) : 0.0;
+            final double taxableSubtotal = p.items.isNotEmpty
+                ? p.items.where((it) => !it.isTaxExempt).fold<double>(0.0, (sum, it) => sum + (it.price * it.qty))
+                : subtotal;
+            final double gstAmount = showGst ? (taxableSubtotal * (taxPct / 100.0)) : 0.0;
             final double cgstAmount = gstAmount / 2.0;
             final double finalTotal = subtotal + gstAmount;
 
@@ -823,6 +885,8 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen>
                 'total': it.price * it.qty,
                 'orderedBy': it.orderedBy ?? p.customerName,
                 'deviceId': it.deviceId ?? p.deviceId,
+                'isTaxExempt': it.isTaxExempt,
+                'is_tax_exempt': it.isTaxExempt,
               }).toList(),
               'subtotal': subtotal,
               'subtotal_amount': subtotal,
@@ -982,6 +1046,8 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen>
     String guestName = 'Table ${table.tableNumber}';
     String guestPhone = '';
 
+    double taxableSubtotal = 0.0;
+
     for (final order in activeOrdersForTable) {
       if (guestName.startsWith('Table') && order.customerName != null && order.customerName!.isNotEmpty) {
         guestName = order.customerName!;
@@ -990,30 +1056,37 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen>
         guestPhone = order.customerPhone!;
       }
       for (final it in order.items) {
+        final lineSubtotal = it.price * it.qty;
         allItems.add({
           'name': it.name,
           'qty': it.qty,
           'price': it.price,
-          'subtotal': it.price * it.qty,
+          'subtotal': lineSubtotal,
           'orderedBy': it.orderedBy ?? guestName,
+          'isTaxExempt': it.isTaxExempt,
         });
-        subtotal += (it.price * it.qty);
+        subtotal += lineSubtotal;
+        if (!it.isTaxExempt) {
+          taxableSubtotal += lineSubtotal;
+        }
       }
     }
 
     if (subtotal <= 0) {
       subtotal = table.currentBillAmount;
+      taxableSubtotal = subtotal;
       allItems.add({
         'name': 'Dine-In Food Order',
         'qty': 1,
         'price': subtotal,
         'subtotal': subtotal,
+        'isTaxExempt': false,
       });
     }
 
     final double taxPct = (printerState.taxPercentage ?? 0.0);
     final bool showGst = printerState.showGst && taxPct > 0;
-    final double gstAmount = showGst ? (subtotal * (taxPct / 100.0)) : 0.0;
+    final double gstAmount = showGst ? (taxableSubtotal * (taxPct / 100.0)) : 0.0;
     final double finalTotal = subtotal + gstAmount;
 
     final billMap = {
@@ -2620,6 +2693,26 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen>
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  margin: const EdgeInsets.only(bottom: 12),
+                  decoration: BoxDecoration(
+                    color: ClassicTheme.infoBlue.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: ClassicTheme.infoBlue.withValues(alpha: 0.3)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.table_restaurant_rounded, size: 14, color: ClassicTheme.infoBlue),
+                      const SizedBox(width: 6),
+                      Text(
+                        'Licensed: ${_tables.length} / ${_resolveLicensedTableCount(orgId)} Tables used',
+                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: ClassicTheme.infoBlue),
+                      ),
+                    ],
+                  ),
+                ),
                 TextField(
                   controller: numCtrl,
                   decoration: const InputDecoration(labelText: 'Table Number *', hintText: 'e.g. 1, 2, 10, T-05', border: OutlineInputBorder()),
@@ -2667,6 +2760,19 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen>
               onPressed: () async {
                 final tableNum = numCtrl.text.trim();
                 if (tableNum.isEmpty) return;
+
+                final maxAllowed = _resolveLicensedTableCount(orgId);
+                if (_tables.length >= maxAllowed) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Cannot add table: Plan license limit reached ($maxAllowed tables). Please upgrade your plan in Store Settings.'),
+                      backgroundColor: ClassicTheme.dangerRed,
+                    ),
+                  );
+                  Navigator.pop(ctx);
+                  return;
+                }
+
                 final docId = '${orgId}_T${tableNum.replaceAll(RegExp(r'[^0-9]'), '')}';
                 final token = const Uuid().v4();
                 final qrUrl = _buildQrUrl(tableNum, shopName, orgId);
@@ -2685,6 +2791,15 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen>
 
                 setState(() {
                   _tables.add(newTable);
+                  _tables.sort((a, b) {
+                    final numA = int.tryParse(a.tableNumber.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
+                    final numB = int.tryParse(b.tableNumber.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
+                    if (numA != 0 && numB != 0) {
+                      final cmp = numA.compareTo(numB);
+                      if (cmp != 0) return cmp;
+                    }
+                    return a.tableNumber.compareTo(b.tableNumber);
+                  });
                 });
                 await _saveTablesToHive(orgId);
 
@@ -2975,14 +3090,20 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen>
     }
 
     double dishesSubtotal = 0.0;
+    double taxableSubtotal = 0.0;
     for (final it in allItems) {
-      dishesSubtotal += (it.price * it.qty);
+      final lineSubtotal = it.price * it.qty;
+      dishesSubtotal += lineSubtotal;
+      if (!it.isTaxExempt) {
+        taxableSubtotal += lineSubtotal;
+      }
     }
     if (dishesSubtotal <= 0) {
       dishesSubtotal = activeOrders.fold<double>(0.0, (s, o) => s + o.totalAmount);
       if (dishesSubtotal <= 0 && resolvedTable != null) {
         dishesSubtotal = resolvedTable.currentBillAmount;
       }
+      taxableSubtotal = dishesSubtotal;
     }
 
     String custName = '';
@@ -3024,7 +3145,10 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen>
       builder: (ctx) => StatefulBuilder(
         builder: (context, setModalState) {
           final scAmount = includeServiceCharge ? (dishesSubtotal * (scRate / 100.0)) : 0.0;
-          final gstAmount = (dishesSubtotal + scAmount) * (gstRate / 100.0);
+          final taxableSc = (dishesSubtotal > 0 && taxableSubtotal > 0)
+              ? (scAmount * (taxableSubtotal / dishesSubtotal))
+              : (taxableSubtotal > 0 ? scAmount : 0.0);
+          final gstAmount = (taxableSubtotal + taxableSc) * (gstRate / 100.0);
           final totalPayable = dishesSubtotal + scAmount + gstAmount + selectedTip;
 
           final upiId = _getDefaultUpiId();
@@ -3450,6 +3574,7 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen>
                                 'price': it.price,
                                 'qty': it.qty,
                                 'subtotal': it.price * it.qty,
+                                'isTaxExempt': it.isTaxExempt,
                               }).toList(),
                             };
                             await AppsScriptBackendService.saveBill(

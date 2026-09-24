@@ -30,6 +30,7 @@ class ClientLedgerCloudRouterService {
   static const String masterAdminEmail = kAdminEmail;
 
   static final GoogleSignIn _googleSignIn = GoogleSignIn(
+    clientId: kIsWeb ? kGoogleClientId : null,
     serverClientId: kGoogleClientId,
     scopes: const [
       'email',

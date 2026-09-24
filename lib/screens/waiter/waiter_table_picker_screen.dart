@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
@@ -30,12 +31,29 @@ class _WaiterTablePickerScreenState extends ConsumerState<WaiterTablePickerScree
     with FeatureRouteGuard<WaiterTablePickerScreen> {
   List<RestaurantTable> _tables = [];
   String _section = 'All';
+  StreamSubscription? _hiveTableSub;
 
   @override
   void initState() {
     super.initState();
     guardFeature(FeatureKeys.waiterOrdering);
-    if (!guardTripped) _load();
+    if (!guardTripped) {
+      _load();
+      try {
+        final org = _orgId();
+        if (Hive.isBoxOpen('configBox')) {
+          _hiveTableSub = Hive.box('configBox').watch(key: 'restaurant_tables_$org').listen((_) {
+            if (mounted) _load();
+          });
+        }
+      } catch (_) {}
+    }
+  }
+
+  @override
+  void dispose() {
+    _hiveTableSub?.cancel();
+    super.dispose();
   }
 
   String _orgId() {
@@ -47,17 +65,62 @@ class _WaiterTablePickerScreenState extends ConsumerState<WaiterTablePickerScree
     );
   }
 
+  int _resolveLicensedTableCount(String orgId) {
+    final session = ref.read(saasSessionProvider);
+    final outletId = session.activeFranchiseId ?? session.assignedOutletId;
+    if (outletId != null && outletId.isNotEmpty && Hive.isBoxOpen('configBox')) {
+      final rawOutlets = Hive.box('configBox').get('restaurant_outlets_$orgId');
+      if (rawOutlets is List) {
+        for (final o in rawOutlets) {
+          if (o is Map && (o['id'] == outletId || o['outletId'] == outletId)) {
+            final count = (o['tableCount'] as num?)?.toInt() ?? 0;
+            if (count > 0) return count;
+          }
+        }
+      }
+    }
+    return session.licensedTableCount;
+  }
+
   void _load() {
     try {
       final box = Hive.box('configBox');
-      final raw = box.get('restaurant_tables_${_orgId()}');
-      if (raw is List) {
+      final orgId = _orgId();
+      final raw = box.get('restaurant_tables_$orgId');
+      if (raw is List && raw.isNotEmpty) {
         _tables = raw
             .whereType<Map>()
             .map((m) => RestaurantTable.fromMap(Map<String, dynamic>.from(m), m['id']?.toString() ?? ''))
-            .toList()
-          ..sort((a, b) => a.tableNumber.compareTo(b.tableNumber));
+            .toList();
+      } else {
+        final targetCount = _resolveLicensedTableCount(orgId);
+        if (targetCount > 0) {
+          _tables = List.generate(targetCount, (index) {
+            final num = '${index + 1}';
+            return RestaurantTable(
+              id: '${orgId}_T$num',
+              organizationId: orgId,
+              tableNumber: num,
+              name: 'Table $num',
+              section: 'Main Dining',
+              capacity: 4,
+              status: TableStatus.vacant,
+            );
+          });
+          box.put('restaurant_tables_$orgId', _tables.map((t) => t.toMap()).toList());
+        }
       }
+
+      // Natural numeric sorting
+      _tables.sort((a, b) {
+        final numA = int.tryParse(a.tableNumber.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
+        final numB = int.tryParse(b.tableNumber.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
+        if (numA != 0 && numB != 0) {
+          final cmp = numA.compareTo(numB);
+          if (cmp != 0) return cmp;
+        }
+        return a.tableNumber.compareTo(b.tableNumber);
+      });
     } catch (_) {
       _tables = [];
     }

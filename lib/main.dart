@@ -41,7 +41,21 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   try {
-    await Firebase.initializeApp();
+    if (kIsWeb) {
+      await Firebase.initializeApp(
+        options: const FirebaseOptions(
+          apiKey: 'AIzaSyBv9G7J15k47VKFwc0pUcC3oJHs4xNybyc',
+          appId: '1:486476143616:web:8bee0b3b52aa403b928ce5',
+          messagingSenderId: '486476143616',
+          projectId: 'smartdine-restaurant-pos',
+          authDomain: 'smartdine-restaurant-pos.firebaseapp.com',
+          storageBucket: 'smartdine-restaurant-pos.firebasestorage.app',
+          databaseURL: 'https://smart-kirana-shop-5bb2b-default-rtdb.asia-southeast1.firebasedatabase.app',
+        ),
+      );
+    } else {
+      await Firebase.initializeApp();
+    }
     FirebaseDatabase.instance.databaseURL =
         'https://smart-kirana-shop-5bb2b-default-rtdb.asia-southeast1.firebasedatabase.app';
     
@@ -68,20 +82,22 @@ void main() async {
     debugPrint('Outbox auto-drain failed to start: $e');
   }
 
-  Future.microtask(() async {
-    try {
-      final tempDir = await getTemporaryDirectory();
-      if (tempDir.existsSync()) {
-        for (final entity in tempDir.listSync()) {
-          try {
-            final name = entity.path.split(Platform.pathSeparator).last.toLowerCase();
-            if (name.endsWith('.sbk') || name.endsWith('.csv')) continue;
-            entity.deleteSync(recursive: true);
-          } catch (_) {}
+  if (!kIsWeb) {
+    Future.microtask(() async {
+      try {
+        final tempDir = await getTemporaryDirectory();
+        if (tempDir.existsSync()) {
+          for (final entity in tempDir.listSync()) {
+            try {
+              final name = entity.path.split(Platform.pathSeparator).last.toLowerCase();
+              if (name.endsWith('.sbk') || name.endsWith('.csv')) continue;
+              entity.deleteSync(recursive: true);
+            } catch (_) {}
+          }
         }
-      }
-    } catch (_) {}
-  });
+      } catch (_) {}
+    });
+  }
 
   PaintingBinding.instance.imageCache.maximumSizeBytes = 50 * 1024 * 1024;
   PaintingBinding.instance.imageCache.maximumSize = 100;
@@ -148,7 +164,7 @@ Future<void> _bootstrapMasterDatabaseIfNeeded() async {
 }
 
 // Keep in step with pubspec.yaml `version:` — the forced-update check compares this.
-const String kCurrentAppVersion = '1.1.7';
+const String kCurrentAppVersion = '1.2.0';
 
 int _compareVersions(String v1, String v2) {
   final cleanV1 = v1.split('+').first.trim();

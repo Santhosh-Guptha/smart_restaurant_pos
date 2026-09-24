@@ -72,11 +72,11 @@ String formatQty(dynamic qty) {
 
 /// Resolves current effective outlet/org ID safely without guessing or hardcoding foreign tenants.
 String resolveOutletId({String? userOrgId, String? sessionOrgId, dynamic hiveBox}) {
-  if (userOrgId != null && userOrgId.isNotEmpty && userOrgId != 'ORG_DEFAULT' && userOrgId != 'default' && userOrgId != 'ORG264646') {
-    return userOrgId;
-  }
   if (sessionOrgId != null && sessionOrgId.isNotEmpty && sessionOrgId != 'ORG_DEFAULT' && sessionOrgId != 'default' && sessionOrgId != 'ORG264646') {
     return sessionOrgId;
+  }
+  if (userOrgId != null && userOrgId.isNotEmpty && userOrgId != 'ORG_DEFAULT' && userOrgId != 'default' && userOrgId != 'ORG264646') {
+    return userOrgId;
   }
   if (hiveBox != null) {
     try {
