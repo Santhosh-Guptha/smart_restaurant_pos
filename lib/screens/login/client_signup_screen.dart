@@ -596,18 +596,31 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
         }
 
         final profile = PlanProfile.byId(_selectedOption);
+        final vertical = Verticals.forCategory(_businessCategory);
+        final fallbackSuffix = vertical == Verticals.restaurant
+            ? "Restaurant"
+            : vertical == Verticals.supermarket
+                ? "Supermarket"
+                : vertical == Verticals.pharmacy
+                    ? "Pharmacy"
+                    : "Store";
+        final effectiveShopName = shopName.isNotEmpty ? shopName : "$clientName $fallbackSuffix";
+
         final reqRef = _firestore.collection('registration_requests').doc();
         await reqRef.set({
           'id': reqRef.id,
           'clientName': clientName,
-          'shopName': shopName.isNotEmpty ? shopName : "$clientName Store",
+          'shopName': effectiveShopName,
           'businessCategory': _businessCategory,
           'mobile': mobile,
           'email': email,
           'status': 'PENDING',
           'emailVerified': true,
           'requestedPlan': _selectedOption,
-          'requestedPackageId': _selectedOption,
+          'requestedPlanLabel': profile.label,
+          'requestedPackageId': profile.id,
+          'requestedPlanId': profile.id.toLowerCase(),
+          'isEnterprise': false,
           'createdAt': FieldValue.serverTimestamp(),
           'updatedAt': FieldValue.serverTimestamp(),
         });
@@ -615,7 +628,7 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
         SmtpEmailService.sendRegistrationSubmittedEmail(
           recipientEmail: email,
           clientName: clientName,
-          shopName: shopName.isNotEmpty ? shopName : "$clientName Store",
+          shopName: effectiveShopName,
           businessCategory: _businessCategory,
           mobile: mobile,
         ).catchError((_) => <String, dynamic>{});
@@ -641,17 +654,31 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
           return;
         }
 
+        final vertical = Verticals.forCategory(_businessCategory);
+        final fallbackSuffix = vertical == Verticals.restaurant
+            ? "Restaurant"
+            : vertical == Verticals.supermarket
+                ? "Supermarket"
+                : vertical == Verticals.pharmacy
+                    ? "Pharmacy"
+                    : "Store";
+        final effectiveShopName = shopName.isNotEmpty ? shopName : "$clientName $fallbackSuffix";
+
         final reqRef = _firestore.collection('registration_requests').doc();
         await reqRef.set({
           'id': reqRef.id,
           'clientName': clientName,
-          'shopName': shopName.isNotEmpty ? shopName : "$clientName Restaurant",
+          'shopName': effectiveShopName,
           'businessCategory': _businessCategory,
           'mobile': mobile,
           'email': email,
           'status': 'PENDING',
           'emailVerified': true,
           'requestedPlan': 'ENTERPRISE_CUSTOM',
+          'requestedPlanLabel': 'Enterprise / Custom Setup',
+          'requestedPackageId': PlanProfile.omnichannel.id,
+          'requestedPlanId': 'omnichannel',
+          'isEnterprise': true,
           'createdAt': FieldValue.serverTimestamp(),
           'updatedAt': FieldValue.serverTimestamp(),
         });
@@ -659,7 +686,7 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
         SmtpEmailService.sendRegistrationSubmittedEmail(
           recipientEmail: email,
           clientName: clientName,
-          shopName: shopName.isNotEmpty ? shopName : "$clientName Store",
+          shopName: effectiveShopName,
           businessCategory: _businessCategory,
           mobile: mobile,
         ).catchError((_) => <String, dynamic>{});

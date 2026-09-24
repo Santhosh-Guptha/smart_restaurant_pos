@@ -390,6 +390,21 @@ When transitioning from local development to the brand-new production environmen
 
 ---
 
+### Issue 24: Multi-Vertical Registration Alignment & Custom Package/Plan Desynchronization in Admin Console
+- **Problem**: When a client registered for non-restaurant verticals (e.g. *Supermarket / Departmental Store*, *Kirana Store*, *Pharmacy*) and requested *Enterprise / Custom Setup* or paid packages:
+  1. In `admin_models.dart`, `UnifiedClientLead.fromTrial` hardcoded `selectedPlan = '14-Day Free Trial'` and `isTrial = true`, ignoring `d['requestedPlan']` (`ENTERPRISE_CUSTOM` or paid package IDs). Inquiries & Leads displayed the client as requesting a 14-day free trial.
+  2. In `master_admin_screen.dart`, `AdminInquiriesView.onOnboardLead` failed to forward `initialCategory`, `initialPackageId`, and `initialPlanId` to `OrganizationsTab.showOnboardOrganizationDialog`.
+  3. `showOnboardOrganizationDialog` lacked parameters to receive the requested plan and package, causing the modal to always fall back to `Restaurant & Cafe`, `isDefaultTrial` (14-day free trial plan), and `offlineDineIn` (with dining tables, running tabs, and kitchen tickets).
+  4. The onboarding dialog displayed restaurant-specific quotas (Table Quota: 15, Operating Mode: Dine-In Postpaid) for retail stores and rendered action button text as `"Onboard Restaurant"`.
+  5. `TenantPackageEditor` displayed `offlineDineIn` for all verticals without filtering restaurant-specific features.
+- **Resolution**:
+  - `admin_models.dart`: Updated `UnifiedClientLead` with `requestedPackageId` and `requestedPlanId`. Updated `fromTrial` and `fromInquiry` to parse `requestedPlan`, `requestedPackageId`, `requestedPlanId`, and `isEnterprise`. Enterprise and paid package requests are now categorized with their true requested plan label (e.g. "Enterprise / Custom Setup") and marked `isTrial = false`.
+  - `client_signup_screen.dart`: Updated `_handleSubmitRegistration` to persist `requestedPlanLabel`, `requestedPackageId`, `requestedPlanId`, `isEnterprise`, and vertical-aware fallback store names (e.g., "$name Supermarket" instead of "$name Restaurant").
+  - `master_admin_screen.dart`: Updated `onOnboardLead` to pass `initialCategory`, `initialPackageId`, and `initialPlanId`. Updated `showOnboardOrganizationDialog` to safely map category, pre-select the client's requested plan and package, hide dining table/KOT quotas for retail/supermarket stores, and display dynamic action buttons and success messages (`"Onboard Supermarket"`, `"Onboard Kirana Store"`, etc.).
+  - `tenant_package_editor.dart`: Added `businessCategory` parameter. Non-restaurant verticals automatically filter out `offlineDineIn` and `offline_dine_in` plans, and display tailored retail descriptions for `offlineSingle`, `connected`, and `omnichannel`.
+
+---
+
 ### Step 2: Google Apps Script Webhook Deployment
 - [x] Logged into [script.google.com](https://script.google.com) with production account `smartdine.platform@gmail.com`.
 - [x] Deployed `google_apps_script/Code.gs` as Web App (the canonical production operational gateway):

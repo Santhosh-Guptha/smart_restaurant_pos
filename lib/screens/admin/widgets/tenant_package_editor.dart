@@ -124,12 +124,16 @@ class TenantPackageEditor extends StatefulWidget {
   /// the licence screen.
   final bool showValidity;
 
+  /// The vertical or business category for this tenant (e.g. supermarket, kirana, restaurant).
+  final String? businessCategory;
+
   const TenantPackageEditor({
     super.key,
     required this.value,
     required this.onChanged,
     this.limitsReadOnly = false,
     this.showValidity = true,
+    this.businessCategory,
   });
 
   @override
@@ -145,27 +149,48 @@ class _TenantPackageEditorState extends State<TenantPackageEditor> {
     _lists = _load();
   }
 
+  @override
+  void didUpdateWidget(TenantPackageEditor oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.businessCategory != oldWidget.businessCategory) {
+      setState(() {
+        _lists = _load();
+      });
+    }
+  }
+
   Future<(List<TenantPackage>, List<SubscriptionPlan>)> _load() async {
     var packages = await PackageService.getAll();
     var plans = await SubscriptionPlanService.getAllPlans();
     if (plans.isEmpty) plans = [SubscriptionPlanService.fallbackTrialPlan];
+
+    final vertical = Verticals.forCategory(widget.businessCategory);
+    final isRestaurant = vertical == Verticals.restaurant;
+
+    // Filter packages and plans if not a restaurant
+    if (!isRestaurant) {
+      packages = packages.where((p) => p.id != PlanProfile.offlineDineIn.id).toList();
+      plans = plans.where((p) => p.id != 'offline_dine_in').toList();
+    }
+
     plans.sort((a, b) {
       if (a.isDefaultTrial != b.isDefaultTrial) return a.isDefaultTrial ? -1 : 1;
       final d = a.validityDays.compareTo(b.validityDays);
       return d != 0 ? d : a.name.compareTo(b.name);
     });
 
-    // The value handed in may name a package or plan by id that the lists
-    // know better (an admin's edit since the caller built it). Prefer the
-    // list's copy so the preview shows what will actually be written.
-    //
-    // A package the list does not have is a custom one made for this tenant
-    // and not yet saved: show it, selected, so Apply can save it. A plan the
-    // list does not have is either the same (a `plan_custom_` snap) or a
-    // stand-in with no id; the stand-in is replaced by a real plan, because a
-    // planId that is not a document must never be written.
-    final pkg = packages.where((p) => p.id == widget.value.package.id).firstOrNull;
-    if (pkg == null) packages = [...packages, widget.value.package];
+    // Check if current package is valid for this vertical
+    TenantPackage currentPkg = widget.value.package;
+    if (!isRestaurant && currentPkg.id == PlanProfile.offlineDineIn.id) {
+      final fallbackPkgId = Verticals.defaultPackageFor(widget.businessCategory);
+      currentPkg = packages.firstWhere(
+        (p) => p.id == fallbackPkgId,
+        orElse: () => packages.isNotEmpty ? packages.first : currentPkg,
+      );
+    }
+
+    final pkg = packages.where((p) => p.id == currentPkg.id).firstOrNull;
+    if (pkg == null) packages = [...packages, currentPkg];
     var plan = plans.where((p) => p.id == widget.value.plan.id).firstOrNull;
     if (plan == null) {
       if (widget.value.plan.id.isNotEmpty) {
@@ -180,9 +205,11 @@ class _TenantPackageEditorState extends State<TenantPackageEditor> {
             : b);
       }
     }
-    if ((pkg != null && pkg != widget.value.package) || (plan != null && plan != widget.value.plan)) {
+    final effectivePkg = pkg ?? currentPkg;
+    final effectivePlan = plan ?? widget.value.plan;
+    if (effectivePkg != widget.value.package || effectivePlan != widget.value.plan) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) widget.onChanged(widget.value.copyWith(package: pkg, plan: plan));
+        if (mounted) widget.onChanged(widget.value.copyWith(package: effectivePkg, plan: effectivePlan));
       });
     }
     return (packages, plans);
@@ -222,15 +249,31 @@ class _TenantPackageEditorState extends State<TenantPackageEditor> {
   Widget _packageCard(BuildContext context, TenantPackage p) {
     final selected = p.id == widget.value.package.id;
     final on = p.enabledKeys.length;
+    final desc = _packageDescriptionFor(p, widget.businessCategory);
     return _card(
       context,
       selected: selected,
       onTap: () => widget.onChanged(widget.value.copyWith(package: p)),
       title: p.name,
       trailing: '$on feature${on == 1 ? '' : 's'} \u00b7 ${StorageModes.label(p.storageMode)}',
-      body: p.description,
+      body: desc,
       badge: p.isStarter ? null : 'Custom',
     );
+  }
+
+  String _packageDescriptionFor(TenantPackage p, String? businessCategory) {
+    final vertical = Verticals.forCategory(businessCategory);
+    if (vertical == Verticals.restaurant) return p.description;
+    if (p.id == PlanProfile.offlineSingle.id) {
+      return 'One till, no internet. Fast barcode billing, product catalog, receipt printing, store settings, and day-end.';
+    }
+    if (p.id == PlanProfile.connected.id) {
+      return 'Multi-till barcode billing with cloud sync, sales ledger, and analytics on up to 5 devices.';
+    }
+    if (p.id == PlanProfile.omnichannel.id) {
+      return 'Multi-store chain setup, central warehouse, multiple outlets, stock management, staff and digital bills.';
+    }
+    return p.description;
   }
 
   Widget _planCard(BuildContext context, SubscriptionPlan p) {

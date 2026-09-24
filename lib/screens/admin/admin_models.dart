@@ -1,6 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../../core/entitlements.dart';
+import '../../core/package_model.dart';
 
-/// Unified model representing either a Website Commercial Inquiry or a 14-Day Free Trial lead.
+/// Unified model representing either a Website Commercial Inquiry or a Registration lead.
 class UnifiedClientLead {
   final String id;
   final String clientName;
@@ -17,6 +19,8 @@ class UnifiedClientLead {
   final bool isTrial;
   final DateTime? createdAt;
   final Map<String, dynamic> rawData;
+  final String? requestedPackageId;
+  final String? requestedPlanId;
 
   UnifiedClientLead({
     required this.id,
@@ -34,6 +38,8 @@ class UnifiedClientLead {
     required this.isTrial,
     this.createdAt,
     required this.rawData,
+    this.requestedPackageId,
+    this.requestedPlanId,
   });
 
   /// Still needs a human. `PROVISIONING` is here on purpose: the web page
@@ -97,6 +103,15 @@ class UnifiedClientLead {
         '';
     final status = (d['status']?.toString().trim().toUpperCase() ?? 'NEW_INQUIRY');
 
+    final planLower = plan.toLowerCase();
+    final isEnterprise = planLower.contains('enterprise');
+    final String? pkgId = d['requestedPackageId']?.toString().trim() ??
+        d['packageId']?.toString().trim() ??
+        (isEnterprise ? PlanProfile.omnichannel.id : (planLower.contains('connected') ? PlanProfile.connected.id : null));
+    final String? planId = d['requestedPlanId']?.toString().trim() ??
+        d['planId']?.toString().trim() ??
+        (isEnterprise ? 'omnichannel' : (planLower.contains('connected') ? 'connected' : null));
+
     return UnifiedClientLead(
       id: docId,
       clientName: clientName,
@@ -113,6 +128,8 @@ class UnifiedClientLead {
       isTrial: false,
       createdAt: parseDateTime(d['createdAt']),
       rawData: d,
+      requestedPackageId: pkgId,
+      requestedPlanId: planId,
     );
   }
 
@@ -120,7 +137,7 @@ class UnifiedClientLead {
     final clientName = d['clientName']?.toString().trim() ??
         d['client_name']?.toString().trim() ??
         d['name']?.toString().trim() ??
-        'Trial Applicant';
+        'Applicant';
     final brandName = d['shopName']?.toString().trim() ??
         d['shop_name']?.toString().trim() ??
         d['brandName']?.toString().trim() ??
@@ -135,8 +152,40 @@ class UnifiedClientLead {
     final category = d['businessCategory']?.toString().trim() ??
         d['category']?.toString().trim() ??
         'Restaurant & Cafe';
-    final plan = '14-Day Free Trial';
     final status = (d['status']?.toString().trim().toUpperCase() ?? 'PENDING');
+
+    final rawPlan = d['requestedPlan']?.toString().trim() ??
+        d['plan']?.toString().trim() ??
+        '';
+    final isEnterprise = rawPlan.toUpperCase() == 'ENTERPRISE_CUSTOM' ||
+        d['isEnterprise'] == true ||
+        rawPlan.toLowerCase().contains('enterprise');
+    final isPaidPkg = rawPlan.isNotEmpty &&
+        rawPlan != 'free_trial' &&
+        rawPlan != 'trial' &&
+        !isEnterprise;
+
+    final String planLabel;
+    if (d['requestedPlanLabel'] != null && d['requestedPlanLabel'].toString().isNotEmpty) {
+      planLabel = d['requestedPlanLabel'].toString();
+    } else if (isEnterprise) {
+      planLabel = 'Enterprise / Custom Setup';
+    } else if (isPaidPkg) {
+      final prof = PlanProfile.byId(rawPlan);
+      planLabel = prof.label;
+    } else {
+      planLabel = '14-Day Free Trial';
+    }
+
+    final isTrial = !isEnterprise && !isPaidPkg;
+
+    final pkgId = d['requestedPackageId']?.toString().trim() ??
+        (isEnterprise ? PlanProfile.omnichannel.id : (isPaidPkg ? rawPlan : Verticals.defaultPackageFor(category)));
+    final planId = isEnterprise ? 'omnichannel' : (isPaidPkg ? rawPlan.toLowerCase() : 'trial');
+
+    final defaultReqs = isEnterprise
+        ? 'Enterprise / Custom multi-store deployment request.'
+        : (d['referralSource'] != null ? 'Referral: ${d['referralSource']}' : '');
 
     return UnifiedClientLead(
       id: docId,
@@ -146,16 +195,18 @@ class UnifiedClientLead {
       email: email,
       city: city,
       businessCategory: category,
-      selectedPlan: plan,
-      outlets: '1 Outlet',
-      stations: 'POS Counter',
-      requirements: d['referralSource'] != null
-          ? 'Referral Source: ${d['referralSource']}'
-          : '',
+      selectedPlan: planLabel,
+      outlets: isEnterprise ? 'Multi-Outlet / Chain' : '1 Outlet',
+      stations: isEnterprise ? 'Enterprise Multi-Till' : 'POS Counter',
+      requirements: d['requirements']?.toString().trim() ??
+          d['notes']?.toString().trim() ??
+          defaultReqs,
       status: status,
-      isTrial: true,
+      isTrial: isTrial,
       createdAt: parseDateTime(d['createdAt']),
       rawData: d,
+      requestedPackageId: pkgId,
+      requestedPlanId: planId,
     );
   }
 }

@@ -789,10 +789,13 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
                                 context,
                                 initialName: lead.clientName,
                                 initialShopName: lead.brandName,
+                                initialCategory: lead.businessCategory,
                                 initialEmail: lead.email,
                                 initialMobile: lead.phone,
                                 initialAddress: lead.city,
                                 requestId: lead.id,
+                                initialPackageId: lead.requestedPackageId,
+                                initialPlanId: lead.requestedPlanId,
                               );
                             },
                           ),
@@ -1513,6 +1516,23 @@ class OrganizationsTab extends ConsumerStatefulWidget {
     );
   }
 
+  static String _getEntityLabel(String cat) {
+    final v = Verticals.forCategory(cat);
+    switch (v) {
+      case Verticals.supermarket:
+        return "Supermarket";
+      case Verticals.kirana:
+        return "Kirana Store";
+      case Verticals.pharmacy:
+        return "Pharmacy";
+      case Verticals.retail:
+        return "Store";
+      case Verticals.restaurant:
+      default:
+        return "Restaurant";
+    }
+  }
+
   static void showOnboardOrganizationDialog(
     BuildContext context, {
     String? initialName,
@@ -1525,19 +1545,58 @@ class OrganizationsTab extends ConsumerStatefulWidget {
     String? initialGst,
     String? initialAddress,
     String? requestId,
+    String? initialPackageId,
+    String? initialPlanId,
   }) async {
     final availablePlans = await SubscriptionPlanService.getAllPlans();
     if (!context.mounted) return;
 
     final formKey = GlobalKey<FormState>();
 
+    final validCategories = const [
+      'Restaurant & Cafe',
+      'Fast Food / QSR',
+      'Fine Dining & Bar',
+      'Bakery & Sweets',
+      'Food Court / Kiosk',
+      'Cloud Kitchen / Delivery',
+      'Pizzeria / Italian',
+      'Coffee House / Tea Lounge',
+      'Other Hospitality',
+      'Kirana / Grocery Store',
+      'Supermarket / Departmental Store',
+      'Pharmacy / Medical Store',
+      'General Retail / Fashion / Electronics',
+    ];
+
+    String businessCategory = 'Restaurant & Cafe';
+    if (initialCategory != null && initialCategory.trim().isNotEmpty) {
+      if (validCategories.contains(initialCategory.trim())) {
+        businessCategory = initialCategory.trim();
+      } else {
+        final v = Verticals.forCategory(initialCategory);
+        if (v == Verticals.supermarket) {
+          businessCategory = 'Supermarket / Departmental Store';
+        } else if (v == Verticals.kirana) {
+          businessCategory = 'Kirana / Grocery Store';
+        } else if (v == Verticals.pharmacy) {
+          businessCategory = 'Pharmacy / Medical Store';
+        } else if (v == Verticals.retail) {
+          businessCategory = 'General Retail / Fashion / Electronics';
+        } else {
+          businessCategory = 'Restaurant & Cafe';
+        }
+      }
+    }
+
+    final entityLabel = _getEntityLabel(businessCategory);
+
     // Client & Org Information Controllers
     final orgIdController = TextEditingController(text: generateUniqueOrgId());
     final ownerNameController = TextEditingController(text: initialName ?? '');
     final nameController = TextEditingController(
-      text: initialShopName ?? (initialName != null ? "$initialName Restaurant" : ''),
+      text: initialShopName ?? (initialName != null ? "$initialName $entityLabel" : ''),
     );
-    String businessCategory = initialCategory ?? 'Restaurant & Cafe';
     final mobileController = TextEditingController(text: initialMobile ?? '');
     final aadhaarController = TextEditingController(text: initialAadhaar ?? '');
     final panController = TextEditingController(text: initialPan ?? '');
@@ -1546,21 +1605,36 @@ class OrganizationsTab extends ConsumerStatefulWidget {
     final ownerEmailController = TextEditingController(text: initialEmail ?? '');
     final ownerPasswordController = TextEditingController(text: '123456');
 
-    // Selected Dynamic Subscription Plan
-    SubscriptionPlan selectedPlan = availablePlans.firstWhere(
-      (p) => p.isDefaultTrial,
-      orElse: () => availablePlans.isNotEmpty ? availablePlans.first : SubscriptionPlanService.fallbackTrialPlan,
-    );
+    // Selected Dynamic Subscription Plan: Match initialPlanId if provided
+    SubscriptionPlan selectedPlan;
+    if (initialPlanId != null && initialPlanId.trim().isNotEmpty) {
+      final targetPlanId = initialPlanId.trim().toLowerCase();
+      selectedPlan = availablePlans.firstWhere(
+        (p) => p.id.toLowerCase() == targetPlanId,
+        orElse: () => availablePlans.firstWhere(
+          (p) => p.isDefaultTrial,
+          orElse: () => availablePlans.isNotEmpty ? availablePlans.first : SubscriptionPlanService.fallbackTrialPlan,
+        ),
+      );
+    } else {
+      selectedPlan = availablePlans.firstWhere(
+        (p) => p.isDefaultTrial,
+        orElse: () => availablePlans.isNotEmpty ? availablePlans.first : SubscriptionPlanService.fallbackTrialPlan,
+      );
+    }
 
-    int tableCount = selectedPlan.tableCount;
-    String operatingMode = selectedPlan.operatingMode;
+    final isRestaurantInitial = Verticals.forCategory(businessCategory) == Verticals.restaurant;
+    int tableCount = isRestaurantInitial ? selectedPlan.tableCount : 0;
+    String operatingMode = isRestaurantInitial ? selectedPlan.operatingMode : 'counterPrepaid';
 
-    // A package and a plan, in one value object that composes itself, so
-    // nothing below can read a half-configured licence. Starts on what a new
-    // restaurant most often is: the trial package for its category, on the
-    // default trial plan.
-    final startPackage = (await PackageService.getById(Verticals.defaultPackageFor(businessCategory))) ??
-        TenantPackage.fromProfile(PlanProfile.offlineDineIn);
+    // Start Package: Match initialPackageId if provided, else vertical default
+    final pkgIdToUse = (initialPackageId != null && initialPackageId.trim().isNotEmpty)
+        ? initialPackageId.trim()
+        : Verticals.defaultPackageFor(businessCategory);
+
+    final startPackage = (await PackageService.getById(pkgIdToUse)) ??
+        (await PackageService.getById(Verticals.defaultPackageFor(businessCategory))) ??
+        TenantPackage.fromProfile(PlanProfile.offlineSingle);
     if (!context.mounted) return;
     TenantPackageSelection selection =
         TenantPackageSelection(package: startPackage, plan: selectedPlan);
@@ -1576,6 +1650,10 @@ class OrganizationsTab extends ConsumerStatefulWidget {
         return StatefulBuilder(
           builder: (context, setDialogState) {
             final primaryAccent = ClassicTheme.warningAmber;
+            final currentVertical = Verticals.forCategory(businessCategory);
+            final isCurrentRestaurant = currentVertical == Verticals.restaurant;
+            final currentEntityLabel = _getEntityLabel(businessCategory);
+
             return AlertDialog(
               backgroundColor: context.surfaceColor,
               shape: RoundedRectangleBorder(
@@ -1690,12 +1768,23 @@ class OrganizationsTab extends ConsumerStatefulWidget {
                           ],
                           onChanged: (val) async {
                             if (val == null) return;
-                            setDialogState(() => businessCategory = val);
+                            final newVertical = Verticals.forCategory(val);
+                            final isNewRestaurant = newVertical == Verticals.restaurant;
                             final pkgId = Verticals.defaultPackageFor(val);
                             final pkg = await PackageService.getById(pkgId);
-                            if (pkg != null) {
-                              setDialogState(() => selection = selection.copyWith(package: pkg));
-                            }
+                            setDialogState(() {
+                              businessCategory = val;
+                              if (!isNewRestaurant) {
+                                tableCount = 0;
+                                operatingMode = 'counterPrepaid';
+                              } else {
+                                tableCount = 15;
+                                operatingMode = 'dineFirstPostpaid';
+                              }
+                              if (pkg != null) {
+                                selection = selection.copyWith(package: pkg);
+                              }
+                            });
                           },
                         ),
                         const SizedBox(height: 10),
@@ -1826,86 +1915,154 @@ class OrganizationsTab extends ConsumerStatefulWidget {
                         const SizedBox(height: 20),
 
                         // SECTIONS 2 & 3: PACKAGE, VALIDITY AND ADD-ONS
-                        //
-                        // One editor for all three. It offers only the storage
-                        // modes the package can run, shows included features as
-                        // included rather than as switches that would not
-                        // survive the resolver, and the licence is written from
-                        // what the resolver says — so the tenant gets exactly
-                        // what is on this screen.
                         TenantPackageEditor(
                           value: selection,
+                          businessCategory: businessCategory,
                           onChanged: (v) => setDialogState(() => selection = v),
                         ),
                         const SizedBox(height: 20),
 
                         // Quotas the package does not decide.
-                        Container(
-                          padding: const EdgeInsets.symmetric(vertical: 4),
-                          child: Row(
-                            children: [
-                              Icon(Icons.tune_rounded, color: primaryAccent, size: 16),
-                              const SizedBox(width: 6),
-                              Text("Other quotas", style: TextStyle(color: primaryAccent, fontWeight: FontWeight.bold, fontSize: 13)),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        Row(
-                          children: [
-                            Expanded(
-                              // Staff count is the plan's to decide, so it is
-                              // shown here and edited on the Plans screen.
-                              child: InputDecorator(
-                                decoration: InputDecoration(
-                                  labelText: "Max Staff / Users (from plan)",
-                                  labelStyle: TextStyle(color: context.textSecondary, fontSize: 13),
-                                  prefixIcon: const Icon(Icons.groups_rounded, size: 16),
-                                  enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: context.borderColor)),
+                        Builder(builder: (context) {
+                          if (!isCurrentRestaurant) {
+                            return Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.symmetric(vertical: 4),
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.tune_rounded, color: primaryAccent, size: 16),
+                                      const SizedBox(width: 6),
+                                      Text("Store Configuration", style: TextStyle(color: primaryAccent, fontWeight: FontWeight.bold, fontSize: 13)),
+                                    ],
+                                  ),
                                 ),
-                                child: Text('${selection.plan.maxUsers}',
-                                    style: TextStyle(color: context.textPrimary)),
+                                const SizedBox(height: 6),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: InputDecorator(
+                                        decoration: InputDecoration(
+                                          labelText: "Max Staff / Users (from plan)",
+                                          labelStyle: TextStyle(color: context.textSecondary, fontSize: 13),
+                                          prefixIcon: const Icon(Icons.groups_rounded, size: 16),
+                                          enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: context.borderColor)),
+                                        ),
+                                        child: Text('${selection.plan.maxUsers}',
+                                            style: TextStyle(color: context.textPrimary)),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: InputDecorator(
+                                        decoration: InputDecoration(
+                                          labelText: "Operating Mode",
+                                          labelStyle: TextStyle(color: context.textSecondary, fontSize: 13),
+                                          prefixIcon: const Icon(Icons.point_of_sale_rounded, size: 16),
+                                          enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: context.borderColor)),
+                                        ),
+                                        child: Text('Counter / Barcode POS',
+                                            style: TextStyle(color: context.textPrimary)),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 8),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                  decoration: BoxDecoration(
+                                    color: context.borderColor.withValues(alpha: 0.15),
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(color: context.borderColor),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      const Icon(Icons.check_circle_outline_rounded, size: 16, color: ClassicTheme.successEmerald),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          "Retail & Barcode mode active for $currentEntityLabel. Dine-in tables and KOT slips are automatically disabled.",
+                                          style: TextStyle(fontSize: 12, color: context.textSecondary),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            );
+                          }
+
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(vertical: 4),
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.tune_rounded, color: primaryAccent, size: 16),
+                                    const SizedBox(width: 6),
+                                    Text("Other quotas", style: TextStyle(color: primaryAccent, fontWeight: FontWeight.bold, fontSize: 13)),
+                                  ],
+                                ),
                               ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: TextFormField(
-                                initialValue: tableCount.toString(),
-                                style: TextStyle(color: context.textPrimary),
-                                keyboardType: TextInputType.number,
+                              const SizedBox(height: 6),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: InputDecorator(
+                                      decoration: InputDecoration(
+                                        labelText: "Max Staff / Users (from plan)",
+                                        labelStyle: TextStyle(color: context.textSecondary, fontSize: 13),
+                                        prefixIcon: const Icon(Icons.groups_rounded, size: 16),
+                                        enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: context.borderColor)),
+                                      ),
+                                      child: Text('${selection.plan.maxUsers}',
+                                          style: TextStyle(color: context.textPrimary)),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: TextFormField(
+                                      initialValue: tableCount.toString(),
+                                      style: TextStyle(color: context.textPrimary),
+                                      keyboardType: TextInputType.number,
+                                      decoration: InputDecoration(
+                                        labelText: "Table Quota",
+                                        labelStyle: TextStyle(color: context.textSecondary, fontSize: 13),
+                                        prefixIcon: const Icon(Icons.table_restaurant_rounded, size: 16),
+                                        enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: context.borderColor)),
+                                        focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: primaryAccent, width: 2)),
+                                      ),
+                                      onChanged: (v) => tableCount = int.tryParse(v) ?? tableCount,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 10),
+                              DropdownButtonFormField<String>(
+                                initialValue: operatingMode,
+                                dropdownColor: context.surfaceColor,
+                                style: TextStyle(color: context.textPrimary, fontSize: 13),
                                 decoration: InputDecoration(
-                                  labelText: "Table Quota",
+                                  labelText: "Operating Mode",
                                   labelStyle: TextStyle(color: context.textSecondary, fontSize: 13),
-                                  prefixIcon: const Icon(Icons.table_restaurant_rounded, size: 16),
+                                  prefixIcon: const Icon(Icons.room_service_rounded, size: 16),
                                   enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: context.borderColor)),
                                   focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: primaryAccent, width: 2)),
                                 ),
-                                onChanged: (v) => tableCount = int.tryParse(v) ?? tableCount,
+                                items: const [
+                                  DropdownMenuItem(value: 'dineFirstPostpaid', child: Text("Dine-In Postpaid")),
+                                  DropdownMenuItem(value: 'counterPrepaid', child: Text("Fast QSR Prepaid")),
+                                  DropdownMenuItem(value: 'hybrid', child: Text("Hybrid Dynamic")),
+                                ],
+                                onChanged: (v) {
+                                  if (v != null) setDialogState(() => operatingMode = v);
+                                },
                               ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 10),
-                        DropdownButtonFormField<String>(
-                          initialValue: operatingMode,
-                          dropdownColor: context.surfaceColor,
-                          style: TextStyle(color: context.textPrimary, fontSize: 13),
-                          decoration: InputDecoration(
-                            labelText: "Operating Mode",
-                            labelStyle: TextStyle(color: context.textSecondary, fontSize: 13),
-                            prefixIcon: const Icon(Icons.room_service_rounded, size: 16),
-                            enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: context.borderColor)),
-                            focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: primaryAccent, width: 2)),
-                          ),
-                          items: const [
-                            DropdownMenuItem(value: 'dineFirstPostpaid', child: Text("Dine-In Postpaid")),
-                            DropdownMenuItem(value: 'counterPrepaid', child: Text("Fast QSR Prepaid")),
-                            DropdownMenuItem(value: 'hybrid', child: Text("Hybrid Dynamic")),
-                          ],
-                          onChanged: (v) {
-                            if (v != null) setDialogState(() => operatingMode = v);
-                          },
-                        ),
+                            ],
+                          );
+                        }),
                       ],
                     ),
                   ),
@@ -1935,20 +2092,15 @@ class OrganizationsTab extends ConsumerStatefulWidget {
                             final pan = panController.text.trim();
                             final aadhaar = aadhaarController.text.trim();
 
-                            // The subscription record matching the chosen
-                            // package, so the plan name and billing cycle stay
-                            // meaningful. Every limit and feature below comes
-                            // from the resolver, not from that record.
-                            // The selection *is* a package and a plan now.
-                            // What is written is their composition, so the
-                            // preview the admin just looked at and the licence
-                            // the till reads are the same numbers.
+                            final effectiveTableCount = isCurrentRestaurant ? tableCount : 0;
+                            final effectiveOperatingMode = isCurrentRestaurant ? operatingMode : 'counterPrepaid';
+
                             final finalPlan = selection.plan.copyWith(
                               maxOutlets: selection.effectiveOutlets,
                               maxDevices: selection.effectiveDevices,
                               maxUsers: selection.plan.maxUsers,
-                              tableCount: tableCount,
-                              operatingMode: operatingMode,
+                              tableCount: effectiveTableCount,
+                              operatingMode: effectiveOperatingMode,
                               allowedRoles: selection.effectiveRoles,
                               features: selection.resolvedFeatures,
                             );
@@ -1981,7 +2133,7 @@ class OrganizationsTab extends ConsumerStatefulWidget {
                               Navigator.pop(context);
                               AppToast.showSuccess(
                                 context,
-                                "Restaurant Onboarded Successfully",
+                                "$currentEntityLabel Onboarded Successfully",
                                 subtitle: "$orgName ($orgId) onboarded with ${finalPlan.name}.",
                               );
                             }
@@ -2004,7 +2156,7 @@ class OrganizationsTab extends ConsumerStatefulWidget {
                           height: 18,
                           child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                         )
-                      : const Text("Onboard Restaurant", style: TextStyle(fontWeight: FontWeight.bold)),
+                      : Text("Onboard $currentEntityLabel", style: const TextStyle(fontWeight: FontWeight.bold)),
                 ),
               ],
             );

@@ -1,7 +1,7 @@
 # SmartDine POS — Project Context
 
 > **Last updated**: 2026-09-24  
-> **Version**: 1.2.0+48 (pubspec) · `kCurrentAppVersion = '1.2.0'` (forced-update gate — synced ✅)  
+> **Version**: 1.2.0+49 (pubspec) · `kCurrentAppVersion = '1.2.0'` (forced-update gate — synced ✅)  
 > **Branch**: `feature/ux-entitlements-v2`  
 > **Package name**: `smart_restaurant_pos`
 
@@ -512,6 +512,25 @@ Each tenant org maps to a **private Google Spreadsheet** in Drive. Apps Script p
   - Dismisses immediately upon successful purge with clear toast feedback.
 - **Firestore Security Rules**:
   - Added explicit rules for `/branding/{brandingId}` to prevent 403 Forbidden errors during tenant configuration and purge.
+
+---
+
+## 16. Multi-Vertical Registration & Dynamic Onboarding Alignment
+
+- **Registration Vertical Persistence (`lib/screens/login/client_signup_screen.dart`)**:
+  - Automatically attaches `requestedPlanLabel`, `requestedPackageId`, `requestedPlanId`, and `isEnterprise` flag to `registration_requests`.
+  - Store names use vertical-aware fallback suffixes (`Supermarket`, `Kirana Store`, `Pharmacy`, `Store`, `Restaurant`).
+- **Unified Lead Resolution (`lib/screens/admin/admin_models.dart`)**:
+  - Correctly parses `requestedPlan` (`ENTERPRISE_CUSTOM` or package IDs). Sets `isTrial: false` for commercial enterprise/package leads.
+  - Passes `requestedPackageId` and `requestedPlanId` through to the onboard dialog.
+- **Dynamic Master Admin Onboard Modal (`lib/screens/dashboard/master_admin_screen.dart`)**:
+  - Automatically matches client's registered category (`Supermarket / Departmental Store`, `Kirana`, etc.).
+  - Preselects the client's requested package (e.g. `omnichannel` Everything on) and plan (e.g. `omnichannel` Annual).
+  - Hides dine-in table quotas and restaurant operating modes for retail stores, displaying a clean retail indicator.
+  - Dynamically renders action button ("Onboard Supermarket") and confirmation feedback.
+- **Vertical-Aware Package & Plan Editor (`lib/screens/admin/widgets/tenant_package_editor.dart`)**:
+  - Automatically filters out `offlineDineIn` and `offline_dine_in` plans for non-restaurant verticals.
+  - Dynamically renders retail-adapted descriptions for counter, connected, and omnichannel tiers.
 
 ---
 
