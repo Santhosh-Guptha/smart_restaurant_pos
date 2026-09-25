@@ -785,7 +785,7 @@ class SaasSessionNotifier extends StateNotifier<SaasSessionState> {
       await box.put('saas_username_to_email_$input', emailKey);
 
       // Cache credentials locally for offline verification
-      await box.put('saas_password_hash_$emailKey', passwordHash ?? BCrypt.hashpw(password, BCrypt.gensalt()));
+      await box.put('saas_password_hash_$emailKey', (userData['passwordHash'] as String?) ?? BCrypt.hashpw(password, BCrypt.gensalt()));
       await box.put('saas_user_$emailKey', jsonEncode(user.toJson()));
       await box.put('saas_org_$emailKey', jsonEncode(organization.toJson()));
       await box.put('saas_license_$emailKey', jsonEncode(license.toJson()));
