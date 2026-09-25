@@ -1,4 +1,4 @@
-# SmartDine POS: Enterprise Architecture & Technical Specifications
+# SmartBizz POS: Enterprise Architecture & Technical Specifications
 
 > **Comprehensive Architectural Blueprint, Security Protocols, Storage Modes, Entitlements Engine, and Receipt Pipeline for SmartDine Restaurant POS (v1.1.7+36).**
 
@@ -248,3 +248,65 @@ SmartDine separates receipt formatting into a declarative block-based domain-spe
    - Firestore security rules permanently block operational collections: `/orders`, `/bills`, `/restaurant_tables`, `/kitchen_kots`, `/customers`, `/suppliers`, `/purchase_orders` (`allow read, write: if false;`).
 3. **Durable Outbox (X-18)**:
    - Settlements and order updates survive app restarts and network disruptions through a local Hive outbox queue with exponential backoff retry.
+
+---
+
+## 🧭 9. Current model — SmartBizz (branch `fix/category-alignment`, Sep 2026)
+
+This section supersedes anything above that disagrees with it.
+
+### 9.1 Planes
+- **Control plane — Firestore:** `organizations`, `licenses`, `users`, `staff_users`, `outlets` (+ `franchises`
+  mirror), `packages`, `subscription_plans`, `public_stores`, `audit_logs`, **`tenant_metrics`** (new).
+- **Operational plane — the tenant's own storage:** Hive on each device, plus (own-Sheets mode) one Google
+  Sheet per store in the tenant owner's Drive, written by Apps Script `Code.gs` as the single writer.
+- **Server:** Google Apps Script web app — sign-up, trials, `ISSUE_AUTH_TOKEN` (Firebase custom token), sheet writes.
+
+### 9.2 Storage modes
+| Mode | Offered at onboarding | Bills live in | Network use |
+|---|---|---|---|
+| `PURE_OFFLINE` | Yes | Device (Hive) | Licence check + daily aggregates only (CloudGate blocks everything else) |
+| `CLIENTS_OWN_SHEETS` (default) | Yes | Device + a Sheet per store in the tenant's Drive | Sheets/Drive + control plane |
+| `CLOUD_SYNC` | No — legacy tenants only | Platform ledger | Full |
+
+### 9.3 Tenancy and roles
+```
+MASTER_ADMIN (platform)          sees every tenant, Business Analytics
+└─ Tenant OWNER (no franchiseId) all stores, creates stores and store owners
+   └─ Store OWNER (franchiseId)  one store; adds that store's staff; cannot create OWNERs
+      └─ MANAGER / CASHIER / KITCHEN / WAITER (franchiseId = store)
+```
+Isolation: every query is filtered by `organizationId`/`orgId`; store-scoped users additionally by
+`franchiseId`. `firestore.rules.next` enforces the same with custom-token claims (`orgId`, `role`,
+`franchiseId`) — drafted, not deployed (see SECURITY_NOTES.md).
+
+### 9.4 Trade (category) resolution
+`Verticals.resolve(vertical, businessCategory)` → restaurant | kirana | supermarket | pharmacy | retail.
+Drives screens, packages, labels (`VerticalLabels`), accent colour (`AccentPalette.forVertical`), receipt
+footer and staff roles. Server twin: `verticalFor_()` in Code.gs.
+
+### 9.5 Sheet per store and derived sharing
+1. Creating a store (Branches screen) calls `provisionRestaurantSheet(outletId, saveAsActive:false)` → sheet
+   `… (<outletId>)` in the owner's Drive; id saved to `outlets/{id}.googleSheetId` and the `franchises` mirror.
+2. `SheetAccessReconciler.reconcile()` computes the desired writers per sheet:
+   tenant-wide OWNER/MANAGER/CLIENT → every sheet; store users → their store's sheet; `staff_users` with
+   `isSheetAccessGranted`. Device-only `.pos` logins are skipped.
+3. It grants missing writers, **revokes** everyone else (never the file owner or the platform admin), creates
+   sheets that are missing, and writes an `audit_logs` entry.
+4. Triggers: tenant owner's home screen (at most every 3 h), after editing store owners, and the
+   **Sync Google Sheet access** button on Branches. So removing/deactivating/editing a user in the app or the
+   platform console is reflected in Drive on the next run.
+
+### 9.6 Offline licence and credentials
+`LicenseLease` (`lib/core/license_lease.dart`): recorded on every licence read that came from the server;
+grace 30 days (offline) / 7 days (cloud); a device clock earlier than the last check blocks
+(`LicenseRevalidateScreen`). A connectivity listener re-reads the licence when the device comes online.
+Login is server-first (`FirebaseAuthBridge.signInForLogin`); only when the server can't be reached does the
+app fall back to the bcrypt hash cached from an earlier verified login.
+
+### 9.7 Platform business analytics
+`TenantMetricsService` (every till, from the home screen, at most every 2 h) recomputes the last 7 days from
+local ledgers and overwrites `tenant_metrics/{orgId}__{outletId}__{yyyymmdd}`:
+`bills, grossPaise, paymentPaise{UPI,CASH,CARD,KHATA,OTHER}, vertical, storageMode`. Cancelled/void bills are
+skipped; bills are de-duplicated by canonical id. Console → **Business Analytics** draws (no chart package):
+pies — tenants by trade, storage mode, plan, payment mix; bars — gross by trade, bills per day; top tenants.

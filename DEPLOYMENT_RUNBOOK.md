@@ -1,4 +1,4 @@
-# 🚀 SmartDine Restaurant POS: Production Deployment & Operations Runbook
+# 🚀 SmartBizz Restaurant POS: Production Deployment & Operations Runbook
 
 > **Complete Step-by-Step Blueprint for Production Setup, Infrastructure Provisioning, Serverless Gateway Deployment, Client Wiring, Troubleshooting & Incident Resolution.**
 
@@ -779,3 +779,16 @@ npx firebase appdistribution:distribute "build/app/outputs/flutter-apk/app-relea
 - [x] Operational collections (`/orders`, `/bills`, `/tables`, `/kitchen_kots`) locked to `allow read, write: if false;` in Firestore rules
 - [x] Tested on Mobile Phone viewports (360px - 480px width)
 - [x] Tested on 8" - 12" Android Tablet viewports (800px - 1280px width)
+
+---
+
+## 🔁 Release checklist — SmartBizz branch (Sep 2026)
+1. `powershell -ExecutionPolicy Bypass -File .\claude_run.ps1 -NoDeploy` → analyze clean, all tests pass.
+2. `claude_run.ps1` (no switch) → builds web, copies to `hosting_public/pos`, deploys hosting.
+   Verify: `findstr /c:"Santhosh@2001" hosting_public\pos\main.dart.js` → nothing.
+3. `firebase deploy --only firestore:rules` (adds `tenant_metrics`).
+4. Apps Script: paste `google_apps_script/Code.gs`, Script properties `FIREBASE_SA_EMAIL`,
+   `FIREBASE_SA_PRIVATE_KEY`, deploy a new version (same URL). Firebase console → Authentication → enable.
+5. Console → Migrations → Align business types (dry run → apply).
+6. Change the master-admin password.
+Troubleshooting for this branch: `TROUBLESHOOTING.md`.

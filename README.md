@@ -1,4 +1,4 @@
-# SmartDine Restaurant POS & Cloud Management Platform
+# SmartBizz Restaurant POS & Cloud Management Platform
 
 > **Enterprise Multi-Tenant Point-of-Sale, Kitchen Display System (KDS), Table Management, and QR Dining Suite for Fine Dining, Cafes, Quick Service Restaurants (QSR), and Franchise Chains.**
 
@@ -181,7 +181,7 @@ The codebase enforces a zero-lint, zero-warning standard with automated regressi
 # Run static analysis (must report: No issues found!)
 flutter analyze
 
-# Run full test suite (143/143 tests passing)
+# Run full test suite (333 tests)
 flutter test
 ```
 
@@ -242,3 +242,12 @@ For detailed technical specifications and operational manuals:
 * [**`DEPLOYMENT_RUNBOOK.md`**](./DEPLOYMENT_RUNBOOK.md) — Step-by-step production deployment guide, serverless webhook configuration, and incident runbook.
 * [**`FLOWS_AND_SCENARIOS.md`**](./FLOWS_AND_SCENARIOS.md) — 14 end-to-end operational user journeys with sequence diagrams.
 * [**`ISSUES_AND_RESOLUTIONS.md`**](./ISSUES_AND_RESOLUTIONS.md) — Complete resolution register of architectural improvements, security hardening, and bug fixes.
+
+---
+
+## 🆕 SmartBizz update (Sep 2026)
+- One app for restaurants, kirana, supermarkets, pharmacies and retail; screens, words, colours and packages follow the trade.
+- Onboarding storage: **Offline** (licence checked once, 30-day offline lease) or **your own Google Sheets** (a sheet per store in your Drive, shared automatically with that store's people and unshared when they leave).
+- Tenant → stores → store owners → staff, each seeing only their scope.
+- Platform admin **Business Analytics**: tenants by trade/storage/plan, payment mix, gross and bills — from daily aggregates only.
+- Tests: 333 (see `claude_run.ps1`). Docs: `CLAUDE.md`, `ARCHITECTURE.md` §9, `TROUBLESHOOTING.md`.

@@ -1,4 +1,4 @@
-# SmartDine POS: Workflows, Scenarios & Operational User Journeys
+# SmartBizz POS: Workflows, Scenarios & Operational User Journeys
 
 > **Step-by-step operational workflows covering client onboarding, Google Drive auto-provisioning, kitchen ticket management, contactless table ordering, multi-outlet switching, and license renewals.**
 
@@ -373,3 +373,37 @@ sequenceDiagram
     Encoder->>Printer: Sends raw byte stream over Bluetooth / USB
     Printer-->>Cashier: Thermal printer outputs byte-identical receipt with dynamic UPI QR!
 ```
+
+---
+
+## Scenario 15: Onboarding with a storage choice (SmartBizz)
+1. Web trial or platform admin → onboarding form. Storage: **Offline** or **Client's own Google Sheets**
+   (default). `CLOUD_SYNC` appears only when editing a tenant already on it.
+2. Code.gs creates organisation, licence (trade-correct plan: shops get Shop counter), owner user
+   (`businessCategory` + `vertical`), and outlet `outlet_<orgId>`.
+3. Offline: the till works with no network after the first licence check. Own Sheets: the owner signs in
+   with Google on first launch and the main store's sheet is created in their Drive.
+
+## Scenario 16: Tenant owner opens a second store
+1. Branches → Add store (limit = licence `maxOutlets`). Optional store-owner e-mail and temporary password.
+2. A new sheet `… (<outletId>)` is created in the tenant's Drive; the owner's own till keeps its own sheet.
+3. The store owner (role OWNER + `franchiseId`) is shared on that sheet only.
+
+## Scenario 17: Store owner adds and removes staff
+1. Store owner logs in → sees only their store; Staff → Add (roles by trade; no OWNER option).
+2. Staff get `franchiseId` = the store. Next reconcile shares that store's sheet with them.
+3. Deactivate/delete a staff member (here or in the platform console) → next reconcile revokes their access.
+   Force it with Branches → **Sync Google Sheet access**.
+
+## Scenario 18: Offline till for weeks
+1. First login online: server verifies, licence lease recorded, credentials cached.
+2. Offline: billing continues; the lease shows days left. At 30 days (or on clock rollback) the revalidate
+   screen appears — connect once and re-check.
+
+## Scenario 19: Trade change by the platform admin
+Admin edits the tenant's category → organisation `vertical`, licence `vertical` and owner `businessCategory`
+are rewritten together; on next launch the app shows the new trade's screens, words and accent.
+
+## Scenario 20: Platform business analytics
+Each till uploads daily aggregates (no bill lines). Admin → Business Analytics → pick 7/30/90 days → pies
+and bars across all tenants; top tenants by gross.

@@ -1,34 +1,68 @@
 # SmartBizz POS — notes for Claude Code
 
-Flutter 3.47.1 app (Android, iOS, Windows, web) plus a static marketing site.
-Brand is **SmartBizz** everywhere a user sees it (formerly SmartDine).
+Flutter 3.47.1 / Dart 3.13.1 app (Android, iOS, Windows, web) plus a static marketing site.
+Brand is **SmartBizz** everywhere a user sees it (formerly SmartDine). Data identifiers keep the
+old name on purpose: crypto salt, Drive folder `SmartDine_Menu_Images`, Firebase project
+`smartdine-pos`, admin e-mail `smartdine.platform@gmail.com`, Android app id.
+
+Deeper docs: `ARCHITECTURE.md` (§9 = current model), `FLOWS_AND_SCENARIOS.md` (15–20),
+`ISSUES_AND_RESOLUTIONS.md` (§3 = this branch), `TROUBLESHOOTING.md`, `SECURITY_NOTES.md`.
 
 ## Commands
-- Flutter: `C:\Users\santhosh\flutter\bin\flutter` (not on PATH)
-- Check: `flutter analyze` · `flutter test`
-- Web till: `flutter build web --release --base-href /pos/` then `robocopy build\web hosting_public\pos /E`
-- Deploy (test URL https://smartdine-pos.web.app): `firebase deploy --only hosting`
-  Production later: smartbizz.devmonks.space (guest QR base URL = `kRestaurantWebOrderingBaseUrl` in `lib/core/constants.dart`).
+- Flutter: `C:\Users\santhosh\flutter\bin\flutter` (not on PATH).
+- One-shot check: `powershell -ExecutionPolicy Bypass -File .\claude_run.ps1 -NoDeploy`
+  (analyze + test, log in `claude_run_log.txt`). Without `-NoDeploy` it also builds web and deploys hosting.
+- Web till: `flutter build web --release --base-href /pos/` then `robocopy build\web hosting_public\pos /E`.
+- Deploy (test URL https://smartdine-pos.web.app): `firebase deploy --only hosting`.
+  Production later: smartbizz.devmonks.space (guest QR base = `kRestaurantWebOrderingBaseUrl` in `lib/core/constants.dart`).
+- Rules: `firebase deploy --only firestore:rules` (deploys `firestore.rules`; `firestore.rules.next` is the locked-down draft).
 - Marketing site is generated: edit `tools/site/site_data.py` / `screens.py`, run `python tools/site/build_site.py`.
-- Git: work on branch `fix/category-alignment`. Files are CRLF on disk; set `git config core.autocrlf true` or ~160 files show as modified (line endings only).
+- Git: branch `fix/category-alignment`. Files are CRLF; keep `core.autocrlf true`. Don't commit
+  `hosting_public/pos/*` together with source changes — commit a build only when deploying it.
 
 ## Rules that must hold
-- A tenant's trade is resolved **only** by `Verticals.resolve()` (`lib/core/package_model.dart`): business category wins when it names a trade, else a valid stored `vertical`, else restaurant. Every writer stores `businessCategory` and `vertical` together (organisation, licence, owner user). The Apps Script twin is `verticalFor_()` in `google_apps_script/Code.gs`.
-- Customer-pickable categories live in `BusinessCategories` (same file); the website trial form and Code.gs post those exact strings.
-- Starter packages are universal (`Verticals.any`); per-trade feature filtering happens in the resolver (`BlockReason.verticalMismatch`), not in packages.
-- Words that differ by trade go through `VerticalLabels` (`lib/core/vertical_labels.dart`). Shops never route lines to a kitchen (`sendsToKitchen` false).
-- No secrets in code. No plain PINs/passwords in Firestore — hashes only.
+- **Trade** is resolved only by `Verticals.resolve()` (`lib/core/package_model.dart`): business category
+  wins when it names a trade, else a valid stored `vertical`, else restaurant. Writers store
+  `businessCategory` and `vertical` together (organisation, licence, owner user). Apps Script twin: `verticalFor_()`.
+- Customer-pickable categories: `BusinessCategories`. Starter packages are universal (`Verticals.any`);
+  per-trade filtering is in the resolver (`BlockReason.verticalMismatch`).
+- Trade-specific words go through `VerticalLabels`. Shops never send to a kitchen (`sendsToKitchen` false).
+  Restaurant receipt bytes are golden-tested — shop footers go via `ReceiptContextBuilder.tradeDefaultFooter`.
+- **Storage modes offered at onboarding: `PURE_OFFLINE` and `CLIENTS_OWN_SHEETS` only.** `CLOUD_SYNC` is
+  legacy and shown only for tenants already on it. New tenants default to own Sheets.
+- **One Google Sheet per store**, in the tenant owner's Drive (`provisionRestaurantSheet(outletId:, saveAsActive:)`).
+  Sharing is derived, never hand-edited: `SheetAccessReconciler` grants/revokes to match the users table.
+- **Hierarchy:** platform admin (`MASTER_ADMIN`) → tenant owner (`OWNER`, no `franchiseId`) → store owner
+  (`OWNER` with `franchiseId`) → staff (`franchiseId` = their store). Store-scoped users can't create OWNERs
+  or see other stores.
+- **Offline licence:** validated once online, then `LicenseLease` allows 30 days offline (7 for cloud modes),
+  renews on every online server read, blocks on clock rollback. Credentials are cached (bcrypt) after a
+  server-verified login.
+- **Platform analytics only get aggregates** (`tenant_metrics`: bills, gross, payment split per store per day).
+  Never upload bill lines or customer data.
+- No secrets in code. No plain PINs/passwords in Firestore — hashes only. Never call
+  `makeSpreadsheetEditableByLink` (anyone-with-link editor) — kept only for reference.
 
-## Done on this branch (not yet verified by analyze/test at the time of writing)
-38ba6f9 website 3D layer · a711b69 one vertical resolver, shop packages keep barcode/khata, web trial fixes, "Align business types" migration + `test/category_alignment_test.dart` · bea0918 shop wording on counter/bills/PDF/e-mail, no KOTs for shops, kitchen/waiter roles hidden for shops · 7ea6379 removed hard-coded master-admin password + startup password reset, staff secrets hash-only, staff join active branch, branch limit from entitlements, web-trial outlet id `outlet_<orgId>`, purge removes franchises · 7d32619 SmartDine → SmartBizz (data identifiers kept: crypto salt, Drive folder `SmartDine_Menu_Images`, Firebase ids, admin e-mail, Android app id).
+## Commits on this branch
+38ba6f9 web 3D · a711b69 vertical resolver + tests + "Align business types" · bea0918 shop wording, no KOT ·
+7ea6379 admin password removed, hash-only staff secrets, branch/staff mapping · 7d32619 brand SmartBizz ·
+807bc84 handoff + run script · 63bedad trade accents + console trade icons · 96c3398 receipt goldens ·
+2bea1b9 Firebase custom token + rules.next · 84a6d98 server-first login · eb52233 offline cache fix ·
+d22139a licence lease · 90c6314 store owners per outlet · 0e036ce two storage modes, sheet per store +
+sharing reconciler, tenant metrics, admin Business Analytics.
 
-## Also done
-63bedad per-trade accent colours + console trade icons · 96c3398 receipt goldens restored, shop default footer via `ReceiptContextBuilder.tradeDefaultFooter` · 2bea1b9 Firebase custom-token sign-in (`FirebaseAuthBridge`, Code.gs `ISSUE_AUTH_TOKEN`) + draft `firestore.rules.next` (NOT deployed — order in SECURITY_NOTES.md)
+## Status (25 Sep 2026)
+- Run on 90c6314: analyze clean; tests 332 pass / 1 fail — `widget_test.dart` failed to compile because the run
+  caught a half-saved edit (`provisionRestaurantSheet(outletId:)`). Fixed in 0e036ce. **Rerun on 0e036ce.**
+- Hosting currently serves an older build; redeploy after the rerun passes.
 
 ## Next steps, in order
-1. `flutter analyze` and `flutter test` — fix everything they report.
-2. **The hosting deploy made on 25 Sep 17:37 IST published an OLD web bundle** (`hosting_public/pos/main.dart.js` still contains the old hard-coded admin password and the SmartDine name; the fresh build in `build/web` does not). Rebuild, copy, redeploy, then confirm with `findstr /c:"Santhosh@2001" hosting_public\pos\main.dart.js` (must find nothing). Then change the master-admin password (see SECURITY_NOTES.md).
-3. Paste `google_apps_script/Code.gs` into the Apps Script project and redeploy it (web-trial fixes).
-4. In the console's Migrations screen: "Align business types" → dry run → apply.
-5. Live test with tenants named "ZZ Test – <trade>" (one per trade): signup, trade screens, barcode + khata for shops, bills, branches, staff roles. Delete them afterwards.
-6. Remaining work: platform admin console audit; per-trade theme/colours; responsive layouts phone → large screen; `firestore.rules` is allow-all — needs Firebase custom-token auth (design in SECURITY_NOTES.md).
+1. Rerun `claude_run.ps1 -NoDeploy` on 0e036ce; fix anything it reports; then run it without `-NoDeploy`.
+2. `firebase deploy --only firestore:rules` (adds `tenant_metrics`; everything else unchanged).
+3. Paste `google_apps_script/Code.gs` into Apps Script and redeploy; add Script properties
+   `FIREBASE_SA_EMAIL` / `FIREBASE_SA_PRIVATE_KEY`; enable Firebase Authentication.
+4. Change the master-admin password (it was public in an old bundle). Console → Migrations → "Align business types".
+5. Live test with "ZZ Test – <trade>" tenants: offline tenant, own-Sheets tenant with 2 stores, store owners,
+   staff add/remove → sheet sharing follows; Business Analytics fills after a day of bills.
+6. Open: app icon per trade (waiting on artwork decision), admin 2FA server-side, then deploy `firestore.rules.next`;
+   signed licence lease; responsive polish on phone/large screens.

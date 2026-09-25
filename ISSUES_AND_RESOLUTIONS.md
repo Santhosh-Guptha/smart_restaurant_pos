@@ -1,4 +1,4 @@
-# SmartDine POS: Issues, Resolutions & Production Migration Guide
+# SmartBizz POS: Issues, Resolutions & Production Migration Guide
 
 > **Comprehensive Catalog of Resolved Issues, Codebase Cleanups, Architectural Hardening, Active Watchpoints, and Production Transition Checklist.**  
 > 📖 **See also**: [`DEPLOYMENT_RUNBOOK.md`](./DEPLOYMENT_RUNBOOK.md) for the complete end-to-end production deployment and incident troubleshooting runbook.
@@ -442,3 +442,35 @@ When transitioning from local development to the brand-new production environmen
 | **Security & Privacy** | Salted SHA-256 + Bcrypt passwords, 2MFA Email OTP, Fail-Closed RBAC |
 | **Recurring Cloud Cost** | Guaranteed **$0.00 / month** on free tier services |
 | **Data Safety** | 100% Client Google Drive ownership with permanent Master Admin co-ownership |
+
+---
+
+## 🧩 3. Fixed on branch `fix/category-alignment` (Sep 2026)
+
+| # | Issue | Resolution | Commit |
+|---|---|---|---|
+| 18 | Trade read from different fields → shops saw restaurant screens | Single `Verticals.resolve()`; "Align business types" migration; tests | a711b69 |
+| 19 | Shop trials lost barcode/khata (starter packages vertical-scoped) | Starter packages universal; `OFFLINE_RETAIL` Shop counter | a711b69 |
+| 20 | Restaurant words/KOTs on shop bills, PDFs, e-mails; kitchen roles for shops | `VerticalLabels`, `sendsToKitchen` only for restaurants | bea0918 |
+| 21 | Hard-coded master-admin password in app + web bundle; reset on every start | Removed; hash only | 7ea6379 |
+| 22 | Plain staff PINs/passwords in `staff_users` | Hash only, old fields deleted | 7ea6379 |
+| 23 | Branch limit hard-coded; staff not tied to a branch; purge left `franchises` | Limit from entitlements; `franchiseId` on staff; purge extended | 7ea6379 |
+| 24 | Mixed SmartDine/SmartBizz branding | SmartBizz in every customer-facing place | 7d32619 |
+| 25 | One accent for every trade | `AccentPalette.forVertical`; console trade icons | 63bedad |
+| 26 | Rules can't identify callers | Firebase custom token via Apps Script; `firestore.rules.next` draft | 2bea1b9 |
+| 27 | Login trusted a client-side hash read from Firestore | Server-first login; client check only offline | 84a6d98, eb52233 |
+| 28 | Offline tenants' licence never expired offline; clock rollback | `LicenseLease` 30/7 days + rollback block | d22139a |
+| 29 | Tenant owner couldn't give each store its own owner | Store owners per outlet (`OutletOwnersDialog`) | 90c6314 |
+| 30 | Onboarding offered 3 storage modes | Offline + own Sheets only; CLOUD_SYNC legacy | 0e036ce |
+| 31 | Every branch reused the first branch's sheet and hijacked the till's active sheet | Sheet per outlet, `saveAsActive:false` | 0e036ce |
+| 32 | Sheet sharing never removed people | `SheetAccessReconciler` grant + revoke | 0e036ce |
+| 33 | Platform had no business view across tenants | `tenant_metrics` + Business Analytics charts | 0e036ce |
+
+### Still open
+- `firestore.rules` is still open (`if true`) until every device runs a build with custom-token login and admin 2FA moves server-side.
+- Licence lease is stored locally unsigned — a determined user could edit Hive; plan: signed lease from Apps Script.
+- `makeSpreadsheetEditableByLink` exists (anyone-with-link editor). Not called; do not use.
+- Sheet reconcile runs only on a device where the tenant owner is signed in with Google.
+- App icon per trade after login — waiting on artwork decision.
+
+Troubleshooting for build/test/deploy problems: `TROUBLESHOOTING.md`.

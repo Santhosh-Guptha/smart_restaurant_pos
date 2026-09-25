@@ -1,4 +1,4 @@
-# SmartDine POS — Project Context
+# SmartBizz POS — Project Context
 
 > **Last updated**: 2026-09-24  
 > **Version**: 1.2.0+49 (pubspec) · `kCurrentAppVersion = '1.2.0'` (forced-update gate — synced ✅)  
@@ -536,3 +536,11 @@ Each tenant org maps to a **private Google Spreadsheet** in Drive. Apps Script p
 
 *This file is maintained as a living document. Update it as the project evolves.*
 
+---
+
+## 10. Update — SmartBizz (Sep 2026)
+Product renamed **SmartBizz** (data ids keep "smartdine"). New modules: `lib/core/license_lease.dart`,
+`lib/services/firebase_auth_bridge.dart`, `category_alignment_service.dart`, `sheet_access_reconciler.dart`,
+`tenant_metrics_service.dart`, `lib/widgets/outlet_owners_dialog.dart`,
+`lib/screens/login/license_revalidate_screen.dart`, `lib/screens/admin/views/admin_business_analytics_view.dart`.
+Storage at onboarding: Offline or Client's own Google Sheets. See `CLAUDE.md` and `ARCHITECTURE.md` §9.

@@ -35,5 +35,17 @@ This can't be fixed by tightening rules alone, because the app does its own sign
 
 1. **Done in code:** after every successful login the app asks Apps Script (`ISSUE_AUTH_TOKEN`) for a Firebase custom token and signs in with it (`lib/services/firebase_auth_bridge.dart`). It never blocks login; with the backend unconfigured nothing changes.
 2. **You:** create a service-account key (Firebase console → Project settings → Service accounts → Generate new private key). In the Apps Script project add Script properties `FIREBASE_SA_EMAIL` (= `client_email`) and `FIREBASE_SA_PRIVATE_KEY` (= `private_key`, pasted as-is), paste the new `Code.gs`, redeploy. Keep the key file somewhere safe and never commit it.
-3. **Next code step:** make login itself go through `ISSUE_AUTH_TOKEN` (so `/users` is never read before sign-in), move the admin 2FA check server-side, and set `FS_USE_OAUTH = true` in `firestore.gs` (bind the Apps Script project to the Firebase GCP project).
+3. **Partly done (84a6d98):** login goes through `ISSUE_AUTH_TOKEN` first; the client-side hash check runs only when the server can't be reached. **Still to do:** move the admin 2FA check server-side, and set `FS_USE_OAUTH = true` in `firestore.gs` (bind the Apps Script project to the Firebase GCP project).
 4. When every active device runs a build from step 3, deploy `firestore.rules.next` as `firestore.rules` (`firebase deploy --only firestore:rules`) — test in the Firebase console's Rules Playground first.
+
+## Added on this branch (Sep 2026)
+
+| Area | What it does | Limits |
+|---|---|---|
+| Offline licence lease (`LicenseLease`) | 30 days offline (7 cloud), renewed on every server read, blocks on clock rollback | Stored unsigned in Hive — plan a server-signed lease |
+| Credential cache | bcrypt hash cached only after a server-verified login | First login on a device must be online |
+| Sheet sharing (`SheetAccessReconciler`) | Each store's sheet shared only with that store's people; everyone else revoked; audited | Runs on the tenant owner's signed-in device only |
+| `tenant_metrics` | Daily aggregates per store (count, gross, payment split). No bill lines, no customer data | Rules open today; `firestore.rules.next` limits write to the tenant and read to the admin |
+| `makeSpreadsheetEditableByLink` | **Dangerous** (anyone with the link can edit). Not called anywhere | Delete it or keep unused |
+
+Privacy: say in the Terms/privacy page that daily sales totals per store are shared with the platform for analytics, including for offline tenants (sent with the licence check).

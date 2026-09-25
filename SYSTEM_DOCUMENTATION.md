@@ -1,4 +1,4 @@
-# SmartDine Restaurant POS — Architecture & Operations Manual
+# SmartBizz Restaurant POS — Architecture & Operations Manual
 
 > **Zero-Firebase Operational Pipeline & Google Sheets Schema v2**  
 > *Last Updated: September 2026 | Version 2.5 (Tranches 0–14 Complete, v1.1.7+36 Release)*
@@ -348,3 +348,13 @@ When a spreadsheet is connected, `ensureV2Sheets(ss)` automatically provisions a
  
 - **Phase 9 — Performance & Storage Optimization**: Automatic sheet partitioning, archival of year-old orders to cold tabs.
 - **Phase 10 — End-to-End Verification & Launch Gate**: Full automated simulation of multi-terminal peak rush hours.
+
+---
+
+### **Phase 15 — SmartBizz: trade alignment, tenancy, storage & platform analytics (Sep 2026)**
+Branch `fix/category-alignment`. Single trade resolver and migration; shop wording and packages; security
+(hard-coded admin password removed, hashed staff secrets, server-first login, Firebase custom token, draft
+locked rules); licence lease for offline tills; store owners per outlet; onboarding limited to Offline and
+Client's own Google Sheets; one sheet per store with sharing kept in sync by `SheetAccessReconciler`;
+`tenant_metrics` aggregates and the admin **Business Analytics** screen. Details: `ARCHITECTURE.md` §9,
+`ISSUES_AND_RESOLUTIONS.md` §3, `TROUBLESHOOTING.md`.
