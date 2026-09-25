@@ -104,6 +104,20 @@ class AccentPalette {
 
   static const AccentPalette fallback = clay;
 
+  /// The accent a trade starts on until someone picks one in Settings, so a
+  /// chemist's till does not open in a restaurant's clay. The same families
+  /// as the website's trade pages: amber for kirana, blue for supermarkets,
+  /// green for pharmacies, plum for retail.
+  static AccentPalette forVertical(String? vertical) {
+    switch (vertical) {
+      case 'kirana':      return amber;
+      case 'supermarket': return ocean;
+      case 'pharmacy':    return pine;
+      case 'retail':      return plum;
+      default:            return clay;
+    }
+  }
+
   static AccentPalette byId(String? id) {
     for (final p in all) {
       if (p.id == id) return p;

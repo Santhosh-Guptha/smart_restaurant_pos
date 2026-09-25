@@ -66,6 +66,7 @@ final accentProvider =
 class AccentNotifier extends StateNotifier<AccentPalette> {
   static const String _prefix = 'app_accent_v1_';
   String _userKey = 'device';
+  String? _vertical;
 
   AccentNotifier() : super(AccentPalette.fallback) {
     _load();
@@ -74,18 +75,32 @@ class AccentNotifier extends StateNotifier<AccentPalette> {
   Box? get _box => Hive.isBoxOpen('configBox') ? Hive.box('configBox') : null;
 
   /// Call when the signed-in user changes so their own choice is loaded.
-  void bindUser(String? userId) {
+  void bindUser(String? userId) => bind(userId: userId, vertical: _vertical);
+
+  /// The user and the tenant's trade together. A saved choice always wins;
+  /// with none, the trade's own accent ([AccentPalette.forVertical]).
+  void bind({String? userId, String? vertical}) {
     final key = (userId == null || userId.isEmpty) ? 'device' : userId;
-    if (key == _userKey) return;
+    if (key == _userKey && vertical == _vertical) return;
     _userKey = key;
+    _vertical = vertical;
     _load();
   }
 
   void _load() {
     final saved = _box?.get('$_prefix$_userKey') ?? _box?.get('${_prefix}device');
-    final palette = AccentPalette.byId(saved?.toString());
+    final palette = saved == null
+        ? AccentPalette.forVertical(_vertical)
+        : AccentPalette.byId(saved.toString());
+    // The static is what the theme reads, so it changes now. The provider
+    // state follows a microtask later: bind() runs while MaterialApp is
+    // building, and a provider must not change in the middle of a build.
     ClassicTheme.activePalette = palette;
-    state = palette;
+    if (state.id != palette.id) {
+      Future.microtask(() {
+        if (mounted) state = palette;
+      });
+    }
   }
 
   Future<void> setAccent(AccentPalette palette) async {

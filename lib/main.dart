@@ -263,7 +263,11 @@ class SmartBizzApp extends ConsumerWidget {
     // Settings recolour the whole app: the theme getters below read
     // ClassicTheme.activePalette, which the notifier sets before this rebuild.
     ref.watch(accentProvider);
-    ref.read(accentProvider.notifier).bindUser(saasSession.currentUser?.id);
+    ref.read(accentProvider.notifier).bind(
+          userId: saasSession.currentUser?.id,
+          // Before sign-in there is no tenant, and the login screen stays neutral.
+          vertical: saasSession.currentOrganization == null ? null : saasSession.vertical,
+        );
 
     return MaterialApp(
       navigatorKey: navigatorKey,

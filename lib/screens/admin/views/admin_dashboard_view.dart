@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../../core/classic_theme.dart';
+import '../../../core/package_model.dart';
 import '../../dashboard/restaurant_home_screen.dart';
 import '../../restaurant/branch_management_screen.dart';
 import '../../settings/staff_management_screen.dart';
@@ -778,7 +779,14 @@ class AdminDashboardView extends ConsumerWidget {
                 final docId = d.id;
                 final name = data['name'] ?? 'Unnamed Store';
                 final storageMode = data['storageMode'] ?? 'CLOUD_SYNC';
-                final category = data['businessCategory'] ?? 'Restaurant';
+                // The trade the app will actually open this tenant on, by the
+                // same rule the till uses, and an icon to match.
+                final vertical = Verticals.resolve(
+                  vertical: data['vertical']?.toString(),
+                  businessCategory: (data['businessCategory'] ?? data['category'])?.toString(),
+                );
+                final category = (data['businessCategory'] ?? Verticals.label(vertical)).toString();
+                final tradeIcon = _tradeIcon(vertical);
 
                 return Container(
                   padding: const EdgeInsets.all(12),
@@ -793,7 +801,7 @@ class AdminDashboardView extends ConsumerWidget {
                           children: [
                             Row(
                               children: [
-                                const Icon(Icons.restaurant_rounded, size: 18, color: ClassicTheme.warningAmber),
+                                Icon(tradeIcon, size: 18, color: ClassicTheme.warningAmber),
                                 const SizedBox(width: 8),
                                 Expanded(
                                   child: Text(
@@ -878,7 +886,7 @@ class AdminDashboardView extends ConsumerWidget {
                                 color: ClassicTheme.warningAmber.withValues(alpha: 0.15),
                                 borderRadius: BorderRadius.circular(8),
                               ),
-                              child: const Icon(Icons.restaurant_rounded, size: 20, color: ClassicTheme.warningAmber),
+                              child: Icon(tradeIcon, size: 20, color: ClassicTheme.warningAmber),
                             ),
                             const SizedBox(width: 12),
                             Expanded(
@@ -974,5 +982,15 @@ class AdminDashboardView extends ConsumerWidget {
         ],
       ),
     );
+  }
+}
+
+IconData _tradeIcon(String vertical) {
+  switch (vertical) {
+    case Verticals.kirana:      return Icons.local_grocery_store_rounded;
+    case Verticals.supermarket: return Icons.shopping_cart_rounded;
+    case Verticals.pharmacy:    return Icons.local_pharmacy_rounded;
+    case Verticals.retail:      return Icons.storefront_rounded;
+    default:                    return Icons.restaurant_rounded;
   }
 }
