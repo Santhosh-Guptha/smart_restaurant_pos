@@ -22,6 +22,9 @@ Brand is **SmartBizz** everywhere a user sees it (formerly SmartDine).
 ## Done on this branch (not yet verified by analyze/test at the time of writing)
 38ba6f9 website 3D layer · a711b69 one vertical resolver, shop packages keep barcode/khata, web trial fixes, "Align business types" migration + `test/category_alignment_test.dart` · bea0918 shop wording on counter/bills/PDF/e-mail, no KOTs for shops, kitchen/waiter roles hidden for shops · 7ea6379 removed hard-coded master-admin password + startup password reset, staff secrets hash-only, staff join active branch, branch limit from entitlements, web-trial outlet id `outlet_<orgId>`, purge removes franchises · 7d32619 SmartDine → SmartBizz (data identifiers kept: crypto salt, Drive folder `SmartDine_Menu_Images`, Firebase ids, admin e-mail, Android app id).
 
+## Also done
+63bedad per-trade accent colours + console trade icons · 96c3398 receipt goldens restored, shop default footer via `ReceiptContextBuilder.tradeDefaultFooter` · 2bea1b9 Firebase custom-token sign-in (`FirebaseAuthBridge`, Code.gs `ISSUE_AUTH_TOKEN`) + draft `firestore.rules.next` (NOT deployed — order in SECURITY_NOTES.md)
+
 ## Next steps, in order
 1. `flutter analyze` and `flutter test` — fix everything they report.
 2. **The hosting deploy made on 25 Sep 17:37 IST published an OLD web bundle** (`hosting_public/pos/main.dart.js` still contains the old hard-coded admin password and the SmartDine name; the fresh build in `build/web` does not). Rebuild, copy, redeploy, then confirm with `findstr /c:"Santhosh@2001" hosting_public\pos\main.dart.js` (must find nothing). Then change the master-admin password (see SECURITY_NOTES.md).
