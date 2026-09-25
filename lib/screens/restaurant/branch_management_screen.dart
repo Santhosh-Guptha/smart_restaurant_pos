@@ -1427,6 +1427,11 @@ class _BranchManagementScreenState
       modeLabel = 'Hybrid Service';
       modeColor = ClassicTheme.secondaryAccent;
     }
+    if (!vl.isRestaurant) {
+      // Shops have one flow: scan, bill, pay at the counter.
+      modeLabel = 'Counter Billing';
+      modeColor = ClassicTheme.successEmerald;
+    }
 
     final qrOrderingUrl =
         '${OrderingPlatformConfigService.getOrderingBaseUrl()}?org=$orgId&store=${outlet.id}&table=1';
@@ -1537,7 +1542,8 @@ class _BranchManagementScreenState
                           ),
                         ),
                       ),
-                      // Table Count Tag
+                      // Table Count Tag (restaurants only)
+                      if (vl.isRestaurant)
                       Container(
                         padding:
                             const EdgeInsets.symmetric(horizontal: 10, vertical: 5),

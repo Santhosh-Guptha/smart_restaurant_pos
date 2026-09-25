@@ -5365,12 +5365,84 @@ function handleIssueAuthToken_(data) {
     role: String(u.role || "").toUpperCase(),
     franchiseId: String(u.franchiseId || "")
   };
+
+  // Platform admin: the second step (e-mailed code) is checked HERE, so no
+  // admin token exists until it passes. The app's own check is only a
+  // fallback while the server cannot be reached.
+  var isAdmin = claims.role === "MASTER_ADMIN" || claims.orgId === "SYSTEM_ADMIN" || hit.id === "usr_master_admin";
+  if (isAdmin) {
+    var mfa = checkAdminSecondStep_(hit.id, u, data.mfaCode, cache);
+    if (mfa) return responseJson(mfa);
+    claims.adminVerified = true;
+  }
   try {
     return responseJson({ success: true, uid: hit.id, claims: claims, token: mintFirebaseCustomToken_(hit.id, claims) });
   } catch (e) {
     Logger.log("custom token mint failed: " + e);
     return responseJson({ success: false, error_code: "MINT_FAILED" });
   }
+}
+
+/** True unless the platform has turned admin 2-step verification off. Fails closed. */
+function admin2faEnabled_() {
+  try {
+    var d = fsGet_("system_config/security");
+    if (!d || d.twoFactorEnabled === undefined) return true;
+    return d.twoFactorEnabled === true;
+  } catch (e) {
+    return true;
+  }
+}
+
+function sha256Hex_(s) {
+  return Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, String(s))
+    .map(function (b) { return ("0" + (b & 0xff).toString(16)).slice(-2); }).join("");
+}
+
+/**
+ * The admin's second step. Returns null when the admin may have a token, or
+ * the JSON reply to send instead:
+ *   MFA_REQUIRED (a code was e-mailed), MFA_INVALID, MFA_EXPIRED, MFA_LOCKED, RATE_LIMITED.
+ * Codes: 6 digits, SHA-256 in the script cache, 10 minutes, 5 tries, 5 sends per 10 minutes.
+ */
+function checkAdminSecondStep_(uid, u, mfaCode, cache) {
+  if (!admin2faEnabled_()) return null;
+  var key = "adminmfa_" + uid;
+  var entered = String(mfaCode || "").replace(/\D/g, "");
+  if (!entered) {
+    var sendKey = "adminmfa_sends_" + uid;
+    var sends = Number(cache.get(sendKey) || 0);
+    if (sends >= 5) return { success: false, error_code: "RATE_LIMITED" };
+    cache.put(sendKey, String(sends + 1), 600);
+    var n = parseInt(Utilities.getUuid().replace(/-/g, "").slice(0, 12), 16) % 1000000;
+    var code = ("000000" + n).slice(-6);
+    cache.put(key, JSON.stringify({ h: sha256Hex_(code), n: 0 }), 600);
+    var to = String(u.email || "");
+    if (to.indexOf("@") < 0) {
+      to = PropertiesService.getScriptProperties().getProperty("admin_email") || "smartdine.platform@gmail.com";
+    }
+    MailApp.sendEmail({
+      to: to,
+      subject: "SmartBizz admin sign-in code: " + code,
+      htmlBody: "<p>Your SmartBizz platform admin sign-in code is</p>" +
+        "<p style='font-size:28px;font-weight:700;letter-spacing:6px'>" + code + "</p>" +
+        "<p>It expires in 10 minutes. If you did not try to sign in, change the admin password now.</p>"
+    });
+    var at = to.indexOf("@");
+    var masked = to.slice(0, Math.min(2, at)) + "***" + to.slice(at);
+    return { success: false, error_code: "MFA_REQUIRED", email: masked };
+  }
+  var raw = cache.get(key);
+  if (!raw) return { success: false, error_code: "MFA_EXPIRED" };
+  var st = JSON.parse(raw);
+  if (st.n >= 5) { cache.remove(key); return { success: false, error_code: "MFA_LOCKED" }; }
+  if (sha256Hex_(entered) !== st.h) {
+    st.n += 1;
+    cache.put(key, JSON.stringify(st), 600);
+    return { success: false, error_code: "MFA_INVALID" };
+  }
+  cache.remove(key);
+  return null;
 }
 
 /** A Firebase custom token (RS256 JWT signed with the service-account key). */

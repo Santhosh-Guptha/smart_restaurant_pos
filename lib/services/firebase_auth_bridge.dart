@@ -31,13 +31,21 @@ enum ServerLoginStatus {
   /// No answer we can use — offline, backend not configured yet, token could
   /// not be minted. The caller falls back to the app's own check.
   unavailable,
+
+  /// Platform admin: password right, the server e-mailed a code ([ServerLogin.email]).
+  mfaRequired,
+
+  /// Platform admin: the code was wrong, expired or tried too often
+  /// ([ServerLogin.errorCode] = MFA_INVALID / MFA_EXPIRED / MFA_LOCKED). Final.
+  mfaFailed,
 }
 
 class ServerLogin {
   final ServerLoginStatus status;
   final String? uid;
   final String? errorCode;
-  const ServerLogin(this.status, {this.uid, this.errorCode});
+  final String? email;
+  const ServerLogin(this.status, {this.uid, this.errorCode, this.email});
 }
 
 class FirebaseAuthBridge {
@@ -51,6 +59,7 @@ class FirebaseAuthBridge {
     required FirebaseFirestore firestore,
     required String identifier,
     required String password,
+    String? mfaCode,
   }) async {
     Map? data;
     try {
@@ -61,6 +70,7 @@ class FirebaseAuthBridge {
           'action': 'ISSUE_AUTH_TOKEN',
           'identifier': identifier.trim().toLowerCase(),
           'password': password,
+          if (mfaCode != null && mfaCode.trim().isNotEmpty) 'mfaCode': mfaCode.trim(),
         }),
         timeout: const Duration(seconds: 12),
       );
@@ -75,6 +85,12 @@ class FirebaseAuthBridge {
     if (data['success'] != true) {
       if (code == 'INVALID' || code == 'RATE_LIMITED') {
         return ServerLogin(ServerLoginStatus.rejected, errorCode: code);
+      }
+      if (code == 'MFA_REQUIRED') {
+        return ServerLogin(ServerLoginStatus.mfaRequired, email: data['email']?.toString());
+      }
+      if (code == 'MFA_INVALID' || code == 'MFA_EXPIRED' || code == 'MFA_LOCKED') {
+        return ServerLogin(ServerLoginStatus.mfaFailed, errorCode: code);
       }
       return ServerLogin(ServerLoginStatus.unavailable, errorCode: code);
     }

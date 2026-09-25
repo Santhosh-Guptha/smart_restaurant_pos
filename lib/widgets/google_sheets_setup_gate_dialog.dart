@@ -67,7 +67,7 @@ class _GoogleSheetsSetupGateDialogState extends ConsumerState<GoogleSheetsSetupG
     if (org == null) return;
 
     final orgId = org.id;
-    final storeName = org.name.isNotEmpty ? org.name : (org.appName.isNotEmpty ? org.appName : 'My Restaurant');
+    final storeName = org.name.isNotEmpty ? org.name : (org.appName.isNotEmpty ? org.appName : (VerticalLabels.of(ref.read(currentVerticalProvider)).isRestaurant ? 'My Restaurant' : 'My Store'));
     final expectedEmail = (user?.email != null && user!.email.isNotEmpty)
         ? user.email
         : (org.ownerGoogleEmail ?? '');
@@ -94,7 +94,7 @@ class _GoogleSheetsSetupGateDialogState extends ConsumerState<GoogleSheetsSetupG
       final currentAuthState = ref.read(restaurantAuthProvider);
       final authorizedEmail = signInRes['staff']?.email ?? currentAuthState.googleEmail ?? expectedEmail;
 
-      setState(() => _statusText = 'Provisioning 7-tab Restaurant Google Sheet...');
+      setState(() => _statusText = 'Creating your store\'s Google Sheet...');
 
       // 1. Provision 7-Tab Restaurant Google Sheet on Client's Drive
       final provisionRes = await RestaurantSheetsService.provisionRestaurantSheet(
@@ -110,7 +110,7 @@ class _GoogleSheetsSetupGateDialogState extends ConsumerState<GoogleSheetsSetupG
       final sheetId = provisionRes['spreadsheetId']?.toString() ?? '';
       final sheetUrl = provisionRes['sheetUrl']?.toString() ?? 'https://docs.google.com/spreadsheets/d/$sheetId/edit';
 
-      setState(() => _statusText = 'Registering cloud webhook & web menu sync...');
+      setState(() => _statusText = 'Connecting your sheet to SmartBizz...');
 
       // 3. Register tenant in Apps Script Webhook so web QR menu works immediately
       try {
@@ -170,7 +170,7 @@ class _GoogleSheetsSetupGateDialogState extends ConsumerState<GoogleSheetsSetupG
         AppToast.showSuccess(
           context,
           'Cloud Database Connected Successfully!',
-          subtitle: '7-Tab Restaurant Google Sheet initialized & live for web orders.',
+          subtitle: 'Your store\'s Google Sheet is ready and receiving bills.',
         );
       }
     } catch (e) {
@@ -513,7 +513,7 @@ class _GoogleSheetsSetupGateDialogState extends ConsumerState<GoogleSheetsSetupG
                 // Feature Highlights
                 _buildBenefitRow(Icons.check_circle_rounded, 'Private 7-Tab Spreadsheet in your Google Drive'),
                 const SizedBox(height: 8),
-                _buildBenefitRow(Icons.check_circle_rounded, 'Synchronized with web QR digital menu'),
+                _buildBenefitRow(Icons.check_circle_rounded, VerticalLabels.of(ref.watch(currentVerticalProvider)).isRestaurant ? 'Synchronized with web QR digital menu' : 'Synchronized with your online store'),
                 const SizedBox(height: 8),
                 _buildBenefitRow(Icons.check_circle_rounded, r'Zero cloud storage costs ($0.00 / month)'),
                 const SizedBox(height: 24),

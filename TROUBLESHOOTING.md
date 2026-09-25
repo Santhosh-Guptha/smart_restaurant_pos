@@ -44,3 +44,12 @@ Claude will not type passwords, create accounts, or permanently delete data on y
 | iOS: "You have changed the icon for SmartBizz" alert | iOS always announces alternate icons | Expected, once per change. |
 | `flutter run` says no launchable activity | All launcher aliases disabled (manual adb tinkering) | `adb shell pm enable com.devmonks.smartdine/.LauncherBrand`. |
 | Windows taskbar shows the brand icon for every trade | By design; Windows exe icons are fixed at build time | — |
+
+## Admin sign-in (server-side 2-step)
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| Admin gets no code e-mail | Code.gs not redeployed, or `MailApp` not authorised | Paste the new Code.gs, deploy a new version, run any function once in the editor to grant mail permission. Until then the app falls back to its own code. |
+| "That code has expired" | Codes live 10 minutes | Tap Resend code. |
+| "Too many codes sent" | 5 codes per 10 minutes | Wait ten minutes. |
+| "The platform admin console needs an internet connection" | Admin offline login is blocked by design | Connect and sign in. |

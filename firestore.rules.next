@@ -14,7 +14,9 @@ service cloud.firestore {
 
     function signedIn()        { return request.auth != null; }
     function claim(k)          { return signedIn() ? request.auth.token[k] : null; }
-    function isAdmin()         { return claim('role') == 'MASTER_ADMIN'; }
+    // adminVerified is only put on a token after the e-mailed second step
+    // passed on the server (checkAdminSecondStep_ in Code.gs).
+    function isAdmin()         { return claim('role') == 'MASTER_ADMIN' && claim('adminVerified') == true; }
     function inOrg(orgId)      { return signedIn() && claim('orgId') == orgId; }
     function isManager(orgId)  { return inOrg(orgId) && claim('role') in ['OWNER', 'CLIENT', 'STORE_ADMIN', 'MANAGER']; }
     function docOrg()          { return resource.data.organizationId; }
@@ -154,10 +156,9 @@ service cloud.firestore {
     }
     match /_conn_test/{id}     { allow read, write: if signedIn(); }
 
-    // TODO before switching: the master-admin 2FA code is written and read
-    // during login, i.e. before any token exists. Move that into
-    // ISSUE_AUTH_TOKEN (issue the token only after the code checks out), then
-    // make this admin/server-only.
+    // Admin 2-step now runs on the server and never touches this collection.
+    // Still used by the sign-up e-mail check (client_signup_screen). Next step:
+    // move that check to Code.gs too, then make this `if false`.
     match /email_otps/{email}  { allow read, write: if true; }
 
     // ── Operational data lives in Sheets + Hive, never here ───────────────

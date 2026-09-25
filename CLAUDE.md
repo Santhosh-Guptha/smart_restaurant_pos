@@ -55,6 +55,8 @@ sharing reconciler, tenant metrics, admin Business Analytics.
 
 ## Status (25 Sep 2026)
 - Run on 5ac7cc0 (+ link-sharing removal): analyze clean, **333/333 tests**, web build OK.
+- Since then (not yet run): 860f7be icons · next commit: trade wording fixes in store settings / branches /
+  menu / analytics / Sheets setup, and admin 2-step verification on the server.
 - Next commit adds the per-trade app icons + `test/app_icon_service_test.dart` — rerun the script once.
 - Hosting currently serves an older build; redeploy after the rerun passes.
 
@@ -67,5 +69,5 @@ sharing reconciler, tenant metrics, admin Business Analytics.
 5. Live test with "ZZ Test – <trade>" tenants: offline tenant, own-Sheets tenant with 2 stores, store owners,
    staff add/remove → sheet sharing follows; Business Analytics fills after a day of bills.
 6. Check the icon switch on a real Android phone and an iPhone (log in as a kirana tenant → launcher icon changes).
-7. Open: admin 2FA server-side, then deploy `firestore.rules.next`;
+7. Open: sign-up e-mail check server-side, then deploy `firestore.rules.next` (admin 2FA is server-side now — needs the new Code.gs);
    signed licence lease; responsive polish on phone/large screens.

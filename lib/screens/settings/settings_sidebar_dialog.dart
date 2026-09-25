@@ -807,7 +807,7 @@ class _SettingsSidebarDialogState extends ConsumerState<SettingsSidebarDialog> {
       children: [
         _buildSectionHeading(
           'Backup & Restore',
-          'Encrypted backup of bills, menu, customers and settings. Staff logins are not included - they are re-created by owner sign-in on a new device.',
+          'Encrypted backup of bills, ${VerticalLabels.of(ref.watch(currentVerticalProvider)).isRestaurant ? 'menu' : 'products'}, customers and settings. Staff logins are not included - they are re-created by owner sign-in on a new device.',
         ),
         const SizedBox(height: 12),
         Row(

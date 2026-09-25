@@ -1247,7 +1247,7 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
         if (!roleMenu) return null;
         return FeatureGatedCard(
           featureKey: 'menuManagement',
-          featureLabel: 'Menu Configuration',
+          featureLabel: VerticalLabels.of(vertical).menuScreenTitle,
           onTap: null,
           child: _buildFeatureCard(
             title: VerticalLabels.of(vertical).menuScreenTitle,

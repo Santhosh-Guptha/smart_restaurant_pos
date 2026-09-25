@@ -487,7 +487,7 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
                   children: [
                     'Customer Walkout',
                     'Order Entered in Error',
-                    'Duplicate Ticket',
+                    VerticalLabels.of(ref.read(currentVerticalProvider)).isRestaurant ? 'Duplicate Ticket' : 'Duplicate Bill',
                     VerticalLabels.of(ref.read(currentVerticalProvider)).isRestaurant
                         ? 'Kitchen Shortage'
                         : 'Out of Stock',

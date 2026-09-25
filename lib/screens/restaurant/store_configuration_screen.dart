@@ -722,7 +722,9 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
           children: [
             Expanded(
               child: Text(
-                'Changes apply immediately to Counter Billing, Waiter Orders, KDS and Web Menu.',
+                VerticalLabels.of(_vertical).isRestaurant
+                    ? 'Changes apply immediately to Counter Billing, Waiter Orders, KDS and Web Menu.'
+                    : 'Changes apply immediately to Billing, Receipts and your Online Store.',
                 style: TextStyle(fontSize: 12, color: context.textSecondary),
               ),
             ),
@@ -820,6 +822,7 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
   // TAB 2: TAXES & CHARGES
   // ─────────────────────────────────────────────────────────────
   Widget _buildTaxesAndChargesTab() {
+    final isRest = VerticalLabels.of(_vertical).isRestaurant;
     final gst = double.tryParse(_gstCtrl.text.trim()) ?? 5.0;
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
@@ -873,12 +876,14 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
                   ],
                 ),
               ),
+              if (isRest) ...[
               const SizedBox(height: 16),
               _buildToggleRow(
                 'Default Service Charge Enabled for Dine-In Orders',
                 _defaultServiceChargeOn,
                 (v) => setState(() => _defaultServiceChargeOn = v),
               ),
+              ],
               const SizedBox(height: 12),
               Divider(color: context.borderColor),
               const SizedBox(height: 12),
@@ -887,7 +892,7 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
                   Expanded(
                     child: _buildTextField(
                       _packagingChargeCtrl,
-                      'Takeaway Packaging Fee ($_currency)',
+                      isRest ? 'Takeaway Packaging Fee ($_currency)' : 'Carry Bag / Packing Fee ($_currency)',
                       Icons.takeout_dining_rounded,
                       keyboardType: const TextInputType.numberWithOptions(decimal: true),
                     ),
@@ -896,13 +901,14 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
                   Expanded(
                     child: _buildTextField(
                       _deliveryChargeCtrl,
-                      'Direct Delivery Fee ($_currency)',
+                      isRest ? 'Direct Delivery Fee ($_currency)' : 'Home Delivery Fee ($_currency)',
                       Icons.delivery_dining_rounded,
                       keyboardType: const TextInputType.numberWithOptions(decimal: true),
                     ),
                   ),
                 ],
               ),
+              if (isRest) ...[
               const SizedBox(height: 16),
               Divider(color: context.borderColor),
               const SizedBox(height: 12),
@@ -935,6 +941,7 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
                   if (val != null) setState(() => _dineInPaymentTiming = val);
                 },
               ),
+              ],
             ],
           ),
         ],
@@ -989,7 +996,9 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
                     borderRadius: BorderRadius.circular(8),
                     border: Border.all(color: context.borderColor),
                   ),
-                  child: Text('No secondary UPI accounts configured. Dynamic table QR will use the Primary UPI VPA.',
+                  child: Text(VerticalLabels.of(_vertical).isRestaurant
+                          ? 'No secondary UPI accounts configured. Dynamic table QR will use the Primary UPI VPA.'
+                          : 'No secondary UPI accounts configured. The payment QR will use the Primary UPI VPA.',
                       style: TextStyle(fontSize: 12, color: context.textSecondary)),
                 )
               else
@@ -1097,7 +1106,7 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'Guests pay you directly',
+                            VerticalLabels.of(_vertical).isRestaurant ? 'Guests pay you directly' : 'Customers pay you directly',
                             style: TextStyle(
                               color: context.textPrimary,
                               fontSize: DS.fontCaption,
@@ -1106,7 +1115,7 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            'The UPI ID above is what a guest sees as a QR code when they '
+                            'The UPI ID above is what ${VerticalLabels.of(_vertical).isRestaurant ? 'a guest' : 'a customer'} sees as a QR code when they '
                             'pay from their phone, so the money reaches your account with '
                             'nothing in between. Cash and card-machine payments are '
                             'recorded here by your staff when the bill is settled.',
@@ -1150,7 +1159,9 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
               const SizedBox(height: 6),
               Text(
                 _hasOnlineMenu
-                    ? 'When toggled OFF, the online menu tells guests the kitchen is currently closed.'
+                    ? (VerticalLabels.of(_vertical).isRestaurant
+                        ? 'When toggled OFF, the online menu tells guests the kitchen is currently closed.'
+                        : 'When toggled OFF, your online store tells customers the shop is currently closed.')
                     : 'When toggled OFF, receipts and reports mark the store as closed.',
                 style: TextStyle(color: context.textSecondary, fontSize: 12),
               ),
@@ -1357,7 +1368,9 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
                   );
                 },
                 icon: Icon(Icons.receipt_long_rounded, color: ClassicTheme.primaryAccent, size: 18),
-                label: const Text('Design Your Receipts, Tokens & Kitchen Tickets', style: TextStyle(fontSize: 13)),
+                label: Text(
+                    (_hasKot && isRest) ? 'Design Your Receipts, Tokens & Kitchen Tickets' : 'Design Your Receipts & Tokens',
+                    style: const TextStyle(fontSize: 13)),
               ),
             ],
           ),

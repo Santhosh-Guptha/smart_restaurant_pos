@@ -112,6 +112,10 @@ class SaasSessionNotifier extends StateNotifier<SaasSessionState> {
   final Ref _ref;
   Future<void>? initFuture;
 
+  /// Platform-admin credentials between the password step and the code step,
+  /// so "Resend code" can ask the server for a new one. Memory only.
+  (String, String)? _pendingAdminLogin;
+
   StreamSubscription<DocumentSnapshot>? _licenseListener;
   StreamSubscription<List<ConnectivityResult>>? _leaseConnSub;
   StreamSubscription<DocumentSnapshot>? _featuresListener;
@@ -465,7 +469,24 @@ class SaasSessionNotifier extends StateNotifier<SaasSessionState> {
         firestore: firestore,
         identifier: input,
         password: password,
+        mfaCode: mfaCode,
       );
+      // Platform admin: the server runs the second step itself.
+      if (serverLogin.status == ServerLoginStatus.mfaRequired) {
+        _pendingAdminLogin = (input, password);
+        return 'MFA_REQUIRED:${serverLogin.email ?? kAdminEmail}';
+      }
+      if (serverLogin.status == ServerLoginStatus.mfaFailed) {
+        switch (serverLogin.errorCode) {
+          case 'MFA_EXPIRED':
+            return 'That code has expired. Tap "Resend code" for a new one.';
+          case 'MFA_LOCKED':
+            return 'Too many wrong codes. Tap "Resend code" for a new one.';
+          default:
+            return 'Invalid 2-step verification code.';
+        }
+      }
+      if (serverLogin.status == ServerLoginStatus.ok) _pendingAdminLogin = null;
       if (serverLogin.status == ServerLoginStatus.rejected) {
         return serverLogin.errorCode == 'RATE_LIMITED'
             ? "Too many attempts. Please wait ten minutes and try again."
@@ -573,7 +594,10 @@ class SaasSessionNotifier extends StateNotifier<SaasSessionState> {
           orgId == 'SYSTEM_ADMIN' ||
           userId == 'usr_master_admin';
 
-      if (isMasterAdmin) {
+      // When the server verified this login it has already run the second
+      // step (checkAdminSecondStep_ in Code.gs). The app's own e-mail code is
+      // only the fallback for when the server can't be reached.
+      if (isMasterAdmin && serverLogin.status != ServerLoginStatus.ok) {
         final bool is2faEnabled = await PlatformSecurityService.is2faEnabled();
         if (is2faEnabled) {
           final targetMfaEmail = (userEmail.isNotEmpty && userEmail.contains('@'))
@@ -898,6 +922,23 @@ class SaasSessionNotifier extends StateNotifier<SaasSessionState> {
 
   /// Resends 2-Step Verification code to the Master Admin email
   Future<Map<String, dynamic>> resendMfaCode(String email) async {
+    // Server-run second step: asking again without a code sends a new one.
+    final pending = _pendingAdminLogin;
+    if (pending != null) {
+      final conn = _ref.read(firebaseConnectionServiceProvider);
+      final r = await FirebaseAuthBridge.signInForLogin(
+        firestore: conn.masterFirestore,
+        identifier: pending.$1,
+        password: pending.$2,
+      );
+      if (r.status == ServerLoginStatus.mfaRequired) return {'success': true};
+      if (r.status == ServerLoginStatus.rejected && r.errorCode == 'RATE_LIMITED') {
+        return {'success': false, 'message': 'Too many codes sent. Please wait ten minutes.'};
+      }
+      if (r.status != ServerLoginStatus.unavailable) {
+        return {'success': false, 'message': 'Could not send a new code. Please sign in again.'};
+      }
+    }
     final is2fa = await PlatformSecurityService.is2faEnabled();
     if (!is2fa) {
       return {'success': false, 'message': '2-Factor Authentication is currently disabled on the platform.'};
@@ -937,6 +978,11 @@ class SaasSessionNotifier extends StateNotifier<SaasSessionState> {
     }
 
     final user = SaasUser.fromJson(jsonDecode(userJson));
+    // The platform admin always signs in online: the second step needs the
+    // server, and an offline admin session could not do anything anyway.
+    if (user.role.toUpperCase() == 'MASTER_ADMIN' || user.organizationId == 'SYSTEM_ADMIN') {
+      return "The platform admin console needs an internet connection to sign in.";
+    }
     final organization = SaasOrganization.fromJson(jsonDecode(orgJson));
     final license = SaasLicense.fromJson(jsonDecode(licJson));
     final franchiseId = box.get('saas_active_franchise_id_$emailKey');
@@ -1592,6 +1638,7 @@ class SaasSessionNotifier extends StateNotifier<SaasSessionState> {
   }
 
   Future<void> clearSession() async {
+    _pendingAdminLogin = null;
     _cancelListeners();
     unawaited(FirebaseAuthBridge.signOut(_ref.read(firebaseConnectionServiceProvider).masterFirestore));
     final box = Hive.box('configBox');

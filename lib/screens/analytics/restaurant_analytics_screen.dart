@@ -893,7 +893,9 @@ class _RestaurantAnalyticsScreenState
                                 style: TextStyle(color: context.textPrimary, fontSize: 14, fontWeight: FontWeight.bold),
                               ),
                               Text(
-                                'Visualizes kitchen load and service volume',
+                                vl.isRestaurant
+                                    ? 'Visualizes kitchen load and service volume'
+                                    : 'Visualizes counter rush and bill volume',
                                 style: TextStyle(color: context.textSecondary, fontSize: 12),
                               ),
                             ],

@@ -1154,7 +1154,7 @@ class _RestaurantMenuManagementScreenState
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
                               Text(
-                                'Item Photo (Customer QR & Web Menu)',
+                                _vl.isRestaurant ? 'Item Photo (Customer QR & Web Menu)' : '${_vl.itemSingular} Photo (Online Store)',
                                 style: TextStyle(
                                   color: context.textPrimary,
                                   fontSize: 12.5,

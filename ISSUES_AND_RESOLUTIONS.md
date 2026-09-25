@@ -466,6 +466,9 @@ When transitioning from local development to the brand-new production environmen
 | 32 | Sheet sharing never removed people | `SheetAccessReconciler` grant + revoke | 0e036ce |
 | 33 | Platform had no business view across tenants | `tenant_metrics` + Business Analytics charts | 0e036ce |
 
+| 34 | Shop tenants saw dine-in settlement policy, service charge, table counts, "Guests"/"kitchen" wording in store settings, branches, menu, analytics and the Sheets setup | Hidden or reworded per trade | this branch |
+| 35 | Admin 2-step code was generated and checked in the app (readable in `email_otps`) | Server-run second step; admin token only after it passes; no offline admin login | this branch |
+
 ### Still open
 - `firestore.rules` is still open (`if true`) until every device runs a build with custom-token login and admin 2FA moves server-side.
 - Licence lease is stored locally unsigned — a determined user could edit Hive; plan: signed lease from Apps Script.
@@ -474,3 +477,5 @@ When transitioning from local development to the brand-new production environmen
 - App icon per trade after login — waiting on artwork decision.
 
 Troubleshooting for build/test/deploy problems: `TROUBLESHOOTING.md`.
+
+- Google Sheet **tab names** are restaurant words for every trade ("Dining Bills", "KOT History", "Kitchen Expenses"). They are keys that Code.gs reads, so renaming needs a coordinated change in the app, Code.gs and existing sheets.
