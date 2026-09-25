@@ -337,10 +337,6 @@ class SmtpEmailService {
     }
 
     try {
-      final config = await getSmtpConfig();
-      if (!config.isConfigured) return {'success': false, 'error': 'SMTP Gateway not configured.'};
-
-      final smtpServer = _buildSmtpServer(config);
       final headerHtml = _buildHeaderHtml(
         badgeText: "Verification Required",
         badgeBg: "#eff6ff",
@@ -350,12 +346,9 @@ class SmtpEmailService {
       );
       final footerHtml = _buildFooterHtml();
 
-      final message = Message()
-        ..from = Address(config.username, config.fromName)
-        ..recipients.add(cleanEmail)
-        ..subject = 'Your Smart POS Verification Code: $otpCode'
-        ..text = 'Hello $clientName,\n\nYour 6-digit verification code is: $otpCode\n\nThis code will expire in 10 minutes.\n\nBest regards,\nSmart POS Team'
-        ..html = '''
+      final subject = 'Your Smart POS Verification Code: $otpCode';
+      final plainText = 'Hello $clientName,\n\nYour 6-digit verification code is: $otpCode\n\nThis code will expire in 10 minutes.\n\nBest regards,\nSmart POS Team';
+      final htmlContent = '''
 <!DOCTYPE html>
 <html>
 <head>
@@ -389,9 +382,12 @@ class SmtpEmailService {
 </html>
 ''';
 
-      await send(message, smtpServer).timeout(const Duration(seconds: 15));
-      debugPrint("SmtpEmailService: OTP sent to $cleanEmail");
-      return {'success': true, 'message': 'OTP email delivered successfully.'};
+      return await _dispatchEmail(
+        recipientEmail: cleanEmail,
+        subject: subject,
+        plainText: plainText,
+        htmlContent: htmlContent,
+      );
     } catch (e) {
       debugPrint("SmtpEmailService error sending OTP: $e");
       return {'success': false, 'error': e.toString()};
@@ -412,10 +408,6 @@ class SmtpEmailService {
     }
 
     try {
-      final config = await getSmtpConfig();
-      if (!config.isConfigured) return {'success': false, 'error': 'SMTP Gateway not configured.'};
-
-      final smtpServer = _buildSmtpServer(config);
       final headerHtml = _buildHeaderHtml(
         badgeText: "Security Challenge - 2MFA",
         badgeBg: "#fef3c7",
@@ -425,12 +417,9 @@ class SmtpEmailService {
       );
       final footerHtml = _buildFooterHtml();
 
-      final message = Message()
-        ..from = Address(config.username, config.fromName)
-        ..recipients.add(cleanEmail)
-        ..subject = '[SmartDine Security] Master Admin 2-Step Verification Code: $otpCode'
-        ..text = 'Hello $clientName,\n\nYour 6-digit Master Admin verification code is: $otpCode\n\nThis code will expire in 10 minutes.\nIf you did not attempt to sign in, please secure your administrative credentials immediately.\n\nBest regards,\nSmartDine Platform Security'
-        ..html = '''
+      final subject = '[SmartDine Security] Master Admin 2-Step Verification Code: $otpCode';
+      final plainText = 'Hello $clientName,\n\nYour 6-digit Master Admin verification code is: $otpCode\n\nThis code will expire in 10 minutes.\nIf you did not attempt to sign in, please secure your administrative credentials immediately.\n\nBest regards,\nSmartDine Platform Security';
+      final htmlContent = '''
 <!DOCTYPE html>
 <html>
 <head>
@@ -467,9 +456,12 @@ class SmtpEmailService {
 </html>
 ''';
 
-      await send(message, smtpServer).timeout(const Duration(seconds: 15));
-      debugPrint("SmtpEmailService: 2MFA login OTP sent to $cleanEmail");
-      return {'success': true, 'message': '2MFA code delivered successfully.'};
+      return await _dispatchEmail(
+        recipientEmail: cleanEmail,
+        subject: subject,
+        plainText: plainText,
+        htmlContent: htmlContent,
+      );
     } catch (e) {
       debugPrint("SmtpEmailService error sending 2MFA OTP: $e");
       return {'success': false, 'error': e.toString()};
@@ -485,6 +477,9 @@ class SmtpEmailService {
     required String shopName,
     required String businessCategory,
     required String mobile,
+    String? selectedPlan,
+    String? packageName,
+    Map<String, bool>? features,
   }) async {
     final cleanEmail = recipientEmail.trim().toLowerCase();
     if (cleanEmail.isEmpty || !cleanEmail.contains('@')) {
@@ -492,10 +487,6 @@ class SmtpEmailService {
     }
 
     try {
-      final config = await getSmtpConfig();
-      if (!config.isConfigured) return {'success': false, 'error': 'SMTP Gateway not configured.'};
-
-      final smtpServer = _buildSmtpServer(config);
       final headerHtml = _buildHeaderHtml(
         badgeText: "Application Received",
         badgeBg: "#fef3c7",
@@ -505,12 +496,50 @@ class SmtpEmailService {
       );
       final footerHtml = _buildFooterHtml();
 
-      final message = Message()
-        ..from = Address(config.username, config.fromName)
-        ..recipients.add(cleanEmail)
-        ..subject = 'Store Registration Received - Smart POS'
-        ..text = 'Hello $clientName,\n\nWe have received your registration for "$shopName" ($businessCategory). Your request is currently under review by our administrator.\n\nBest regards,\nSmart POS Team'
-        ..html = '''
+      final planDisplay = selectedPlan ?? 'Standard Plan';
+
+      // Build key features list if provided
+      final featureListHtml = StringBuffer();
+      if (features != null && features.isNotEmpty) {
+        final activeKeys = features.entries.where((e) => e.value == true).map((e) => e.key).toList();
+        final displayItems = <String>[];
+        for (final key in activeKeys) {
+          FeatureDef? def;
+          try {
+            def = FeatureCatalog.all.firstWhere((f) => f.key == key);
+          } catch (_) {}
+          displayItems.add(def?.label ?? key);
+        }
+        if (displayItems.isNotEmpty) {
+          featureListHtml.writeln('<div style="margin-top: 14px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px;">');
+          featureListHtml.writeln('<p style="margin: 0 0 8px 0; font-size: 12px; font-weight: bold; color: #475569;">Selected Package Features Included:</p>');
+          featureListHtml.writeln('<ul style="margin: 0; padding-left: 18px; font-size: 12px; color: #1e293b; line-height: 1.6;">');
+          for (final item in displayItems.take(8)) {
+            featureListHtml.writeln('<li>&#10004; $item</li>');
+          }
+          if (displayItems.length > 8) {
+            featureListHtml.writeln('<li style="color: #64748b;">+ ${displayItems.length - 8} more features included in package</li>');
+          }
+          featureListHtml.writeln('</ul></div>');
+        }
+      }
+
+      final subject = 'Store Registration Received - $shopName ($planDisplay)';
+      final plainText = '''
+Hello $clientName,
+
+Thank you for choosing Smart POS. We have received your store registration for "$shopName" ($businessCategory).
+
+Selected Package / Plan: $planDisplay
+Status: Under Administrative Review
+
+Our administrative team will review your application and onboard your store shortly. Once approved, you will receive an account activation email with your store ID and login credentials.
+
+Best regards,
+Smart POS Team
+''';
+
+      final htmlContent = '''
 <!DOCTYPE html>
 <html>
 <head>
@@ -535,17 +564,19 @@ class SmtpEmailService {
     <p class="note">Thank you for choosing Smart POS. Your store registration request has been successfully submitted and is under administrative review.</p>
     
     <div class="status-banner">
-      <p class="status-text">&#8987; Status: Pending Administrator Approval</p>
+      <p class="status-text">&#8987; Status: Pending Administrator Approval & Onboarding</p>
     </div>
 
     <div class="info-box">
       <div class="info-row"><span class="info-label">Store / Business Name:</span> <span class="info-val">$shopName</span></div>
       <div class="info-row"><span class="info-label">Business Category:</span> <span class="info-val">$businessCategory</span></div>
+      <div class="info-row"><span class="info-label">Requested Package / Plan:</span> <span class="info-val" style="color: #2563eb;">$planDisplay</span></div>
       <div class="info-row"><span class="info-label">Contact Mobile:</span> <span class="info-val">$mobile</span></div>
       <div class="info-row" style="margin-bottom: 0;"><span class="info-label">Registered Email:</span> <span class="info-val">$cleanEmail</span></div>
+      $featureListHtml
     </div>
     
-    <p class="note">Our administrative team will review your application and onboard your store shortly. Once processed, you will receive an account activation email with your store login credentials.</p>
+    <p class="note">Our administrative team will review your application and configure your store environment. Once activated, you will receive an account activation email containing your <strong>Store ID</strong> and <strong>Login Credentials</strong>.</p>
     
     $footerHtml
   </div>
@@ -553,8 +584,12 @@ class SmtpEmailService {
 </html>
 ''';
 
-      await send(message, smtpServer).timeout(const Duration(seconds: 15));
-      return {'success': true, 'message': 'Registration confirmation delivered.'};
+      return await _dispatchEmail(
+        recipientEmail: cleanEmail,
+        subject: subject,
+        plainText: plainText,
+        htmlContent: htmlContent,
+      );
     } catch (e) {
       debugPrint("SmtpEmailService error sending registration email: $e");
       return {'success': false, 'error': e.toString()};
@@ -581,10 +616,6 @@ class SmtpEmailService {
     }
 
     try {
-      final config = await getSmtpConfig();
-      if (!config.isConfigured) return {'success': false, 'error': 'SMTP Gateway not configured.'};
-
-      final smtpServer = _buildSmtpServer(config);
       final headerHtml = _buildHeaderHtml(
         badgeText: "Account Activated",
         badgeBg: "#dcfce7",
@@ -612,12 +643,24 @@ class SmtpEmailService {
       final activeFeaturesHtml = activeList.map((item) => '<li style="margin-bottom: 6px; font-size: 12.5px; color: #1e293b;">$item</li>').join('\n');
       final upgradeFeaturesHtml = upgradeList.map((item) => '<li style="margin-bottom: 6px; font-size: 12.5px; color: #64748b;">$item</li>').join('\n');
 
-      final message = Message()
-        ..from = Address(config.username, config.fromName)
-        ..recipients.add(cleanEmail)
-        ..subject = '\u{1F389} Congratulations! Your Smart POS Store Account is Activated'
-        ..text = 'Hello $clientName,\n\nYour store "$shopName" has been approved and activated!\n\nOrganization ID: $organizationId\nPlan: $planTier\nLogin Email: $cleanEmail\nDefault Password: ${defaultPassword ?? "Set by admin"}\n\nOn your first login, you will be prompted to set your private permanent password.\n\nBest regards,\nSmart POS Team'
-        ..html = '''
+      final subject = '\u{1F389} Congratulations! Your Smart POS Store Account is Activated';
+      final plainText = '''
+Hello $clientName,
+
+Your store "$shopName" has been approved and activated!
+
+Organization ID: $organizationId
+Plan: $planTier
+Login Email: $cleanEmail
+Default Password: ${defaultPassword ?? "Set by admin"}
+
+On your first login, you will be prompted to set your private permanent password.
+
+Best regards,
+Smart POS Team
+''';
+
+      final htmlContent = '''
 <!DOCTYPE html>
 <html>
 <head>
@@ -682,9 +725,12 @@ class SmtpEmailService {
 </html>
 ''';
 
-      await send(message, smtpServer).timeout(const Duration(seconds: 15));
-      debugPrint("SmtpEmailService: Approval email sent successfully to $cleanEmail");
-      return {'success': true, 'message': 'Approval email delivered.'};
+      return await _dispatchEmail(
+        recipientEmail: cleanEmail,
+        subject: subject,
+        plainText: plainText,
+        htmlContent: htmlContent,
+      );
     } catch (e) {
       debugPrint("SmtpEmailService error sending approval email: $e");
       return {'success': false, 'error': e.toString()};
@@ -706,10 +752,6 @@ class SmtpEmailService {
     }
 
     try {
-      final config = await getSmtpConfig();
-      if (!config.isConfigured) return {'success': false, 'error': 'SMTP Gateway not configured.'};
-
-      final smtpServer = _buildSmtpServer(config);
       final headerHtml = _buildHeaderHtml(
         badgeText: "Application Update",
         badgeBg: "#fee2e2",
@@ -719,12 +761,9 @@ class SmtpEmailService {
       );
       final footerHtml = _buildFooterHtml();
 
-      final message = Message()
-        ..from = Address(config.username, config.fromName)
-        ..recipients.add(cleanEmail)
-        ..subject = 'Update regarding your Smart POS Registration Request'
-        ..text = 'Hello $clientName,\n\nRegarding your registration request for "$shopName": we were unable to approve your application at this time.\n\nReason: ${reason ?? "Verification could not be completed."}\n\nBest regards,\nSmart POS Team'
-        ..html = '''
+      final subject = 'Update regarding your Smart POS Registration Request';
+      final plainText = 'Hello $clientName,\n\nRegarding your registration request for "$shopName": we were unable to approve your application at this time.\n\nReason: ${reason ?? "Verification could not be completed."}\n\nBest regards,\nSmart POS Team';
+      final htmlContent = '''
 <!DOCTYPE html>
 <html>
 <head>
@@ -758,8 +797,12 @@ class SmtpEmailService {
 </html>
 ''';
 
-      await send(message, smtpServer).timeout(const Duration(seconds: 15));
-      return {'success': true, 'message': 'Rejection notice delivered.'};
+      return await _dispatchEmail(
+        recipientEmail: cleanEmail,
+        subject: subject,
+        plainText: plainText,
+        htmlContent: htmlContent,
+      );
     } catch (e) {
       debugPrint("SmtpEmailService error sending rejection email: $e");
       return {'success': false, 'error': e.toString()};
@@ -777,10 +820,6 @@ class SmtpEmailService {
     String? clientPhone,
   }) async {
     try {
-      final config = await getSmtpConfig();
-      if (!config.isConfigured) return {'success': false, 'error': 'SMTP Gateway not configured.'};
-
-      final smtpServer = _buildSmtpServer(config);
       final headerHtml = _buildHeaderHtml(
         badgeText: "Renewal Request",
         badgeBg: "#fef3c7",
@@ -790,12 +829,9 @@ class SmtpEmailService {
       );
       final footerHtml = _buildFooterHtml();
 
-      final message = Message()
-        ..from = Address(config.username, "SmartDine Platform Alerts")
-        ..recipients.add(kAdminEmail)
-        ..subject = '[Priority] License Renewal Requested: $orgName ($orgId)'
-        ..text = 'Hello Master Admin,\n\nClient "$orgName" (ID: $orgId) has requested a license renewal for their $planTier plan.\n\nClient Email: ${clientEmail ?? "N/A"}\nPhone: ${clientPhone ?? "N/A"}\n\nPlease sign in to the Master Admin Console to approve and extend this client\'s license.\n\nSmartDine System Alert'
-        ..html = '''
+      final subject = '[Priority] License Renewal Requested: $orgName ($orgId)';
+      final plainText = 'Hello Master Admin,\n\nClient "$orgName" (ID: $orgId) has requested a license renewal for their $planTier plan.\n\nClient Email: ${clientEmail ?? "N/A"}\nPhone: ${clientPhone ?? "N/A"}\n\nPlease sign in to the Master Admin Console to approve and extend this client\'s license.\n\nSmartDine System Alert';
+      final htmlContent = '''
 <!DOCTYPE html>
 <html>
 <head>
@@ -833,8 +869,13 @@ class SmtpEmailService {
 </html>
 ''';
 
-      await send(message, smtpServer).timeout(const Duration(seconds: 15));
-      return {'success': true, 'message': 'Admin alert email delivered.'};
+      return await _dispatchEmail(
+        recipientEmail: kAdminEmail,
+        subject: subject,
+        plainText: plainText,
+        htmlContent: htmlContent,
+        fromName: "SmartDine Platform Alerts",
+      );
     } catch (e) {
       debugPrint("SmtpEmailService error sending renewal request alert email: $e");
       return {'success': false, 'error': e.toString()};
@@ -858,10 +899,6 @@ class SmtpEmailService {
     }
 
     try {
-      final config = await getSmtpConfig();
-      if (!config.isConfigured) return {'success': false, 'error': 'SMTP Gateway not configured.'};
-
-      final smtpServer = _buildSmtpServer(config);
       final formattedDate = "${validUntil.day.toString().padLeft(2, '0')}/${validUntil.month.toString().padLeft(2, '0')}/${validUntil.year}";
       final headerHtml = _buildHeaderHtml(
         badgeText: "Subscription Active",
@@ -872,12 +909,9 @@ class SmtpEmailService {
       );
       final footerHtml = _buildFooterHtml();
 
-      final message = Message()
-        ..from = Address(config.username, config.fromName)
-        ..recipients.add(cleanEmail)
-        ..subject = 'License Renewed: Welcome back to SmartDine POS!'
-        ..text = 'Hello $orgName,\n\nYour SmartDine Restaurant POS subscription license has been successfully renewed!\n\nPlan Tier: $planTier\nValid Until: $formattedDate\nPermitted Staff Seats: $maxUsers\nPermitted Restaurant Branches: $maxFranchises\n\nYour POS terminals will unblock automatically in real-time.\n\nBest regards,\nSmartDine Support Team'
-        ..html = '''
+      final subject = 'License Renewed: Welcome back to SmartDine POS!';
+      final plainText = 'Hello $orgName,\n\nYour SmartDine Restaurant POS subscription license has been successfully renewed!\n\nPlan Tier: $planTier\nValid Until: $formattedDate\nPermitted Staff Seats: $maxUsers\nPermitted Restaurant Branches: $maxFranchises\n\nYour POS terminals will unblock automatically in real-time.\n\nBest regards,\nSmartDine Support Team';
+      final htmlContent = '''
 <!DOCTYPE html>
 <html>
 <head>
@@ -914,8 +948,12 @@ class SmtpEmailService {
 </html>
 ''';
 
-      await send(message, smtpServer).timeout(const Duration(seconds: 15));
-      return {'success': true, 'message': 'Client renewal confirmation delivered.'};
+      return await _dispatchEmail(
+        recipientEmail: cleanEmail,
+        subject: subject,
+        plainText: plainText,
+        htmlContent: htmlContent,
+      );
     } catch (e) {
       debugPrint("SmtpEmailService error sending renewal confirmation email: $e");
       return {'success': false, 'error': e.toString()};

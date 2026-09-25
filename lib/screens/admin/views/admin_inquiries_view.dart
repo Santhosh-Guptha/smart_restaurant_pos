@@ -61,7 +61,9 @@ class _AdminInquiriesViewState extends ConsumerState<AdminInquiriesView> {
   }
 
   Future<void> _updateLeadStatus(UnifiedClientLead lead, String newStatus) async {
-    final collection = lead.isTrial ? 'registration_requests' : 'business_inquiries';
+    final collection = lead.sourceCollection.isNotEmpty
+        ? lead.sourceCollection
+        : (lead.isTrial ? 'registration_requests' : 'business_inquiries');
     try {
       await FirebaseFirestore.instance.collection(collection).doc(lead.id).update({
         'status': newStatus,
@@ -71,6 +73,19 @@ class _AdminInquiriesViewState extends ConsumerState<AdminInquiriesView> {
         AppToast.showSuccess(context, 'Lead marked as $newStatus');
       }
     } catch (e) {
+      // Fallback: try the other collection in case of legacy leads or collection mismatches
+      final altCollection = collection == 'registration_requests' ? 'business_inquiries' : 'registration_requests';
+      try {
+        await FirebaseFirestore.instance.collection(altCollection).doc(lead.id).update({
+          'status': newStatus,
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+        if (mounted) {
+          AppToast.showSuccess(context, 'Lead marked as $newStatus');
+        }
+        return;
+      } catch (_) {}
+
       if (mounted) {
         AppToast.showError(context, 'Failed to update lead: $e');
       }

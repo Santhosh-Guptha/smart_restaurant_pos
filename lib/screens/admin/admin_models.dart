@@ -17,6 +17,7 @@ class UnifiedClientLead {
   final String requirements;
   final String status; // 'NEW_INQUIRY', 'PENDING', 'APPROVED', 'REJECTED', 'CONTACTED'
   final bool isTrial;
+  final String sourceCollection; // 'registration_requests' or 'business_inquiries'
   final DateTime? createdAt;
   final Map<String, dynamic> rawData;
   final String? requestedPackageId;
@@ -36,6 +37,7 @@ class UnifiedClientLead {
     this.requirements = '',
     required this.status,
     required this.isTrial,
+    this.sourceCollection = 'registration_requests',
     this.createdAt,
     required this.rawData,
     this.requestedPackageId,
@@ -126,6 +128,7 @@ class UnifiedClientLead {
       requirements: reqs,
       status: status,
       isTrial: false,
+      sourceCollection: 'business_inquiries',
       createdAt: parseDateTime(d['createdAt']),
       rawData: d,
       requestedPackageId: pkgId,
@@ -203,6 +206,7 @@ class UnifiedClientLead {
           defaultReqs,
       status: status,
       isTrial: isTrial,
+      sourceCollection: 'registration_requests',
       createdAt: parseDateTime(d['createdAt']),
       rawData: d,
       requestedPackageId: pkgId,

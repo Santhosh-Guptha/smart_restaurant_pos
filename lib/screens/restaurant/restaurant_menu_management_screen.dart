@@ -77,8 +77,8 @@ class _RestaurantMenuManagementScreenState
   void _loadCategoriesFromHive() {
     try {
       final box = Hive.isBoxOpen('restaurant_config_box') ? Hive.box('restaurant_config_box') : null;
-      final raw = box?.get('restaurant_categories_map');
-      if (raw is Map) {
+      final raw = box?.get('restaurant_categories_map_$_vertical') ?? box?.get('restaurant_categories_map');
+      if (raw is Map && raw.isNotEmpty) {
         _categoriesWithSubs = {};
         raw.forEach((k, v) {
           if (v is List) {
@@ -88,6 +88,15 @@ class _RestaurantMenuManagementScreenState
           }
         });
       }
+      // Check if loaded categories are restaurant defaults on a non-restaurant vertical, or if map is empty
+      final isNonRestaurant = _vertical != Verticals.restaurant;
+      final hasRestaurantDefaults = _categoriesWithSubs.keys.any((k) => k == 'Main Course' || k == 'Starters' || k == 'Breads');
+      if (_categoriesWithSubs.isEmpty || (isNonRestaurant && hasRestaurantDefaults)) {
+        _categoriesWithSubs = Map<String, List<String>>.from(
+          _vl.defaultCategoriesWithSubs.map((k, v) => MapEntry(k, List<String>.from(v))),
+        );
+        _saveCategoriesToHive();
+      }
     } catch (e) {
       debugPrint('Error loading categories from Hive: $e');
     }
@@ -96,6 +105,7 @@ class _RestaurantMenuManagementScreenState
   void _saveCategoriesToHive() {
     try {
       final box = Hive.isBoxOpen('restaurant_config_box') ? Hive.box('restaurant_config_box') : null;
+      box?.put('restaurant_categories_map_$_vertical', _categoriesWithSubs);
       box?.put('restaurant_categories_map', _categoriesWithSubs);
     } catch (e) {
       debugPrint('Error saving categories to Hive: $e');
@@ -218,7 +228,7 @@ class _RestaurantMenuManagementScreenState
           cloudDishes.add({
             'id': data['id'] ?? doc.id,
             'name': data['name'] ?? '',
-            'category': data['category'] ?? 'Main Course',
+            'category': data['category'] ?? _vl.defaultCategory,
             'subcategory': data['subcategory'] ?? 'General',
             'price': (data['price'] as num?)?.toDouble() ?? 0.0,
             'isVeg': data['isVeg'] == true,
@@ -384,7 +394,7 @@ class _RestaurantMenuManagementScreenState
           final id = (item['id'] ?? '').toString().trim();
           final name = (item['name'] ?? '').toString().trim();
           final price = (item['price'] as num?)?.toDouble() ?? 0.0;
-          final cat = (item['category'] ?? 'Main Course').toString().trim();
+          final cat = (item['category'] ?? _vl.defaultCategory).toString().trim();
           final isVeg = item['isVeg'] != false;
           final isAvail = item['available'] != false && item['is_available'] != false;
           final isExempt = item['isTaxExempt'] == true || item['is_tax_exempt'] == true;
@@ -1002,12 +1012,12 @@ class _RestaurantMenuManagementScreenState
     bool isUploadingImage = false;
     String? uploadStatusText;
 
-    String category = existing?['category'] ?? (_categoriesWithSubs.isNotEmpty ? _categoriesWithSubs.keys.first : 'Main Course');
+    String category = existing?['category'] ?? (_categoriesWithSubs.isNotEmpty ? _categoriesWithSubs.keys.first : _vl.defaultCategory);
     String station = existing?['station'] ?? (_stations.isNotEmpty ? _stations.first.name : 'Main Kitchen');
     bool sendsToKitchen = existing?['sendsToKitchen'] ?? true;
     bool isVeg = existing?['isVeg'] ?? true;
     bool isAvailable = existing?['isAvailable'] ?? true;
-    bool isTimeRestricted = existing?['isTimeRestricted'] ?? false;
+    bool isTimeRestricted = _vl.hasTimeRestrictedServing && (existing?['isTimeRestricted'] ?? false);
     bool isTaxExempt = existing?['isTaxExempt'] == true || existing?['is_tax_exempt'] == true;
 
     Future<void> pickAndUpload(ImageSource source, StateSetter setDialogState) async {
@@ -1516,10 +1526,15 @@ class _RestaurantMenuManagementScreenState
                             ),
                             child: DropdownButtonHideUnderline(
                               child: DropdownButton<String>(
-                                value: _categoriesWithSubs.containsKey(category) ? category : (_categoriesWithSubs.isNotEmpty ? _categoriesWithSubs.keys.first : category),
+                                value: _categoriesWithSubs.containsKey(category)
+                                    ? category
+                                    : (_categoriesWithSubs.isNotEmpty ? _categoriesWithSubs.keys.first : _vl.defaultCategory),
                                 dropdownColor: context.surfaceColor,
                                 style: TextStyle(color: context.textPrimary, fontSize: 13),
-                                items: (_categoriesWithSubs.isNotEmpty ? _categoriesWithSubs.keys.toList() : ['Main Course', 'Starters', 'Breads', 'Beverages', 'Desserts']).map((cat) {
+                                items: (_categoriesWithSubs.isNotEmpty
+                                        ? _categoriesWithSubs.keys.toList()
+                                        : _vl.defaultCategories)
+                                    .map((cat) {
                                   return DropdownMenuItem(value: cat, child: Text(cat));
                                 }).toList(),
                                 onChanged: (val) {
@@ -1954,79 +1969,82 @@ class _RestaurantMenuManagementScreenState
                     ),
                     const SizedBox(height: 14),
 
-                    // Time-Restricted Serving
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: context.isDark ? ClassicTheme.cardSurfaceDark : context.canvasColor,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: context.borderColor),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text('Time-Restricted Serving', style: TextStyle(color: context.textPrimary, fontSize: 13, fontWeight: FontWeight.bold)),
-                                  Text('e.g. Breakfast only, Lunch only', style: TextStyle(color: context.textSecondary, fontSize: 12)),
-                                ],
-                              ),
-                              Switch(
-                                value: isTimeRestricted,
-                                activeThumbColor: ClassicTheme.infoBlue,
-                                onChanged: (v) => setDialogState(() => isTimeRestricted = v),
-                              ),
-                            ],
-                          ),
-                          if (isTimeRestricted) ...[
-                            Divider(color: context.borderColor, height: 16),
+                    // Time-Restricted Serving (Restaurants only - breakfast/lunch/dinner slots)
+                    if (_vl.hasTimeRestrictedServing) ...[
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: context.isDark ? ClassicTheme.cardSurfaceDark : context.canvasColor,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: context.borderColor),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
                             Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                Expanded(
-                                  child: TextField(
-                                    controller: fromTimeCtrl,
-                                    style: TextStyle(color: context.textPrimary, fontSize: 13),
-                                    decoration: InputDecoration(
-                                      labelText: 'Available From',
-                                      labelStyle: TextStyle(color: context.textSecondary, fontSize: 12),
-                                      hintText: 'HH:mm (e.g. 07:00)',
-                                      filled: true,
-                                      fillColor: context.inputFill,
-                                      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: context.borderColor)),
-                                      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: context.borderColor)),
-                                    ),
-                                  ),
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text('Time-Restricted Serving', style: TextStyle(color: context.textPrimary, fontSize: 13, fontWeight: FontWeight.bold)),
+                                    Text('e.g. Breakfast only, Lunch only', style: TextStyle(color: context.textSecondary, fontSize: 12)),
+                                  ],
                                 ),
-                                const SizedBox(width: 8),
-                                Text('to', style: TextStyle(color: context.textSecondary)),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: TextField(
-                                    controller: toTimeCtrl,
-                                    style: TextStyle(color: context.textPrimary, fontSize: 13),
-                                    decoration: InputDecoration(
-                                      labelText: 'Available Until',
-                                      labelStyle: TextStyle(color: context.textSecondary, fontSize: 12),
-                                      hintText: 'HH:mm (e.g. 11:30)',
-                                      filled: true,
-                                      fillColor: context.inputFill,
-                                      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: context.borderColor)),
-                                      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: context.borderColor)),
-                                    ),
-                                  ),
+                                Switch(
+                                  value: isTimeRestricted,
+                                  activeThumbColor: ClassicTheme.infoBlue,
+                                  onChanged: (v) => setDialogState(() => isTimeRestricted = v),
                                 ),
                               ],
                             ),
+                            if (isTimeRestricted) ...[
+                              Divider(color: context.borderColor, height: 16),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: TextField(
+                                      controller: fromTimeCtrl,
+                                      style: TextStyle(color: context.textPrimary, fontSize: 13),
+                                      decoration: InputDecoration(
+                                        labelText: 'Available From',
+                                        labelStyle: TextStyle(color: context.textSecondary, fontSize: 12),
+                                        hintText: 'HH:mm (e.g. 07:00)',
+                                        filled: true,
+                                        fillColor: context.inputFill,
+                                        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: context.borderColor)),
+                                        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: context.borderColor)),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text('to', style: TextStyle(color: context.textSecondary)),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: TextField(
+                                      controller: toTimeCtrl,
+                                      style: TextStyle(color: context.textPrimary, fontSize: 13),
+                                      decoration: InputDecoration(
+                                        labelText: 'Available Until',
+                                        labelStyle: TextStyle(color: context.textSecondary, fontSize: 12),
+                                        hintText: 'HH:mm (e.g. 11:30)',
+                                        filled: true,
+                                        fillColor: context.inputFill,
+                                        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: context.borderColor)),
+                                        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: context.borderColor)),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
                           ],
-                        ],
+                        ),
                       ),
-                    ),
+                      const SizedBox(height: 14),
+                    ],
                   ],
                 ),
               ),
@@ -2068,11 +2086,11 @@ class _RestaurantMenuManagementScreenState
                     'station': station,
                     'sendsToKitchen': sendsToKitchen,
                     'isAvailable': isAvailable,
-                    'isTimeRestricted': isTimeRestricted,
+                    'isTimeRestricted': _vl.hasTimeRestrictedServing && isTimeRestricted,
                     'isTaxExempt': isTaxExempt,
                     'is_tax_exempt': isTaxExempt,
-                    'availableFrom': fromTimeCtrl.text.trim(),
-                    'availableTo': toTimeCtrl.text.trim(),
+                    'availableFrom': _vl.hasTimeRestrictedServing ? fromTimeCtrl.text.trim() : '',
+                    'availableTo': _vl.hasTimeRestrictedServing ? toTimeCtrl.text.trim() : '',
                     'barcode': barcodeCtrl.text.trim().isNotEmpty ? barcodeCtrl.text.trim() : existing?['barcode'],
                     'sku': skuCtrl.text.trim().isNotEmpty ? skuCtrl.text.trim() : existing?['sku'],
                     'unit': unitCtrl.text.trim().isNotEmpty ? unitCtrl.text.trim() : (existing?['unit'] ?? 'pcs'),
@@ -2726,7 +2744,7 @@ class _RestaurantMenuManagementScreenState
                                                   ),
                                                 ),
                                               ],
-                                              if (dish['isTimeRestricted'] == true) ...[
+                                              if (_vl.hasTimeRestrictedServing && dish['isTimeRestricted'] == true) ...[
                                                 const SizedBox(width: 6),
                                                 Text(
                                                   '⏰ ${dish['availableFrom']} - ${dish['availableTo']}',

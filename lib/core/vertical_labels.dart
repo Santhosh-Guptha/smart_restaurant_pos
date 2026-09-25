@@ -232,4 +232,74 @@ class VerticalLabels {
       default:                   return 'Set up your product catalog. Add products and categories to enable fast billing and stock management.';
     }
   }
+
+  // ── Features & Dynamic Catalog Defaults ─────────────────────────────────
+
+  bool get hasTimeRestrictedServing => vertical == Verticals.restaurant;
+
+  String get defaultCategory {
+    switch (vertical) {
+      case Verticals.restaurant:
+        return 'Main Course';
+      case Verticals.pharmacy:
+        return 'Prescription Medicines';
+      case Verticals.kirana:
+      case Verticals.supermarket:
+        return 'Groceries & Staples';
+      default:
+        return 'General Products';
+    }
+  }
+
+  List<String> get defaultCategories => defaultCategoriesWithSubs.keys.toList();
+
+  Map<String, List<String>> get defaultCategoriesWithSubs {
+    switch (vertical) {
+      case Verticals.restaurant:
+        return const {
+          'Main Course': ['Veg Curries', 'Non-Veg Gravies', 'Rice & Biryani'],
+          'Starters': ['Veg Starters', 'Non-Veg Starters', 'Tandoor & Kebab'],
+          'Breads': ['Roti & Naan', 'Parathas'],
+          'Beverages': ['Hot Drinks', 'Cold Drinks', 'Juices & Shakes'],
+          'Desserts': ['Ice Creams', 'Traditional Sweets'],
+        };
+      case Verticals.kirana:
+        return const {
+          'Groceries & Staples': ['Rice & Grains', 'Flours & Atta', 'Pulses & Dals', 'Edible Oils & Ghee'],
+          'Spices & Masalas': ['Whole Spices', 'Powdered Spices', 'Cooking Pastes'],
+          'Packaged Foods': ['Snacks & Namkeen', 'Biscuits & Cookies', 'Noodles & Pasta'],
+          'Dairy & Eggs': ['Milk & Curd', 'Paneer & Butter', 'Eggs'],
+          'Beverages': ['Tea & Coffee', 'Cold Drinks & Juices'],
+          'Household & Cleaning': ['Detergents & Soaps', 'Dishwashers', 'Surface Cleaners'],
+          'Personal Care': ['Soaps & Body Wash', 'Hair Care', 'Oral Care'],
+        };
+      case Verticals.supermarket:
+        return const {
+          'Groceries & Staples': ['Rice & Grains', 'Atta & Flours', 'Pulses & Dals', 'Oils & Ghee'],
+          'Packaged Foods': ['Biscuits & Snacks', 'Chocolates & Sweets', 'Breakfast Cereals', 'Instant Noodles & Pasta'],
+          'Dairy & Frozen': ['Milk & Butter', 'Paneer & Cheese', 'Frozen Foods & Ice Creams'],
+          'Beverages': ['Juices & Energy Drinks', 'Soft Drinks', 'Tea & Coffee'],
+          'Personal Care': ['Skin & Body Care', 'Hair Care', 'Dental Care'],
+          'Home & Hygiene': ['Laundry & Detergents', 'Kitchen & Cleaners', 'Pooja Essentials'],
+          'Fresh Produce': ['Vegetables', 'Fruits'],
+        };
+      case Verticals.pharmacy:
+        return const {
+          'Prescription Medicines': ['Tablets & Capsules', 'Syrups & Suspensions', 'Injections', 'Ointments & Creams'],
+          'OTC & First Aid': ['Pain Relief', 'Cold & Cough', 'Bandages & Antiseptics', 'Digestive Care'],
+          'Healthcare & Wellness': ['Vitamins & Supplements', 'Protein Powders', 'Immunity Boosters'],
+          'Personal & Hygiene': ['Sanitizers & Masks', 'Baby Care', 'Skin Care'],
+          'Medical Devices': ['Thermometers', 'BP Monitors', 'Glucometers & Strips'],
+        };
+      case Verticals.retail:
+      default:
+        return const {
+          'General Products': ['Best Sellers', 'New Arrivals'],
+          'Apparel & Fashion': ['Men', 'Women', 'Kids'],
+          'Electronics & Accessories': ['Cables & Chargers', 'Gadgets', 'Batteries'],
+          'Stationery & Office': ['Notebooks & Pens', 'Office Supplies'],
+          'Home & Gifts': ['Home Decor', 'Gifts & Toys'],
+        };
+    }
+  }
 }

@@ -622,13 +622,19 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
           'updatedAt': FieldValue.serverTimestamp(),
         });
 
-        SmtpEmailService.sendRegistrationSubmittedEmail(
+        await SmtpEmailService.sendRegistrationSubmittedEmail(
           recipientEmail: email,
           clientName: clientName,
           shopName: effectiveShopName,
           businessCategory: _businessCategory,
           mobile: mobile,
-        ).catchError((_) => <String, dynamic>{});
+          selectedPlan: profile.label,
+          packageName: profile.id,
+          features: profile.features,
+        ).catchError((e) {
+          debugPrint("Registration email dispatch error: $e");
+          return <String, dynamic>{};
+        });
 
         if (mounted) {
           setState(() => _isSubmitting = false);
@@ -680,13 +686,19 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
           'updatedAt': FieldValue.serverTimestamp(),
         });
 
-        SmtpEmailService.sendRegistrationSubmittedEmail(
+        await SmtpEmailService.sendRegistrationSubmittedEmail(
           recipientEmail: email,
           clientName: clientName,
           shopName: effectiveShopName,
           businessCategory: _businessCategory,
           mobile: mobile,
-        ).catchError((_) => <String, dynamic>{});
+          selectedPlan: 'Enterprise / Custom Setup',
+          packageName: 'Enterprise Custom',
+          features: PlanProfile.omnichannel.features,
+        ).catchError((e) {
+          debugPrint("Enterprise registration email dispatch error: $e");
+          return <String, dynamic>{};
+        });
 
         if (mounted) {
           setState(() => _isSubmitting = false);

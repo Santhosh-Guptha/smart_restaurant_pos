@@ -317,7 +317,7 @@ class TenantProvisioningService {
       });
 
       // 12. Dispatch Welcome & Login Credentials Email
-      SmtpEmailService.sendAccountApprovedEmail(
+      await SmtpEmailService.sendAccountApprovedEmail(
         recipientEmail: cleanEmail,
         clientName: cleanName,
         shopName: cleanShopName,
