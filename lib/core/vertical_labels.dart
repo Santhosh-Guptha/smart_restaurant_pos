@@ -235,6 +235,15 @@ class VerticalLabels {
     }
   }
 
+  // ── Bills ──────────────────────────────────────────────────────────────
+
+  /// Printed under the total when the store has not written its own footer.
+  String get billThankYou =>
+      isRestaurant ? 'Thank you for dining with us! Please visit again.' : 'Thank you for shopping with us! Please visit again.';
+
+  /// The customer line on a bill with no name taken.
+  String get defaultGuestName => isRestaurant ? 'Dine-In Guest' : 'Walk-in Customer';
+
   // ── Features & Dynamic Catalog Defaults ─────────────────────────────────
 
   bool get hasTimeRestrictedServing => vertical == Verticals.restaurant;

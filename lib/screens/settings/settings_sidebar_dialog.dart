@@ -668,7 +668,9 @@ class _SettingsSidebarDialogState extends ConsumerState<SettingsSidebarDialog> {
                 ),
                 // New-KOT chimes only make sense when KOTs can arrive from another
                 // device, which needs the cloud (cloudSync).
-                if (ref.watch(entitlementsProvider).isEnabled(FeatureKeys.cloudSync)) ...[
+                // Kitchen tickets are a restaurant thing; a shop has no KOTs.
+                if (ref.watch(entitlementsProvider).isEnabled(FeatureKeys.cloudSync) &&
+                    VerticalLabels.of(ref.watch(currentVerticalProvider)).isRestaurant) ...[
                 const Divider(height: 12),
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,

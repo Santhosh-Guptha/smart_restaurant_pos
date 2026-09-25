@@ -153,7 +153,8 @@ class PosBillPdfService {
                     pw.Row(
                       mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                       children: [
-                        pw.Text('Table: $tableName', style: pw.TextStyle(fontSize: 8.5, fontWeight: pw.FontWeight.bold)),
+                        // A shop bill has no table; print nothing rather than "Table: ".
+                        pw.Text(tableName.trim().isEmpty ? '' : 'Table: $tableName', style: pw.TextStyle(fontSize: 8.5, fontWeight: pw.FontWeight.bold)),
                         // The token already carries whatever marker it needs, so
                         // prefixing another `#` here printed `Token No: #T-0709-001`.
                         pw.Text('Token No: $tokenNumber', style: pw.TextStyle(fontSize: 8.5, fontWeight: pw.FontWeight.bold, color: PdfColors.blue800)),
@@ -173,7 +174,7 @@ class PosBillPdfService {
                         ),
                       ],
                     ),
-                    if ((customerName != null && customerName.isNotEmpty && customerName != 'Guest' && customerName != 'Dine-In Guest') ||
+                    if ((customerName != null && customerName.isNotEmpty && customerName != 'Guest' && customerName != 'Dine-In Guest' && customerName != 'Walk-in Customer') ||
                         (customerPhone != null && customerPhone.isNotEmpty) ||
                         (customerEmail != null && customerEmail.isNotEmpty)) ...[
                       pw.SizedBox(height: 3),
@@ -330,7 +331,7 @@ class PosBillPdfService {
                 child: pw.Text(
                   (footerText ?? '').trim().isNotEmpty
                       ? footerText!.trim()
-                      : 'Thank you for dining with us! Please visit again.',
+                      : 'Thank you! Please visit again.',
                   style: pw.TextStyle(fontSize: 8.5, fontStyle: pw.FontStyle.italic, color: PdfColors.grey700),
                 ),
               ),

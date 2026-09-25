@@ -996,7 +996,7 @@ Smart POS Team
       final footerHtml = _buildFooterHtml();
 
       final cleanBillId = billNumber.replaceAll(RegExp(r'[^a-zA-Z0-9_\-]'), '_');
-      final cleanCust = customerName.trim().isNotEmpty && customerName != 'Guest' && customerName != 'Dine-In Guest'
+      final cleanCust = customerName.trim().isNotEmpty && customerName != 'Guest' && customerName != 'Dine-In Guest' && customerName != 'Walk-in Customer'
           ? customerName.trim()
           : 'Valued Guest';
 

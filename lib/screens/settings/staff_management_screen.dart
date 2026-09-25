@@ -104,12 +104,21 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
     bool obscurePassword = true;
     
     // Filter available roles according to license allowedRoles
+    //
+    // A shop has no kitchen and no tables: the kitchen and waiter roles open
+    // nothing on a shop's dashboard (every card they could reach is a
+    // restaurant card), so a shop staff member given one signed in to an
+    // empty screen. Offer only the roles that have work to do here.
+    bool fitsTrade(StaffRole r) =>
+        r != StaffRole.unassigned &&
+        (vl.isRestaurant || (r != StaffRole.kitchen && r != StaffRole.waiter));
     final filteredRoles = StaffRole.values.where((r) {
       final roleKey = r.name.toUpperCase();
-      return allowedRoles.any((a) => a.toUpperCase() == roleKey);
+      return fitsTrade(r) && allowedRoles.any((a) => a.toUpperCase() == roleKey);
     }).toList();
-    final availableRoles =
-        filteredRoles.isNotEmpty ? filteredRoles : StaffRole.values;
+    final availableRoles = filteredRoles.isNotEmpty
+        ? filteredRoles
+        : StaffRole.values.where(fitsTrade).toList();
 
     StaffRole role = existing?.role ?? availableRoles.first;
     if (!availableRoles.contains(role)) {

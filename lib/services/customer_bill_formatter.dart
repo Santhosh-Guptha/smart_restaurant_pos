@@ -230,7 +230,7 @@ class CustomerBillFormatter {
 
     bytes += generator.feed(1);
     bytes += generator.text(
-      'Thank you for dining with us!',
+      'Thank you for your visit!',
       styles: const PosStyles(align: PosAlign.center, bold: true),
     );
     bytes += generator.text(

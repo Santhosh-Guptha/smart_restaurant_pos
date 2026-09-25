@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../providers/saas_session_provider.dart';
+import '../../core/vertical_labels.dart';
 import '../../providers/auth_provider.dart';
 import '../../core/constants.dart';
 import '../../utils/ui_feedback.dart';
@@ -80,7 +81,8 @@ class _SaaSExpiredScreenState extends ConsumerState<SaaSExpiredScreen> {
   @override
   Widget build(BuildContext context) {
     final session = ref.watch(saasSessionProvider);
-    final orgName = session.currentOrganization?.name ?? 'Restaurant';
+    final orgName = session.currentOrganization?.name ??
+        VerticalLabels.of(session.vertical).dashboardBrandFallback;
     final orgId = session.currentOrganization?.id ?? 'N/A';
     final license = session.currentLicense;
     final isTrial = license?.planTier.toUpperCase() == 'TRIAL';

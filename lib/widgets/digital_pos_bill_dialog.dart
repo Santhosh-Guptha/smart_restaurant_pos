@@ -6,6 +6,7 @@ import '../core/restaurant_models.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import '../core/constants.dart';
 import '../core/entitlements.dart';
+import '../core/vertical_labels.dart';
 import '../core/receipt/receipt_context_builder.dart';
 import '../core/receipt/receipt_print_service.dart';
 import '../core/receipt/receipt_template.dart';
@@ -183,6 +184,10 @@ class _DigitalPosBillDialogState extends ConsumerState<DigitalPosBillDialog> {
   /// emailed under another.
   PrinterState get _printer => ref.read(thermalPrinterProvider);
 
+  /// The tenant's trade, for every word on this bill that is not the same
+  /// for a restaurant and a shop.
+  VerticalLabels get _labels => VerticalLabels.of(ref.read(currentVerticalProvider));
+
   String? _resolved(String? custom, String? stored, String? fallback) {
     for (final v in [custom, stored, fallback]) {
       if ((v ?? '').trim().isNotEmpty) return v!.trim();
@@ -199,7 +204,7 @@ class _DigitalPosBillDialogState extends ConsumerState<DigitalPosBillDialog> {
     final bytes = await PosBillPdfService.generateInvoicePdfBytes(
       shopName: _resolved(printer.customName, stored('store.name'),
               widget.organizationName) ??
-          'SmartDine Restaurant',
+          _labels.dashboardBrandFallback,
       shopPhone: _resolved(printer.customPhone, stored('store.phone'),
               widget.organizationPhone) ??
           '',
@@ -209,7 +214,9 @@ class _DigitalPosBillDialogState extends ConsumerState<DigitalPosBillDialog> {
       // The statutory line, resolved the same way as the rest: the slip
       // prefers the store record here, so the attachment must too.
       fssai: _resolved(null, stored('store.fssai'), widget.fssai),
-      footerText: printer.customFooter,
+      footerText: (printer.customFooter ?? '').trim().isNotEmpty
+          ? printer.customFooter
+          : _labels.billThankYou,
       billNumber: widget.billNumber,
       tokenNumber: widget.tokenNumber,
       tableName: widget.tableName,
@@ -256,7 +263,7 @@ class _DigitalPosBillDialogState extends ConsumerState<DigitalPosBillDialog> {
         customerName: widget.customerName ?? 'Guest',
         billNumber: widget.billNumber,
         tableName: widget.tableName,
-        restaurantName: widget.organizationName ?? 'SmartDine Restaurant',
+        restaurantName: widget.organizationName ?? _labels.dashboardBrandFallback,
         totalAmount: widget.totalAmount,
         paymentMode: widget.paymentMode,
         pdfBytes: pdfBytes,
@@ -508,7 +515,7 @@ class _DigitalPosBillDialogState extends ConsumerState<DigitalPosBillDialog> {
                       child: Column(
                         children: [
                           Text(
-                            (widget.organizationName ?? 'SmartDine Restaurant').toUpperCase(),
+                            (widget.organizationName ?? _labels.dashboardBrandFallback).toUpperCase(),
                             style: TextStyle(
                               color: context.textPrimary,
                               fontSize: 16,
@@ -537,7 +544,7 @@ class _DigitalPosBillDialogState extends ConsumerState<DigitalPosBillDialog> {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Text(
-                          'Customer: ${widget.customerName ?? "Dine-In Guest"}',
+                          'Customer: ${widget.customerName ?? _labels.defaultGuestName}',
                           style: TextStyle(color: context.textPrimary, fontSize: 12, fontWeight: FontWeight.w600),
                         ),
                         Text(

@@ -991,7 +991,9 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
                                               mainAxisAlignment: MainAxisAlignment.center,
                                               children: [
                                                 Text(
-                                                  card.title,
+                                                  // The trade's own words ("Products & Stock",
+                                                  // "Sales History"), as on the pinned cards.
+                                                  card.titleFor(ent.vertical),
                                                   style: TextStyle(
                                                     color: context.textPrimary,
                                                     fontSize: 13,
@@ -1001,7 +1003,7 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
                                                   overflow: TextOverflow.ellipsis,
                                                 ),
                                                 Text(
-                                                  card.subtitle,
+                                                  card.subtitleFor(ent.vertical),
                                                   style: TextStyle(
                                                     color: context.textSecondary,
                                                     fontSize: 12,

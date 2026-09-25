@@ -49,6 +49,9 @@ class FastQsrBillingScreen extends ConsumerStatefulWidget {
 }
 
 class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> with SingleTickerProviderStateMixin {
+  /// This screen is the counter for every trade: the kirana's "POS Billing
+  /// Desk" is this same till. Every word that differs goes through here.
+  VerticalLabels get _vl => VerticalLabels.of(ref.read(entitlementsProvider).vertical);
   late TabController _tabController;
   String _orderType = 'Dine-In'; // 'Dine-In' or 'Takeaway'
   String? _selectedTable;
@@ -548,14 +551,16 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
         final existing = _cart[existingIndex];
         _cart[existingIndex] = existing.copyWith(qty: existing.qty + 1);
       } else {
-        final sendsToKitchen = item['sendsToKitchen'] != false;
+        // A shop's products never go to a kitchen, whatever an older save
+        // stored on them.
+        final sendsToKitchen = _vl.isRestaurant && item['sendsToKitchen'] != false;
         final basePrice = (item['price'] as num?)?.toDouble() ?? 0.0;
         final delta = mods.fold<double>(0.0, (sum, m) => sum + m.priceDelta);
 
         _cart.add(
           KotItem(
             productId: item['id']?.toString() ?? UniqueKey().toString(),
-            name: item['name']?.toString() ?? 'Dish',
+            name: item['name']?.toString() ?? _vl.itemSingular,
             price: basePrice + delta,
             qty: 1,
             isVeg: item['isVeg'] != false,
@@ -570,7 +575,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
   }
 
   Future<void> _customizeAndAddToCart(Map<String, dynamic> item) async {
-    final itemName = (item['name'] ?? 'Dish').toString();
+    final itemName = (item['name'] ?? _vl.itemSingular).toString();
     final basePrice = (item['price'] as num?)?.toDouble() ?? 0.0;
 
     List<ItemModifierGroup>? groups;
@@ -1263,7 +1268,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                           final received = await UpiQrPaymentSheet.show(
                             context,
                             upiId: _getDefaultUpiId(),
-                            payeeName: ref.read(saasSessionProvider).currentOrganization?.name ?? 'Restaurant',
+                            payeeName: ref.read(saasSessionProvider).currentOrganization?.name ?? _vl.dashboardBrandFallback,
                             amountPaise: amountPaise,
                             tableName: _selectedTable,
                             billNumber: (existingOrderToAppend?['orderId'] ?? '').toString(),
@@ -2445,7 +2450,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
             'paymentStatus': isPaid ? 'PAID' : 'PENDING',
             'isPaid': isPaid,
             'orderSource': 'POS_COUNTER',
-            'customerName': _customerNameCtrl.text.trim().isNotEmpty ? _customerNameCtrl.text.trim() : 'Dine-In Guest',
+            'customerName': _customerNameCtrl.text.trim().isNotEmpty ? _customerNameCtrl.text.trim() : _vl.defaultGuestName,
             'customerPhone': _customerPhoneCtrl.text.trim(),
             'customerEmail': _customerEmailCtrl.text.trim(),
             'orderType': _orderType,
@@ -2643,7 +2648,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
           totalAmount: orderTotals.grandTotal,
           paymentMode: paymentMode,
           cashierName: cashierStaff,
-          customerName: _customerNameCtrl.text.trim().isNotEmpty ? _customerNameCtrl.text.trim() : 'Dine-In Guest',
+          customerName: _customerNameCtrl.text.trim().isNotEmpty ? _customerNameCtrl.text.trim() : _vl.defaultGuestName,
           customerPhone: _customerPhoneCtrl.text.trim(),
           customerEmail: _customerEmailCtrl.text.trim(),
           organizationId: orgId,
@@ -2673,14 +2678,14 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
             content: SingleChildScrollView(child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(
-                  Icons.outdoor_grill_rounded,
+                Icon(
+                  _vl.isRestaurant ? Icons.outdoor_grill_rounded : Icons.check_circle_rounded,
                   color: ClassicTheme.successEmerald,
                   size: 56,
                 ),
                 const SizedBox(height: 16),
                 Text(
-                  'KOT SENT TO KITCHEN!',
+                  _vl.isRestaurant ? 'KOT SENT TO KITCHEN!' : 'ORDER SAVED!',
                   style: TextStyle(
                     color: context.textPrimary,
                     fontSize: 18,
@@ -2774,7 +2779,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
         'isPaid': isPaid,
         'orderSource': 'POS_COUNTER',
         'order_source': 'POS_COUNTER',
-        'customerName': _customerNameCtrl.text.trim().isNotEmpty ? _customerNameCtrl.text.trim() : 'Dine-In Guest',
+        'customerName': _customerNameCtrl.text.trim().isNotEmpty ? _customerNameCtrl.text.trim() : _vl.defaultGuestName,
         'customerPhone': _customerPhoneCtrl.text.trim(),
         'customerEmail': _customerEmailCtrl.text.trim(),
         'orderType': _orderType,
@@ -2951,6 +2956,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
     if (clean.isEmpty) return true;
     if (clean == 'guest' ||
         clean == 'dine-in guest' ||
+        clean == 'walk-in customer' ||
         clean == 'walk-in' ||
         clean == 'walkin' ||
         clean == 'customer' ||
@@ -3155,7 +3161,10 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
     if (src == 'QR_MENU' || type.toLowerCase().contains('self') || type.toLowerCase().contains('site') || type.toLowerCase().contains('qr')) {
       return 'QR Web';
     }
-    if (type.toLowerCase().contains('takeaway') || type.toLowerCase().contains('parcel')) {
+    // A shop's "Delivery" is its takeaway bucket, as its tabs label it.
+    if (type.toLowerCase().contains('takeaway') ||
+        type.toLowerCase().contains('parcel') ||
+        type.toLowerCase().contains('delivery')) {
       return 'Takeaway';
     }
     return 'Dine-In';
@@ -3185,7 +3194,9 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
     return rawItems.map((item) {
       if (item is KotItem) return item;
       if (item is Map) {
-        final sendsToKitchen = item['sendsToKitchen'] != false;
+        // A shop's products never go to a kitchen, whatever an older save
+        // stored on them.
+        final sendsToKitchen = _vl.isRestaurant && item['sendsToKitchen'] != false;
         return KotItem(
           productId: (item['id'] ?? item['productId'] ?? UniqueKey().toString()).toString(),
           name: (item['name'] ?? 'Item').toString(),
@@ -3565,7 +3576,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
           paymentMode: paymentMode,
           cashierName: activeStaff,
           waiterName: (order['waiterName'] ?? '').toString(),
-          customerName: (order['customerName'] ?? order['customer_name'] ?? 'Dine-In Guest').toString(),
+          customerName: (order['customerName'] ?? order['customer_name'] ?? _vl.defaultGuestName).toString(),
           customerPhone: (order['customerPhone'] ?? order['customer_phone'] ?? '').toString(),
           customerEmail: custEmail,
           organizationId: orgId,
@@ -3918,7 +3929,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                           builder: (context) {
                             final upiId = _getDefaultUpiId();
                             final saasSession = ref.read(saasSessionProvider);
-                            final shopName = saasSession.currentOrganization?.name ?? 'Restaurant';
+                            final shopName = saasSession.currentOrganization?.name ?? _vl.dashboardBrandFallback;
                             final cleanTable = tableName.replaceAll(RegExp(r'[^0-9]'), '');
                             final note = cleanTable.isNotEmpty ? 'Table $cleanTable Bill' : 'Bill $orderId';
                             final upiUri = UpiPayment.buildUri(
@@ -4133,7 +4144,9 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Are you sure you want to void order #$orderId? This action will cancel the ticket and release the table.',
+                  _vl.isRestaurant
+                      ? 'Are you sure you want to void order #$orderId? This action will cancel the ticket and release the table.'
+                      : 'Are you sure you want to void bill #$orderId? This action cancels the bill.',
                   style: TextStyle(color: context.textSecondary, fontSize: 12.5),
                 ),
                 const SizedBox(height: 14),
@@ -4169,7 +4182,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                     'Customer Walkout',
                     'Order Entered in Error',
                     'Duplicate Ticket',
-                    'Kitchen Shortage',
+                    _vl.isRestaurant ? 'Kitchen Shortage' : 'Out of Stock',
                     'Payment Failed'
                   ].map((r) => ActionChip(
                     label: Text(r, style: const TextStyle(fontSize: 12)),
@@ -4360,7 +4373,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                 controller: _pendingSearchCtrl,
                 style: TextStyle(color: context.textPrimary, fontSize: 13),
                 decoration: InputDecoration(
-                  hintText: 'Search pending table, token #, customer...',
+                  hintText: _vl.isRestaurant ? 'Search pending table, token #, customer...' : 'Search pending bill, token #, customer...',
                   hintStyle: TextStyle(color: context.textSecondary.withValues(alpha: 0.6), fontSize: 12),
                   prefixIcon: Icon(Icons.search_rounded, color: context.textSecondary, size: 20),
                   suffixIcon: _pendingSearchCtrl.text.isNotEmpty
@@ -4389,7 +4402,10 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                   return Padding(
                     padding: const EdgeInsets.only(right: 8),
                     child: ChoiceChip(
-                      label: Text(fType),
+                      // Internal ids stay; a shop sees its own words.
+                      label: Text(_vl.isRestaurant
+                          ? fType
+                          : const {'Dine-In': 'Walk-in', 'Takeaway': 'Delivery', 'QR Web': 'Online'}[fType] ?? fType),
                       selected: isSel,
                       onSelected: (_) => setState(() => _pendingFilterType = fType),
                       selectedColor: ClassicTheme.primaryAccent,
@@ -4464,7 +4480,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                               ),
                               const SizedBox(height: 4),
                               Text(
-                                'All table & counter orders have been settled.',
+                                _vl.isRestaurant ? 'All table & counter orders have been settled.' : 'All counter bills have been settled.',
                                 style: TextStyle(fontSize: 12, color: context.textSecondary),
                               ),
                               const SizedBox(height: 16),
@@ -4505,7 +4521,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                     final items = _parseOrderItems(order['items']);
                     final itemsSummary = items.isNotEmpty
                         ? items.map((i) => '${i.name} x${i.qty.toInt()}').join(', ')
-                        : (order['itemsSummary'] ?? 'Dishes').toString();
+                        : (order['itemsSummary'] ?? _vl.itemPlural).toString();
 
                     return Container(
                       decoration: BoxDecoration(
@@ -4694,7 +4710,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                                     // Add More Dishes to this Table
                                     IconButton(
                                       icon: const Icon(Icons.add_shopping_cart_rounded, size: 20),
-                                      tooltip: 'Add dishes to this bill',
+                                      tooltip: 'Add ${_vl.itemPlural.toLowerCase()} to this bill',
                                       color: ClassicTheme.primaryAccent,
                                       onPressed: () {
                                         setState(() {
@@ -4959,7 +4975,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                           controller: _searchCtrl,
                           style: TextStyle(color: context.textPrimary, fontSize: 13),
                           decoration: InputDecoration(
-                            hintText: 'Search dishes, breads, drinks...',
+                            hintText: _vl.isRestaurant ? 'Search dishes, breads, drinks...' : 'Search ${_vl.itemPlural.toLowerCase()} by name or code...',
                             hintStyle: TextStyle(color: context.textSecondary.withValues(alpha: 0.6), fontSize: 12),
                             prefixIcon: Icon(Icons.search_rounded, color: context.textSecondary, size: 20),
                             suffixIcon: _searchQuery.isNotEmpty
@@ -5027,10 +5043,10 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                                     child: Column(
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
-                                        Icon(Icons.restaurant_rounded, size: 48, color: context.textSecondary.withValues(alpha: 0.4)),
+                                        Icon(_vl.isRestaurant ? Icons.restaurant_rounded : Icons.inventory_2_rounded, size: 48, color: context.textSecondary.withValues(alpha: 0.4)),
                                         const SizedBox(height: 10),
                                         Text(
-                                          'No dishes found in $_selectedCategory',
+                                          'No ${_vl.itemPlural.toLowerCase()} found in $_selectedCategory',
                                           style: TextStyle(color: context.textSecondary, fontSize: 13, fontWeight: FontWeight.bold),
                                         ),
                                       ],
@@ -5074,7 +5090,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                                             borderRadius: BorderRadius.circular(8),
                                           ),
                                           child: Text(
-                                            '$totalInCat dishes',
+                                            '$totalInCat ${_vl.itemPlural.toLowerCase()}',
                                             style: const TextStyle(fontSize: 12, color: Colors.white, fontWeight: FontWeight.bold),
                                           ),
                                         ),
@@ -5201,7 +5217,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                                                       crossAxisAlignment: CrossAxisAlignment.start,
                                                       children: [
                                                         Text(
-                                                          item['name']?.toString() ?? 'Dish Item',
+                                                          item['name']?.toString() ?? _vl.itemSingular,
                                                           style: TextStyle(
                                                             fontSize: 14,
                                                             fontWeight: FontWeight.bold,

@@ -7,6 +7,7 @@ import '../core/classic_theme.dart';
 import '../core/constants.dart';
 import '../providers/saas_session_provider.dart';
 import '../providers/entitlements_provider.dart';
+import '../core/vertical_labels.dart';
 import '../providers/restaurant_auth_provider.dart';
 import '../services/restaurant_sheets_service.dart';
 import '../services/client_ledger_cloud_router_service.dart';
@@ -456,8 +457,11 @@ class _GoogleSheetsSetupGateDialogState extends ConsumerState<GoogleSheetsSetupG
 
                 // Description
                 Text(
-                  'SmartDine Restaurant POS stores your dishes, orders, KOTs, and bills directly in your Google Drive. '
-                  'Authorize your Google account to initialize your 7-tab store database and activate online QR ordering.',
+                  VerticalLabels.of(ref.watch(currentVerticalProvider)).isRestaurant
+                      ? 'SmartDine stores your dishes, orders, KOTs and bills directly in your Google Drive. '
+                          'Authorize your Google account to initialize your 7-tab store database and activate online QR ordering.'
+                      : 'SmartDine stores your products, bills and customer accounts directly in your Google Drive. '
+                          'Authorize your Google account to initialize your store database.',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontSize: 13,

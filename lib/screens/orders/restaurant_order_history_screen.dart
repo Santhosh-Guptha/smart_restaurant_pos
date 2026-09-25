@@ -488,7 +488,9 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
                     'Customer Walkout',
                     'Order Entered in Error',
                     'Duplicate Ticket',
-                    'Kitchen Shortage',
+                    VerticalLabels.of(ref.read(currentVerticalProvider)).isRestaurant
+                        ? 'Kitchen Shortage'
+                        : 'Out of Stock',
                     'Payment Failed'
                   ].map((r) => ActionChip(
                     label: Text(r, style: const TextStyle(fontSize: 12)),
@@ -711,7 +713,8 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
   /// they were handed. It is the same template now, rendered to characters.
   Future<void> _shareReceiptText(Map<String, dynamic> orderData) async {
     final saasSession = ref.read(saasSessionProvider);
-    final shopName = saasSession.currentOrganization?.name ?? 'Restaurant';
+    final shopName = saasSession.currentOrganization?.name ??
+        VerticalLabels.of(ref.read(currentVerticalProvider)).dashboardBrandFallback;
     final billId = (orderData['id'] ?? orderData['orderId'] ?? 'BILL').toString();
 
     final slip = await ReceiptPrintService.asText(
@@ -1495,15 +1498,19 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
                   padding: const EdgeInsets.only(bottom: 4),
                   child: Row(
                     children: [
-                      Icon(
-                        Icons.circle,
-                        size: 7,
-                        color: it['isVeg'] != false ? ClassicTheme.successEmerald : ClassicTheme.dangerRed,
-                      ),
-                      const SizedBox(width: 6),
+                      // The veg / non-veg dot is a food mark; a shop's
+                      // lines do not carry one.
+                      if (vl.isRestaurant) ...[
+                        Icon(
+                          Icons.circle,
+                          size: 7,
+                          color: it['isVeg'] != false ? ClassicTheme.successEmerald : ClassicTheme.dangerRed,
+                        ),
+                        const SizedBox(width: 6),
+                      ],
                       Expanded(
                         child: Text(
-                          (it['name'] ?? 'Dish').toString(),
+                          (it['name'] ?? vl.itemSingular).toString(),
                           style: TextStyle(fontSize: 12, color: context.textPrimary),
                         ),
                       ),

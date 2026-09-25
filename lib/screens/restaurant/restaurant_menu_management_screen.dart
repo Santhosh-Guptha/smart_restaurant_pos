@@ -425,8 +425,9 @@ class _RestaurantMenuManagementScreenState
               'price': price,
               'isVeg': isVeg,
               'prepTime': 15,
-              'station': 'main_kitchen',
-              'sendsToKitchen': true,
+              'station': _vl.isRestaurant ? 'main_kitchen' : 'counter',
+              // A shop has no kitchen: its lines are direct counter sales.
+              'sendsToKitchen': _vl.isRestaurant,
               'isAvailable': isAvail,
               'is_available': isAvail,
               'isTaxExempt': isExempt,
@@ -1014,7 +1015,10 @@ class _RestaurantMenuManagementScreenState
 
     String category = existing?['category'] ?? (_categoriesWithSubs.isNotEmpty ? _categoriesWithSubs.keys.first : _vl.defaultCategory);
     String station = existing?['station'] ?? (_stations.isNotEmpty ? _stations.first.name : 'Main Kitchen');
-    bool sendsToKitchen = existing?['sendsToKitchen'] ?? true;
+    // Only a restaurant routes lines to a kitchen. The switch is hidden for a
+    // shop, so it used to save every product as a kitchen item and the
+    // counter then tried to print KOTs for soap and rice.
+    bool sendsToKitchen = _vl.isRestaurant && (existing?['sendsToKitchen'] ?? true);
     bool isVeg = existing?['isVeg'] ?? true;
     bool isAvailable = existing?['isAvailable'] ?? true;
     bool isTimeRestricted = _vl.hasTimeRestrictedServing && (existing?['isTimeRestricted'] ?? false);
