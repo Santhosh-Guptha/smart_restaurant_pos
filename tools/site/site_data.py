@@ -219,3 +219,114 @@ CATEGORIES = [
 ]
 
 BY_SLUG = {c["slug"]: c for c in CATEGORIES}
+
+
+# ─────────────────────────────────────────────────────────────────────────
+#  The suite, as one application.
+#
+#  Every module a tenant can have, which trades see it, and what it costs.
+#  Sources, so this can be re-checked rather than trusted:
+#    trades  -> allowedVerticals in lib/providers/dashboard_layout_provider.dart
+#    tier    -> PlanProfile.offlineRetail / offlineDineIn (free trial) versus
+#               connected / omnichannel in lib/core/entitlements.dart
+#  tier: 'free' = in the 14-day trial and the offline plan
+#        'plan' = needs Connected or Everything on
+#        'soon' = has a key or a card but no screen yet; always said so
+# ─────────────────────────────────────────────────────────────────────────
+ALL = ("restaurant", "kirana", "supermarket", "pharmacy", "retail")
+SHOPS = ("kirana", "supermarket", "pharmacy", "retail")
+
+MODULES = [
+    # the till
+    dict(icon="🧾", name="Counter billing", tier="free", trades=ALL, group="Till",
+         line="A touch grid, takeaway tokens, bill and print in two taps."),
+    dict(icon="🏷️", name="Barcode billing", tier="free", trades=SHOPS, group="Till",
+         line="Any USB or Bluetooth scanner. Type the code when the label is torn."),
+    dict(icon="💸", name="UPI QR at the till", tier="free", trades=ALL, group="Till",
+         line="A QR for the exact amount. Money goes bank to bank — 0% to us."),
+    dict(icon="🖨️", name="Thermal printing", tier="free", trades=ALL, group="Till",
+         line="58mm or 80mm ESC/POS over Bluetooth or USB, plus the cash drawer."),
+    dict(icon="🧮", name="GST bills", tier="free", trades=ALL, group="Till",
+         line="Your GSTIN, HSN, CGST/SGST split and an unbroken invoice series."),
+    # the floor
+    dict(icon="🪑", name="Tables & floor", tier="free", trades=("restaurant",), group="Floor",
+         line="A live map of the room. Running tabs, transfer, merge, reservations."),
+    dict(icon="🎫", name="Kitchen tickets", tier="free", trades=("restaurant",), group="Floor",
+         line="KOTs to a kitchen printer, numbered round by round."),
+    dict(icon="🔥", name="Kitchen display", tier="plan", trades=("restaurant",), group="Floor",
+         line="Received → Preparing → Ready → Served, with a spoken chime."),
+    dict(icon="📱", name="Waiter pad", tier="plan", trades=("restaurant",), group="Floor",
+         line="Pick a table, take the order, tag the course, send it."),
+    dict(icon="🔳", name="Guest QR ordering", tier="plan", trades=("restaurant",), group="Floor",
+         line="The table scans, orders and pays in the browser. No app.", demo="/r/?org=DEMO&table=1"),
+    dict(icon="🌐", name="Online menu", tier="plan", trades=("restaurant",), group="Floor",
+         line="Your own ordering page, not a marketplace's."),
+    # the customer
+    dict(icon="📒", name="Customer khata", tier="free", trades=("kirana", "pharmacy", "retail"), group="Customers",
+         line="Credit per customer, every payment against it, balance in front of you."),
+    dict(icon="✉️", name="E-mailed bills", tier="plan", trades=ALL, group="Customers",
+         line="The invoice reaches the customer without a paper roll."),
+    # the back office
+    dict(icon="👥", name="Staff & roles", tier="free", trades=ALL, group="Office",
+         line="Owner, manager, cashier. Every void and discount has a name."),
+    dict(icon="🌙", name="Shifts & day-end", tier="free", trades=ALL, group="Office",
+         line="Open, count the drawer, close, print the Z-report."),
+    dict(icon="📊", name="Analytics & rush", tier="free", trades=ALL, group="Office",
+         line="Heatmaps, dayparts, best sellers and the average bill."),
+    dict(icon="💼", name="Expenses", tier="free", trades=ALL, group="Office",
+         line="Purchases, wages and bills paid, against the takings."),
+    dict(icon="🔐", name="Backup & restore", tier="free", trades=ALL, group="Office",
+         line="One encrypted file. A new tablet without losing a day."),
+    # growth
+    dict(icon="☁️", name="Cloud ledger", tier="plan", trades=ALL, group="Growth",
+         line="Every bill off the device, and the day's numbers from home."),
+    dict(icon="🔗", name="More than one till", tier="plan", trades=ALL, group="Growth",
+         line="Two counters, five, fifteen — one catalogue, one day-end."),
+    dict(icon="🏢", name="Outlets & franchise", tier="plan", trades=ALL, group="Growth",
+         line="Switch branch without signing out. Each banks its own; you see all."),
+    dict(icon="📦", name="Stock manager", tier="soon", trades=SHOPS, group="Growth",
+         line="Levels, reorder points and suppliers."),
+    dict(icon="⏳", name="Batch & expiry", tier="soon", trades=("pharmacy",), group="Growth",
+         line="Batch numbers and expiry dates on every strip."),
+]
+
+TIER_LABEL = {"free": "In the free trial", "plan": "On a plan", "soon": "Coming"}
+
+# PlanProfile.all, in the order a business climbs it. No prices: they are
+# quoted, and a number on this page would be out of date the day it changed.
+PLANS = [
+    dict(name="Offline counter", tag="14 days free", hot=False,
+         limits="1 device · 1 outlet · no internet",
+         blurb="The complete till. Restaurants get tables, KOTs and reservations; shops get barcode billing and the khata.",
+         points=["Billing, printing and UPI QR", "Products, staff, shifts and day-end",
+                 "Expenses and analytics", "Encrypted backup you can restore"]),
+    dict(name="Connected", tag="Plan", hot=True,
+         limits="Up to 5 devices · 1 outlet",
+         blurb="Everything offline, plus the cloud ledger — so every till is in step and the numbers reach your phone.",
+         points=["Everything in Offline counter", "Cloud ledger across devices",
+                 "Multiple tills on one catalogue", "Reports from anywhere"]),
+    dict(name="Everything on", tag="Plan", hot=False,
+         limits="Up to 15 devices · 25 outlets",
+         blurb="The whole suite: kitchen screens, waiter phones, guest QR and online ordering, and every branch in one view.",
+         points=["Everything in Connected", "Kitchen display & waiter pad",
+                 "Guest QR & online ordering", "Outlets, franchise view, e-mailed bills"]),
+]
+
+HUB_FAQ = [
+    ("Is it really one app for every trade?",
+     "Yes. You pick your trade when you sign up and the same app turns into the right counter — "
+     "tables and a kitchen for a restaurant, a scanner and a khata for a shop. The till, staff "
+     "logins, printing and day-end underneath are shared."),
+    ("What does it run on?",
+     "Android phones and tablets, Windows PCs, and in the browser. Receipts go to any 58mm or "
+     "80mm ESC/POS thermal printer over Bluetooth or USB."),
+    ("What happens when the internet goes down?",
+     "Nothing you would notice. The free plan never uses the internet at all. On a paid plan the "
+     "till keeps billing and syncs when the line comes back."),
+    ("Do you take a cut of my UPI payments?",
+     "No. SmartBizz is not a payment gateway. The customer pays your bank directly from the QR on "
+     "the till, and nothing passes through us."),
+    ("Can I move up a plan later without losing data?",
+     "Yes. The bills, products and staff on your device come with you when you switch on the "
+     "cloud ledger or add a second till."),
+]

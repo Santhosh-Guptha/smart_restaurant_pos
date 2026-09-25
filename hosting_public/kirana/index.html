@@ -15,29 +15,33 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Sora:wght@300;400;500;600&display=swap" rel="stylesheet">
 <title>Kirana &amp; grocery — SmartBizz</title>
-<link rel="stylesheet" href="/assets/site.css">
+<link rel="stylesheet" href="/assets/site.css?v=cdead209">
+<script>try{var t=localStorage.getItem("sb-theme");if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
 </head>
 <body>
+<a class="skip" href="#main">Skip to content</a>
 <nav>
   <div class="wrap">
     <a class="logo" href="/"><img src="/assets/logo.png" alt="" width="34" height="34">SmartBizz</a>
-    <ul><li><a href="/restaurants/">Restaurant</a></li><li><a href="/kirana/" aria-current="page">Kirana</a></li><li><a href="/supermarket/">Supermarket</a></li><li><a href="/pharmacy/">Pharmacy</a></li><li><a href="/retail/">Retail</a></li></ul>
-    <a class="btn lamp sm" href="javascript:void(0)" onclick="openTrialModal()">Start free trial</a>
+    <ul id="navList"><li><a href="/restaurants/">Restaurant</a></li><li><a href="/kirana/" aria-current="page">Kirana</a></li><li><a href="/supermarket/">Supermarket</a></li><li><a href="/pharmacy/">Pharmacy</a></li><li><a href="/retail/">Retail</a></li><li class="nav-sep" aria-hidden="true"></li><li><a href="/#suite">The suite</a></li><li><a href="/#plans">Plans</a></li></ul>
+    <div class="nav-act"><button class="icon-btn" id="themeBtn" type="button" aria-label="Switch light or dark"><span class="i-sun">☀</span><span class="i-moon">☾</span></button><a class="btn lamp sm" href="javascript:void(0)" onclick="openTrialModal()">Start free trial</a><button class="icon-btn burger" id="navBtn" type="button" aria-label="Menu" aria-expanded="false" aria-controls="navList"><i></i><i></i><i></i></button></div>
   </div>
 </nav>
+<main id="main">
 <section class="hero" id="top">
   <div class="lamp-glow"></div>
-  <div class="wrap solo">
+  <div class="wrap">
     <div>
       <p class="kicker">For kirana shops, grocers &amp; provision stores</p>
       <h1>Scan it,<br>bill it,<br><em class="grad" style="font-style:italic;font-weight:500">write it in the khata.</em></h1>
       <p class="lede">The queue moves at the speed of the scanner. The regulars' credit is a ledger you can actually search. <strong>A shop counter that works with the shutters down</strong> and the internet off.</p>
       <div class="hero-cta">
         <a class="btn lamp" href="javascript:void(0)" onclick="openTrialModal()">Start 14-day free trial →</a>
-        <a class="btn ghost" href="#included">What you get</a>
+        <a class="btn ghost" href="#modules">See every module</a>
       </div>
       <p class="hero-note"><b>Free to start.</b> Runs on the phone or tablet you already own. No card, no payment gateway, no internet needed.</p>
     </div>
+    <div class="dv" data-cat="kirana" id="device"><div class="dv-stage"><div class="dv-glow"></div><div class="tablet"><div class="tablet-cam"></div><div class="tablet-scr" id="tabScr"><div class="app-bar"><div><b>Barcode Billing</b><small>Counter 1 · Shift open 7:02</small></div><span class="app-badge">Offline ✓</span></div><div class="split"><div class="main"><div class="scan"><span>▮▯▮▮▯▮</span> 8901063 <i></i></div><div class="ln"><span>Atta 5 kg<small>1 × ₹265</small></span><b>₹265</b></div><div class="ln"><span>Toor dal (loose)<small>1.5 kg × ₹140</small></span><b>₹210</b></div><div class="ln"><span>Salt 1 kg<small>2 × ₹28</small></span><b>₹56</b></div><div class="ln"><span>Butter 500 g<small>1 × ₹285</small></span><b>₹285</b></div></div><div class="side"><div class="side-h">Customer khata</div><div class="khata"><b>Ramesh K.</b><small>Regular · since Mar</small><div class="due">₹2,340 <span>due</span></div><div class="mini">Paid ₹1,000 · last Tue</div></div><div class="tot"><span>Bill</span><b>₹816</b></div><div class="pay"><span class="upi-qr"></span><span>Add to khata or UPI</span></div></div></div></div></div><div class="phone-s"><div class="phone-notch"></div><div class="phone-scr" id="phScr"><div class="ph-top"><b>Pay</b><small>UPI</small></div><div class="ph-qr"><span class="upi-qr big"></span></div><div class="ph-amt">₹816</div><div class="ph-note">Straight to the shop's bank</div><div class="ph-ok">✓ Paid</div></div></div></div><p class="dv-cap">Drawn from the real screen, with sample data.</p></div>
   </div>
 </section>
 
@@ -52,25 +56,37 @@
   </div>
 </section>
 
-<section class="band" id="included">
+<section class="band" id="modules">
   <div class="wrap">
-    <p class="kicker rv">The 14-day free trial</p>
-    <h2 class="rv d1">What you get<br>without paying anything.</h2>
+    <p class="kicker rv">Inside the app</p>
+    <h2 class="rv d1">16 modules for<br>kirana shops.</h2>
+    <p class="lede rv d2">Every one of them is in the same app. Each says plainly whether it is in the free trial, needs a plan, or is still being built.</p>
+    <div class="mods" id="mods"><article class="md" data-tier="free" data-trades="restaurant kirana supermarket pharmacy retail"><div class="md-top"><span class="md-ico">🧾</span><span class="tier t-free">In the free trial</span></div><h3>Counter billing</h3><p>A touch grid, takeaway tokens, bill and print in two taps.</p></article><article class="md" data-tier="free" data-trades="kirana supermarket pharmacy retail"><div class="md-top"><span class="md-ico">🏷️</span><span class="tier t-free">In the free trial</span></div><h3>Barcode billing</h3><p>Any USB or Bluetooth scanner. Type the code when the label is torn.</p></article><article class="md" data-tier="free" data-trades="restaurant kirana supermarket pharmacy retail"><div class="md-top"><span class="md-ico">💸</span><span class="tier t-free">In the free trial</span></div><h3>UPI QR at the till</h3><p>A QR for the exact amount. Money goes bank to bank — 0% to us.</p></article><article class="md" data-tier="free" data-trades="restaurant kirana supermarket pharmacy retail"><div class="md-top"><span class="md-ico">🖨️</span><span class="tier t-free">In the free trial</span></div><h3>Thermal printing</h3><p>58mm or 80mm ESC/POS over Bluetooth or USB, plus the cash drawer.</p></article><article class="md" data-tier="free" data-trades="restaurant kirana supermarket pharmacy retail"><div class="md-top"><span class="md-ico">🧮</span><span class="tier t-free">In the free trial</span></div><h3>GST bills</h3><p>Your GSTIN, HSN, CGST/SGST split and an unbroken invoice series.</p></article><article class="md" data-tier="free" data-trades="kirana pharmacy retail"><div class="md-top"><span class="md-ico">📒</span><span class="tier t-free">In the free trial</span></div><h3>Customer khata</h3><p>Credit per customer, every payment against it, balance in front of you.</p></article><article class="md" data-tier="plan" data-trades="restaurant kirana supermarket pharmacy retail"><div class="md-top"><span class="md-ico">✉️</span><span class="tier t-plan">On a plan</span></div><h3>E-mailed bills</h3><p>The invoice reaches the customer without a paper roll.</p></article><article class="md" data-tier="free" data-trades="restaurant kirana supermarket pharmacy retail"><div class="md-top"><span class="md-ico">👥</span><span class="tier t-free">In the free trial</span></div><h3>Staff &amp; roles</h3><p>Owner, manager, cashier. Every void and discount has a name.</p></article><article class="md" data-tier="free" data-trades="restaurant kirana supermarket pharmacy retail"><div class="md-top"><span class="md-ico">🌙</span><span class="tier t-free">In the free trial</span></div><h3>Shifts &amp; day-end</h3><p>Open, count the drawer, close, print the Z-report.</p></article><article class="md" data-tier="free" data-trades="restaurant kirana supermarket pharmacy retail"><div class="md-top"><span class="md-ico">📊</span><span class="tier t-free">In the free trial</span></div><h3>Analytics &amp; rush</h3><p>Heatmaps, dayparts, best sellers and the average bill.</p></article><article class="md" data-tier="free" data-trades="restaurant kirana supermarket pharmacy retail"><div class="md-top"><span class="md-ico">💼</span><span class="tier t-free">In the free trial</span></div><h3>Expenses</h3><p>Purchases, wages and bills paid, against the takings.</p></article><article class="md" data-tier="free" data-trades="restaurant kirana supermarket pharmacy retail"><div class="md-top"><span class="md-ico">🔐</span><span class="tier t-free">In the free trial</span></div><h3>Backup &amp; restore</h3><p>One encrypted file. A new tablet without losing a day.</p></article><article class="md" data-tier="plan" data-trades="restaurant kirana supermarket pharmacy retail"><div class="md-top"><span class="md-ico">☁️</span><span class="tier t-plan">On a plan</span></div><h3>Cloud ledger</h3><p>Every bill off the device, and the day&#x27;s numbers from home.</p></article><article class="md" data-tier="plan" data-trades="restaurant kirana supermarket pharmacy retail"><div class="md-top"><span class="md-ico">🔗</span><span class="tier t-plan">On a plan</span></div><h3>More than one till</h3><p>Two counters, five, fifteen — one catalogue, one day-end.</p></article><article class="md" data-tier="plan" data-trades="restaurant kirana supermarket pharmacy retail"><div class="md-top"><span class="md-ico">🏢</span><span class="tier t-plan">On a plan</span></div><h3>Outlets &amp; franchise</h3><p>Switch branch without signing out. Each banks its own; you see all.</p></article><article class="md" data-tier="soon" data-trades="kirana supermarket pharmacy retail"><div class="md-top"><span class="md-ico">📦</span><span class="tier t-soon">Coming</span></div><h3>Stock manager</h3><p>Levels, reorder points and suppliers.</p></article></div>
+  </div>
+</section>
+
+<section id="included">
+  <div class="wrap two">
+    <div><p class="kicker rv">The 14-day free trial</p>
+    <h2 class="rv d1">What you get<br>without paying.</h2>
     <p class="lede rv d2">One device, no internet, nothing held back to make you upgrade. This is the whole offline till for kirana shops.</p>
-    <ul class="getlist"><li><span class="tick">✓</span><span><b>Bill and print, on one device</b> — Counter till, receipts on any 58mm or 80mm ESC/POS printer, cash drawer.</span></li><li><span class="tick">✓</span><span><b>Your products and prices</b> — Categories, rates, taxes. Change one, it changes everywhere on the device.</span></li><li><span class="tick">✓</span><span><b>Staff with their own logins</b> — Owner, manager, cashier. Every discount and void has a name on it.</span></li><li><span class="tick">✓</span><span><b>Shift and day-end</b> — Open, close, count the drawer, print the Z-report.</span></li><li><span class="tick">✓</span><span><b>Backup you can restore</b> — One encrypted file. Move to a new tablet without losing a day.</span></li><li><span class="tick">✓</span><span><b>Barcode billing</b> — Scan with any USB or Bluetooth scanner; type the code when a label is torn.</span></li><li><span class="tick">✓</span><span><b>Customer khata</b> — Credit by customer, payments against it, and the balance in front of you.</span></li><li><span class="tick">✓</span><span><b>Loose goods</b> — Sell by kilo, litre or piece — rate by unit, not by guesswork.</span></li><li><span class="tick">✓</span><span><b>Expenses and analytics</b> — Purchases and wages out, sales and busy hours in.</span></li></ul>
+    <ul class="getlist"><li><span class="tick">✓</span><span><b>Bill and print, on one device</b> — Counter till, receipts on any 58mm or 80mm ESC/POS printer, cash drawer.</span></li><li><span class="tick">✓</span><span><b>Your products and prices</b> — Categories, rates, taxes. Change one, it changes everywhere on the device.</span></li><li><span class="tick">✓</span><span><b>Staff with their own logins</b> — Owner, manager, cashier. Every discount and void has a name on it.</span></li><li><span class="tick">✓</span><span><b>Shift and day-end</b> — Open, close, count the drawer, print the Z-report.</span></li><li><span class="tick">✓</span><span><b>Backup you can restore</b> — One encrypted file. Move to a new tablet without losing a day.</span></li><li><span class="tick">✓</span><span><b>Barcode billing</b> — Scan with any USB or Bluetooth scanner; type the code when a label is torn.</span></li><li><span class="tick">✓</span><span><b>Customer khata</b> — Credit by customer, payments against it, and the balance in front of you.</span></li><li><span class="tick">✓</span><span><b>Loose goods</b> — Sell by kilo, litre or piece — rate by unit, not by guesswork.</span></li><li><span class="tick">✓</span><span><b>Expenses and analytics</b> — Purchases and wages out, sales and busy hours in.</span></li></ul></div>
+    <div><p class="kicker rv">When you outgrow one counter</p>
+    <h2 class="rv d1">What a plan adds.</h2>
+    <p class="lede rv d2">Only what needs the cloud or a second device. Anything marked <span class="soon">coming</span> is not built yet.</p>
+    <ul class="getlist"><li><span class="tick">✓</span><span><b>Every counter in step</b> — A second till at the door on the same stock and the same bills.</span></li><li><span class="tick">✓</span><span><b>The cloud ledger</b> — Yesterday&#x27;s takings from your phone, at home.</span></li><li><span class="tick">✓</span><span><b>More than one shop</b> — Each one banks its own money; you see them together.</span></li><li><span class="soon-i">·</span><span><b>Stock control</b><span class="soon">coming</span> — Levels, reorder points and suppliers.</span></li><li><span class="tick">✓</span><span><b>The cloud ledger</b> — Every bill on every device, and a view of the business from anywhere.</span></li><li><span class="tick">✓</span><span><b>More than one counter</b> — Two tills, three, a second floor. They stay in step.</span></li><li><span class="tick">✓</span><span><b>More than one branch</b> — Each shop banks its own takings; you see them together.</span></li><li><span class="tick">✓</span><span><b>E-mailed bills</b> — The customer gets the invoice without giving you their number.</span></li></ul></div>
+  </div>
+</section>
+
+<section class="band" id="plans">
+  <div class="wrap">
+    <p class="kicker rv">Plans</p>
+    <h2 class="rv d1">Start free. Grow when you need to.</h2>
+    <div class="plans"><div class="plan rv d1"><span class="plan-tag">14 days free</span><h3>Offline counter</h3><p class="plan-lim">1 device · 1 outlet · no internet</p><p class="plan-blurb">The complete till. Restaurants get tables, KOTs and reservations; shops get barcode billing and the khata.</p><ul><li>Billing, printing and UPI QR</li><li>Products, staff, shifts and day-end</li><li>Expenses and analytics</li><li>Encrypted backup you can restore</li></ul><a class="btn lamp" href="javascript:void(0)" onclick="openTrialModal()">Start free →</a></div><div class="plan rv d2 hot"><span class="plan-tag">Plan</span><h3>Connected</h3><p class="plan-lim">Up to 5 devices · 1 outlet</p><p class="plan-blurb">Everything offline, plus the cloud ledger — so every till is in step and the numbers reach your phone.</p><ul><li>Everything in Offline counter</li><li>Cloud ledger across devices</li><li>Multiple tills on one catalogue</li><li>Reports from anywhere</li></ul><a class="btn lamp" href="javascript:void(0)" onclick="openContactModal('Connected plan — Kirana &amp; grocery')">Ask for a quote</a></div><div class="plan rv d3"><span class="plan-tag">Plan</span><h3>Everything on</h3><p class="plan-lim">Up to 15 devices · 25 outlets</p><p class="plan-blurb">The whole suite: kitchen screens, waiter phones, guest QR and online ordering, and every branch in one view.</p><ul><li>Everything in Connected</li><li>Kitchen display &amp; waiter pad</li><li>Guest QR &amp; online ordering</li><li>Outlets, franchise view, e-mailed bills</li></ul><a class="btn ghost" href="javascript:void(0)" onclick="openContactModal('Everything on plan — Kirana &amp; grocery')">Ask for a quote</a></div></div>
   </div>
 </section>
 
 <section>
-  <div class="wrap">
-    <p class="kicker rv">When you outgrow one counter</p>
-    <h2 class="rv d1">What a plan adds.</h2>
-    <p class="lede rv d2">Only what genuinely needs the cloud or a second device. Anything marked <span class="soon">coming</span> is not built yet — we would rather you knew now than found out in month two.</p>
-    <ul class="getlist"><li><span class="tick">✓</span><span><b>Every counter in step</b> — A second till at the door on the same stock and the same bills.</span></li><li><span class="tick">✓</span><span><b>The cloud ledger</b> — Yesterday&#x27;s takings from your phone, at home.</span></li><li><span class="tick">✓</span><span><b>More than one shop</b> — Each one banks its own money; you see them together.</span></li><li><span class="soon-i">·</span><span><b>Stock control</b><span class="soon">coming</span> — Levels, reorder points and suppliers.</span></li><li><span class="tick">✓</span><span><b>The cloud ledger</b> — Every bill on every device, and a view of the business from anywhere.</span></li><li><span class="tick">✓</span><span><b>More than one counter</b> — Two tills, three, a second floor. They stay in step.</span></li><li><span class="tick">✓</span><span><b>More than one branch</b> — Each shop banks its own takings; you see them together.</span></li><li><span class="tick">✓</span><span><b>E-mailed bills</b> — The customer gets the invoice without giving you their number.</span></li></ul>
-  </div>
-</section>
-
-<section class="band">
   <div class="wrap">
     <p class="kicker rv">Straight answers</p>
     <h2 class="rv d1">Before you ask.</h2>
@@ -79,6 +95,7 @@
 </section>
 
 <section class="final" id="start">
+  <div class="lamp-glow"></div>
   <div class="wrap">
     <h2 class="rv">Try it on tomorrow’s counter.</h2>
     <p class="lede rv d1" style="margin-left:auto;margin-right:auto">Fourteen days, the whole offline till, no card. If it does not fit the way you work, you have lost an evening.</p>
@@ -86,18 +103,21 @@
       <a class="btn lamp" href="javascript:void(0)" onclick="openTrialModal()">Start 14-day free trial →</a>
       <a class="btn ghost" href="javascript:void(0)" onclick="openContactModal('Kirana &amp; grocery')">Talk to us first</a>
     </div>
-    <p class="kicker" style="margin-top:56px">SmartBizz also runs</p>
+    <p class="kicker" style="margin-top:56px">The same app also runs</p>
     <div class="alsofor" style="justify-content:center"><a href="/restaurants/">🍽️ Restaurants &amp; cafés</a><a href="/supermarket/">🛒 Supermarkets</a><a href="/pharmacy/">💊 Pharmacies</a><a href="/retail/">👗 Retail &amp; fashion</a></div>
   </div>
 </section>
 
+</main>
 <footer>
-  <div class="wrap">
-    <span class="logo" style="font-size:18px"><img src="/assets/logo.png" alt="" width="26" height="26">SmartBizz</span>
-    <p style="margin:14px 0 0;color:var(--fg-2);font-size:14px">One till. Every kind of counter.</p>
-    <p style="margin:18px 0 0;font-size:13.5px;color:var(--fg-2)"><a href="/restaurants/">Restaurant</a> · <a href="/kirana/">Kirana</a> · <a href="/supermarket/">Supermarket</a> · <a href="/pharmacy/">Pharmacy</a> · <a href="/retail/">Retail</a></p>
-    <p style="margin:14px 0 0;font-size:13px;color:var(--fg-2)"><a href="/privacy.html">Privacy</a> · <a href="/terms.html">Terms</a> · <a href="/support.html">Support</a> · <a href="/deletion.html">Delete your data</a></p>
+  <div class="wrap foot">
+    <div class="foot-brand"><span class="logo" style="font-size:20px"><img src="/assets/logo.png" alt="" width="28" height="28">SmartBizz</span>
+    <p>One till. Every kind of counter. Billing software for Indian counters, built to keep going when the internet does not.</p><a class="btn lamp sm" href="javascript:void(0)" onclick="openTrialModal()">Start 14-day free trial</a></div>
+    <div><h4>Trades</h4><ul><li><a href="/restaurants/">🍽️ Restaurants &amp; cafés</a></li><li><a href="/kirana/">🏪 Kirana &amp; grocery</a></li><li><a href="/supermarket/">🛒 Supermarkets</a></li><li><a href="/pharmacy/">💊 Pharmacies</a></li><li><a href="/retail/">👗 Retail &amp; fashion</a></li></ul></div>
+    <div><h4>Product</h4><ul><li><a href="/#suite">The suite</a></li><li><a href="/#compare">Compare trades</a></li><li><a href="/#plans">Plans</a></li><li><a href="/r/?org=DEMO&amp;table=1">Guest QR demo</a></li><li><a href="/pos/">Web till sign-in</a></li></ul></div>
+    <div><h4>Help</h4><ul><li><a href="/support.html">Support</a></li><li><a href="javascript:void(0)" onclick="openContactModal('General enquiry')">Talk to us</a></li><li><a href="/privacy.html">Privacy</a></li><li><a href="/terms.html">Terms</a></li><li><a href="/deletion.html">Delete your data</a></li></ul></div>
   </div>
+  <div class="wrap foot-base"><span>© SmartBizz. Not a payment gateway — your money goes straight to your bank.</span><a href="#top">Back to top ↑</a></div>
 </footer>
 <!-- ═══════════════ MODAL 1: FREE TRIAL REGISTRATION (MATCHES MOBILE APP) ═══════════════ -->
 <div class="modal-overlay" id="trialModal" role="dialog" aria-modal="true" aria-labelledby="trialModalTitle" style="display:none">
@@ -316,6 +336,6 @@
 </div>
 
 <script>window.SB_CATEGORY = 'Kirana / Grocery Store';</script>
-<script src="/assets/site.js"></script>
+<script src="/assets/site.js?v=cdead209"></script>
 </body>
 </html>

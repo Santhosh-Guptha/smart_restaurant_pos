@@ -382,3 +382,97 @@ Please share commercial details.`);
   document.getElementById('contactFormContainer').style.display = 'none';
   document.getElementById('contactSuccessView').style.display = 'block';
 }
+
+// =========================================================================
+//  Showcase: theme switch, mobile menu, the device stage, module explorer
+// =========================================================================
+(function(){
+  const root = document.documentElement;
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // Light / dark. Remembered per browser; the page is fine without it.
+  const themeBtn = document.getElementById('themeBtn');
+  if (themeBtn) themeBtn.addEventListener('click', () => {
+    const cur = root.dataset.theme || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+    const next = cur === 'light' ? 'dark' : 'light';
+    root.dataset.theme = next;
+    try { localStorage.setItem('sb-theme', next); } catch (_) {}
+  });
+
+  // Mobile menu.
+  const navBtn = document.getElementById('navBtn'), navList = document.getElementById('navList');
+  if (navBtn && navList) {
+    const set = (open) => { navList.classList.toggle('open', open); navBtn.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    navBtn.addEventListener('click', () => set(!navList.classList.contains('open')));
+    navList.addEventListener('click', e => { if (e.target.closest('a')) set(false); });
+    window.addEventListener('keydown', e => { if (e.key === 'Escape') set(false); });
+  }
+
+  // Device stage: one app, a different counter per trade.
+  const dv = document.getElementById('device'), src = document.getElementById('dvSrc');
+  if (dv && src) {
+    const tabs = Array.from(dv.querySelectorAll('.dv-tab'));
+    const stage = dv.querySelector('.dv-stage');
+    const tabScr = document.getElementById('tabScr'), phScr = document.getElementById('phScr');
+    const screens = {};
+    src.content.querySelectorAll('[data-v]').forEach(n => {
+      screens[n.dataset.v] = { tab: n.querySelector('.tab-scr').innerHTML, ph: n.querySelector('.ph-scr').innerHTML };
+    });
+    let idx = 0, timer = 0, userTook = false;
+    const show = (i, focus) => {
+      idx = (i + tabs.length) % tabs.length;
+      const v = tabs[idx].dataset.v;
+      tabs.forEach((t, k) => { t.setAttribute('aria-selected', k === idx ? 'true' : 'false'); t.tabIndex = k === idx ? 0 : -1; });
+      if (focus) tabs[idx].focus();
+      const paint = () => { tabScr.innerHTML = screens[v].tab; phScr.innerHTML = screens[v].ph; dv.dataset.cat = v; stage.classList.remove('swap'); };
+      if (reduce) { paint(); return; }
+      stage.classList.add('swap');
+      setTimeout(paint, 280);
+    };
+    const tick = () => { if (!userTook && !document.hidden) show(idx + 1); };
+    const start = () => { if (!reduce && !timer) timer = setInterval(tick, 4200); };
+    const stop = () => { clearInterval(timer); timer = 0; };
+    tabs.forEach((t, i) => {
+      t.addEventListener('click', () => { userTook = true; stop(); show(i); });
+      t.addEventListener('keydown', e => {
+        if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+        e.preventDefault(); userTook = true; stop(); show(idx + (e.key === 'ArrowRight' ? 1 : -1), true);
+      });
+    });
+    stage.addEventListener('mouseenter', stop);
+    stage.addEventListener('mouseleave', () => { if (!userTook) start(); });
+    start();
+  }
+
+  // Module explorer: filter by trade and by what it costs.
+  const mods = document.getElementById('mods');
+  const chipsT = Array.from(document.querySelectorAll('.chip[data-f]'));
+  const chipsP = Array.from(document.querySelectorAll('.chip[data-t]'));
+  const count = document.getElementById('modsCount');
+  if (mods && chipsT.length) {
+    let trade = 'all';
+    const tiers = new Set(chipsP.map(c => c.dataset.t));
+    const names = { all: 'every trade' };
+    chipsT.forEach(c => { if (c.dataset.f !== 'all') names[c.dataset.f] = c.textContent.trim().replace(/^\S+\s/, '').toLowerCase(); });
+    const apply = () => {
+      let n = 0;
+      mods.querySelectorAll('.md').forEach(m => {
+        const ok = (trade === 'all' || m.dataset.trades.split(' ').includes(trade)) && tiers.has(m.dataset.tier);
+        m.hidden = !ok; if (ok) n++;
+      });
+      if (count) count.textContent = n + (n === 1 ? ' module' : ' modules') + ' for ' + names[trade] + '.';
+    };
+    chipsT.forEach(c => c.addEventListener('click', () => {
+      trade = c.dataset.f;
+      chipsT.forEach(x => x.setAttribute('aria-pressed', x === c ? 'true' : 'false'));
+      apply();
+    }));
+    chipsP.forEach(c => c.addEventListener('click', () => {
+      const k = c.dataset.t;
+      if (tiers.has(k) && tiers.size > 1) tiers.delete(k); else tiers.add(k);
+      chipsP.forEach(x => x.setAttribute('aria-pressed', tiers.has(x.dataset.t) ? 'true' : 'false'));
+      apply();
+    }));
+    apply();
+  }
+})();

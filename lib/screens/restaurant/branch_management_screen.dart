@@ -14,6 +14,7 @@ import '../../services/ordering_platform_config_service.dart';
 import '../../core/entitlements.dart';
 import '../../core/feature_route_guard.dart';
 import '../../core/constants.dart';
+import '../../core/vertical_labels.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class BranchManagementScreen extends ConsumerStatefulWidget {
@@ -43,6 +44,9 @@ class _BranchManagementScreenState
     required int currentBranchCount,
     required int maxBranches,
   }) {
+    final vertical = ref.read(currentVerticalProvider);
+    final vl = VerticalLabels.of(vertical);
+
     if (currentBranchCount >= maxBranches) {
       showDialog(
         context: context,
@@ -62,7 +66,7 @@ class _BranchManagementScreenState
             ],
           ),
           content: Text(
-            'Your current subscription allows up to $maxBranches restaurant branches.\n\n'
+            'Your current subscription allows up to $maxBranches ${vl.subscriptionBranchQuota}.\n\n'
             'To expand your franchise scale and onboard additional outlets, please contact your account manager or platform administrator.',
             style: TextStyle(color: context.textSecondary, fontSize: 14),
           ),
@@ -86,11 +90,11 @@ class _BranchManagementScreenState
     final adminNameCtrl = TextEditingController();
     final adminEmailCtrl = TextEditingController();
     final passwordCtrl = TextEditingController(text: '123456');
-    final tableCountCtrl = TextEditingController(text: '12');
+    final tableCountCtrl = TextEditingController(text: vl.isRestaurant ? '12' : '0');
     final addressCtrl = TextEditingController();
     final phoneCtrl = TextEditingController();
     final upiCtrl = TextEditingController();
-    String operatingMode = 'dineFirstPostpaid';
+    String operatingMode = vl.isRestaurant ? 'dineFirstPostpaid' : 'payFirstQSR';
     bool isSaving = false;
 
     showDialog(
@@ -115,7 +119,7 @@ class _BranchManagementScreenState
               const SizedBox(width: 12),
               Expanded(
                 child: Text(
-                  'Register Restaurant Branch',
+                  vl.registerBranchTitle,
                   style: TextStyle(
                     color: context.textPrimary,
                     fontWeight: FontWeight.bold,
@@ -167,80 +171,82 @@ class _BranchManagementScreenState
                     ),
                     const SizedBox(height: 12),
 
-                    Row(
-                      children: [
-                        Expanded(
-                          flex: 1,
-                          child: TextFormField(
-                            controller: tableCountCtrl,
-                            keyboardType: TextInputType.number,
-                            style: TextStyle(color: context.textPrimary),
-                            decoration: InputDecoration(
-                              labelText: 'Dining Tables',
-                              labelStyle:
-                                  TextStyle(color: context.textSecondary),
-                              prefixIcon: const Icon(
-                                  Icons.table_restaurant_rounded,
-                                  color: ClassicTheme.warningAmber,
-                                  size: 20),
-                              filled: true,
-                              fillColor: context.inputFill,
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(12),
-                                borderSide: BorderSide.none,
+                    if (vl.isRestaurant) ...[
+                      Row(
+                        children: [
+                          Expanded(
+                            flex: 1,
+                            child: TextFormField(
+                              controller: tableCountCtrl,
+                              keyboardType: TextInputType.number,
+                              style: TextStyle(color: context.textPrimary),
+                              decoration: InputDecoration(
+                                labelText: 'Dining Tables',
+                                labelStyle:
+                                    TextStyle(color: context.textSecondary),
+                                prefixIcon: const Icon(
+                                    Icons.table_restaurant_rounded,
+                                    color: ClassicTheme.warningAmber,
+                                    size: 20),
+                                filled: true,
+                                fillColor: context.inputFill,
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                  borderSide: BorderSide.none,
+                                ),
                               ),
+                              validator: (v) {
+                                if (v == null || v.trim().isEmpty) return 'Required';
+                                final n = int.tryParse(v.trim());
+                                if (n == null || n <= 0) return 'Invalid';
+                                return null;
+                              },
                             ),
-                            validator: (v) {
-                              if (v == null || v.trim().isEmpty) return 'Required';
-                              final n = int.tryParse(v.trim());
-                              if (n == null || n <= 0) return 'Invalid';
-                              return null;
-                            },
                           ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          flex: 2,
-                          child: DropdownButtonFormField<String>(
-                            initialValue: operatingMode,
-                            dropdownColor: context.surfaceColor,
-                            style: TextStyle(
-                                color: context.textPrimary, fontSize: 13),
-                            decoration: InputDecoration(
-                              labelText: 'Operating Service Flow',
-                              labelStyle:
-                                  TextStyle(color: context.textSecondary),
-                              filled: true,
-                              fillColor: context.inputFill,
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(12),
-                                borderSide: BorderSide.none,
+                          const SizedBox(width: 12),
+                          Expanded(
+                            flex: 2,
+                            child: DropdownButtonFormField<String>(
+                              initialValue: operatingMode,
+                              dropdownColor: context.surfaceColor,
+                              style: TextStyle(
+                                  color: context.textPrimary, fontSize: 13),
+                              decoration: InputDecoration(
+                                labelText: 'Operating Service Flow',
+                                labelStyle:
+                                    TextStyle(color: context.textSecondary),
+                                filled: true,
+                                fillColor: context.inputFill,
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                  borderSide: BorderSide.none,
+                                ),
                               ),
+                              items: const [
+                                DropdownMenuItem(
+                                  value: 'dineFirstPostpaid',
+                                  child: Text('Dine First, Pay After'),
+                                ),
+                                DropdownMenuItem(
+                                  value: 'payFirstQSR',
+                                  child: Text('Pay First, Token / KOT (QSR)'),
+                                ),
+                                DropdownMenuItem(
+                                  value: 'hybrid',
+                                  child: Text('Hybrid Service'),
+                                ),
+                              ],
+                              onChanged: (val) {
+                                if (val != null) {
+                                  setDialogState(() => operatingMode = val);
+                                }
+                              },
                             ),
-                            items: const [
-                              DropdownMenuItem(
-                                value: 'dineFirstPostpaid',
-                                child: Text('Dine First, Pay After'),
-                              ),
-                              DropdownMenuItem(
-                                value: 'payFirstQSR',
-                                child: Text('Pay First, Token / KOT (QSR)'),
-                              ),
-                              DropdownMenuItem(
-                                value: 'hybrid',
-                                child: Text('Hybrid Service'),
-                              ),
-                            ],
-                            onChanged: (val) {
-                              if (val != null) {
-                                setDialogState(() => operatingMode = val);
-                              }
-                            },
                           ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                    ],
 
                     TextFormField(
                       controller: addressCtrl,
@@ -356,7 +362,9 @@ class _BranchManagementScreenState
                       decoration: InputDecoration(
                         labelText: 'Store Admin Email *',
                         labelStyle: TextStyle(color: context.textSecondary),
-                        hintText: 'admin.branch@restaurant.com',
+                        hintText: vl.isRestaurant
+                            ? 'admin.branch@restaurant.com'
+                            : 'admin.branch@store.com',
                         hintStyle: const TextStyle(color: Colors.white24),
                         prefixIcon: const Icon(Icons.email_outlined,
                             color: ClassicTheme.warningAmber, size: 20),
@@ -553,7 +561,7 @@ class _BranchManagementScreenState
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
                               content: Text(
-                                  '✓ Restaurant branch "$branchName" created successfully with Store Admin "$adminEmail".'),
+                                  '✓ ${vl.outletLabel} "$branchName" created successfully with Store Admin "$adminEmail".'),
                               backgroundColor: ClassicTheme.successEmerald,
                             ),
                           );
@@ -592,6 +600,9 @@ class _BranchManagementScreenState
     required BuildContext context,
     required RestaurantOutlet outlet,
   }) {
+    final vertical = ref.read(currentVerticalProvider);
+    final vl = VerticalLabels.of(vertical);
+
     final formKey = GlobalKey<FormState>();
     final nameCtrl = TextEditingController(text: outlet.name);
     final tableCountCtrl =
@@ -638,68 +649,70 @@ class _BranchManagementScreenState
                         v == null || v.trim().isEmpty ? 'Required' : null,
                   ),
                   const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextFormField(
-                          controller: tableCountCtrl,
-                          keyboardType: TextInputType.number,
-                          style: TextStyle(color: context.textPrimary),
-                          decoration: InputDecoration(
-                            labelText: 'Dining Tables',
-                            labelStyle:
-                                TextStyle(color: context.textSecondary),
-                            filled: true,
-                            fillColor: context.inputFill,
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: BorderSide.none,
+                  if (vl.isRestaurant) ...[
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextFormField(
+                            controller: tableCountCtrl,
+                            keyboardType: TextInputType.number,
+                            style: TextStyle(color: context.textPrimary),
+                            decoration: InputDecoration(
+                              labelText: 'Dining Tables',
+                              labelStyle:
+                                  TextStyle(color: context.textSecondary),
+                              filled: true,
+                              fillColor: context.inputFill,
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide: BorderSide.none,
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: DropdownButtonFormField<String>(
-                          initialValue: operatingMode,
-                          dropdownColor: context.surfaceColor,
-                          style: TextStyle(
-                              color: context.textPrimary, fontSize: 13),
-                          decoration: InputDecoration(
-                            labelText: 'Service Flow',
-                            labelStyle:
-                                TextStyle(color: context.textSecondary),
-                            filled: true,
-                            fillColor: context.inputFill,
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: BorderSide.none,
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: DropdownButtonFormField<String>(
+                            initialValue: operatingMode,
+                            dropdownColor: context.surfaceColor,
+                            style: TextStyle(
+                                color: context.textPrimary, fontSize: 13),
+                            decoration: InputDecoration(
+                              labelText: 'Service Flow',
+                              labelStyle:
+                                  TextStyle(color: context.textSecondary),
+                              filled: true,
+                              fillColor: context.inputFill,
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide: BorderSide.none,
+                              ),
                             ),
+                            items: const [
+                              DropdownMenuItem(
+                                value: 'dineFirstPostpaid',
+                                child: Text('Dine First, Pay After'),
+                              ),
+                              DropdownMenuItem(
+                                value: 'payFirstQSR',
+                                child: Text('Pay First (QSR)'),
+                              ),
+                              DropdownMenuItem(
+                                value: 'hybrid',
+                                child: Text('Hybrid Service'),
+                              ),
+                            ],
+                            onChanged: (val) {
+                              if (val != null) {
+                                setDialogState(() => operatingMode = val);
+                              }
+                            },
                           ),
-                          items: const [
-                            DropdownMenuItem(
-                              value: 'dineFirstPostpaid',
-                              child: Text('Dine First, Pay After'),
-                            ),
-                            DropdownMenuItem(
-                              value: 'payFirstQSR',
-                              child: Text('Pay First (QSR)'),
-                            ),
-                            DropdownMenuItem(
-                              value: 'hybrid',
-                              child: Text('Hybrid Service'),
-                            ),
-                          ],
-                          onChanged: (val) {
-                            if (val != null) {
-                              setDialogState(() => operatingMode = val);
-                            }
-                          },
                         ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                  ],
                   TextFormField(
                     controller: addressCtrl,
                     style: TextStyle(color: context.textPrimary),
@@ -828,6 +841,9 @@ class _BranchManagementScreenState
 
   @override
   Widget build(BuildContext context) {
+    final vertical = ref.watch(currentVerticalProvider);
+    final vl = VerticalLabels.of(vertical);
+
     final saasSession = ref.watch(saasSessionProvider);
     final user = saasSession.currentUser;
     final org = saasSession.currentOrganization;
@@ -843,7 +859,7 @@ class _BranchManagementScreenState
           ).isNotEmpty
               ? resolveOutletId(userOrgId: user?.organizationId, sessionOrgId: org?.id)
               : ((org?.id.isNotEmpty == true) ? org!.id : (user?.organizationId ?? '')));
-    final orgName = org?.name ?? 'Restaurant';
+    final orgName = org?.name ?? (vl.isRestaurant ? 'Restaurant' : 'Store');
     final maxBranches = license?.maxFranchises ?? 3;
     final activeBranchId = saasSession.activeFranchiseId;
 
@@ -874,7 +890,7 @@ class _BranchManagementScreenState
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    '$orgName · Restaurant Branches',
+                    '$orgName · ${vl.activeBranchesTitle}',
                     style: TextStyle(
                         fontSize: 16, fontWeight: FontWeight.bold, color: context.textPrimary),
                     maxLines: 1,
@@ -1039,6 +1055,7 @@ class _BranchManagementScreenState
     required String? activeBranchId,
     required SaasLicense? license,
   }) {
+    final vl = VerticalLabels.of(ref.read(currentVerticalProvider));
     final totalTables =
         outlets.fold<int>(0, (totalCount, o) => totalCount + o.tableCount);
 
@@ -1070,11 +1087,11 @@ class _BranchManagementScreenState
                     ),
                     const SizedBox(height: 10),
                     _buildMetricCard(
-                      icon: Icons.table_restaurant_rounded,
+                      icon: vl.isRestaurant ? Icons.table_restaurant_rounded : Icons.storefront_rounded,
                       iconColor: ClassicTheme.successEmerald,
-                      title: 'Total Dining Tables',
-                      value: totalTables.toString(),
-                      subtitle: 'Across all active branches',
+                      title: vl.isRestaurant ? 'Total Dining Tables' : 'Total Active Outlets',
+                      value: vl.isRestaurant ? totalTables.toString() : outlets.length.toString(),
+                      subtitle: vl.isRestaurant ? 'Across all active branches' : 'Managed in organization',
                     ),
                     const SizedBox(height: 10),
                     _buildMetricCard(
@@ -1105,11 +1122,11 @@ class _BranchManagementScreenState
                     const SizedBox(width: 14),
                     Expanded(
                       child: _buildMetricCard(
-                        icon: Icons.table_restaurant_rounded,
+                        icon: vl.isRestaurant ? Icons.table_restaurant_rounded : Icons.storefront_rounded,
                         iconColor: ClassicTheme.successEmerald,
-                        title: 'Total Dining Tables',
-                        value: totalTables.toString(),
-                        subtitle: 'Across all active branches',
+                        title: vl.isRestaurant ? 'Total Dining Tables' : 'Total Active Outlets',
+                        value: vl.isRestaurant ? totalTables.toString() : outlets.length.toString(),
+                        subtitle: vl.isRestaurant ? 'Across all active branches' : 'Managed in organization',
                       ),
                     ),
                     const SizedBox(width: 14),
@@ -1129,7 +1146,7 @@ class _BranchManagementScreenState
               }
             },
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 25),
 
           // ── Header Row with Add Branch Action ─────────────────────────────
           Wrap(
@@ -1142,7 +1159,7 @@ class _BranchManagementScreenState
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Active Restaurant Outlets',
+                    vl.activeBranchesTitle,
                     style: TextStyle(
                       color: context.textPrimary,
                       fontSize: 17,
@@ -1151,7 +1168,9 @@ class _BranchManagementScreenState
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    featureOn(FeatureKeys.qrOrdering) ? 'Select a branch to operate, download QR standees, or edit settings' : 'Select a branch to operate or edit its settings',
+                    vl.isRestaurant
+                        ? (featureOn(FeatureKeys.qrOrdering) ? 'Select a branch to operate, download QR standees, or edit settings' : 'Select a branch to operate or edit its settings')
+                        : 'Select an outlet to operate or edit its settings',
                     style: TextStyle(color: context.textSecondary, fontSize: 12),
                   ),
                 ],
@@ -1165,8 +1184,8 @@ class _BranchManagementScreenState
                   maxBranches: maxBranches,
                 ),
                 icon: const Icon(Icons.add_rounded, size: 18),
-                label: const Text('ADD RESTAURANT BRANCH',
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                label: Text(vl.addBranchButton,
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: ClassicTheme.warningAmber,
                   foregroundColor: Colors.black,
@@ -1196,16 +1215,16 @@ class _BranchManagementScreenState
                   const Icon(Icons.storefront_rounded,
                       color: ClassicTheme.warningAmber, size: 54),
                   const SizedBox(height: 16),
-                  const Text(
-                    'No Restaurant Branches Registered Yet',
-                    style: TextStyle(
+                  Text(
+                    vl.noBranchesText,
+                    style: const TextStyle(
                         color: Colors.white,
                         fontSize: 18,
                         fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    featureOn(FeatureKeys.qrOrdering) ? 'Add your main dining hall, express cafe, or franchise branches to manage orders and table QR codes.' : 'Add your main dining hall, express cafe, or franchise branches to manage orders per store.',
+                    vl.branchSubtitleDesc,
                     textAlign: TextAlign.center,
                     style: TextStyle(color: context.textSecondary, fontSize: 13),
                   ),
@@ -1331,6 +1350,7 @@ class _BranchManagementScreenState
     required String orgId,
     required bool isCurrentActive,
   }) {
+    final vl = VerticalLabels.of(ref.read(currentVerticalProvider));
     String modeLabel = 'Dine First (Postpaid)';
     Color modeColor = ClassicTheme.infoBlue;
     if (outlet.operatingMode == 'payFirstQSR') {
@@ -1427,48 +1447,50 @@ class _BranchManagementScreenState
                   ],
                 ),
               ),
-              Flexible(
-                child: Wrap(
-                  spacing: 10,
-                  runSpacing: 6,
-                  children: [
-                    // Operating Mode Tag
-                    Container(
-                      padding:
-                          const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                      decoration: BoxDecoration(
-                        color: modeColor.withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        modeLabel,
-                        style: TextStyle(
-                          color: modeColor,
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
+              if (vl.isRestaurant) ...[
+                Flexible(
+                  child: Wrap(
+                    spacing: 10,
+                    runSpacing: 6,
+                    children: [
+                      // Operating Mode Tag
+                      Container(
+                        padding:
+                            const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: modeColor.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          modeLabel,
+                          style: TextStyle(
+                            color: modeColor,
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ),
-                    ),
-                    // Table Count Tag
-                    Container(
-                      padding:
-                          const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                      decoration: BoxDecoration(
-                        color: context.canvasColor,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        '${outlet.tableCount} Tables',
-                        style: TextStyle(
-                          color: context.textSecondary,
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
+                      // Table Count Tag
+                      Container(
+                        padding:
+                            const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: context.canvasColor,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          '${outlet.tableCount} Tables',
+                          style: TextStyle(
+                            color: context.textSecondary,
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
+              ],
             ],
           ),
 
@@ -1522,7 +1544,7 @@ class _BranchManagementScreenState
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
                           content: Text(
-                            'Switched active restaurant branch to "${outlet.name}".',
+                            'Switched active ${vl.outletLabel.toLowerCase()} to "${outlet.name}".',
                             style: TextStyle(
                               color: context.textPrimary,
                               fontWeight: FontWeight.bold,
@@ -1534,8 +1556,8 @@ class _BranchManagementScreenState
                     }
                   },
                   icon: const Icon(Icons.swap_horiz_rounded, size: 16),
-                  label: const Text('SWITCH TO BRANCH',
-                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                  label: Text('SWITCH TO ${vl.outletLabel.toUpperCase()}',
+                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: ClassicTheme.warningAmber,
                     foregroundColor: Colors.black,
@@ -1572,7 +1594,7 @@ class _BranchManagementScreenState
                 ),
 
               // Table QR standees belong to qrOrdering.
-              if (featureOn(FeatureKeys.qrOrdering)) ...[
+              if (featureOn(FeatureKeys.qrOrdering) && vl.isRestaurant) ...[
               const SizedBox(width: 12),
 
               // Download Table Standees PDF Button
@@ -1637,7 +1659,9 @@ class _BranchManagementScreenState
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
                         content: Text(
-                            'Table ordering link copied: $qrOrderingUrl'),
+                            vl.isRestaurant
+                                ? 'Table ordering link copied: $qrOrderingUrl'
+                                : 'Store catalog link copied: $qrOrderingUrl'),
                         backgroundColor: ClassicTheme.successEmerald,
                       ),
                     );
@@ -1646,7 +1670,7 @@ class _BranchManagementScreenState
                 icon: const Icon(Icons.link_rounded,
                     size: 16, color: Colors.white70),
                 label: Text(
-                  'COPY MENU LINK',
+                  vl.isRestaurant ? 'COPY MENU LINK' : 'COPY CATALOG LINK',
                   style: TextStyle(
                     color: context.textSecondary,
                     fontSize: 12,
@@ -1675,9 +1699,9 @@ class _BranchManagementScreenState
                 },
                 icon: const Icon(Icons.open_in_browser_rounded,
                     size: 16, color: ClassicTheme.infoBlue),
-                label: const Text(
-                  'OPEN MENU',
-                  style: TextStyle(
+                label: Text(
+                  vl.isRestaurant ? 'OPEN MENU' : 'OPEN CATALOG',
+                  style: const TextStyle(
                     color: ClassicTheme.infoBlue,
                     fontSize: 12,
                     fontWeight: FontWeight.bold,
@@ -1694,7 +1718,7 @@ class _BranchManagementScreenState
 
               // Edit Button
               IconButton(
-                tooltip: 'Edit Branch Info',
+                tooltip: 'Edit ${vl.outletLabel} Info',
                 onPressed: () => _showEditBranchDialog(
                   context: context,
                   outlet: outlet,

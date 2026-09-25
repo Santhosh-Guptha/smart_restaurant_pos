@@ -12,6 +12,8 @@ import '../../sync/local_store.dart';
 import '../../core/entitlements.dart';
 import '../../core/feature_route_guard.dart';
 import '../../core/cloud_gate.dart';
+import '../../core/vertical_labels.dart';
+import '../../core/package_model.dart';
 
 enum StoreScopeMode { all, individual, selected }
 
@@ -325,48 +327,51 @@ class _RestaurantAnalyticsScreenState
         }
       }
 
+      final curVertical = ref.read(currentVerticalProvider);
+      final isRest = curVertical == Verticals.restaurant;
+
       final shifts = [
         {
-          'name': 'Breakfast Shift',
+          'name': isRest ? 'Breakfast Shift' : 'Morning Shift',
           'time': '07:00 - 11:00',
           'sales': bSales,
           'orders': bOrders,
           'aov': bOrders > 0 ? (bSales / bOrders) : 0.0,
-          'topSubcategory': 'Breakfast & Snacks',
-          'turnaround': '22 mins',
+          'topSubcategory': isRest ? 'Breakfast & Snacks' : 'Daily Essentials',
+          'turnaround': isRest ? '22 mins' : '1.2 mins',
           'color': amberAccent,
           'icon': Icons.wb_sunny_outlined,
         },
         {
-          'name': 'Lunch Rush',
+          'name': isRest ? 'Lunch Rush' : 'Midday Rush',
           'time': '11:00 - 16:00',
           'sales': lSales,
           'orders': lOrders,
           'aov': lOrders > 0 ? (lSales / lOrders) : 0.0,
-          'topSubcategory': 'Main Meals & Combos',
-          'turnaround': '38 mins',
+          'topSubcategory': isRest ? 'Main Meals & Combos' : 'Packaged Goods',
+          'turnaround': isRest ? '38 mins' : '1.8 mins',
           'color': coralAccent,
-          'icon': Icons.lunch_dining_rounded,
+          'icon': isRest ? Icons.lunch_dining_rounded : Icons.storefront_rounded,
         },
         {
-          'name': 'Dinner Shift',
+          'name': isRest ? 'Dinner Shift' : 'Evening Peak',
           'time': '16:00 - 23:00',
           'sales': dSales,
           'orders': dOrders,
           'aov': dOrders > 0 ? (dSales / dOrders) : 0.0,
-          'topSubcategory': 'Starters & Special',
-          'turnaround': '45 mins',
+          'topSubcategory': isRest ? 'Starters & Special' : 'Groceries & Provisions',
+          'turnaround': isRest ? '45 mins' : '1.5 mins',
           'color': ClassicTheme.secondaryAccent,
-          'icon': Icons.dinner_dining_rounded,
+          'icon': isRest ? Icons.dinner_dining_rounded : Icons.shopping_basket_rounded,
         },
         {
-          'name': 'Late Night',
+          'name': isRest ? 'Late Night' : 'Night Closing',
           'time': '23:00 - 07:00',
           'sales': nSales,
           'orders': nOrders,
           'aov': nOrders > 0 ? (nSales / nOrders) : 0.0,
-          'topSubcategory': 'Desserts & Beverages',
-          'turnaround': '18 mins',
+          'topSubcategory': isRest ? 'Desserts & Beverages' : 'Night Essentials',
+          'turnaround': isRest ? '18 mins' : '1.0 mins',
           'color': const Color(0xFF06B6D4),
           'icon': Icons.nightlight_round,
         },
@@ -399,7 +404,7 @@ class _RestaurantAnalyticsScreenState
           for (final it in items) {
             if (it is Map) {
               final sub = (it['subcategory'] ?? it['category'] ?? 'General').toString();
-              final cat = (it['category'] ?? 'Food').toString();
+              final cat = (it['category'] ?? (isRest ? 'Food' : VerticalLabels.of(curVertical).defaultCategory)).toString();
               final qty = ((it['quantity'] ?? it['qty'] ?? 1) as num).toInt();
               final price = ((it['price'] ?? 0.0) as num).toDouble();
               final sales = qty * price;
@@ -520,6 +525,8 @@ class _RestaurantAnalyticsScreenState
 
   @override
   Widget build(BuildContext context) {
+    final vertical = ref.watch(currentVerticalProvider);
+    final vl = VerticalLabels.of(vertical);
     double totalRevenue = 0;
     int totalOrders = 0;
     for (final h in _hourlyData.values) {
@@ -751,30 +758,30 @@ class _RestaurantAnalyticsScreenState
                         accentColor: emeraldAccent,
                       ),
                       _buildKpiCard(
-                        title: 'TOTAL KOT ORDERS',
+                        title: vl.totalOrdersKpiTitle,
                         value: '$totalOrders',
-                        subtitle: 'Live settled orders',
+                        subtitle: vl.totalOrdersKpiSubtitle,
                         icon: Icons.receipt_long_rounded,
                         accentColor: amberAccent,
                       ),
                       _buildKpiCard(
                         title: 'AVERAGE ORDER VALUE',
                         value: '₹ ${avgAov.toStringAsFixed(0)}',
-                        subtitle: 'Highest at Dinner',
+                        subtitle: vl.isRestaurant ? 'Highest at Dinner' : 'Highest at Evening',
                         icon: Icons.trending_up_rounded,
                         accentColor: ClassicTheme.infoBlue,
                       ),
                       _buildKpiCard(
-                        title: 'TABLE TURNAROUND',
-                        value: '35 mins',
-                        subtitle: 'Optimal velocity',
+                        title: vl.turnaroundKpiTitle,
+                        value: vl.turnaroundKpiValue,
+                        subtitle: vl.turnaroundKpiSubtitle,
                         icon: Icons.timer_outlined,
                         accentColor: ClassicTheme.secondaryAccent,
                       ),
                       _buildKpiCard(
                         title: 'PEAK RUSH HOUR',
                         value: '8:00 - 10:00 PM',
-                        subtitle: 'Peak guest traffic',
+                        subtitle: vl.rushHourSubtitle,
                         icon: Icons.local_fire_department_rounded,
                         accentColor: coralAccent,
                       ),
@@ -795,9 +802,9 @@ class _RestaurantAnalyticsScreenState
                       const SizedBox(width: 10),
                       Expanded(
                         child: _buildKpiCard(
-                          title: 'TOTAL KOT ORDERS',
+                          title: vl.totalOrdersKpiTitle,
                           value: '$totalOrders',
-                          subtitle: 'Live settled orders',
+                          subtitle: vl.totalOrdersKpiSubtitle,
                           icon: Icons.receipt_long_rounded,
                           accentColor: amberAccent,
                         ),
@@ -807,7 +814,7 @@ class _RestaurantAnalyticsScreenState
                         child: _buildKpiCard(
                           title: 'AVG ORDER VALUE',
                           value: '₹ ${avgAov.toStringAsFixed(0)}',
-                          subtitle: 'Highest at Dinner',
+                          subtitle: vl.isRestaurant ? 'Highest at Dinner' : 'Highest at Evening',
                           icon: Icons.trending_up_rounded,
                           accentColor: ClassicTheme.infoBlue,
                         ),
@@ -815,9 +822,9 @@ class _RestaurantAnalyticsScreenState
                       const SizedBox(width: 10),
                       Expanded(
                         child: _buildKpiCard(
-                          title: 'TABLE TURNAROUND',
-                          value: '35 mins',
-                          subtitle: 'Optimal velocity',
+                          title: vl.turnaroundKpiTitle,
+                          value: vl.turnaroundKpiValue,
+                          subtitle: vl.turnaroundKpiSubtitle,
                           icon: Icons.timer_outlined,
                           accentColor: ClassicTheme.secondaryAccent,
                         ),
@@ -827,7 +834,7 @@ class _RestaurantAnalyticsScreenState
                         child: _buildKpiCard(
                           title: 'PEAK RUSH HOUR',
                           value: '8:00 - 10:00 PM',
-                          subtitle: 'Peak guest traffic',
+                          subtitle: vl.rushHourSubtitle,
                           icon: Icons.local_fire_department_rounded,
                           accentColor: coralAccent,
                         ),
@@ -1036,7 +1043,7 @@ class _RestaurantAnalyticsScreenState
 
             // ── SHIFT / DAYPART PERFORMANCE GRID ───────────────────────────
             Text(
-              'Restaurant Shifts & Daypart Performance',
+              vl.analyticsShiftsTitle,
               style: TextStyle(color: context.textPrimary, fontSize: 15, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 10),
@@ -1338,6 +1345,7 @@ class _RestaurantAnalyticsScreenState
   }
 
   Widget _buildSubcategoriesSection() {
+    final vl = VerticalLabels.of(ref.watch(currentVerticalProvider));
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -1371,7 +1379,9 @@ class _RestaurantAnalyticsScreenState
           ),
           const SizedBox(height: 4),
           Text(
-            'Tracks item velocity across distinct menu groups',
+            vl.isRestaurant
+                ? 'Tracks item velocity across distinct menu groups'
+                : 'Tracks item velocity across product categories',
             style: TextStyle(color: context.textSecondary, fontSize: 12),
           ),
           const SizedBox(height: 14),

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/legacy.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import '../core/entitlements.dart';
 import '../core/package_model.dart';
+import '../core/vertical_labels.dart';
 
 /// Represents a customizable card on the restaurant dashboard.
 class DashboardCardMeta {
@@ -64,6 +65,42 @@ class DashboardCardMeta {
     }
 
     return true;
+  }
+
+  /// Dynamic title based on tenant's business vertical.
+  String titleFor(String? vertical) {
+    if (vertical == null) return title;
+    final vl = VerticalLabels.of(vertical);
+    switch (id) {
+      case 'counter_billing':
+        return vl.counterBillingTitle;
+      case 'orders_history':
+        return vl.ordersHistoryTitle;
+      case 'menu':
+        return vl.menuScreenTitle;
+      case 'store_config':
+        return vl.storeSettingsTitle;
+      default:
+        return title;
+    }
+  }
+
+  /// Dynamic subtitle based on tenant's business vertical.
+  String subtitleFor(String? vertical) {
+    if (vertical == null) return subtitle;
+    final vl = VerticalLabels.of(vertical);
+    switch (id) {
+      case 'counter_billing':
+        return vl.counterBillingSubtitle;
+      case 'orders_history':
+        return vl.ordersHistorySubtitle;
+      case 'menu':
+        return vl.menuScreenSubtitle;
+      case 'store_config':
+        return vl.storeSettingsSubtitleShort;
+      default:
+        return subtitle;
+    }
   }
 }
 

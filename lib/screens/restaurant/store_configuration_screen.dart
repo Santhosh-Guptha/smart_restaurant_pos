@@ -264,7 +264,7 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
     _printerFeedLines = pState.feedLines.toDouble();
 
     // 6. Expenses
-    final defaultCategories = ['Rent', 'Utilities', 'Salaries', 'Inventory', 'Maintenance', 'Miscellaneous'];
+    final defaultCategories = VerticalLabels.of(_vertical).defaultExpenseCategories;
     final rawCats = cBox?.get('expense_categories_$email', defaultValue: defaultCategories);
     if (rawCats is List) {
       _categories = List<String>.from(rawCats);
@@ -468,7 +468,7 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
 
       if (mounted) {
         AppToast.showSuccess(context, 'Store Configurations Saved!',
-            subtitle: 'All restaurant operational parameters updated successfully.');
+            subtitle: VerticalLabels.of(_vertical).storeSavedNotification);
       }
     } catch (e) {
       if (mounted) {
@@ -695,7 +695,7 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
             const Tab(icon: Icon(Icons.receipt_rounded, size: 18), text: 'Taxes & Charges'),
             const Tab(icon: Icon(Icons.payments_rounded, size: 18), text: 'Payments & UPI'),
             const Tab(icon: Icon(Icons.access_time_filled_rounded, size: 18), text: 'Hours & Shifts'),
-            Tab(icon: const Icon(Icons.print_rounded, size: 18), text: _hasKot ? 'KOT & Receipts' : 'Receipts'),
+            Tab(icon: const Icon(Icons.print_rounded, size: 18), text: (_hasKot && VerticalLabels.of(_vertical).isRestaurant) ? 'KOT & Receipts' : 'Receipts'),
             if (_hasExpenses)
               const Tab(icon: Icon(Icons.receipt_long_rounded, size: 18), text: 'Expense Categories'),
           ],
@@ -1226,14 +1226,14 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
               const SizedBox(height: 16),
               Divider(color: context.borderColor),
               const SizedBox(height: 12),
-              Text('Shift Timings & Dayparts:',
+              Text(VerticalLabels.of(_vertical).isRestaurant ? 'Shift Timings & Dayparts:' : 'Store Operating Shifts:',
                   style: TextStyle(color: context.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
               const SizedBox(height: 10),
-              _buildTextField(_breakfastShiftCtrl, 'Breakfast Shift Hours', Icons.wb_twilight_rounded),
+              _buildTextField(_breakfastShiftCtrl, VerticalLabels.of(_vertical).isRestaurant ? 'Breakfast Shift Hours' : 'Morning Shift Hours', Icons.wb_twilight_rounded),
               const SizedBox(height: 10),
-              _buildTextField(_lunchShiftCtrl, 'Lunch Rush Hours', Icons.wb_sunny_rounded),
+              _buildTextField(_lunchShiftCtrl, VerticalLabels.of(_vertical).isRestaurant ? 'Lunch Rush Hours' : 'Midday Rush Hours', Icons.wb_sunny_rounded),
               const SizedBox(height: 10),
-              _buildTextField(_dinnerShiftCtrl, 'Dinner Shift Hours', Icons.nights_stay_rounded),
+              _buildTextField(_dinnerShiftCtrl, VerticalLabels.of(_vertical).isRestaurant ? 'Dinner Shift Hours' : 'Evening Peak Hours', Icons.nights_stay_rounded),
             ],
           ),
         ],
@@ -1245,16 +1245,17 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
   // TAB 5: KOT & RECEIPTS
   // ─────────────────────────────────────────────────────────────
   Widget _buildKotAndReceiptsTab() {
+    final isRest = VerticalLabels.of(_vertical).isRestaurant;
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildSectionHeader(_hasKot ? 'KOT & Thermal Receipt Customization' : 'Thermal Receipt Customization', Icons.print_rounded),
+          _buildSectionHeader((_hasKot && isRest) ? 'KOT & Thermal Receipt Customization' : 'Thermal Receipt Customization', Icons.print_rounded),
           const SizedBox(height: 12),
           _buildCard(
             children: [
-              if (_hasKot) ...[
+              if (_hasKot && isRest) ...[
               _buildToggleRow(
                 'Auto-Print KOT to Kitchen on New Order Dispatch',
                 _autoPrintKot,

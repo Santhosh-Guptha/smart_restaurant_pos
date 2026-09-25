@@ -8,7 +8,9 @@ import '../../core/design_tokens.dart';
 import '../../core/entitlements.dart';
 import '../../core/feature_route_guard.dart';
 import '../../core/responsive.dart';
+import '../../core/vertical_labels.dart';
 import '../../providers/expenses_provider.dart';
+import '../../providers/saas_session_provider.dart';
 import '../../utils/ui_feedback.dart';
 
 /// Day-to-day spend for the store: what went out, on what, paid how.
@@ -49,18 +51,8 @@ class _ExpensesScreenState extends ConsumerState<ExpensesScreen>
         return raw.map((e) => e.toString()).toList();
       }
     } catch (_) {}
-    return const [
-      'Groceries & Vegetables',
-      'Meat & Seafood',
-      'Dairy & Bakery',
-      'Gas & Fuel',
-      'Electricity & Water',
-      'Staff Wages',
-      'Rent',
-      'Packaging',
-      'Repairs & Maintenance',
-      'Miscellaneous',
-    ];
+    final vertical = ref.read(currentVerticalProvider);
+    return VerticalLabels.of(vertical).defaultExpenseCategories;
   }
 
   DateTime? _rangeStart() {

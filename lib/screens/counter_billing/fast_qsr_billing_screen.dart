@@ -21,6 +21,8 @@ import '../../sync/outbox.dart';
 import '../../sync/local_store.dart';
 import '../../core/entitlements.dart';
 import '../../providers/entitlements_provider.dart';
+import '../../core/vertical_labels.dart';
+import '../../core/package_model.dart';
 import '../../core/upi_payment.dart';
 import 'widgets/upi_qr_payment_sheet.dart';
 import '../../core/receipt/receipt_context.dart';
@@ -145,8 +147,11 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
       });
     }
 
+    final isRest = ent.vertical == Verticals.restaurant;
     if (widget.initialOrderType != null) {
       _orderType = widget.initialOrderType!;
+    } else if (!isRest || !_hasRunningTabs) {
+      _orderType = isRest ? 'Takeaway' : 'Walk-in';
     }
     if (widget.initialTableNumber != null) {
       _selectedTable = widget.initialTableNumber;
@@ -646,6 +651,8 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
   }
 
   void _showOrderTypeSelectionModal() {
+    final ent = ref.read(entitlementsProvider);
+    final isRest = ent.vertical == Verticals.restaurant;
     showModalBottomSheet(
       context: context,
       backgroundColor: context.surfaceColor,
@@ -679,39 +686,46 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  'Choose whether this order is for dining in or customer takeaway.',
+                  isRest
+                      ? 'Choose whether this order is for dining in or customer takeaway.'
+                      : 'Choose whether this sale is walk-in counter billing or delivery.',
                   style: TextStyle(fontSize: 12, color: context.textSecondary),
                 ),
                 const SizedBox(height: 20),
 
                 Row(
                   children: [
-                    // Dine In Card
+                    // Primary Card (Dine In for Restaurant, Walk-In for Others)
                     Expanded(
                       child: InkWell(
                         onTap: () {
                           Navigator.pop(ctx);
-                          setState(() => _orderType = 'Dine-In');
-                          if (_hasTablePicker) {
-                            _showTableSelectionModal();
+                          if (isRest) {
+                            setState(() => _orderType = 'Dine-In');
+                            if (_hasTablePicker) {
+                              _showTableSelectionModal();
+                            } else {
+                              setState(() => _selectedTable = 'Dine-in');
+                              _showPaymentChoiceModal(isDineIn: true);
+                            }
                           } else {
-                            // No floor plan in this plan: the order is still
-                            // dine-in (packaging and tax treatment follow), it
-                            // just isn't tied to a table.
-                            setState(() => _selectedTable = 'Dine-in');
-                            _showPaymentChoiceModal(isDineIn: true);
+                            setState(() {
+                              _orderType = 'Walk-in';
+                              _selectedTable = 'Counter';
+                            });
+                            _showPaymentChoiceModal(isDineIn: false);
                           }
                         },
                         borderRadius: BorderRadius.circular(16),
                         child: Container(
                           padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
                           decoration: BoxDecoration(
-                            color: _orderType == 'Dine-In'
+                            color: (_orderType == 'Dine-In' || _orderType == 'Walk-in')
                                 ? ClassicTheme.primaryAccent.withValues(alpha: 0.12)
                                 : context.canvasColor,
                             borderRadius: BorderRadius.circular(16),
                             border: Border.all(
-                              color: _orderType == 'Dine-In'
+                              color: (_orderType == 'Dine-In' || _orderType == 'Walk-in')
                                   ? ClassicTheme.primaryAccent
                                   : context.borderColor,
                               width: 1.5,
@@ -725,15 +739,15 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                                   color: ClassicTheme.successEmerald.withValues(alpha: 0.15),
                                   shape: BoxShape.circle,
                                 ),
-                                child: const Icon(
-                                  Icons.table_restaurant_rounded,
+                                child: Icon(
+                                  isRest ? Icons.table_restaurant_rounded : Icons.point_of_sale_rounded,
                                   color: ClassicTheme.successEmerald,
                                   size: 30,
                                 ),
                               ),
                               const SizedBox(height: 12),
                               Text(
-                                'Dine In',
+                                isRest ? 'Dine In' : 'Walk-In',
                                 style: TextStyle(
                                   fontSize: 16,
                                   fontWeight: FontWeight.bold,
@@ -742,7 +756,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                               ),
                               const SizedBox(height: 4),
                               Text(
-                                'Select table & running bill',
+                                isRest ? 'Select table & running bill' : 'Counter checkout & bill',
                                 textAlign: TextAlign.center,
                                 style: TextStyle(fontSize: 12, color: context.textSecondary),
                               ),
@@ -753,24 +767,24 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                     ),
                     const SizedBox(width: 16),
 
-                    // Takeaway Card
+                    // Secondary Card (Takeaway for Restaurant, Delivery/Pickup for Others)
                     Expanded(
                       child: InkWell(
                         onTap: () {
                           Navigator.pop(ctx);
-                          setState(() => _orderType = 'Takeaway');
+                          setState(() => _orderType = isRest ? 'Takeaway' : 'Delivery');
                           _showPaymentChoiceModal(isDineIn: false);
                         },
                         borderRadius: BorderRadius.circular(16),
                         child: Container(
                           padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
                           decoration: BoxDecoration(
-                            color: _orderType == 'Takeaway'
+                            color: (_orderType == 'Takeaway' || _orderType == 'Delivery')
                                 ? ClassicTheme.primaryAccent.withValues(alpha: 0.12)
                                 : context.canvasColor,
                             borderRadius: BorderRadius.circular(16),
                             border: Border.all(
-                              color: _orderType == 'Takeaway'
+                              color: (_orderType == 'Takeaway' || _orderType == 'Delivery')
                                   ? ClassicTheme.primaryAccent
                                   : context.borderColor,
                               width: 1.5,
@@ -784,15 +798,15 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                                   color: ClassicTheme.warningAmber.withValues(alpha: 0.15),
                                   shape: BoxShape.circle,
                                 ),
-                                child: const Icon(
-                                  Icons.takeout_dining_rounded,
+                                child: Icon(
+                                  isRest ? Icons.takeout_dining_rounded : Icons.local_shipping_rounded,
                                   color: ClassicTheme.warningAmber,
                                   size: 30,
                                 ),
                               ),
                               const SizedBox(height: 12),
                               Text(
-                                'Take Away',
+                                isRest ? 'Take Away' : 'Delivery',
                                 style: TextStyle(
                                   fontSize: 16,
                                   fontWeight: FontWeight.bold,
@@ -801,7 +815,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                               ),
                               const SizedBox(height: 4),
                               Text(
-                                'Quick parcel counter bill',
+                                isRest ? 'Quick parcel counter bill' : 'Delivery or customer pickup',
                                 textAlign: TextAlign.center,
                                 style: TextStyle(fontSize: 12, color: context.textSecondary),
                               ),
@@ -4746,6 +4760,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
   @override
   Widget build(BuildContext context) {
     final activeStaff = ref.watch(restaurantAuthProvider).activeStaff;
+    final ent = ref.watch(entitlementsProvider);
     final orgId = _getEffectiveOrgId();
 
     final Set<String> dynamicCats = {'All'};
@@ -4792,7 +4807,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  'Counter Billing POS',
+                  VerticalLabels.of(ent.vertical).counterBillingTitle,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: context.textPrimary),
@@ -4813,7 +4828,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                     tooltip: 'Shift Close (Z-Report)',
                     onPressed: _showShiftCloseDialog,
                   ),
-                // Order Type Pill (Dine-In or Takeaway indicator)
+                // Order Type Pill (Dine-In, Walk-in, Takeaway or Delivery indicator)
                 Container(
                   margin: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -4829,14 +4844,22 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Icon(
-                        _orderType == 'Dine-In' ? Icons.table_restaurant_rounded : Icons.takeout_dining_rounded,
+                        _orderType == 'Dine-In'
+                            ? Icons.table_restaurant_rounded
+                            : (_orderType == 'Walk-in'
+                                ? Icons.point_of_sale_rounded
+                                : (_orderType == 'Delivery'
+                                    ? Icons.local_shipping_rounded
+                                    : Icons.takeout_dining_rounded)),
                         size: 14,
                         color: ClassicTheme.primaryAccent,
                       ),
                       const SizedBox(width: 5),
                       Flexible(
                         child: Text(
-                          _orderType == 'Dine-In' ? (_selectedTable ?? 'Dine-In') : 'Takeaway',
+                          _orderType == 'Dine-In'
+                              ? (_selectedTable ?? 'Dine-In')
+                              : _orderType,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(

@@ -8,6 +8,7 @@ import '../../core/accent_palettes.dart';
 import '../../core/classic_theme.dart';
 import '../../core/entitlements.dart';
 import '../../providers/entitlements_provider.dart';
+import '../../core/vertical_labels.dart';
 import '../../core/rbac_permissions.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/restaurant_auth_provider.dart';
@@ -424,7 +425,7 @@ class _SettingsSidebarDialogState extends ConsumerState<SettingsSidebarDialog> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text('Restaurant Outlet:', style: TextStyle(fontSize: 13, color: context.textSecondary)),
+                      Text('${VerticalLabels.of(ref.watch(currentVerticalProvider)).outletLabel}:', style: TextStyle(fontSize: 13, color: context.textSecondary)),
                       Flexible(child: Text(org.name, maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.end, style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: context.textPrimary))),
                     ],
                   ),

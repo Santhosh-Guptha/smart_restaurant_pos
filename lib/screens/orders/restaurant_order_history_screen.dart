@@ -10,6 +10,8 @@ import '../../core/classic_theme.dart';
 import '../../core/cloud_gate.dart';
 import '../../core/entitlements.dart';
 import '../../providers/entitlements_provider.dart';
+import '../../core/vertical_labels.dart';
+import '../../core/package_model.dart';
 import '../../core/constants.dart';
 import '../../core/restaurant_models.dart';
 import '../../providers/saas_session_provider.dart';
@@ -352,13 +354,23 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
 
   String _normalizeOrderType(Map<String, dynamic> data) {
     final src = (data['orderSource'] ?? '').toString().toUpperCase();
-    final type = (data['orderType'] ?? '').toString();
+    final type = (data['orderType'] ?? '').toString().toLowerCase();
 
-    if (src == 'QR_MENU' || type.toLowerCase().contains('self') || type.toLowerCase().contains('site') || type.toLowerCase().contains('qr')) {
+    if (src == 'QR_MENU' || type.contains('self') || type.contains('site') || type.contains('qr')) {
       return 'QR Self-Order';
     }
-    if (type.toLowerCase().contains('takeaway') || type.toLowerCase().contains('parcel')) {
+    if (type.contains('takeaway') || type.contains('parcel')) {
       return 'Takeaway';
+    }
+    if (type.contains('delivery')) {
+      return 'Delivery';
+    }
+    if (type.contains('walk') || type.contains('counter')) {
+      return 'Walk-in';
+    }
+    final vertical = ref.read(currentVerticalProvider);
+    if (vertical != Verticals.restaurant) {
+      return 'Walk-in';
     }
     return 'Dine-In';
   }
@@ -811,7 +823,8 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
   @override
   Widget build(BuildContext context) {
     final orgId = _getEffectiveOrgId();
-
+    final vertical = ref.watch(currentVerticalProvider);
+    final vl = VerticalLabels.of(vertical);
 
     return Scaffold(
       backgroundColor: context.canvasColor,
@@ -822,11 +835,11 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Orders & Payment History',
+              vl.ordersHistoryTitle,
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: context.textPrimary),
             ),
             Text(
-              _hasCloud ? 'Complete live ledger of Dine-In, Takeaway & QR Web orders' : 'Ledger of every bill raised on this device',
+              _hasCloud ? vl.ordersLedgerSubtitle : 'Ledger of every bill raised on this device',
               style: TextStyle(fontSize: 12, color: context.textSecondary),
             ),
           ],
@@ -940,9 +953,9 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
               pendingCount++;
             }
 
-            if (type == 'Dine-In') {
+            if (type == 'Dine-In' || type == 'Walk-in') {
               dineInCount++;
-            } else if (type == 'Takeaway') {
+            } else if (type == 'Takeaway' || type == 'Delivery') {
               takeawayCount++;
             } else if (type == 'QR Self-Order') {
               qrCount++;
@@ -1004,6 +1017,8 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
     required int paidCount,
     required int pendingCount,
   }) {
+    final vertical = ref.watch(currentVerticalProvider);
+    final vl = VerticalLabels.of(vertical);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       decoration: BoxDecoration(
@@ -1066,9 +1081,9 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceAround,
                         children: [
-                          _buildMiniBadge('🍽️ Dine', '$dineInCount', ClassicTheme.infoBlue),
-                          _buildMiniBadge('🛍️ Take', '$takeawayCount', ClassicTheme.warningAmber),
-                          _buildMiniBadge('📱 Site', '$qrCount', ClassicTheme.secondaryAccent),
+                          _buildMiniBadge(vl.isRestaurant ? '🍽️ Dine' : '🛒 Walk-in', '$dineInCount', ClassicTheme.infoBlue),
+                          _buildMiniBadge(vl.isRestaurant ? '🛍️ Take' : '🚚 Delivery', '$takeawayCount', ClassicTheme.warningAmber),
+                          _buildMiniBadge(vl.isRestaurant ? '📱 Site' : '📱 Web', '$qrCount', ClassicTheme.secondaryAccent),
                         ],
                       ),
                     ],
@@ -1092,6 +1107,8 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
   }
 
   Widget _buildFiltersBar() {
+    final vertical = ref.watch(currentVerticalProvider);
+    final vl = VerticalLabels.of(vertical);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       color: context.surfaceColor,
@@ -1103,7 +1120,7 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
             child: TextField(
               controller: _searchCtrl,
               decoration: InputDecoration(
-                hintText: 'Search Bill #, KOT, Table, Customer or Mobile...',
+                hintText: vl.searchOrdersHint,
                 hintStyle: TextStyle(fontSize: 12, color: context.textSecondary),
                 prefixIcon: const Icon(Icons.search, size: 18),
                 suffixIcon: _searchQuery.isNotEmpty
@@ -1243,12 +1260,23 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
   }
 
   Widget _buildOrderTypeTabs() {
-    final types = [
-      {'id': 'ALL', 'label': 'All Orders', 'icon': Icons.all_inbox_rounded},
-      {'id': 'Dine-In', 'label': '🍽️ Dine-In', 'icon': Icons.restaurant_rounded},
-      {'id': 'Takeaway', 'label': '🛍️ Takeaway', 'icon': Icons.takeout_dining_rounded},
-      {'id': 'QR Self-Order', 'label': '📱 Site Self-Order', 'icon': Icons.qr_code_scanner_rounded},
-    ];
+    final vertical = ref.watch(currentVerticalProvider);
+    final vl = VerticalLabels.of(vertical);
+    final isRest = vl.isRestaurant;
+
+    final types = isRest
+        ? [
+            {'id': 'ALL', 'label': 'All Orders', 'icon': Icons.all_inbox_rounded},
+            {'id': 'Dine-In', 'label': '🍽️ Dine-In', 'icon': Icons.restaurant_rounded},
+            {'id': 'Takeaway', 'label': '🛍️ Takeaway', 'icon': Icons.takeout_dining_rounded},
+            {'id': 'QR Self-Order', 'label': '📱 Site Self-Order', 'icon': Icons.qr_code_scanner_rounded},
+          ]
+        : [
+            {'id': 'ALL', 'label': 'All Bills', 'icon': Icons.all_inbox_rounded},
+            {'id': 'Walk-in', 'label': '🛒 Walk-in', 'icon': Icons.point_of_sale_rounded},
+            {'id': 'Takeaway', 'label': '🚚 Delivery / Pickup', 'icon': Icons.local_shipping_rounded},
+            {'id': 'QR Self-Order', 'label': '📱 Online Orders', 'icon': Icons.qr_code_scanner_rounded},
+          ];
 
     return Container(
       decoration: BoxDecoration(
@@ -1323,6 +1351,9 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
     Color typeBadgeBg;
     Color typeBadgeText;
     IconData typeIcon;
+    final vertical = ref.watch(currentVerticalProvider);
+    final vl = VerticalLabels.of(vertical);
+
     switch (type) {
       case 'QR Self-Order':
         typeBadgeBg = ClassicTheme.secondaryAccent.withValues(alpha: 0.12);
@@ -1330,15 +1361,25 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
         typeIcon = Icons.qr_code_scanner_rounded;
         break;
       case 'Takeaway':
-        typeBadgeBg = ClassicTheme.warningAmber;
+        typeBadgeBg = ClassicTheme.warningAmber.withValues(alpha: 0.12);
         typeBadgeText = ClassicTheme.warningAmber;
         typeIcon = Icons.takeout_dining_rounded;
+        break;
+      case 'Delivery':
+        typeBadgeBg = ClassicTheme.warningAmber.withValues(alpha: 0.12);
+        typeBadgeText = ClassicTheme.warningAmber;
+        typeIcon = Icons.local_shipping_rounded;
+        break;
+      case 'Walk-in':
+        typeBadgeBg = ClassicTheme.infoBlue.withValues(alpha: 0.12);
+        typeBadgeText = ClassicTheme.infoBlue;
+        typeIcon = Icons.point_of_sale_rounded;
         break;
       case 'Dine-In':
       default:
         typeBadgeBg = ClassicTheme.infoBlue.withValues(alpha: 0.12);
         typeBadgeText = ClassicTheme.infoBlue;
-        typeIcon = Icons.restaurant_rounded;
+        typeIcon = vl.isRestaurant ? Icons.restaurant_rounded : Icons.point_of_sale_rounded;
     }
 
     return Card(
@@ -1379,7 +1420,7 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
                       ),
                     ),
                     const SizedBox(width: 8),
-                    if (kotNum.isNotEmpty)
+                    if (kotNum.isNotEmpty && vl.isRestaurant)
                       Text(
                         kotNum,
                         style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: context.textSecondary),

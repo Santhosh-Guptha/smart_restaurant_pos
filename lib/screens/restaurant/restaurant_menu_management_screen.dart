@@ -443,7 +443,7 @@ class _RestaurantMenuManagementScreenState
 
       sm.showSnackBar(
         SnackBar(
-          content: Text('✅ Pulled catalog: $updatedCount updated, $addedCount new dishes from Google Sheets!'),
+          content: Text('✅ Pulled catalog: $updatedCount updated, $addedCount new ${_vl.itemPlural.toLowerCase()} from Google Sheets!'),
           backgroundColor: ClassicTheme.successEmerald,
         ),
       );
@@ -1728,7 +1728,7 @@ class _RestaurantMenuManagementScreenState
 
                     // Station & Kitchen Routing — stations belong to the KDS; the
                     // "sends to kitchen" switch also matters for KOT slips.
-                    if (_kdsOn || _kotOn)
+                    if (_vl.isRestaurant && (_kdsOn || _kotOn))
                     Builder(
                       builder: (ctx) {
                         final stationNames = _stations.map((s) => s.name).toSet().toList();
@@ -2154,7 +2154,7 @@ class _RestaurantMenuManagementScreenState
                 ),
                 const SizedBox(width: 10),
                 Text(
-                  'Kitchen Shifts & Timings',
+                  _vl.storeOperatingHoursTitle,
                   style: TextStyle(color: context.textPrimary, fontWeight: FontWeight.bold, fontSize: 16),
                 ),
               ],
@@ -2181,7 +2181,7 @@ class _RestaurantMenuManagementScreenState
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
-                              isOpen ? 'Kitchen is currently OPEN and accepting orders.' : 'Kitchen is currently paused between shifts.',
+                              isOpen ? _vl.storeOpenStatus : _vl.storePausedStatus,
                               style: TextStyle(color: isOpen ? ClassicTheme.successEmerald : ClassicTheme.dangerRed, fontWeight: FontWeight.bold, fontSize: 12),
                             ),
                           ),
@@ -2343,7 +2343,7 @@ class _RestaurantMenuManagementScreenState
                   ],
                 ),
               ),
-              if (_kdsOn)
+              if (_kdsOn && _vl.isRestaurant)
               PopupMenuItem(
                 value: 'stations',
                 child: Row(
@@ -2486,7 +2486,7 @@ class _RestaurantMenuManagementScreenState
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                           ),
                         ),
-                        if (_kdsOn)
+                        if (_kdsOn && _vl.isRestaurant)
                         OutlinedButton.icon(
                           onPressed: _showManageStationsDialog,
                           icon: const Icon(Icons.soup_kitchen_rounded, size: 18, color: ClassicTheme.infoBlue),

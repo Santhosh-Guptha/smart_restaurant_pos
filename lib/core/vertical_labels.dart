@@ -12,6 +12,8 @@ class VerticalLabels {
 
   static VerticalLabels of(String vertical) => VerticalLabels._(vertical);
 
+  bool get isRestaurant => vertical == Verticals.restaurant;
+
   // ── Screen Titles ──────────────────────────────────────────────────────
 
   String get menuScreenTitle {
@@ -300,6 +302,167 @@ class VerticalLabels {
           'Stationery & Office': ['Notebooks & Pens', 'Office Supplies'],
           'Home & Gifts': ['Home Decor', 'Gifts & Toys'],
         };
+    }
+  }
+
+  // ── Analytics Labels ───────────────────────────────────────────────────
+
+  String get analyticsShiftsTitle =>
+      isRestaurant ? 'Restaurant Shifts & Daypart Performance' : 'Store Shifts & Hourly Footfall';
+
+  String get totalOrdersKpiTitle =>
+      isRestaurant ? 'TOTAL KOT ORDERS' : 'TOTAL INVOICES / BILLS';
+
+  String get totalOrdersKpiSubtitle =>
+      isRestaurant ? 'Live settled orders' : 'Live settled bills';
+
+  String get turnaroundKpiTitle =>
+      isRestaurant ? 'TABLE TURNAROUND' : 'CHECKOUT VELOCITY';
+
+  String get turnaroundKpiValue =>
+      isRestaurant ? '35 mins' : '1.5 mins';
+
+  String get turnaroundKpiSubtitle =>
+      isRestaurant ? 'Optimal velocity' : 'Avg checkout time';
+
+  String get rushHourSubtitle =>
+      isRestaurant ? 'Peak guest traffic' : 'Peak store footfall';
+
+  String get popularItemsHeader =>
+      isRestaurant ? 'Top Selling Dishes' : 'Top Selling Products';
+
+  String get salesByCategoryHeader =>
+      isRestaurant ? 'Cuisine / Category Split' : 'Category Split';
+
+  // ── Orders History Labels ──────────────────────────────────────────────
+
+  String get ordersLedgerSubtitle =>
+      isRestaurant
+          ? 'Complete live ledger of Dine-In, Takeaway & QR Web orders'
+          : 'Complete live ledger of Counter, Walk-in & Delivery sales';
+
+  String get orderSingular => isRestaurant ? 'Order' : 'Invoice';
+  String get orderPlural => isRestaurant ? 'Orders' : 'Invoices';
+
+  String get dineInLabel => isRestaurant ? 'Dine-In' : 'Walk-in';
+  String get takeawayLabel => isRestaurant ? 'Takeaway' : 'Delivery';
+  String get qrSiteLabel => isRestaurant ? 'QR Web' : 'Online / App';
+
+  String get searchOrdersHint =>
+      isRestaurant
+          ? 'Search Bill #, KOT, Table, Customer or Mobile...'
+          : 'Search Bill #, Customer or Mobile...';
+
+  // ── Store Hours & Kitchen Shifts ───────────────────────────────────────
+
+  String get storeOperatingHoursTitle =>
+      isRestaurant ? 'Kitchen Shifts & Timings' : 'Store Shifts & Operating Hours';
+
+  String get storeOpenStatus =>
+      isRestaurant
+          ? 'Kitchen is currently OPEN and accepting orders.'
+          : 'Store is currently OPEN and accepting billing.';
+
+  String get storePausedStatus =>
+      isRestaurant
+          ? 'Kitchen is currently paused between shifts.'
+          : 'Store is currently closed between shifts.';
+
+  // ── Outlets & Stores Labels ────────────────────────────────────────────
+
+  String get outletLabel => isRestaurant ? 'Restaurant Outlet' : 'Store Outlet';
+
+  String get registerBranchTitle =>
+      isRestaurant ? 'Register Restaurant Branch' : 'Register Store Branch';
+
+  String get activeBranchesTitle =>
+      isRestaurant ? 'Active Restaurant Outlets' : 'Active Store Branches';
+
+  String get addBranchButton =>
+      isRestaurant ? 'ADD RESTAURANT BRANCH' : 'ADD STORE OUTLET';
+
+  String get noBranchesText =>
+      isRestaurant
+          ? 'No Restaurant Branches Registered Yet'
+          : 'No Store Branches Registered Yet';
+
+  String get branchSubtitleDesc =>
+      isRestaurant
+          ? 'Add your dining hall or franchise branches to manage orders per store.'
+          : 'Add your branches, warehouses, or retail outlets to manage stock and billing per store.';
+
+  String get subscriptionBranchQuota =>
+      isRestaurant ? 'restaurant branches' : 'store outlets';
+
+  String get storeSavedNotification =>
+      isRestaurant
+          ? 'All restaurant operational parameters updated successfully.'
+          : 'All store operational parameters updated successfully.';
+
+  // ── Expenses Defaults ──────────────────────────────────────────────────
+
+  List<String> get defaultExpenseCategories {
+    switch (vertical) {
+      case Verticals.restaurant:
+        return const [
+          'Raw Groceries & Veg',
+          'Meat & Seafood',
+          'Dairy & Bakery',
+          'Kitchen Gas & Fuel',
+          'Electricity & Water',
+          'Staff Salaries',
+          'Shop Rent',
+          'Packaging & Disposables',
+          'Repairs & Maintenance',
+          'Platform Commissions',
+          'Miscellaneous',
+        ];
+      case Verticals.kirana:
+        return const [
+          'Stock & Inventory Purchase',
+          'Packaging Material & Carry Bags',
+          'Shop Rent',
+          'Electricity & Power',
+          'Staff Wages & Daily Labor',
+          'Transportation & Freight',
+          'Repairs & Maintenance',
+          'Tea & Daily Misc',
+        ];
+      case Verticals.supermarket:
+        return const [
+          'FMCG Stock Purchase',
+          'Dairy & Fresh Produce',
+          'Shop Rent & Property',
+          'Electricity & Refrigeration',
+          'Staff Salaries',
+          'Logistics & Warehousing',
+          'Packaging & Bags',
+          'Maintenance & Equipment',
+          'Miscellaneous',
+        ];
+      case Verticals.pharmacy:
+        return const [
+          'Medicine Stockist Purchase',
+          'Cold Chain & Refrigeration',
+          'Shop Rent',
+          'Electricity & Water',
+          'Pharmacist & Staff Salary',
+          'Trade Compliance & Licenses',
+          'Packaging & Carry Bags',
+          'Miscellaneous',
+        ];
+      case Verticals.retail:
+      default:
+        return const [
+          'Inventory & Merchandise',
+          'Packaging & Bags',
+          'Shop Rent & Lease',
+          'Electricity & Maintenance',
+          'Staff Salaries',
+          'Logistics & Shipping',
+          'Marketing & Promotion',
+          'Miscellaneous',
+        ];
     }
   }
 }

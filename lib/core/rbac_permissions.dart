@@ -19,7 +19,7 @@ extension StaffRoleExtension on StaffRole {
   String get displayName {
     switch (this) {
       case StaffRole.owner:
-        return 'Restaurant Owner';
+        return 'Store / Restaurant Owner';
       case StaffRole.manager:
         return 'Store Manager';
       case StaffRole.billing:
@@ -28,6 +28,24 @@ extension StaffRoleExtension on StaffRole {
         return 'Kitchen / Chef';
       case StaffRole.waiter:
         return 'Waiter / Captain';
+      case StaffRole.unassigned:
+        return 'Unassigned';
+    }
+  }
+
+  String displayNameFor(String vertical) {
+    final vl = VerticalLabels.of(vertical);
+    switch (this) {
+      case StaffRole.owner:
+        return vl.ownerRoleLabel;
+      case StaffRole.manager:
+        return vl.managerRoleLabel;
+      case StaffRole.billing:
+        return vl.billingRoleLabel;
+      case StaffRole.kitchen:
+        return vl.kitchenRoleLabel;
+      case StaffRole.waiter:
+        return vl.waiterRoleLabel;
       case StaffRole.unassigned:
         return 'Unassigned';
     }

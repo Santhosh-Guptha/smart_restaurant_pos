@@ -12,6 +12,7 @@ import '../../core/rbac_permissions.dart';
 import '../../providers/restaurant_auth_provider.dart';
 import '../../providers/saas_session_provider.dart';
 import '../../services/restaurant_sheets_service.dart';
+import '../../core/vertical_labels.dart';
 
 class StaffManagementScreen extends ConsumerStatefulWidget {
   final String? initialOrgId;
@@ -43,6 +44,9 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
   }
 
   void _showAddEditStaffModal([StaffMember? existing]) {
+    final vertical = ref.read(currentVerticalProvider);
+    final vl = VerticalLabels.of(vertical);
+
     final saasSession = ref.read(saasSessionProvider);
     final license = saasSession.currentLicense;
     final maxUsers = license?.maxUsers ?? 10;
@@ -73,7 +77,7 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
           ),
           content: Text(
             'Your current subscription allows up to $maxUsers staff members ($maxUsers maximum allocated).\n\n'
-            'To expand staff user capacity and onboard more team members across your stations, please contact your administrator.',
+            'To expand staff user capacity and onboard more team members${vl.isRestaurant ? " across your stations" : ""}, please contact your administrator.',
             style: TextStyle(color: context.textSecondary, fontSize: 13),
           ),
           actions: [
@@ -177,7 +181,7 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
                     labelStyle: TextStyle(color: context.textSecondary),
                     prefixText: '@',
                     prefixStyle: TextStyle(color: ClassicTheme.warningAmber, fontWeight: FontWeight.bold, fontSize: 15),
-                    hintText: 'e.g. chef_ravi, cashier1',
+                    hintText: vl.isRestaurant ? 'e.g. chef_ravi, cashier1' : 'e.g. alex_store, cashier1',
                     hintStyle: TextStyle(color: context.textSecondary.withValues(alpha: 0.5)),
                     helperText: 'Unique username for direct login on POS terminal',
                     helperStyle: const TextStyle(color: ClassicTheme.warningAmber, fontSize: 12),
@@ -280,7 +284,7 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
                   dropdownColor: context.surfaceColor,
                   style: TextStyle(color: context.textPrimary, fontSize: 14),
                   decoration: InputDecoration(
-                    labelText: 'Station Role',
+                    labelText: vl.isRestaurant ? 'Station Role' : 'Staff Role',
                     labelStyle: TextStyle(color: context.textSecondary),
                     filled: true,
                     fillColor: context.canvasColor,
@@ -296,7 +300,7 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
                   items: availableRoles.map((r) {
                     return DropdownMenuItem(
                       value: r,
-                      child: Text(r.displayName, style: TextStyle(color: context.textPrimary)),
+                      child: Text(r.displayNameFor(vertical), style: TextStyle(color: context.textPrimary)),
                     );
                   }).toList(),
                   onChanged: (val) {
@@ -322,7 +326,7 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
                   children: availableRoles.map((r) {
                     final isSelected = selectedRoles.contains(r);
                     return FilterChip(
-                      label: Text(r.displayName),
+                      label: Text(r.displayNameFor(vertical)),
                       selected: isSelected,
                       selectedColor: ClassicTheme.primaryAccent.withValues(alpha: 0.15),
                       checkmarkColor: ClassicTheme.primaryAccent,
@@ -353,7 +357,7 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
                 // Kitchen Station & 4-Digit PIN Row (station belongs to the KDS)
                 Row(
                   children: [
-                    if (hasKds) ...[
+                    if (hasKds && vl.isRestaurant) ...[
                     Expanded(
                       flex: 6,
                       child: DropdownButtonFormField<String>(
@@ -465,7 +469,7 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
                     style: TextStyle(color: context.textPrimary, fontSize: 13),
                   ),
                   subtitle: Text(
-                    'Shares restaurant operational spreadsheet with staff email',
+                    'Shares ${vl.isRestaurant ? "restaurant" : "store"} operational spreadsheet with staff email',
                     style: TextStyle(color: context.textSecondary, fontSize: 12),
                   ),
                   activeThumbColor: ClassicTheme.warningAmber,
@@ -867,6 +871,8 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final vertical = ref.watch(currentVerticalProvider);
+    final vl = VerticalLabels.of(vertical);
     final allStaff = ref.watch(restaurantAuthProvider).staffList;
     final staffList = allStaff.where((s) => !_isExcludedStaff(s)).toList();
     final saasSession = ref.watch(saasSessionProvider);
@@ -985,11 +991,11 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
                       badgeColor = ClassicTheme.successEmerald;
                       break;
                     case StaffRole.kitchen:
-                      iconData = Icons.outdoor_grill_rounded;
+                      iconData = vl.isRestaurant ? Icons.outdoor_grill_rounded : Icons.inventory_2_rounded;
                       badgeColor = ClassicTheme.warningAmber;
                       break;
                     case StaffRole.waiter:
-                      iconData = Icons.room_service_rounded;
+                      iconData = vl.isRestaurant ? Icons.room_service_rounded : Icons.support_agent_rounded;
                       badgeColor = ClassicTheme.infoBlue;
                       break;
                     case StaffRole.unassigned:
@@ -1095,7 +1101,7 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
                                                borderRadius: BorderRadius.circular(5),
                                              ),
                                              child: Text(
-                                               r.displayName,
+                                               r.displayNameFor(vertical),
                                                style: TextStyle(
                                                  color: rBadgeColor,
                                                  fontSize: 12,
@@ -1107,16 +1113,18 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
                                        ),
                                      ],
                                    ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    'Station: ${staff.assignedStation}',
-                                    style: TextStyle(
-                                      color: context.textSecondary,
-                                      fontSize: 12,
+                                  if (vl.isRestaurant) ...[
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      'Station: ${staff.assignedStation}',
+                                      style: TextStyle(
+                                        color: context.textSecondary,
+                                        fontSize: 12,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
                                     ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
+                                  ],
                                 ],
                               ),
                             ),
