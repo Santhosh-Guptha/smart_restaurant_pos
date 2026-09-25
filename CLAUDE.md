@@ -58,7 +58,7 @@ d22139a licence lease · 90c6314 store owners per outlet · 0e036ce two storage 
 sharing reconciler, tenant metrics, admin Business Analytics.
 
 ## Status (25 Sep 2026)
-- Run on 1bc06d1: analyze clean, **338/338 tests**, **hosting deployed** (25 Sep ~20:04 IST). a2f8f32 (responsive) not yet run in full.
+- Run on ba8498d (everything so far): analyze clean, **338/338 tests**, **hosting deployed** (25 Sep ~20:13 IST).
 - After that: mock/demo mode removed (admin "Showcase Demo POS", mock login, setMockRole, proMock, old LoginScreen).
 - Since then (not yet run): 860f7be icons · next commit: trade wording fixes in store settings / branches /
   menu / analytics / Sheets setup, and admin 2-step verification on the server · then: sign-up e-mail check +
