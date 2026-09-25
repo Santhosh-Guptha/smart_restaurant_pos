@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../widgets/max_width_body.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
@@ -126,7 +127,7 @@ class _ExpensesScreenState extends ConsumerState<ExpensesScreen>
         icon: const Icon(Icons.add_rounded),
         label: const Text('Add expense', style: TextStyle(fontWeight: FontWeight.w700)),
       ),
-      body: ListView(
+      body: MaxWidthBody(maxWidth: 1100, child: ListView(
         padding: EdgeInsets.fromLTRB(gutter, DS.space4, gutter, 96),
         children: [
           _summaryCard(context, total, topCats),
@@ -138,7 +139,7 @@ class _ExpensesScreenState extends ConsumerState<ExpensesScreen>
           else
             ...visible.map((e) => _row(context, e)),
         ],
-      ),
+      )),
     );
   }
 

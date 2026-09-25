@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../widgets/max_width_body.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
@@ -2427,7 +2428,7 @@ class _RestaurantMenuManagementScreenState
           ),
         ),
       ),
-      body: RefreshIndicator(
+      body: MaxWidthBody(maxWidth: 1440, child: RefreshIndicator(
         onRefresh: _handleRefresh,
         color: ClassicTheme.infoBlue,
         child: _dishes.isEmpty
@@ -2904,7 +2905,7 @@ class _RestaurantMenuManagementScreenState
                 ],
               ),
             ),
-      ),
+      )),
     );
   }
 }

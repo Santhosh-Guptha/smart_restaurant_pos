@@ -106,6 +106,11 @@ class _BarcodeBillingScreenState extends ConsumerState<BarcodeBillingScreen> {
 
   String _selectedCategory = 'All';
   String _catalogSearchQuery = '';
+
+  /// Phones show one pane at a time. With items in the cart the owner can
+  /// still switch back to the catalogue to tap-add (typing in the search box
+  /// switches automatically).
+  bool _mobileBrowse = false;
   double _discountAmount = 0.0;
   bool _isDiscountPercentage = false;
   double _discountPercent = 0.0;
@@ -1062,11 +1067,13 @@ class _BarcodeBillingScreenState extends ConsumerState<BarcodeBillingScreen> {
   }
 
   Widget _buildMobileLayout() {
+    final showCatalog = _cart.isEmpty || _mobileBrowse || _catalogSearchQuery.trim().isNotEmpty;
     return Column(
       children: [
         _buildScannerInputHeader(),
+        if (_cart.isNotEmpty) _buildMobilePaneSwitch(showCatalog),
         Expanded(
-          child: _cart.isEmpty
+          child: showCatalog
               ? _buildCatalogSection()
               : Column(
                   children: [
@@ -1077,6 +1084,34 @@ class _BarcodeBillingScreenState extends ConsumerState<BarcodeBillingScreen> {
         ),
         _buildTotalsAndPaymentBar(),
       ],
+    );
+  }
+
+  Widget _buildMobilePaneSwitch(bool showCatalog) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+      child: SizedBox(
+        width: double.infinity,
+        child: SegmentedButton<bool>(
+          showSelectedIcon: false,
+          segments: [
+            const ButtonSegment(value: true, icon: Icon(Icons.grid_view_rounded, size: 16), label: Text('Items')),
+            ButtonSegment(
+              value: false,
+              icon: const Icon(Icons.shopping_cart_rounded, size: 16),
+              label: Text('Cart · ${_cart.length}'),
+            ),
+          ],
+          selected: {showCatalog},
+          onSelectionChanged: (sel) => setState(() {
+            _mobileBrowse = sel.first;
+            if (!sel.first) {
+              _catalogSearchQuery = '';
+              _scanCtrl.clear();
+            }
+          }),
+        ),
+      ),
     );
   }
 

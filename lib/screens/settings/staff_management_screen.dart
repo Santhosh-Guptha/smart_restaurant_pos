@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import '../../widgets/max_width_body.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:bcrypt/bcrypt.dart';
@@ -970,7 +971,7 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
           ),
         ],
       ),
-      body: RefreshIndicator(
+      body: MaxWidthBody(maxWidth: 1200, child: RefreshIndicator(
         onRefresh: _handleRefresh,
         color: ClassicTheme.warningAmber,
         child: Padding(
@@ -1283,7 +1284,7 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
                 },
               ),
         ),
-      ),
+      )),
     );
   }
 }

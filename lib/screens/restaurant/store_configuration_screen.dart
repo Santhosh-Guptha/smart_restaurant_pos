@@ -1,5 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import '../../widgets/max_width_body.dart';
+import '../../widgets/responsive_field_row.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -701,7 +703,7 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
           ],
         ),
       ),
-      body: TabBarView(
+      body: MaxWidthBody(maxWidth: 1100, child: TabBarView(
         controller: _tabController,
         children: [
           _buildProfileAndLegalTab(),
@@ -711,7 +713,7 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
           _buildKotAndReceiptsTab(),
           if (_hasExpenses) _buildExpenseCategoriesTab(),
         ],
-      ),
+      )),
       bottomNavigationBar: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         decoration: BoxDecoration(
@@ -769,21 +771,12 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
               const SizedBox(height: 12),
               _buildTextField(_addressCtrl, 'Physical Store Address', Icons.location_on_rounded, maxLines: 2),
               const SizedBox(height: 12),
-              Row(
+              ResponsiveFieldRow(
+                flex: const [2, 2, 1],
                 children: [
-                  Expanded(
-                    flex: 2,
-                    child: _buildTextField(_fssaiCtrl, VerticalLabels.of(_vertical).licenseLabel, Icons.verified_user_rounded),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    flex: 2,
-                    child: _buildTextField(_gstinCtrl, 'GSTIN Identification No.', Icons.confirmation_number_rounded),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    flex: 1,
-                    child: Container(
+                  _buildTextField(_fssaiCtrl, VerticalLabels.of(_vertical).licenseLabel, Icons.verified_user_rounded),
+                  _buildTextField(_gstinCtrl, 'GSTIN Identification No.', Icons.confirmation_number_rounded),
+                  Container(
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                       decoration: BoxDecoration(
                         color: context.canvasColor,
@@ -808,7 +801,6 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
                         ),
                       ),
                     ),
-                  ),
                 ],
               ),
             ],
@@ -833,26 +825,21 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
           const SizedBox(height: 12),
           _buildCard(
             children: [
-              Row(
+              ResponsiveFieldRow(
                 children: [
-                  Expanded(
-                    child: _buildTextField(
+                  _buildTextField(
                       _gstCtrl,
                       'Total GST Rate (%)',
                       Icons.percent_rounded,
                       keyboardType: const TextInputType.numberWithOptions(decimal: true),
                       onChanged: (_) => setState(() {}),
                     ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: _buildTextField(
+                  _buildTextField(
                       _serviceChargeCtrl,
                       'Service Charge (%)',
                       Icons.room_service_rounded,
                       keyboardType: const TextInputType.numberWithOptions(decimal: true),
                     ),
-                  ),
                 ],
               ),
               const SizedBox(height: 8),
@@ -887,25 +874,20 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
               const SizedBox(height: 12),
               Divider(color: context.borderColor),
               const SizedBox(height: 12),
-              Row(
+              ResponsiveFieldRow(
                 children: [
-                  Expanded(
-                    child: _buildTextField(
+                  _buildTextField(
                       _packagingChargeCtrl,
                       isRest ? 'Takeaway Packaging Fee ($_currency)' : 'Carry Bag / Packing Fee ($_currency)',
                       Icons.takeout_dining_rounded,
                       keyboardType: const TextInputType.numberWithOptions(decimal: true),
                     ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: _buildTextField(
+                  _buildTextField(
                       _deliveryChargeCtrl,
                       isRest ? 'Direct Delivery Fee ($_currency)' : 'Home Delivery Fee ($_currency)',
                       Icons.delivery_dining_rounded,
                       keyboardType: const TextInputType.numberWithOptions(decimal: true),
                     ),
-                  ),
                 ],
               ),
               if (isRest) ...[
@@ -1043,17 +1025,11 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
               Text('Accepted In-Store Payment Methods:',
                   style: TextStyle(color: context.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
               const SizedBox(height: 8),
-              Row(
+              ResponsiveFieldRow(
                 children: [
-                  Expanded(
-                    child: _buildToggleOption('Dynamic UPI QR', _enableUpi, (v) => setState(() => _enableUpi = v)),
-                  ),
-                  Expanded(
-                    child: _buildToggleOption('Cash Counter', _enableCash, (v) => setState(() => _enableCash = v)),
-                  ),
-                  Expanded(
-                    child: _buildToggleOption('Cards / POS', _enableCard, (v) => setState(() => _enableCard = v)),
-                  ),
+                  _buildToggleOption('Dynamic UPI QR', _enableUpi, (v) => setState(() => _enableUpi = v)),
+                  _buildToggleOption('Cash Counter', _enableCash, (v) => setState(() => _enableCash = v)),
+                  _buildToggleOption('Cards / POS', _enableCard, (v) => setState(() => _enableCard = v)),
                 ],
               ),
               const SizedBox(height: 16),
@@ -1062,27 +1038,17 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
               Text('Bank Settlement Account (For Internal Payout Records):',
                   style: TextStyle(color: context.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
               const SizedBox(height: 10),
-              Row(
+              ResponsiveFieldRow(
                 children: [
-                  Expanded(
-                    child: _buildTextField(_bankAccountCtrl, 'Bank Account Number', Icons.account_balance_rounded),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: _buildTextField(_bankIfscCtrl, 'Bank IFSC Code', Icons.numbers_rounded),
-                  ),
+                  _buildTextField(_bankAccountCtrl, 'Bank Account Number', Icons.account_balance_rounded),
+                  _buildTextField(_bankIfscCtrl, 'Bank IFSC Code', Icons.numbers_rounded),
                 ],
               ),
               const SizedBox(height: 10),
-              Row(
+              ResponsiveFieldRow(
                 children: [
-                  Expanded(
-                    child: _buildTextField(_bankHolderCtrl, 'Account Holder Name', Icons.badge_rounded),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: _buildTextField(_settlementUpiCtrl, 'Settlement UPI ID (Optional)', Icons.swap_horiz_rounded),
-                  ),
+                  _buildTextField(_bankHolderCtrl, 'Account Holder Name', Icons.badge_rounded),
+                  _buildTextField(_settlementUpiCtrl, 'Settlement UPI ID (Optional)', Icons.swap_horiz_rounded),
                 ],
               ),
               const SizedBox(height: 16),

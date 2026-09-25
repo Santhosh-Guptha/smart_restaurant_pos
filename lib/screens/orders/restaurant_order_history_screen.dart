@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import '../../widgets/max_width_body.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
@@ -859,7 +860,7 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
           ),
         ],
       ),
-      body: !Hive.isBoxOpen('configBox')
+      body: MaxWidthBody(maxWidth: 1280, child: !Hive.isBoxOpen('configBox')
           ? Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -1007,7 +1008,7 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
             ],
           );
         },
-      ),
+      )),
     );
   }
 

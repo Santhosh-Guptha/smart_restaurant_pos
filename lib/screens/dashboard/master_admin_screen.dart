@@ -1,6 +1,7 @@
 import 'dart:math';
 import 'dart:async';
 import 'package:flutter/material.dart';
+import '../../widgets/responsive_field_row.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -2010,11 +2011,10 @@ class OrganizationsTab extends ConsumerStatefulWidget {
                           ),
                         ),
                         const SizedBox(height: 10),
-                        Row(
+                        ResponsiveFieldRow(
+                          flex: const [2, 3],
                           children: [
-                            Expanded(
-                              flex: 2,
-                              child: TextFormField(
+                            TextFormField(
                                 controller: orgIdController,
                                 style: TextStyle(color: context.textPrimary, fontWeight: FontWeight.bold),
                                 decoration: InputDecoration(
@@ -2026,11 +2026,7 @@ class OrganizationsTab extends ConsumerStatefulWidget {
                                 ),
                                 validator: (v) => (v == null || v.trim().isEmpty) ? "Required" : null,
                               ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              flex: 3,
-                              child: TextFormField(
+                            TextFormField(
                                 controller: nameController,
                                 style: TextStyle(color: context.textPrimary),
                                 decoration: InputDecoration(
@@ -2042,7 +2038,6 @@ class OrganizationsTab extends ConsumerStatefulWidget {
                                 ),
                                 validator: (v) => (v == null || v.trim().isEmpty) ? "Required" : null,
                               ),
-                            ),
                           ],
                         ),
                         const SizedBox(height: 10),
@@ -2094,10 +2089,9 @@ class OrganizationsTab extends ConsumerStatefulWidget {
                           },
                         ),
                         const SizedBox(height: 10),
-                        Row(
+                        ResponsiveFieldRow(
                           children: [
-                            Expanded(
-                              child: TextFormField(
+                            TextFormField(
                                 controller: ownerNameController,
                                 style: TextStyle(color: context.textPrimary),
                                 decoration: InputDecoration(
@@ -2109,10 +2103,7 @@ class OrganizationsTab extends ConsumerStatefulWidget {
                                 ),
                                 validator: (v) => (v == null || v.trim().isEmpty) ? "Required" : null,
                               ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: TextFormField(
+                            TextFormField(
                                 controller: mobileController,
                                 style: TextStyle(color: context.textPrimary),
                                 keyboardType: TextInputType.phone,
@@ -2125,14 +2116,12 @@ class OrganizationsTab extends ConsumerStatefulWidget {
                                 ),
                                 validator: (v) => (v == null || v.trim().isEmpty) ? "Required" : null,
                               ),
-                            ),
                           ],
                         ),
                         const SizedBox(height: 10),
-                        Row(
+                        ResponsiveFieldRow(
                           children: [
-                            Expanded(
-                              child: TextFormField(
+                            TextFormField(
                                 controller: ownerEmailController,
                                 style: TextStyle(color: context.textPrimary),
                                 keyboardType: TextInputType.emailAddress,
@@ -2149,10 +2138,7 @@ class OrganizationsTab extends ConsumerStatefulWidget {
                                   return null;
                                 },
                               ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: TextFormField(
+                            TextFormField(
                                 controller: ownerPasswordController,
                                 obscureText: obscurePassword,
                                 style: TextStyle(color: context.textPrimary),
@@ -2169,7 +2155,6 @@ class OrganizationsTab extends ConsumerStatefulWidget {
                                 ),
                                 validator: (v) => (v == null || v.length < 6) ? "Min 6 characters" : null,
                               ),
-                            ),
                           ],
                         ),
                         const SizedBox(height: 10),
@@ -2185,10 +2170,9 @@ class OrganizationsTab extends ConsumerStatefulWidget {
                           ),
                         ),
                         const SizedBox(height: 10),
-                        Row(
+                        ResponsiveFieldRow(
                           children: [
-                            Expanded(
-                              child: TextFormField(
+                            TextFormField(
                                 controller: gstController,
                                 style: TextStyle(color: context.textPrimary),
                                 textCapitalization: TextCapitalization.characters,
@@ -2200,10 +2184,7 @@ class OrganizationsTab extends ConsumerStatefulWidget {
                                   focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: primaryAccent, width: 2)),
                                 ),
                               ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: TextFormField(
+                            TextFormField(
                                 controller: panController,
                                 style: TextStyle(color: context.textPrimary),
                                 textCapitalization: TextCapitalization.characters,
@@ -2215,7 +2196,6 @@ class OrganizationsTab extends ConsumerStatefulWidget {
                                   focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: primaryAccent, width: 2)),
                                 ),
                               ),
-                            ),
                           ],
                         ),
                         const SizedBox(height: 20),
@@ -2797,10 +2777,9 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                               const SizedBox(height: 10),
 
                               // Client Name & Business Name
-                              Row(
+                              ResponsiveFieldRow(
                                 children: [
-                                  Expanded(
-                                    child: TextFormField(
+                                  TextFormField(
                                       controller: ownerNameController,
                                       style: TextStyle(color: context.textPrimary),
                                       decoration: InputDecoration(
@@ -2813,10 +2792,7 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                                       ),
                                       validator: (v) => v == null || v.trim().isEmpty ? "Client name is required" : null,
                                     ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: TextFormField(
+                                  TextFormField(
                                       controller: nameController,
                                       style: TextStyle(color: context.textPrimary),
                                       decoration: InputDecoration(
@@ -2829,16 +2805,14 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                                       ),
                                       validator: (v) => v == null || v.trim().isEmpty ? "Business name is required" : null,
                                     ),
-                                  ),
                                 ],
                               ),
                               const SizedBox(height: 10),
 
                               // Business Category & Mobile Number
-                              Row(
+                              ResponsiveFieldRow(
                                 children: [
-                                  Expanded(
-                                    child: DropdownButtonFormField<String>(
+                                  DropdownButtonFormField<String>(
                                       initialValue: businessCategory,
                                       dropdownColor: context.surfaceColor,
                                       style: TextStyle(color: context.textPrimary, fontSize: 13),
@@ -2859,10 +2833,7 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                                         }
                                       },
                                     ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: TextFormField(
+                                  TextFormField(
                                       controller: mobileController,
                                       style: TextStyle(color: context.textPrimary),
                                       keyboardType: TextInputType.phone,
@@ -2875,16 +2846,14 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                                         focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: primaryAccent, width: 2)),
                                       ),
                                     ),
-                                  ),
                                 ],
                               ),
                               const SizedBox(height: 10),
 
                               // Client Login Email & Password Update
-                              Row(
+                              ResponsiveFieldRow(
                                 children: [
-                                  Expanded(
-                                    child: TextFormField(
+                                  TextFormField(
                                       controller: ownerEmailController,
                                       style: TextStyle(color: context.textPrimary),
                                       keyboardType: TextInputType.emailAddress,
@@ -2897,10 +2866,7 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                                       ),
                                       validator: (v) => v == null || !v.contains('@') ? "Valid email required" : null,
                                     ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: TextFormField(
+                                  TextFormField(
                                       controller: ownerPasswordController,
                                       style: TextStyle(color: context.textPrimary),
                                       obscureText: obscurePassword,
@@ -2929,16 +2895,14 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                                         return null;
                                       },
                                     ),
-                                  ),
                                 ],
                               ),
                               const SizedBox(height: 10),
 
                               // Optional Compliance Details: Aadhaar, PAN, GST No, Address
-                              Row(
+                              ResponsiveFieldRow(
                                 children: [
-                                  Expanded(
-                                    child: TextFormField(
+                                  TextFormField(
                                       controller: aadhaarController,
                                       style: TextStyle(color: context.textPrimary),
                                       keyboardType: TextInputType.number,
@@ -2951,10 +2915,7 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                                         focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: primaryAccent, width: 2)),
                                       ),
                                     ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: TextFormField(
+                                  TextFormField(
                                       controller: panController,
                                       style: TextStyle(color: context.textPrimary),
                                       textCapitalization: TextCapitalization.characters,
@@ -2967,7 +2928,6 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                                         focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: primaryAccent, width: 2)),
                                       ),
                                     ),
-                                  ),
                                 ],
                               ),
                               const SizedBox(height: 10),
@@ -3264,11 +3224,10 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                               ),
                               if (!inheritPlatformSmtp) ...[
                                 const SizedBox(height: 8),
-                                Row(
+                                ResponsiveFieldRow(
+                                  flex: const [3, 1],
                                   children: [
-                                    Expanded(
-                                      flex: 3,
-                                      child: TextFormField(
+                                    TextFormField(
                                         controller: smtpHostController,
                                         style: TextStyle(color: context.textPrimary, fontSize: 13),
                                         decoration: InputDecoration(
@@ -3279,11 +3238,7 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                                           focusedBorder: const UnderlineInputBorder(borderSide: BorderSide(color: ClassicTheme.infoBlue, width: 2)),
                                         ),
                                       ),
-                                    ),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      flex: 1,
-                                      child: TextFormField(
+                                    TextFormField(
                                         controller: smtpPortController,
                                         keyboardType: TextInputType.number,
                                         style: TextStyle(color: context.textPrimary, fontSize: 13),
@@ -3295,7 +3250,6 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                                           focusedBorder: const UnderlineInputBorder(borderSide: BorderSide(color: ClassicTheme.infoBlue, width: 2)),
                                         ),
                                       ),
-                                    ),
                                   ],
                                 ),
                                 const SizedBox(height: 10),

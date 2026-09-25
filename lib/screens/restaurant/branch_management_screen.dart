@@ -3,6 +3,8 @@ import '../../core/classic_theme.dart';
 import '../../providers/restaurant_auth_provider.dart';
 import '../../services/restaurant_sheets_service.dart';
 import 'package:flutter/material.dart';
+import '../../widgets/max_width_body.dart';
+import '../../widgets/responsive_field_row.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -176,11 +178,10 @@ class _BranchManagementScreenState
                     const SizedBox(height: 12),
 
                     if (vl.isRestaurant) ...[
-                      Row(
+                      ResponsiveFieldRow(
+                        flex: const [1, 2],
                         children: [
-                          Expanded(
-                            flex: 1,
-                            child: TextFormField(
+                          TextFormField(
                               controller: tableCountCtrl,
                               keyboardType: TextInputType.number,
                               style: TextStyle(color: context.textPrimary),
@@ -206,11 +207,7 @@ class _BranchManagementScreenState
                                 return null;
                               },
                             ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            flex: 2,
-                            child: DropdownButtonFormField<String>(
+                          DropdownButtonFormField<String>(
                               initialValue: operatingMode,
                               dropdownColor: context.surfaceColor,
                               style: TextStyle(
@@ -246,7 +243,6 @@ class _BranchManagementScreenState
                                 }
                               },
                             ),
-                          ),
                         ],
                       ),
                       const SizedBox(height: 12),
@@ -272,10 +268,9 @@ class _BranchManagementScreenState
                     ),
                     const SizedBox(height: 12),
 
-                    Row(
+                    ResponsiveFieldRow(
                       children: [
-                        Expanded(
-                          child: TextFormField(
+                        TextFormField(
                             controller: phoneCtrl,
                             keyboardType: TextInputType.phone,
                             style: TextStyle(color: context.textPrimary),
@@ -293,10 +288,7 @@ class _BranchManagementScreenState
                               ),
                             ),
                           ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: TextFormField(
+                        TextFormField(
                             controller: upiCtrl,
                             style: TextStyle(color: context.textPrimary),
                             decoration: InputDecoration(
@@ -315,7 +307,6 @@ class _BranchManagementScreenState
                               ),
                             ),
                           ),
-                        ),
                       ],
                     ),
                     const SizedBox(height: 20),
@@ -709,10 +700,9 @@ class _BranchManagementScreenState
                   ),
                   const SizedBox(height: 12),
                   if (vl.isRestaurant) ...[
-                    Row(
+                    ResponsiveFieldRow(
                       children: [
-                        Expanded(
-                          child: TextFormField(
+                        TextFormField(
                             controller: tableCountCtrl,
                             keyboardType: TextInputType.number,
                             style: TextStyle(color: context.textPrimary),
@@ -728,10 +718,7 @@ class _BranchManagementScreenState
                               ),
                             ),
                           ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: DropdownButtonFormField<String>(
+                        DropdownButtonFormField<String>(
                             initialValue: operatingMode,
                             dropdownColor: context.surfaceColor,
                             style: TextStyle(
@@ -767,7 +754,6 @@ class _BranchManagementScreenState
                               }
                             },
                           ),
-                        ),
                       ],
                     ),
                     const SizedBox(height: 12),
@@ -787,10 +773,9 @@ class _BranchManagementScreenState
                     ),
                   ),
                   const SizedBox(height: 12),
-                  Row(
+                  ResponsiveFieldRow(
                     children: [
-                      Expanded(
-                        child: TextFormField(
+                      TextFormField(
                           controller: phoneCtrl,
                           keyboardType: TextInputType.phone,
                           style: TextStyle(color: context.textPrimary),
@@ -806,10 +791,7 @@ class _BranchManagementScreenState
                             ),
                           ),
                         ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: TextFormField(
+                      TextFormField(
                           controller: upiCtrl,
                           style: TextStyle(color: context.textPrimary),
                           decoration: InputDecoration(
@@ -824,7 +806,6 @@ class _BranchManagementScreenState
                             ),
                           ),
                         ),
-                      ),
                     ],
                   ),
                 ],
@@ -983,7 +964,7 @@ class _BranchManagementScreenState
           const SizedBox(width: 8),
         ],
       ),
-      body: StreamBuilder<QuerySnapshot>(
+      body: MaxWidthBody(maxWidth: 1280, child: StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance
             .collection('outlets')
             .where('organizationId', isEqualTo: orgId)
@@ -1103,7 +1084,7 @@ class _BranchManagementScreenState
             license: license,
           );
         },
-      ),
+      )),
     );
   }
 

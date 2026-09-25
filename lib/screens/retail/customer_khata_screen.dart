@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../../widgets/max_width_body.dart';
+import '../../widgets/responsive_field_row.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
@@ -162,10 +164,9 @@ class _CustomerKhataScreenState extends ConsumerState<CustomerKhataScreen> {
                   ),
                 ),
                 const SizedBox(height: 12),
-                Row(
+                ResponsiveFieldRow(
                   children: [
-                    Expanded(
-                      child: TextField(
+                    TextField(
                         controller: limitCtrl,
                         keyboardType: const TextInputType.numberWithOptions(decimal: true),
                         style: TextStyle(color: context.textPrimary, fontSize: 13),
@@ -176,10 +177,7 @@ class _CustomerKhataScreenState extends ConsumerState<CustomerKhataScreen> {
                           border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: TextField(
+                    TextField(
                         controller: openingBalCtrl,
                         keyboardType: const TextInputType.numberWithOptions(decimal: true),
                         style: TextStyle(color: context.textPrimary, fontSize: 13),
@@ -190,7 +188,6 @@ class _CustomerKhataScreenState extends ConsumerState<CustomerKhataScreen> {
                           border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
                         ),
                       ),
-                    ),
                   ],
                 ),
               ],
@@ -684,7 +681,7 @@ class _CustomerKhataScreenState extends ConsumerState<CustomerKhataScreen> {
           const SizedBox(width: 12),
         ],
       ),
-      body: Column(
+      body: MaxWidthBody(maxWidth: 1200, child: Column(
         children: [
           // KPI Metric Banner
           Container(
@@ -955,7 +952,7 @@ class _CustomerKhataScreenState extends ConsumerState<CustomerKhataScreen> {
                   ),
           ),
         ],
-      ),
+      )),
     );
   }
 

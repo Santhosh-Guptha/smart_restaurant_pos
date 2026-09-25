@@ -940,8 +940,15 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
                   return LayoutBuilder(
                     builder: (context, constraints) {
                       final width = constraints.maxWidth;
-                      final int crossAxisCount = width > 900 ? 4 : (width > 550 ? 3 : 2);
-                      final double childAspectRatio = width > 550 ? 1.25 : 1.08;
+                      // Up to 6 across on large monitors and TVs; 2 on phones.
+                      final int crossAxisCount = width > 1600
+                          ? 6
+                          : width > 1250
+                              ? 5
+                              : width > 900
+                                  ? 4
+                                  : (width > 550 ? 3 : 2);
+                      final double childAspectRatio = width > 1250 ? 1.4 : (width > 550 ? 1.25 : 1.08);
 
                       return Column(
                         crossAxisAlignment: CrossAxisAlignment.start,

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import '../../widgets/max_width_body.dart';
 import 'package:flutter/services.dart';
 import 'dart:math';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -636,7 +637,7 @@ class _RestaurantAnalyticsScreenState
           const SizedBox(width: 4),
         ],
       ),
-      body: RefreshIndicator(
+      body: MaxWidthBody(maxWidth: 1440, child: RefreshIndicator(
         onRefresh: _handleRefresh,
         color: amberAccent,
         child: SingleChildScrollView(
@@ -1104,7 +1105,7 @@ class _RestaurantAnalyticsScreenState
           ],
         ),
       ),
-    ),
+    )),
   );
   }
 
