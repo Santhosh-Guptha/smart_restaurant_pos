@@ -2960,7 +2960,7 @@ function getActiveWaiterAlerts(orgId, ss) {
 }
 
 function handleSendOtpEmail(p) {
-  var limited = mailRateLimited_(p.email);
+  var limited = mailCallerRefused_(p) || mailRateLimited_(p.email);
   if (limited) return responseJson({ success: false, error: limited });
   var email = p.email;
   var clientName = p.client_name || "Valued Retailer";
@@ -3014,7 +3014,7 @@ function handleSendEmail(p) {
   if (!subject) {
     return responseJson({ success: false, error: "Missing email subject." });
   }
-  var limited = mailRateLimited_(to);
+  var limited = mailCallerRefused_(p) || mailRateLimited_(to);
   if (limited) return responseJson({ success: false, error: limited });
 
   try {
@@ -5421,6 +5421,52 @@ function mailRateLimited_(to) {
   if (g >= 400) return "E-mail limit reached for this hour. Try again later.";
   cache.put(rKey, String(r + 1), 3700);
   cache.put(gKey, String(g + 1), 3700);
+  return null;
+}
+
+/**
+ * Who is asking for mail: the Firebase user behind p.idToken (checked with
+ * Identity Toolkit accounts:lookup), or null. Cached 10 minutes per token.
+ */
+function mailCallerUid_(p) {
+  var tok = String(p.idToken || "");
+  if (!tok) return null;
+  var cache = CacheService.getScriptCache();
+  var ck = "idtok_" + sha256Hex_(tok);
+  var hit = cache.get(ck);
+  if (hit) return hit === "-" ? null : hit;
+  var key = PropertiesService.getScriptProperties().getProperty("FIREBASE_WEB_API_KEY") || "AIzaSyBv9G7J15k47VKFwc0pUcC3oJHs4xNybyc";
+  var uid = null;
+  try {
+    var r = UrlFetchApp.fetch("https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=" + key, {
+      method: "post", contentType: "application/json", muteHttpExceptions: true,
+      payload: JSON.stringify({ idToken: tok })
+    });
+    if (r.getResponseCode() === 200) {
+      var users = JSON.parse(r.getContentText()).users || [];
+      if (users.length > 0) uid = String(users[0].localId || "") || null;
+    }
+  } catch (e) {
+    uid = null;
+  }
+  cache.put(ck, uid || "-", 600);
+  return uid;
+}
+
+/**
+ * With Script property MAIL_REQUIRES_SIGN_IN = "true", SEND_EMAIL and
+ * SEND_OTP_EMAIL only work for a signed-in app (every build from this branch
+ * sends its ID token). Signed-in callers are also capped at 60 mails per hour.
+ */
+function mailCallerRefused_(p) {
+  var uid = mailCallerUid_(p);
+  var required = PropertiesService.getScriptProperties().getProperty("MAIL_REQUIRES_SIGN_IN") === "true";
+  if (!uid) return required ? "Sign in to send e-mail." : null;
+  var cache = CacheService.getScriptCache();
+  var k = "mail_u_" + Math.floor(Date.now() / 3600000) + "_" + uid;
+  var n = Number(cache.get(k) || 0);
+  if (n >= 60) return "E-mail limit reached for this account this hour.";
+  cache.put(k, String(n + 1), 3700);
   return null;
 }
 

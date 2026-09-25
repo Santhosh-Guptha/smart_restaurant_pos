@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:hive_flutter/hive_flutter.dart';
@@ -406,6 +407,16 @@ class AppsScriptBackendService {
     }
   }
 
+  /// The signed-in user's Firebase ID token, so Code.gs can tell who is
+  /// asking it to send mail (MAIL_REQUIRES_SIGN_IN). null when signed out.
+  static Future<String?> _idToken() async {
+    try {
+      return await FirebaseAuth.instance.currentUser?.getIdToken();
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// 6. Send OTP Email for Client Registration
   static Future<bool> sendOtpEmail({
     required String email,
@@ -422,6 +433,7 @@ class AppsScriptBackendService {
         body: jsonEncode({
           'secret': _secretToken,
           'action': 'SEND_OTP_EMAIL',
+          'idToken': await _idToken(),
           'email': email,
           'client_name': clientName,
           'otp_code': otpCode,
@@ -462,6 +474,7 @@ class AppsScriptBackendService {
         body: jsonEncode({
           'secret': _secretToken,
           'action': 'SEND_EMAIL',
+          'idToken': await _idToken(),
           'to': to.trim(),
           'subject': subject.trim(),
           'text': text.trim(),

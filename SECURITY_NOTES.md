@@ -59,7 +59,7 @@ copy. `firestore.rules.next` makes the document admin-only. **Change that mail p
 password) once the new build is out, because older builds have read it.
 
 Apps Script `SEND_EMAIL` / `SEND_OTP_EMAIL` accept mail from any caller (tills use them). They are now capped at
-20 per recipient per hour and 400 per hour in total. A signed request (tenant token) is the next step.
+20 per recipient per hour and 400 per hour in total. The app now sends its Firebase ID token with them; Code.gs checks it (Identity Toolkit `accounts:lookup`) and caps each signed-in account at 60 per hour. Set Script property **`MAIL_REQUIRES_SIGN_IN = true`** once every till runs a build from this branch: then only signed-in apps can send. (Signed-out mail — the "registration received" note on the paid sign-up form, and the admin fallback code — then stops; sign-up codes use `SIGNUP_SEND_CODE` and are not affected.)
 
 ## Before deploying firestore.rules.next — checklist
 1. New Code.gs deployed; Script properties set; Firebase Authentication on.

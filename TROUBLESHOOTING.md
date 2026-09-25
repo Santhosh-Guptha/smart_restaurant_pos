@@ -62,3 +62,8 @@ Claude will not type passwords, create accounts, or permanently delete data on y
 | "Please wait 30 seconds" / "Too many codes" | Server limits: 1 per 30 s, 5 per 10 min | Wait. |
 | Trial owner can't log in with the chosen password | The trial was created by an older Code.gs that e-mails a temporary password | Use the e-mailed password, or deploy the new Code.gs. |
 | Tenant bill e-mails stopped using the platform Gmail | By design — they go through Apps Script now | Tenants who want their own sender set their SMTP in store settings. |
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| "Sign in to send e-mail." from Code.gs | `MAIL_REQUIRES_SIGN_IN` is on and the device isn't signed in to Firebase (old build, or Firebase Auth / service-account properties not set) | Update the till; check Script properties `FIREBASE_SA_EMAIL` / `FIREBASE_SA_PRIVATE_KEY`; or turn the property off. |
+| "E-mail limit reached for this account this hour." | 60 mails per signed-in account per hour | Wait, or raise the cap in `mailCallerRefused_`. |
