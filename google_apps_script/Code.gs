@@ -133,6 +133,12 @@ function doPost(e) {
       case "SEND_OTP_EMAIL":
         return handleSendOtpEmail(json);
 
+      case "SIGNUP_SEND_CODE":
+        return handleSignupSendCode_(json);
+
+      case "SIGNUP_VERIFY_CODE":
+        return handleSignupVerifyCode_(json);
+
       case "SEND_EMAIL":
       case "SEND_REGISTRATION_EMAIL":
       case "SEND_APPROVAL_EMAIL":
@@ -2954,6 +2960,8 @@ function getActiveWaiterAlerts(orgId, ss) {
 }
 
 function handleSendOtpEmail(p) {
+  var limited = mailRateLimited_(p.email);
+  if (limited) return responseJson({ success: false, error: limited });
   var email = p.email;
   var clientName = p.client_name || "Valued Retailer";
   var otpCode = p.otp_code;
@@ -3006,6 +3014,8 @@ function handleSendEmail(p) {
   if (!subject) {
     return responseJson({ success: false, error: "Missing email subject." });
   }
+  var limited = mailRateLimited_(to);
+  if (limited) return responseJson({ success: false, error: limited });
 
   try {
     var mailOpts = {
@@ -3334,7 +3344,12 @@ function handleStartTrial(json) {
     }
 
     var tempPassword = Math.random().toString(36).slice(-8) + "!1A";
-    var passwordHash = bcryptHash_(tempPassword);
+    // The app's sign-up screen lets the owner choose a password once the
+    // server has verified their e-mail (SIGNUP_VERIFY_CODE -> email_proof).
+    // Without that proof the owner gets a temporary password by e-mail.
+    var ownPassword = String(data.password || "");
+    var proofOk = ownPassword.length >= 8 && checkSignupProof_(email, data.email_proof || data.emailProof);
+    var passwordHash = bcryptHash_(proofOk ? ownPassword : tempPassword);
 
     var now = new Date();
     var endDate = new Date(now.getTime() + plan.validityDays * 86400000);
@@ -3385,7 +3400,7 @@ function handleStartTrial(json) {
       businessCategory: category,
       // The e-mailed password is temporary; the app's first-login screen
       // makes them choose their own before anything else.
-      mustChangePassword: true,
+      mustChangePassword: !proofOk,
       status: "ACTIVE",
       createdAt: now,
       updatedAt: now
@@ -3490,9 +3505,14 @@ function handleStartTrial(json) {
               "Your 14-day free trial of SmartBizz POS is ready.\n\n" +
               "Organization ID: " + orgId + "\n" +
               "Login Email: " + email + "\n" +
-              "Temporary Password: " + tempPassword + "\n\n" +
-              "Open the app and sign in. You will be asked to set your own password on first sign-in.\n\n" +
-              "Your trial is the " + plan.packageName + " plan: " + (plan.planProfile === "OFFLINE_SINGLE" ? "counter billing, inventory, " : "billing, tables, running tabs, kitchen tickets, ") +
+              (proofOk
+                ? "Sign in with the password you chose.\n\n"
+                : "Temporary Password: " + tempPassword + "\n\n" +
+                  "Open the app and sign in. You will be asked to set your own password on first sign-in.\n\n") +
+              "Your trial is the " + plan.packageName + " plan: " +
+              (plan.planProfile === "OFFLINE_RETAIL" ? "barcode billing, customer khata, expenses, "
+                : plan.planProfile === "OFFLINE_SINGLE" ? "counter billing, inventory, "
+                : "billing, tables, running tabs, kitchen tickets, ") +
               "receipt printing and day-end reports, on one device, with everything kept on that device.\n\n" +
               "Best regards,\nSmartBizz Support Team"
       });
@@ -3507,6 +3527,8 @@ function handleStartTrial(json) {
       org_id: orgId,
       user_id: userId,
       email: email,
+      username: username,
+      own_password: proofOk,
       mailed: mailed,
       message: mailed
         ? "Trial provisioned. Credentials have been e-mailed."
@@ -5381,6 +5403,96 @@ function handleIssueAuthToken_(data) {
     Logger.log("custom token mint failed: " + e);
     return responseJson({ success: false, error_code: "MINT_FAILED" });
   }
+}
+
+/**
+ * SEND_EMAIL and SEND_OTP_EMAIL accept requests from any device (tills send
+ * bills and notices through them), so they are capped: 20 mails per
+ * recipient per hour and 400 in total per hour. Returns an error string when
+ * over the cap, otherwise null.
+ */
+function mailRateLimited_(to) {
+  var cache = CacheService.getScriptCache();
+  var hour = Math.floor(Date.now() / 3600000);
+  var rKey = "mail_r_" + hour + "_" + Utilities.base64EncodeWebSafe(String(to || "").toLowerCase()).slice(0, 180);
+  var gKey = "mail_g_" + hour;
+  var r = Number(cache.get(rKey) || 0), g = Number(cache.get(gKey) || 0);
+  if (r >= 20) return "Too many e-mails to this address. Try again in an hour.";
+  if (g >= 400) return "E-mail limit reached for this hour. Try again later.";
+  cache.put(rKey, String(r + 1), 3700);
+  cache.put(gKey, String(g + 1), 3700);
+  return null;
+}
+
+/** Secret for signing e-mail proofs; created on first use, kept in Script properties. */
+function signupSecret_() {
+  var props = PropertiesService.getScriptProperties();
+  var k = props.getProperty("SIGNUP_PROOF_SECRET");
+  if (!k) { k = Utilities.getUuid() + Utilities.getUuid(); props.setProperty("SIGNUP_PROOF_SECRET", k); }
+  return k;
+}
+
+function signupProof_(email, exp) {
+  var mac = Utilities.computeHmacSha256Signature(email + "|" + exp, signupSecret_());
+  return exp + "." + Utilities.base64EncodeWebSafe(mac).replace(/=+$/, "");
+}
+
+/** Proof an e-mail address was verified by the server (checked by Code.gs when it matters). */
+function checkSignupProof_(email, proof) {
+  var parts = String(proof || "").split(".");
+  if (parts.length !== 2) return false;
+  var exp = Number(parts[0]);
+  if (!exp || exp < Date.now()) return false;
+  return signupProof_(String(email).trim().toLowerCase(), exp) === proof;
+}
+
+/**
+ * Sign-up e-mail check, done on the server: the code is never stored where a
+ * client can read it. 6 digits, SHA-256 in the script cache, 10 minutes,
+ * 5 tries, one send per 30 s and 5 per 10 minutes per address.
+ */
+function handleSignupSendCode_(p) {
+  var email = String(p.email || "").trim().toLowerCase();
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return responseJson({ success: false, error_code: "BAD_EMAIL" });
+  var name = String(p.name || p.client_name || "there").slice(0, 80).replace(/[<>&"]/g, "");
+  var cache = CacheService.getScriptCache();
+  var id = Utilities.base64EncodeWebSafe(email).slice(0, 180);
+  if (cache.get("su_wait_" + id)) return responseJson({ success: false, error_code: "WAIT" });
+  var sends = Number(cache.get("su_sends_" + id) || 0);
+  if (sends >= 5) return responseJson({ success: false, error_code: "RATE_LIMITED" });
+  var n = parseInt(Utilities.getUuid().replace(/-/g, "").slice(0, 12), 16) % 1000000;
+  var code = ("000000" + n).slice(-6);
+  cache.put("su_code_" + id, JSON.stringify({ h: sha256Hex_(code), n: 0 }), 600);
+  cache.put("su_sends_" + id, String(sends + 1), 600);
+  cache.put("su_wait_" + id, "1", 30);
+  MailApp.sendEmail({
+    to: email,
+    name: "SmartBizz",
+    subject: "Your SmartBizz verification code: " + code,
+    htmlBody: "<p>Hello " + name + ",</p><p>Your SmartBizz verification code is</p>" +
+      "<p style='font-size:28px;font-weight:700;letter-spacing:6px'>" + code + "</p>" +
+      "<p>It expires in 10 minutes. If you didn't ask for it, ignore this e-mail.</p>"
+  });
+  return responseJson({ success: true });
+}
+
+function handleSignupVerifyCode_(p) {
+  var email = String(p.email || "").trim().toLowerCase();
+  var entered = String(p.code || "").replace(/\D/g, "");
+  var cache = CacheService.getScriptCache();
+  var id = Utilities.base64EncodeWebSafe(email).slice(0, 180);
+  var raw = cache.get("su_code_" + id);
+  if (!raw) return responseJson({ success: false, error_code: "EXPIRED" });
+  var st = JSON.parse(raw);
+  if (st.n >= 5) { cache.remove("su_code_" + id); return responseJson({ success: false, error_code: "LOCKED" }); }
+  if (sha256Hex_(entered) !== st.h) {
+    st.n += 1;
+    cache.put("su_code_" + id, JSON.stringify(st), 600);
+    return responseJson({ success: false, error_code: "INVALID" });
+  }
+  cache.remove("su_code_" + id);
+  // Good for 24 hours: long enough to finish the sign-up form.
+  return responseJson({ success: true, proof: signupProof_(email, Date.now() + 86400000) });
 }
 
 /** True unless the platform has turned admin 2-step verification off. Fails closed. */

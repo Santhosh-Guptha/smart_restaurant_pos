@@ -53,3 +53,12 @@ Claude will not type passwords, create accounts, or permanently delete data on y
 | "That code has expired" | Codes live 10 minutes | Tap Resend code. |
 | "Too many codes sent" | 5 codes per 10 minutes | Wait ten minutes. |
 | "The platform admin console needs an internet connection" | Admin offline login is blocked by design | Connect and sign in. |
+
+## Sign-up (server-side e-mail check)
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| Sign-up code e-mail doesn't arrive | Old Code.gs (no `SIGNUP_SEND_CODE`) — the app falls back to the old path | Deploy the new Code.gs. |
+| "Please wait 30 seconds" / "Too many codes" | Server limits: 1 per 30 s, 5 per 10 min | Wait. |
+| Trial owner can't log in with the chosen password | The trial was created by an older Code.gs that e-mails a temporary password | Use the e-mailed password, or deploy the new Code.gs. |
+| Tenant bill e-mails stopped using the platform Gmail | By design — they go through Apps Script now | Tenants who want their own sender set their SMTP in store settings. |

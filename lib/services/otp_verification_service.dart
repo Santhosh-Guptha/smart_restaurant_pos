@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
@@ -6,6 +7,34 @@ import 'apps_script_backend_service.dart';
 
 class OtpVerificationService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+
+  // ── Server-side sign-up codes (Code.gs SIGNUP_SEND_CODE / SIGNUP_VERIFY_CODE)
+  // The code never lands anywhere a client can read it. The old Firestore
+  // path below is only used while the server doesn't know these actions yet.
+  static final Set<String> _serverEmails = {};
+  static final Map<String, String> _proofs = {};
+
+  /// The server's signed proof that [email] was verified, if it gave one.
+  static String? proofFor(String email) => _proofs[email.trim().toLowerCase()];
+
+  /// null = server can't answer (offline, older Code.gs) -> use the old path.
+  static Future<Map?> _server(String action, Map<String, dynamic> payload) async {
+    try {
+      final res = await AppsScriptBackendService.postWithRedirects(
+        Uri.parse(AppsScriptBackendService.getWebhookUrl()),
+        headers: const {'Content-Type': 'text/plain;charset=utf-8'},
+        body: jsonEncode({'action': action, ...payload}),
+        timeout: const Duration(seconds: 15),
+      );
+      final data = jsonDecode(res.body);
+      if (data is! Map) return null;
+      if (data['success'] == true || data['error_code'] != null) return data;
+      return null; // e.g. "Unknown action" from a Code.gs that predates this
+    } catch (e) {
+      debugPrint('OtpVerificationService: server unavailable ($e)');
+      return null;
+    }
+  }
 
   /// Generates a secure 6-digit numeric OTP and delivers it via SMTP / Webhook.
   /// Valid for 10 minutes.
@@ -17,6 +46,27 @@ class OtpVerificationService {
     final cleanEmail = email.trim().toLowerCase();
     if (cleanEmail.isEmpty || !cleanEmail.contains('@')) {
       return {'success': false, 'message': 'Invalid email address.'};
+    }
+
+    if (!isMfa) {
+      final r = await _server('SIGNUP_SEND_CODE', {'email': cleanEmail, 'name': clientName.trim()});
+      if (r != null) {
+        if (r['success'] == true) {
+          _serverEmails.add(cleanEmail);
+          return {
+            'success': true,
+            'message': 'A 6-digit verification code has been sent to $cleanEmail. Please check your inbox and spam folder.',
+          };
+        }
+        switch (r['error_code']) {
+          case 'WAIT':
+            return {'success': false, 'message': 'Please wait 30 seconds before requesting a new code.'};
+          case 'RATE_LIMITED':
+            return {'success': false, 'message': 'Too many codes requested. Please try again after 10 minutes.'};
+          case 'BAD_EMAIL':
+            return {'success': false, 'message': 'Invalid email address.'};
+        }
+      }
     }
 
     try {
@@ -127,6 +177,26 @@ class OtpVerificationService {
 
     if (cleanOtp.length != 6) {
       return {'success': false, 'message': 'Please enter a valid 6-digit OTP.'};
+    }
+
+    if (_serverEmails.contains(cleanEmail)) {
+      final r = await _server('SIGNUP_VERIFY_CODE', {'email': cleanEmail, 'code': cleanOtp});
+      if (r == null) {
+        return {'success': false, 'message': 'Could not reach the server. Check your connection and try again.'};
+      }
+      if (r['success'] == true) {
+        final proof = r['proof']?.toString();
+        if (proof != null && proof.isNotEmpty) _proofs[cleanEmail] = proof;
+        return {'success': true, 'message': 'Email verified successfully!'};
+      }
+      switch (r['error_code']) {
+        case 'EXPIRED':
+          return {'success': false, 'message': 'OTP has expired. Please request a new OTP.'};
+        case 'LOCKED':
+          return {'success': false, 'message': 'Too many wrong codes. Please request a new OTP.'};
+        default:
+          return {'success': false, 'message': 'Incorrect OTP. Please check the code and try again.'};
+      }
     }
 
     try {

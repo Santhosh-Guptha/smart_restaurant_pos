@@ -61,6 +61,22 @@ class SmtpEmailService {
   /// Retrieves the effective SMTP configuration for a tenant.
   /// If the tenant specifies custom SMTP (inheritPlatform == false) and it is configured,
   /// returns the tenant's configuration. Otherwise falls back to platform SMTP.
+  /// The platform's own SMTP account (system_config/smtp) is used only while
+  /// the platform admin is signed in (set in main.dart). Tenant devices and
+  /// the sign-up screen send through Apps Script instead, so the platform's
+  /// mail password never reaches them. firestore.rules.next makes that
+  /// document admin-only.
+  static bool allowPlatformSmtp = false;
+
+  static SmtpConfig _unconfigured() => SmtpConfig(
+        host: 'smtp.gmail.com',
+        port: 587,
+        isSsl: false,
+        username: '',
+        password: '',
+        fromName: 'SmartBizz POS',
+      );
+
   static Future<SmtpConfig> getEffectiveSmtpConfig({String? organizationId}) async {
     if (organizationId != null && organizationId.trim().isNotEmpty) {
       final cleanOrgId = organizationId.trim();
@@ -92,6 +108,13 @@ class SmtpEmailService {
       } catch (_) {}
     }
 
+    if (!allowPlatformSmtp) {
+      // Drop any copy of the platform account an older build cached here.
+      try {
+        if (Hive.isBoxOpen('configBox')) await Hive.box('configBox').delete('smtp_config');
+      } catch (_) {}
+      return _unconfigured();
+    }
     return getSmtpConfig();
   }
 

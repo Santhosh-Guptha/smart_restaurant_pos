@@ -149,17 +149,18 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
     match /audit_logs/{id}     { allow create: if signedIn(); allow read, update, delete: if isAdmin(); }
+    // system_config/smtp holds the platform mail password: admin only.
+    // (Tenant devices send through Apps Script; SmtpEmailService.allowPlatformSmtp.)
     match /system_config/{id}  {
-      allow read: if signedIn();
+      allow read: if (signedIn() && id != 'smtp') || isAdmin();
       allow write: if isAdmin();
       match /{child=**} { allow read: if signedIn(); allow write: if isAdmin(); }
     }
     match /_conn_test/{id}     { allow read, write: if signedIn(); }
 
-    // Admin 2-step now runs on the server and never touches this collection.
-    // Still used by the sign-up e-mail check (client_signup_screen). Next step:
-    // move that check to Code.gs too, then make this `if false`.
-    match /email_otps/{email}  { allow read, write: if true; }
+    // Sign-up and admin codes are checked by Code.gs now. This collection is
+    // only the old fallback path of builds before that; closed here.
+    match /email_otps/{email}  { allow read, write: if false; }
 
     // ── Operational data lives in Sheets + Hive, never here ───────────────
     match /orders/{id}            { allow read, write: if false; }

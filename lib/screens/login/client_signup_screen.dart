@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -9,6 +10,7 @@ import '../../core/package_model.dart';
 import '../../widgets/package_features_breakdown_widget.dart';
 import '../../services/package_service.dart';
 import '../../services/otp_verification_service.dart';
+import '../../services/apps_script_backend_service.dart';
 import '../../services/smtp_email_service.dart';
 import '../../services/subscription_plan_service.dart';
 import '../../services/tenant_provisioning_service.dart';
@@ -406,14 +408,22 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
     setState(() => _isSendingOtp = true);
 
     try {
-      // 1. Check if user already exists
-      final existingUser = await _firestore
-          .collection('users')
-          .where('email', isEqualTo: email)
-          .limit(1)
-          .get();
+      // 1. Check if user already exists. Under the locked-down rules a
+      //    signed-out device can't read /users; the server (START_TRIAL)
+      //    refuses a registered e-mail anyway, so a refused read is not an error.
+      bool exists = false;
+      try {
+        final existingUser = await _firestore
+            .collection('users')
+            .where('email', isEqualTo: email)
+            .limit(1)
+            .get();
+        exists = existingUser.docs.isNotEmpty;
+      } catch (e) {
+        debugPrint('Existing-account check skipped: $e');
+      }
 
-      if (existingUser.docs.isNotEmpty) {
+      if (exists) {
         if (mounted) {
           setState(() => _isSendingOtp = false);
           _showAccountExistsDialog(email);
@@ -516,6 +526,38 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
         // The trial is a package and a plan like every other licence: the
         // starter package for this business category, on the default trial
         // plan, composed the same way the console composes them.
+        // Server first: with an e-mail the server verified, Code.gs creates
+        // the tenant itself (START_TRIAL) with the password chosen here. The
+        // app only writes the tenant documents when the server can't be
+        // reached — those writes stop working once the locked rules go live.
+        final proof = OtpVerificationService.proofFor(email);
+        if (proof != null) {
+          final server = await _startTrialOnServer(
+            clientName: clientName,
+            shopName: shopName,
+            email: email,
+            mobile: mobile,
+            password: password,
+            proof: proof,
+          );
+          if (server != null) {
+            if (mounted) {
+              setState(() => _isSubmitting = false);
+              if (server['success'] == true) {
+                _showTrialSuccessDialog(
+                  clientName: clientName,
+                  shopName: shopName.isNotEmpty ? shopName : _fallbackShopName(clientName),
+                  orgId: (server['org_id'] ?? '').toString(),
+                  email: email,
+                );
+              } else {
+                AppToast.showError(context, (server['error'] ?? 'The trial could not be created.').toString());
+              }
+            }
+            return;
+          }
+        }
+
         final trialPlan = await SubscriptionPlanService.getDefaultTrialPlan();
         final trialPackage =
             (await PackageService.getById(Verticals.defaultPackageFor(_businessCategory))) ??
@@ -548,7 +590,7 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
           if (res['success'] == true) {
             _showTrialSuccessDialog(
               clientName: clientName,
-              shopName: shopName.isNotEmpty ? shopName : "$clientName Restaurant",
+              shopName: shopName.isNotEmpty ? shopName : _fallbackShopName(clientName),
               orgId: res['orgId'] ?? '',
               email: email,
             );
@@ -560,14 +602,22 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
         // =====================================================================
         //  PAID PACKAGE REQUEST (SUBMITS FOR ADMIN APPROVAL)
         // =====================================================================
-        final pendingReq = await _firestore
-            .collection('registration_requests')
-            .where('email', isEqualTo: email)
-            .where('status', isEqualTo: 'PENDING')
-            .limit(1)
-            .get();
+        // Signed-out devices can't read requests under the locked rules; a
+        // duplicate then simply reaches the admin, who sees both.
+        bool pending = false;
+        try {
+          final pendingReq = await _firestore
+              .collection('registration_requests')
+              .where('email', isEqualTo: email)
+              .where('status', isEqualTo: 'PENDING')
+              .limit(1)
+              .get();
+          pending = pendingReq.docs.isNotEmpty;
+        } catch (e) {
+          debugPrint('Pending-request check skipped: $e');
+        }
 
-        if (pendingReq.docs.isNotEmpty) {
+        if (pending) {
           setState(() => _isSubmitting = false);
           _showDuplicateRequestDialog(email);
           return;
@@ -598,6 +648,7 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
           'email': email,
           'status': 'PENDING',
           'emailVerified': true,
+          if (OtpVerificationService.proofFor(email) != null) 'emailProof': OtpVerificationService.proofFor(email),
           'requestedPlan': _selectedOption,
           'requestedPlanLabel': profile.label,
           'requestedPackageId': profile.id,
@@ -629,14 +680,22 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
         // =====================================================================
         //  CUSTOM / ENTERPRISE REQUEST (SUBMITS FOR ADMIN CONSULTATION)
         // =====================================================================
-        final pendingReq = await _firestore
-            .collection('registration_requests')
-            .where('email', isEqualTo: email)
-            .where('status', isEqualTo: 'PENDING')
-            .limit(1)
-            .get();
+        // Signed-out devices can't read requests under the locked rules; a
+        // duplicate then simply reaches the admin, who sees both.
+        bool pending = false;
+        try {
+          final pendingReq = await _firestore
+              .collection('registration_requests')
+              .where('email', isEqualTo: email)
+              .where('status', isEqualTo: 'PENDING')
+              .limit(1)
+              .get();
+          pending = pendingReq.docs.isNotEmpty;
+        } catch (e) {
+          debugPrint('Pending-request check skipped: $e');
+        }
 
-        if (pendingReq.docs.isNotEmpty) {
+        if (pending) {
           setState(() => _isSubmitting = false);
           _showDuplicateRequestDialog(email);
           return;
@@ -662,6 +721,7 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
           'email': email,
           'status': 'PENDING',
           'emailVerified': true,
+          if (OtpVerificationService.proofFor(email) != null) 'emailProof': OtpVerificationService.proofFor(email),
           'requestedPlan': 'ENTERPRISE_CUSTOM',
           'requestedPlanLabel': 'Enterprise / Custom Setup',
           'requestedPackageId': PlanProfile.omnichannel.id,
@@ -695,6 +755,51 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
         setState(() => _isSubmitting = false);
         AppToast.showError(context, e.toString(), title: "Registration Failed");
       }
+    }
+  }
+
+  String _fallbackShopName(String clientName) {
+    final v = Verticals.forCategory(_businessCategory);
+    final suffix = v == Verticals.restaurant
+        ? 'Restaurant'
+        : v == Verticals.supermarket
+            ? 'Supermarket'
+            : v == Verticals.pharmacy
+                ? 'Pharmacy'
+                : 'Store';
+    return '$clientName $suffix';
+  }
+
+  /// START_TRIAL on Code.gs. null when the server can't be reached.
+  Future<Map?> _startTrialOnServer({
+    required String clientName,
+    required String shopName,
+    required String email,
+    required String mobile,
+    required String password,
+    required String proof,
+  }) async {
+    try {
+      final res = await AppsScriptBackendService.postWithRedirects(
+        Uri.parse(AppsScriptBackendService.getWebhookUrl()),
+        headers: const {'Content-Type': 'text/plain;charset=utf-8'},
+        body: jsonEncode({
+          'action': 'START_TRIAL',
+          'client_name': clientName,
+          'shop_name': shopName,
+          'email': email,
+          'mobile': mobile,
+          'business_category': _businessCategory,
+          'password': password,
+          'email_proof': proof,
+        }),
+        timeout: const Duration(seconds: 40),
+      );
+      final data = jsonDecode(res.body);
+      return data is Map ? data : null;
+    } catch (e) {
+      debugPrint('START_TRIAL unavailable: $e');
+      return null;
     }
   }
 

@@ -468,6 +468,8 @@ When transitioning from local development to the brand-new production environmen
 
 | 34 | Shop tenants saw dine-in settlement policy, service charge, table counts, "Guests"/"kitchen" wording in store settings, branches, menu, analytics and the Sheets setup | Hidden or reworded per trade | this branch |
 | 35 | Admin 2-step code was generated and checked in the app (readable in `email_otps`) | Server-run second step; admin token only after it passes; no offline admin login | this branch |
+| 36 | Sign-up code stored readable in `email_otps`; app free trial wrote org/licence/user documents from a signed-out device | Server-side sign-up code + signed proof; START_TRIAL creates the tenant with the chosen password | this branch |
+| 37 | Platform SMTP password readable by every device | Admin-only use; tenants mail via Apps Script; rules.next admin-only; mail endpoints rate-limited | this branch |
 
 ### Still open
 - `firestore.rules` is still open (`if true`) until every device runs a build with custom-token login and admin 2FA moves server-side.

@@ -56,7 +56,8 @@ sharing reconciler, tenant metrics, admin Business Analytics.
 ## Status (25 Sep 2026)
 - Run on 5ac7cc0 (+ link-sharing removal): analyze clean, **333/333 tests**, web build OK.
 - Since then (not yet run): 860f7be icons · next commit: trade wording fixes in store settings / branches /
-  menu / analytics / Sheets setup, and admin 2-step verification on the server.
+  menu / analytics / Sheets setup, and admin 2-step verification on the server · then: sign-up e-mail check +
+  trial creation on the server, platform SMTP admin-only.
 - Next commit adds the per-trade app icons + `test/app_icon_service_test.dart` — rerun the script once.
 - Hosting currently serves an older build; redeploy after the rerun passes.
 
