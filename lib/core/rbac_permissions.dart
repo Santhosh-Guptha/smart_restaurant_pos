@@ -3,7 +3,7 @@ import 'package:crypto/crypto.dart';
 import 'vertical_labels.dart';
 import 'package_model.dart';
 
-// SmartDine Role-Based Access Control (RBAC)
+// SmartBizz Role-Based Access Control (RBAC)
 // Enforces permissions across Owner, Manager, Billing Cashier, Kitchen Chef, and Waiter.
 
 enum StaffRole {

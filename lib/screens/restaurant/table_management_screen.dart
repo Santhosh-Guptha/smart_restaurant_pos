@@ -3133,7 +3133,7 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen>
     final scRate = _getServiceChargeRate();
     final gstRate = _getGstRate();
     final saasSession = ref.read(saasSessionProvider);
-    final shopName = saasSession.currentOrganization?.name ?? 'SmartDine Restaurant';
+    final shopName = saasSession.currentOrganization?.name ?? 'SmartBizz Restaurant';
 
     showModalBottomSheet(
       context: context,

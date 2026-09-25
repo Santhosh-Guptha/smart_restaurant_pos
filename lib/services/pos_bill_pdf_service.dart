@@ -338,7 +338,7 @@ class PosBillPdfService {
               pw.SizedBox(height: 2),
               pw.Center(
                 child: pw.Text(
-                  'SmartDine Cloud POS - Fast, Reliable & Digital',
+                  'SmartBizz Cloud POS - Fast, Reliable & Digital',
                   style: const pw.TextStyle(fontSize: 7, color: PdfColors.grey500),
                 ),
               ),
@@ -393,7 +393,7 @@ class PosBillPdfService {
       final file = await savePdfFile(bytes: bytes, billNumber: billNumber);
       await SharePlus.instance.share(ShareParams(
         files: [XFile(file.path, mimeType: 'application/pdf', name: 'Invoice_$billNumber.pdf')],
-        text: 'Tax Invoice #$billNumber${customerName != null ? " for $customerName" : ""} - SmartDine POS',
+        text: 'Tax Invoice #$billNumber${customerName != null ? " for $customerName" : ""} - SmartBizz POS',
         subject: 'Tax Invoice #$billNumber',
       ));
     } catch (e) {

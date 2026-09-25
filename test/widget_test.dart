@@ -5,6 +5,6 @@ import 'package:smart_restaurant_pos/main.dart';
 
 void main() {
   testWidgets('App smoke test', (WidgetTester tester) async {
-    expect(const ProviderScope(child: SmartDineApp()), isNotNull);
+    expect(const ProviderScope(child: SmartBizzApp()), isNotNull);
   });
 }

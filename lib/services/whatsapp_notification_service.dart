@@ -2,7 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'apps_script_backend_service.dart';
 
-/// Automated WhatsApp Notification Service for SmartDine POS.
+/// Automated WhatsApp Notification Service for SmartBizz POS.
 ///
 /// Features:
 /// 1. Instant Welcome & Credentials Dispatch upon tenant signup
@@ -39,7 +39,7 @@ class WhatsAppNotificationService {
     String downloadUrl = defaultDownloadUrl,
   }) {
     return '''
-🍽️ *Welcome to SmartDine POS!*
+🍽️ *Welcome to SmartBizz POS!*
 Hi $clientName, your restaurant account for *$shopName* is now active.
 
 🔑 *Your Login Credentials:*
@@ -172,7 +172,7 @@ _Need assistance? Reply directly to this WhatsApp number for support._
     final varianceFormatted = '$varianceSign${variance.abs().toStringAsFixed(2)}';
 
     return '''
-📊 *SmartDine Day-End Z-Report*
+📊 *SmartBizz Day-End Z-Report*
 🏪 Store: *$storeName* ($orgId)
 📅 Date: $businessDate | Closed by: $closedBy
 

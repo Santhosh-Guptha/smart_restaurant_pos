@@ -10,7 +10,7 @@ import 'design_tokens.dart';
 /// every `ClassicTheme.primaryAccent`, `context.textPrimary` and
 /// `ClassicTheme.inputDecorationFor(...)` call site keeps working — but the
 /// values behind those names, and the ThemeData built from them, are the new
-/// SmartDine visual system defined in `design_tokens.dart`.
+/// SmartBizz visual system defined in `design_tokens.dart`.
 ///
 /// Screens should prefer the `context` extension at the bottom of this file
 /// over the raw `*Dark` / `*Light` constants, so light mode is correct without

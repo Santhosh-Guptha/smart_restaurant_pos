@@ -545,7 +545,7 @@ class SaasSessionNotifier extends StateNotifier<SaasSessionState> {
           if (mfaCode == null || mfaCode.trim().isEmpty) {
             final otpRes = await OtpVerificationService.sendMfaLoginOtp(
               email: targetMfaEmail,
-              clientName: userData['fullName'] ?? 'SmartDine Platform Admin',
+              clientName: userData['fullName'] ?? 'SmartBizz Platform Admin',
             );
             if (otpRes['success'] != true) {
               return "Failed to send 2-step verification code: ${otpRes['message'] ?? 'Please try again'}";
@@ -865,7 +865,7 @@ class SaasSessionNotifier extends StateNotifier<SaasSessionState> {
         : kAdminEmail;
     return await OtpVerificationService.sendMfaLoginOtp(
       email: targetEmail,
-      clientName: 'SmartDine Platform Admin',
+      clientName: 'SmartBizz Platform Admin',
     );
   }
 

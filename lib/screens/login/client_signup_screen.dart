@@ -927,7 +927,7 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final primaryAccent = ClassicTheme.warningAmber; // SmartDine Amber Gold
+    final primaryAccent = ClassicTheme.warningAmber; // SmartBizz Amber Gold
 
     return Scaffold(
       backgroundColor: context.canvasColor,

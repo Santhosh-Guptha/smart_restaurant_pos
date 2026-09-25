@@ -120,7 +120,7 @@ void main() async {
   runApp(
     UncontrolledProviderScope(
       container: container,
-      child: const SmartDineApp(),
+      child: const SmartBizzApp(),
     ),
   );
 }
@@ -181,8 +181,8 @@ int _compareVersions(String v1, String v2) {
   return 0;
 }
 
-class SmartDineApp extends ConsumerWidget {
-  const SmartDineApp({super.key});
+class SmartBizzApp extends ConsumerWidget {
+  const SmartBizzApp({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -199,7 +199,7 @@ class SmartDineApp extends ConsumerWidget {
         return MaterialApp(
           navigatorKey: navigatorKey,
           scaffoldMessengerKey: scaffoldMessengerKey,
-          title: 'SmartDine Update',
+          title: 'SmartBizz Update',
           theme: AppTheme.lightTheme,
           darkTheme: AppTheme.darkTheme,
         builder: (context, child) {
@@ -268,7 +268,7 @@ class SmartDineApp extends ConsumerWidget {
     return MaterialApp(
       navigatorKey: navigatorKey,
       scaffoldMessengerKey: scaffoldMessengerKey,
-      title: org?.appName ?? 'SmartDine',
+      title: org?.appName ?? 'SmartBizz',
       theme: AppTheme.lightTheme,
       darkTheme: AppTheme.darkTheme,
       themeMode: themeMode,
@@ -311,7 +311,7 @@ class _LoadingSplashScreenState extends State<LoadingSplashScreen>
     'Initializing restaurant system...',
     'Connecting to cloud services...',
     'Verifying account access...',
-    'Loading SmartDine POS...',
+    'Loading SmartBizz POS...',
   ];
 
   @override
@@ -408,7 +408,7 @@ class _LoadingSplashScreenState extends State<LoadingSplashScreen>
               ),
               const SizedBox(height: 28),
               const Text(
-                'SmartDine POS',
+                'SmartBizz POS',
                 style: TextStyle(
                   fontSize: 26,
                   fontWeight: FontWeight.bold,

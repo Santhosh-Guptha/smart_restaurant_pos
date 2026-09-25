@@ -90,12 +90,12 @@ BEGIN
         BLOCK "040904e4"
         BEGIN
             VALUE "CompanyName", "com.devmonks" "\0"
-            VALUE "FileDescription", "SmartDine POS" "\0"
+            VALUE "FileDescription", "SmartBizz POS" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
             VALUE "InternalName", "smart_restaurant_pos" "\0"
             VALUE "LegalCopyright", "Copyright (C) 2026 com.devmonks. All rights reserved." "\0"
-            VALUE "OriginalFilename", "SmartDine POS.exe" "\0"
-            VALUE "ProductName", "SmartDine POS" "\0"
+            VALUE "OriginalFilename", "SmartBizz POS.exe" "\0"
+            VALUE "ProductName", "SmartBizz POS" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

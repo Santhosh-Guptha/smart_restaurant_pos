@@ -1543,7 +1543,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
           final double totalPayable = tableSubtotal + scAmt + gstAmt + _selectedTip;
 
           final saasSession = ref.read(saasSessionProvider);
-          final shopName = saasSession.currentOrganization?.name ?? 'SmartDine Restaurant';
+          final shopName = saasSession.currentOrganization?.name ?? 'SmartBizz Restaurant';
           final upiId = _getDefaultUpiId();
           final cleanTableNum = widget.table.tableNumber.replaceAll(RegExp(r'^Table\s*', caseSensitive: false), '').trim();
           final upiUri = 'upi://pay?pa=$upiId&pn=${Uri.encodeComponent(shopName)}&am=${totalPayable.toStringAsFixed(2)}&cu=INR&tn=${Uri.encodeComponent("Table $cleanTableNum Bill")}';

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-/// SmartDine design tokens — the single source of truth for the visual system.
+/// SmartBizz design tokens — the single source of truth for the visual system.
 ///
 /// Nothing in here depends on Flutter's theme lookup, so these values can be
 /// used from decorations, painters and PDF/receipt code as well as widgets.

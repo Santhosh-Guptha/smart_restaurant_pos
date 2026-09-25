@@ -308,7 +308,7 @@ class _SaaSLoginScreenState extends ConsumerState<SaaSLoginScreen> {
                   ),
                   const SizedBox(height: 16),
                   Text(
-                    "SmartDine POS",
+                    "SmartBizz POS",
                     style: TextStyle(
                       color: context.textPrimary,
                       fontSize: 22,

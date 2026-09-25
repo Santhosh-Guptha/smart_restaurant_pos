@@ -1,6 +1,6 @@
 /**
  * =========================================================================
- * SMARTDINE RESTAURANT POS CLOUD BACKEND (Google Apps Script)
+ * SMARTBIZZ POS CLOUD BACKEND (Google Apps Script)
  * Automatically creates & manages Google Spreadsheets in your Google Drive.
  * 100% Zero-Server & Zero-Firebase Architecture.
  * =========================================================================
@@ -3482,16 +3482,16 @@ function handleStartTrial(json) {
     try {
       MailApp.sendEmail({
         to: email,
-        subject: "Welcome to SmartDine POS — Your 14-Day Free Trial Account",
+        subject: "Welcome to SmartBizz POS — Your 14-Day Free Trial Account",
         body: "Hello " + clientName + ",\n\n" +
-              "Your 14-day free trial of SmartDine POS is ready.\n\n" +
+              "Your 14-day free trial of SmartBizz POS is ready.\n\n" +
               "Organization ID: " + orgId + "\n" +
               "Login Email: " + email + "\n" +
               "Temporary Password: " + tempPassword + "\n\n" +
               "Open the app and sign in. You will be asked to set your own password on first sign-in.\n\n" +
               "Your trial is the " + plan.packageName + " plan: " + (plan.planProfile === "OFFLINE_SINGLE" ? "counter billing, inventory, " : "billing, tables, running tabs, kitchen tickets, ") +
               "receipt printing and day-end reports, on one device, with everything kept on that device.\n\n" +
-              "Best regards,\nSmartDine Support Team"
+              "Best regards,\nSmartBizz Support Team"
       });
     } catch (eMail) {
       mailed = false;

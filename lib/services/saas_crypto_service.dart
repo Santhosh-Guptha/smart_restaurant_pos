@@ -3,7 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:crypto/crypto.dart';
 import 'package:encrypt/encrypt.dart' as enc;
 
-/// Enterprise Reusable Cryptographic Service for SmartDine Restaurant POS.
+/// Enterprise Reusable Cryptographic Service for SmartBizz POS.
 ///
 /// Provides symmetric AES-256-CBC encryption, HMAC-SHA256 data integrity validation,
 /// and timestamp-based replay attack mitigation for cross-platform communication

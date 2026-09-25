@@ -34,7 +34,7 @@ class SmtpConfig {
       isSsl: map['isSsl'] == true,
       username: map['username'] ?? '',
       password: map['password'] ?? '',
-      fromName: map['fromName'] ?? 'SmartDine POS',
+      fromName: map['fromName'] ?? 'SmartBizz POS',
       inheritPlatform: map['inheritPlatform'] != false,
     );
   }
@@ -127,7 +127,7 @@ class SmtpEmailService {
       isSsl: false,
       username: '',
       password: '',
-      fromName: 'SmartDine POS',
+      fromName: 'SmartBizz POS',
     );
   }
 
@@ -231,7 +231,7 @@ class SmtpEmailService {
       final message = Message()
         ..from = Address(config.username.trim(), config.fromName)
         ..recipients.add(toEmail.trim())
-        ..subject = 'SmartDine POS \u2014 SMTP Configuration Test'
+        ..subject = 'SmartBizz POS \u2014 SMTP Configuration Test'
         ..html = '''
         <div style="font-family: sans-serif; padding: 24px; color: #1e293b; background: #f8fafc; border-radius: 12px; border: 1px solid #e2e8f0;">
           <h2 style="color: #10b981; margin-top: 0;">&#10004; SMTP Connection Successful!</h2>
@@ -241,7 +241,7 @@ class SmtpEmailService {
           <p><strong>Encryption:</strong> ${config.isSsl ? 'SSL' : 'STARTTLS / none'}</p>
           <p><strong>Sender:</strong> ${config.username}</p>
           <p><strong>Sender Name:</strong> ${config.fromName}</p>
-          <p style="color: #64748b; font-size: 12px; margin-top: 20px;">Sent from SmartDine POS Platform Administration.</p>
+          <p style="color: #64748b; font-size: 12px; margin-top: 20px;">Sent from SmartBizz POS Platform Administration.</p>
         </div>
         ''';
       await send(message, smtpServer);
@@ -300,7 +300,7 @@ class SmtpEmailService {
           <td style="vertical-align: top; padding-bottom: 12px;">
             <div style="display: flex; align-items: center;">
               <span style="font-size: 16px; margin-right: 6px;">&#128241;</span>
-              <span style="font-size: 12px; font-weight: 700; color: #1e293b;">SmartDine Restaurant POS Suite</span>
+              <span style="font-size: 12px; font-weight: 700; color: #1e293b;">SmartBizz POS Suite</span>
             </div>
             <p style="margin: 3px 0 0 0; font-size: 11px; color: #64748b;">Offline POS, Tables, Kitchen Display & Multi-Outlet Management</p>
           </td>
@@ -412,13 +412,13 @@ class SmtpEmailService {
         badgeText: "Security Challenge - 2MFA",
         badgeBg: "#fef3c7",
         badgeColor: "#d97706",
-        title: "SmartDine Security Center",
+        title: "SmartBizz Security Center",
         subtitle: "Platform Master Admin Authentication",
       );
       final footerHtml = _buildFooterHtml();
 
-      final subject = '[SmartDine Security] Master Admin 2-Step Verification Code: $otpCode';
-      final plainText = 'Hello $clientName,\n\nYour 6-digit Master Admin verification code is: $otpCode\n\nThis code will expire in 10 minutes.\nIf you did not attempt to sign in, please secure your administrative credentials immediately.\n\nBest regards,\nSmartDine Platform Security';
+      final subject = '[SmartBizz Security] Master Admin 2-Step Verification Code: $otpCode';
+      final plainText = 'Hello $clientName,\n\nYour 6-digit Master Admin verification code is: $otpCode\n\nThis code will expire in 10 minutes.\nIf you did not attempt to sign in, please secure your administrative credentials immediately.\n\nBest regards,\nSmartBizz Platform Security';
       final htmlContent = '''
 <!DOCTYPE html>
 <html>
@@ -439,7 +439,7 @@ class SmtpEmailService {
   <div class="card">
     $headerHtml
     <p class="greeting">Hello <strong>$clientName</strong>,</p>
-    <p class="note">A sign-in attempt to the <strong>SmartDine Master Administration Console</strong> requires two-step verification. Please enter the following 6-digit security code to verify your identity:</p>
+    <p class="note">A sign-in attempt to the <strong>SmartBizz Master Administration Console</strong> requires two-step verification. Please enter the following 6-digit security code to verify your identity:</p>
     
     <div class="otp-box">
       <div class="otp-code">$otpCode</div>
@@ -824,13 +824,13 @@ Smart POS Team
         badgeText: "Renewal Request",
         badgeBg: "#fef3c7",
         badgeColor: "#d97706",
-        title: "SmartDine Restaurant POS",
+        title: "SmartBizz POS",
         subtitle: "Client License Renewal Notification",
       );
       final footerHtml = _buildFooterHtml();
 
       final subject = '[Priority] License Renewal Requested: $orgName ($orgId)';
-      final plainText = 'Hello Master Admin,\n\nClient "$orgName" (ID: $orgId) has requested a license renewal for their $planTier plan.\n\nClient Email: ${clientEmail ?? "N/A"}\nPhone: ${clientPhone ?? "N/A"}\n\nPlease sign in to the Master Admin Console to approve and extend this client\'s license.\n\nSmartDine System Alert';
+      final plainText = 'Hello Master Admin,\n\nClient "$orgName" (ID: $orgId) has requested a license renewal for their $planTier plan.\n\nClient Email: ${clientEmail ?? "N/A"}\nPhone: ${clientPhone ?? "N/A"}\n\nPlease sign in to the Master Admin Console to approve and extend this client\'s license.\n\nSmartBizz System Alert';
       final htmlContent = '''
 <!DOCTYPE html>
 <html>
@@ -874,7 +874,7 @@ Smart POS Team
         subject: subject,
         plainText: plainText,
         htmlContent: htmlContent,
-        fromName: "SmartDine Platform Alerts",
+        fromName: "SmartBizz Platform Alerts",
       );
     } catch (e) {
       debugPrint("SmtpEmailService error sending renewal request alert email: $e");
@@ -904,13 +904,13 @@ Smart POS Team
         badgeText: "Subscription Active",
         badgeBg: "#dcfce7",
         badgeColor: "#16a34a",
-        title: "SmartDine Restaurant POS",
+        title: "SmartBizz POS",
         subtitle: "License Renewal Confirmed",
       );
       final footerHtml = _buildFooterHtml();
 
-      final subject = 'License Renewed: Welcome back to SmartDine POS!';
-      final plainText = 'Hello $orgName,\n\nYour SmartDine Restaurant POS subscription license has been successfully renewed!\n\nPlan Tier: $planTier\nValid Until: $formattedDate\nPermitted Staff Seats: $maxUsers\nPermitted Restaurant Branches: $maxFranchises\n\nYour POS terminals will unblock automatically in real-time.\n\nBest regards,\nSmartDine Support Team';
+      final subject = 'License Renewed: Welcome back to SmartBizz POS!';
+      final plainText = 'Hello $orgName,\n\nYour SmartBizz POS subscription license has been successfully renewed!\n\nPlan Tier: $planTier\nValid Until: $formattedDate\nPermitted Staff Seats: $maxUsers\nPermitted Restaurant Branches: $maxFranchises\n\nYour POS terminals will unblock automatically in real-time.\n\nBest regards,\nSmartBizz Support Team';
       final htmlContent = '''
 <!DOCTYPE html>
 <html>
@@ -928,7 +928,7 @@ Smart POS Team
     $headerHtml
     <p class="greeting">Hello <strong>$orgName Team</strong>,</p>
     <p style="color: #475569; font-size: 13px; line-height: 1.5;">
-      We are delighted to confirm that your <strong>SmartDine Restaurant POS</strong> subscription license has been successfully renewed.
+      We are delighted to confirm that your <strong>SmartBizz POS</strong> subscription license has been successfully renewed.
     </p>
 
     <div class="renew-box">

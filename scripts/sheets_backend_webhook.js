@@ -12,9 +12,9 @@
  */
 
 /**
- * SMARTDINE RESTAURANT POS - ZERO-COST MULTI-TENANT CLOUD WEBHOOK
+ * SMARTBIZZ POS - ZERO-COST MULTI-TENANT CLOUD WEBHOOK
  * 
- * Production-ready Google Apps Script backend for SmartDine POS.
+ * Production-ready Google Apps Script backend for SmartBizz POS.
  * Serves as a zero-cost serverless API gateway for:
  * 1. Customer Table QR Ordering (smartbizz.devmonks.space/r/)
  * 2. Real-Time Kitchen Display System (KDS) & Order Polling
@@ -27,7 +27,7 @@
  * 3. Deploy > New Deployment > Web app:
  *    - Execute as: "Me" (your Google account)
  *    - Who has access: "Anyone"
- * 4. Copy the Web App URL and paste it into SmartDine Master Admin Control Panel.
+ * 4. Copy the Web App URL and paste it into SmartBizz Master Admin Control Panel.
  */
 
 const SECRET_SALT = "SmartDinePosZeroCostPlatform2026S";
@@ -129,7 +129,7 @@ function doPost(e) {
       case "HEALTH_CHECK":
         return jsonResponse({
           success: true,
-          service: "SmartDine Serverless POS Gateway",
+          service: "SmartBizz Serverless POS Gateway",
           status: "ONLINE",
           crypto: "AES-CBC/HMAC-SHA256 active",
           timestamp: new Date().toISOString()
@@ -161,7 +161,7 @@ function doGet(e) {
 
   return jsonResponse({
     status: "online",
-    service: "SmartDine Restaurant POS Serverless Gateway",
+    service: "SmartBizz POS Serverless Gateway",
     version: "2.5.0",
     encryption: "AES-256-CBC + HMAC-SHA256",
     timestamp: new Date().toISOString()
@@ -441,7 +441,7 @@ function handleCreateRestaurantOutlet(p) {
   var outletName = p.outlet_name || "Main Branch";
 
   // Create dedicated Google Sheet for this restaurant branch
-  var outletSS = SpreadsheetApp.create("SmartDine_" + outletName + "_" + outletId);
+  var outletSS = SpreadsheetApp.create("SmartBizz_" + outletName + "_" + outletId);
   setupRestaurantSpreadsheet(outletSS);
 
   outletSheet.appendRow([

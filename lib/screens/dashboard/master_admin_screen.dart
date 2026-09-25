@@ -401,7 +401,7 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
                           TextField(
                             controller: fromNameController,
                             style: TextStyle(color: context.textPrimary, fontSize: 13),
-                            decoration: ClassicTheme.inputDecorationFor(context, hintText: "SmartDine POS"),
+                            decoration: ClassicTheme.inputDecorationFor(context, hintText: "SmartBizz POS"),
                           ),
                           const SizedBox(height: 14),
                           SwitchListTile(
@@ -441,7 +441,7 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
                                             isSsl: isSsl,
                                             username: usernameController.text.trim(),
                                             password: passwordController.text.trim(),
-                                            fromName: fromNameController.text.trim().isNotEmpty ? fromNameController.text.trim() : 'SmartDine POS',
+                                            fromName: fromNameController.text.trim().isNotEmpty ? fromNameController.text.trim() : 'SmartBizz POS',
                                           );
                                           final ok = await SmtpEmailService.sendTestEmail(
                                             toEmail: testEmailController.text.trim(),
@@ -494,7 +494,7 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
                       isSsl: isSsl,
                       username: usernameController.text.trim(),
                       password: passwordController.text.trim(),
-                      fromName: fromNameController.text.trim().isNotEmpty ? fromNameController.text.trim() : 'SmartDine POS',
+                      fromName: fromNameController.text.trim().isNotEmpty ? fromNameController.text.trim() : 'SmartBizz POS',
                     );
                     await SmtpEmailService.saveSmtpConfig(cfg);
                     if (ctx.mounted && mounted) {
@@ -970,7 +970,7 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
       builder: (ctx) => AlertDialog(
         title: const Text('Close the console?'),
         content: const Text(
-            'You are on the dashboard, so going back closes SmartDine.'),
+            'You are on the dashboard, so going back closes SmartBizz.'),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx, false),
@@ -1318,7 +1318,7 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          "SmartDine",
+                          "SmartBizz",
                           style: TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.bold,
@@ -4562,7 +4562,7 @@ class _RegistrationRequestsTabState extends ConsumerState<RegistrationRequestsTa
     var clean = phone.replaceAll(RegExp(r'[^0-9]'), '');
     if (clean.length == 10) clean = '91$clean';
     if (clean.isEmpty) return;
-    final msg = Uri.encodeComponent("Hello $clientName, this is from SmartDine POS! We received your request.");
+    final msg = Uri.encodeComponent("Hello $clientName, this is from SmartBizz POS! We received your request.");
     final uri = Uri.parse('https://wa.me/$clean?text=$msg');
     try {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
@@ -4571,7 +4571,7 @@ class _RegistrationRequestsTabState extends ConsumerState<RegistrationRequestsTa
 
   Future<void> _sendEmail(String email, String clientName) async {
     if (email.isEmpty) return;
-    final uri = Uri.parse('mailto:$email?subject=${Uri.encodeComponent("SmartDine POS Setup & Onboarding")}');
+    final uri = Uri.parse('mailto:$email?subject=${Uri.encodeComponent("SmartBizz POS Setup & Onboarding")}');
     try {
       await launchUrl(uri);
     } catch (_) {}

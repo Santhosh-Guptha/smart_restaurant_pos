@@ -458,9 +458,9 @@ class _GoogleSheetsSetupGateDialogState extends ConsumerState<GoogleSheetsSetupG
                 // Description
                 Text(
                   VerticalLabels.of(ref.watch(currentVerticalProvider)).isRestaurant
-                      ? 'SmartDine stores your dishes, orders, KOTs and bills directly in your Google Drive. '
+                      ? 'SmartBizz stores your dishes, orders, KOTs and bills directly in your Google Drive. '
                           'Authorize your Google account to initialize your 7-tab store database and activate online QR ordering.'
-                      : 'SmartDine stores your products, bills and customer accounts directly in your Google Drive. '
+                      : 'SmartBizz stores your products, bills and customer accounts directly in your Google Drive. '
                           'Authorize your Google account to initialize your store database.',
                   textAlign: TextAlign.center,
                   style: TextStyle(

@@ -968,7 +968,7 @@ class AppsScriptBackendService {
 
   // ── Payment gateway ───────────────────────────────────────────────────────
   //
-  // Removed deliberately. SmartDine does not collect card or wallet money on a
+  // Removed deliberately. SmartBizz does not collect card or wallet money on a
   // merchant's behalf: doing so makes the platform a payment aggregator, which
   // requires RBI authorisation and a registered entity behind it. Until that
   // exists, a bill is settled by cash, by a card machine the restaurant already

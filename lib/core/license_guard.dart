@@ -176,7 +176,7 @@ class LicenseGuard {
             onPressed: () async {
               Navigator.of(ctx).pop();
               final uri = Uri.parse(
-                  'mailto:$kAdminEmail?subject=SmartDine renewal request: $orgName');
+                  'mailto:$kAdminEmail?subject=SmartBizz renewal request: $orgName');
               try {
                 await launchUrl(uri);
               } catch (_) {}

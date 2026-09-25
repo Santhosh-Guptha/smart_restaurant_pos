@@ -20,7 +20,7 @@ void main() {
         planName: 'Omnichannel Pro',
       );
 
-      expect(msg, contains('Welcome to SmartDine POS!'));
+      expect(msg, contains('Welcome to SmartBizz POS!'));
       expect(msg, contains('Grand Spice Kitchen'));
       expect(msg, contains('ORG26012'));
       expect(msg, contains('rajesh_spice'));

@@ -123,7 +123,7 @@ class TableQrPdfService {
                       ),
                       pw.SizedBox(height: 2),
                       pw.Text(
-                        'Smart Dine-In Ordering • Powered by SmartDine',
+                        'Scan · Order · Pay • Powered by SmartBizz',
                         style: pw.TextStyle(
                           fontSize: 9,
                           fontWeight: pw.FontWeight.bold,

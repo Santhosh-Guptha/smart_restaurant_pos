@@ -176,12 +176,12 @@ class VerticalLabels {
 
   String get dashboardBrandFallback {
     switch (vertical) {
-      case Verticals.restaurant: return 'SmartDine Restaurant';
-      case Verticals.kirana:     return 'Smart Kirana';
-      case Verticals.supermarket: return 'Smart Supermarket';
-      case Verticals.pharmacy:   return 'Smart Pharma';
-      case Verticals.retail:     return 'Smart Retail';
-      default:                   return 'SmartPOS Store';
+      case Verticals.restaurant: return 'SmartBizz Restaurant';
+      case Verticals.kirana:     return 'SmartBizz Kirana';
+      case Verticals.supermarket: return 'SmartBizz Supermarket';
+      case Verticals.pharmacy:   return 'SmartBizz Pharmacy';
+      case Verticals.retail:     return 'SmartBizz Retail';
+      default:                   return 'SmartBizz Store';
     }
   }
 

@@ -131,7 +131,7 @@ class FeatureGatedButton extends ConsumerWidget {
             onPressed: () async {
               Navigator.of(ctx).pop();
               final uri = Uri.parse(
-                  'mailto:$kAdminEmail?subject=SmartDine: please enable $featureLabel');
+                  'mailto:$kAdminEmail?subject=SmartBizz: please enable $featureLabel');
               try {
                 await launchUrl(uri);
               } catch (_) {}

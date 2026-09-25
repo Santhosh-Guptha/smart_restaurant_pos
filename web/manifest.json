@@ -1,12 +1,12 @@
 {
-    "name": "SmartDine POS",
-    "short_name": "SmartDine POS",
+    "name": "SmartBizz POS",
+    "short_name": "SmartBizz POS",
     "start_url": "/pos/",
     "scope": "/pos/",
     "display": "standalone",
     "background_color": "#0F172A",
     "theme_color": "#0F172A",
-    "description": "SmartDine All-in-One Multi-Vertical POS Platform",
+    "description": "SmartBizz All-in-One Multi-Vertical POS Platform",
     "orientation": "any",
     "prefer_related_applications": false,
     "icons": [

@@ -40,7 +40,7 @@ class RestaurantSheetsService {
           drive.File(
             name: 'SmartDine_Menu_Images',
             mimeType: 'application/vnd.google-apps.folder',
-            description: 'Public menu item images for SmartDine POS and QR ordering',
+            description: 'Public menu item images for SmartBizz POS and QR ordering',
           ),
         );
         folderId = newFolder.id!;
@@ -427,7 +427,7 @@ class RestaurantSheetsService {
       // 2. Build 7-Tab Spreadsheet Blueprint
       final spreadsheet = sheets.Spreadsheet(
         properties: sheets.SpreadsheetProperties(
-          title: 'SmartDine Ledger - $restaurantName ($orgId)',
+          title: 'SmartBizz Ledger - $restaurantName ($orgId)',
         ),
         sheets: [
           sheets.Sheet(

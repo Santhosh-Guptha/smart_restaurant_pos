@@ -32,7 +32,7 @@
     </queries>
 
     <application
-        android:label="SmartDine"
+        android:label="SmartBizz"
         android:icon="@mipmap/launcher_icon">
         <activity
             android:name=".MainActivity"

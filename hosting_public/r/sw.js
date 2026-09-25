@@ -1,4 +1,4 @@
-// SmartDine Customer Web App Service Worker (W-39, W-40, W-41, W-42)
+// SmartBizz Customer Web App Service Worker (W-39, W-40, W-41, W-42)
 const CACHE_VERSION = '2026.09.18-v3';
 const CACHE_NAME = 'smartbizz-menu-' + CACHE_VERSION;
 

@@ -356,7 +356,7 @@ class AdminDashboardView extends ConsumerWidget {
                                               crossAxisAlignment: CrossAxisAlignment.start,
                                               children: [
                                                 Text(
-                                                  'SmartDine Platform Governance & Cloud Health',
+                                                  'SmartBizz Platform Governance & Cloud Health',
                                                   style: TextStyle(
                                                     fontSize: 18,
                                                     fontWeight: FontWeight.bold,

@@ -43,7 +43,7 @@ class _AdminInquiriesViewState extends ConsumerState<AdminInquiriesView> {
     if (clean.length == 10) clean = '91$clean';
     if (clean.isEmpty) return;
     final msg = Uri.encodeComponent(
-      'Hello $name! Greetings from SmartDine POS. We received your request for "$brand". We would love to assist with your demo and onboarding.',
+      'Hello $name! Greetings from SmartBizz POS. We received your request for "$brand". We would love to assist with your demo and onboarding.',
     );
     final uri = Uri.parse('https://wa.me/$clean?text=$msg');
     try {
@@ -53,7 +53,7 @@ class _AdminInquiriesViewState extends ConsumerState<AdminInquiriesView> {
 
   Future<void> _sendEmail(String email, String brand) async {
     if (email.isEmpty) return;
-    final subject = Uri.encodeComponent('SmartDine POS Demonstration & Onboarding: $brand');
+    final subject = Uri.encodeComponent('SmartBizz POS Demonstration & Onboarding: $brand');
     final uri = Uri.parse('mailto:$email?subject=$subject');
     try {
       await launchUrl(uri);

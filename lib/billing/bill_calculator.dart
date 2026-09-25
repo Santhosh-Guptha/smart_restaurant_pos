@@ -1,4 +1,4 @@
-// SmartDine Canonical Bill Calculator
+// SmartBizz Canonical Bill Calculator
 // Follows audit specification Section 4.4 and Section 6.1
 // All monetary arithmetic is performed in integer paise (1 INR = 100 paise)
 
