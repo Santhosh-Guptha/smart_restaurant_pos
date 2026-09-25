@@ -1,3 +1,5 @@
+import '../../services/sheet_access_reconciler.dart';
+import '../../services/tenant_metrics_service.dart';
 import 'dart:async';
 import '../../providers/dashboard_layout_provider.dart';
 import '../../providers/entitlements_provider.dart';
@@ -90,7 +92,45 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
       if (mounted) {
         _checkGoogleSheetsAccess();
       }
+      _reconcileSheetAccess();
+      _uploadTenantMetrics();
     });
+  }
+
+  /// On the tenant owner's device, keep every store's sheet shared with the
+  /// right people (SheetAccessReconciler). Picks up changes made in the
+  /// platform console or on other devices. At most every few hours.
+  Future<void> _reconcileSheetAccess() async {
+    try {
+      final session = ref.read(saasSessionProvider);
+      final org = session.currentOrganization;
+      final user = session.currentUser;
+      if (org == null || user == null) return;
+      if (org.storageMode != StorageModes.clientsOwnSheets) return;
+      if (user.role.toUpperCase() != 'OWNER' || (user.franchiseId ?? '').isNotEmpty) return;
+      final client = ref.read(restaurantAuthProvider.notifier).authenticatedHttpClient;
+      if (client == null) return;
+      await SheetAccessReconciler.reconcileIfDue(client: client, orgId: org.id, orgName: org.name);
+    } catch (e) {
+      debugPrint('Sheet access reconcile skipped: $e');
+    }
+  }
+
+  /// Daily totals per store for the platform's business analytics
+  /// (TenantMetricsService). Aggregates only; bills stay with the tenant.
+  Future<void> _uploadTenantMetrics() async {
+    try {
+      final session = ref.read(saasSessionProvider);
+      final org = session.currentOrganization;
+      if (org == null || (session.currentUser?.role ?? '').toUpperCase() == 'MASTER_ADMIN') return;
+      await TenantMetricsService.uploadIfDue(
+        orgId: org.id,
+        vertical: session.vertical,
+        storageMode: org.storageMode,
+      );
+    } catch (e) {
+      debugPrint('Tenant metrics skipped: $e');
+    }
   }
 
   @override

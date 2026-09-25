@@ -18,6 +18,7 @@ import '../../core/vertical_labels.dart';
 import '../../core/package_model.dart';
 import '../../providers/entitlements_provider.dart';
 import '../../widgets/outlet_owners_dialog.dart';
+import '../../services/sheet_access_reconciler.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class BranchManagementScreen extends ConsumerStatefulWidget {
@@ -469,10 +470,12 @@ class _BranchManagementScreenState
                               authenticatedClient: client,
                               restaurantName: branchName,
                               orgId: orgId,
+                              outletId: outletId,
+                              saveAsActive: false,
                             );
                             if (provisionResult['success'] == true) {
                               sheetId = provisionResult['spreadsheetId']?.toString() ?? '';
-                              sheetUrl = provisionResult['spreadsheetUrl']?.toString() ?? '';
+                              sheetUrl = (provisionResult['sheetUrl'] ?? provisionResult['spreadsheetUrl'])?.toString() ?? '';
                             }
                           } catch (sheetErr) {
                             debugPrint('Auto-provision Google Sheet failed: $sheetErr');
@@ -618,6 +621,38 @@ class _BranchManagementScreenState
         ),
       ),
     );
+  }
+
+  /// Share each store's Google Sheet with exactly its owners and staff
+  /// (SheetAccessReconciler). Needs this device signed in to the tenant
+  /// owner's Google account; otherwise it says so.
+  Future<void> _syncSheetAccess(BuildContext context, {String? outletId, bool quiet = false}) async {
+    final session = ref.read(saasSessionProvider);
+    final org = session.currentOrganization;
+    if (org == null || org.storageMode != StorageModes.clientsOwnSheets) {
+      if (!quiet && context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Sheet access applies to tenants on their own Google Sheets.')));
+      }
+      return;
+    }
+    final client = ref.read(restaurantAuthProvider.notifier).authenticatedHttpClient;
+    if (client == null) {
+      if (!quiet && context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Sign in with the owner\'s Google account on this device to manage sheet access.')));
+      }
+      return;
+    }
+    final report = await SheetAccessReconciler.reconcile(
+        client: client, orgId: org.id, orgName: org.name, onlyOutletId: outletId);
+    if (!context.mounted) return;
+    if (!quiet || report.changed || report.errors.isNotEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Sheet access: $report'),
+        backgroundColor: report.errors.isEmpty ? ClassicTheme.successEmerald : ClassicTheme.warningAmber,
+      ));
+    }
   }
 
   void _showEditBranchDialog({
@@ -935,6 +970,11 @@ class _BranchManagementScreenState
           ],
         ),
         actions: [
+          IconButton(
+            tooltip: 'Sync Google Sheet access',
+            icon: Icon(Icons.sync_lock_rounded, color: context.textSecondary),
+            onPressed: () => _syncSheetAccess(context),
+          ),
           IconButton(
             tooltip: 'Refresh Outlets',
             icon: Icon(Icons.refresh_rounded, color: context.textSecondary),
@@ -1755,7 +1795,9 @@ class _BranchManagementScreenState
                     outletName: outlet.name,
                     businessCategory: session.currentOrganization?.businessCategory ?? '',
                     maxUsers: session.currentLicense?.maxUsers ?? 0,
-                  );
+                  ).then((_) {
+                    if (context.mounted) _syncSheetAccess(context, outletId: outlet.id, quiet: true);
+                  });
                 },
                 icon: Icon(Icons.manage_accounts_rounded, color: context.textSecondary, size: 20),
               ),

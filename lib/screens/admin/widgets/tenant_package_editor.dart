@@ -66,8 +66,12 @@ class TenantPackageSelection {
         currentStorageMode: currentStorageMode,
       );
 
-  ComposedLicense get composed =>
-      LicenseComposer.compose(package, plan, currentStorageMode: currentStorageMode);
+  /// A new tenant (no current mode) on a cloud package is set up on its own
+  /// Google Sheets: onboarding offers two ways to store data — offline on the
+  /// device, or the client's own Sheets — and the platform ledger
+  /// (CLOUD_SYNC) is kept only for tenants already on it.
+  ComposedLicense get composed => LicenseComposer.compose(package, plan,
+      currentStorageMode: currentStorageMode ?? StorageModes.clientsOwnSheets);
 
   // ── the contract the four consumers read ────────────────────────────────
 

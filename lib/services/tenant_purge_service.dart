@@ -95,6 +95,7 @@ class TenantPurgeService {
       'expenses',
       'registration_requests',
       'business_inquiries',
+      'tenant_metrics',
     ];
 
     for (final col in queryCollections) {

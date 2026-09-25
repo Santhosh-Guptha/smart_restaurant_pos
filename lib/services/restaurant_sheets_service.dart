@@ -395,11 +395,19 @@ class RestaurantSheetsService {
   }
 
   /// Creates and provisions the 7-Tab Restaurant Google Sheet in the Owner Google Drive
+  /// One ledger per store. [outletId] names a branch's own sheet; without it
+  /// this is the tenant's main sheet. The duplicate check and the title use
+  /// the outlet id, so a second branch no longer finds — and silently shares —
+  /// the first branch's sheet. [saveAsActive] is false when an owner creates a
+  /// sheet for *another* branch, so their own till keeps writing to its own.
   static Future<Map<String, dynamic>> provisionRestaurantSheet({
     required http.Client authenticatedClient,
     required String restaurantName,
     required String orgId,
+    String? outletId,
+    bool saveAsActive = true,
   }) async {
+    final ledgerKey = (outletId != null && outletId.isNotEmpty) ? outletId : orgId;
     try {
       final sheetsApi = sheets.SheetsApi(authenticatedClient);
       final driveApi = drive.DriveApi(authenticatedClient);
@@ -407,7 +415,7 @@ class RestaurantSheetsService {
       // 1. Safe Guard: Query Google Drive to prevent duplicate creation
       try {
         final query =
-            "mimeType = 'application/vnd.google-apps.spreadsheet' and name contains '$orgId' and trashed = false";
+            "mimeType = 'application/vnd.google-apps.spreadsheet' and name contains '($ledgerKey)' and trashed = false";
         final existing = await driveApi.files.list(q: query, spaces: 'drive');
         if (existing.files != null && existing.files!.isNotEmpty) {
           final existingId = existing.files!.first.id;
@@ -427,7 +435,7 @@ class RestaurantSheetsService {
       // 2. Build 7-Tab Spreadsheet Blueprint
       final spreadsheet = sheets.Spreadsheet(
         properties: sheets.SpreadsheetProperties(
-          title: 'SmartBizz Ledger - $restaurantName ($orgId)',
+          title: 'SmartBizz Ledger - $restaurantName ($ledgerKey)',
         ),
         sheets: [
           sheets.Sheet(
@@ -598,10 +606,12 @@ class RestaurantSheetsService {
         sheetId,
       );
 
-      // 4. Save sheetId to local Hive config
-      final box = await Hive.openBox(boxName);
-      await box.put(keySheetId, sheetId);
-      await box.put(keySheetUrl, sheetUrl);
+      // 4. Save sheetId to local Hive config (only for this device's own store)
+      if (saveAsActive) {
+        final box = await Hive.openBox(boxName);
+        await box.put(keySheetId, sheetId);
+        await box.put(keySheetUrl, sheetUrl);
+      }
 
       return {
         'success': true,

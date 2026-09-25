@@ -139,6 +139,13 @@ service cloud.firestore {
     }
 
     // ── Platform ──────────────────────────────────────────────────────────
+    // Aggregates only: a tenant writes its own stores' days; the platform reads all.
+    match /tenant_metrics/{metricId} {
+      allow create, update: if inOrg(request.resource.data.orgId)
+                            && metricId.matches(request.resource.data.orgId + '__.*');
+      allow read: if isAdmin() || inOrg(resource.data.orgId);
+      allow delete: if isAdmin();
+    }
     match /audit_logs/{id}     { allow create: if signedIn(); allow read, update, delete: if isAdmin(); }
     match /system_config/{id}  {
       allow read: if signedIn();

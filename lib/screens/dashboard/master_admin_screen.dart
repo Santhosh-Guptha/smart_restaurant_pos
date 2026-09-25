@@ -33,6 +33,7 @@ import '../admin/views/admin_encyclopedia_view.dart';
 import '../admin/views/admin_packages_view.dart';
 import '../admin/views/admin_plans_view.dart';
 import '../admin/views/admin_migrations_view.dart';
+import '../admin/views/admin_business_analytics_view.dart';
 import '../admin/dialogs/tenant_access_dialog.dart';
 import '../admin/widgets/tenant_package_editor.dart';
 import 'restaurant_home_screen.dart';
@@ -1057,6 +1058,7 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
                           const AdminEncyclopediaView(),
                           const AdminPackagesView(),
                           const AdminMigrationsView(),
+                          const AdminBusinessAnalyticsView(),
                         ],
                       ),
                     ),
@@ -1487,6 +1489,15 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
                   title: "Packages",
                   icon: Icons.inventory_2_outlined,
                   activeIcon: Icons.inventory_2_rounded,
+                  showExpanded: showExpanded,
+                  isMobile: isMobile,
+                ),
+                _buildNavItem(
+                  context,
+                  index: 10,
+                  title: "Business Analytics",
+                  icon: Icons.pie_chart_outline_rounded,
+                  activeIcon: Icons.pie_chart_rounded,
                   showExpanded: showExpanded,
                   isMobile: isMobile,
                 ),
@@ -3022,10 +3033,13 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                                   enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: context.borderColor)),
                                   focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: primaryAccent, width: 2)),
                                 ),
-                                items: const [
-                                  DropdownMenuItem(value: 'CLOUD_SYNC', child: Text('Cloud Sync Mode (Firestore & Drive)')),
-                                  DropdownMenuItem(value: 'PURE_OFFLINE', child: Text('Pure Offline Mode (Device Local Only)')),
-                                  DropdownMenuItem(value: 'CLIENTS_OWN_SHEETS', child: Text("Client Dedicated Cloud Database")),
+                                // Two ways to store data. The platform ledger stays
+                                // listed only for a tenant that is already on it.
+                                items: [
+                                  const DropdownMenuItem(value: 'PURE_OFFLINE', child: Text('Offline (this device only)')),
+                                  const DropdownMenuItem(value: 'CLIENTS_OWN_SHEETS', child: Text("Client's own Google Sheets")),
+                                  if (initialStorageMode == 'CLOUD_SYNC')
+                                    const DropdownMenuItem(value: 'CLOUD_SYNC', child: Text('Platform cloud ledger (legacy)')),
                                 ],
                                 onChanged: (newMode) {
                                   if (newMode == null || newMode == storageMode) return;

@@ -82,6 +82,13 @@ service cloud.firestore {
       }
     }
 
+    // Daily per-store aggregates for platform analytics (TenantMetricsService).
+    // Open like the rest of this file today; firestore.rules.next locks it to
+    // the tenant (write) and the platform admin (read).
+    match /tenant_metrics/{metricId} {
+      allow read, write: if true;
+    }
+
     match /audit_logs/{logId} {
       allow read, write: if true;
     }
