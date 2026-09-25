@@ -21,7 +21,7 @@ import hashlib
 # pairs new HTML with a stale cached site.css / site.js.
 def _asset_v():
     h = hashlib.md5()
-    for f in ('site.css', 'site.js'):
+    for f in ('site.css', 'site.js', 'fx.css', 'fx.js'):
         h.update(open(os.path.join(OUT, 'assets', f), 'rb').read())
     return h.hexdigest()[:8]
 ASSET_V = _asset_v()
@@ -54,6 +54,7 @@ def head(title, desc, cat, canonical):
         '&family=Sora:wght@300;400;500;600&display=swap" rel="stylesheet">\n'
         '<title>' + E(title) + '</title>\n'
         '<link rel="stylesheet" href="/assets/site.css?v=' + ASSET_V + '">\n'
+        '<link rel="stylesheet" href="/assets/fx.css?v=' + ASSET_V + '">\n'
         '<script>try{var t=localStorage.getItem("sb-theme");if(t)document.documentElement.dataset.theme=t}catch(e){}</script>\n'
         '</head>\n<body>')
 
@@ -72,6 +73,7 @@ def nav(active=None, hub=False):
     extra = ('<li class="nav-sep" aria-hidden="true"></li>'
              '<li><a href="/#suite">The suite</a></li><li><a href="/#plans">Plans</a></li>')
     return ('\n<a class="skip" href="#main">Skip to content</a>'
+            '\n<div class="fx-progress" aria-hidden="true"><i></i></div>'
             '\n<nav>\n  <div class="wrap">\n'
             '    <a class="logo" href="/"><img src="/assets/logo.png" alt="" width="34" height="34">' + D.BRAND + '</a>\n'
             '    <ul id="navList">' + items + extra + '</ul>\n'
@@ -99,8 +101,8 @@ def device(slugs, interactive):
     tabbar = ('<div class="dv-tabs" role="tablist" aria-label="See the app for each trade">' + tabs + '</div>'
               if interactive else '')
     return ('<div class="dv' + (' dv-live' if interactive else '') + '" data-cat="' + slugs[0] + '" id="device">' + tabbar +
-            '<div class="dv-stage"><div class="dv-glow"></div>'
-            '<div class="tablet"><div class="tablet-cam"></div><div class="tablet-scr" id="tabScr">' +
+            '<div class="dv-stage"><div class="dv-glow"></div>' + orbit(slugs) +
+            '<div class="tablet"><div class="fx-glare"></div><div class="tablet-cam"></div><div class="tablet-scr" id="tabScr">' +
             S.SCREENS[slugs[0]]() + '</div></div>'
             '<div class="phone-s"><div class="phone-notch"></div><div class="phone-scr" id="phScr">' +
             S.phone(slugs[0]) + '</div></div>' +
@@ -111,10 +113,52 @@ def device(slugs, interactive):
             '</div>')
 
 
+def orbit(slugs):
+    """Module chips circling the device: one app, many parts."""
+    pool = [m for m in D.MODULES if m['tier'] != 'soon' and any(v in m['trades'] for v in slugs)]
+    if len(slugs) > 1:
+        pick = [m for m in pool if m['name'] in ('Counter billing', 'Tables & floor', 'Kitchen display',
+                'Barcode billing', 'Customer khata', 'UPI QR at the till', 'GST bills', 'Analytics & rush',
+                'Guest QR ordering', 'Outlets & franchise')]
+    else:
+        pick = pool[:10]
+    n = len(pick)
+    chips = ''.join('<span class="orb" style="--a:' + str(round(360 * i / n, 2)) + 'deg"><span class="orb-in">' +
+                    m['icon'] + '<b>' + E(m['name']) + '</b></span></span>' for i, m in enumerate(pick))
+    return '<div class="orbit" aria-hidden="true"><div class="orbit-ring">' + chips + '</div></div>'
+
+
+def layers():
+    """The exploded app: five planes that separate as you scroll."""
+    groups = [('Till', 'Bill, print and get paid'), ('Floor', 'Tables, kitchen and guests'),
+              ('Customers', 'Khata and bills that reach them'), ('Office', 'Staff, shifts, numbers, backup'),
+              ('Growth', 'More tills, the cloud, more branches')]
+    planes = ''
+    for i, (g, line) in enumerate(groups):
+        ms = [m for m in D.MODULES if m['group'] == g]
+        icons = ''.join('<span class="ly-m t-' + m['tier'] + '">' + m['icon'] + '<small>' + E(m['name']) +
+                        '</small></span>' for m in ms)
+        planes += ('<div class="ly" style="--i:' + str(i) + '"><div class="ly-h"><b>' + E(g) + '</b><span>' + E(line) +
+                   '</span></div><div class="ly-ms">' + icons + '</div></div>')
+    return ('<section class="layers" id="layers" aria-label="The app, layer by layer">'
+            '<div class="ly-sticky"><div class="wrap ly-wrap">'
+            '<div class="ly-copy"><p class="kicker">Under the hood</p><h2>One app.<br>Five layers.</h2>'
+            '<p class="lede">Scroll, and the app comes apart. The till sits on the bottom — every trade stands on it. '
+            'The floor, your customers, the office and growth stack on top, and switch on as you need them.</p>'
+            '<ol class="ly-key">' + ''.join('<li style="--i:' + str(i) + '"><b>' + E(g) + '</b> ' + E(l) + '</li>'
+                                            for i, (g, l) in enumerate(groups)) + '</ol></div>'
+            '<div class="ly-scene"><div class="ly-stack">' + planes + '</div></div>'
+            '</div></div></section>\n\n')
+
+
 def stats():
     items = [('5', 'trades, one app'), ('0%', 'taken from your UPI'), ('58 · 80mm', 'any ESC/POS printer'),
              ('Offline', 'bills with the Wi-Fi down'), ('14 days', 'free, no card')]
-    return ('<div class="stats rv">' + ''.join('<div><b>' + E(a) + '</b><span>' + E(b) + '</span></div>'
+    def num(a):
+        import re
+        m = re.match(r'^(\d+)(.*)$', a)
+        return ('<b data-count="' + m.group(1) + '" data-suffix="' + E(m.group(2)) + '">' + E(a) + '</b>') if m and not a.startswith('58') else '<b>' + E(a) + '</b>'
+    return ('<div class="stats rv">' + ''.join('<div>' + num(a) + '<span>' + E(b) + '</span></div>'
                                                 for a, b in items) + '</div>')
 
 
@@ -250,7 +294,8 @@ def footer(category_value):
         '  </div>\n  <div class="wrap foot-base"><span>© ' + D.BRAND + '. Not a payment gateway — your money goes '
         'straight to your bank.</span><a href="#top">Back to top ↑</a></div>\n</footer>\n' + MODALS +
         '\n<script>window.SB_CATEGORY = ' + category_value + ';</script>\n'
-        '<script src="/assets/site.js?v=' + ASSET_V + '"></script>\n</body>\n</html>\n')
+        '<script src="/assets/site.js?v=' + ASSET_V + '"></script>\n'
+        '<script src="/assets/fx.js?v=' + ASSET_V + '" defer></script>\n</body>\n</html>\n')
 
 
 def category_page(c):
@@ -312,7 +357,7 @@ def category_page(c):
         '    <h2 class="rv d1">Before you ask.</h2>\n'
         '    <div class="faqs rv d2">' + faq(c['faq']) + '</div>\n  </div>\n</section>\n\n'
 
-        '<section class="final" id="start">\n  <div class="lamp-glow"></div>\n  <div class="wrap">\n'
+        '<section class="final" id="start">\n  <div class="fx-floor" aria-hidden="true"><i></i></div><div class="lamp-glow"></div>\n  <div class="wrap">\n'
         '    <h2 class="rv">Try it on tomorrow’s counter.</h2>\n'
         '    <p class="lede rv d1" style="margin-left:auto;margin-right:auto">Fourteen days, the whole '
         'offline till, no card. If it does not fit the way you work, you have lost an evening.</p>\n'
@@ -365,6 +410,7 @@ def hub():
         'you pick when you sign up.</p>\n'
         '    <div class="cats">' + cards + '\n    </div>\n  </div>\n</section>\n\n'
 
+        + layers() +
         '<section class="band" id="suite">\n  <div class="wrap">\n'
         '    <p class="kicker rv">The suite</p>\n'
         '    <h2 class="rv d1">Everything we make,<br>in one application.</h2>\n'
@@ -404,7 +450,7 @@ def hub():
         '    <h2 class="rv d1">Before you ask.</h2>\n'
         '    <div class="faqs rv d2">' + faq(D.HUB_FAQ) + '</div>\n  </div>\n</section>\n\n'
 
-        '<section class="final" id="start">\n  <div class="lamp-glow"></div>\n  <div class="wrap">\n'
+        '<section class="final" id="start">\n  <div class="fx-floor" aria-hidden="true"><i></i></div><div class="lamp-glow"></div>\n  <div class="wrap">\n'
         '    <h2 class="rv">Start on tomorrow’s counter.</h2>\n'
         '    <p class="lede rv d1" style="margin-left:auto;margin-right:auto">Fourteen days, the whole '
         'offline till, no card.</p>\n'

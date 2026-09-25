@@ -1,0 +1,263 @@
+/* ═══════════════════════════════════════════════════════════════════════
+   SmartBizz — FX layer
+   ─────────────────────────────────────────────────────────────────────
+   The 3D, motion and cross-device layer, kept apart from site.css so it can
+   be read (or switched off) on its own.
+
+   Rules this file keeps:
+   * transform and opacity only, so it composites on the GPU on phones too;
+   * nothing is hidden unless fx.js has run (html.fx), so a page without
+     JavaScript, or with a script error, still reads top to bottom;
+   * prefers-reduced-motion switches every moving part off, and anything
+     off-screen is paused (.fx-off);
+   * hover effects only on devices that can hover.
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ── scroll progress ─────────────────────────────────────────────────── */
+.fx-progress{position:fixed;top:0;left:0;right:0;height:3px;z-index:60;pointer-events:none}
+.fx-progress i{display:block;height:100%;transform-origin:0 50%;transform:scaleX(var(--sp,0));
+  background:linear-gradient(90deg,var(--lamp-2),var(--lamp),var(--flame));box-shadow:0 0 12px var(--lamp)}
+
+/* ── the device stage, in real 3D ───────────────────────────────────── */
+.dv-stage{transform-style:preserve-3d;perspective:1400px;--rx:0deg;--ry:0deg;--gx:50%;--gy:30%}
+.dv .tablet,.dv-stage:hover .tablet{transform-style:preserve-3d;
+  transform:rotateY(calc(-8deg + var(--ry))) rotateX(calc(5deg + var(--rx)));transition:transform .5s cubic-bezier(.2,.8,.2,1)}
+.dv .phone-s,.dv-stage:hover .phone-s{
+  transform:translateZ(70px) rotateY(calc(-14deg + var(--ry) * 1.6)) rotateX(calc(var(--rx) * 1.6)) rotateZ(3deg);transition:transform .5s cubic-bezier(.2,.8,.2,1)}
+.dv-stage.tracking .tablet,.dv-stage.tracking .phone-s{transition:transform .12s linear}
+.fx-glare{position:absolute;inset:0;border-radius:inherit;pointer-events:none;z-index:3;opacity:.0;transition:opacity .4s;
+  background:radial-gradient(circle at var(--gx) var(--gy),rgba(255,255,255,.28),transparent 45%);mix-blend-mode:screen}
+.dv-stage.tracking .fx-glare{opacity:1}
+
+/* screen flip when the trade changes */
+.tablet-scr{transform-origin:50% 50%;backface-visibility:hidden;-webkit-backface-visibility:hidden;
+  transition:transform .32s cubic-bezier(.5,0,.75,0),opacity .32s}
+.phone-scr{transition:transform .32s cubic-bezier(.5,0,.75,0),opacity .32s}
+.swap .tablet-scr{opacity:.15;transform:rotateY(88deg) scale(.96)}
+.swap .phone-scr{opacity:0;transform:scale(.7) rotateZ(-8deg)}
+.swap-in .tablet-scr{opacity:.15;transform:rotateY(-88deg) scale(.96);transition:none}
+.swap-in .phone-scr{opacity:0;transform:scale(1.2) rotateZ(6deg);transition:none}
+.dv-stage:not(.swap) .tablet-scr,.dv-stage:not(.swap) .phone-scr{transition-timing-function:cubic-bezier(.2,.9,.25,1.15);transition-duration:.55s}
+
+/* the orbit: one app, many parts */
+.orbit{position:absolute;left:0;right:0;top:0;bottom:0;pointer-events:none;transform-style:preserve-3d;z-index:0}
+.orbit-ring{--r:min(215px,36vw);position:absolute;left:46%;top:calc(100% - 92px);width:0;height:0;transform-style:preserve-3d;
+  transform:rotateX(74deg) rotateZ(0deg);animation:orb-spin 36s linear infinite}
+.orb{position:absolute;left:0;top:0;transform-style:preserve-3d;
+  transform:rotateZ(var(--a)) translateX(var(--r)) rotateZ(calc(var(--a) * -1))}
+.orb-in{position:absolute;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;
+  transform:translate(-50%,-50%) rotateZ(0deg) rotateX(-74deg);animation:orb-face 36s linear infinite;
+  padding:6px 11px 6px 8px;border-radius:999px;font-size:12.5px;line-height:1;
+  background:color-mix(in srgb,var(--bg-2) 82%,transparent);border:1px solid color-mix(in srgb,var(--lamp) 40%,var(--rule));
+  color:var(--fg);box-shadow:0 10px 26px -12px rgba(0,0,0,.7)}
+.orb-in b{font-weight:600}
+@keyframes orb-spin{to{transform:rotateX(74deg) rotateZ(360deg)}}
+@keyframes orb-face{to{transform:translate(-50%,-50%) rotateZ(-360deg) rotateX(-74deg)}}
+@media (max-width:720px){ .orb-in b{display:none} .orb-in{padding:7px;font-size:15px} .orbit-ring{--r:40vw;left:48%;top:calc(100% - 44px)} }
+
+/* room under the device for the ring to pass in front */
+.dv-live .dv-stage,.dv .dv-stage{padding-bottom:110px}
+@media (max-width:720px){ .dv .dv-stage{padding-bottom:78px} }
+.dv-cap{position:relative;z-index:1;margin-top:14px}
+/* entrance */
+.fx .dv .tablet{animation:dv-in 1.3s cubic-bezier(.2,.8,.2,1) both}
+.fx .dv .phone-s{animation:ph-in 1.3s .25s cubic-bezier(.2,.8,.2,1) both}
+.fx .dv .orb-in{animation:orb-face 36s linear infinite,fade-in 1.2s .6s backwards}
+@keyframes dv-in{from{opacity:0;transform:translateY(80px) rotateX(48deg) rotateY(-30deg) scale(.86)}}
+@keyframes ph-in{from{opacity:0;transform:translateZ(260px) translateY(120px) rotateY(-50deg) rotateZ(14deg)}}
+@keyframes fade-in{from{opacity:0}}
+
+/* hero lamp follows the pointer */
+.hero .lamp-glow{translate:var(--mx,0) var(--my,0);transition:translate .8s cubic-bezier(.2,.8,.2,1)}
+
+/* ── headings rise word by word, in 3D ─────────────────────────────── */
+.fx .fx-words .w{display:inline-block;transform-origin:50% 100%;
+  transform:translateY(.55em) rotateX(-85deg);opacity:0;
+  transition:transform .9s cubic-bezier(.2,.8,.2,1),opacity .6s;transition-delay:calc(var(--wi) * 55ms)}
+.fx .fx-words{perspective:700px}
+.fx .fx-words.fx-in .w{transform:none;opacity:1}
+
+/* sections unfold toward you */
+.fx .rv{opacity:0;transform:perspective(1000px) translateY(46px) rotateX(16deg) scale(.98);
+  transition:transform 1s cubic-bezier(.2,.8,.2,1),opacity .8s}
+.fx .rv.in{opacity:1;transform:none}
+
+/* ── tilt + glare on cards (fine pointers only; fx.js adds .fx-tilt) ── */
+.fx-tilt{position:relative;transform-style:preserve-3d;will-change:transform}
+.fx .fx-tilt.in,.fx-tilt:not(.rv){transform:perspective(900px) rotateX(var(--rx,0deg)) rotateY(var(--ry,0deg)) translateZ(0)}
+.fx .fx-tilt.in:hover,.fx-tilt:not(.rv):hover{transform:perspective(900px) rotateX(var(--rx,0deg)) rotateY(var(--ry,0deg)) translateY(-6px) scale(1.015)}
+.fx-tilt.tilting{transition:transform .12s linear,border-color .3s,box-shadow .3s!important}
+.fx-tilt::after{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;opacity:0;transition:opacity .35s;
+  background:radial-gradient(circle at var(--gx,50%) var(--gy,50%),color-mix(in srgb,var(--c,var(--lamp)) 26%,transparent),transparent 55%)}
+.fx-tilt:hover::after{opacity:1}
+.fx-tilt > *{transform:translateZ(0)}
+.fx-tilt:hover .md-ico,.fx-tilt:hover .ico,.fx-tilt:hover .demo-i,.fx-tilt:hover .fl-i{transform:translateZ(38px) scale(1.12);transition:transform .4s cubic-bezier(.2,.8,.2,1)}
+.md-ico,.cat .ico,.demo-i,.fl-i{display:inline-block;transition:transform .4s cubic-bezier(.2,.8,.2,1)}
+
+/* the day flow draws its line as it comes in */
+.flow::before{transform-origin:0 50%;transform:scaleX(0);transition:transform 1.6s .3s cubic-bezier(.2,.8,.2,1)}
+.flow.fx-in::before{transform:scaleX(1)}
+.fx .flow li .fl-n{transition:transform .6s cubic-bezier(.3,1.6,.5,1)}
+.fx .flow li:not(.in) .fl-n{transform:scale(0) rotate(-180deg)}
+
+/* matrix rows cascade */
+.fx .matrix tbody tr{opacity:0;transform:translateX(-18px);transition:opacity .5s,transform .6s cubic-bezier(.2,.8,.2,1);transition-delay:calc(var(--ri,0) * 28ms)}
+.fx .matrix.fx-in tbody tr{opacity:1;transform:none}
+
+/* ── the exploded app ───────────────────────────────────────────────── */
+.layers{position:relative;height:280vh;height:280svh;padding:0;background:var(--bg);--p:0}
+.ly-sticky{position:-webkit-sticky;position:sticky;top:0;height:100vh;height:100svh;display:flex;align-items:center;overflow:hidden}
+.ly-wrap{display:grid;grid-template-columns:.9fr 1.1fr;gap:40px;align-items:center;width:100%}
+.ly-copy h2{font-size:clamp(34px,4.6vw,60px)}
+.ly-key{list-style:none;padding:0;margin:28px 0 0;display:grid;gap:8px;font-size:14.5px;color:var(--fg-2)}
+.ly-key li{padding:9px 14px;border-radius:12px;border:1px solid transparent;transition:all .4s}
+.ly-key li b{color:var(--fg);margin-right:6px}
+.ly-key li.on{border-color:color-mix(in srgb,var(--ly) 60%,transparent);background:color-mix(in srgb,var(--ly) 12%,transparent);color:var(--fg);transform:translateX(8px)}
+.ly-scene{perspective:1600px;height:min(560px,70vh);display:grid;place-items:center}
+.ly-stack{position:relative;width:min(400px,78vw);height:min(250px,48vw);transform-style:preserve-3d;
+  transform:rotateX(58deg) rotateZ(calc(-40deg + var(--p) * 30deg)) translateZ(calc(var(--p) * -60px))}
+.ly{--gap:calc(10px + var(--p) * 78px);position:absolute;left:0;top:0;right:0;bottom:0;border-radius:20px;padding:16px 18px;
+  transform:translateZ(calc(var(--i) * var(--gap)));transform-style:preserve-3d;
+  background:linear-gradient(145deg,color-mix(in srgb,var(--ly) 26%,transparent),color-mix(in srgb,var(--bg-2) 55%,transparent));
+  border:1px solid color-mix(in srgb,var(--ly) 55%,transparent);
+  box-shadow:0 30px 50px -30px rgba(0,0,0,.8),inset 0 1px 0 rgba(255,255,255,.06);transition:box-shadow .4s,border-color .4s}
+.ly .ly-ms,.ly .ly-h{opacity:.35;transition:opacity .4s}
+.ly.on .ly-ms,.ly.on .ly-h{opacity:1}
+.ly.on{background:linear-gradient(145deg,color-mix(in srgb,var(--ly) 30%,var(--bg-2)),var(--bg-2));box-shadow:0 0 0 2px var(--ly),0 40px 70px -30px color-mix(in srgb,var(--ly) 70%,transparent)}
+.ly:nth-child(1),.ly-key li:nth-child(1){--ly:#f2a93b}
+.ly:nth-child(2),.ly-key li:nth-child(2){--ly:#ff6a3d}
+.ly:nth-child(3),.ly-key li:nth-child(3){--ly:#35c39a}
+.ly:nth-child(4),.ly-key li:nth-child(4){--ly:#4aa3e8}
+.ly:nth-child(5),.ly-key li:nth-child(5){--ly:#a98cf0}
+.ly-h{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:10px}
+.ly-h b{font-family:var(--display);font-size:22px;color:var(--fg)}
+.ly-h span{font-size:11.5px;color:var(--fg-2);text-align:right}
+.ly-ms{display:flex;flex-wrap:wrap;gap:6px}
+.ly-m{display:inline-flex;align-items:center;gap:5px;padding:5px 9px;border-radius:999px;font-size:11px;background:color-mix(in srgb,var(--bg) 70%,transparent);border:1px solid var(--rule);color:var(--fg-2)}
+.ly-m small{font-size:inherit}
+.ly-m.t-free{color:var(--fg)}
+@media (max-width:900px){
+  .ly-wrap{grid-template-columns:1fr;gap:6px}
+  .ly-copy .lede{display:none}
+  .ly-key{grid-template-columns:repeat(5,auto);gap:4px;margin-top:14px;font-size:12px;overflow-x:auto}
+  .ly-key li{padding:6px 9px;white-space:nowrap}.ly-key li b{margin:0}
+  .ly-key li span,.ly-key li{font-size:0}.ly-key li b{font-size:12.5px}
+  .ly-key li.on{transform:none}
+  .ly-scene{height:min(430px,58svh);margin-top:auto}
+  .ly{--gap:calc(8px + var(--p) * 40px)}
+  .ly-stack{width:min(300px,70vw);height:min(190px,44vw)}
+  .ly-sticky{align-items:stretch}.ly-wrap{align-content:space-between;padding-top:84px;padding-bottom:20px;height:100%}
+  .ly-m small{display:none}.ly-m{font-size:14px;padding:5px 7px}
+  .ly-h b{font-size:18px}.ly-h span{display:none}
+}
+
+/* ── final CTA: a floor that runs toward the horizon ────────────────── */
+.fx-floor{position:absolute;left:-20%;right:-20%;bottom:0;height:62%;perspective:420px;pointer-events:none;
+  -webkit-mask-image:linear-gradient(to top,#000 10%,transparent 90%);mask-image:linear-gradient(to top,#000 10%,transparent 90%)}
+.fx-floor i{position:absolute;inset:0;transform-origin:50% 100%;transform:rotateX(72deg);
+  background-image:linear-gradient(color-mix(in srgb,var(--lamp) 45%,transparent) 1px,transparent 1px),
+                   linear-gradient(90deg,color-mix(in srgb,var(--lamp) 45%,transparent) 1px,transparent 1px);
+  background-size:64px 64px;animation:floor-run 3.2s linear infinite}
+@keyframes floor-run{to{background-position:0 64px,0 0}}
+.final .wrap{position:relative;z-index:1}
+
+/* ── pause what cannot be seen ─────────────────────────────────────── */
+.fx-off,.fx-off *{animation-play-state:paused!important}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   EVERY DEVICE
+   ═══════════════════════════════════════════════════════════════════ */
+/* Notches and rounded corners (viewport-fit=cover is already set). */
+nav .wrap,.wrap{padding-left:max(24px,env(safe-area-inset-left));padding-right:max(24px,env(safe-area-inset-right))}
+@media (max-width:520px){ nav .wrap,.wrap{padding-left:max(16px,env(safe-area-inset-left));padding-right:max(16px,env(safe-area-inset-right))} }
+footer{padding-bottom:max(28px,env(safe-area-inset-bottom))}
+nav{-webkit-backdrop-filter:blur(14px)}
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
+button,a{-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+
+/* Thumb-sized targets on touch screens. */
+@media (pointer:coarse){
+  .dv-tab,.chip,.icon-btn{min-height:44px}
+  .icon-btn{width:44px}
+  .faqs summary{padding-top:24px;padding-bottom:24px}
+  .foot ul a{display:inline-block;padding:4px 0}
+}
+
+/* The narrowest phones (320–359px). */
+@media (max-width:359px){
+  h1,.hero h1{font-size:36px}
+  h2{font-size:30px}
+  .btn{padding:12px 16px;font-size:14px}
+  .stats{grid-template-columns:1fr}
+  .stats div:last-child{grid-column:auto}
+}
+/* Phones on their side: keep the hero within one screen. */
+@media (max-height:500px) and (orientation:landscape){
+  .hero{padding-top:28px}
+  .hero .wrap{grid-template-columns:1fr 1fr}
+  .hero h1{font-size:clamp(32px,5vw,48px)}
+  .orbit{display:none}
+  .layers{height:auto}.ly-sticky{position:static;height:auto;padding:60px 0}
+}
+/* Tablets in portrait: device under the copy, centred. */
+@media (min-width:600px) and (max-width:960px){ .dv{max-width:620px;margin:10px auto 0;width:100%} }
+/* Big desktop and TV screens. */
+@media (min-width:1700px){
+  .wrap{max-width:1360px}
+  body{font-size:18px}
+  .orbit-ring{--r:390px}
+}
+
+/* Browsers without color-mix (Safari < 16.2, older Android WebView). */
+@supports not (color:color-mix(in srgb,red 50%,blue)){
+  nav{background:rgba(15,18,25,.86)}
+  .btn.lamp{box-shadow:0 10px 30px -10px rgba(242,169,59,.7)}
+  .orb-in{background:rgba(23,27,38,.9);border-color:rgba(242,169,59,.4)}
+  .tier,.plan-tag,.badge,.app-badge{background:rgba(242,169,59,.16)}
+  .t-free.tier,.mx.f,.plan:first-child .plan-tag{color:#5fd3a3;background:rgba(95,211,163,.14)}
+  .t-plan.tier,.mx.p,.plan-tag{color:#f2a93b}
+  .chip[aria-pressed="true"]{background:rgba(242,169,59,.14);border-color:#f2a93b}
+  .ly{background:#1f2432;border-color:rgba(255,255,255,.14)}
+  .ly-key li.on{background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.2)}
+  .fx-floor i{background-image:linear-gradient(rgba(242,169,59,.4) 1px,transparent 1px),linear-gradient(90deg,rgba(242,169,59,.4) 1px,transparent 1px)}
+  .fx-tilt::after{background:radial-gradient(circle at var(--gx,50%) var(--gy,50%),rgba(242,169,59,.22),transparent 55%)}
+  .demo-i{background:#1f2432}
+  .heat i{background:#f2a93b}
+  .md:hover,.cat:hover{border-color:#f2a93b}
+  .plan.hot{box-shadow:0 30px 60px -36px rgba(242,169,59,.7)}
+  .dv-glow,.lamp-glow{background:radial-gradient(closest-side,rgba(242,169,59,.26),transparent 70%)}
+}
+/* Browsers without aspect-ratio (Safari < 15). */
+@supports not (aspect-ratio:1/1){
+  .tablet-scr{min-height:310px}
+  .phone-scr{min-height:250px}
+  .upi-qr.big{height:90px;width:90px}
+}
+/* Browsers without overflow:clip (Safari < 16): hidden on the parts that bleed. */
+@supports not (overflow:clip){ .hero,.final,.ribbon,.layers{overflow:hidden} }
+/* Without individual transform properties, the glow simply stays put. */
+@supports not (translate:0){ .hero .lamp-glow{transition:none} }
+
+/* ── Motion off: everything readable, nothing moving ───────────────── */
+@media (prefers-reduced-motion: reduce){
+  .orbit-ring,.orb-in,.fx-floor i{animation:none!important}
+  .fx .rv,.fx .fx-words .w,.fx .matrix tbody tr,.fx .flow li .fl-n{opacity:1!important;transform:none!important}
+  .flow::before{transform:none}
+  .layers{height:auto;--p:.7}
+  .ly-sticky{position:static;height:auto;padding:90px 0}
+  .fx-progress{display:none}
+}
+
+/* ── Print: the words, without the theatre ─────────────────────────── */
+@media print{
+  nav,.fx-progress,.orbit,.fx-floor,.lamp-glow,.ribbon,.modal-overlay,.dv-tabs,.skip{display:none!important}
+  body{background:#fff;color:#000}
+  *{animation:none!important;transition:none!important;box-shadow:none!important}
+  .rv,.w,.matrix tbody tr{opacity:1!important;transform:none!important}
+  .layers{height:auto}.ly-sticky{position:static;height:auto}
+  section{padding:28px 0;break-inside:avoid}
+}
+
+/* Keep the glow behind the 3D scene: at z=0 it would cut through the
+   tilted tablet and hide part of the screen. */
+.dv-stage .dv-glow{transform:translateZ(-320px) scale(1.35);pointer-events:none}
