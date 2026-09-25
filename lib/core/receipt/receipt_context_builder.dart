@@ -18,6 +18,14 @@ import '../restaurant_models.dart';
 import 'receipt_context.dart';
 
 class ReceiptContextBuilder {
+  /// The footer a slip prints when the store has not written its own.
+  ///
+  /// Empty means "the template's own wording", which is the restaurant's
+  /// ("Thank you for dining with us!") and must stay byte-identical to the
+  /// old bill. The app sets a shop's wording here when a shop signs in
+  /// (main.dart), so a kirana's receipt does not thank people for dining.
+  static String tradeDefaultFooter = '';
+
   ReceiptContextBuilder._();
 
   static const String _storeBox = 'restaurant_config_box';
@@ -482,7 +490,7 @@ class ReceiptContextBuilder {
       // Left empty rather than defaulted: the template carries the wording
       // (`{{store.footer | default:...}}`), so an unset footer still prints
       // exactly what the old slip printed.
-      'store.footer': '',
+      'store.footer': tradeDefaultFooter,
     };
   }
 

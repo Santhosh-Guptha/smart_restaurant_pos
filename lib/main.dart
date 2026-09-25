@@ -1,3 +1,5 @@
+import 'core/receipt/receipt_context_builder.dart';
+import 'core/package_model.dart';
 import 'dart:ui';
 import 'core/classic_theme.dart';
 import 'dart:io';
@@ -263,6 +265,10 @@ class SmartBizzApp extends ConsumerWidget {
     // Settings recolour the whole app: the theme getters below read
     // ClassicTheme.activePalette, which the notifier sets before this rebuild.
     ref.watch(accentProvider);
+    ReceiptContextBuilder.tradeDefaultFooter =
+        saasSession.currentOrganization != null && Verticals.isShop(saasSession.vertical)
+            ? 'Thank you for shopping with us! Please visit again.'
+            : '';
     ref.read(accentProvider.notifier).bind(
           userId: saasSession.currentUser?.id,
           // Before sign-in there is no tenant, and the login screen stays neutral.
