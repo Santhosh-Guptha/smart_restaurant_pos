@@ -40,8 +40,10 @@ Deeper docs: `ARCHITECTURE.md` (§9 = current model), `FLOWS_AND_SCENARIOS.md` (
   server-verified login.
 - **Platform analytics only get aggregates** (`tenant_metrics`: bills, gross, payment split per store per day).
   Never upload bill lines or customer data.
-- No secrets in code. No plain PINs/passwords in Firestore — hashes only. Never call
-  `makeSpreadsheetEditableByLink` (anyone-with-link editor) — kept only for reference.
+- **App icon** follows the trade after login (`AppIconService`, Android activity-aliases, iOS `AppIcon-<trade>`).
+  Edit artwork in `assets_src/app_icons/*.svg`, regenerate with `generate_icons.py`, never hand-edit PNGs.
+- No secrets in code. No plain PINs/passwords in Firestore — hashes only. Never share a sheet as
+  "anyone with the link" (the old `makeSpreadsheetEditableByLink` was removed).
 
 ## Commits on this branch
 38ba6f9 web 3D · a711b69 vertical resolver + tests + "Align business types" · bea0918 shop wording, no KOT ·
@@ -52,8 +54,8 @@ d22139a licence lease · 90c6314 store owners per outlet · 0e036ce two storage 
 sharing reconciler, tenant metrics, admin Business Analytics.
 
 ## Status (25 Sep 2026)
-- Run on 90c6314: analyze clean; tests 332 pass / 1 fail — `widget_test.dart` failed to compile because the run
-  caught a half-saved edit (`provisionRestaurantSheet(outletId:)`). Fixed in 0e036ce. **Rerun on 0e036ce.**
+- Run on 5ac7cc0 (+ link-sharing removal): analyze clean, **333/333 tests**, web build OK.
+- Next commit adds the per-trade app icons + `test/app_icon_service_test.dart` — rerun the script once.
 - Hosting currently serves an older build; redeploy after the rerun passes.
 
 ## Next steps, in order
@@ -64,5 +66,6 @@ sharing reconciler, tenant metrics, admin Business Analytics.
 4. Change the master-admin password (it was public in an old bundle). Console → Migrations → "Align business types".
 5. Live test with "ZZ Test – <trade>" tenants: offline tenant, own-Sheets tenant with 2 stores, store owners,
    staff add/remove → sheet sharing follows; Business Analytics fills after a day of bills.
-6. Open: app icon per trade (waiting on artwork decision), admin 2FA server-side, then deploy `firestore.rules.next`;
+6. Check the icon switch on a real Android phone and an iPhone (log in as a kirana tenant → launcher icon changes).
+7. Open: admin 2FA server-side, then deploy `firestore.rules.next`;
    signed licence lease; responsive polish on phone/large screens.

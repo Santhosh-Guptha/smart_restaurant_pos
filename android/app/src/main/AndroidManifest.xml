@@ -33,7 +33,7 @@
 
     <application
         android:label="SmartBizz"
-        android:icon="@mipmap/launcher_icon">
+        android:icon="@mipmap/ic_sb_brand">
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -46,11 +46,88 @@
                 android:name="io.flutter.embedding.android.NormalTheme"
                 android:resource="@style/NormalTheme"
                 />
+        </activity>
+
+        <!-- Launcher entries, one per trade. Exactly one is enabled at a time;
+             AppIconService (Dart) switches them after login. "Brand" is the default. -->
+        <activity-alias
+            android:name=".LauncherBrand"
+            android:targetActivity=".MainActivity"
+            android:icon="@mipmap/ic_sb_brand"
+            android:roundIcon="@mipmap/ic_sb_brand"
+            android:label="SmartBizz"
+            android:enabled="true"
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
-        </activity>
+        </activity-alias>
+        <activity-alias
+            android:name=".LauncherRestaurant"
+            android:targetActivity=".MainActivity"
+            android:icon="@mipmap/ic_sb_restaurant"
+            android:roundIcon="@mipmap/ic_sb_restaurant"
+            android:label="SmartBizz"
+            android:enabled="false"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".LauncherKirana"
+            android:targetActivity=".MainActivity"
+            android:icon="@mipmap/ic_sb_kirana"
+            android:roundIcon="@mipmap/ic_sb_kirana"
+            android:label="SmartBizz"
+            android:enabled="false"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".LauncherSupermarket"
+            android:targetActivity=".MainActivity"
+            android:icon="@mipmap/ic_sb_supermarket"
+            android:roundIcon="@mipmap/ic_sb_supermarket"
+            android:label="SmartBizz"
+            android:enabled="false"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".LauncherPharmacy"
+            android:targetActivity=".MainActivity"
+            android:icon="@mipmap/ic_sb_pharmacy"
+            android:roundIcon="@mipmap/ic_sb_pharmacy"
+            android:label="SmartBizz"
+            android:enabled="false"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".LauncherRetail"
+            android:targetActivity=".MainActivity"
+            android:icon="@mipmap/ic_sb_retail"
+            android:roundIcon="@mipmap/ic_sb_retail"
+            android:label="SmartBizz"
+            android:enabled="false"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity-alias>
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />

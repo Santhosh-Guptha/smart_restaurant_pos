@@ -34,3 +34,13 @@ Firebase CLI in headless shells) are in `DEPLOYMENT_RUNBOOK.md` §5.
 ## Access the assistant cannot take
 Claude will not type passwords, create accounts, or permanently delete data on your behalf. Sign in yourself
 (Firebase CLI `firebase login`, Google, the admin console) and delete test tenants from the console.
+
+## App icons
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| Android: icon doesn't change right away | Launchers refresh aliases on their own schedule | Wait a few seconds or go to the home screen; some launchers need a restart. |
+| Android: home-screen shortcut disappeared after login | Switching launcher alias removes shortcuts pinned to the old alias on some launchers | Re-add it from the app drawer. Happens once per trade change. |
+| iOS: "You have changed the icon for SmartBizz" alert | iOS always announces alternate icons | Expected, once per change. |
+| `flutter run` says no launchable activity | All launcher aliases disabled (manual adb tinkering) | `adb shell pm enable com.devmonks.smartdine/.LauncherBrand`. |
+| Windows taskbar shows the brand icon for every trade | By design; Windows exe icons are fixed at build time | — |

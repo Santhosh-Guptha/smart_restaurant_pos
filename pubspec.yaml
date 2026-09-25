@@ -59,20 +59,25 @@ flutter:
   uses-material-design: true
   assets:
     - lib/assets/logo.png
+    - lib/assets/app_icons/
 
+# Re-generate the SmartBizz brand icons with `dart run flutter_launcher_icons`.
+# The per-trade launcher icons (Android aliases, iOS AppIcon-<trade>) come from
+# assets_src/app_icons/generate_icons.py and are not touched by this tool.
 flutter_launcher_icons:
   android: "launcher_icon"
   ios: true
-  image_path: "lib/assets/logo.png"
+  remove_alpha_ios: true
+  image_path: "assets_src/app_icons/brand_full.png"
   min_sdk_android: 21
   adaptive_icon_background: "#0F2557"
-  adaptive_icon_foreground: "lib/assets/logo.png"
+  adaptive_icon_foreground: "assets_src/app_icons/brand_fg.png"
   web:
     generate: true
-    image_path: "lib/assets/logo.png"
+    image_path: "assets_src/app_icons/brand_round.png"
     background_color: "#0F2557"
     theme_color: "#0F2557"
   windows:
     generate: true
-    image_path: "lib/assets/logo.png"
+    image_path: "assets_src/app_icons/brand_round.png"
     icon_size: 48

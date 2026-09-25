@@ -33,6 +33,7 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        registerAppIconChannel(flutterEngine)
 
         // ── Telephony channel (existing) ────────────────────────────────────
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).setMethodCallHandler { call, result ->
@@ -146,6 +147,53 @@ class MainActivity : FlutterActivity() {
                 }
             } else {
                 result.notImplemented()
+            }
+        }
+    }
+
+    // ── Launcher icon per trade ────────────────────────────────────────────
+    // One <activity-alias> per trade in AndroidManifest.xml; enable the one
+    // for this tenant's trade and disable the rest. DONT_KILL_APP keeps the
+    // running session; the launcher refreshes the icon on its own.
+    private val iconAliases = listOf("Brand", "Restaurant", "Kirana", "Supermarket", "Pharmacy", "Retail")
+
+    private fun aliasComponent(name: String) =
+        android.content.ComponentName(this, this::class.java.name.substringBeforeLast('.') + ".Launcher" + name)
+
+    private fun currentIconAlias(): String {
+        for (name in iconAliases.drop(1)) {
+            if (packageManager.getComponentEnabledSetting(aliasComponent(name)) ==
+                PackageManager.COMPONENT_ENABLED_STATE_ENABLED) return name
+        }
+        return "Brand" // enabled in the manifest unless another alias was switched on
+    }
+
+    private fun registerAppIconChannel(flutterEngine: FlutterEngine) {
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "com.devmonks.smartbizz/app_icon").setMethodCallHandler { call, result ->
+            try {
+                when (call.method) {
+                    "current" -> result.success(currentIconAlias().lowercase())
+                    "set" -> {
+                        val wanted = (call.argument<String>("name") ?: "brand").lowercase()
+                        val target = iconAliases.firstOrNull { it.lowercase() == wanted } ?: "Brand"
+                        if (target == currentIconAlias()) {
+                            result.success(false)
+                        } else {
+                            // Enable the new entry first so there is never a moment with no launcher entry.
+                            packageManager.setComponentEnabledSetting(aliasComponent(target),
+                                PackageManager.COMPONENT_ENABLED_STATE_ENABLED, PackageManager.DONT_KILL_APP)
+                            for (name in iconAliases) {
+                                if (name == target) continue
+                                packageManager.setComponentEnabledSetting(aliasComponent(name),
+                                    PackageManager.COMPONENT_ENABLED_STATE_DISABLED, PackageManager.DONT_KILL_APP)
+                            }
+                            result.success(true)
+                        }
+                    }
+                    else -> result.notImplemented()
+                }
+            } catch (e: Exception) {
+                result.error("APP_ICON", e.message, null)
             }
         }
     }

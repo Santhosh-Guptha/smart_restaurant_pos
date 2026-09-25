@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+<defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#d19136"/><stop offset="1" stop-color="#8f5707"/></linearGradient>
+<radialGradient id="gl" cx=".3" cy=".22" r=".8"><stop offset="0" stop-color="#fff" stop-opacity=".22"/><stop offset=".6" stop-color="#fff" stop-opacity="0"/></radialGradient>
+<linearGradient id="sg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FFC857"/><stop offset="1" stop-color="#FF6B3D"/></linearGradient></defs>
+<rect width="1024" height="1024" rx="224" fill="url(#bg)"/><rect width="1024" height="1024" rx="224" fill="url(#gl)"/><g fill="none" stroke="#fff" stroke-width="56" stroke-linecap="round" stroke-linejoin="round"><g transform="translate(0,22)"><path d="M300,352 H724 L766,462 C756,520 649,520 639,462 C629,520 522,520 512,462 C502,520 395,520 385,462 C375,520 268,520 258,462 Z"/><path d="M322,540 V716 H702 V540"/><path d="M466,716 V616 H558 V716"/></g></g><path d="M0,-46 C6,-10 10,-6 46,0 C10,6 6,10 0,46 C-6,10 -10,6 -46,0 C-10,-6 -6,-10 0,-46Z" fill="#ffffff" transform="translate(724,300)"/></svg>

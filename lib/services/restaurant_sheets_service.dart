@@ -184,27 +184,6 @@ class RestaurantSheetsService {
     }
   }
 
-  /// Grants public link editing permission so webhook, diner website, and staff can sync with 0 permission blocks
-  static Future<Map<String, dynamic>> makeSpreadsheetEditableByLink({
-    required http.Client authenticatedClient,
-    required String spreadsheetId,
-  }) async {
-    try {
-      final driveApi = drive.DriveApi(authenticatedClient);
-      await driveApi.permissions.create(
-        drive.Permission(
-          type: 'anyone',
-          role: 'writer',
-        ),
-        spreadsheetId,
-      );
-      return {'success': true};
-    } catch (e) {
-      debugPrint('makeSpreadsheetEditableByLink notice: $e');
-      return {'success': false, 'error': e.toString()};
-    }
-  }
-
   /// Ensures all 7 required tabs exist in the spreadsheet so append/update never fails with parse error
   static Future<void> ensureRestaurantTabsExist({
     required http.Client authenticatedClient,

@@ -310,3 +310,13 @@ local ledgers and overwrites `tenant_metrics/{orgId}__{outletId}__{yyyymmdd}`:
 `bills, grossPaise, paymentPaise{UPI,CASH,CARD,KHATA,OTHER}, vertical, storageMode`. Cancelled/void bills are
 skipped; bills are de-duplicated by canonical id. Console → **Business Analytics** draws (no chart package):
 pies — tenants by trade, storage mode, plan, payment mix; bars — gross by trade, bills per day; top tenants.
+
+### 9.8 App icon per trade
+Brand icon (navy, orange "S" with a spark) before sign-in and for the platform admin; after a tenant signs
+in the icon switches to its trade: restaurant (cloche, coral), kirana (shop awning, amber), supermarket
+(cart, blue), pharmacy (cross, teal), retail (bag, plum). `AppIconService.apply()` from `main.dart`:
+Android enables one of six `<activity-alias>` launcher entries (`MainActivity.kt`, channel
+`com.devmonks.smartbizz/app_icon`); iOS uses alternate icon sets `AppIcon-<trade>` (the system shows a
+short notice); web swaps the favicon; Windows keeps the brand icon. Signing out keeps the last icon.
+Sources: `assets_src/app_icons/*.svg` + `generate_icons.py` (cairosvg); brand icons can also be rebuilt
+with `dart run flutter_launcher_icons`.

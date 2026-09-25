@@ -1,5 +1,6 @@
 import '../../services/sheet_access_reconciler.dart';
 import '../../services/tenant_metrics_service.dart';
+import '../../services/app_icon_service.dart';
 import 'dart:async';
 import '../../providers/dashboard_layout_provider.dart';
 import '../../providers/entitlements_provider.dart';
@@ -757,7 +758,13 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
                         color: ClassicTheme.successEmerald.withValues(alpha: 0.15),
                         borderRadius: BorderRadius.circular(8),
                       ),
-                      child: const Icon(Icons.storefront_rounded, color: ClassicTheme.successEmerald, size: 18),
+                      child: Image.asset(
+                        AppIconService.assetFor(saasSession.vertical),
+                        width: 18,
+                        height: 18,
+                        errorBuilder: (_, __, ___) =>
+                            const Icon(Icons.storefront_rounded, color: ClassicTheme.successEmerald, size: 18),
+                      ),
                     ),
                     const SizedBox(width: 10),
                     Expanded(

@@ -64,3 +64,4 @@ app.*.map.json
 .firebase/
 
 claude_run_log.txt
+_icons_incoming.zip

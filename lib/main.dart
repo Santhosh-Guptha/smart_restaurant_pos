@@ -20,6 +20,7 @@ import 'providers/auth_provider.dart';
 import 'providers/saas_session_provider.dart';
 import 'providers/theme_provider.dart';
 import 'sync/outbox.dart';
+import 'services/app_icon_service.dart';
 import 'services/firebase_connection_service.dart';
 import 'services/database_cleanup_service.dart';
 import 'services/subscription_plan_service.dart';
@@ -287,6 +288,13 @@ class SmartBizzApp extends ConsumerWidget {
           // Before sign-in there is no tenant, and the login screen stays neutral.
           vertical: saasSession.currentOrganization == null ? null : saasSession.vertical,
         );
+
+    // Launcher/tab icon follows the trade once a tenant is signed in; the
+    // platform admin keeps the SmartBizz icon. Signing out changes nothing.
+    if (org != null) {
+      final isAdmin = (saasSession.currentUser?.role ?? '').toUpperCase() == 'MASTER_ADMIN';
+      AppIconService.apply(isAdmin ? AppIconService.brand : saasSession.vertical);
+    }
 
     return MaterialApp(
       navigatorKey: navigatorKey,
