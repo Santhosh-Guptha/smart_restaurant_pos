@@ -1,6 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
-import 'package:bcrypt/bcrypt.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import '../core/constants.dart';
 import 'subscription_plan_service.dart';
@@ -8,39 +7,37 @@ import 'subscription_plan_service.dart';
 class DatabaseCleanupService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
-  /// Ensures that the immutable Master Admin user always exists in Firestore with Santhosh@2001 credentials.
-  /// If missing or deleted at any time, it will automatically regenerate.
+  /// Keeps the platform admin account's identity fields correct.
+  ///
+  /// It never writes a password. This used to hash a password written into
+  /// the source and reset the account to it on every app start, on every
+  /// customer's device — so the admin password could never be changed, and
+  /// it shipped inside the public web bundle for anyone to read. The account
+  /// now keeps whatever password it has. If the document is missing it is
+  /// *not* recreated here: re-create it from the Firebase console (see
+  /// SECURITY_NOTES.md), because a client-side "re-create with this password"
+  /// is exactly the hole this closes.
   static Future<void> ensureMasterAdminUserExists() async {
     try {
-      final hashedPassword = BCrypt.hashpw('Santhosh@2001', BCrypt.gensalt());
-
-      // 1. Primary Platform Master Admin (smartdine.platform@gmail.com)
-      final adminDoc = await _firestore.collection('users').doc('usr_master_admin').get();
-      bool needsUpdate = !adminDoc.exists ||
-          adminDoc.data()?['role'] != 'MASTER_ADMIN' ||
-          adminDoc.data()?['username'] != 'admin' ||
-          adminDoc.data()?['email'] != kAdminEmail;
-
-      if (!needsUpdate) {
-        final existingHash = adminDoc.data()?['passwordHash'] as String?;
-        if (existingHash == null || !BCrypt.checkpw('Santhosh@2001', existingHash)) {
-          needsUpdate = true;
-        }
+      final adminRef = _firestore.collection('users').doc('usr_master_admin');
+      final adminDoc = await adminRef.get();
+      if (!adminDoc.exists) {
+        debugPrint('Master admin document usr_master_admin is missing; not recreating it from the client.');
+        return;
       }
-
-      if (needsUpdate) {
-        await _firestore.collection('users').doc('usr_master_admin').set({
+      final d = adminDoc.data() ?? const <String, dynamic>{};
+      if (d['role'] != 'MASTER_ADMIN' ||
+          d['username'] != 'admin' ||
+          d['email'] != kAdminEmail ||
+          d['organizationId'] != 'SYSTEM_ADMIN') {
+        await adminRef.set({
           'id': 'usr_master_admin',
           'username': 'admin',
           'email': kAdminEmail,
-          'fullName': 'SmartDine Platform Admin',
           'role': 'MASTER_ADMIN',
           'organizationId': 'SYSTEM_ADMIN',
-          'passwordHash': hashedPassword,
-          'createdAt': FieldValue.serverTimestamp(),
           'updatedAt': FieldValue.serverTimestamp(),
         }, SetOptions(merge: true));
-        debugPrint("✓ Master admin user usr_master_admin ($kAdminEmail) secured with username 'admin'.");
       }
 
       // 2. Remove legacy co-admin account if it exists

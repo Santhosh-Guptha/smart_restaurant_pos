@@ -3415,7 +3415,13 @@ function handleStartTrial(json) {
     fsSet_("limits/" + orgId, { maxFranchises: plan.maxOutlets, maxUsers: plan.maxUsers, maxDevices: plan.maxDevices, updatedAt: now });
 
     var outletName = orgName + " (Main Branch)";
-    var outletId = fsCreate_("outlets", {
+    // The main outlet's id is deterministic, as TenantProvisioningService
+    // makes it ("outlet_<orgId>"): the app's branch screen heals and the
+    // purge deletes that id, and an auto-id here left web-trial tenants with
+    // a main branch nothing else could find by name.
+    var outletId = "outlet_" + orgId;
+    fsSet_("outlets/" + outletId, {
+      id: outletId,
       organizationId: orgId,
       name: outletName,
       storeAdminEmail: email,
@@ -3429,7 +3435,6 @@ function handleStartTrial(json) {
       createdAt: now,
       updatedAt: now
     });
-    fsMerge_("outlets/" + outletId, { id: outletId });
     fsSet_("franchises/" + outletId, {
       id: outletId,
       organizationId: orgId,

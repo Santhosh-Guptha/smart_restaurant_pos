@@ -589,7 +589,15 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
 
                 final saasSession = ref.read(saasSessionProvider);
                 final orgId = saasSession.currentOrganization?.id ?? '';
-                final franchiseId = saasSession.currentUser?.franchiseId ?? '';
+                // The branch a new staff member belongs to is the branch being
+                // managed right now — the owner may have switched to one with
+                // the outlet switcher — not the creator's own (an owner's is
+                // blank, so every staff member an owner added used to belong
+                // to no branch). An edit keeps the member where they are.
+                final franchiseId = (saasSession.activeFranchiseId?.isNotEmpty == true
+                        ? saasSession.activeFranchiseId
+                        : saasSession.currentUser?.franchiseId) ??
+                    '';
                 final effectiveEmail = newEmail.isNotEmpty
                     ? newEmail
                     : '$cleanUsername@${orgId.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '')}.pos';
@@ -621,8 +629,11 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
 
                 // 1. Sync staff credentials to Firestore (/users and /staff_users).
                 //    Cloud-connected tenants only; an offline till keeps staff in Hive.
-                final String? newPasswordHash = password.isNotEmpty
-                    ? BCrypt.hashpw(password, BCrypt.gensalt())
+                // Hashed from the password in effect (typed now, or the one this
+                // device already holds), so scrubbing the plain copy below can
+                // never leave a staff member without a way to sign in.
+                final String? newPasswordHash = effectivePassword.isNotEmpty
+                    ? BCrypt.hashpw(effectivePassword, BCrypt.gensalt())
                     : null;
                 final usersDocId = existing?.id ?? 'usr_${newMember.id}';
 
@@ -635,7 +646,7 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
                       'fullName': newMember.name,
                       'role': newMember.role.key,
                       'organizationId': orgId,
-                      'franchiseId': franchiseId,
+                      if (!isEditing) 'franchiseId': franchiseId,
                       'status': 'ACTIVE',
                       'phone': newMember.phone,
                       'updatedAt': FieldValue.serverTimestamp(),
@@ -659,19 +670,21 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
                       'email': newMember.email,
                       'role': newMember.role.key,
                       'roles': newMember.roles.map((r) => r.key).toList(),
-                      'pin': newMember.pin,
+                      // Secrets leave the device hashed only. The plain PIN and
+                      // password used to be written here, and this collection
+                      // is readable by anyone who can reach the project; the
+                      // delete() scrubs what older saves left behind.
+                      'pin': FieldValue.delete(),
+                      'password': FieldValue.delete(),
                       'pinHash': newMember.pinHash,
                       'phone': newMember.phone,
                       'organizationId': orgId,
-                      'franchiseId': franchiseId,
+                      if (!isEditing) 'franchiseId': franchiseId,
                       'assignedStation': newMember.assignedStation,
                       'isSheetAccessGranted': newMember.isSheetAccessGranted,
                       'isActive': newMember.isActive,
                       'updatedAt': FieldValue.serverTimestamp(),
                     };
-                    if (effectivePassword.isNotEmpty) {
-                      staffPayload['password'] = effectivePassword;
-                    }
                     if (newPasswordHash != null) {
                       staffPayload['passwordHash'] = newPasswordHash;
                     }

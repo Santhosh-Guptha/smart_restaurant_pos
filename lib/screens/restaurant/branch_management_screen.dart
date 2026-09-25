@@ -15,6 +15,8 @@ import '../../core/entitlements.dart';
 import '../../core/feature_route_guard.dart';
 import '../../core/constants.dart';
 import '../../core/vertical_labels.dart';
+import '../../core/package_model.dart';
+import '../../providers/entitlements_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class BranchManagementScreen extends ConsumerStatefulWidget {
@@ -519,6 +521,8 @@ class _BranchManagementScreenState
                           'googleSheetUrl': sheetUrl,
                           'status': 'ACTIVE',
                           'is_active': true,
+                          'storeAdminEmail': adminEmail,
+                          'category': ref.read(saasSessionProvider).currentOrganization?.businessCategory ?? '',
                           'createdAt': FieldValue.serverTimestamp(),
                         });
 
@@ -528,7 +532,24 @@ class _BranchManagementScreenState
                         final newUserId =
                             'usr_${DateTime.now().millisecondsSinceEpoch}';
 
+                        // The same shape TenantProvisioningService gives an owner, so the
+                        // store admin can sign in by username too and the console lists them.
+                        var username = adminEmail.split('@').first.replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_');
+                        final taken = await firestore
+                            .collection('users')
+                            .where('username', isEqualTo: username)
+                            .limit(1)
+                            .get();
+                        if (taken.docs.isNotEmpty) {
+                          username = '${username}_${DateTime.now().millisecondsSinceEpoch.toString().substring(8)}';
+                        }
                         await firestore.collection('users').doc(newUserId).set({
+                          'id': newUserId,
+                          'username': username,
+                          'status': 'ACTIVE',
+                          'businessCategory': ref.read(saasSessionProvider).currentOrganization?.businessCategory ??
+                              Verticals.canonicalCategoryFor(vertical),
+                          'updatedAt': FieldValue.serverTimestamp(),
                           'email': adminEmail,
                           'fullName': adminName,
                           'phone': phone,
@@ -860,7 +881,10 @@ class _BranchManagementScreenState
               ? resolveOutletId(userOrgId: user?.organizationId, sessionOrgId: org?.id)
               : ((org?.id.isNotEmpty == true) ? org!.id : (user?.organizationId ?? '')));
     final orgName = org?.name ?? (vl.isRestaurant ? 'Restaurant' : 'Store');
-    final maxBranches = license?.maxFranchises ?? 3;
+    // The resolved limit, not the raw licence field: an offline tenant is
+    // clamped to one outlet by the resolver, and a licence without the field
+    // falls back to its package — never to a guessed 3.
+    final maxBranches = ref.watch(entitlementsProvider).maxOutlets;
     final activeBranchId = saasSession.activeFranchiseId;
 
     return Scaffold(

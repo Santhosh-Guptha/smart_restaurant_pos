@@ -87,6 +87,9 @@ class TenantPurgeService {
       'users',
       'staff_users',
       'outlets',
+      // Every outlet has a mirror here (TenantProvisioningService, the web
+      // trial, the branch screen); keyed by outlet id, so only a query finds them.
+      'franchises',
       'device_registry',
       'products',
       'expenses',

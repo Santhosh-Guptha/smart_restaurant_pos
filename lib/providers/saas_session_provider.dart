@@ -514,9 +514,10 @@ class SaasSessionNotifier extends StateNotifier<SaasSessionState> {
       if (!passwordValid && plainPassword != null && plainPassword.isNotEmpty) {
         passwordValid = (password == plainPassword);
       }
-      if (!passwordValid && (userId == 'usr_master_admin' || userData['role'] == 'MASTER_ADMIN')) {
-        passwordValid = (password == 'admin' || password == 'Santhosh@2001');
-      }
+      // (A hard-coded master-admin password used to be accepted here — "admin"
+      // among them — and it shipped in the public web bundle. Removed: the
+      // admin signs in with the password stored on their account, like
+      // everyone else.)
 
       if (!passwordValid) {
         return "Invalid username/email or password";
