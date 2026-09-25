@@ -437,7 +437,9 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
     final bool roleTables = isMasterAdmin || isOwner || isManager || isBilling || isWaiter;
     final bool roleKds = isMasterAdmin || isOwner || isManager || isKitchen;
     final bool roleMenu = isMasterAdmin || isOwner || isManager;
-    final bool roleOutlets = isMasterAdmin || isOwner;
+    // Creating and managing outlets is the tenant owner's: a store owner is an
+    // owner *of one outlet* (franchiseId set) and runs that store only.
+    final bool roleOutlets = isMasterAdmin || (isOwner && !isStaffLockedToOutlet);
     final bool roleStaff = isMasterAdmin || isOwner || isManager;
     final bool roleStoreConfig = isMasterAdmin || isOwner || isManager;
     final bool roleAnalytics = isMasterAdmin || isOwner || isManager;
@@ -848,6 +850,7 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
                   final layoutState = ref.watch(dashboardLayoutProvider(ent.vertical));
                   final entitlements = ref.watch(entitlementsProvider);
                   final allowedCards = kAllDashboardCards.where((c) {
+                    if (c.id == 'outlets' && !roleOutlets) return false;
                     return c.isAllowedFor(
                       entitlements: entitlements,
                       role: roleStr,

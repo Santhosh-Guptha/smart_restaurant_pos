@@ -17,6 +17,7 @@ import '../../core/constants.dart';
 import '../../core/vertical_labels.dart';
 import '../../core/package_model.dart';
 import '../../providers/entitlements_provider.dart';
+import '../../widgets/outlet_owners_dialog.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class BranchManagementScreen extends ConsumerStatefulWidget {
@@ -339,7 +340,7 @@ class _BranchManagementScreenState
                       controller: adminNameCtrl,
                       style: const TextStyle(color: Colors.white),
                       decoration: InputDecoration(
-                        labelText: 'Store Admin Full Name *',
+                        labelText: 'Store Owner Full Name *',
                         labelStyle: TextStyle(color: context.textSecondary),
                         hintText: 'e.g. Ramesh Chandra',
                         hintStyle: const TextStyle(color: Colors.white24),
@@ -362,7 +363,7 @@ class _BranchManagementScreenState
                       keyboardType: TextInputType.emailAddress,
                       style: const TextStyle(color: Colors.white),
                       decoration: InputDecoration(
-                        labelText: 'Store Admin Email *',
+                        labelText: 'Store Owner Email *',
                         labelStyle: TextStyle(color: context.textSecondary),
                         hintText: vl.isRestaurant
                             ? 'admin.branch@restaurant.com'
@@ -554,7 +555,9 @@ class _BranchManagementScreenState
                           'fullName': adminName,
                           'phone': phone,
                           'passwordHash': hashedPassword,
-                          'role': 'MANAGER',
+                          // The branch's first admin is its store owner: runs this
+                          // outlet, adds its staff, cannot see other outlets.
+                          'role': 'OWNER',
                           'organizationId': orgId,
                           'franchiseId': outletId,
                           'outletId': outletId,
@@ -582,7 +585,7 @@ class _BranchManagementScreenState
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
                               content: Text(
-                                  '✓ ${vl.outletLabel} "$branchName" created successfully with Store Admin "$adminEmail".'),
+                                  '✓ ${vl.outletLabel} "$branchName" created successfully with store owner "$adminEmail".'),
                               backgroundColor: ClassicTheme.successEmerald,
                             ),
                           );
@@ -1464,7 +1467,7 @@ class _BranchManagementScreenState
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      'Store Admin: ${outlet.storeAdminName} (${outlet.storeAdminEmail.isNotEmpty ? outlet.storeAdminEmail : "Not configured"})',
+                      'Store owner: ${outlet.storeAdminName} (${outlet.storeAdminEmail.isNotEmpty ? outlet.storeAdminEmail : "Not configured"})',
                       style: TextStyle(
                           color: context.textSecondary, fontSize: 12),
                     ),
@@ -1739,6 +1742,23 @@ class _BranchManagementScreenState
                 ),
               ),
               ],
+
+              // Store owners of this outlet
+              IconButton(
+                tooltip: 'Store owners',
+                onPressed: () {
+                  final session = ref.read(saasSessionProvider);
+                  OutletOwnersDialog.show(
+                    context,
+                    orgId: orgId,
+                    outletId: outlet.id,
+                    outletName: outlet.name,
+                    businessCategory: session.currentOrganization?.businessCategory ?? '',
+                    maxUsers: session.currentLicense?.maxUsers ?? 0,
+                  );
+                },
+                icon: Icon(Icons.manage_accounts_rounded, color: context.textSecondary, size: 20),
+              ),
 
               // Edit Button
               IconButton(

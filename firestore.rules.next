@@ -20,6 +20,10 @@ service cloud.firestore {
     function docOrg()          { return resource.data.organizationId; }
     function newOrg()          { return request.resource.data.organizationId; }
     function onlyChanges(keys) { return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys); }
+    // A store owner / store staff carry their outlet in the token; the tenant
+    // owner carries none. Store-scoped users act only inside their outlet.
+    function tenantWide()      { return claim('franchiseId') == null || claim('franchiseId') == ''; }
+    function inScope(fid)      { return tenantWide() || claim('franchiseId') == fid; }
 
     // ── Public: the guest QR menu, the website, the signup screen ──────────
     match /public_stores/{orgId} {
@@ -91,23 +95,26 @@ service cloud.firestore {
     // manage accounts inside itself.
     match /users/{uid} {
       allow read: if isAdmin() || (signedIn() && request.auth.uid == uid) || inOrg(docOrg());
-      allow create: if isAdmin() || (isManager(newOrg()) && request.resource.data.role != 'MASTER_ADMIN');
+      allow create: if isAdmin() ||
+        (isManager(newOrg()) && request.resource.data.role != 'MASTER_ADMIN' && inScope(request.resource.data.get('franchiseId', '')));
       allow update: if isAdmin() ||
-        (isManager(docOrg()) && newOrg() == docOrg() && request.resource.data.role != 'MASTER_ADMIN') ||
+        (isManager(docOrg()) && newOrg() == docOrg() && request.resource.data.role != 'MASTER_ADMIN'
+          && inScope(resource.data.get('franchiseId', '')) && inScope(request.resource.data.get('franchiseId', ''))) ||
         (signedIn() && request.auth.uid == uid && onlyChanges(['passwordHash', 'mustChangePassword', 'updatedAt']));
-      allow delete: if isAdmin() || isManager(docOrg());
+      allow delete: if isAdmin() || (isManager(docOrg()) && inScope(resource.data.get('franchiseId', '')));
     }
     match /staff_users/{id} {
       allow read: if isAdmin() || inOrg(docOrg());
-      allow create: if isAdmin() || isManager(newOrg());
-      allow update, delete: if isAdmin() || isManager(docOrg());
+      allow create: if isAdmin() || (isManager(newOrg()) && inScope(request.resource.data.get('franchiseId', '')));
+      allow update, delete: if isAdmin() || (isManager(docOrg()) && inScope(resource.data.get('franchiseId', '')));
     }
 
     // ── Branches and per-tenant data ──────────────────────────────────────
     match /outlets/{id} {
       allow read: if isAdmin() || inOrg(docOrg());
-      allow create: if isAdmin() || isManager(newOrg());
-      allow update, delete: if isAdmin() || isManager(docOrg());
+      // Only the tenant owner opens or closes outlets; a store owner may edit its own.
+      allow create, delete: if isAdmin() || (isManager(newOrg()) && tenantWide());
+      allow update: if isAdmin() || (isManager(docOrg()) && inScope(id));
       match /{child=**} { allow read, write: if isAdmin() || inOrg(get(/databases/$(database)/documents/outlets/$(id)).data.organizationId); }
     }
     match /franchises/{id} {

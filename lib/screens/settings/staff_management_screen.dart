@@ -109,8 +109,14 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
     // nothing on a shop's dashboard (every card they could reach is a
     // restaurant card), so a shop staff member given one signed in to an
     // empty screen. Offer only the roles that have work to do here.
+    //
+    // A store owner (an owner tied to one outlet) adds that outlet's staff but
+    // not more owners: owners are assigned per outlet by the tenant owner in
+    // Outlets → Store owners.
+    final creatorIsStoreScoped = (saasSession.currentUser?.franchiseId ?? '').isNotEmpty;
     bool fitsTrade(StaffRole r) =>
         r != StaffRole.unassigned &&
+        !(creatorIsStoreScoped && r == StaffRole.owner) &&
         (vl.isRestaurant || (r != StaffRole.kitchen && r != StaffRole.waiter));
     final filteredRoles = StaffRole.values.where((r) {
       final roleKey = r.name.toUpperCase();
