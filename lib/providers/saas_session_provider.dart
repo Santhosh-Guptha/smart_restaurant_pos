@@ -450,88 +450,111 @@ class SaasSessionNotifier extends StateNotifier<SaasSessionState> {
       Map<String, dynamic>? userData;
       String? userId;
 
-      // 1a. First attempt: Query by username
-      var userQuery = await firestore
-          .collection('users')
-          .where('username', isEqualTo: input)
-          .limit(1)
-          .get()
-          .timeout(const Duration(seconds: 5));
-
-      // 1b. Fallback: Query by email
-      if (userQuery.docs.isEmpty) {
-        userQuery = await firestore
-            .collection('users')
-            .where('email', isEqualTo: input)
-            .limit(1)
-            .get()
-            .timeout(const Duration(seconds: 5));
+      // 0. The server checks the password first (FirebaseAuthBridge). A
+      //    verified login is also a Firebase sign-in, which is what the
+      //    locked-down rules will key on. A definite "wrong password" from the
+      //    server is final. Only when the server cannot answer (offline, not
+      //    configured yet) does the app fall back to checking it here.
+      bool passwordValid = false;
+      final serverLogin = await FirebaseAuthBridge.signInForLogin(
+        firestore: firestore,
+        identifier: input,
+        password: password,
+      );
+      if (serverLogin.status == ServerLoginStatus.rejected) {
+        return serverLogin.errorCode == 'RATE_LIMITED'
+            ? "Too many attempts. Please wait ten minutes and try again."
+            : "Invalid username/email or password";
       }
-
-      if (userQuery.docs.isNotEmpty) {
-        final userDoc = userQuery.docs.first;
-        userId = userDoc.id;
-        userData = userDoc.data();
-      } else {
-        // 1c. Fallback: Check /staff_users collection
-        final staffQuery = await firestore
-            .collection('staff_users')
-            .where('username', isEqualTo: input)
-            .limit(1)
-            .get()
-            .timeout(const Duration(seconds: 4));
-        if (staffQuery.docs.isNotEmpty) {
-          final staffDoc = staffQuery.docs.first;
-          userId = staffDoc.id;
-          userData = staffDoc.data();
-        } else {
-          final staffEmailQuery = await firestore
-              .collection('staff_users')
-              .where('email', isEqualTo: input)
-              .limit(1)
-              .get()
-              .timeout(const Duration(seconds: 4));
-          if (staffEmailQuery.docs.isNotEmpty) {
-            final staffDoc = staffEmailQuery.docs.first;
-            userId = staffDoc.id;
-            userData = staffDoc.data();
+      if (serverLogin.status == ServerLoginStatus.ok) {
+        final uid = serverLogin.uid!;
+        for (final col in const ['users', 'staff_users']) {
+          final doc = await firestore.collection(col).doc(uid).get().timeout(const Duration(seconds: 6));
+          if (doc.exists) {
+            userId = doc.id;
+            userData = doc.data();
+            passwordValid = true;
+            break;
           }
         }
       }
 
-      if (userData == null || userId == null) {
-        return "Invalid username/email or password";
-      }
-
-      final passwordHash = userData['passwordHash'] as String?;
-      final plainPassword = userData['password'] as String?;
-
-      bool passwordValid = false;
-      if (passwordHash != null && passwordHash.isNotEmpty) {
-        try {
-          passwordValid = BCrypt.checkpw(password, passwordHash);
-        } catch (_) {}
-      }
-      if (!passwordValid && plainPassword != null && plainPassword.isNotEmpty) {
-        passwordValid = (password == plainPassword);
-      }
-      // (A hard-coded master-admin password used to be accepted here — "admin"
-      // among them — and it shipped in the public web bundle. Removed: the
-      // admin signs in with the password stored on their account, like
-      // everyone else.)
-
       if (!passwordValid) {
+        // 1a. First attempt: Query by username
+        var userQuery = await firestore
+            .collection('users')
+            .where('username', isEqualTo: input)
+            .limit(1)
+            .get()
+            .timeout(const Duration(seconds: 5));
+
+        // 1b. Fallback: Query by email
+        if (userQuery.docs.isEmpty) {
+          userQuery = await firestore
+              .collection('users')
+              .where('email', isEqualTo: input)
+              .limit(1)
+              .get()
+              .timeout(const Duration(seconds: 5));
+        }
+
+        if (userQuery.docs.isNotEmpty) {
+          final userDoc = userQuery.docs.first;
+          userId = userDoc.id;
+          userData = userDoc.data();
+        } else {
+          // 1c. Fallback: Check /staff_users collection
+          final staffQuery = await firestore
+              .collection('staff_users')
+              .where('username', isEqualTo: input)
+              .limit(1)
+              .get()
+              .timeout(const Duration(seconds: 4));
+          if (staffQuery.docs.isNotEmpty) {
+            final staffDoc = staffQuery.docs.first;
+            userId = staffDoc.id;
+            userData = staffDoc.data();
+          } else {
+            final staffEmailQuery = await firestore
+                .collection('staff_users')
+                .where('email', isEqualTo: input)
+                .limit(1)
+                .get()
+                .timeout(const Duration(seconds: 4));
+            if (staffEmailQuery.docs.isNotEmpty) {
+              final staffDoc = staffEmailQuery.docs.first;
+              userId = staffDoc.id;
+              userData = staffDoc.data();
+            }
+          }
+        }
+
+        if (userData == null || userId == null) {
+          return "Invalid username/email or password";
+        }
+
+        final passwordHash = userData['passwordHash'] as String?;
+        final plainPassword = userData['password'] as String?;
+
+        passwordValid = false;
+        if (passwordHash != null && passwordHash.isNotEmpty) {
+          try {
+            passwordValid = BCrypt.checkpw(password, passwordHash);
+          } catch (_) {}
+        }
+        if (!passwordValid && plainPassword != null && plainPassword.isNotEmpty) {
+          passwordValid = (password == plainPassword);
+        }
+        // (A hard-coded master-admin password used to be accepted here — "admin"
+        // among them — and it shipped in the public web bundle. Removed: the
+        // admin signs in with the password stored on their account, like
+        // everyone else.)
+      }
+
+      if (!passwordValid || userData == null || userId == null) {
         return "Invalid username/email or password";
       }
 
-      // A Firebase identity alongside the app's own sign-in, in the
-      // background: it never blocks or fails the login (see
-      // FirebaseAuthBridge). It is what the stricter Firestore rules will key on.
-      unawaited(FirebaseAuthBridge.signIn(
-        firestore: firestore,
-        identifier: input,
-        password: password,
-      ));
 
       final role = userData['role'] ?? 'STAFF';
       final orgId = userData['organizationId'] ?? '';
@@ -557,6 +580,8 @@ class SaasSessionNotifier extends StateNotifier<SaasSessionState> {
               email: targetMfaEmail,
               clientName: userData['fullName'] ?? 'SmartBizz Platform Admin',
             );
+            // No Firebase session for an admin until the second step passes.
+            await FirebaseAuthBridge.signOut(firestore);
             if (otpRes['success'] != true) {
               return "Failed to send 2-step verification code: ${otpRes['message'] ?? 'Please try again'}";
             }
@@ -567,6 +592,7 @@ class SaasSessionNotifier extends StateNotifier<SaasSessionState> {
               enteredOtp: mfaCode.trim(),
             );
             if (verifyRes['success'] != true) {
+              await FirebaseAuthBridge.signOut(firestore);
               return verifyRes['message'] ?? 'Invalid or expired 2-step verification code.';
             }
           }

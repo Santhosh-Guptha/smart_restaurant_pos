@@ -20,8 +20,75 @@ import 'apps_script_backend_service.dart';
 /// which is what lets it ship ahead of the stricter rules. Once every active
 /// client signs in this way, `firestore.rules.next` can replace the open
 /// rules.
+enum ServerLoginStatus {
+  /// Password verified by the server and this device is signed in to Firebase.
+  ok,
+
+  /// The server checked and the credentials are wrong (or the account is
+  /// disabled, or locked out after repeated failures). Final: do not fall back.
+  rejected,
+
+  /// No answer we can use — offline, backend not configured yet, token could
+  /// not be minted. The caller falls back to the app's own check.
+  unavailable,
+}
+
+class ServerLogin {
+  final ServerLoginStatus status;
+  final String? uid;
+  final String? errorCode;
+  const ServerLogin(this.status, {this.uid, this.errorCode});
+}
+
 class FirebaseAuthBridge {
   FirebaseAuthBridge._();
+
+  /// The login path: the server checks the password and, when it is right,
+  /// the device signs in to Firebase with the token it returns. Unlike
+  /// [signIn] it reports *why* it did not sign in, so a wrong password is
+  /// refused here and never retried against the client-side check.
+  static Future<ServerLogin> signInForLogin({
+    required FirebaseFirestore firestore,
+    required String identifier,
+    required String password,
+  }) async {
+    Map? data;
+    try {
+      final res = await AppsScriptBackendService.postWithRedirects(
+        Uri.parse(AppsScriptBackendService.getWebhookUrl()),
+        headers: const {'Content-Type': 'text/plain;charset=utf-8'},
+        body: jsonEncode({
+          'action': 'ISSUE_AUTH_TOKEN',
+          'identifier': identifier.trim().toLowerCase(),
+          'password': password,
+        }),
+        timeout: const Duration(seconds: 12),
+      );
+      final decoded = jsonDecode(res.body);
+      if (decoded is Map) data = decoded;
+    } catch (e) {
+      debugPrint('FirebaseAuthBridge: server login unavailable: $e');
+      return const ServerLogin(ServerLoginStatus.unavailable);
+    }
+    if (data == null) return const ServerLogin(ServerLoginStatus.unavailable);
+    final code = data['error_code']?.toString();
+    if (data['success'] != true) {
+      if (code == 'INVALID' || code == 'RATE_LIMITED') {
+        return ServerLogin(ServerLoginStatus.rejected, errorCode: code);
+      }
+      return ServerLogin(ServerLoginStatus.unavailable, errorCode: code);
+    }
+    try {
+      final auth = FirebaseAuth.instanceFor(app: firestore.app);
+      await auth.signInWithCustomToken(data['token'] as String);
+      final uid = auth.currentUser?.uid;
+      if (uid == null) return const ServerLogin(ServerLoginStatus.unavailable);
+      return ServerLogin(ServerLoginStatus.ok, uid: uid);
+    } catch (e) {
+      debugPrint('FirebaseAuthBridge: token sign-in failed: $e');
+      return const ServerLogin(ServerLoginStatus.unavailable);
+    }
+  }
 
   /// Signs this device in to Firebase Auth for [firestore]'s project.
   /// Returns true when a Firebase user is now signed in.

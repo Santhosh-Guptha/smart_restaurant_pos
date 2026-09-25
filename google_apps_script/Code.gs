@@ -5351,6 +5351,9 @@ function handleIssueAuthToken_(data) {
   var hash = String(u.passwordHash || "");
   var ok = false;
   if (hash) { try { ok = bcryptCheck_(pw, hash); } catch (e) { ok = false; } }
+  // Same legacy allowance as the app: an account saved before hashing
+  // existed may still hold a plain password until it is next re-saved.
+  if (!ok && !hash && u.password) ok = (pw === String(u.password));
   var status = String(u.status || "ACTIVE").toUpperCase();
   if (!ok || status !== "ACTIVE" || u.isActive === false) {
     cache.put(failKey, String(fails + 1), 600);
