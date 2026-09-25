@@ -35,7 +35,8 @@ Deeper docs: `ARCHITECTURE.md` (§9 = current model), `FLOWS_AND_SCENARIOS.md` (
 - **Hierarchy:** platform admin (`MASTER_ADMIN`) → tenant owner (`OWNER`, no `franchiseId`) → store owner
   (`OWNER` with `franchiseId`) → staff (`franchiseId` = their store). Store-scoped users can't create OWNERs
   or see other stores.
-- **Offline licence:** validated once online, then `LicenseLease` allows 30 days offline (7 for cloud modes),
+- **Offline licence:** validated once online, then `LicenseLease` allows 30 days offline (7 for cloud modes); the lease is
+  RSA-signed by Code.gs (`LICENSE_LEASE`, key in Script property `LEASE_SIGNING_KEY`, public half in `lease_public_key.dart`),
   renews on every online server read, blocks on clock rollback. Credentials are cached (bcrypt) after a
   server-verified login.
 - **Platform analytics only get aggregates** (`tenant_metrics`: bills, gross, payment split per store per day).

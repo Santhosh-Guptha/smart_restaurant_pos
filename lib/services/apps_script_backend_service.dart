@@ -79,11 +79,14 @@ class AppsScriptBackendService {
     Object? body,
     Duration timeout = const Duration(seconds: 18),
     http.Client? client,
+    bool licenceTraffic = false,
   }) async {
     // Every webhook request in the app funnels through here, so this is the one
     // place the offline rule is enforced for the Apps Script backend (rule 4).
     // Callers already treat a thrown error as a failed request.
-    if (CloudGate.offline) throw const CloudOfflineException();
+    // [licenceTraffic]: sign-in and the licence lease — the only requests an
+    // offline store makes, and only when a connection happens to be there.
+    if (CloudGate.offline && !licenceTraffic) throw const CloudOfflineException();
     final httpClient = client ?? http.Client();
     final shouldClose = client == null;
     try {

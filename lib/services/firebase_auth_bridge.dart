@@ -73,6 +73,7 @@ class FirebaseAuthBridge {
           if (mfaCode != null && mfaCode.trim().isNotEmpty) 'mfaCode': mfaCode.trim(),
         }),
         timeout: const Duration(seconds: 12),
+        licenceTraffic: true,
       );
       final decoded = jsonDecode(res.body);
       if (decoded is Map) data = decoded;
@@ -123,6 +124,7 @@ class FirebaseAuthBridge {
           'password': password,
         }),
         timeout: const Duration(seconds: 15),
+        licenceTraffic: true,
       );
       final data = jsonDecode(res.body);
       if (data is! Map || data['success'] != true || data['token'] is! String) {

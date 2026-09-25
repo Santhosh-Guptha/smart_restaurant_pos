@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/classic_theme.dart';
@@ -6,6 +7,7 @@ import '../../core/design_tokens.dart';
 import '../../core/license_lease.dart';
 import '../../core/responsive.dart';
 import '../../providers/saas_session_provider.dart';
+import '../../services/license_lease_service.dart';
 
 /// Shown when this device has gone too long without checking its licence
 /// online, or its clock has been moved back (see [LicenseLease]).
@@ -30,13 +32,17 @@ class _LicenseRevalidateScreenState extends ConsumerState<LicenseRevalidateScree
       _result = null;
     });
     await ref.read(saasSessionProvider.notifier).refreshSessionFromFirestore();
+    final orgId = ref.read(saasSessionProvider).currentOrganization?.id ?? '';
+    await LicenseLeaseService.refresh(orgId, force: true);
     if (!mounted) return;
     final org = ref.read(saasSessionProvider).currentOrganization;
     final now = LicenseLease.check(orgId: org?.id ?? '', storageMode: org?.storageMode);
     setState(() {
       _busy = false;
       _result = now.blocked
-          ? 'Still could not reach the licence server. Check the internet connection and try again.'
+          ? (FirebaseAuth.instance.currentUser == null
+              ? 'This device needs to sign in again online to renew its licence. Sign out, then sign in.'
+              : 'Still could not reach the licence server. Check the internet connection and try again.')
           : null;
     });
   }

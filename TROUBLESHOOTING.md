@@ -67,3 +67,11 @@ Claude will not type passwords, create accounts, or permanently delete data on y
 |---|---|---|
 | "Sign in to send e-mail." from Code.gs | `MAIL_REQUIRES_SIGN_IN` is on and the device isn't signed in to Firebase (old build, or Firebase Auth / service-account properties not set) | Update the till; check Script properties `FIREBASE_SA_EMAIL` / `FIREBASE_SA_PRIVATE_KEY`; or turn the property off. |
 | "E-mail limit reached for this account this hour." | 60 mails per signed-in account per hour | Wait, or raise the cap in `mailCallerRefused_`. |
+
+## Signed offline licence
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| Till never gets a signed lease | `LEASE_SIGNING_KEY` not set, or the device has no Firebase sign-in (old login, service-account properties missing) | Set the property; sign out and in once online. Until then the unsigned 30-day lease still works. |
+| "This device needs to sign in again online to renew its licence" | Signed lease expired/removed and no Firebase session on the device | Sign out, sign in with internet. |
+| All tills blocked after removing the signing key | Devices that had a signed lease only trust signed leases | Put the key back (same one), or ship a build with a new public key. |

@@ -133,6 +133,9 @@ function doPost(e) {
       case "SEND_OTP_EMAIL":
         return handleSendOtpEmail(json);
 
+      case "LICENSE_LEASE":
+        return handleLicenseLease_(json);
+
       case "SIGNUP_SEND_CODE":
         return handleSignupSendCode_(json);
 
@@ -5468,6 +5471,45 @@ function mailCallerRefused_(p) {
   if (n >= 60) return "E-mail limit reached for this account this hour.";
   cache.put(k, String(n + 1), 3700);
   return null;
+}
+
+/**
+ * A signed licence lease for an offline till. The caller proves who it is
+ * with its Firebase ID token; the lease names the organisation, the licence
+ * status and end date, when it was issued and how long it may be used
+ * offline. It is signed with Script property LEASE_SIGNING_KEY (RSA PKCS#8
+ * PEM); the app holds the public half (lib/core/lease_public_key.dart), so a
+ * lease can be checked with no network and cannot be edited on the device.
+ */
+function handleLicenseLease_(p) {
+  var pem = String(PropertiesService.getScriptProperties().getProperty("LEASE_SIGNING_KEY") || "").replace(/\\n/g, "\n");
+  if (!pem) return responseJson({ success: false, error_code: "NOT_CONFIGURED" });
+  var uid = mailCallerUid_(p);
+  if (!uid) return responseJson({ success: false, error_code: "SIGN_IN_REQUIRED" });
+  var u = fsGet_("users/" + uid) || fsGet_("staff_users/" + uid);
+  if (!u) return responseJson({ success: false, error_code: "NO_USER" });
+  var orgId = String(u.organizationId || "");
+  if (!orgId || orgId === "SYSTEM_ADMIN") return responseJson({ success: false, error_code: "NO_ORG" });
+  var lic = fsGet_("licenses/" + orgId) || {};
+  var org = fsGet_("organizations/" + orgId) || {};
+  var mode = String(org.storageMode || lic.storageMode || "");
+  var graceDays = (mode === "PURE_OFFLINE") ? 30 : 7;
+  function iso(v) { return v instanceof Date ? v.toISOString() : (v ? String(v) : ""); }
+  var now = new Date();
+  // Fixed key order: the app verifies the exact string it is given.
+  var payload = JSON.stringify({
+    v: 1,
+    orgId: orgId,
+    uid: uid,
+    deviceId: String(p.deviceId || "").slice(0, 128),
+    status: String(lic.status || "UNKNOWN").toUpperCase(),
+    endDate: iso(lic.endDate),
+    storageMode: mode,
+    issuedAt: now.toISOString(),
+    leaseUntil: new Date(now.getTime() + graceDays * 86400000).toISOString()
+  });
+  var sig = Utilities.base64Encode(Utilities.computeRsaSha256Signature(payload, pem));
+  return responseJson({ success: true, payload: payload, sig: sig });
 }
 
 /** Secret for signing e-mail proofs; created on first use, kept in Script properties. */

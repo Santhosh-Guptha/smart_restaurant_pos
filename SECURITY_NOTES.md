@@ -42,7 +42,7 @@ This can't be fixed by tightening rules alone, because the app does its own sign
 
 | Area | What it does | Limits |
 |---|---|---|
-| Offline licence lease (`LicenseLease`) | 30 days offline (7 cloud), renewed on every server read, blocks on clock rollback | Stored unsigned in Hive — plan a server-signed lease |
+| Offline licence lease (`LicenseLease`) | 30 days offline (7 cloud), renewed on every server read, blocks on clock rollback. **Signed:** Code.gs `LICENSE_LEASE` returns an RSA-signed lease (org, status, end date, issued, valid-until); the app checks it with the public key in `lib/core/lease_public_key.dart`. Once a device has one, it trusts only signed leases — editing or deleting it blocks until the next online check | Needs Script property `LEASE_SIGNING_KEY` (the PEM in `secrets/lease_signing_key.pem`, git-ignored). A patched app binary can still skip checks |
 | Credential cache | bcrypt hash cached only after a server-verified login | First login on a device must be online |
 | Sheet sharing (`SheetAccessReconciler`) | Each store's sheet shared only with that store's people; everyone else revoked; audited | Runs on the tenant owner's signed-in device only |
 | `tenant_metrics` | Daily aggregates per store (count, gross, payment split). No bill lines, no customer data | Rules open today; `firestore.rules.next` limits write to the tenant and read to the admin |
@@ -66,3 +66,9 @@ Apps Script `SEND_EMAIL` / `SEND_OTP_EMAIL` accept mail from any caller (tills u
 2. Every till on a build from `ca689d2` or later (server-first login, server 2-step, server sign-up).
 3. Test in the Rules Playground: tenant owner, store owner, staff, admin (with `adminVerified`), signed-out sign-up.
 4. Deploy: copy `firestore.rules.next` over `firestore.rules`, `firebase deploy --only firestore:rules`. Keep the old file to roll back.
+
+## Licence signing key — set up once
+1. Open `secrets/lease_signing_key.pem` (on your machine only; git ignores `secrets/`).
+2. Apps Script → Project settings → Script properties → add `LEASE_SIGNING_KEY` = the whole file, including the BEGIN/END lines.
+3. Keep a copy somewhere safe (password manager). Do not e-mail it or paste it into chat.
+4. Rotating it: generate a new pair, update the property and `lib/core/lease_public_key.dart`, ship a build. Devices re-fetch on their next online check.

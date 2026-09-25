@@ -21,6 +21,7 @@ import 'providers/saas_session_provider.dart';
 import 'providers/theme_provider.dart';
 import 'sync/outbox.dart';
 import 'services/app_icon_service.dart';
+import 'services/license_lease_service.dart';
 import 'services/smtp_email_service.dart';
 import 'services/firebase_connection_service.dart';
 import 'services/database_cleanup_service.dart';
@@ -73,6 +74,8 @@ void main() async {
   await Hive.initFlutter();
 
   await Hive.openBox('configBox');
+  // Every server-confirmed licence read also fetches a signed offline lease.
+  LicenseLease.onValidated = LicenseLeaseService.refresh;
   await Hive.openBox('deviceBox');
   await Hive.openBox('restaurant_auth_box');
   await Hive.openBox('restaurant_config_box');
