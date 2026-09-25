@@ -639,6 +639,203 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
   //  CHECKOUT & NEXT FLOW (Prompt 1: Dine-In vs Takeaway, Prompt 2: Table, Prompt 3: Pay Now vs Later)
   // =========================================================================
 
+
+  // =========================================================================
+  //  WIDE SCREENS: the running bill as a side panel
+  // =========================================================================
+
+  void _bumpCartLine(int index, int delta) {
+    HapticFeedback.selectionClick();
+    setState(() {
+      if (index < 0 || index >= _cart.length) return;
+      final line = _cart[index];
+      final next = line.qty + delta;
+      if (next <= 0) {
+        _cart.removeAt(index);
+      } else {
+        _cart[index] = line.copyWith(qty: next);
+      }
+      if (_cart.isEmpty) _appliedDiscount = null;
+    });
+  }
+
+  Widget _buildCurrentBillPanel() {
+    final t = _billTotals;
+    final count = _cart.fold<int>(0, (total, i) => total + i.qty.toInt());
+    Widget amountRow(String label, double v, {bool strong = false, Color? color}) => Padding(
+          padding: const EdgeInsets.symmetric(vertical: 2),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(label,
+                    style: TextStyle(
+                        fontSize: strong ? 15 : 12.5,
+                        fontWeight: strong ? FontWeight.w800 : FontWeight.w500,
+                        color: color ?? (strong ? context.textPrimary : context.textSecondary))),
+              ),
+              Text(v < 0 ? '-₹${(-v).toStringAsFixed(2)}' : '₹${v.toStringAsFixed(2)}',
+                  style: TextStyle(
+                      fontSize: strong ? 18 : 12.5,
+                      fontWeight: strong ? FontWeight.w900 : FontWeight.w600,
+                      color: color ?? context.textPrimary)),
+            ],
+          ),
+        );
+
+    return Container(
+      decoration: BoxDecoration(
+        color: context.surfaceColor,
+        border: Border(left: BorderSide(color: context.borderColor)),
+      ),
+      child: SafeArea(
+        left: false,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 8, 10),
+              child: Row(
+                children: [
+                  Icon(Icons.receipt_long_rounded, size: 18, color: ClassicTheme.primaryAccent),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      count == 0 ? 'Current bill' : 'Current bill · $count ${count == 1 ? 'item' : 'items'}',
+                      style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15, color: context.textPrimary),
+                    ),
+                  ),
+                  if (_cart.isNotEmpty)
+                    IconButton(
+                      icon: const Icon(Icons.delete_outline_rounded, color: ClassicTheme.dangerRed, size: 20),
+                      tooltip: 'Clear Cart',
+                      onPressed: () => setState(() {
+                        _cart.clear();
+                        _appliedDiscount = null;
+                      }),
+                    ),
+                ],
+              ),
+            ),
+            Divider(height: 1, color: context.borderColor),
+            Expanded(
+              child: _cart.isEmpty
+                  ? Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Text(
+                          'Tap ${_vl.itemPlural.toLowerCase()} on the left to start a bill.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: context.textSecondary, fontSize: 13),
+                        ),
+                      ),
+                    )
+                  : ListView.separated(
+                      padding: const EdgeInsets.symmetric(vertical: 6),
+                      itemCount: _cart.length,
+                      separatorBuilder: (_, __) => Divider(height: 1, indent: 16, endIndent: 16, color: context.borderColor),
+                      itemBuilder: (context, i) {
+                        final line = _cart[i];
+                        final unit = line.unitPriceWithModifiers;
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(line.displayNameWithModifiers,
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: context.textPrimary)),
+                                    Text('₹${unit.toStringAsFixed(2)} each',
+                                        style: TextStyle(fontSize: 11.5, color: context.textSecondary)),
+                                  ],
+                                ),
+                              ),
+                              IconButton(
+                                visualDensity: VisualDensity.compact,
+                                icon: const Icon(Icons.remove_circle_outline_rounded, size: 20),
+                                tooltip: 'One less',
+                                onPressed: () => _bumpCartLine(i, -1),
+                              ),
+                              SizedBox(
+                                width: 26,
+                                child: Text(
+                                  line.qty % 1 == 0 ? line.qty.toInt().toString() : line.qty.toStringAsFixed(2),
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(fontWeight: FontWeight.w800, color: context.textPrimary),
+                                ),
+                              ),
+                              IconButton(
+                                visualDensity: VisualDensity.compact,
+                                icon: Icon(Icons.add_circle_rounded, size: 20, color: ClassicTheme.primaryAccent),
+                                tooltip: 'One more',
+                                onPressed: () => _bumpCartLine(i, 1),
+                              ),
+                              SizedBox(
+                                width: 72,
+                                child: Text('₹${(unit * line.qty).toStringAsFixed(2)}',
+                                    textAlign: TextAlign.right,
+                                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: context.textPrimary)),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+            ),
+            Container(
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 14),
+              decoration: BoxDecoration(border: Border(top: BorderSide(color: context.borderColor))),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  amountRow('Subtotal', t.subtotal),
+                  if (t.discount > 0) amountRow('Discount', -t.discount, color: ClassicTheme.successEmerald),
+                  if (t.serviceCharge > 0) amountRow('Service charge (${_serviceChargeRate.toStringAsFixed(0)}%)', t.serviceCharge),
+                  if (t.cgst + t.sgst > 0) amountRow('GST (${_gstRate.toStringAsFixed(0)}%)', t.cgst + t.sgst),
+                  const SizedBox(height: 4),
+                  amountRow('Total', t.grandTotal, strong: true),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      OutlinedButton.icon(
+                        onPressed: _cart.isEmpty ? null : _showDiscountDialog,
+                        icon: Icon(Icons.percent_rounded,
+                            size: 16, color: _appliedDiscount != null ? ClassicTheme.primaryAccent : null),
+                        label: Text(_appliedDiscount != null ? 'Discount on' : 'Discount'),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: ClassicTheme.primaryAccent,
+                            foregroundColor: Colors.white,
+                            elevation: 0,
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
+                          icon: const Icon(Icons.arrow_forward_rounded, size: 18),
+                          label: const Text('Next', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                          onPressed: _cart.isEmpty ? null : _onNextPressed,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   void _onNextPressed() {
     if (!LicenseGuard.checkAndShowLockout(context, ref, actionName: 'take counter orders or settle bills')) {
       return;
@@ -4961,8 +5158,12 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
           body: TabBarView(
             controller: _tabController,
             children: [
-              // Tab 0: New Bill Catalog & Cart
-              Column(
+              // Tab 0: New Bill Catalog & Cart. On tablets in landscape,
+              // desktops and big screens the bill sits beside the catalogue
+              // (items left, running bill right) instead of in a bottom bar.
+              LayoutBuilder(builder: (context, tabBox) {
+              final split = tabBox.maxWidth >= 1000;
+              final catalogue = Column(
                 children: [
                   // Search & Category Bar
                   Container(
@@ -5370,8 +5571,8 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                     ),
                   ),
 
-                  // Bottom Checkout Bar with "Next" Button
-                  if (_cart.isNotEmpty)
+                  // Bottom Checkout Bar with "Next" Button (phones & portrait tablets)
+                  if (_cart.isNotEmpty && !split)
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                       decoration: BoxDecoration(
@@ -5530,7 +5731,19 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                       ),
                     ),
                 ],
-              ),
+              );
+              if (!split) return catalogue;
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Expanded(child: catalogue),
+                  SizedBox(
+                    width: tabBox.maxWidth >= 1400 ? 420 : 360,
+                    child: _buildCurrentBillPanel(),
+                  ),
+                ],
+              );
+              }),
 
               // Tab 1: Pending Bills — only with running tabs
               if (_hasRunningTabs) _buildPendingBillsTab(pendingOrders, orgId),
