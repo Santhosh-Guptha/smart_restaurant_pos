@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Register your restaurant · SmartDine</title>
+<title>Register your business · SmartBizz</title>
 <meta name="description" content="Tell us about your restaurant. We review every request personally and set you up within a business day.">
 <meta name="theme-color" content="#0f1219">
 <meta name="robots" content="index,follow">
@@ -87,7 +87,7 @@
 <body>
 
 <nav><div class="wrap">
-  <a class="logo" href="/"><img src="/assets/logo.png" alt="" width="32" height="32">SmartDine</a>
+  <a class="logo" href="/"><img src="/assets/logo.png" alt="" width="32" height="32">SmartBizz</a>
   <a class="back" href="/">← Back to site</a>
 </div></nav>
 
@@ -112,17 +112,24 @@
         <div class="f"><label for="mobile">Mobile <span>* WhatsApp preferred</span></label><input id="mobile" name="mobile" type="tel" inputmode="tel" autocomplete="tel" placeholder="+91 98765 43210" required><div class="err"></div></div>
         <div class="f full"><label for="email">Email <span>* your login will be sent here</span></label><input id="email" name="email" type="email" autocomplete="email" required maxlength="120"><div class="err"></div></div>
         <div class="f full"><label for="shopName">Restaurant / brand name <span>*</span></label><input id="shopName" name="shopName" autocomplete="organization" required maxlength="100"><div class="err"></div></div>
-        <div class="f"><label for="businessCategory">Type of place</label>
+        <div class="f"><label for="businessCategory">Type of business</label>
           <select id="businessCategory" name="businessCategory">
-            <option>Restaurant &amp; Cafe</option><option>Fast Food / QSR</option><option>Fine Dining &amp; Bar</option><option>Bakery &amp; Sweets</option>
-            <option>Food Court / Kiosk</option><option>Cloud Kitchen / Delivery</option><option>Pizzeria / Italian</option><option>Coffee House / Tea Lounge</option><option>Other</option>
+            <optgroup label="Food &amp; hospitality">
+              <option>Restaurant &amp; Cafe</option><option>Fast Food / QSR</option><option>Fine Dining &amp; Bar</option>
+              <option>Bakery &amp; Sweets</option><option>Food Court / Kiosk</option><option>Cloud Kitchen / Delivery</option>
+              <option>Pizzeria / Italian</option><option>Coffee House / Tea Lounge</option><option>Other Hospitality</option>
+            </optgroup>
+            <optgroup label="Shops &amp; retail">
+              <option>Kirana / Grocery Store</option><option>Supermarket / Departmental Store</option>
+              <option>Pharmacy / Medical Store</option><option>General Retail / Fashion / Electronics</option>
+            </optgroup>
           </select></div>
         <div class="f"><label for="city">City</label><input id="city" name="city" autocomplete="address-level2" maxlength="60"></div>
         <div class="f"><label for="requestedStoreCount">Number of outlets</label>
           <select id="requestedStoreCount" name="requestedStoreCount"><option value="1">1 — just this one</option><option value="2">2</option><option value="3">3</option><option value="5">4–5</option><option value="10">6–10</option><option value="25">More than 10</option></select></div>
-        <div class="f"><label for="tableCount">Tables <span>approx., biggest outlet</span></label><input id="tableCount" name="tableCount" type="number" inputmode="numeric" min="0" max="500" placeholder="12"></div>
+        <div class="f"><label for="tableCount">Tables <span>restaurants only, approx.</span></label><input id="tableCount" name="tableCount" type="number" inputmode="numeric" min="0" max="500" placeholder="12"></div>
         <div class="f full"><label for="referralSource">How did you hear about us?</label>
-          <select id="referralSource" name="referralSource"><option value="">Choose one</option><option>A friend or another restaurant</option><option>Search</option><option>Social media</option><option>Someone from SmartDine reached out</option><option>Other</option></select></div>
+          <select id="referralSource" name="referralSource"><option value="">Choose one</option><option>A friend or another business</option><option>Search</option><option>Social media</option><option>Someone from SmartBizz reached out</option><option>Other</option></select></div>
         <div class="f full"><label for="notes">Anything we should know? <span>optional</span></label><textarea id="notes" name="notes" maxlength="600" placeholder="Opening date, current billing setup, what's frustrating you today…"></textarea></div>
       </div>
       <div class="submit">
@@ -142,7 +149,7 @@
   </div>
 </main>
 
-<footer>SmartDine · Made for the people who run the room.</footer>
+<footer>SmartBizz · Made for the people behind the counter.</footer>
 
 <script>
 // ────────────────────────────────────────────────────────────────────────
