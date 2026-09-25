@@ -491,7 +491,7 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
     final bool isPureOffline = ent.isPureOffline;
 
     final String roleDisplayName = isMasterAdmin
-        ? 'Master Admin (Demo Showcase)'
+        ? 'Platform Admin (Support View)'
         : (activeStaff != null
             ? '${activeStaff.name} (${activeStaff.role.displayName})'
             : isOwner

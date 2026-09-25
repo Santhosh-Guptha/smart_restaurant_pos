@@ -122,7 +122,7 @@ class RestaurantAuthNotifier extends StateNotifier<RestaurantAuthState> {
 
     if (isMaster) {
       return StaffMember(
-        id: 'master_admin_demo',
+        id: 'master_admin_support',
         name: 'Platform Master Admin',
         email: cleanEmail,
         role: StaffRole.owner,

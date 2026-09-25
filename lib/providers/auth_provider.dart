@@ -1,7 +1,5 @@
 
 import 'dart:async';
-import 'dart:convert';
-import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart';
@@ -94,23 +92,6 @@ class AuthNotifier extends StateNotifier<ShopAccount?> {
     }
   }
 
-  /// Hashes the password locally using salted SHA-256 (offline safe)
-  String _hashPassword(String password) {
-    final bytes = utf8.encode("SmartBillingPassSalt2026_$password");
-    return sha256.convert(bytes).toString();
-  }
-
-  /// Legacy DJB2 hash for backwards compatibility during password migration
-  String _legacyDjb2Hash(String password) {
-    int hash = 5381;
-    final String salted = '${password}SmartBillingPassSalt2026';
-    for (int i = 0; i < salted.length; i++) {
-      hash = ((hash << 5) + hash) + salted.codeUnitAt(i);
-      hash = hash & 0xFFFFFFFF;
-    }
-    return hash.toRadixString(16);
-  }
-
   /// Activates the device using the activation key (legacy)
   Future<bool> activateDevice(String key) async {
     final deviceId = await LicenseHelper.getOrCreateDeviceId();
@@ -129,88 +110,6 @@ class AuthNotifier extends StateNotifier<ShopAccount?> {
       await LicenseHelper.updateLastActiveTime();
       _ref.read(isClockTamperedProvider.notifier).state = false;
       _ref.read(isActivatedProvider.notifier).state = true;
-      return true;
-    }
-    return false;
-  }
-
-  /// Registers a local account credentials and shop profile (onboarding) in one step (legacy)
-  Future<void> registerLocal({
-    required String username,
-    required String password,
-    required String shopName,
-    required String shopPhone,
-    required String shopAddress,
-    required String shopVpa,
-  }) async {
-    final box = Hive.box('configBox');
-    await box.put('local_username', username.trim());
-    await box.put('local_password', _hashPassword(password));
-    
-    final String mockEmail = '${username.trim().toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '')}@smartdine.local';
-    await box.put('current_user_email', mockEmail);
-    await box.put('phone_validated_$mockEmail', true);
-    await box.put('shop_name_$mockEmail', shopName.trim());
-    await box.put('shop_phone_$mockEmail', shopPhone.trim());
-    await box.put('shop_address_$mockEmail', shopAddress.trim());
-    await box.put('shop_vpas_$mockEmail', shopVpa.trim());
-    
-    await box.put('tpl_invoice_$mockEmail', 'Invoice from {shop_name}.\nTotal amount: ₹{total_amount}.');
-    await box.put('tpl_reminder_$mockEmail', 'Dear customer, you have a remaining outstanding balance of ₹{remaining_balance} with {shop_name}. Please clear your dues. Thank you!');
-    await box.put('tpl_receipt_$mockEmail', 'Hello {customer_name},\n\nWe have successfully received your payment of *₹{receipt_amount}* {payment_details}.\n\n🏪 *Shop:* {shop_name}\n💰 *Amount Paid:* ₹{receipt_amount}\n💳 *Remaining Outstanding Balance:* ₹{remaining_balance}\n\nThank you for your payment! 🙏');
-    await box.put('pdf_title_$mockEmail', 'RETAIL INVOICE');
-    await box.put('pdf_footer_$mockEmail', 'Thank you for shopping with us! Have a wonderful day!');
-    await box.put('pdf_color_$mockEmail', 'purple');
-    await box.put('profile_completed_$mockEmail', true);
-    await box.put('registry_verified_$mockEmail', true);
-
-    _ref.read(isRegisteredProvider.notifier).state = true;
-    
-    await box.put('session_active', true);
-    final String todayStr = DateTime.now().toIso8601String().substring(0, 10);
-    await box.put('last_login_date', todayStr);
-    await LicenseHelper.updateLastActiveTime();
-    
-    // Switch saas session to mock owner
-    _ref.read(saasSessionProvider.notifier).setMockRole('OWNER');
-    _ref.read(activeSessionSelectedProvider.notifier).state = true;
-  }
-
-  /// Logs in local user with credentials verification (legacy)
-  Future<bool> loginLocal(String username, String password) async {
-    if (LicenseHelper.checkClockTamper()) {
-      _ref.read(isClockTamperedProvider.notifier).state = true;
-      return false;
-    }
-    if (LicenseHelper.isLicenseExpired()) {
-      _ref.read(isActivatedProvider.notifier).state = false;
-      return false;
-    }
-
-    final box = Hive.box('configBox');
-    final String? storedUser = box.get('local_username');
-    final String? storedPass = box.get('local_password');
-    
-    final String hashedEntered = _hashPassword(password);
-    final String legacyHash = _legacyDjb2Hash(password);
-    final bool passMatches =
-        storedPass == hashedEntered || (storedPass != null && storedPass == legacyHash);
-
-    if (storedUser != null &&
-        storedUser.toLowerCase().trim() == username.toLowerCase().trim() &&
-        passMatches) {
-      if (storedPass == legacyHash) {
-        // Upgrade legacy DJB2 hash to salted SHA-256 on successful login
-        await box.put('local_password', hashedEntered);
-      }
-      await box.put('session_active', true);
-      final String todayStr = DateTime.now().toIso8601String().substring(0, 10);
-      await box.put('last_login_date', todayStr);
-      await LicenseHelper.updateLastActiveTime();
-
-      // Update SaaS session role matching local account
-      _ref.read(saasSessionProvider.notifier).setMockRole('OWNER');
-      _ref.read(activeSessionSelectedProvider.notifier).state = true;
       return true;
     }
     return false;
@@ -316,11 +215,6 @@ class AuthNotifier extends StateNotifier<ShopAccount?> {
     }
   }
   
-  Future<void> signInOffline() async {
-    _ref.read(saasSessionProvider.notifier).setMockRole('OWNER');
-    _ref.read(activeSessionSelectedProvider.notifier).state = true;
-  }
-
   Future<bool> refreshToken() async {
     try {
       final account = await _googleSignIn.signInSilently();

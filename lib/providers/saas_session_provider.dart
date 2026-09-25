@@ -1216,7 +1216,7 @@ class SaasSessionNotifier extends StateNotifier<SaasSessionState> {
       final org = SaasOrganization.fromFirestore(orgData, orgId);
 
       await switchStoreContext(org: org, outletId: outletId);
-      debugPrint("[Master Admin Demo] Switched active organization to ${org.name} ($orgId, outlet: $outletId)");
+      debugPrint("[Master Admin support view] Switched active organization to ${org.name} ($orgId, outlet: $outletId)");
     } catch (e) {
       debugPrint("switchOrganizationForMasterAdmin error: $e");
     }
@@ -1316,54 +1316,6 @@ class SaasSessionNotifier extends StateNotifier<SaasSessionState> {
     } catch (e) {
       debugPrint("Failed to write audit log: $e");
     }
-  }
-
-  /// Sets user role dynamically in mock mode for dashboard testing
-  void setMockRole(String role) {
-    final mockUser = SaasUser(
-      id: 'usr-mock-112',
-      email: '${role.toLowerCase()}@smartbiz.com',
-      fullName: 'Mock ${role[0]}${role.substring(1).toLowerCase()}',
-      role: role,
-      organizationId: 'org-demo-101',
-      franchiseId: role == 'OWNER' || role == 'MASTER_ADMIN' ? null : 'franchise-hq-01',
-    );
-
-    final mockOrg = SaasOrganization(
-      id: 'org-demo-101',
-      name: 'Demo Business Network',
-      appName: 'SmartBiz',
-      logoUrl: null,
-      primaryColor: '#1E3A8A',
-      secondaryColor: '#10B981',
-    );
-
-    final mockLicense = role == 'MASTER_ADMIN'
-        ? SaasLicense(
-            planTier: 'ENTERPRISE',
-            status: 'ACTIVE',
-            maxFranchises: 999,
-            maxUsers: 999,
-            maxDevices: 999,
-            features: {
-              'inventoryEnabled': true,
-              'reportsEnabled': true,
-              'loyaltyEnabled': true,
-              'onlineOrderingEnabled': true,
-              'whiteLabelEnabled': true,
-            },
-            startDate: DateTime.now(),
-            endDate: DateTime.now().add(const Duration(days: 365)),
-          )
-        : (role == 'STAFF' ? SaasLicense.defaultFree(trialDays: 7) : SaasLicense.defaultFree(trialDays: 14));
-
-    state = SaasSessionState(
-      currentUser: mockUser,
-      currentOrganization: mockOrg,
-      currentLicense: mockLicense,
-      activeFranchiseId: mockUser.franchiseId ?? 'franchise-hq-01',
-      isMockMode: true,
-    );
   }
 
   Future<void> setActiveFranchise(String franchiseId) async {

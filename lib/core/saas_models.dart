@@ -233,23 +233,6 @@ class SaasLicense {
       vertical: vertical,
     );
   }
-
-  /// Mock licence with everything on: the Omnichannel profile.
-  factory SaasLicense.proMock({String vertical = Verticals.restaurant}) {
-    return SaasLicense(
-      planTier: 'YEARLY',
-      planProfile: 'OMNICHANNEL',
-      status: 'ACTIVE',
-      maxFranchises: 25,
-      maxUsers: 20,
-      maxDevices: 15,
-      allowedRoles: const ['OWNER', 'MANAGER', 'BILLING', 'KITCHEN', 'WAITER'],
-      features: const {},
-      startDate: DateTime.now(),
-      endDate: DateTime.now().add(const Duration(days: 365)),
-      vertical: vertical,
-    );
-  }
 }
 
 class SaasOrganization {

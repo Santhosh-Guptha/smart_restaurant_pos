@@ -42,6 +42,7 @@ Deeper docs: `ARCHITECTURE.md` (§9 = current model), `FLOWS_AND_SCENARIOS.md` (
   Never upload bill lines or customer data.
 - **App icon** follows the trade after login (`AppIconService`, Android activity-aliases, iOS `AppIcon-<trade>`).
   Edit artwork in `assets_src/app_icons/*.svg`, regenerate with `generate_icons.py`, never hand-edit PNGs.
+- No mock/demo sessions: the app runs only on real accounts. The admin opens a tenant's POS from Tenants → ▶ (support view).
 - No secrets in code. No plain PINs/passwords in Firestore — hashes only. Never share a sheet as
   "anyone with the link" (the old `makeSpreadsheetEditableByLink` was removed).
 
@@ -54,7 +55,8 @@ d22139a licence lease · 90c6314 store owners per outlet · 0e036ce two storage 
 sharing reconciler, tenant metrics, admin Business Analytics.
 
 ## Status (25 Sep 2026)
-- Run on 5ac7cc0 (+ link-sharing removal): analyze clean, **333/333 tests**, web build OK.
+- Run on ba4689e: analyze clean, **335/335 tests**, web build OK, **hosting deployed** (25 Sep 19:51 IST).
+- After that: mock/demo mode removed (admin "Showcase Demo POS", mock login, setMockRole, proMock, old LoginScreen).
 - Since then (not yet run): 860f7be icons · next commit: trade wording fixes in store settings / branches /
   menu / analytics / Sheets setup, and admin 2-step verification on the server · then: sign-up e-mail check +
   trial creation on the server, platform SMTP admin-only.

@@ -1146,26 +1146,6 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
           ),
           const SizedBox(width: 6),
           ElevatedButton.icon(
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const RestaurantHomeScreen()),
-              );
-            },
-            icon: const Icon(Icons.restaurant_menu_rounded, size: 14),
-            label: Text(
-              isVeryCompact ? "POS Demo" : "Showcase Demo POS",
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
-            ),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: ClassicTheme.successEmerald,
-              foregroundColor: Colors.white,
-              padding: EdgeInsets.symmetric(horizontal: isVeryCompact ? 8 : 14, vertical: isVeryCompact ? 6 : 8),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-            ),
-          ),
-          SizedBox(width: isVeryCompact ? 2 : 6),
-          ElevatedButton.icon(
             onPressed: () => OrganizationsTab.showOnboardOrganizationDialog(context),
             icon: const Icon(Icons.add_business_rounded, size: 14),
             label: Text(
@@ -3865,7 +3845,7 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                                   children: [
                                     IconButton(
                                       icon: const Icon(Icons.play_circle_fill_rounded, color: ClassicTheme.infoBlue, size: 22),
-                                      tooltip: "Showcase / Launch POS for $name",
+                                      tooltip: "Open $name's POS (support view)",
                                       onPressed: () async {
                                         await ref.read(saasSessionProvider.notifier).switchOrganizationForMasterAdmin(docId);
                                         if (context.mounted) {
