@@ -12,7 +12,8 @@ void setFavicon(String href) {
     return;
   }
   for (var i = 0; i < links.length; i++) {
-    final el = links.item(i);
-    if (el is web.HTMLLinkElement) el.href = href;
+    // querySelectorAll only returned <link> elements; Element is a subtype of Node.
+    final el = links.item(i) as web.Element?;
+    el?.setAttribute('href', href);
   }
 }
