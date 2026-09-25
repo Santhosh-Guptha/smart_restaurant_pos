@@ -1141,9 +1141,13 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
                     const SizedBox(height: 8),
                     // --- Package cards relevant to vertical ---
                     ...PlanProfile.all.where((profile) {
-                      if (_vertical != Verticals.restaurant && profile.id == PlanProfile.offlineDineIn.id) {
-                        return false;
-                      }
+                      final isRestaurant = _vertical == Verticals.restaurant;
+                      // Each family sees its own offline starter, not both.
+                      // A chemist has no use for tables and reservations, and a
+                      // restaurant has no use for a shop counter.
+                      if (!isRestaurant && profile.id == PlanProfile.offlineDineIn.id) return false;
+                      if (isRestaurant && profile.id == PlanProfile.offlineRetail.id) return false;
+                      if (!isRestaurant && profile.id == PlanProfile.offlineSingle.id) return false;
                       return true;
                     }).map((profile) {
                       final features = _filteredFeaturesFor(profile, _vertical);

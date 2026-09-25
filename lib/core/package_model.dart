@@ -325,6 +325,8 @@ class Verticals {
   static String defaultPackageFor(String? businessCategory) {
     final v = forCategory(businessCategory);
     if (v == restaurant) return PlanProfile.offlineDineIn.id;
-    return PlanProfile.offlineSingle.id; // retail verticals start with counter
+    // A shop counter, not the bare till: the barcode scanner and the khata
+    // are the two things a kirana or a chemist buys this for.
+    return PlanProfile.offlineRetail.id;
   }
 }

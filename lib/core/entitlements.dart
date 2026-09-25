@@ -609,6 +609,16 @@ class PlanProfile {
   final int maxOutlets;
   final Set<CommercialTier> tiers;
 
+  /// Keys included beyond the tiers.
+  ///
+  /// The tiers are one dimension (how much of the product) but the catalogue
+  /// now has two (a restaurant's floor features and a shop's counter
+  /// features both sit in `offlineAddOn`). Rather than re-cut the tiers under
+  /// every live licence, a profile may name the extra keys it includes. Used
+  /// by the shop counter package, which needs the barcode scanner and the
+  /// khata without tables, reservations or kitchen tickets.
+  final Set<String> extraKeys;
+
   const PlanProfile({
     required this.id,
     required this.label,
@@ -617,12 +627,19 @@ class PlanProfile {
     required this.maxDevices,
     required this.maxOutlets,
     required this.tiers,
+    this.extraKeys = const {},
   });
 
   bool get isOffline => StorageModes.isOffline(storageMode);
 
-  /// Every key in the included tiers on, everything else off.
-  Map<String, bool> get features => FeatureCatalog.featuresFor(tiers);
+  /// Every key in the included tiers on, plus [extraKeys]; everything else off.
+  Map<String, bool> get features {
+    final out = FeatureCatalog.featuresFor(tiers);
+    for (final k in extraKeys) {
+      if (out.containsKey(k)) out[k] = true;
+    }
+    return out;
+  }
 
   /// The storage modes a tenant on this package may run. Derived, never
   /// stored: an offline package that could be pointed at the cloud would be
@@ -665,6 +682,33 @@ class PlanProfile {
     maxDevices: 1,
     maxOutlets: 1,
     tiers: {CommercialTier.offlineBasic},
+  );
+
+  /// What a shop gets on day one: the counter till, the barcode scanner, the
+  /// khata, expenses and sales analytics. One device, no internet.
+  ///
+  /// Kirana, supermarket, pharmacy and general retail used to be started on
+  /// [offlineSingle], which is the bare till: their dashboard showed Barcode
+  /// Billing and Customer Khata and the licence denied both, so the free
+  /// trial could not scan a barcode. Stock management is deliberately absent
+  /// \u2014 the card opens the product catalogue and there is no stock screen
+  /// behind it yet.
+  static const PlanProfile offlineRetail = PlanProfile(
+    id: 'OFFLINE_RETAIL',
+    label: 'Shop counter',
+    description:
+        'One device, no internet. Barcode billing, customer khata, products '
+        'and pricing, expenses and day-end \u2014 a complete shop till.',
+    storageMode: StorageModes.pureOffline,
+    maxDevices: 1,
+    maxOutlets: 1,
+    tiers: {CommercialTier.offlineBasic},
+    extraKeys: {
+      FeatureKeys.barcodeBilling,
+      FeatureKeys.customerKhata,
+      FeatureKeys.expenseManagement,
+      FeatureKeys.analytics,
+    },
   );
 
   static const PlanProfile offlineDineIn = PlanProfile(
@@ -714,6 +758,7 @@ class PlanProfile {
 
   static const List<PlanProfile> all = [
     offlineSingle,
+    offlineRetail,
     offlineDineIn,
     connected,
     omnichannel,
@@ -728,6 +773,10 @@ class PlanProfile {
       case 'OFFLINE':
       case 'COUNTER':
         return offlineSingle;
+      case 'OFFLINE_RETAIL':
+      case 'SHOP_COUNTER':
+      case 'RETAIL_COUNTER':
+        return offlineRetail;
       case 'OFFLINE_DINE_IN':
       case 'OFFLINE_ADDON':
       case 'DINEIN_OFFLINE':

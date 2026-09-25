@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:smart_restaurant_pos/core/entitlements.dart';
+import 'package:smart_restaurant_pos/core/package_model.dart';
 import 'package:smart_restaurant_pos/core/saas_models.dart';
 
 SaasLicense _license({
@@ -52,6 +53,49 @@ void main() {
           expect(p.features[f.key], isFalse, reason: '${p.id} has ${f.key}');
         }
       }
+    });
+  });
+
+  group('Shop counter package', () {
+    test('a shop trial can scan a barcode and keep a khata', () {
+      final f = PlanProfile.offlineRetail.features;
+      expect(f[FeatureKeys.barcodeBilling], isTrue);
+      expect(f[FeatureKeys.customerKhata], isTrue);
+      expect(f[FeatureKeys.expenseManagement], isTrue);
+      expect(f[FeatureKeys.analytics], isTrue);
+    });
+
+    test('it carries no floor features, and no stock screen that does not exist', () {
+      final f = PlanProfile.offlineRetail.features;
+      expect(f[FeatureKeys.tableManagement], isFalse);
+      expect(f[FeatureKeys.reservations], isFalse);
+      expect(f[FeatureKeys.dineInBilling], isFalse);
+      expect(f[FeatureKeys.dualPrinting], isFalse);
+      expect(f[FeatureKeys.stockManagement], isFalse,
+          reason: 'the Stock Manager card opens the product catalogue; do not sell it yet');
+    });
+
+    test('it stays a one-device offline package', () {
+      expect(PlanProfile.offlineRetail.isOffline, isTrue);
+      expect(PlanProfile.offlineRetail.maxDevices, 1);
+      expect(PlanProfile.offlineRetail.maxOutlets, 1);
+    });
+
+    test('every shop vertical starts on it, and restaurants do not', () {
+      for (final c in ['Kirana / Grocery Store', 'Supermarket / Departmental Store',
+                       'Pharmacy / Medical Store', 'General Retail / Fashion / Electronics']) {
+        expect(Verticals.defaultPackageFor(c), PlanProfile.offlineRetail.id, reason: c);
+      }
+      expect(Verticals.defaultPackageFor('Restaurant & Cafe'), PlanProfile.offlineDineIn.id);
+    });
+
+    test('extraKeys cannot invent a key the catalogue does not have', () {
+      const bogus = PlanProfile(
+        id: 'X', label: 'x', description: '', storageMode: StorageModes.pureOffline,
+        maxDevices: 1, maxOutlets: 1, tiers: {CommercialTier.offlineBasic},
+        extraKeys: {'notARealFeature'},
+      );
+      expect(bogus.features.containsKey('notARealFeature'), isFalse);
     });
   });
 
