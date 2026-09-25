@@ -335,18 +335,11 @@ class SaasOrganization {
 
   factory SaasOrganization.fromJson(Map<String, dynamic> json) {
     final rawCategory = json['businessCategory']?.toString() ?? json['category']?.toString();
-    final rawVertical = json['vertical']?.toString().trim();
-    String resolvedVertical = Verticals.restaurant;
-    if (rawCategory != null && rawCategory.trim().isNotEmpty) {
-      final v = Verticals.forCategory(rawCategory);
-      if (v != Verticals.restaurant) {
-        resolvedVertical = v;
-      } else if (rawVertical != null && rawVertical.isNotEmpty) {
-        resolvedVertical = Verticals.forCategory(rawVertical);
-      }
-    } else if (rawVertical != null && rawVertical.isNotEmpty) {
-      resolvedVertical = Verticals.forCategory(rawVertical);
-    }
+    // One rule for every reader: see Verticals.resolve.
+    final resolvedVertical = Verticals.resolve(
+      vertical: json['vertical']?.toString(),
+      businessCategory: rawCategory,
+    );
 
     return SaasOrganization(
       id: json['id'] ?? '',
@@ -423,18 +416,11 @@ class SaasOrganization {
 
   factory SaasOrganization.fromFirestore(Map<String, dynamic> data, String docId) {
     final rawCategory = data['businessCategory']?.toString() ?? data['category']?.toString();
-    final rawVertical = data['vertical']?.toString().trim();
-    String resolvedVertical = Verticals.restaurant;
-    if (rawCategory != null && rawCategory.trim().isNotEmpty) {
-      final v = Verticals.forCategory(rawCategory);
-      if (v != Verticals.restaurant) {
-        resolvedVertical = v;
-      } else if (rawVertical != null && rawVertical.isNotEmpty) {
-        resolvedVertical = Verticals.forCategory(rawVertical);
-      }
-    } else if (rawVertical != null && rawVertical.isNotEmpty) {
-      resolvedVertical = Verticals.forCategory(rawVertical);
-    }
+    // One rule for every reader: see Verticals.resolve.
+    final resolvedVertical = Verticals.resolve(
+      vertical: data['vertical']?.toString(),
+      businessCategory: rawCategory,
+    );
 
     return SaasOrganization(
       id: docId,
@@ -836,7 +822,9 @@ class ClientOnboardingRequest {
       email: data['email'] ?? '',
       mobile: data['mobile'] ?? '',
       businessCategory: data['businessCategory'] ?? 'Restaurant & Cafe',
-      vertical: data['vertical']?.toString() ?? Verticals.forCategory(data['businessCategory']),
+      vertical: Verticals.resolve(
+          vertical: data['vertical']?.toString(),
+          businessCategory: data['businessCategory']?.toString()),
       referralSource: data['referralSource'],
       address: data['address'],
       requestedTrialDays: (data['requestedTrialDays'] ?? 14) as int,

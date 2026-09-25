@@ -6,6 +6,8 @@ import '../../../core/classic_theme.dart';
 import '../../../core/design_tokens.dart';
 import '../../../core/entitlements.dart';
 import '../../../core/responsive.dart';
+import '../../../core/package_model.dart';
+import '../../../services/category_alignment_service.dart';
 import '../../../services/license_migration_service.dart';
 import '../../../utils/ui_feedback.dart';
 
@@ -56,6 +58,8 @@ class AdminMigrationsView extends ConsumerWidget {
           return ListView(
             padding: EdgeInsets.fromLTRB(gutter, DS.space4, gutter, DS.space10),
             children: [
+              const _CategoryAlignCard(),
+              const SizedBox(height: DS.space4),
               const _PackagePlanSnapCard(),
               const SizedBox(height: DS.space6),
               if (docs.isEmpty)
@@ -605,6 +609,171 @@ class _PackagePlanSnapCardState extends State<_PackagePlanSnapCard> {
                   onPressed: _busy ? null : _apply,
                   icon: const Icon(Icons.check_rounded, size: 16),
                   label: Text('Assign ${r.rows.length}'),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Make every tenant's business type agree across the organisation, its
+/// licence and its owner. Dry run first; nothing but those four fields is
+/// written.
+class _CategoryAlignCard extends StatefulWidget {
+  const _CategoryAlignCard();
+
+  @override
+  State<_CategoryAlignCard> createState() => _CategoryAlignCardState();
+}
+
+class _CategoryAlignCardState extends State<_CategoryAlignCard> {
+  CategoryAlignmentReport? _report;
+  bool _busy = false;
+
+  Future<void> _dryRun() async {
+    setState(() => _busy = true);
+    try {
+      final r = await CategoryAlignmentService.plan();
+      if (mounted) setState(() => _report = r);
+    } catch (e) {
+      if (mounted) AppToast.showError(context, e, title: 'Could not read tenants');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _apply() async {
+    final r = _report;
+    if (r == null || r.toWrite.isEmpty) return;
+    final n = r.toWrite.length;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Align $n tenant${n == 1 ? '' : 's'}?'),
+        content: const Text(
+          'Each tenant\'s business category and vertical are written to its organisation, '
+          'its licence and its owner, as shown. Features, packages, plans, dates and limits '
+          'do not change. An open session picks the new type up on its next sign-in.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: ClassicTheme.primaryAccent, foregroundColor: Colors.white),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Align'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    setState(() => _busy = true);
+    try {
+      final done = await CategoryAlignmentService.apply(r);
+      if (!mounted) return;
+      AppToast.showSuccess(context, 'Aligned $done tenant${done == 1 ? '' : 's'}');
+      await _dryRun();
+    } catch (e) {
+      if (mounted) AppToast.showError(context, e);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final r = _report;
+    final toWrite = r?.toWrite ?? const <CategoryFix>[];
+    final bare = r?.bareTillShops ?? const <CategoryFix>[];
+    return Container(
+      padding: const EdgeInsets.all(DS.space4),
+      decoration: BoxDecoration(
+        color: context.surfaceColor,
+        borderRadius: BorderRadius.circular(DS.radiusLg),
+        border: Border.all(color: context.borderColor),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.category_outlined, color: ClassicTheme.primaryAccent, size: 20),
+              const SizedBox(width: DS.space2),
+              Expanded(
+                child: Text('Align business types',
+                    style: TextStyle(fontSize: DS.fontBodyLg, fontWeight: FontWeight.w700, color: context.textPrimary)),
+              ),
+              if (_busy) const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
+            ],
+          ),
+          const SizedBox(height: DS.space2),
+          Text(
+            'A tenant\'s trade is stored on the organisation, its licence and its owner. Older edits changed '
+            'the category without the vertical, and web trials never wrote the vertical at all, so some tenants '
+            'open on another trade\'s screens. This resolves each one with the app\'s own rule and writes the '
+            'answer everywhere. Dry run first.',
+            style: TextStyle(fontSize: DS.fontCaption, color: context.textSecondary, height: 1.45),
+          ),
+          const SizedBox(height: DS.space3),
+          if (r != null) ...[
+            Text(
+              toWrite.isEmpty
+                  ? 'Nothing to align: all ${r.alreadyAligned} tenant${r.alreadyAligned == 1 ? '' : 's'} agree with themselves.'
+                  : '${toWrite.length} to align \u00b7 ${r.alreadyAligned} already aligned',
+              style: TextStyle(fontSize: DS.fontCaption, fontWeight: FontWeight.w600, color: context.textPrimary),
+            ),
+            if (toWrite.isNotEmpty) ...[
+              const SizedBox(height: DS.space2),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 260),
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: toWrite.length,
+                  itemBuilder: (context, i) {
+                    final row = toWrite[i];
+                    final from = row.orgVertical.isEmpty ? '(none)' : row.orgVertical;
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 3),
+                      child: Text(
+                        '${row.orgName} (${row.orgId}) \u2014 ${Verticals.label(row.vertical)}'
+                        '${row.orgVerticalChanges ? '  \u00b7 vertical $from \u2192 ${row.vertical}' : ''}'
+                        '${row.categoryChanges ? '  \u00b7 category \u201c${row.category.isEmpty ? '(none)' : row.category}\u201d \u2192 \u201c${row.canonicalCategory}\u201d' : ''}'
+                        '${row.licenseChanges ? '  \u00b7 licence' : ''}'
+                        '${row.ownerChanges ? '  \u00b7 owner' : ''}',
+                        style: TextStyle(fontSize: DS.fontMicro, color: context.textSecondary),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+            if (bare.isNotEmpty) ...[
+              const SizedBox(height: DS.space2),
+              Text(
+                '${bare.length} shop${bare.length == 1 ? ' is' : 's are'} on "Offline counter", which has no barcode '
+                'billing or khata: ${bare.map((b) => b.orgName).join(', ')}. Move them to "Shop counter" from the '
+                'tenant editor if they should have both \u2014 this card does not change packages.',
+                style: const TextStyle(fontSize: DS.fontMicro, color: ClassicTheme.warningAmber),
+              ),
+            ],
+            const SizedBox(height: DS.space3),
+          ],
+          Row(
+            children: [
+              OutlinedButton.icon(
+                onPressed: _busy ? null : _dryRun,
+                icon: const Icon(Icons.search_rounded, size: 16),
+                label: Text(r == null ? 'Dry run' : 'Run again'),
+              ),
+              const SizedBox(width: DS.space2),
+              if (toWrite.isNotEmpty)
+                ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                      backgroundColor: ClassicTheme.primaryAccent, foregroundColor: Colors.white),
+                  onPressed: _busy ? null : _apply,
+                  icon: const Icon(Icons.check_rounded, size: 16),
+                  label: Text('Align ${toWrite.length}'),
                 ),
             ],
           ),

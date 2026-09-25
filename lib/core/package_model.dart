@@ -18,9 +18,14 @@ class TenantPackage {
   final String name;
   final String description;
 
-  /// Which line of business this package is for. Every current package is
-  /// `restaurant`; the field exists so a second vertical is a data change,
-  /// not a fork.
+  /// Which line of business this package is for, or [Verticals.any] for a
+  /// package every business type can be put on (all four starters are).
+  ///
+  /// A vertical-specific package has the other verticals' feature keys
+  /// stripped by [normalise]. A universal one keeps them all: the resolver
+  /// already switches off, per tenant, any key that belongs to a different
+  /// vertical ([BlockReason.verticalMismatch]), so a kirana on "Shop counter"
+  /// gets the scanner and the khata and never sees tables.
   final String vertical;
 
   final String storageMode;
@@ -44,7 +49,7 @@ class TenantPackage {
     required this.description,
     required this.storageMode,
     required this.features,
-    this.vertical = Verticals.restaurant,
+    this.vertical = Verticals.any,
     this.isStarter = false,
     this.sortOrder = 100,
     this.createdAt,
@@ -134,7 +139,7 @@ class TenantPackage {
   static Map<String, bool> normalise(
     Map<String, bool> raw,
     String storageMode, {
-    String vertical = 'restaurant',
+    String vertical = Verticals.any,
   }) {
     final offline = StorageModes.isOffline(storageMode);
     final out = <String, bool>{};
@@ -143,8 +148,12 @@ class TenantPackage {
       if (offline && (def.need != FeatureNeed.none || def.tier.isOnline)) {
         on = false;
       }
-      // Strip features that belong to a different vertical.
-      if (def.verticals.isNotEmpty && !def.verticals.contains(vertical)) {
+      // Strip features that belong to a different vertical — only for a
+      // package that is for one vertical. A universal package keeps them and
+      // the per-tenant resolver decides.
+      if (!Verticals.isAny(vertical) &&
+          def.verticals.isNotEmpty &&
+          !def.verticals.contains(vertical)) {
         on = false;
       }
       out[def.key] = on;
@@ -177,6 +186,7 @@ class TenantPackage {
         'name': name,
         'description': description,
         'vertical': vertical,
+        'verticalScoped': !Verticals.isAny(vertical),
         'storageMode': storageMode,
         'allowedStorageModes': allowedStorageModes.toList(),
         'features': features,
@@ -193,7 +203,18 @@ class TenantPackage {
       }
     }
     final mode = (j['storageMode'] ?? StorageModes.pureOffline).toString().toUpperCase();
-    final vert = (j['vertical'] ?? Verticals.restaurant).toString();
+    // Starters are universal whatever the stored field says: they were
+    // seeded with 'restaurant' before the field meant anything, and reading
+    // them as restaurant-only stripped the scanner and the khata out of
+    // "Shop counter" for every shop put on it.
+    //
+    // The same holds for every package saved before `verticalScoped`
+    // existed: the editor never offered a vertical, so the stored
+    // 'restaurant' was a default, not a choice. Only a package explicitly
+    // marked as scoped to one vertical is read as one.
+    final vert = (j['isStarter'] != true && j['verticalScoped'] == true)
+        ? Verticals.normalizePackageVertical(j['vertical']?.toString())
+        : Verticals.any;
     return TenantPackage(
       id: id,
       name: (j['name'] ?? id).toString(),
@@ -223,6 +244,24 @@ class TenantPackage {
 
 /// Lines of business. Five verticals; the field is what makes adding more a
 /// data change rather than a fork.
+///
+/// ## One source of truth
+///
+/// A tenant's vertical is decided by **one** function, [resolve], and every
+/// reader — the organisation model, the session, the console, the web trial
+/// handler (its JavaScript twin in `google_apps_script/Code.gs`) — goes
+/// through it. The rule, and why:
+///
+/// 1. The **business category** wins when it names a trade we recognise.
+///    It is what the owner picked at signup and what the console edits, and
+///    until this change the console edited it *without* touching `vertical`,
+///    so where the two disagree the category is the newer of the two.
+/// 2. Otherwise a valid stored `vertical`.
+/// 3. Otherwise [restaurant], the product's original trade.
+///
+/// Every writer now stores both fields together (see [canonicalCategoryFor]),
+/// so the two stop disagreeing, and the console's "Align business types"
+/// migration repairs documents written before.
 class Verticals {
   Verticals._();
   static const String restaurant  = 'restaurant';
@@ -231,9 +270,25 @@ class Verticals {
   static const String pharmacy    = 'pharmacy';
   static const String retail      = 'retail';
 
+  /// A package usable by every vertical. Never a tenant's vertical.
+  static const String any = 'any';
+
   static const List<String> all = [
     restaurant, kirana, supermarket, pharmacy, retail,
   ];
+
+  /// The shop trades: barcode counter instead of tables and a kitchen.
+  static const Set<String> shops = {kirana, supermarket, pharmacy, retail};
+
+  static bool isShop(String vertical) => shops.contains(vertical);
+  static bool isValid(String? v) => v != null && all.contains(v.trim().toLowerCase());
+  static bool isAny(String? v) => v == null || v.trim().isEmpty || v.trim().toLowerCase() == any;
+
+  /// A package's stored vertical: one of [all], or [any].
+  static String normalizePackageVertical(String? v) {
+    final t = (v ?? '').trim().toLowerCase();
+    return all.contains(t) ? t : any;
+  }
 
   /// Human-readable label for a vertical.
   static String label(String vertical) {
@@ -243,90 +298,153 @@ class Verticals {
       case supermarket: return 'Supermarket';
       case pharmacy:    return 'Pharmacy / Medical';
       case retail:      return 'Retail Store';
+      case any:         return 'All business types';
       default:          return vertical;
     }
   }
 
-  /// Maps any business-category string (from signup, master admin, or Firestore) to a vertical.
-  static String forCategory(String? businessCategory) {
-    if (businessCategory == null || businessCategory.trim().isEmpty) {
-      return restaurant;
-    }
+  /// **The** resolver. See the class comment for the rule.
+  static String resolve({String? vertical, String? businessCategory}) {
+    final fromCategory = tryForCategory(businessCategory);
+    if (fromCategory != null) return fromCategory;
+    final v = vertical?.trim().toLowerCase();
+    if (isValid(v)) return v!;
+    // A vertical written as a category string ("Kirana / Grocery Store").
+    return tryForCategory(vertical) ?? restaurant;
+  }
+
+  /// Maps any business-category string (from signup, master admin, or
+  /// Firestore) to a vertical, falling back to [restaurant].
+  static String forCategory(String? businessCategory) =>
+      tryForCategory(businessCategory) ?? restaurant;
+
+  /// As [forCategory], but `null` when the string names no trade we know —
+  /// so a blank or unrecognised category can never outvote a real vertical.
+  static String? tryForCategory(String? businessCategory) {
+    if (businessCategory == null || businessCategory.trim().isEmpty) return null;
     final clean = businessCategory.trim().toLowerCase();
 
     // Direct matches with vertical identifiers
-    if (clean == restaurant) return restaurant;
-    if (clean == kirana) return kirana;
-    if (clean == supermarket) return supermarket;
-    if (clean == pharmacy) return pharmacy;
-    if (clean == retail) return retail;
+    if (all.contains(clean)) return clean;
 
-    // 1. Supermarket / Departmental Store checks
-    if (clean.contains('supermarket') || clean.contains('departmental')) {
+    // Order matters: the specific shop trades are checked before the
+    // restaurant words, because "Medical Store", "Tea & Grocery" and
+    // "Bakery Supermarket" should land on the shop.
+
+    // 1. Supermarket / Departmental Store
+    if (clean.contains('supermarket') ||
+        clean.contains('super market') ||
+        clean.contains('hypermarket') ||
+        clean.contains('departmental') ||
+        clean.contains('department store')) {
       return supermarket;
     }
 
-    // 2. Pharmacy / Medical checks
+    // 2. Pharmacy / Medical
     if (clean.contains('pharmacy') ||
         clean.contains('medical') ||
         clean.contains('chemist') ||
         clean.contains('drug') ||
-        clean.contains('pharma')) {
+        clean.contains('pharma') ||
+        clean.contains('medicine')) {
       return pharmacy;
     }
 
-    // 3. Kirana / Grocery checks
+    // 3. Kirana / Grocery
     if (clean.contains('kirana') ||
         clean.contains('grocery') ||
-        clean.contains('provision')) {
+        clean.contains('grocer') ||
+        clean.contains('provision') ||
+        clean.contains('general merchant')) {
       return kirana;
     }
 
-    // 4. Retail / General Store / Apparel / Electronics / Hardware checks
-    if (clean.contains('clothing') ||
-        clean.contains('apparel') ||
-        clean.contains('electronics') ||
-        clean.contains('mobile') ||
-        clean.contains('hardware') ||
-        clean.contains('electrical') ||
-        clean.contains('general store') ||
-        clean.contains('fashion') ||
-        clean.contains('retail') ||
-        clean == 'other business') {
-      return retail;
+    // 4. Retail: fashion, electronics, hardware and the other counters
+    //    that sell things rather than meals.
+    const retailWords = [
+      'retail', 'clothing', 'apparel', 'fashion', 'garment', 'textile', 'saree',
+      'boutique', 'footwear', 'shoe', 'electronics', 'electrical', 'mobile',
+      'hardware', 'general store', 'stationer', 'book', 'gift', 'toy',
+      'jewel', 'optical', 'furniture', 'cosmetic', 'sports', 'other business',
+    ];
+    for (final w in retailWords) {
+      if (clean.contains(w)) return retail;
     }
 
-    // 5. Restaurant / Cafe / Dining / Bakery / Food / Hospitality checks
-    if (clean.contains('restaurant') ||
-        clean.contains('cafe') ||
-        clean.contains('bakery') ||
-        clean.contains('sweets') ||
-        clean.contains('dining') ||
-        clean.contains('fast food') ||
-        clean.contains('qsr') ||
-        clean.contains('kiosk') ||
-        clean.contains('food court') ||
-        clean.contains('food') ||
-        clean.contains('cloud kitchen') ||
-        clean.contains('kitchen') ||
-        clean.contains('pizzeria') ||
-        clean.contains('coffee') ||
-        clean.contains('tea') ||
-        clean.contains('bar') ||
-        clean.contains('hospitality')) {
-      return restaurant;
+    // 5. Restaurant / Cafe / Dining / Bakery / Food / Hospitality
+    const restaurantWords = [
+      'restaurant', 'cafe', 'café', 'bakery', 'sweets', 'dining', 'fast food',
+      'qsr', 'kiosk', 'food', 'kitchen', 'pizz', 'coffee', 'tea', 'bar',
+      'pub', 'lounge', 'dhaba', 'hotel', 'hospitality', 'canteen', 'mess',
+    ];
+    for (final w in restaurantWords) {
+      if (clean.contains(w)) return restaurant;
     }
-
-    return restaurant;
+    return null;
   }
 
   /// Default package for signup. Restaurants get dine-in;
-  /// all retail verticals get offline-single (counter-first).
+  /// all retail verticals get the shop counter.
   static String defaultPackageFor(String? businessCategory) {
     final v = forCategory(businessCategory);
     if (v == restaurant) return PlanProfile.offlineDineIn.id;
     // A shop counter, not the bare till: the barcode scanner and the khata
     // are the two things a kirana or a chemist buys this for.
     return PlanProfile.offlineRetail.id;
+  }
+
+  /// The business category to store for a vertical when all we know is the
+  /// vertical (the console's type switch, a repaired document).
+  static String canonicalCategoryFor(String vertical) {
+    switch (vertical) {
+      case supermarket: return BusinessCategories.supermarket;
+      case kirana:      return BusinessCategories.kirana;
+      case pharmacy:    return BusinessCategories.pharmacy;
+      case retail:      return BusinessCategories.retail;
+      default:          return BusinessCategories.restaurant;
+    }
+  }
+}
+
+/// The business categories a customer can pick, in one place.
+///
+/// The signup screen, the console's onboarding dialog and the canonicaliser
+/// all read this list. The website's trial form (`tools/site/site_data.py`)
+/// and the Apps Script trial handler post these exact strings, so a change
+/// here must be mirrored there.
+class BusinessCategories {
+  BusinessCategories._();
+
+  static const String restaurant  = 'Restaurant & Cafe';
+  static const String kirana      = 'Kirana / Grocery Store';
+  static const String supermarket = 'Supermarket / Departmental Store';
+  static const String pharmacy    = 'Pharmacy / Medical Store';
+  static const String retail      = 'General Retail / Fashion / Electronics';
+
+  static const List<String> hospitality = [
+    restaurant,
+    'Fast Food / QSR',
+    'Fine Dining & Bar',
+    'Bakery & Sweets',
+    'Food Court / Kiosk',
+    'Cloud Kitchen / Delivery',
+    'Pizzeria / Italian',
+    'Coffee House / Tea Lounge',
+    'Other Hospitality',
+  ];
+
+  static const List<String> shops = [kirana, supermarket, pharmacy, retail];
+
+  static const List<String> all = [...hospitality, ...shops];
+
+  /// A stored category as one of [all]: kept when it already is one,
+  /// otherwise the canonical category of the vertical it maps to.
+  static String canonicalize(String? category) {
+    final clean = (category ?? '').trim();
+    if (clean.isEmpty) return restaurant;
+    for (final c in all) {
+      if (c.toLowerCase() == clean.toLowerCase()) return c;
+    }
+    return Verticals.canonicalCategoryFor(Verticals.forCategory(clean));
   }
 }

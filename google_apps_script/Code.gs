@@ -3335,7 +3335,7 @@ function handleStartTrial(json) {
 
     var now = new Date();
     var endDate = new Date(now.getTime() + plan.validityDays * 86400000);
-    var defaultSuffix = (category && (category.indexOf("Kirana") >= 0 || category.indexOf("Supermarket") >= 0 || category.indexOf("Pharmacy") >= 0 || category.indexOf("Retail") >= 0)) ? " Store" : " Restaurant";
+    var defaultSuffix = plan.vertical === "restaurant" ? " Restaurant" : " Store";
     var orgName = shopName || (clientName + defaultSuffix);
 
     // 6. The documents. Written in the order the console writes them, and
@@ -3348,6 +3348,7 @@ function handleStartTrial(json) {
       appName: orgName,
       clientName: clientName,
       businessCategory: category,
+      vertical: plan.vertical,
       phone: mobile,
       email: email,
       ownerGoogleEmail: email,
@@ -3378,6 +3379,7 @@ function handleStartTrial(json) {
       passwordHash: passwordHash,
       role: "OWNER",
       organizationId: orgId,
+      businessCategory: category,
       // The e-mailed password is temporary; the app's first-login screen
       // makes them choose their own before anything else.
       mustChangePassword: true,
@@ -3395,6 +3397,7 @@ function handleStartTrial(json) {
       planProfile: plan.planProfile,
       status: "ACTIVE",
       storageMode: plan.storageMode,
+      vertical: plan.vertical,
       startDate: now,
       endDate: endDate,
       maxFranchises: plan.maxOutlets,
@@ -3525,10 +3528,14 @@ function handleStartTrial(json) {
  * outlet, no cloud or online-tier key, and no waiter or kitchen role.
  */
 function trialPlan_(businessCategory) {
-  var cat = String(businessCategory || "").trim();
-  var isRetail = cat.indexOf("Kirana") >= 0 || cat.indexOf("Supermarket") >= 0 || cat.indexOf("Pharmacy") >= 0 || cat.indexOf("Retail") >= 0;
-  var packageId = isRetail ? "OFFLINE_SINGLE" : "OFFLINE_DINE_IN";
-  var isRetailSingle = (packageId === "OFFLINE_SINGLE");
+  // Shops start on "Shop counter" (OFFLINE_RETAIL) exactly as the app's
+  // Verticals.defaultPackageFor does. They used to get OFFLINE_SINGLE, the
+  // bare till, so a web-trial kirana could not scan a barcode or open the
+  // khata the website promised it.
+  var vertical = verticalFor_(businessCategory);
+  var isRetail = vertical !== "restaurant";
+  var packageId = isRetail ? "OFFLINE_RETAIL" : "OFFLINE_DINE_IN";
+  var isRetailSingle = isRetail;
   var pkg = null;
   var planDoc = null;
   // Blank unless a plan document was actually read: a planId on a licence
@@ -3550,7 +3557,8 @@ function trialPlan_(businessCategory) {
 
   var offlineKeys = isRetailSingle ? [
     "billing", "qsrBilling", "menuManagement", "thermalPrinting", "storeConfiguration",
-    "dayEndReports", "staffManagement", "backupRestore"
+    "dayEndReports", "staffManagement", "backupRestore",
+    "barcodeBilling", "customerKhata", "expenseManagement", "analytics"
   ] : [
     "billing", "qsrBilling", "menuManagement", "thermalPrinting", "storeConfiguration",
     "dayEndReports", "staffManagement", "backupRestore",
@@ -3591,11 +3599,12 @@ function trialPlan_(businessCategory) {
     // Only when the document was read; the seeded starter has this id, and a
     // licence must never point at a document that is not there.
     packageId: pkg ? packageId : "",
-    packageName: String((pkg && pkg.name) || (isRetailSingle ? "Offline counter" : "Offline dine-in")),
+    packageName: String((pkg && pkg.name) || (isRetailSingle ? "Shop counter" : "Offline dine-in")),
     planId: planId,
     name: String(planDoc.name || "Free Trial (14 Days)"),
     billingCycle: String(planDoc.billingCycle || "TRIAL"),
-    planProfile: offline ? (isRetailSingle ? "OFFLINE_SINGLE" : "OFFLINE_DINE_IN") : "CONNECTED",
+    planProfile: offline ? (isRetailSingle ? "OFFLINE_RETAIL" : "OFFLINE_DINE_IN") : "CONNECTED",
+    vertical: vertical,
     storageMode: storageMode,
     validityDays: Number(planDoc.validityDays) > 0 ? Number(planDoc.validityDays) : 14,
     maxUsers: Number(planDoc.maxUsers) > 0 ? Number(planDoc.maxUsers) : 5,
@@ -5268,4 +5277,28 @@ function handleSubmitInquiry(json) {
   }
 
   return responseJson({ success: true, message: "Inquiry received successfully." });
+}
+
+/**
+ * Business category -> vertical. The JavaScript twin of Verticals.forCategory
+ * in lib/core/package_model.dart: same words, same order, same restaurant
+ * fallback. Change one, change the other.
+ */
+function verticalFor_(businessCategory) {
+  var clean = String(businessCategory || "").trim().toLowerCase();
+  if (!clean) return "restaurant";
+  var all = ["restaurant", "kirana", "supermarket", "pharmacy", "retail"];
+  if (all.indexOf(clean) >= 0) return clean;
+  function has(words) {
+    for (var i = 0; i < words.length; i++) if (clean.indexOf(words[i]) >= 0) return true;
+    return false;
+  }
+  if (has(["supermarket", "super market", "hypermarket", "departmental", "department store"])) return "supermarket";
+  if (has(["pharmacy", "medical", "chemist", "drug", "pharma", "medicine"])) return "pharmacy";
+  if (has(["kirana", "grocery", "grocer", "provision", "general merchant"])) return "kirana";
+  if (has(["retail", "clothing", "apparel", "fashion", "garment", "textile", "saree",
+           "boutique", "footwear", "shoe", "electronics", "electrical", "mobile",
+           "hardware", "general store", "stationer", "book", "gift", "toy",
+           "jewel", "optical", "furniture", "cosmetic", "sports", "other business"])) return "retail";
+  return "restaurant";
 }

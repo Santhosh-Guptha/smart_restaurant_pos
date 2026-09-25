@@ -579,7 +579,7 @@ class _PackageEditorDialogState extends State<_PackageEditorDialog> {
       id: id,
       name: name,
       description: _desc.text.trim(),
-      vertical: e?.vertical ?? Verticals.restaurant,
+      vertical: e?.vertical ?? Verticals.any,
       storageMode: _isStarter ? e!.storageMode : _mode,
       features: _isStarter ? e!.features : TenantPackage.normalise(_features, _mode),
       isStarter: _isStarter,

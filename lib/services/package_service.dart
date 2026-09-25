@@ -48,7 +48,10 @@ class PackageService {
         final same = currentFeatures is Map &&
             FeatureCatalog.all.every((d) => (currentFeatures[d.key] == true) == (starter.features[d.key] == true)) &&
             (current['storageMode'] ?? '').toString().toUpperCase() == starter.storageMode &&
-            current['isStarter'] == true;
+            current['isStarter'] == true &&
+            // Seeded before starters were universal: rewrite once so the
+            // document says what the app now reads.
+            (current['vertical'] ?? '').toString() == starter.vertical;
         if (!same) {
           batch.set(
             _col.doc(starter.id),
@@ -58,6 +61,7 @@ class PackageService {
               'allowedStorageModes': starter.allowedStorageModes.toList(),
               'isStarter': true,
               'vertical': starter.vertical,
+              'verticalScoped': false,
               'updatedAt': FieldValue.serverTimestamp(),
             },
             SetOptions(merge: true),

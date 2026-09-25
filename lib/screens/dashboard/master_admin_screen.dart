@@ -1829,40 +1829,10 @@ class OrganizationsTab extends ConsumerStatefulWidget {
     );
   }
 
-  static const List<String> standardCategories = [
-    'Restaurant & Cafe',
-    'Fast Food / QSR',
-    'Fine Dining & Bar',
-    'Bakery & Sweets',
-    'Food Court / Kiosk',
-    'Cloud Kitchen / Delivery',
-    'Pizzeria / Italian',
-    'Coffee House / Tea Lounge',
-    'Other Hospitality',
-    'Kirana / Grocery Store',
-    'Supermarket / Departmental Store',
-    'Pharmacy / Medical Store',
-    'General Retail / Fashion / Electronics',
-  ];
+  /// The categories a tenant can be given — one list, shared with signup.
+  static const List<String> standardCategories = BusinessCategories.all;
 
-  static String canonicalizeCategory(String? cat) {
-    if (cat == null || cat.trim().isEmpty) return 'Restaurant & Cafe';
-    final clean = cat.trim();
-    if (standardCategories.contains(clean)) return clean;
-    final v = Verticals.forCategory(clean);
-    switch (v) {
-      case Verticals.supermarket:
-        return 'Supermarket / Departmental Store';
-      case Verticals.kirana:
-        return 'Kirana / Grocery Store';
-      case Verticals.pharmacy:
-        return 'Pharmacy / Medical Store';
-      case Verticals.retail:
-        return 'General Retail / Fashion / Electronics';
-      default:
-        return 'Restaurant & Cafe';
-    }
-  }
+  static String canonicalizeCategory(String? cat) => BusinessCategories.canonicalize(cat);
 
   static String _getEntityLabel(String cat) {
     final v = Verticals.forCategory(cat);
@@ -3498,11 +3468,16 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                             };
 
                             // 1. Update Organization Doc
+                            // Category and vertical are written together, always:
+                            // the category used to change here on its own and the
+                            // stale vertical then kept the tenant on the old screens.
+                            final newVertical = Verticals.forCategory(businessCategory);
                             await _firestore.collection('organizations').doc(orgId).set({
                               'name': orgName,
                               'appName': orgName,
                               'ownerName': ownerName,
                               'businessCategory': businessCategory,
+                              'vertical': newVertical,
                               'phone': mobile,
                               'mobile': mobile,
                               'aadhaar': aadhaar,
@@ -3566,10 +3541,23 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                               });
                             } catch (_) {}
 
+                            // The licence carries a copy of the vertical; keep it true.
+                            // update(), not set(): a tenant without a licence
+                            // must not get a half-empty one from here.
+                            try {
+                              await _firestore.collection('licenses').doc(orgId).update({
+                                'vertical': newVertical,
+                                'updatedAt': FieldValue.serverTimestamp(),
+                              });
+                            } catch (e) {
+                              debugPrint('licence vertical sync skipped for $orgId: $e');
+                            }
+
                             // 3. Update Owner User Doc
                             if (ownerUserId != null && ownerUserId!.isNotEmpty) {
                               final userUpdates = <String, dynamic>{
                                 'fullName': ownerName,
+                                'businessCategory': businessCategory,
                                 'email': email,
                                 'phone': mobile,
                                 'mustChangePassword': mustChangePassword,

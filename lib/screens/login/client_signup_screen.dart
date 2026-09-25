@@ -59,23 +59,8 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
   static final RegExp _emailRegex =
       RegExp(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$');
 
-  final List<String> _categories = const [
-    // Restaurant sub-categories
-    'Restaurant & Cafe',
-    'Fast Food / QSR',
-    'Fine Dining & Bar',
-    'Bakery & Sweets',
-    'Food Court / Kiosk',
-    'Cloud Kitchen / Delivery',
-    'Pizzeria / Italian',
-    'Coffee House / Tea Lounge',
-    'Other Hospitality',
-    // Retail verticals
-    'Kirana / Grocery Store',
-    'Supermarket / Departmental Store',
-    'Pharmacy / Medical Store',
-    'General Retail / Fashion / Electronics',
-  ];
+  // One list for signup, the console and the website trial form.
+  final List<String> _categories = BusinessCategories.all;
 
   @override
   void initState() {

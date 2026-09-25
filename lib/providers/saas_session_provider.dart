@@ -75,32 +75,25 @@ class SaasSessionState {
 
   /// Resolved business vertical (restaurant, kirana, supermarket, pharmacy, retail).
   String get vertical {
-    final orgCategory = currentOrganization?.businessCategory;
-    if (orgCategory != null && orgCategory.isNotEmpty) {
-      final v = Verticals.forCategory(orgCategory);
-      if (v != Verticals.restaurant) return v;
+    // The organisation is the tenant, so it decides — already resolved by
+    // Verticals.resolve when the document was read. The user's own copy of
+    // the category and the licence are only consulted for an organisation
+    // document that carries neither field (very old tenants), and never
+    // override one that does: a stale non-restaurant value on the user or
+    // licence used to win here and turn a restaurant into a shop.
+    final org = currentOrganization;
+    if (org != null &&
+        ((org.businessCategory?.trim().isNotEmpty ?? false) ||
+            org.vertical != Verticals.restaurant)) {
+      return org.vertical;
     }
-    final userCategory = currentUser?.businessCategory;
-    if (userCategory != null && userCategory.isNotEmpty) {
-      final v = Verticals.forCategory(userCategory);
-      if (v != Verticals.restaurant) return v;
-    }
-    final orgVertical = currentOrganization?.vertical;
-    if (orgVertical != null && orgVertical.isNotEmpty && orgVertical != Verticals.restaurant) {
-      return orgVertical;
-    }
-    final licenseVertical = currentLicense?.vertical;
-    if (licenseVertical != null && licenseVertical.isNotEmpty && licenseVertical != Verticals.restaurant) {
-      return licenseVertical;
-    }
-    if (orgCategory != null && orgCategory.isNotEmpty) {
-      return Verticals.forCategory(orgCategory);
-    }
-    if (userCategory != null && userCategory.isNotEmpty) {
-      return Verticals.forCategory(userCategory);
-    }
-    return currentOrganization?.vertical ?? currentLicense?.vertical ?? Verticals.restaurant;
+    final fromUser = Verticals.tryForCategory(currentUser?.businessCategory);
+    if (fromUser != null) return fromUser;
+    final lic = currentLicense?.vertical;
+    if (Verticals.isValid(lic)) return lic!;
+    return org?.vertical ?? Verticals.restaurant;
   }
+
 }
 
 final saasSessionProvider = StateNotifierProvider<SaasSessionNotifier, SaasSessionState>(
