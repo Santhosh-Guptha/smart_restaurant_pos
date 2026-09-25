@@ -19,6 +19,8 @@ import '../services/client_ledger_cloud_router_service.dart';
 import '../services/otp_verification_service.dart';
 import '../services/platform_security_service.dart';
 import '../services/firebase_auth_bridge.dart';
+import '../core/license_lease.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'restaurant_auth_provider.dart';
 
 class SaasSessionState {
@@ -111,6 +113,7 @@ class SaasSessionNotifier extends StateNotifier<SaasSessionState> {
   Future<void>? initFuture;
 
   StreamSubscription<DocumentSnapshot>? _licenseListener;
+  StreamSubscription<List<ConnectivityResult>>? _leaseConnSub;
   StreamSubscription<DocumentSnapshot>? _featuresListener;
   StreamSubscription<DocumentSnapshot>? _orgListener;
   StreamSubscription<DocumentSnapshot>? _userListener;
@@ -292,6 +295,8 @@ class SaasSessionNotifier extends StateNotifier<SaasSessionState> {
         await box.put('saas_license', jsonEncode(updatedLicense.toJson()));
       } else {
         final licDoc = await firestore.collection('licenses').doc(orgId).get();
+        // A server read renews this device's offline licence lease.
+        if (licDoc.exists && !licDoc.metadata.isFromCache) unawaited(LicenseLease.recordValidated(orgId));
         if (licDoc.exists) {
           final Map<String, dynamic> licData = Map<String, dynamic>.from(licDoc.data()!);
           if (!licData.containsKey('maxFranchises')) {
@@ -662,6 +667,8 @@ class SaasSessionNotifier extends StateNotifier<SaasSessionState> {
         );
       } else {
         final licDoc = await firestore.collection('licenses').doc(orgId).get().timeout(const Duration(seconds: 5));
+        // A server read renews this device's offline licence lease.
+        if (licDoc.exists && !licDoc.metadata.isFromCache) unawaited(LicenseLease.recordValidated(orgId));
         if (!licDoc.exists) return "License details not found";
         
         final Map<String, dynamic> licData = Map<String, dynamic>.from(licDoc.data()!);
@@ -1039,6 +1046,8 @@ class SaasSessionNotifier extends StateNotifier<SaasSessionState> {
       SaasLicense? lic;
       try {
         final licDoc = await firestore.collection('licenses').doc(org.id).get();
+        // A server read renews this device's offline licence lease.
+        if (licDoc.exists && !licDoc.metadata.isFromCache) unawaited(LicenseLease.recordValidated(org.id));
         if (licDoc.exists) {
           lic = SaasLicense.fromFirestore(licDoc.data()!);
         }
@@ -1507,6 +1516,8 @@ class SaasSessionNotifier extends StateNotifier<SaasSessionState> {
 
       // 2. Fetch License
       final licDoc = await firestore.collection('licenses').doc(orgId).get();
+      // A server read renews this device's offline licence lease.
+      if (licDoc.exists && !licDoc.metadata.isFromCache) unawaited(LicenseLease.recordValidated(orgId));
       if (!licDoc.exists) return "License details not found";
       
       final Map<String, dynamic> licData = Map<String, dynamic>.from(licDoc.data()!);
@@ -1855,12 +1866,23 @@ class SaasSessionNotifier extends StateNotifier<SaasSessionState> {
     _cancelListeners();
     if (orgId == 'SYSTEM_ADMIN' || state.isMockMode) return;
 
+    // An offline till renews its licence lease the moment it sees a network
+    // again, so a shop that connects once a week is never locked out.
+    _leaseConnSub?.cancel();
+    _leaseConnSub = Connectivity().onConnectivityChanged.listen((results) {
+      final online = results.any((r) => r != ConnectivityResult.none);
+      if (online && mounted && state.currentUser != null) {
+        refreshSessionFromFirestore();
+      }
+    });
+
     try {
       final conn = _ref.read(firebaseConnectionServiceProvider);
       final firestore = conn.masterFirestore;
 
       _licenseListener = firestore.collection('licenses').doc(orgId).snapshots().listen((licSnapshot) async {
         if (!licSnapshot.exists || !mounted) return;
+        if (!licSnapshot.metadata.isFromCache) unawaited(LicenseLease.recordValidated(orgId));
         try {
           final Map<String, dynamic> licData = Map<String, dynamic>.from(licSnapshot.data()!);
           if (!licData.containsKey('maxFranchises')) {
@@ -1997,6 +2019,7 @@ class SaasSessionNotifier extends StateNotifier<SaasSessionState> {
   @override
   void dispose() {
     _cancelListeners();
+    _leaseConnSub?.cancel();
     super.dispose();
   }
 }

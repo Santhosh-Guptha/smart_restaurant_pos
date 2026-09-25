@@ -1,5 +1,7 @@
 import 'core/receipt/receipt_context_builder.dart';
 import 'core/package_model.dart';
+import 'core/license_lease.dart';
+import 'screens/login/license_revalidate_screen.dart';
 import 'dart:ui';
 import 'core/classic_theme.dart';
 import 'dart:io';
@@ -234,8 +236,19 @@ class SmartBizzApp extends ConsumerWidget {
       final license = saasSession.currentLicense;
       final bool isLicenseExpired = license != null && !license.isActive && user.role != 'MASTER_ADMIN';
 
+      // How long since this device last confirmed the licence online. An
+      // offline till runs for 30 days (a cloud one for 7) between checks.
+      final lease = user.role == 'MASTER_ADMIN'
+          ? null
+          : LicenseLease.check(
+              orgId: saasSession.currentOrganization?.id ?? user.organizationId,
+              storageMode: saasSession.currentOrganization?.storageMode,
+            );
+
       if (isLicenseExpired) {
         homeScreen = const SaaSExpiredScreen();
+      } else if (lease != null && lease.blocked) {
+        homeScreen = LicenseRevalidateScreen(lease: lease);
       } else if (user.role == 'MASTER_ADMIN') {
         homeScreen = const MasterAdminScreen();
       } else if (user.mustChangePassword) {
