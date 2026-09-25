@@ -25,6 +25,7 @@ import '../../services/package_service.dart';
 import '../../services/subscription_plan_service.dart';
 import '../../services/tenant_provisioning_service.dart';
 import '../../services/tenant_purge_service.dart';
+import '../../services/platform_security_service.dart';
 import '../admin/views/admin_dashboard_view.dart';
 import '../admin/views/admin_inquiries_view.dart';
 import '../admin/views/admin_features_view.dart';
@@ -220,7 +221,10 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
                         if (ctx.mounted) {
                           Navigator.pop(ctx);
                           if (res['success'] == true) {
-                            if (mounted) AppToast.showSuccess(context, res['message']);
+                            if (mounted) {
+                              setState(() {});
+                              AppToast.showSuccess(context, res['message']);
+                            }
                           } else {
                             if (mounted) AppToast.showError(context, res['message']);
                           }
@@ -683,6 +687,248 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
     );
   }
 
+  void _showSecurity2faDialog() {
+    bool is2faEnabled = true;
+    bool isLoading = true;
+    bool isSaving = false;
+    bool hasFetched = false;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          if (!hasFetched) {
+            hasFetched = true;
+            PlatformSecurityService.is2faEnabled().then((enabled) {
+              if (ctx.mounted) {
+                setDialogState(() {
+                  is2faEnabled = enabled;
+                  isLoading = false;
+                });
+              }
+            }).catchError((_) {
+              if (ctx.mounted) {
+                setDialogState(() => isLoading = false);
+              }
+            });
+          }
+
+          final statusColor = is2faEnabled ? ClassicTheme.successEmerald : ClassicTheme.warningAmber;
+
+          return AlertDialog(
+            backgroundColor: context.surfaceColor,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: BorderSide(color: context.borderColor),
+            ),
+            title: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: statusColor.withValues(alpha: 0.15),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    is2faEnabled ? Icons.security_rounded : Icons.gpp_maybe_rounded,
+                    color: statusColor,
+                    size: 22,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        "Platform 2FA Security",
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                      ),
+                      Text(
+                        "Master Admin 2-Step Verification",
+                        style: TextStyle(fontSize: 11, color: Colors.grey),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            content: SizedBox(
+              width: ClassicTheme.dialogWidth(context, 480),
+              child: isLoading
+                  ? const SizedBox(
+                      height: 140,
+                      child: Center(
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    )
+                  : Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Status Card
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: statusColor.withValues(alpha: 0.08),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: statusColor.withValues(alpha: 0.3)),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                is2faEnabled ? Icons.verified_user_rounded : Icons.shield_outlined,
+                                color: statusColor,
+                                size: 28,
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      is2faEnabled
+                                          ? "2FA IS CURRENTLY ENABLED"
+                                          : "2FA IS CURRENTLY DISABLED",
+                                      style: TextStyle(
+                                        color: statusColor,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 12.5,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      is2faEnabled
+                                          ? "6-digit OTP code required on Master Admin login"
+                                          : "Master Admin logs in directly with password only",
+                                      style: TextStyle(
+                                        color: context.textSecondary,
+                                        fontSize: 11.5,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+
+                        // Toggle Control
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: context.canvasColor,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: context.borderColor),
+                          ),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      "Require 2-Step Verification",
+                                      style: TextStyle(
+                                        color: context.textPrimary,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      "Sends an email OTP to $kAdminEmail during login",
+                                      style: TextStyle(
+                                        color: context.textSecondary,
+                                        fontSize: 11.5,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Switch.adaptive(
+                                value: is2faEnabled,
+                                activeThumbColor: ClassicTheme.successEmerald,
+                                activeTrackColor: ClassicTheme.successEmerald.withValues(alpha: 0.5),
+                                onChanged: (val) {
+                                  setDialogState(() => is2faEnabled = val);
+                                },
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+
+                        // Informational Note
+                        Text(
+                          is2faEnabled
+                              ? "🛡️ High Protection Mode: Master Admin accounts require two factors (password + temporary email security code) to access this console."
+                              : "⚠️ Quick Access Mode: 2-step verification is bypassed. The administrator logs in directly with password credentials without waiting for email delivery. Recommended for testing or if email delivery is delayed.",
+                          style: TextStyle(
+                            color: is2faEnabled ? context.textSecondary : ClassicTheme.warningAmber,
+                            fontSize: 11.5,
+                            height: 1.4,
+                          ),
+                        ),
+                      ],
+                    ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: isSaving ? null : () => Navigator.pop(ctx),
+                child: Text("Cancel", style: TextStyle(color: context.textSecondary)),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: statusColor,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+                onPressed: (isLoading || isSaving)
+                    ? null
+                    : () async {
+                        setDialogState(() => isSaving = true);
+                        final res = await PlatformSecurityService.set2faEnabled(
+                          is2faEnabled,
+                          updatedBy: 'usr_master_admin',
+                        );
+                        if (ctx.mounted) {
+                          Navigator.pop(ctx);
+                          if (res['success'] == true) {
+                            if (mounted) {
+                              setState(() {});
+                              AppToast.showSuccess(
+                                context,
+                                res['message'] as String? ?? '2FA setting updated.',
+                                subtitle: is2faEnabled
+                                    ? "Email verification will be required on next login"
+                                    : "Direct password login is now active",
+                              );
+                            }
+                          } else {
+                            if (mounted) {
+                              AppToast.showError(context, res['message'] as String? ?? 'Failed to update 2FA.');
+                            }
+                          }
+                        }
+                      },
+                child: isSaving
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                      )
+                    : const Text("Save 2FA Settings", style: TextStyle(fontWeight: FontWeight.bold)),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
   /// Switch views. Every path into the `IndexedStack` goes through here so
   /// the history cannot drift from what is on screen.
   void _goToNav(int index) {
@@ -944,6 +1190,11 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
               onPressed: _showSmtpSettingsDialog,
             ),
             IconButton(
+              icon: Icon(Icons.shield_outlined, color: ClassicTheme.primaryAccentIndigo, size: 20),
+              tooltip: "Platform 2FA Security",
+              onPressed: _showSecurity2faDialog,
+            ),
+            IconButton(
               icon: const Icon(Icons.cleaning_services_rounded, color: ClassicTheme.warningAmber, size: 20),
               tooltip: "Clean Database (Keep Admin)",
               onPressed: _showClearDatabaseDialog,
@@ -966,6 +1217,9 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
                     break;
                   case 'smtp':
                     _showSmtpSettingsDialog();
+                    break;
+                  case 'security_2fa':
+                    _showSecurity2faDialog();
                     break;
                   case 'cleanup':
                     _showClearDatabaseDialog();
@@ -990,6 +1244,16 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
                       Icon(Icons.email_outlined, color: ClassicTheme.infoBlue, size: 18),
                       SizedBox(width: 10),
                       Text('Platform SMTP Email', style: TextStyle(fontSize: 13)),
+                    ],
+                  ),
+                ),
+                PopupMenuItem(
+                  value: 'security_2fa',
+                  child: Row(
+                    children: [
+                      Icon(Icons.shield_outlined, color: ClassicTheme.primaryAccentIndigo, size: 18),
+                      const SizedBox(width: 10),
+                      const Text('Platform 2FA Security', style: TextStyle(fontSize: 13)),
                     ],
                   ),
                 ),
@@ -1327,6 +1591,51 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
                             kAdminEmail,
                             style: TextStyle(fontSize: 12, color: context.textSecondary),
                             overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        InkWell(
+                          onTap: _showSecurity2faDialog,
+                          borderRadius: BorderRadius.circular(6),
+                          child: StreamBuilder<bool>(
+                            stream: PlatformSecurityService.watch2faEnabled(),
+                            initialData: true,
+                            builder: (context, snapshot) {
+                              final is2fa = snapshot.data ?? true;
+                              return Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: is2fa
+                                      ? ClassicTheme.successEmerald.withValues(alpha: 0.15)
+                                      : ClassicTheme.warningAmber.withValues(alpha: 0.15),
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: Border.all(
+                                    color: is2fa
+                                        ? ClassicTheme.successEmerald.withValues(alpha: 0.4)
+                                        : ClassicTheme.warningAmber.withValues(alpha: 0.4),
+                                    width: 0.8,
+                                  ),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      is2fa ? Icons.verified_user_rounded : Icons.gpp_maybe_rounded,
+                                      size: 11,
+                                      color: is2fa ? ClassicTheme.successEmerald : ClassicTheme.warningAmber,
+                                    ),
+                                    const SizedBox(width: 3),
+                                    Text(
+                                      is2fa ? "2FA ON" : "2FA OFF",
+                                      style: TextStyle(
+                                        fontSize: 9.5,
+                                        fontWeight: FontWeight.bold,
+                                        color: is2fa ? ClassicTheme.successEmerald : ClassicTheme.warningAmber,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
                           ),
                         ),
                       ],

@@ -17,6 +17,7 @@ import '../core/constants.dart';
 import '../services/firebase_connection_service.dart';
 import '../services/client_ledger_cloud_router_service.dart';
 import '../services/otp_verification_service.dart';
+import '../services/platform_security_service.dart';
 import 'restaurant_auth_provider.dart';
 
 class SaasSessionState {
@@ -541,26 +542,29 @@ class SaasSessionNotifier extends StateNotifier<SaasSessionState> {
           userId == 'usr_master_admin';
 
       if (isMasterAdmin) {
-        final targetMfaEmail = (userEmail.isNotEmpty && userEmail.contains('@'))
-            ? userEmail
-            : kAdminEmail;
+        final bool is2faEnabled = await PlatformSecurityService.is2faEnabled();
+        if (is2faEnabled) {
+          final targetMfaEmail = (userEmail.isNotEmpty && userEmail.contains('@'))
+              ? userEmail
+              : kAdminEmail;
 
-        if (mfaCode == null || mfaCode.trim().isEmpty) {
-          final otpRes = await OtpVerificationService.sendMfaLoginOtp(
-            email: targetMfaEmail,
-            clientName: userData['fullName'] ?? 'SmartDine Platform Admin',
-          );
-          if (otpRes['success'] != true) {
-            return "Failed to send 2-step verification code: ${otpRes['message'] ?? 'Please try again'}";
-          }
-          return 'MFA_REQUIRED:$targetMfaEmail';
-        } else {
-          final verifyRes = await OtpVerificationService.verifyEmailOtp(
-            email: targetMfaEmail,
-            enteredOtp: mfaCode.trim(),
-          );
-          if (verifyRes['success'] != true) {
-            return verifyRes['message'] ?? 'Invalid or expired 2-step verification code.';
+          if (mfaCode == null || mfaCode.trim().isEmpty) {
+            final otpRes = await OtpVerificationService.sendMfaLoginOtp(
+              email: targetMfaEmail,
+              clientName: userData['fullName'] ?? 'SmartDine Platform Admin',
+            );
+            if (otpRes['success'] != true) {
+              return "Failed to send 2-step verification code: ${otpRes['message'] ?? 'Please try again'}";
+            }
+            return 'MFA_REQUIRED:$targetMfaEmail';
+          } else {
+            final verifyRes = await OtpVerificationService.verifyEmailOtp(
+              email: targetMfaEmail,
+              enteredOtp: mfaCode.trim(),
+            );
+            if (verifyRes['success'] != true) {
+              return verifyRes['message'] ?? 'Invalid or expired 2-step verification code.';
+            }
           }
         }
       }
@@ -857,6 +861,10 @@ class SaasSessionNotifier extends StateNotifier<SaasSessionState> {
 
   /// Resends 2-Step Verification code to the Master Admin email
   Future<Map<String, dynamic>> resendMfaCode(String email) async {
+    final is2fa = await PlatformSecurityService.is2faEnabled();
+    if (!is2fa) {
+      return {'success': false, 'message': '2-Factor Authentication is currently disabled on the platform.'};
+    }
     final cleanEmail = email.trim().toLowerCase();
     final targetEmail = (cleanEmail.isNotEmpty && cleanEmail.contains('@'))
         ? cleanEmail
