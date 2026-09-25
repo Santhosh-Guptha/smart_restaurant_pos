@@ -7,6 +7,7 @@ import '../../../core/license_composer.dart';
 import '../../../core/package_model.dart';
 import '../../../core/saas_models.dart';
 import '../../../core/subscription_plan_model.dart';
+import '../../../widgets/package_features_breakdown_widget.dart';
 import '../../../services/package_service.dart';
 import '../../../services/subscription_plan_service.dart';
 
@@ -258,6 +259,18 @@ class _TenantPackageEditorState extends State<TenantPackageEditor> {
       trailing: '$on feature${on == 1 ? '' : 's'} \u00b7 ${StorageModes.label(p.storageMode)}',
       body: desc,
       badge: p.isStarter ? null : 'Custom',
+      extraContent: selected
+          ? Padding(
+              padding: const EdgeInsets.only(top: DS.space2),
+              child: PackageFeaturesBreakdownWidget(
+                package: p,
+                businessCategory: widget.businessCategory,
+                accentColor: ClassicTheme.primaryAccent,
+                isCompact: true,
+                showFeatureIcons: false,
+              ),
+            )
+          : null,
     );
   }
 
@@ -300,6 +313,7 @@ class _TenantPackageEditorState extends State<TenantPackageEditor> {
     required String trailing,
     required String body,
     String? badge,
+    Widget? extraContent,
   }) {
     return Padding(
       padding: const EdgeInsets.only(bottom: DS.space2),
@@ -355,6 +369,7 @@ class _TenantPackageEditorState extends State<TenantPackageEditor> {
                     const SizedBox(height: 2),
                     Text(body,
                         style: TextStyle(fontSize: DS.fontMicro, color: context.textSecondary, height: 1.4)),
+                    if (extraContent != null) extraContent,
                   ],
                 ),
               ),
@@ -424,6 +439,28 @@ class _TenantPackageEditorState extends State<TenantPackageEditor> {
               style: TextStyle(fontSize: DS.fontMicro, color: context.textMuted),
             ),
           ],
+          const SizedBox(height: DS.space3),
+          Divider(height: 1, color: context.borderColor),
+          const SizedBox(height: DS.space3),
+          Text(
+            'INCLUDED FEATURES BY CATEGORY',
+            style: TextStyle(
+              fontSize: DS.fontMicro,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.6,
+              color: context.textSecondary,
+            ),
+          ),
+          const SizedBox(height: DS.space2),
+          PackageFeaturesBreakdownWidget(
+            featureMap: c.features,
+            businessCategory: widget.businessCategory,
+            accentColor: ClassicTheme.primaryAccent,
+            isCompact: false,
+            showFeatureIcons: true,
+            collapsible: true,
+            initiallyExpanded: true,
+          ),
         ],
       ),
     );

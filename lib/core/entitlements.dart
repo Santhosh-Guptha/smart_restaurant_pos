@@ -139,6 +139,77 @@ class FeatureDef {
 
   /// Grouping label for consoles that still think in categories.
   String get category => tier.label;
+
+  /// Functional category label for business-friendly grouping.
+  /// (e.g. "POS & Billing", "Inventory & Catalog", "Dine-In & Kitchen", etc.)
+  String get functionalCategory {
+    switch (key) {
+      case FeatureKeys.billing:
+      case FeatureKeys.qsrBilling:
+      case FeatureKeys.thermalPrinting:
+      case FeatureKeys.barcodeBilling:
+        return 'POS & Billing';
+
+      case FeatureKeys.menuManagement:
+      case FeatureKeys.stockManagement:
+      case FeatureKeys.inventoryEnabled:
+        return 'Inventory & Catalog';
+
+      case FeatureKeys.dineInBilling:
+      case FeatureKeys.tableManagement:
+      case FeatureKeys.reservations:
+      case FeatureKeys.dualPrinting:
+      case FeatureKeys.kdsEnabled:
+      case FeatureKeys.waiterOrdering:
+        return 'Dine-In & Kitchen';
+
+      case FeatureKeys.customerKhata:
+      case FeatureKeys.emailReceipts:
+        return 'Customer & Accounts';
+
+      case FeatureKeys.onlineMenu:
+      case FeatureKeys.qrOrdering:
+      case FeatureKeys.onlineOrderingEnabled:
+        return 'Online & QR Ordering';
+
+      case FeatureKeys.storeConfiguration:
+      case FeatureKeys.staffManagement:
+      case FeatureKeys.expenseManagement:
+      case FeatureKeys.dayEndReports:
+      case FeatureKeys.analytics:
+      case FeatureKeys.backupRestore:
+        return 'Store Admin & Reports';
+
+      case FeatureKeys.cloudSync:
+      case FeatureKeys.multiOutlet:
+        return 'Cloud & Multi-Store';
+
+      default:
+        return tier.label;
+    }
+  }
+
+  /// Icon name matching [functionalCategory].
+  String get functionalCategoryIcon {
+    switch (functionalCategory) {
+      case 'POS & Billing':
+        return 'point_of_sale';
+      case 'Inventory & Catalog':
+        return 'inventory_2';
+      case 'Dine-In & Kitchen':
+        return 'restaurant';
+      case 'Customer & Accounts':
+        return 'account_balance_wallet';
+      case 'Online & QR Ordering':
+        return 'qr_code_scanner';
+      case 'Store Admin & Reports':
+        return 'analytics';
+      case 'Cloud & Multi-Store':
+        return 'cloud_sync';
+      default:
+        return 'category';
+    }
+  }
 }
 
 /// The whole product, described once.
@@ -428,6 +499,34 @@ class FeatureCatalog {
       if (defs.isNotEmpty) map[t.label] = defs;
     }
     return map;
+  }
+
+  /// Canonical display order for functional categories.
+  static const List<String> functionalCategoryOrder = [
+    'POS & Billing',
+    'Inventory & Catalog',
+    'Dine-In & Kitchen',
+    'Customer & Accounts',
+    'Online & QR Ordering',
+    'Store Admin & Reports',
+    'Cloud & Multi-Store',
+  ];
+
+  /// Groups the given [features] by functional category in canonical order.
+  static Map<String, List<FeatureDef>> groupByCategory(Iterable<FeatureDef> features) {
+    final Map<String, List<FeatureDef>> grouped = {};
+    for (final f in features) {
+      grouped.putIfAbsent(f.functionalCategory, () => []).add(f);
+    }
+    final sortedEntries = grouped.entries.toList()
+      ..sort((a, b) {
+        final iA = functionalCategoryOrder.indexOf(a.key);
+        final iB = functionalCategoryOrder.indexOf(b.key);
+        final orderA = iA >= 0 ? iA : 999;
+        final orderB = iB >= 0 ? iB : 999;
+        return orderA.compareTo(orderB);
+      });
+    return Map.fromEntries(sortedEntries);
   }
 
   /// Everything [key] needs, all the way up.

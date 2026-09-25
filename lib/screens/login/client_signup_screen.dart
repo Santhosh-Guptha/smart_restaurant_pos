@@ -6,6 +6,7 @@ import '../../core/classic_theme.dart';
 import '../../core/entitlements.dart';
 import '../../core/license_composer.dart';
 import '../../core/package_model.dart';
+import '../../widgets/package_features_breakdown_widget.dart';
 import '../../services/package_service.dart';
 import '../../services/otp_verification_service.dart';
 import '../../services/smtp_email_service.dart';
@@ -386,20 +387,12 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
                   ),
                   if (featureChips != null && featureChips.isNotEmpty) ...[
                     const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 6,
-                      runSpacing: 4,
-                      children: featureChips.map((def) => Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: context.borderColor.withValues(alpha: 0.35),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Text(
-                          def.label,
-                          style: TextStyle(fontSize: 10, color: context.textSecondary),
-                        ),
-                      )).toList(),
+                    PackageFeaturesBreakdownWidget(
+                      features: featureChips,
+                      vertical: _vertical,
+                      accentColor: primaryAccent,
+                      isCompact: true,
+                      showFeatureIcons: false,
                     ),
                   ],
                 ],
@@ -1107,26 +1100,32 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
                     // SECTION 2: PLAN SELECTION
                     Text("Select Onboarding Option", style: TextStyle(color: context.textSecondary, fontSize: 13, fontWeight: FontWeight.w600)),
                     const SizedBox(height: 8),
-                    // --- Free Trial card ---
-                    _buildOptionCard(
-                      optionValue: 'free_trial',
-                      primaryAccent: primaryAccent,
-                      isFirst: true,
-                      icon: Icons.rocket_launch_rounded,
-                      title: "Start 14-Day Free Trial",
-                      badge: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: ClassicTheme.successEmerald.withValues(alpha: 0.15),
-                          borderRadius: BorderRadius.circular(4),
+                    Builder(builder: (context) {
+                      final defaultPkgId = Verticals.defaultPackageFor(_businessCategory);
+                      final trialProfile = PlanProfile.byId(defaultPkgId);
+                      final trialFeatures = _filteredFeaturesFor(trialProfile, _vertical);
+
+                      return _buildOptionCard(
+                        optionValue: 'free_trial',
+                        primaryAccent: primaryAccent,
+                        isFirst: true,
+                        icon: Icons.rocket_launch_rounded,
+                        title: "Start 14-Day Free Trial",
+                        badge: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: ClassicTheme.successEmerald.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: const Text(
+                            "INSTANT ACCESS",
+                            style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: ClassicTheme.successEmerald),
+                          ),
                         ),
-                        child: const Text(
-                          "INSTANT ACCESS",
-                          style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: ClassicTheme.successEmerald),
-                        ),
-                      ),
-                      subtitle: _freeTrialSubtitle,
-                    ),
+                        subtitle: _freeTrialSubtitle,
+                        featureChips: trialFeatures,
+                      );
+                    }),
                     const SizedBox(height: 8),
                     // --- Package cards relevant to vertical ---
                     ...PlanProfile.all.where((profile) {

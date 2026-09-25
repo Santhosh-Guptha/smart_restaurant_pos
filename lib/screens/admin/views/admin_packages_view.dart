@@ -7,6 +7,7 @@ import '../../../core/entitlements.dart';
 import '../../../core/feature_usage.dart';
 import '../../../core/package_model.dart';
 import '../../../core/responsive.dart';
+import '../../../widgets/package_features_breakdown_widget.dart';
 import '../../../services/package_service.dart';
 import '../../../utils/ui_feedback.dart';
 
@@ -160,20 +161,12 @@ class _AdminPackagesViewState extends ConsumerState<AdminPackagesView> {
                 style: TextStyle(fontSize: DS.fontCaption, color: context.textSecondary, height: 1.45)),
           ],
           const SizedBox(height: DS.space3),
-          Text('${included.length} FEATURES',
-              style: TextStyle(
-                  fontSize: DS.fontMicro, fontWeight: FontWeight.w700, letterSpacing: 0.6, color: context.textSecondary)),
-          const SizedBox(height: DS.space2),
-          Wrap(
-            spacing: DS.space1 + 2,
-            runSpacing: DS.space1 + 2,
-            children: included
-                .map((d) => _pill(
-                      context,
-                      d.label,
-                      kFeatureUsage[d.key]?.implemented == false ? ClassicTheme.warningAmber : accent,
-                    ))
-                .toList(),
+          PackageFeaturesBreakdownWidget(
+            features: included,
+            accentColor: accent,
+            isCompact: false,
+            showFeatureIcons: true,
+            showUnbuiltWarnings: true,
           ),
           if (unbuilt.isNotEmpty) ...[
             const SizedBox(height: DS.space2),
@@ -478,17 +471,33 @@ class _PackageEditorDialogState extends State<_PackageEditorDialog> {
                       style: TextStyle(fontSize: DS.fontMicro, color: context.textSecondary)),
                 ],
               ),
-              const SizedBox(height: DS.space2),
-              for (final tier in CommercialTier.values) ...[
+              for (final entry in FeatureCatalog.groupByCategory(FeatureCatalog.all).entries) ...[
                 Padding(
-                  padding: const EdgeInsets.only(top: DS.space2, bottom: DS.space1),
-                  child: Text(tier.label,
-                      style: TextStyle(fontSize: DS.fontCaption, fontWeight: FontWeight.w700, color: context.textPrimary)),
+                  padding: const EdgeInsets.only(top: DS.space3, bottom: DS.space1),
+                  child: Row(
+                    children: [
+                      Icon(
+                        PackageFeaturesBreakdownWidget.iconForCategory(entry.key),
+                        size: 14,
+                        color: ClassicTheme.primaryAccent,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        entry.key,
+                        style: TextStyle(fontSize: DS.fontCaption, fontWeight: FontWeight.w700, color: context.textPrimary),
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        '(${entry.value.where((d) => _features[d.key] == true).length}/${entry.value.length})',
+                        style: TextStyle(fontSize: DS.fontMicro, color: context.textSecondary),
+                      ),
+                    ],
+                  ),
                 ),
                 Wrap(
                   spacing: DS.space2,
                   runSpacing: DS.space2,
-                  children: FeatureCatalog.all.where((d) => d.tier == tier).map((d) {
+                  children: entry.value.map((d) {
                     final on = _features[d.key] == true;
                     final blocked = _blockedByMode(d);
                     final unbuilt = kFeatureUsage[d.key]?.implemented == false;
@@ -502,6 +511,15 @@ class _PackageEditorDialogState extends State<_PackageEditorDialog> {
                                   ? 'Also switches on ${missing.map((k) => FeatureCatalog.find(k)?.label ?? k).join(', ')}'
                                   : d.description,
                       child: FilterChip(
+                        avatar: Icon(
+                          PackageFeaturesBreakdownWidget.iconForFeature(d.iconCode),
+                          size: 14,
+                          color: blocked
+                              ? context.textMuted
+                              : on
+                                  ? (unbuilt ? ClassicTheme.warningAmber : ClassicTheme.primaryAccent)
+                                  : context.textSecondary,
+                        ),
                         label: Text(d.label),
                         selected: on,
                         onSelected: (_isStarter || blocked) ? null : (v) => _toggle(d, v),
