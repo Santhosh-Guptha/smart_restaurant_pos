@@ -31,4 +31,9 @@ This can't be fixed by tightening rules alone, because the app does its own sign
 2. Sign in the app with that token (`FirebaseAuth.signInWithCustomToken`).
 3. Rewrite the rules on those claims: a tenant reads/writes only its own documents, only `MASTER_ADMIN` writes `licenses`/`packages`/`subscription_plans`, nobody reads `passwordHash`.
 
-It touches login, the console and every Firestore write, so it should be its own piece of work.
+### Switch-over, in order (started on this branch)
+
+1. **Done in code:** after every successful login the app asks Apps Script (`ISSUE_AUTH_TOKEN`) for a Firebase custom token and signs in with it (`lib/services/firebase_auth_bridge.dart`). It never blocks login; with the backend unconfigured nothing changes.
+2. **You:** create a service-account key (Firebase console → Project settings → Service accounts → Generate new private key). In the Apps Script project add Script properties `FIREBASE_SA_EMAIL` (= `client_email`) and `FIREBASE_SA_PRIVATE_KEY` (= `private_key`, pasted as-is), paste the new `Code.gs`, redeploy. Keep the key file somewhere safe and never commit it.
+3. **Next code step:** make login itself go through `ISSUE_AUTH_TOKEN` (so `/users` is never read before sign-in), move the admin 2FA check server-side, and set `FS_USE_OAUTH = true` in `firestore.gs` (bind the Apps Script project to the Firebase GCP project).
+4. When every active device runs a build from step 3, deploy `firestore.rules.next` as `firestore.rules` (`firebase deploy --only firestore:rules`) — test in the Firebase console's Rules Playground first.

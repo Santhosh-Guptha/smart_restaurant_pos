@@ -18,6 +18,7 @@ import '../services/firebase_connection_service.dart';
 import '../services/client_ledger_cloud_router_service.dart';
 import '../services/otp_verification_service.dart';
 import '../services/platform_security_service.dart';
+import '../services/firebase_auth_bridge.dart';
 import 'restaurant_auth_provider.dart';
 
 class SaasSessionState {
@@ -522,6 +523,15 @@ class SaasSessionNotifier extends StateNotifier<SaasSessionState> {
       if (!passwordValid) {
         return "Invalid username/email or password";
       }
+
+      // A Firebase identity alongside the app's own sign-in, in the
+      // background: it never blocks or fails the login (see
+      // FirebaseAuthBridge). It is what the stricter Firestore rules will key on.
+      unawaited(FirebaseAuthBridge.signIn(
+        firestore: firestore,
+        identifier: input,
+        password: password,
+      ));
 
       final role = userData['role'] ?? 'STAFF';
       final orgId = userData['organizationId'] ?? '';
@@ -1546,6 +1556,7 @@ class SaasSessionNotifier extends StateNotifier<SaasSessionState> {
 
   Future<void> clearSession() async {
     _cancelListeners();
+    unawaited(FirebaseAuthBridge.signOut(_ref.read(firebaseConnectionServiceProvider).masterFirestore));
     final box = Hive.box('configBox');
     await box.put('saas_logged_in', false);
     await box.put('session_active', false);

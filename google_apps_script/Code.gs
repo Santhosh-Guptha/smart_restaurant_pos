@@ -118,6 +118,9 @@ function doPost(e) {
       case "REGISTER_TRIAL":
         return handleStartTrial(json);
 
+      case "ISSUE_AUTH_TOKEN":
+        return handleIssueAuthToken_(json);
+
       case "CLOSE_SESSION":
         return handleCloseSession(json);
 
@@ -5306,4 +5309,83 @@ function verticalFor_(businessCategory) {
            "hardware", "general store", "stationer", "book", "gift", "toy",
            "jewel", "optical", "furniture", "cosmetic", "sports", "other business"])) return "retail";
   return "restaurant";
+}
+
+/**
+ * ISSUE_AUTH_TOKEN — a Firebase custom token for a user whose password checks
+ * out here, server-side. The app signs in with it (FirebaseAuthBridge) so the
+ * Firestore rules can one day know who is asking; see SECURITY_NOTES.md.
+ *
+ * Needs two Script Properties (Project Settings -> Script properties), taken
+ * from a Firebase service-account key (Firebase console -> Project settings ->
+ * Service accounts -> Generate new private key):
+ *   FIREBASE_SA_EMAIL        the "client_email" value
+ *   FIREBASE_SA_PRIVATE_KEY  the "private_key" value, pasted as-is
+ * Without them it answers NOT_CONFIGURED and the app carries on unchanged.
+ *
+ * Wrong passwords are counted per identifier; eight in ten minutes locks that
+ * identifier out of this endpoint for the rest of the window.
+ */
+function handleIssueAuthToken_(data) {
+  var id = String(data.identifier || "").trim().toLowerCase();
+  var pw = String(data.password || "");
+  if (!id || !pw) return responseJson({ success: false, error_code: "BAD_REQUEST" });
+
+  var props = PropertiesService.getScriptProperties();
+  if (!props.getProperty("FIREBASE_SA_EMAIL") || !props.getProperty("FIREBASE_SA_PRIVATE_KEY")) {
+    return responseJson({ success: false, error_code: "NOT_CONFIGURED" });
+  }
+
+  var cache = CacheService.getScriptCache();
+  var failKey = "authfail_" + Utilities.base64EncodeWebSafe(id).slice(0, 200);
+  var fails = Number(cache.get(failKey) || 0);
+  if (fails >= 8) return responseJson({ success: false, error_code: "RATE_LIMITED" });
+
+  var hit = null;
+  var lookups = [["users", "username"], ["users", "email"], ["staff_users", "username"], ["staff_users", "email"]];
+  for (var i = 0; i < lookups.length && !hit; i++) {
+    var rows = fsQueryEq_(lookups[i][0], lookups[i][1], id, 1);
+    if (rows.length > 0) hit = rows[0];
+  }
+  var u = hit ? (hit.data || {}) : {};
+  var hash = String(u.passwordHash || "");
+  var ok = false;
+  if (hash) { try { ok = bcryptCheck_(pw, hash); } catch (e) { ok = false; } }
+  var status = String(u.status || "ACTIVE").toUpperCase();
+  if (!ok || status !== "ACTIVE" || u.isActive === false) {
+    cache.put(failKey, String(fails + 1), 600);
+    return responseJson({ success: false, error_code: "INVALID" });
+  }
+
+  var claims = {
+    orgId: String(u.organizationId || ""),
+    role: String(u.role || "").toUpperCase(),
+    franchiseId: String(u.franchiseId || "")
+  };
+  try {
+    return responseJson({ success: true, uid: hit.id, claims: claims, token: mintFirebaseCustomToken_(hit.id, claims) });
+  } catch (e) {
+    Logger.log("custom token mint failed: " + e);
+    return responseJson({ success: false, error_code: "MINT_FAILED" });
+  }
+}
+
+/** A Firebase custom token (RS256 JWT signed with the service-account key). */
+function mintFirebaseCustomToken_(uid, claims) {
+  var props = PropertiesService.getScriptProperties();
+  var sa = props.getProperty("FIREBASE_SA_EMAIL");
+  var key = String(props.getProperty("FIREBASE_SA_PRIVATE_KEY") || "").replace(/\\n/g, "\n");
+  var now = Math.floor(Date.now() / 1000);
+  function b64(s) { return Utilities.base64EncodeWebSafe(s).replace(/=+$/, ""); }
+  var header = b64(JSON.stringify({ alg: "RS256", typ: "JWT" }));
+  var payload = b64(JSON.stringify({
+    iss: sa, sub: sa,
+    aud: "https://identitytoolkit.googleapis.com/google.identity.identitytoolkit.v1.IdentityToolkit",
+    iat: now, exp: now + 3600,
+    uid: String(uid).slice(0, 128),
+    claims: claims
+  }));
+  var input = header + "." + payload;
+  var sig = Utilities.base64EncodeWebSafe(Utilities.computeRsaSha256Signature(input, key)).replace(/=+$/, "");
+  return input + "." + sig;
 }

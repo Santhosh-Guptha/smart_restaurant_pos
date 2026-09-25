@@ -1,0 +1,160 @@
+rules_version = '2';
+// ─────────────────────────────────────────────────────────────────────────
+//  DRAFT — NOT DEPLOYED. The target rules once every client signs in with a
+//  Firebase custom token (lib/services/firebase_auth_bridge.dart, issued by
+//  ISSUE_AUTH_TOKEN in google_apps_script/Code.gs). See SECURITY_NOTES.md for
+//  the order of the switch-over; deploying this before step 3 there locks
+//  every user out, because today's login reads /users before it has a token.
+//
+//  Token claims: orgId, role (OWNER|MANAGER|BILLING|KITCHEN|WAITER|MASTER_ADMIN),
+//  franchiseId.
+// ─────────────────────────────────────────────────────────────────────────
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn()        { return request.auth != null; }
+    function claim(k)          { return signedIn() ? request.auth.token[k] : null; }
+    function isAdmin()         { return claim('role') == 'MASTER_ADMIN'; }
+    function inOrg(orgId)      { return signedIn() && claim('orgId') == orgId; }
+    function isManager(orgId)  { return inOrg(orgId) && claim('role') in ['OWNER', 'CLIENT', 'STORE_ADMIN', 'MANAGER']; }
+    function docOrg()          { return resource.data.organizationId; }
+    function newOrg()          { return request.resource.data.organizationId; }
+    function onlyChanges(keys) { return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys); }
+
+    // ── Public: the guest QR menu, the website, the signup screen ──────────
+    match /public_stores/{orgId} {
+      allow read: if true;
+      allow write: if isAdmin() || isManager(orgId);
+      match /{child=**} {
+        allow read: if true;
+        allow write: if isAdmin() || isManager(orgId);
+      }
+    }
+    match /app_versions/{id}        { allow read: if true; allow write: if isAdmin(); }
+    match /subscription_plans/{id}  { allow read: if true; allow write: if isAdmin(); }
+    match /packages/{id}            { allow read: if true; allow write: if isAdmin(); }
+    match /branding/{orgId} {
+      allow read: if true;
+      allow write: if isAdmin() || isManager(orgId);
+      match /{child=**} { allow read: if true; allow write: if isAdmin() || isManager(orgId); }
+    }
+    // Read before sign-in (the 2FA switch); written by the console only.
+    match /platform_settings/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+      match /{child=**} { allow read: if true; allow write: if isAdmin(); }
+    }
+
+    // The website files leads with no account. It may create one, and may
+    // only hand its own lead back to PENDING afterwards (site.js).
+    match /registration_requests/{id} {
+      allow create: if true;
+      allow update: if isAdmin() ||
+        (onlyChanges(['status', 'provisionError', 'updatedAt']) && request.resource.data.status == 'PENDING');
+      allow read, delete: if isAdmin();
+    }
+    match /business_inquiries/{id} {
+      allow create: if true;
+      allow read, update, delete: if isAdmin();
+    }
+
+    // ── Tenant control plane ──────────────────────────────────────────────
+    match /organizations/{orgId} {
+      allow read: if isAdmin() || inOrg(orgId);
+      allow create, delete: if isAdmin();
+      // Owners run their own storage migration; only the console suspends.
+      allow update: if isAdmin() ||
+        (isManager(orgId) && !request.resource.data.diff(resource.data).affectedKeys()
+            .hasAny(['status', 'statusReason', 'vertical', 'businessCategory', 'ownerUserId']));
+      match /{child=**} {
+        allow read: if isAdmin() || inOrg(orgId);
+        allow write: if isAdmin() || isManager(orgId);
+      }
+    }
+    match /licenses/{orgId} {
+      allow read: if isAdmin() || inOrg(orgId);
+      allow write: if isAdmin();
+      match /{child=**} { allow read: if isAdmin() || inOrg(orgId); allow write: if isAdmin(); }
+    }
+    match /features/{orgId} { allow read: if isAdmin() || inOrg(orgId); allow write: if isAdmin(); }
+    match /limits/{orgId}   { allow read: if isAdmin() || inOrg(orgId); allow write: if isAdmin(); }
+    match /renewal_requests/{orgId} {
+      allow read: if isAdmin() || inOrg(orgId);
+      allow create, update: if isAdmin() || isManager(orgId);
+      allow delete: if isAdmin();
+    }
+    match /firebase_configs/{orgId} { allow read, write: if isAdmin() || isManager(orgId); }
+    match /excel_configs/{orgId}    { allow read, write: if isAdmin() || isManager(orgId); }
+
+    // ── People ────────────────────────────────────────────────────────────
+    // Nobody but the console creates a platform admin, and a tenant can only
+    // manage accounts inside itself.
+    match /users/{uid} {
+      allow read: if isAdmin() || (signedIn() && request.auth.uid == uid) || inOrg(docOrg());
+      allow create: if isAdmin() || (isManager(newOrg()) && request.resource.data.role != 'MASTER_ADMIN');
+      allow update: if isAdmin() ||
+        (isManager(docOrg()) && newOrg() == docOrg() && request.resource.data.role != 'MASTER_ADMIN') ||
+        (signedIn() && request.auth.uid == uid && onlyChanges(['passwordHash', 'mustChangePassword', 'updatedAt']));
+      allow delete: if isAdmin() || isManager(docOrg());
+    }
+    match /staff_users/{id} {
+      allow read: if isAdmin() || inOrg(docOrg());
+      allow create: if isAdmin() || isManager(newOrg());
+      allow update, delete: if isAdmin() || isManager(docOrg());
+    }
+
+    // ── Branches and per-tenant data ──────────────────────────────────────
+    match /outlets/{id} {
+      allow read: if isAdmin() || inOrg(docOrg());
+      allow create: if isAdmin() || isManager(newOrg());
+      allow update, delete: if isAdmin() || isManager(docOrg());
+      match /{child=**} { allow read, write: if isAdmin() || inOrg(get(/databases/$(database)/documents/outlets/$(id)).data.organizationId); }
+    }
+    match /franchises/{id} {
+      allow read: if isAdmin() || inOrg(docOrg());
+      allow create: if isAdmin() || isManager(newOrg());
+      allow update, delete: if isAdmin() || isManager(docOrg());
+      match /{child=**} { allow read, write: if isAdmin() || inOrg(get(/databases/$(database)/documents/franchises/$(id)).data.organizationId); }
+    }
+    match /products/{id} {
+      allow read: if isAdmin() || inOrg(docOrg());
+      allow create: if isAdmin() || inOrg(newOrg());
+      allow update, delete: if isAdmin() || inOrg(docOrg());
+    }
+    match /expenses/{id} {
+      allow read: if isAdmin() || inOrg(docOrg());
+      allow create: if isAdmin() || inOrg(newOrg());
+      allow update, delete: if isAdmin() || isManager(docOrg());
+    }
+    match /device_registry/{id} {
+      allow read, update, delete: if isAdmin() || inOrg(docOrg());
+      allow create: if isAdmin() || inOrg(newOrg());
+    }
+
+    // ── Platform ──────────────────────────────────────────────────────────
+    match /audit_logs/{id}     { allow create: if signedIn(); allow read, update, delete: if isAdmin(); }
+    match /system_config/{id}  {
+      allow read: if signedIn();
+      allow write: if isAdmin();
+      match /{child=**} { allow read: if signedIn(); allow write: if isAdmin(); }
+    }
+    match /_conn_test/{id}     { allow read, write: if signedIn(); }
+
+    // TODO before switching: the master-admin 2FA code is written and read
+    // during login, i.e. before any token exists. Move that into
+    // ISSUE_AUTH_TOKEN (issue the token only after the code checks out), then
+    // make this admin/server-only.
+    match /email_otps/{email}  { allow read, write: if true; }
+
+    // ── Operational data lives in Sheets + Hive, never here ───────────────
+    match /orders/{id}            { allow read, write: if false; }
+    match /restaurant_tables/{id} { allow read, write: if false; }
+    match /kitchen_kots/{id}      { allow read, write: if false; }
+    match /bills/{id}             { allow read, write: if false; }
+    match /customers/{id}         { allow read, write: if false; }
+    match /suppliers/{id}         { allow read, write: if false; }
+    match /purchase_orders/{id}   { allow read, write: if false; }
+
+    match /{document=**} { allow read, write: if false; }
+  }
+}
