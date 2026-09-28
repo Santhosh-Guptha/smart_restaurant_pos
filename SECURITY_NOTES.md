@@ -14,7 +14,7 @@ Found during the category-alignment work (branch `fix/category-alignment`).
 
 1. **Change the master-admin password.** It has been public in the web bundle. Until the rebuilt web app is deployed the old bundle still contains it.
 2. **Rebuild and redeploy the web POS** (`flutter build web` → `hosting_public/pos` → `firebase deploy --only hosting`) so the old bundle stops being served.
-3. To set a new admin password: in the Firebase console open `users/usr_master_admin` and replace `passwordHash` with a bcrypt hash of the new password (any bcrypt tool, cost 10), or add a "change password" action to the console.
+3. To set a new admin password: admin console → key icon (or ⋮ → Change Admin Password). It asks for the current password and stores only a bcrypt hash. (Fallback without the app: replace `passwordHash` on `users/usr_master_admin` with a bcrypt hash, cost 10.)
 4. Re-save each staff member once from Staff Management (or run a one-off script) to scrub plain PINs/passwords that are already in `staff_users`.
 
 ## Still open — needs a design decision
