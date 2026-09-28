@@ -1,5 +1,7 @@
 # SmartBizz POS — notes for Codex
 
+**Start here:** `docs/README.md` (documentation index) and `docs/09_AGENT_GUIDE.md` (rules for agents).
+
 Flutter 3.47.1 / Dart 3.13.1 app (Android, iOS, Windows, web) plus a static marketing site.
 Brand is **SmartBizz** everywhere a user sees it (formerly SmartDine). Data identifiers keep the
 old name on purpose: crypto salt, Drive folder `SmartDine_Menu_Images`, Firebase project
