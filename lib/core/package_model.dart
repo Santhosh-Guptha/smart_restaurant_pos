@@ -108,7 +108,7 @@ class TenantPackage {
   bool get isLegacy => isStarter && PlanProfile.all.any((p) => p.id == id);
 
   /// "Features available for Pharmacy — Basic" (contract §3). A universal
-  /// package reads "Features available for all business types — <Tier>".
+  /// package reads "Features available for all business types — `<Tier>`".
   String get featuresHeading => PackageCatalog.headingFor(vertical, tier);
 
   /// The starter for [vertical] at [tier]: id `<vertical>_<tier>`.

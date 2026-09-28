@@ -527,7 +527,9 @@ class CategoryPackageMigrationService {
     if (license.vertical != trade) changes.add('Business type: ${Verticals.shortLabel(trade)}');
     if (nowOn.isNotEmpty) changes.add('Switches on: ${nowOn.join(', ')}');
     if (nowOff.isNotEmpty) changes.add('Switches off: ${nowOff.join(', ')}');
-    if (addOns.isNotEmpty) changes.add('Kept as add-ons: ${addOns.map(label).join(', ')}');
+    if (storedPackageId.trim() != target.id && addOns.isNotEmpty) {
+      changes.add('Kept as add-ons: ${addOns.map(label).join(', ')}');
+    }
     if (license.maxDevices != composed.maxDevices ||
         license.maxFranchises != composed.maxOutlets ||
         license.maxUsers != composed.maxUsers) {
