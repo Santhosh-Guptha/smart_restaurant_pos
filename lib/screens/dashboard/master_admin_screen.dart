@@ -1,7 +1,8 @@
 import 'dart:math';
 import 'dart:async';
 import 'package:flutter/material.dart';
-import '../../widgets/responsive_field_row.dart';
+import '../../widgets/responsive_field_row.dart';
+import '../../widgets/change_password_dialog.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -1178,6 +1179,16 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
               onPressed: _showSecurity2faDialog,
             ),
             IconButton(
+              icon: const Icon(Icons.key_rounded, color: ClassicTheme.warningAmber, size: 20),
+              tooltip: "Change Admin Password",
+              onPressed: () {
+                final me = ref.read(saasSessionProvider).currentUser;
+                if (me != null) {
+                  ChangePasswordDialog.show(context, userId: me.id, email: me.email, orgId: me.organizationId);
+                }
+              },
+            ),
+            IconButton(
               icon: const Icon(Icons.cleaning_services_rounded, color: ClassicTheme.warningAmber, size: 20),
               tooltip: "Clean Database (Keep Admin)",
               onPressed: _showClearDatabaseDialog,
@@ -1203,6 +1214,12 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
                     break;
                   case 'security_2fa':
                     _showSecurity2faDialog();
+                    break;
+                  case 'change_password':
+                    final me = ref.read(saasSessionProvider).currentUser;
+                    if (me != null) {
+                      ChangePasswordDialog.show(context, userId: me.id, email: me.email, orgId: me.organizationId);
+                    }
                     break;
                   case 'cleanup':
                     _showClearDatabaseDialog();
@@ -1237,6 +1254,16 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
                       Icon(Icons.shield_outlined, color: ClassicTheme.primaryAccentIndigo, size: 18),
                       const SizedBox(width: 10),
                       const Text('Platform 2FA Security', style: TextStyle(fontSize: 13)),
+                    ],
+                  ),
+                ),
+                const PopupMenuItem(
+                  value: 'change_password',
+                  child: Row(
+                    children: [
+                      Icon(Icons.key_rounded, color: ClassicTheme.warningAmber, size: 18),
+                      SizedBox(width: 10),
+                      Text('Change Admin Password', style: TextStyle(fontSize: 13)),
                     ],
                   ),
                 ),

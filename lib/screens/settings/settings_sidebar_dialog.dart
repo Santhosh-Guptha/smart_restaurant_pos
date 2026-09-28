@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
+import '../../widgets/change_password_dialog.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
-import 'package:bcrypt/bcrypt.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../../core/accent_palettes.dart';
 import '../../core/classic_theme.dart';
@@ -14,7 +13,6 @@ import '../../providers/auth_provider.dart';
 import '../../providers/restaurant_auth_provider.dart';
 import '../../providers/saas_session_provider.dart';
 import '../../providers/theme_provider.dart';
-import '../../services/firebase_connection_service.dart';
 import '../../core/constants.dart';
 import '../../core/receipt/receipt_context.dart';
 import '../../core/receipt/receipt_context_builder.dart';
@@ -522,7 +520,13 @@ class _SettingsSidebarDialogState extends ConsumerState<SettingsSidebarDialog> {
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                 ),
-                onPressed: () => _showChangePasswordDialog(context),
+                // Asks for the current password, checks strength, writes a
+                // hash only (users or staff_users) — widgets/change_password_dialog.dart.
+                onPressed: () {
+                  final me = ref.read(saasSessionProvider).currentUser;
+                  if (me == null) return;
+                  ChangePasswordDialog.show(context, userId: me.id, email: me.email, orgId: me.organizationId);
+                },
               ),
               OutlinedButton.icon(
                 icon: const Icon(Icons.logout_rounded, size: 18, color: ClassicTheme.dangerRed),
@@ -1204,115 +1208,6 @@ class _SettingsSidebarDialogState extends ConsumerState<SettingsSidebarDialog> {
             child: const Text('Done', style: TextStyle(fontWeight: FontWeight.bold)),
           ),
         ],
-      ),
-    );
-  }
-
-  void _showChangePasswordDialog(BuildContext context) {
-    final newPassCtrl = TextEditingController();
-    final confirmPassCtrl = TextEditingController();
-    bool isUpdating = false;
-
-    showDialog(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx2, setDialogState) {
-          return AlertDialog(
-            backgroundColor: context.surfaceColor,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(20),
-              side: BorderSide(color: context.borderColor),
-            ),
-            title: Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: ClassicTheme.primaryAccent.withValues(alpha: 0.12),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(Icons.lock_reset_rounded, color: ClassicTheme.primaryAccent, size: 20),
-                ),
-                const SizedBox(width: 10),
-                Text('Update Operator Password',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: context.textPrimary)),
-              ],
-            ),
-            content: SingleChildScrollView(child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: newPassCtrl,
-                  obscureText: true,
-                  style: TextStyle(color: context.textPrimary, fontSize: 13),
-                  decoration: InputDecoration(
-                    labelText: 'New Password (min 6 chars)',
-                    labelStyle: TextStyle(color: context.textSecondary, fontSize: 12),
-                    enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: context.borderColor)),
-                  ),
-                ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: confirmPassCtrl,
-                  obscureText: true,
-                  style: TextStyle(color: context.textPrimary, fontSize: 13),
-                  decoration: InputDecoration(
-                    labelText: 'Confirm New Password',
-                    labelStyle: TextStyle(color: context.textSecondary, fontSize: 12),
-                    enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: context.borderColor)),
-                  ),
-                ),
-              ],
-            )),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx),
-                child: Text('Cancel', style: TextStyle(color: context.textSecondary)),
-              ),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: ClassicTheme.primaryAccent,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                ),
-                onPressed: isUpdating
-                    ? null
-                    : () async {
-                        if (newPassCtrl.text.length < 6) {
-                          AppToast.showWarning(context, 'Password Too Short', subtitle: 'Must be at least 6 characters.');
-                          return;
-                        }
-                        if (newPassCtrl.text != confirmPassCtrl.text) {
-                          AppToast.showWarning(context, "Passwords Don't Match");
-                          return;
-                        }
-                        setDialogState(() => isUpdating = true);
-                        try {
-                          final saasSession = ref.read(saasSessionProvider);
-                          final userId = saasSession.currentUser?.id;
-                          if (userId != null) {
-                            final conn = ref.read(firebaseConnectionServiceProvider);
-                            await conn.masterFirestore.collection('users').doc(userId).update({
-                              'passwordHash': BCrypt.hashpw(newPassCtrl.text, BCrypt.gensalt()),
-                              'updatedAt': FieldValue.serverTimestamp(),
-                            });
-                          }
-                          if (ctx.mounted) Navigator.pop(ctx);
-                          if (context.mounted) {
-                            AppToast.showSuccess(context, 'Password Updated Successfully');
-                          }
-                        } catch (e) {
-                          setDialogState(() => isUpdating = false);
-                          if (context.mounted) AppToast.showError(context, e, title: 'Failed to Update Password');
-                        }
-                      },
-                child: isUpdating
-                    ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                    : const Text('Update Password'),
-              ),
-            ],
-          );
-        },
       ),
     );
   }
