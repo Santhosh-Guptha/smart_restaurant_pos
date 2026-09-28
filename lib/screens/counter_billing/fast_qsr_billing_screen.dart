@@ -575,6 +575,11 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
     });
   }
 
+  /// Restaurants: always (built-in portion/spice/add-ons). Shops: only when
+  /// the product has its own option groups.
+  bool _hasCustomizeOptions(Map<String, dynamic> item) =>
+      _vl.isRestaurant || (item['modifierGroups'] is List && (item['modifierGroups'] as List).isNotEmpty);
+
   Future<void> _customizeAndAddToCart(Map<String, dynamic> item) async {
     final itemName = (item['name'] ?? _vl.itemSingular).toString();
     final basePrice = (item['price'] as num?)?.toDouble() ?? 0.0;
@@ -584,6 +589,12 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
       groups = (item['modifierGroups'] as List)
           .map((g) => ItemModifierGroup.fromMap(Map<String, dynamic>.from(g as Map)))
           .toList();
+    }
+    // The built-in options (portion, spice, add-ons) are food. A shop only
+    // sees options it set up on the product itself.
+    if (groups == null && !_vl.isRestaurant) {
+      _addToCart(item);
+      return;
     }
 
     final selected = await ItemModifierDialog.show(
@@ -5337,7 +5348,8 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                                               ),
                                               child: Row(
                                                 children: [
-                                                  // Veg / Non-Veg Indicator
+                                                  // Veg / Non-Veg Indicator (food only)
+                                                  if (_vl.isRestaurant)
                                                   Container(
                                                     width: 16,
                                                     height: 16,
@@ -5359,7 +5371,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                                                       ),
                                                     ),
                                                   ),
-                                                  const SizedBox(width: 12),
+                                                  if (_vl.isRestaurant) const SizedBox(width: 12),
 
                                                   // Dish Thumbnail (Optional)
                                                   if (item['imageUrl'] != null && item['imageUrl'].toString().trim().isNotEmpty) ...[
@@ -5437,9 +5449,10 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                                                     Row(
                                                       mainAxisSize: MainAxisSize.min,
                                                       children: [
+                                                        if (_hasCustomizeOptions(item))
                                                         IconButton(
                                                           icon: const Icon(Icons.tune_rounded, size: 18, color: ClassicTheme.infoBlue),
-                                                          tooltip: 'Customize (Spice, Add-ons, Portion)',
+                                                          tooltip: _vl.isRestaurant ? 'Customize (Spice, Add-ons, Portion)' : 'Choose options',
                                                           visualDensity: VisualDensity.compact,
                                                           padding: EdgeInsets.zero,
                                                           constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
@@ -5470,9 +5483,10 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                                                     Row(
                                                       mainAxisSize: MainAxisSize.min,
                                                       children: [
+                                                        if (_hasCustomizeOptions(item))
                                                         IconButton(
                                                           icon: const Icon(Icons.tune_rounded, size: 18, color: ClassicTheme.infoBlue),
-                                                          tooltip: 'Customize (Spice, Add-ons, Portion)',
+                                                          tooltip: _vl.isRestaurant ? 'Customize (Spice, Add-ons, Portion)' : 'Choose options',
                                                           visualDensity: VisualDensity.compact,
                                                           padding: EdgeInsets.zero,
                                                           constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
