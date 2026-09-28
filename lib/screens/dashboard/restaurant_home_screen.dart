@@ -352,7 +352,7 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
   /// "12 Oct 2026".
   static String _formatDate(DateTime d) => '${d.day} ${_monthNames[d.month - 1]} ${d.year}';
 
-  /// "<Trade> · <Tier>" with the tier's icon, and the plan's validity end.
+  /// `"<Trade> · <Tier>"` with the tier's icon, and the plan's validity end.
   /// The owner can tap either to ask for an upgrade or a renewal.
   Widget _buildTierLine(Entitlements ent, SaasLicense? licence, {required bool isOwner}) {
     final tier = ent.tier;
