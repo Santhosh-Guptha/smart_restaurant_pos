@@ -36,12 +36,17 @@ class PackageFeaturesBreakdownWidget extends StatefulWidget {
   final bool initiallyExpanded;
   final String? emptyMessage;
 
-  /// Heads the list with the tier a starter package is sold as, named and
-  /// described for the trade ("Pharmacy Basic: One device, no internet…").
-  /// Needs [package] or [profile]; nothing is shown for a custom package.
+  /// Heads the list with the package heading of docs/PLATFORM_STRUCTURE.md
+  /// §3 ("Features available for Pharmacy — Basic") and the storage wording
+  /// of §7 for that tier. The tier is [tier], else [package]'s, else
+  /// [profile]'s; nothing is shown when none is given.
   final bool showTierHeader;
 
-  /// The starter to name in the tier header when there is no [package].
+  /// The tier to name in the tier header (see [showTierHeader]).
+  final PackageTier? tier;
+
+  /// Legacy: a universal starter to name in the tier header when there is
+  /// no [tier] or [package]; read as the tier it maps to.
   final PlanProfile? profile;
 
   const PackageFeaturesBreakdownWidget({
@@ -60,6 +65,7 @@ class PackageFeaturesBreakdownWidget extends StatefulWidget {
     this.initiallyExpanded = true,
     this.emptyMessage,
     this.showTierHeader = false,
+    this.tier,
     this.profile,
   });
 
@@ -150,8 +156,14 @@ class PackageFeaturesBreakdownWidget extends StatefulWidget {
 }
 
 class _PackageFeaturesBreakdownWidgetState extends State<PackageFeaturesBreakdownWidget> {
-  String? get _vertical =>
-      widget.vertical ?? (widget.businessCategory != null ? Verticals.forCategory(widget.businessCategory) : null);
+  /// The trade the list is for: [PackageFeaturesBreakdownWidget.vertical],
+  /// else the business category's, else a trade package's own.
+  String? get _vertical {
+    if (widget.vertical != null) return widget.vertical;
+    if (widget.businessCategory != null) return Verticals.forCategory(widget.businessCategory);
+    final p = widget.package;
+    return (p != null && !Verticals.isAny(p.vertical)) ? p.vertical : null;
+  }
 
   late bool _expanded;
 
@@ -186,20 +198,24 @@ class _PackageFeaturesBreakdownWidgetState extends State<PackageFeaturesBreakdow
     return list.toList();
   }
 
-  /// The starter this list describes, when it is one.
-  PlanProfile? get _tierProfile {
-    if (widget.profile != null) return widget.profile;
+  /// The tier the header names: [PackageFeaturesBreakdownWidget.tier], else
+  /// the package's, else the legacy profile's.
+  PackageTier? get _headerTier {
+    if (widget.tier != null) return widget.tier;
     final p = widget.package;
-    if (p == null || !p.isStarter) return null;
-    final profile = PlanProfile.byId(p.id);
-    return profile.id == p.id ? profile : null;
+    if (p != null) return p.tier;
+    final profile = widget.profile;
+    if (profile != null) {
+      return PackageTier.fromPackageOrProfile(profileId: profile.id, storageMode: profile.storageMode);
+    }
+    return null;
   }
 
   Widget? _tierHeader(BuildContext context, Color accent) {
     if (!widget.showTierHeader) return null;
-    final profile = _tierProfile;
-    if (profile == null) return null;
-    final v = _vertical;
+    final tier = _headerTier;
+    if (tier == null) return null;
+    final v = _vertical ?? widget.package?.vertical ?? Verticals.any;
     return Padding(
       padding: EdgeInsets.only(bottom: widget.isCompact ? 6.0 : 10.0),
       child: Column(
@@ -207,7 +223,7 @@ class _PackageFeaturesBreakdownWidgetState extends State<PackageFeaturesBreakdow
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
-            profile.labelFor(v),
+            PackageCatalog.headingFor(v, tier),
             style: TextStyle(
               fontSize: widget.isCompact ? 11.5 : 13,
               fontWeight: FontWeight.w700,
@@ -216,7 +232,7 @@ class _PackageFeaturesBreakdownWidgetState extends State<PackageFeaturesBreakdow
           ),
           const SizedBox(height: 2),
           Text(
-            profile.descriptionFor(v),
+            tier.isOffline ? PackageCatalog.offlineNotice : PackageCatalog.driveNotice,
             style: TextStyle(
               fontSize: widget.isCompact ? 10.5 : 11.5,
               color: context.textSecondary,

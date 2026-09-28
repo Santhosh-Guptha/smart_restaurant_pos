@@ -4,23 +4,71 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/classic_theme.dart';
 import '../../../core/design_tokens.dart';
-import '../../../core/license_composer.dart';
 import '../../../core/responsive.dart';
 import '../../../core/subscription_plan_model.dart';
 import '../../../services/subscription_plan_service.dart';
 import '../../../utils/ui_feedback.dart';
 
-/// Plans: *how much and for how long*.
+/// Plans: *how long a licence runs* (docs/PLATFORM_STRUCTURE.md §2).
 ///
-/// Name, validity, outlets, devices, staff, and which roles a tenant may
-/// create. Nothing about features — that is the package. A plan document
-/// written before this split still carries a `features` map; it is left in
-/// place and ignored, so an older console build keeps working, and it is
-/// never written by this screen.
-///
-/// No prices anywhere (FEATURE_MASTER_PLAN.md D5).
+/// A plan is its name, validity in days, price, billing cycle and whether it
+/// is the default free trial. Nothing else: features, limits, roles and
+/// storage come from the package. Plan documents written by older builds
+/// still carry legacy fields (limits, roles, table count, operating mode,
+/// features); they are never shown, never edited and never overwritten here
+/// (saving merges only [editableFields]), so an older build reading the same
+/// document keeps working.
 class AdminPlansView extends ConsumerStatefulWidget {
   const AdminPlansView({super.key});
+
+  /// The only fields this screen writes to a plan document (merged; legacy
+  /// fields on the document are left as they are). Timestamps are added by
+  /// the caller.
+  static Map<String, dynamic> editableFields(SubscriptionPlan p) => {
+        'name': p.name,
+        'validityDays': p.validityDays,
+        'price': p.price,
+        'billingCycle': p.billingCycle,
+        'isDefaultTrial': p.isDefaultTrial,
+      };
+
+  /// The billing cycles a plan may have.
+  static const List<String> billingCycles = ['TRIAL', 'MONTHLY', 'QUARTERLY', 'HALF_YEARLY', 'YEARLY', 'LIFETIME'];
+
+  /// "Half-yearly" for `HALF_YEARLY`.
+  static String cycleLabel(String c) {
+    switch (c.toUpperCase()) {
+      case 'TRIAL':
+        return 'Trial';
+      case 'MONTHLY':
+        return 'Monthly';
+      case 'QUARTERLY':
+        return 'Quarterly';
+      case 'HALF_YEARLY':
+        return 'Half-yearly';
+      case 'YEARLY':
+        return 'Yearly';
+      case 'LIFETIME':
+        return 'Lifetime';
+      default:
+        return c;
+    }
+  }
+
+  /// "Free" for 0, else "₹1,499" style with two decimals only when needed.
+  static String priceLabel(double price) {
+    if (price <= 0) return 'Free';
+    final whole = price == price.roundToDouble();
+    final s = whole ? price.toStringAsFixed(0) : price.toStringAsFixed(2);
+    final parts = s.split('.');
+    final digits = parts[0];
+    final b = StringBuffer();
+    for (var i = 0; i < digits.length; i++) {
+      if (i > 0 && (digits.length - i) % 3 == 0) b.write(',');
+      b.write(digits[i]);
+    }
+    return '\u20b9$b${parts.length > 1 ? '.${parts[1]}' : ''}';
+  }
 
   @override
   ConsumerState<AdminPlansView> createState() => _AdminPlansViewState();
@@ -98,9 +146,13 @@ class _AdminPlansViewState extends ConsumerState<AdminPlansView> {
             ),
             const SizedBox(height: DS.space2),
             Text(
-              'A plan is how much and for how long: days of validity, outlets, devices, staff, '
-              'and the roles the owner may create. What the tenant can do is the package. '
-              'An offline package runs on one device and one outlet whatever the plan says.',
+              'A plan sets how long a licence runs. Features and limits come from the package.',
+              style: TextStyle(fontSize: DS.fontBody, fontWeight: FontWeight.w600, color: context.textPrimary, height: 1.45),
+            ),
+            const SizedBox(height: DS.space1),
+            Text(
+              'Each plan is a name, a validity in days, a price and a billing cycle. Devices, stores, users, '
+              'roles and storage are set by the client\u2019s package (and, for Enterprise, per client).',
               style: TextStyle(fontSize: DS.fontCaption, color: context.textSecondary, height: 1.45),
             ),
           ],
@@ -128,27 +180,16 @@ class _AdminPlansViewState extends ConsumerState<AdminPlansView> {
               if (p.isDefaultTrial) _pill(context, 'Default trial', accent),
             ],
           ),
-          Text('${p.id} \u00b7 ${p.billingCycle}', style: TextStyle(fontSize: DS.fontMicro, color: context.textMuted)),
-          if (p.description.isNotEmpty) ...[
-            const SizedBox(height: DS.space2),
-            Text(p.description, style: TextStyle(fontSize: DS.fontCaption, color: context.textSecondary, height: 1.4)),
-          ],
+          Text(p.id, style: TextStyle(fontSize: DS.fontMicro, color: context.textMuted)),
           const SizedBox(height: DS.space3),
           Wrap(
-            spacing: DS.space4,
+            spacing: DS.space5,
             runSpacing: DS.space2,
             children: [
-              _stat(context, _term(p.validityDays), 'validity'),
-              _stat(context, '${p.maxOutlets}', 'outlet${p.maxOutlets == 1 ? '' : 's'}'),
-              _stat(context, '${p.maxDevices}', 'device${p.maxDevices == 1 ? '' : 's'}'),
-              _stat(context, '${p.maxUsers}', 'staff'),
+              _stat(context, '${p.validityDays} day${p.validityDays == 1 ? '' : 's'}', _term(p.validityDays)),
+              _stat(context, AdminPlansView.priceLabel(p.price), 'price'),
+              _stat(context, AdminPlansView.cycleLabel(p.billingCycle), 'billing cycle'),
             ],
-          ),
-          const SizedBox(height: DS.space2),
-          Wrap(
-            spacing: DS.space1 + 2,
-            runSpacing: DS.space1 + 2,
-            children: p.allowedRoles.map((r) => _pill(context, _roleLabel(r), accent)).toList(),
           ),
           const SizedBox(height: DS.space3),
           FutureBuilder<int>(
@@ -240,7 +281,7 @@ class _AdminPlansViewState extends ConsumerState<AdminPlansView> {
     );
     if (saved == null || !context.mounted) return;
     try {
-      await SubscriptionPlanService.savePlan(saved);
+      await _save(saved, isNew: existing == null);
       if (saved.isDefaultTrial) await SubscriptionPlanService.setDefaultTrialPlan(saved.id);
       if (context.mounted) AppToast.showSuccess(context, 'Saved \u201c${saved.name}\u201d');
     } catch (e) {
@@ -248,31 +289,23 @@ class _AdminPlansViewState extends ConsumerState<AdminPlansView> {
     }
   }
 
-  static String _roleLabel(String r) {
-    switch (r.toUpperCase()) {
-      case 'OWNER':
-        return 'Owner';
-      case 'MANAGER':
-        return 'Manager';
-      case 'BILLING':
-        return 'Cashier';
-      case 'WAITER':
-        return 'Waiter';
-      case 'KITCHEN':
-        return 'Kitchen';
-      default:
-        return r;
-    }
-  }
+  /// Merge only [AdminPlansView.editableFields]; a legacy field on the
+  /// document is never touched.
+  static Future<void> _save(SubscriptionPlan p, {required bool isNew}) =>
+      FirebaseFirestore.instance.collection('subscription_plans').doc(p.id).set({
+        ...AdminPlansView.editableFields(p),
+        if (isNew) 'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
 
   static String _term(int days) {
-    if (days == 14) return '14 days';
+    if (days == 14) return '2 weeks';
     if (days == 30) return '1 month';
     if (days == 90) return '3 months';
     if (days == 180) return '6 months';
     if (days == 365) return '1 year';
-    if (days >= 36500) return 'Lifetime';
-    return '$days days';
+    if (days >= 36500) return 'lifetime';
+    return 'validity';
   }
 }
 
@@ -287,79 +320,68 @@ class _PlanEditorDialog extends StatefulWidget {
 class _PlanEditorDialogState extends State<_PlanEditorDialog> {
   final _form = GlobalKey<FormState>();
   late final TextEditingController _name;
-  late final TextEditingController _desc;
   late final TextEditingController _days;
-  late final TextEditingController _outlets;
-  late final TextEditingController _devices;
-  late final TextEditingController _users;
+  late final TextEditingController _price;
   late String _cycle;
   late bool _isDefaultTrial;
-  late Set<String> _roles;
 
-  static const _cycles = ['TRIAL', 'MONTHLY', 'YEARLY', 'LIFETIME'];
+  static const _cycles = AdminPlansView.billingCycles;
 
   @override
   void initState() {
     super.initState();
     final e = widget.existing;
     _name = TextEditingController(text: e?.name ?? '');
-    _desc = TextEditingController(text: e?.description ?? '');
     _days = TextEditingController(text: '${e?.validityDays ?? 365}');
-    _outlets = TextEditingController(text: '${e?.maxOutlets ?? 1}');
-    _devices = TextEditingController(text: '${e?.maxDevices ?? 1}');
-    _users = TextEditingController(text: '${e?.maxUsers ?? 5}');
-    _cycle = _cycles.contains(e?.billingCycle) ? e!.billingCycle : 'YEARLY';
+    final price = e?.price ?? 0.0;
+    _price = TextEditingController(
+        text: price == price.roundToDouble() ? price.toStringAsFixed(0) : price.toStringAsFixed(2));
+    final cycle = (e?.billingCycle ?? 'YEARLY').toUpperCase();
+    _cycle = _cycles.contains(cycle) ? cycle : 'YEARLY';
     _isDefaultTrial = e?.isDefaultTrial ?? false;
-    _roles = {'OWNER', ...(e?.allowedRoles ?? const ['MANAGER', 'BILLING']).map((r) => r.toUpperCase())};
   }
 
   @override
   void dispose() {
-    for (final c in [_name, _desc, _days, _outlets, _devices, _users]) {
+    for (final c in [_name, _days, _price]) {
       c.dispose();
     }
     super.dispose();
   }
 
-  int get _deviceCount => int.tryParse(_devices.text.trim()) ?? 1;
-
   @override
   Widget build(BuildContext context) {
-    final oneDevice = _deviceCount <= 1;
     return AlertDialog(
       backgroundColor: context.surfaceColor,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(DS.radiusXl),
         side: BorderSide(color: context.borderColor),
       ),
-      title: Text(widget.existing == null ? 'New plan' : 'Edit \u201c${widget.existing!.name}\u201d',
+      title: Text(widget.existing == null ? 'New plan' : 'Edit “${widget.existing!.name}”',
           style: TextStyle(fontSize: DS.fontTitle, fontWeight: FontWeight.w700, color: context.textPrimary)),
       content: SizedBox(
-        width: ClassicTheme.dialogWidth(context, 560),
+        width: ClassicTheme.dialogWidth(context, 520),
         child: Form(
           key: _form,
           child: SingleChildScrollView(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                TextFormField(
-                  controller: _name,
-                  style: TextStyle(color: context.textPrimary),
-                  decoration: ClassicTheme.inputDecorationFor(context, labelText: 'Name', hintText: 'e.g. Standard (Annual)'),
-                  validator: (v) => (v ?? '').trim().isEmpty ? 'Give the plan a name' : null,
+                Text(
+                  'A plan sets how long a licence runs. Features and limits come from the package.',
+                  style: TextStyle(fontSize: DS.fontMicro, color: context.textSecondary, height: 1.4),
                 ),
                 const SizedBox(height: DS.space3),
                 TextFormField(
-                  controller: _desc,
-                  maxLines: 2,
+                  controller: _name,
                   style: TextStyle(color: context.textPrimary),
-                  decoration: ClassicTheme.inputDecorationFor(context, labelText: 'Description', hintText: 'Optional'),
+                  decoration: ClassicTheme.inputDecorationFor(context, labelText: 'Name', hintText: 'e.g. Yearly'),
+                  validator: (v) => (v ?? '').trim().isEmpty ? 'Give the plan a name' : null,
                 ),
-                const SizedBox(height: DS.space4),
+                const SizedBox(height: DS.space3),
                 Row(
                   children: [
                     Expanded(
-                      flex: 2,
                       child: TextFormField(
                         controller: _days,
                         keyboardType: TextInputType.number,
@@ -370,103 +392,33 @@ class _PlanEditorDialogState extends State<_PlanEditorDialog> {
                     ),
                     const SizedBox(width: DS.space3),
                     Expanded(
-                      flex: 2,
-                      child: DropdownButtonFormField<String>(
-                        initialValue: _cycle,
-                        decoration: ClassicTheme.inputDecorationFor(context, labelText: 'Billing cycle'),
-                        items: _cycles.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
-                        onChanged: (v) => setState(() => _cycle = v ?? _cycle),
+                      child: TextFormField(
+                        controller: _price,
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                        style: TextStyle(color: context.textPrimary),
+                        decoration: ClassicTheme.inputDecorationFor(context, labelText: 'Price (₹)', hintText: '0 for free'),
+                        validator: _price0,
                       ),
                     ),
                   ],
                 ),
                 const SizedBox(height: DS.space3),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextFormField(
-                        controller: _outlets,
-                        keyboardType: TextInputType.number,
-                        style: TextStyle(color: context.textPrimary),
-                        decoration: ClassicTheme.inputDecorationFor(context, labelText: 'Outlets'),
-                        validator: _positive,
-                      ),
-                    ),
-                    const SizedBox(width: DS.space3),
-                    Expanded(
-                      child: TextFormField(
-                        controller: _devices,
-                        keyboardType: TextInputType.number,
-                        style: TextStyle(color: context.textPrimary),
-                        decoration: ClassicTheme.inputDecorationFor(context, labelText: 'Devices'),
-                        validator: _positive,
-                        onChanged: (_) => setState(() {}),
-                      ),
-                    ),
-                    const SizedBox(width: DS.space3),
-                    Expanded(
-                      child: TextFormField(
-                        controller: _users,
-                        keyboardType: TextInputType.number,
-                        style: TextStyle(color: context.textPrimary),
-                        decoration: ClassicTheme.inputDecorationFor(context, labelText: 'Staff'),
-                        validator: _positive,
-                      ),
-                    ),
-                  ],
+                DropdownButtonFormField<String>(
+                  initialValue: _cycle,
+                  decoration: ClassicTheme.inputDecorationFor(context, labelText: 'Billing cycle'),
+                  items: _cycles
+                      .map((c) => DropdownMenuItem(value: c, child: Text(AdminPlansView.cycleLabel(c))))
+                      .toList(),
+                  onChanged: (v) => setState(() => _cycle = v ?? _cycle),
                 ),
-                const SizedBox(height: DS.space4),
-                Text('ROLES THE OWNER MAY CREATE',
-                    style: TextStyle(
-                        fontSize: DS.fontMicro, fontWeight: FontWeight.w700, letterSpacing: 0.6, color: context.textSecondary)),
-                const SizedBox(height: DS.space2),
-                Wrap(
-                  spacing: DS.space2,
-                  runSpacing: DS.space2,
-                  children: LicenseComposer.allRoles.map((r) {
-                    final always = r == 'OWNER';
-                    final needsDevice = LicenseComposer.secondDeviceRoles.contains(r);
-                    final blocked = needsDevice && oneDevice;
-                    final on = _roles.contains(r) && !blocked;
-                    return Tooltip(
-                      message: always
-                          ? 'Every tenant has an owner'
-                          : blocked
-                              ? 'Needs a second device \u2014 raise Devices above 1'
-                              : '',
-                      child: FilterChip(
-                        label: Text(_AdminPlansViewState._roleLabel(r)),
-                        selected: on || always,
-                        onSelected: (always || blocked)
-                            ? null
-                            : (v) => setState(() => v ? _roles.add(r) : _roles.remove(r)),
-                        selectedColor: ClassicTheme.warningAmber.withValues(alpha: 0.2),
-                        backgroundColor: context.canvasColor,
-                        labelStyle: TextStyle(
-                          fontSize: DS.fontMicro,
-                          color: blocked ? context.textMuted : (on || always) ? ClassicTheme.warningAmber : context.textSecondary,
-                          fontWeight: (on || always) ? FontWeight.w700 : FontWeight.normal,
-                          decoration: blocked ? TextDecoration.lineThrough : null,
-                        ),
-                        side: BorderSide(color: (on || always) ? ClassicTheme.warningAmber : context.borderColor),
-                      ),
-                    );
-                  }).toList(),
-                ),
-                if (oneDevice)
-                  Padding(
-                    padding: const EdgeInsets.only(top: DS.space2),
-                    child: Text(
-                      'One device: the waiter pad and the kitchen screen need a second one, so those roles are off.',
-                      style: TextStyle(fontSize: DS.fontMicro, color: context.textMuted, height: 1.4),
-                    ),
-                  ),
-                const SizedBox(height: DS.space4),
+                const SizedBox(height: DS.space3),
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
                   title: Text('Default free trial',
                       style: TextStyle(fontSize: DS.fontCaption, fontWeight: FontWeight.w700, color: context.textPrimary)),
-                  subtitle: Text('A sign-up on the website gets this plan on the trial package. Exactly one plan can be it.',
+                  subtitle: Text(
+                      'A sign-up on the website gets this plan, on the Offline package for its business type. '
+                      'Exactly one plan can be it.',
                       style: TextStyle(fontSize: DS.fontMicro, color: context.textSecondary)),
                   value: _isDefaultTrial,
                   activeThumbColor: ClassicTheme.successEmerald,
@@ -494,31 +446,27 @@ class _PlanEditorDialogState extends State<_PlanEditorDialog> {
     return null;
   }
 
+  String? _price0(String? v) {
+    final t = (v ?? '').trim();
+    if (t.isEmpty) return null;
+    final n = double.tryParse(t);
+    if (n == null || n < 0) return 'A number, 0 or more';
+    return null;
+  }
+
   void _save() {
     if (!(_form.currentState?.validate() ?? false)) return;
     final e = widget.existing;
-    final devices = _deviceCount;
-    final roles = [
-      for (final r in LicenseComposer.allRoles)
-        if (r == 'OWNER' || (_roles.contains(r) && !(devices <= 1 && LicenseComposer.secondDeviceRoles.contains(r)))) r,
-    ];
-    final plan = SubscriptionPlan(
+    // Only the plan's own fields; everything else on the document is left
+    // as it is by the merge in [_AdminPlansViewState._save].
+    final plan = SubscriptionPlan.validityOnly(
       id: e?.id ?? 'plan_${DateTime.now().millisecondsSinceEpoch}',
       name: _name.text.trim(),
-      description: _desc.text.trim(),
-      isDefaultTrial: _isDefaultTrial,
+      description: e?.description ?? '',
       validityDays: int.parse(_days.text.trim()),
-      price: 0.0,
+      price: double.tryParse(_price.text.trim()) ?? 0.0,
       billingCycle: _cycle,
-      maxOutlets: int.parse(_outlets.text.trim()),
-      maxUsers: int.parse(_users.text.trim()),
-      maxDevices: devices,
-      // Legacy fields: carried through unchanged, never edited here.
-      tableCount: e?.tableCount ?? 15,
-      operatingMode: e?.operatingMode ?? 'dineFirstPostpaid',
-      allowedRoles: roles,
-      features: e?.features ?? const {},
-      createdAt: e?.createdAt,
+      isDefaultTrial: _isDefaultTrial,
     );
     Navigator.pop(context, plan);
   }

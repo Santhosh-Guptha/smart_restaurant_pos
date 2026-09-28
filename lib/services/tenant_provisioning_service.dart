@@ -4,9 +4,10 @@ import 'package:flutter/foundation.dart';
 import 'package:bcrypt/bcrypt.dart';
 import '../core/subscription_plan_model.dart';
 import '../core/entitlements.dart';
+import '../core/license_composer.dart';
 import '../core/package_model.dart';
-import '../core/saas_models.dart';
 import 'apps_script_backend_service.dart';
+import 'package_service.dart';
 import 'smtp_email_service.dart';
 import 'whatsapp_notification_service.dart';
 
@@ -56,67 +57,92 @@ class TenantProvisioningService {
     String? settlementUpiId,
     String? username,
     String? planProfile,
-    /// Which package and plan composed [plan]. Recorded on the licence so the
-    /// console can show and re-apply them; the app never reads either.
+    /// Which package and plan the tenant is put on. The package is composed
+    /// here ([alignedPackageId], then [LicenseComposer.compose]); the plan
+    /// only sets the dates.
     String? packageId,
     String? planId,
+    /// The requested tier (`offline`, `basic`, `standard`, `premium`,
+    /// `enterprise`), used when [packageId] does not name a package.
+    String? tier,
+    /// Devices / outlets / users for an Enterprise tenant (or with
+    /// [adminOverride]); ignored for every other tier.
+    TierLimits? limits,
+    bool adminOverride = false,
   }) async {
     final cleanEmail = email.trim().toLowerCase();
     final cleanCategory = category?.trim().isNotEmpty == true ? category!.trim() : 'Restaurant & Cafe';
     final vertical = Verticals.forCategory(cleanCategory);
 
-    // ── Entitlement alignment ─────────────────────────────────────────────
-    // The licence is written through the same resolver the app reads with, so
-    // a tenant can never be created in a shape the app refuses to run: an
-    // offline store gets one device, one outlet and no cloud keys whatever was
-    // ticked; a dependant is never on without its parent; the profile id is
-    // recorded so the console shows the right starting point.
+    // ── Package, then licence ────────────────────────────────────────────
+    // A licence is one package plus one plan (docs/PLATFORM_STRUCTURE.md):
+    // the package decides the tier, features, limits and roles; the plan only
+    // the dates. Offline storage is always the trade's Offline package
+    // (`<trade>_offline`); otherwise the requested tier's package for this
+    // trade (Basic when nothing says otherwise), or the admin's own package
+    // when it fits the trade and the storage family. Everything goes through
+    // the same composer the console and the app's resolver use, so a tenant
+    // can never be created in a shape the app would read differently.
     final resolvedMode = StorageModes.all.contains(storageMode.toUpperCase())
         ? storageMode.toUpperCase()
         : StorageModes.clientsOwnSheets;
-    final requestedProfile = PlanProfile.byId(planProfile ?? _deriveProfileId(plan, resolvedMode));
-    // The starter must fit the trade (PlanProfile.alignedFor): a pharmacy
-    // approved on the bare till could not scan a barcode, and its welcome
-    // e-mail listed tables and kitchen tickets.
-    var profile = PlanProfile.alignedFor(requestedProfile, vertical);
-    // An offline shop only uses offline features: Shop counter, whatever
-    // package the trial plan names.
-    if (StorageModes.isOffline(resolvedMode) && Verticals.isShop(vertical)) profile = PlanProfile.offlineRetail;
-    final packageRealigned = profile.id != requestedProfile.id;
-    if (packageRealigned) packageId = profile.id;
-    final probe = SaasLicense(
-      planTier: plan.billingCycle,
-      planProfile: profile.id,
-      status: 'ACTIVE',
-      maxFranchises: plan.maxOutlets,
-      maxUsers: plan.maxUsers,
-      maxDevices: plan.maxDevices,
-      // A realigned starter keeps none of the old package's "off" for its own keys.
-      features: Map<String, bool>.from(plan.features)
-        ..removeWhere((k, v) => packageRealigned && v == false && profile.extraKeys.contains(k)),
-      startDate: DateTime.now(),
-      endDate: DateTime.now().add(Duration(days: plan.validityDays)),
+    final offline = StorageModes.isOffline(resolvedMode);
+    final requestedTier = PackageTier.tryParse(tier);
+    final targetPackageId = alignedPackageId(
       vertical: vertical,
+      storageMode: resolvedMode,
+      packageId: packageId,
+      tier: requestedTier,
+      planProfile: planProfile,
     );
-    final resolved = Entitlements.fromLicense(probe, storageMode: resolvedMode, vertical: vertical);
-    final alignedFeatures = <String, bool>{
-      for (final def in FeatureCatalog.all) def.key: resolved.isEnabled(def.key),
-      FeatureKeys.pureOfflineMode: resolved.isPureOffline,
+    final fallbackTier = offline
+        ? PackageTier.offline
+        : (PackageTier.fromStarterId(targetPackageId) ??
+            (requestedTier != null && !requestedTier.isOffline ? requestedTier : PackageTier.basic));
+    var package = await PackageService.getById(targetPackageId) ?? PackageCatalog.starter(vertical, fallbackTier);
+    // A package of the other storage family or of another trade is never
+    // written for this tenant: its own trade's package at the same tier is.
+    if (package.isOffline != offline ||
+        (!Verticals.isAny(package.vertical) && package.vertical != vertical)) {
+      package = PackageCatalog.starter(
+        vertical,
+        offline ? PackageTier.offline : (package.tier.isOffline ? PackageTier.basic : package.tier),
+      );
+    }
+    // Keys the caller switched on over the package are add-ons; the composer
+    // keeps only those this trade, storage and device count allow.
+    final addOns = <String>{
+      for (final e in plan.features.entries)
+        if (e.value && package.features[e.key] != true && FeatureCatalog.find(e.key) != null) e.key,
     };
-    final alignedDevices = resolved.maxDevices;
-    final alignedOutlets = resolved.maxOutlets;
-    storageMode = resolvedMode;
+    // Limits come from the package's tier. Only Enterprise (or an explicit
+    // admin override) takes the caller's: [limits], else the counts on the
+    // plan object older console builds put them in.
+    final customLimits = limits ??
+        ((package.tier.allowsCustomLimits || adminOverride)
+            ? TierLimits(maxDevices: plan.maxDevices, maxOutlets: plan.maxOutlets, maxUsers: plan.maxUsers).clamped
+            : null);
+    final composed = LicenseComposer.compose(
+      package,
+      plan,
+      currentStorageMode: resolvedMode,
+      vertical: vertical,
+      limits: customLimits,
+      adminOverride: adminOverride,
+      addOns: addOns,
+    );
+    final alignedFeatures = composed.features;
+    final alignedDevices = composed.maxDevices;
+    final alignedOutlets = composed.maxOutlets;
+    final alignedUsers = composed.maxUsers;
+    storageMode = composed.storageMode;
     final cleanName = clientName.trim();
     final cleanShopName = shopName.trim().isNotEmpty
         ? shopName.trim()
         : "$cleanName ${_fallbackShopSuffix(vertical)}";
-    // A shop has no kitchen and no tables: the Kitchen and Waiter roles open
-    // nothing on its dashboard, so they are not written into its licence.
-    final provisionedRoles = Verticals.isShop(vertical)
-        ? plan.allowedRoles
-            .where((r) => r.toUpperCase() != 'WAITER' && r.toUpperCase() != 'KITCHEN')
-            .toList()
-        : plan.allowedRoles;
+    // Roles come from the trade and tier (LicenseComposer.rolesFor, in
+    // composed.allowedRoles): offline is the owner only; a shop never gets
+    // the kitchen or waiter role.
     final cleanMobile = mobile.trim();
     final candidateUsername = (username != null && username.trim().isNotEmpty)
         ? username.trim().toLowerCase().replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '')
@@ -200,25 +226,15 @@ class TenantProvisioningService {
       });
 
       // 6. Create License Document
-      final endDate = DateTime.now().add(Duration(days: plan.validityDays));
+      final endDate = composed.endDate;
       await _firestore.collection('licenses').doc(orgId).set({
-        if (packageId != null && packageId.isNotEmpty) 'packageId': packageId,
+        // packageId, tier, limits, roles and features from the composed
+        // package; the plan's name and cycle; dates stamped here.
+        ...composed.toLicenseFields(),
         if (planId != null && planId.isNotEmpty) 'planId': planId,
-        'planTier': plan.billingCycle,
-        'planName': plan.name,
-        'planProfile': profile.id,
-        'status': 'ACTIVE',
-        'storageMode': storageMode,
         'vertical': vertical,
         'startDate': FieldValue.serverTimestamp(),
         'endDate': Timestamp.fromDate(endDate),
-        'maxFranchises': alignedOutlets,
-        'maxUsers': plan.maxUsers,
-        'maxDevices': alignedDevices,
-        'allowedRoles': provisionedRoles,
-        'features': alignedFeatures,
-        'featuresResolvedFor': vertical,
-        'expiryWarningDays': 3,
         'createdAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
       });
@@ -227,13 +243,13 @@ class TenantProvisioningService {
       // Legacy mirror — read only by builds predating the resolver.
       await _firestore.collection('features').doc(orgId).set({
         'features': alignedFeatures,
-        'planProfile': profile.id,
+        'planProfile': package.nearestProfile.id,
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
       await _firestore.collection('limits').doc(orgId).set({
         'maxFranchises': alignedOutlets,
-        'maxUsers': plan.maxUsers,
+        'maxUsers': alignedUsers,
         'maxDevices': alignedDevices,
         'updatedAt': FieldValue.serverTimestamp(),
       });
@@ -392,7 +408,7 @@ class TenantProvisioningService {
           'organizationId': orgId,
           'userId': newUserId,
           'actionType': 'TENANT_PROVISIONED',
-          'details': 'Tenant $cleanShopName ($orgId) onboarded with plan "${plan.name}".',
+          'details': 'Tenant $cleanShopName ($orgId) onboarded on ${package.name} with plan "${plan.name}".',
           'timestamp': FieldValue.serverTimestamp(),
         });
       } catch (auditErr) {
@@ -406,6 +422,8 @@ class TenantProvisioningService {
         'email': cleanEmail,
         'outletId': primaryOutletId,
         'planName': plan.name,
+        'packageId': package.id,
+        'tier': composed.tier.id,
         'validityDays': plan.validityDays,
         'message': 'Tenant $cleanShopName ($orgId) provisioned successfully.',
       };
@@ -418,19 +436,42 @@ class TenantProvisioningService {
     }
   }
 
-  /// Picks the profile a plan's toggles most resemble. Ids are the four the
-  /// console offers; nothing new is invented here.
-  static String _deriveProfileId(SubscriptionPlan plan, String storageMode) {
-    final on = plan.features.entries.where((e) => e.value).map((e) => e.key).toSet();
-    bool anyOf(CommercialTier tier) =>
-        FeatureCatalog.byTier(tier).any((d) => on.contains(d.key));
-    if (StorageModes.isOffline(storageMode)) {
-      return anyOf(CommercialTier.offlineAddOn)
-          ? PlanProfile.offlineDineIn.id
-          : PlanProfile.offlineSingle.id;
+  /// The package a new tenant is put on (docs/PLATFORM_STRUCTURE.md §3):
+  ///
+  /// * offline storage -> the trade's Offline package (`<trade>_offline`);
+  /// * an explicit [tier] with no package, a starter id or a legacy profile
+  ///   id -> the trade's package at [tier];
+  /// * a starter id (`kirana_standard`, possibly another trade's) -> this
+  ///   trade's package at that tier (an offline starter on cloud storage is
+  ///   Basic);
+  /// * a legacy profile id (`CONNECTED`, ...) -> this trade's package at the
+  ///   tier it reads as;
+  /// * no package at all -> this trade's Basic package;
+  /// * any other id (a package the admin made) -> kept as it is.
+  static String alignedPackageId({
+    required String vertical,
+    required String storageMode,
+    String? packageId,
+    PackageTier? tier,
+    String? planProfile,
+  }) {
+    final v = Verticals.isValid(vertical) ? vertical.trim().toLowerCase() : Verticals.restaurant;
+    if (StorageModes.isOffline(storageMode)) return PackageCatalog.starterId(v, PackageTier.offline);
+    final asked = (tier != null && !tier.isOffline) ? tier : null;
+    final id = (packageId ?? '').trim();
+    if (id.isEmpty) return PackageCatalog.starterId(v, asked ?? PackageTier.basic);
+    final fromId = PackageTier.fromStarterId(id);
+    if (fromId != null) {
+      return PackageCatalog.starterId(v, asked ?? (fromId.isOffline ? PackageTier.basic : fromId));
     }
-    return anyOf(CommercialTier.onlineAddOn)
-        ? PlanProfile.omnichannel.id
-        : PlanProfile.connected.id;
+    if (PackageCatalog.isLegacyId(id)) {
+      final inferred = PackageTier.fromPackageOrProfile(
+        packageId: id,
+        profileId: planProfile,
+        storageMode: storageMode,
+      );
+      return PackageCatalog.starterId(v, asked ?? (inferred.isOffline ? PackageTier.basic : inferred));
+    }
+    return id;
   }
 }

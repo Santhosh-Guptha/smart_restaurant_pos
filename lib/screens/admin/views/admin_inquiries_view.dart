@@ -3,8 +3,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../core/classic_theme.dart';
+import '../../../core/entitlements.dart';
+import '../../../core/package_model.dart';
 import '../../../utils/ui_feedback.dart';
 import '../admin_models.dart';
+import '../widgets/tenant_package_editor.dart';
+import '../widgets/tier_visuals.dart';
 
 /// Redesigned, perfectly aligned Website Inquiries & Pricing Leads desk.
 /// Features dual-feed support for Commercial Plan inquiries and Free Trial registrations,
@@ -13,6 +17,15 @@ class AdminInquiriesView extends ConsumerStatefulWidget {
   final Function(UnifiedClientLead lead)? onOnboardLead;
 
   const AdminInquiriesView({super.key, this.onOnboardLead});
+
+  /// The tier a lead is approved on: this trade's package at the tier they
+  /// asked for — Offline when they asked to run offline, Basic otherwise
+  /// ([LicenceEdits.requestedTier]). The plan (validity) is chosen when
+  /// onboarding, and the licence is composed from the two.
+  static PackageTier leadTier(UnifiedClientLead lead) => LicenceEdits.requestedTier({
+        ...lead.rawData,
+        if ((lead.requestedPackageId ?? '').isNotEmpty) 'requestedPackageId': lead.requestedPackageId,
+      });
 
   @override
   ConsumerState<AdminInquiriesView> createState() => _AdminInquiriesViewState();
@@ -534,6 +547,7 @@ class _AdminInquiriesViewState extends ConsumerState<AdminInquiriesView> {
                           lead.businessCategory,
                           style: TextStyle(fontSize: 12, color: context.textSecondary),
                         ),
+                        _tierChip(lead),
                         if (lead.outlets.isNotEmpty)
                           Text('• ${lead.outlets}', style: TextStyle(fontSize: 12, color: context.textSecondary)),
                         if (lead.stations.isNotEmpty)
@@ -735,6 +749,29 @@ class _AdminInquiriesViewState extends ConsumerState<AdminInquiriesView> {
               ),
             ],
           ),
+        ],
+      ),
+    );
+  }
+
+  /// `<Trade> · <Tier>`: the package approving this lead puts them on.
+  Widget _tierChip(UnifiedClientLead lead) {
+    final tier = AdminInquiriesView.leadTier(lead);
+    final color = TierVisuals.color(tier);
+    final trade = Verticals.shortLabel(Verticals.forCategory(lead.businessCategory));
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(
+        color: TierVisuals.tint(tier),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(TierVisuals.icon(tier), size: 12, color: color),
+          const SizedBox(width: 4),
+          Text('$trade \u00b7 ${tier.label}',
+              style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.bold)),
         ],
       ),
     );

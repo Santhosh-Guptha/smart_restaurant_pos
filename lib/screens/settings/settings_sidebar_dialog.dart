@@ -8,6 +8,7 @@ import '../../core/classic_theme.dart';
 import '../../core/entitlements.dart';
 import '../../providers/entitlements_provider.dart';
 import '../../core/vertical_labels.dart';
+import '../../core/package_model.dart';
 import '../../core/rbac_permissions.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/restaurant_auth_provider.dart';
@@ -436,13 +437,39 @@ class _SettingsSidebarDialogState extends ConsumerState<SettingsSidebarDialog> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text('License Plan:', style: TextStyle(fontSize: 13, color: context.textSecondary)),
-                      Text(
-                        license?.planTier ?? 'Enterprise Pro',
-                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: ClassicTheme.secondaryAccent),
+                      Text('Package:', style: TextStyle(fontSize: 13, color: context.textSecondary)),
+                      Flexible(
+                        child: Builder(builder: (_) {
+                          final ent = ref.watch(entitlementsProvider);
+                          return Text(
+                            PackageCatalog.nameFor(ent.vertical, ent.tier),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.end,
+                            style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: ClassicTheme.secondaryAccent),
+                          );
+                        }),
                       ),
                     ],
                   ),
+                  if (license != null) ...[
+                    const Divider(height: 16),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text('Valid till:', style: TextStyle(fontSize: 13, color: context.textSecondary)),
+                        Text(
+                          '${license.endDate.day.toString().padLeft(2, '0')}/'
+                          '${license.endDate.month.toString().padLeft(2, '0')}/${license.endDate.year}',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                            color: license.isExpired ? ClassicTheme.dangerRed : context.textPrimary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ],
               ),
             ),

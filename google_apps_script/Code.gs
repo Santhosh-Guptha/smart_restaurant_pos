@@ -3333,9 +3333,10 @@ function handleStartTrial(json) {
       });
     }
 
-    // 4. The trial licence: default package for the category + the default
-    //    trial plan, as the console has them, so an admin edit applies here.
-    var plan = trialPlan_(category);
+    // 4. The trial licence: the trade's tier package (<trade>_<tier>) + the
+    //    default trial plan, composed as LicenseComposer.compose does. The
+    //    plan gives the term only; limits and roles come from the tier.
+    var plan = trialPlan_(category, data);
 
     // 5. Ids. Org id in the console's own format; user id and username as the
     //    console makes them, username de-duplicated the same way.
@@ -3409,23 +3410,27 @@ function handleStartTrial(json) {
       updatedAt: now
     });
 
+    // ComposedLicense.toLicenseFields, field for field.
     fsSet_("licenses/" + orgId, {
       packageId: plan.packageId,
       planId: plan.planId,
       packageName: plan.packageName,
-      planTier: plan.billingCycle,
-      planName: plan.name,
+      planTier: plan.planTier,
+      planName: plan.planName,
       planProfile: plan.planProfile,
       status: "ACTIVE",
       storageMode: plan.storageMode,
       vertical: plan.vertical,
       startDate: now,
       endDate: endDate,
-      maxFranchises: plan.maxOutlets,
+      maxFranchises: plan.maxFranchises,
       maxUsers: plan.maxUsers,
       maxDevices: plan.maxDevices,
       allowedRoles: plan.allowedRoles,
       features: plan.features,
+      featuresResolvedFor: plan.featuresResolvedFor,
+      tier: plan.tier,
+      limitsCustom: plan.limitsCustom,
       expiryWarningDays: 3,
       createdAt: now,
       updatedAt: now
@@ -3503,20 +3508,16 @@ function handleStartTrial(json) {
     try {
       MailApp.sendEmail({
         to: email,
-        subject: "Welcome to SmartBizz POS — Your 14-Day Free Trial Account",
+        subject: "Welcome to SmartBizz POS — Your " + plan.validityDays + "-Day Free Trial Account",
         body: "Hello " + clientName + ",\n\n" +
-              "Your 14-day free trial of SmartBizz POS is ready.\n\n" +
+              "Your " + plan.validityDays + "-day free trial of SmartBizz POS is ready.\n\n" +
               "Organization ID: " + orgId + "\n" +
               "Login Email: " + email + "\n" +
               (proofOk
                 ? "Sign in with the password you chose.\n\n"
                 : "Temporary Password: " + tempPassword + "\n\n" +
                   "Open the app and sign in. You will be asked to set your own password on first sign-in.\n\n") +
-              "Your trial is the " + plan.packageName + " plan: " +
-              (plan.planProfile === "OFFLINE_RETAIL" ? "barcode billing, customer khata, expenses, "
-                : plan.planProfile === "OFFLINE_SINGLE" ? "counter billing, inventory, "
-                : "billing, tables, running tabs, kitchen tickets, ") +
-              "receipt printing and day-end reports, on one device, with everything kept on that device.\n\n" +
+              trialPackageText_(plan) +
               "Best regards,\nSmartBizz Support Team"
       });
     } catch (eMail) {
@@ -3546,29 +3547,337 @@ function handleStartTrial(json) {
 }
 
 /**
- * The trial licence, composed the way the console composes every licence:
- * one *package* (what the tenant can do: features + storage mode) and one
- * *plan* (for how long, how many outlets, devices and staff, which roles).
- * Mirrors LicenseComposer.compose in lib/core/license_composer.dart.
+ * ─────────────────────────────────────────────────────────────────────────────
+ * Package x plan = licence. The JavaScript twin of lib/core/entitlements.dart
+ * (FeatureCatalog, PackageTier, TierLimits), lib/core/package_model.dart
+ * (PackageCatalog.featuresFor, starter ids `<trade>_<tier>`) and
+ * lib/core/license_composer.dart (LicenseComposer.compose / rolesFor,
+ * ComposedLicense.toLicenseFields). docs/PLATFORM_STRUCTURE.md is the
+ * contract. Change one, change the other.
  *
- *  - package: packages/<Verticals.defaultPackageFor(category)>, which is
- *    OFFLINE_DINE_IN for every category today. Seeded when the platform
- *    console opens; a code fallback stands in if the document is missing.
- *  - plan: the subscription_plans document flagged isDefaultTrial, else
- *    subscription_plans/trial, else a 14-day fallback.
- *
- * The clamps are the resolver's: an offline package means one device, one
- * outlet, no cloud or online-tier key, and no waiter or kitchen role.
+ * A plan contributes ONLY its validity (and its name / billing cycle). Its
+ * legacy maxDevices / maxUsers / maxOutlets / allowedRoles / features fields
+ * are ignored. Limits come from the tier (or the package document's stored
+ * limits); an offline licence is always 1 device, 1 outlet, 1 user, OWNER.
+ * ─────────────────────────────────────────────────────────────────────────────
  */
-function trialPlan_(businessCategory) {
-  // Shops start on "Shop counter" (OFFLINE_RETAIL) exactly as the app's
-  // Verticals.defaultPackageFor does. They used to get OFFLINE_SINGLE, the
-  // bare till, so a web-trial kirana could not scan a barcode or open the
-  // khata the website promised it.
+var TRADES_ = ["restaurant", "kirana", "supermarket", "pharmacy", "retail"];
+var SHOP_TRADES_ = { kirana: true, supermarket: true, pharmacy: true, retail: true };
+var TIERS_ = ["offline", "basic", "standard", "premium", "enterprise"];
+var TIER_LABELS_ = { offline: "Offline", basic: "Basic", standard: "Standard", premium: "Premium", enterprise: "Enterprise" };
+var TRADE_LABELS_ = { restaurant: "Restaurant", kirana: "Kirana", supermarket: "Supermarket", pharmacy: "Pharmacy", retail: "Retail" };
+
+/** TierLimits: devices / outlets / users per tier (contract §3). */
+var TIER_LIMITS = {
+  offline:    { maxDevices: 1,  maxOutlets: 1,  maxUsers: 1 },
+  basic:      { maxDevices: 2,  maxOutlets: 1,  maxUsers: 3 },
+  standard:   { maxDevices: 5,  maxOutlets: 1,  maxUsers: 10 },
+  premium:    { maxDevices: 10, maxOutlets: 3,  maxUsers: 25 },
+  enterprise: { maxDevices: 20, maxOutlets: 10, maxUsers: 50 }
+};
+
+/**
+ * FeatureCatalog.all, in catalogue order. tier: ob = offlineBasic,
+ * oa = offlineAddOn, nb = onlineBasic, na = onlineAddOn. need: none | cloud |
+ * secondDevice. v: the trades it applies to (empty = every trade).
+ */
+var R_ONLY_ = ["restaurant"];
+var SHOPS_ONLY_ = ["kirana", "supermarket", "pharmacy", "retail"];
+var FEATURE_CATALOG_ = [
+  { key: "billing",               label: "Billing",                        tier: "ob", need: "none", deps: [], v: [] },
+  { key: "qsrBilling",            label: "Counter till",                   tier: "ob", need: "none", deps: ["billing"], v: [] },
+  { key: "menuManagement",        label: "Menu",                           tier: "ob", need: "none", deps: [], v: [] },
+  { key: "thermalPrinting",       label: "Receipt printing",               tier: "ob", need: "none", deps: [], v: [] },
+  { key: "storeConfiguration",    label: "Store settings",                 tier: "ob", need: "none", deps: [], v: [] },
+  { key: "dayEndReports",         label: "Shift & day-end",                tier: "ob", need: "none", deps: ["billing"], v: [] },
+  { key: "staffManagement",       label: "Staff & roles",                  tier: "ob", need: "none", deps: [], v: [] },
+  { key: "backupRestore",         label: "Backup & restore",               tier: "ob", need: "none", deps: [], v: [] },
+  { key: "dineInBilling",         label: "Running tabs (dine-in billing)", tier: "oa", need: "none", deps: ["billing"], v: R_ONLY_ },
+  { key: "tableManagement",       label: "Tables & floor plan",            tier: "oa", need: "none", deps: [], v: R_ONLY_ },
+  { key: "reservations",          label: "Reservations",                   tier: "oa", need: "none", deps: ["tableManagement"], v: R_ONLY_ },
+  { key: "dualPrinting",          label: "Kitchen ticket printing",        tier: "oa", need: "none", deps: ["thermalPrinting"], v: R_ONLY_ },
+  { key: "expenseManagement",     label: "Expenses",                       tier: "oa", need: "none", deps: [], v: [] },
+  { key: "analytics",             label: "Sales analytics",                tier: "oa", need: "none", deps: [], v: [] },
+  { key: "cloudSync",             label: "Cloud ledger",                   tier: "nb", need: "cloud", deps: [], v: [] },
+  { key: "emailReceipts",         label: "E-mail receipts",                tier: "na", need: "cloud", deps: ["cloudSync"], v: [] },
+  { key: "kdsEnabled",            label: "Kitchen display",                tier: "na", need: "secondDevice", deps: [], v: R_ONLY_ },
+  { key: "waiterOrdering",        label: "Waiter order taking",            tier: "na", need: "secondDevice", deps: ["tableManagement", "dineInBilling"], v: R_ONLY_ },
+  { key: "onlineMenu",            label: "Online menu",                    tier: "na", need: "cloud", deps: ["cloudSync"], v: R_ONLY_ },
+  { key: "qrOrdering",            label: "QR table ordering",              tier: "na", need: "cloud", deps: ["onlineMenu", "tableManagement"], v: R_ONLY_ },
+  { key: "onlineOrderingEnabled", label: "Online ordering",                tier: "na", need: "cloud", deps: ["onlineMenu"], v: R_ONLY_ },
+  { key: "multiOutlet",           label: "Multiple outlets",               tier: "na", need: "cloud", deps: ["cloudSync"], v: [] },
+  { key: "inventoryEnabled",      label: "Stock & recipes",                tier: "na", need: "cloud", deps: ["menuManagement"], v: R_ONLY_ },
+  { key: "barcodeBilling",        label: "Barcode billing",                tier: "oa", need: "none", deps: [], v: SHOPS_ONLY_ },
+  { key: "customerKhata",         label: "Customer khata",                 tier: "oa", need: "none", deps: [], v: SHOPS_ONLY_ },
+  { key: "stockManagement",       label: "Stock management",               tier: "oa", need: "none", deps: [], v: SHOPS_ONLY_ }
+];
+
+/** FeatureCatalog.comingSoon: never switched on, never offered. */
+var COMING_SOON_ = { inventoryEnabled: true };
+
+/** A trade id, or restaurant for anything that is not one (PackageCatalog._trade). */
+function trade_(vertical) {
+  var v = String(vertical || "").trim().toLowerCase();
+  return TRADES_.indexOf(v) >= 0 ? v : "restaurant";
+}
+
+/** A tier id (id or label, any case), or null (PackageTier.tryParse). */
+function tierParse_(value) {
+  var v = String(value || "").trim().toLowerCase();
+  return TIERS_.indexOf(v) >= 0 ? v : null;
+}
+
+/** The tier named by a starter id `<trade>_<tier>`, or null (PackageTier.fromStarterId). */
+function tierFromStarterId_(packageId) {
+  var t = String(packageId || "").trim().toLowerCase();
+  var i = t.lastIndexOf("_");
+  if (i <= 0 || i === t.length - 1) return null;
+  if (TRADES_.indexOf(t.substring(0, i)) < 0) return null;
+  return tierParse_(t.substring(i + 1));
+}
+
+function tierAtLeast_(tier, other) { return TIERS_.indexOf(tier) >= TIERS_.indexOf(other); }
+
+function featureApplies_(def, vertical) {
+  return def.v.length === 0 || def.v.indexOf(vertical) >= 0;
+}
+
+/**
+ * PackageCatalog.featuresFor(vertical, tier): every catalogue key present;
+ * only keys that apply to the trade may be true; coming-soon keys are false.
+ */
+function featuresFor_(vertical, tier) {
+  var v = trade_(vertical);
+  var t = tierParse_(tier) || "basic";
+  var shop = !!SHOP_TRADES_[v];
+  var standard = tierAtLeast_(t, "standard");
+  var premium = tierAtLeast_(t, "premium");
+  var on = {};
+  FEATURE_CATALOG_.forEach(function (d) { if (d.tier === "ob") on[d.key] = true; });
+  on.expenseManagement = true;
+  on.analytics = true;
+  if (shop) {
+    on.barcodeBilling = true; on.customerKhata = true; on.stockManagement = true;
+  } else {
+    on.dineInBilling = true; on.tableManagement = true; on.reservations = true; on.dualPrinting = true;
+  }
+  if (tierAtLeast_(t, "basic")) on.cloudSync = true;
+  if (standard) on.emailReceipts = true;
+  if (standard && !shop) { on.kdsEnabled = true; on.waiterOrdering = true; }
+  if (premium) on.multiOutlet = true;
+  if (premium && !shop) { on.onlineMenu = true; on.qrOrdering = true; on.onlineOrderingEnabled = true; }
+  var out = {};
+  FEATURE_CATALOG_.forEach(function (d) {
+    out[d.key] = on[d.key] === true && featureApplies_(d, v) && !COMING_SOON_[d.key];
+  });
+  return out;
+}
+
+/**
+ * The resolver's clamps on a raw map (TenantPackage.normalise plus the
+ * Entitlements device clamp): trade-applicable keys only, nothing coming soon,
+ * no cloud or online-tier key offline, no second-device key on one device,
+ * dependencies to a fixed point. Every catalogue key present.
+ */
+function normaliseFeatures_(raw, vertical, offline, maxDevices) {
+  var v = trade_(vertical);
+  var out = {};
+  FEATURE_CATALOG_.forEach(function (d) {
+    var on = !!raw && raw[d.key] === true;
+    if (offline && (d.need !== "none" || d.tier === "nb" || d.tier === "na")) on = false;
+    if (!featureApplies_(d, v)) on = false;
+    if (COMING_SOON_[d.key]) on = false;
+    if (maxDevices <= 1 && d.need === "secondDevice") on = false;
+    out[d.key] = on;
+  });
+  var changed = true;
+  while (changed) {
+    changed = false;
+    FEATURE_CATALOG_.forEach(function (d) {
+      if (out[d.key] !== true) return;
+      for (var i = 0; i < d.deps.length; i++) {
+        if (out[d.deps[i]] !== true) { out[d.key] = false; changed = true; return; }
+      }
+    });
+  }
+  return out;
+}
+
+/**
+ * LicenseComposer.rolesFor: offline -> OWNER only; a shop -> OWNER, MANAGER,
+ * BILLING; a restaurant on Standard or above with more than one device also
+ * WAITER and KITCHEN.
+ */
+function rolesFor_(vertical, tier, maxDevices) {
+  var t = tierParse_(tier) || "basic";
+  if (t === "offline") return ["OWNER"];
+  var shop = !!SHOP_TRADES_[String(vertical || "").trim().toLowerCase()];
+  var roles = ["OWNER", "MANAGER", "BILLING"];
+  if (!shop && tierAtLeast_(t, "standard") && Number(maxDevices) > 1) roles.push("WAITER", "KITCHEN");
+  return roles;
+}
+
+/** PackageTier.profileFor: the legacy profile id the resolver falls back to. */
+function profileFor_(vertical, tier) {
+  var t = tierParse_(tier) || "basic";
+  if (t === "offline") return SHOP_TRADES_[trade_(vertical)] ? "OFFLINE_RETAIL" : "OFFLINE_DINE_IN";
+  if (t === "basic" || t === "standard") return "CONNECTED";
+  return "OMNICHANNEL";
+}
+
+/** "Features available for Pharmacy — Basic" (contract §3). */
+function packageHeading_(vertical, tier) {
+  return "Features available for " + TRADE_LABELS_[trade_(vertical)] + " — " + TIER_LABELS_[tierParse_(tier) || "basic"];
+}
+
+/** FeatureDef.labelFor: the name a customer of this trade sees. */
+function featureLabelFor_(def, vertical) {
+  var v = trade_(vertical);
+  if (v === "restaurant") return def.label;
+  if (def.key === "menuManagement") return v === "pharmacy" ? "Medicines & pricing" : "Products & pricing";
+  if (def.key === "multiOutlet") return "Multiple stores";
+  if (def.key === "stockManagement" && v === "pharmacy") return "Stock with batches and expiry";
+  return def.label;
+}
+
+/** The names of the keys on in [features], in catalogue order, worded for the trade. */
+function featureNamesFor_(features, vertical) {
+  var v = trade_(vertical);
+  var names = [];
+  FEATURE_CATALOG_.forEach(function (d) {
+    if (features && features[d.key] === true && featureApplies_(d, v)) names.push(featureLabelFor_(d, v));
+  });
+  return names;
+}
+
+/** Contract §7 wording. */
+var DRIVE_NOTICE_ = "Your business data stays in your own Google Drive. We do not take your business data; " +
+  "only limited usage analytics such as bill counts are collected.";
+var OFFLINE_NOTICE_ = "Works securely on your device without depending on the cloud.";
+
+/**
+ * LicenseComposer.compose for a trade's tier package and a plan.
+ *
+ *  vertical  the tenant's trade (anything else reads as restaurant)
+ *  tier      offline | basic | standard | premium | enterprise
+ *  planDoc   a subscription_plans document (or {}): only validityDays, name
+ *            and billingCycle are read
+ *  opts      { planId, startDate, packageDoc (packages/<trade>_<tier>, when
+ *            read), limits {maxDevices,maxOutlets,maxUsers} (honoured on
+ *            Enterprise or with adminOverride), adminOverride, status }
+ *
+ * Returns the licenses/{orgId} fields (ComposedLicense.toLicenseFields) plus
+ * validityDays for the caller.
+ */
+function composeLicence_(vertical, tier, planDoc, opts) {
+  opts = opts || {};
+  planDoc = planDoc || {};
+  var v = trade_(vertical);
+  var t = tierParse_(tier) || "basic";
+  var offline = t === "offline";
+  var pkg = opts.packageDoc || null;
+
+  // Limits: the package's stored limits, else the tier's defaults. Custom
+  // only on Enterprise or an explicit admin override. Offline is fixed.
+  var def = TIER_LIMITS[t];
+  var lim = { maxDevices: def.maxDevices, maxOutlets: def.maxOutlets, maxUsers: def.maxUsers };
+  var limitsCustom = false;
+  if (offline) {
+    lim = { maxDevices: 1, maxOutlets: 1, maxUsers: 1 };
+  } else {
+    if (pkg) {
+      ["maxDevices", "maxOutlets", "maxUsers"].forEach(function (k) {
+        if (Number(pkg[k]) >= 1) lim[k] = Math.floor(Number(pkg[k]));
+      });
+    }
+    var req = opts.limits;
+    if (req && (t === "enterprise" || opts.adminOverride === true)) {
+      var c = {};
+      ["maxDevices", "maxOutlets", "maxUsers"].forEach(function (k) {
+        var n = Number(req[k]);
+        c[k] = n >= 1 ? Math.floor(n) : (n < 1 && req[k] != null ? 1 : lim[k]);
+      });
+      limitsCustom = c.maxDevices !== lim.maxDevices || c.maxOutlets !== lim.maxOutlets || c.maxUsers !== lim.maxUsers;
+      lim = c;
+    }
+  }
+
+  // Features: the package document's map when it was read (an admin edit
+  // applies), else the trade table; either way through the resolver's clamps.
+  var raw = (pkg && pkg.features && typeof pkg.features === "object") ? pkg.features : featuresFor_(v, t);
+  var features = normaliseFeatures_(raw, v, offline, lim.maxDevices);
+  features.pureOfflineMode = offline;
+
+  var validityDays = Number(planDoc.validityDays) >= 1 ? Math.floor(Number(planDoc.validityDays)) : 14;
+  var start = opts.startDate instanceof Date ? opts.startDate : new Date();
+  var end = new Date(start.getTime() + validityDays * 86400000);
+  var packageName = String((pkg && pkg.name) || (TRADE_LABELS_[v] + " " + TIER_LABELS_[t]));
+
+  return {
+    packageId: v + "_" + t,
+    planId: String(opts.planId || ""),
+    planTier: String(planDoc.billingCycle || "TRIAL"),
+    planName: String(planDoc.name || "Free Trial (" + validityDays + " Days)"),
+    packageName: packageName,
+    planProfile: profileFor_(v, t),
+    status: String(opts.status || "ACTIVE"),
+    storageMode: offline ? "PURE_OFFLINE" : "CLIENTS_OWN_SHEETS",
+    startDate: start,
+    endDate: end,
+    maxFranchises: lim.maxOutlets,
+    maxUsers: offline ? 1 : lim.maxUsers,
+    maxDevices: lim.maxDevices,
+    allowedRoles: rolesFor_(v, t, lim.maxDevices),
+    features: features,
+    featuresResolvedFor: v,
+    tier: t,
+    limitsCustom: limitsCustom,
+    vertical: v,
+    expiryWarningDays: 3,
+    validityDays: validityDays
+  };
+}
+
+/**
+ * The tier a START_TRIAL request asks for. Accepts, newest first:
+ * `tier` / `package_tier` / `packageTier`; `packageId` / `package_id`
+ * (`<trade>_<tier>`, only when it names this trade); `storage_mode` /
+ * `storageMode` (PURE_OFFLINE -> offline, anything else -> basic); the legacy
+ * `plan_profile` / `planProfile` / `selected_option` (OFFLINE_* -> offline,
+ * CONNECTED -> basic, OMNICHANNEL -> premium). Nothing -> offline, as the
+ * app's Verticals.defaultPackageFor does for a trial.
+ */
+function requestedTier_(data, vertical) {
+  data = data || {};
+  var explicit = tierParse_(data.tier || data.package_tier || data.packageTier);
+  if (explicit) return explicit;
+  var pid = String(data.packageId || data.package_id || "").trim().toLowerCase();
+  var fromId = tierFromStarterId_(pid);
+  if (fromId && pid.substring(0, pid.lastIndexOf("_")) === vertical) return fromId;
+  var mode = String(data.storage_mode || data.storageMode || "").trim().toUpperCase();
+  if (mode) return mode === "PURE_OFFLINE" ? "offline" : "basic";
+  var prof = String(data.plan_profile || data.planProfile || data.selected_option || data.selectedOption || "").trim().toUpperCase();
+  if (prof.indexOf("OFFLINE") === 0) return "offline";
+  if (prof === "CONNECTED") return "basic";
+  if (prof === "OMNICHANNEL") return "premium";
+  return "offline";
+}
+
+/**
+ * The trial licence: the trade's tier package (packages/<trade>_<tier> when
+ * the console has seeded it, else the code table) on the default trial plan
+ * (subscription_plans isDefaultTrial, else subscription_plans/trial, else 14
+ * days), composed by composeLicence_. The plan gives the term only.
+ *
+ * Returns the composed licence fields plus the fields handleStartTrial and
+ * smokeTestTrialProvisioning read (name, billingCycle, maxOutlets,
+ * tableCount, operatingMode, validityDays).
+ */
+function trialPlan_(businessCategory, request) {
   var vertical = verticalFor_(businessCategory);
-  var isRetail = vertical !== "restaurant";
-  var packageId = isRetail ? "OFFLINE_RETAIL" : "OFFLINE_DINE_IN";
-  var isRetailSingle = isRetail;
+  var isShop = !!SHOP_TRADES_[vertical];
+  var tier = requestedTier_(request, vertical);
+  var packageId = vertical + "_" + tier;
   var pkg = null;
   var planDoc = null;
   // Blank unless a plan document was actually read: a planId on a licence
@@ -3577,7 +3886,7 @@ function trialPlan_(businessCategory) {
   try {
     pkg = fsGet_("packages/" + packageId);
   } catch (e) {
-    Logger.log("package read failed, using fallback: " + e);
+    Logger.log("package read failed, using the code table: " + e);
   }
   try {
     var hits = fsQueryEq_("subscription_plans", "isDefaultTrial", true, 1);
@@ -3588,66 +3897,34 @@ function trialPlan_(businessCategory) {
   }
   planDoc = planDoc || {};
 
-  var offlineKeys = isRetailSingle ? [
-    "billing", "qsrBilling", "menuManagement", "thermalPrinting", "storeConfiguration",
-    "dayEndReports", "staffManagement", "backupRestore",
-    "barcodeBilling", "customerKhata", "expenseManagement", "analytics", "stockManagement"
-  ] : [
-    "billing", "qsrBilling", "menuManagement", "thermalPrinting", "storeConfiguration",
-    "dayEndReports", "staffManagement", "backupRestore",
-    "dineInBilling", "tableManagement", "reservations", "dualPrinting", "expenseManagement", "analytics"
-  ];
-  var cloudKeys = [
-    "cloudSync", "emailReceipts", "kdsEnabled", "waiterOrdering", "onlineMenu",
-    "qrOrdering", "onlineOrderingEnabled", "multiOutlet", "inventoryEnabled"
-  ];
+  var lic = composeLicence_(vertical, tier, planDoc, { planId: planId, packageDoc: pkg });
+  // Kept for existing readers of this object.
+  lic.name = lic.planName;
+  lic.billingCycle = lic.planTier;
+  lic.maxOutlets = lic.maxFranchises;
+  lic.tableCount = isShop ? 0 : 15;
+  lic.operatingMode = isShop ? "counterPrepaid" : "dineFirstPostpaid";
+  return lic;
+}
 
-  // Package: features and storage mode. Fallback = the OFFLINE_DINE_IN starter.
-  var storageMode = String((pkg && pkg.storageMode) || "PURE_OFFLINE").toUpperCase();
-  var offline = storageMode === "PURE_OFFLINE";
-  var pkgFeatures = (pkg && pkg.features && typeof pkg.features === "object") ? pkg.features : null;
-  var features = {};
-  offlineKeys.forEach(function (k) { features[k] = pkgFeatures ? pkgFeatures[k] === true : true; });
-  cloudKeys.forEach(function (k) { features[k] = (!offline && pkgFeatures) ? pkgFeatures[k] === true : false; });
-  features.pureOfflineMode = offline;
-
-  // Plan: term, outlets, devices, staff, roles.
-  var maxDevices = Number(planDoc.maxDevices) > 0 ? Number(planDoc.maxDevices) : 1;
-  var maxOutlets = Number(planDoc.maxOutlets) > 0 ? Number(planDoc.maxOutlets) : 1;
-  if (offline) { maxDevices = 1; maxOutlets = 1; }
-
-  var allRoles = ["OWNER", "MANAGER", "BILLING", "WAITER", "KITCHEN"];
-  var secondDevice = { WAITER: true, KITCHEN: true };
-  var wanted = Array.isArray(planDoc.allowedRoles) && planDoc.allowedRoles.length
-    ? planDoc.allowedRoles.map(function (r) { return String(r).trim().toUpperCase(); })
-    : ["OWNER", "MANAGER", "BILLING"];
-  var roles = allRoles.filter(function (r) {
-    if (r === "OWNER") return true;
-    if (wanted.indexOf(r) < 0) return false;
-    if (maxDevices <= 1 && secondDevice[r]) return false;
-    return true;
-  });
-
-  return {
-    // Only when the document was read; the seeded starter has this id, and a
-    // licence must never point at a document that is not there.
-    packageId: pkg ? packageId : "",
-    packageName: String((pkg && pkg.name) || (isRetailSingle ? "Shop counter" : "Offline dine-in")),
-    planId: planId,
-    name: String(planDoc.name || "Free Trial (14 Days)"),
-    billingCycle: String(planDoc.billingCycle || "TRIAL"),
-    planProfile: offline ? (isRetailSingle ? "OFFLINE_RETAIL" : "OFFLINE_DINE_IN") : "CONNECTED",
-    vertical: vertical,
-    storageMode: storageMode,
-    validityDays: Number(planDoc.validityDays) > 0 ? Number(planDoc.validityDays) : 14,
-    maxUsers: Number(planDoc.maxUsers) > 0 ? Number(planDoc.maxUsers) : 5,
-    maxOutlets: maxOutlets,
-    maxDevices: maxDevices,
-    tableCount: isRetailSingle ? 0 : (Number(planDoc.tableCount) >= 0 ? Number(planDoc.tableCount) : 15),
-    operatingMode: isRetailSingle ? "counterPrepaid" : String(planDoc.operatingMode || "dineFirstPostpaid"),
-    allowedRoles: roles,
-    features: features
-  };
+/** The welcome e-mail's package paragraph, per trade and tier (contract §3, §7). */
+function trialPackageText_(lic) {
+  var v = trade_(lic.vertical);
+  var shop = !!SHOP_TRADES_[v];
+  var names = featureNamesFor_(lic.features, v);
+  var reach;
+  if (lic.tier === "offline") {
+    reach = "For one device, one store and one user. " + OFFLINE_NOTICE_;
+  } else {
+    var outlets = Number(lic.maxFranchises) || 1;
+    reach = "Up to " + lic.maxDevices + " devices, " + outlets + " " +
+      (outlets === 1 ? (shop ? "store" : "outlet") : (shop ? "stores" : "outlets")) +
+      " and " + lic.maxUsers + " users. " + DRIVE_NOTICE_;
+  }
+  return "Your trial is the " + lic.packageName + " package.\n\n" +
+    packageHeading_(v, lic.tier) + ":\n" +
+    names.map(function (n) { return "  - " + n; }).join("\n") + "\n\n" +
+    reach + "\n\n";
 }
 
 
@@ -5494,6 +5771,14 @@ function handleLicenseLease_(p) {
   var org = fsGet_("organizations/" + orgId) || {};
   var mode = String(org.storageMode || lic.storageMode || "");
   var graceDays = (mode === "PURE_OFFLINE") ? 30 : 7;
+  // Limits as the licence materialised them (composeLicence_ /
+  // LicenseComposer.compose); never re-derived from a plan. Offline is
+  // always one device, one outlet, one user.
+  var leaseOffline = mode === "PURE_OFFLINE" || String(lic.tier || "").toLowerCase() === "offline";
+  function leaseCount(v, d) { var n = Number(v); return n >= 1 ? Math.floor(n) : d; }
+  var leaseDevices = leaseOffline ? 1 : leaseCount(lic.maxDevices, 1);
+  var leaseOutlets = leaseOffline ? 1 : leaseCount(lic.maxFranchises, 1);
+  var leaseUsers = leaseOffline ? 1 : leaseCount(lic.maxUsers, 1);
   function iso(v) { return v instanceof Date ? v.toISOString() : (v ? String(v) : ""); }
   var now = new Date();
   // Fixed key order: the app verifies the exact string it is given.
@@ -5506,7 +5791,12 @@ function handleLicenseLease_(p) {
     endDate: iso(lic.endDate),
     storageMode: mode,
     issuedAt: now.toISOString(),
-    leaseUntil: new Date(now.getTime() + graceDays * 86400000).toISOString()
+    leaseUntil: new Date(now.getTime() + graceDays * 86400000).toISOString(),
+    // Appended after the original keys: older apps read only the ones above.
+    tier: leaseOffline ? "offline" : String(lic.tier || ""),
+    maxDevices: leaseDevices,
+    maxOutlets: leaseOutlets,
+    maxUsers: leaseUsers
   });
   var sig = Utilities.base64Encode(Utilities.computeRsaSha256Signature(payload, pem));
   return responseJson({ success: true, payload: payload, sig: sig });

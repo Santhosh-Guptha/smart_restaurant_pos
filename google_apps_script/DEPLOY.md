@@ -68,3 +68,45 @@ for a human.
 The trial is always **one device, one outlet, PURE_OFFLINE**, whatever the
 `subscription_plans/trial` document says — the app's resolver would clamp it
 the same way.
+
+## 2026-09-28 — Licences follow package x plan (contract alignment)
+
+`Code.gs` now composes every licence it writes the way the app's
+`LicenseComposer.compose` does (`docs/PLATFORM_STRUCTURE.md`):
+
+- **Package = the trade's features at a tier.** New JS twins of the Dart
+  code: `TIER_LIMITS`, `FEATURE_CATALOG_`, `featuresFor_(vertical, tier)`
+  (`PackageCatalog.featuresFor`), `normaliseFeatures_`, `rolesFor_`
+  (`LicenseComposer.rolesFor`), `profileFor_`, `composeLicence_` (the
+  `ComposedLicense.toLicenseFields` fields: `packageId` `<trade>_<tier>`,
+  `planId`, `planName`, `planTier`, `planProfile`, `tier`, `vertical`,
+  `storageMode`, full `features` + `pureOfflineMode`, `featuresResolvedFor`,
+  `maxDevices`, `maxFranchises`, `maxUsers`, `allowedRoles`, `limitsCustom`).
+- **Plan = validity only.** Only `validityDays`, `name` and `billingCycle` are
+  read from `subscription_plans`; legacy `maxDevices` / `maxUsers` /
+  `maxOutlets` / `allowedRoles` / `features` on a plan document are ignored.
+- **Offline is fixed** at 1 device, 1 outlet, 1 user, OWNER only,
+  `PURE_OFFLINE`. Cloud tiers use `CLIENTS_OWN_SHEETS` and the tier's
+  default limits (or the limits stored on `packages/<trade>_<tier>`).
+- **START_TRIAL** picks the tier from the request: `tier` /
+  `package_tier` / `packageTier`, else `packageId` / `package_id` (only when
+  it names the same trade), else `storage_mode` / `storageMode`
+  (`PURE_OFFLINE` -> offline, other -> basic), else legacy `plan_profile` /
+  `planProfile` / `selected_option`. With none of them (today's app and
+  website) the trial is the trade's **Offline** package, as before. The
+  welcome e-mail lists the features "available for <Trade> — <Tier>" from
+  the trade's own feature names, with the contract §7 data wording.
+- **LICENSE_LEASE** appends `tier`, `maxDevices`, `maxOutlets`, `maxUsers`
+  (from the licence, offline clamped to 1/1/1) after the existing payload
+  keys. Older apps ignore them; the signature still covers the whole string.
+- Every action name and response shape is unchanged.
+
+This supersedes "The trial is always one device, one outlet, PURE_OFFLINE"
+above: that is now true of the Offline tier, which remains the trial default.
+
+**To deploy:** paste the new `Code.gs` into the existing Apps Script project
+(`firestore.gs` and `bcrypt.gs` are unchanged), save, run
+`smokeTestTrialProvisioning` once, then **Deploy → Manage deployments → edit
+the existing deployment → New version → Deploy**. Do not create a new
+deployment and do not change the deployment id: the `/exec` URL the app and
+the website use must stay the same.

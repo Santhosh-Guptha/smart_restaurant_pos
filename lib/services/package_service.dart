@@ -228,8 +228,16 @@ class PackageService {
             ((o['pendingStorageChange'] as Map)['status']?.toString() == 'PENDING');
       } catch (_) {}
       if (currentMode.isEmpty) currentMode = StorageModes.cloudSync;
-      // Limits the admin set for this client survive a re-apply.
+      // Limits the admin set for this client survive a re-apply, and so do
+      // the client's own add-ons and switched-off package features: applying
+      // a package changes what the package gives, not what this client chose.
       final custom = d['limitsCustom'] == true;
+      final clientAddOns = <String>{
+        if (d['addOns'] is List) ...(d['addOns'] as List).map((e) => e.toString()),
+      };
+      final clientOff = <String>{
+        if (d['featuresOff'] is List) ...(d['featuresOff'] as List).map((e) => e.toString()),
+      };
       final composed = LicenseComposer.compose(
         p,
         plan,
@@ -243,7 +251,28 @@ class PackageService {
               )
             : null,
         adminOverride: custom,
+        addOns: clientAddOns,
       );
+      final features = Map<String, bool>.from(composed.features);
+      for (final k in clientOff) {
+        final def = FeatureCatalog.find(k);
+        // Core features are never off; a key the package no longer has is
+        // already off.
+        if (def == null || def.tier == CommercialTier.offlineBasic) continue;
+        if (features[k] == true) features[k] = false;
+      }
+      // A dependant never stays on without its parent.
+      var changed = true;
+      while (changed) {
+        changed = false;
+        for (final def in FeatureCatalog.all) {
+          if (features[def.key] != true) continue;
+          if (def.dependsOn.any((dep) => features[dep] != true)) {
+            features[def.key] = false;
+            changed = true;
+          }
+        }
+      }
 
       // A change of storage *family* is requested, never applied here — the
       // owner completes the migration on their device and the mode flips
@@ -268,7 +297,7 @@ class PackageService {
         'packageName': p.name,
         'planProfile': p.nearestProfile.id,
         'storageMode': composed.storageMode,
-        'features': composed.features,
+        'features': features,
         'featuresResolvedFor': composed.featuresResolvedFor,
         'tier': composed.tier.id,
         'limitsCustom': composed.limitsCustom,
@@ -281,7 +310,7 @@ class PackageService {
       }, SetOptions(merge: true));
       // Legacy mirror, one more release.
       batch.set(_db.collection('features').doc(doc.id), {
-        'features': composed.features,
+        'features': features,
         'planProfile': p.nearestProfile.id,
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));

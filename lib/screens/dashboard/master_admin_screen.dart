@@ -38,6 +38,7 @@ import '../admin/views/admin_migrations_view.dart';
 import '../admin/views/admin_business_analytics_view.dart';
 import '../admin/dialogs/tenant_access_dialog.dart';
 import '../admin/widgets/tenant_package_editor.dart';
+import '../admin/widgets/tier_visuals.dart';
 import 'restaurant_home_screen.dart';
 import '../restaurant/branch_management_screen.dart';
 import '../settings/staff_management_screen.dart';
@@ -1049,6 +1050,7 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
                                 requestId: lead.id,
                                 initialPackageId: lead.requestedPackageId,
                                 initialPlanId: lead.requestedPlanId,
+                                initialTier: AdminInquiriesView.leadTier(lead),
                               );
                             },
                           ),
@@ -1884,6 +1886,9 @@ class OrganizationsTab extends ConsumerStatefulWidget {
     String? requestId,
     String? initialPackageId,
     String? initialPlanId,
+    /// The tier the request asked for (AdminInquiriesView.leadTier). Wins
+    /// over what [initialPackageId] implies.
+    PackageTier? initialTier,
   }) async {
     final availablePlans = await SubscriptionPlanService.getAllPlans();
     if (!context.mounted) return;
@@ -1910,71 +1915,36 @@ class OrganizationsTab extends ConsumerStatefulWidget {
 
     final isRestaurantInitial = Verticals.forCategory(businessCategory) == Verticals.restaurant;
 
-    // Selected Dynamic Subscription Plan: Match initialPlanId or initialPackageId if provided
-    SubscriptionPlan selectedPlan;
-    bool matchesNonRestaurant(SubscriptionPlan p) =>
-        p.id.toLowerCase() == 'offline_counter' ||
-        p.id.toLowerCase() == 'offline_single' ||
-        p.name.toLowerCase().contains('counter');
+    // The plan is validity only (docs/PLATFORM_STRUCTURE.md §2): the one the
+    // request named, else the default trial, else the first there is.
+    final wantPlan = (initialPlanId ?? '').trim().toLowerCase();
+    final SubscriptionPlan selectedPlan =
+        availablePlans.where((p) => wantPlan.isNotEmpty && p.id.toLowerCase() == wantPlan).firstOrNull ??
+            availablePlans.where((p) => p.isDefaultTrial).firstOrNull ??
+            (availablePlans.isNotEmpty ? availablePlans.first : SubscriptionPlanService.fallbackTrialPlan);
 
-    if (initialPlanId != null && initialPlanId.trim().isNotEmpty) {
-      final targetPlanId = initialPlanId.trim().toLowerCase();
-      final normalizedId = targetPlanId == 'offline_single' ? 'offline_counter' : targetPlanId;
-      selectedPlan = availablePlans.firstWhere(
-        (p) => p.id.toLowerCase() == normalizedId || p.id.toLowerCase() == targetPlanId,
-        orElse: () => availablePlans.firstWhere(
-          (p) => initialPackageId != null &&
-              initialPackageId.trim().isNotEmpty &&
-              (p.id.toLowerCase() == initialPackageId.trim().toLowerCase() ||
-                  (initialPackageId.trim().toLowerCase() == 'offline_single' && p.id.toLowerCase() == 'offline_counter')),
-          orElse: () => availablePlans.firstWhere(
-            (p) => isRestaurantInitial ? p.isDefaultTrial : matchesNonRestaurant(p),
-            orElse: () => availablePlans.isNotEmpty ? availablePlans.first : SubscriptionPlanService.fallbackTrialPlan,
-          ),
-        ),
-      );
-    } else if (initialPackageId != null && initialPackageId.trim().isNotEmpty) {
-      final targetPkg = initialPackageId.trim().toLowerCase();
-      final normalizedPkg = targetPkg == 'offline_single' ? 'offline_counter' : targetPkg;
-      selectedPlan = availablePlans.firstWhere(
-        (p) => p.id.toLowerCase() == normalizedPkg || p.id.toLowerCase() == targetPkg,
-        orElse: () => availablePlans.firstWhere(
-          (p) => isRestaurantInitial ? p.isDefaultTrial : matchesNonRestaurant(p),
-          orElse: () => availablePlans.isNotEmpty ? availablePlans.first : SubscriptionPlanService.fallbackTrialPlan,
-        ),
-      );
-    } else {
-      selectedPlan = availablePlans.firstWhere(
-        (p) => isRestaurantInitial ? p.isDefaultTrial : matchesNonRestaurant(p),
-        orElse: () => availablePlans.isNotEmpty ? availablePlans.first : SubscriptionPlanService.fallbackTrialPlan,
-      );
-    }
+    int tableCount = isRestaurantInitial ? 15 : 0;
+    String operatingMode = isRestaurantInitial ? 'dineFirstPostpaid' : 'counterPrepaid';
 
-    int tableCount = isRestaurantInitial ? selectedPlan.tableCount : 0;
-    String operatingMode = isRestaurantInitial ? selectedPlan.operatingMode : 'counterPrepaid';
-
-    // Start Package: Match initialPackageId if provided, else vertical default
-    final pkgIdToUse = (initialPackageId != null && initialPackageId.trim().isNotEmpty)
-        ? initialPackageId.trim()
-        : Verticals.defaultPackageFor(businessCategory);
-
-    var startPackage = (await PackageService.getById(pkgIdToUse)) ??
-        (await PackageService.getById(Verticals.defaultPackageFor(businessCategory))) ??
-        TenantPackage.fromProfile(PlanProfile.offlineSingle);
-
-    // The requested package must fit the business type: a shop that asked
-    // for the bare till or offline dine-in starts on Shop counter, a
-    // restaurant that asked for Shop counter on offline dine-in.
-    final alignedId = PlanProfile.alignedFor(PlanProfile.byId(startPackage.id), Verticals.forCategory(businessCategory)).id;
-    if (PlanProfile.byId(startPackage.id).id != alignedId) {
-      final fitted = await PackageService.getById(alignedId);
-      startPackage = fitted ?? TenantPackage.fromProfile(PlanProfile.byId(alignedId));
-    }
+    // The package: category -> tier. The request's own package when it is
+    // one of this trade's; otherwise this trade's package at the tier asked
+    // for (a starter id or legacy profile names one), Offline when nothing
+    // does.
+    final allPackages = await PackageService.getAll();
+    final initialTrade = Verticals.forCategory(businessCategory);
+    final askedId = (initialPackageId ?? '').trim();
+    final asked =
+        allPackages.where((p) => p.id == askedId && LicenceEdits.belongsToTrade(p, initialTrade)).firstOrNull;
+    final startTier = initialTier ??
+        (askedId.isEmpty
+            ? PackageTier.offline
+            : LicenceEdits.requestedTier({'requestedPackageId': askedId, 'planProfile': askedId}));
+    final startPackage = asked ?? LicenceEdits.tierPackage(allPackages, initialTrade, startTier);
     if (!context.mounted) return;
     TenantPackageSelection selection = TenantPackageSelection(
       package: startPackage,
       plan: selectedPlan,
-      vertical: Verticals.forCategory(businessCategory),
+      vertical: initialTrade,
     );
 
     // Feature Toggles: populated dynamically from the selected plan
@@ -2098,12 +2068,10 @@ class OrganizationsTab extends ConsumerStatefulWidget {
                             DropdownMenuItem(value: 'Pharmacy / Medical Store', child: Text("Pharmacy / Medical Store")),
                             DropdownMenuItem(value: 'General Retail / Fashion / Electronics', child: Text("General Retail / Electronics")),
                           ],
-                          onChanged: (val) async {
+                          onChanged: (val) {
                             if (val == null) return;
                             final newVertical = Verticals.forCategory(val);
                             final isNewRestaurant = newVertical == Verticals.restaurant;
-                            final pkgId = Verticals.defaultPackageFor(val);
-                            final pkg = await PackageService.getById(pkgId);
                             setDialogState(() {
                               businessCategory = val;
                               if (!isNewRestaurant) {
@@ -2113,10 +2081,12 @@ class OrganizationsTab extends ConsumerStatefulWidget {
                                 tableCount = 15;
                                 operatingMode = 'dineFirstPostpaid';
                               }
-                              // The trade travels with the selection: it
-                              // decides the licence's roles (no waiter or
-                              // kitchen for a shop).
-                              selection = selection.copyWith(package: pkg, vertical: newVertical);
+                              // The trade travels with the selection, and the
+                              // package follows it at the same tier: the new
+                              // trade's package, keeping the limits and the
+                              // add-ons that still apply.
+                              selection = selection.copyWith(vertical: newVertical).withPackage(
+                                  LicenceEdits.tierPackage(allPackages, newVertical, selection.tier));
                             });
                           },
                         ),
@@ -2262,12 +2232,12 @@ class OrganizationsTab extends ConsumerStatefulWidget {
                                     Expanded(
                                       child: InputDecorator(
                                         decoration: InputDecoration(
-                                          labelText: "Max Staff / Users (from plan)",
+                                          labelText: "Users (from package)",
                                           labelStyle: TextStyle(color: context.textSecondary, fontSize: 13),
                                           prefixIcon: const Icon(Icons.groups_rounded, size: 16),
                                           enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: context.borderColor)),
                                         ),
-                                        child: Text('${selection.plan.maxUsers}',
+                                        child: Text('${selection.maxUsers}',
                                             style: TextStyle(color: context.textPrimary)),
                                       ),
                                     ),
@@ -2330,12 +2300,12 @@ class OrganizationsTab extends ConsumerStatefulWidget {
                                   Expanded(
                                     child: InputDecorator(
                                       decoration: InputDecoration(
-                                        labelText: "Max Staff / Users (from plan)",
+                                        labelText: "Users (from package)",
                                         labelStyle: TextStyle(color: context.textSecondary, fontSize: 13),
                                         prefixIcon: const Icon(Icons.groups_rounded, size: 16),
                                         enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: context.borderColor)),
                                       ),
-                                      child: Text('${selection.plan.maxUsers}',
+                                      child: Text('${selection.maxUsers}',
                                           style: TextStyle(color: context.textPrimary)),
                                     ),
                                   ),
@@ -2413,14 +2383,19 @@ class OrganizationsTab extends ConsumerStatefulWidget {
                             final effectiveTableCount = isCurrentRestaurant ? tableCount : 0;
                             final effectiveOperatingMode = isCurrentRestaurant ? operatingMode : 'counterPrepaid';
 
+                            // The plan carries the term; the package, tier and
+                            // limits are composed by the provisioner from the
+                            // same choices (keys on over the package travel as
+                            // add-ons on the plan's feature map).
+                            final composed = selection.composed;
                             final finalPlan = selection.plan.copyWith(
-                              maxOutlets: selection.effectiveOutlets,
-                              maxDevices: selection.effectiveDevices,
-                              maxUsers: selection.plan.maxUsers,
+                              maxOutlets: composed.maxOutlets,
+                              maxDevices: composed.maxDevices,
+                              maxUsers: composed.maxUsers,
                               tableCount: effectiveTableCount,
                               operatingMode: effectiveOperatingMode,
-                              allowedRoles: selection.effectiveRoles,
-                              features: selection.resolvedFeatures,
+                              allowedRoles: composed.allowedRoles,
+                              features: composed.features,
                             );
 
                             final result = await TenantProvisioningService.provisionTenant(
@@ -2441,6 +2416,9 @@ class OrganizationsTab extends ConsumerStatefulWidget {
                               planProfile: selection.profile.id,
                               packageId: selection.packageId,
                               planId: selection.planId,
+                              tier: composed.tier.id,
+                              limits: selection.limitsEditable ? selection.requestedLimits : null,
+                              adminOverride: selection.adminOverride && selection.limitsEditable,
                             );
 
                             if (result['success'] != true) {
@@ -2594,6 +2572,51 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
         if (mounted) AppToast.showError(context, 'Failed to purge: $e');
       }
     }
+  }
+
+  /// Moves `licenses/{orgId}` from [fromTrade] to [toTrade] after a change of
+  /// business type ([LicenceEdits.moveToTrade]), with its legacy mirror and
+  /// the guest web app's flags. A tenant without a licence gets none.
+  Future<void> _moveLicenceToTrade(
+    String orgId, {
+    required String fromTrade,
+    required String toTrade,
+    required String storageMode,
+  }) async {
+    final ref = _firestore.collection('licenses').doc(orgId);
+    final lic = (await ref.get()).data();
+    if (lic == null) return;
+    final packages = await PackageService.getAll();
+    final plans = await SubscriptionPlanService.getAllPlans();
+    final current = LicenceEdits.read(lic,
+            vertical: fromTrade, storageMode: storageMode, packages: packages, plans: plans)
+        .selection;
+    final moved = LicenceEdits.moveToTrade(current, toTrade, packages);
+    final guest = moved.resolvedFor(moved.trade);
+    final now = FieldValue.serverTimestamp();
+    final batch = _firestore.batch();
+    batch.set(ref, {...LicenceEdits.licenceFields(moved), 'updatedAt': now}, SetOptions(merge: true));
+    batch.set(_firestore.collection('features').doc(orgId), {
+      'features': moved.composed.features,
+      'planProfile': moved.profile.id,
+      'updatedAt': now,
+      'updatedBy': 'master_admin',
+    }, SetOptions(merge: true));
+    batch.set(_firestore.collection('public_stores').doc(orgId), {
+      'onlineMenuEnabled': guest.isEnabled(FeatureKeys.onlineMenu),
+      'onlineOrderingEnabled': guest.isEnabled(FeatureKeys.onlineOrderingEnabled),
+      'qrOrderingEnabled': guest.isEnabled(FeatureKeys.qrOrdering),
+      'entitlementsUpdatedAt': now,
+    }, SetOptions(merge: true));
+    batch.set(_firestore.collection('audit_logs').doc(), {
+      'action': 'LICENCE_TRADE_CHANGED',
+      'targetOrgId': orgId,
+      'details': '${current.package.name} \u2192 ${moved.package.name} (${moved.tier.label})'
+          '${moved.activeAddOns.isEmpty ? '' : ' \u00b7 add-ons kept: ${(moved.activeAddOns.toList()..sort()).join(', ')}'}',
+      'by': 'master_admin',
+      'timestamp': now,
+    });
+    await batch.commit();
   }
 
   void _showEditOrganizationDialog(String orgId, String orgName) {
@@ -3528,38 +3551,28 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                               });
                             } catch (_) {}
 
-                            // The licence carries a copy of the vertical; keep it true.
-                            // update(), not set(): a tenant without a licence
-                            // must not get a half-empty one from here.
-                            //
-                            // A change of business type also re-stamps the
-                            // feature map with the trade it was resolved for
-                            // (the old one). The new trade's app then reads a
-                            // false against one of its own keys that the old
-                            // trade did not have (tables for a shop turned
-                            // restaurant; barcode, khata and stock for a
-                            // restaurant turned pharmacy) as the old trade's,
-                            // not a choice, and the package's default applies
-                            // (Entitlements.fromLicense). Every other toggle
-                            // stands. A legacy map with no stamp already
-                            // reads as resolved for a restaurant, which is
-                            // what a shop needs, so it is left alone then.
+                            // The licence follows the business type. A change of
+                            // trade moves it to the new trade's package at the
+                            // same tier: features recomposed for that trade, the
+                            // add-ons it also offers kept, limits kept (custom
+                            // limits stay custom), dates, status and plan as
+                            // they are. Otherwise only the vertical copy is kept
+                            // true — update(), not set(), so a tenant without a
+                            // licence does not get a half-empty one from here.
                             final tradeChanged = newVertical != initialVertical;
                             try {
-                              var restamp = tradeChanged;
-                              if (tradeChanged && Verticals.isShop(newVertical)) {
-                                final licSnap = await _firestore.collection('licenses').doc(orgId).get();
-                                final stamp = (licSnap.data()?['featuresResolvedFor'] ?? '').toString().trim();
-                                if (stamp.isEmpty) restamp = false;
+                              if (tradeChanged) {
+                                await _moveLicenceToTrade(orgId,
+                                    fromTrade: initialVertical, toTrade: newVertical, storageMode: initialStorageMode);
+                              } else {
+                                await _firestore.collection('licenses').doc(orgId).update({
+                                  'vertical': newVertical,
+                                  'updatedAt': FieldValue.serverTimestamp(),
+                                });
                               }
-                              await _firestore.collection('licenses').doc(orgId).update({
-                                'vertical': newVertical,
-                                if (restamp) 'featuresResolvedFor': initialVertical,
-                                'updatedAt': FieldValue.serverTimestamp(),
-                              });
                               initialVertical = newVertical;
                             } catch (e) {
-                              debugPrint('licence vertical sync skipped for $orgId: $e');
+                              debugPrint('licence trade sync skipped for $orgId: $e');
                             }
 
                             // 3. Update Owner User Doc
@@ -3997,7 +4010,13 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                                       badgeLabel = "$tier ($daysLeft days)";
                                     }
 
-                                    return Container(
+                                    // "<Trade> · <Tier>", read as the app reads it.
+                                    final trade = Verticals.resolve(
+                                      vertical: data['vertical']?.toString(),
+                                      businessCategory: (data['businessCategory'] ?? data['category'])?.toString(),
+                                    );
+                                    final pkgTier = LicenceEdits.tierOf(lData, storageMode: storageMode.toString());
+                                    final statusBadge = Container(
                                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                                       decoration: BoxDecoration(
                                         color: badgeColor.withValues(alpha: 0.15),
@@ -4021,6 +4040,11 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                                           ),
                                         ],
                                       ),
+                                    );
+                                    return Wrap(
+                                      spacing: 6,
+                                      runSpacing: 6,
+                                      children: [_tradeTierChip(trade, pkgTier), statusBadge],
                                     );
                                   },
                                 ),
@@ -4161,6 +4185,28 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
               },
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  /// `<Trade> · <Tier>` with the tier's icon and colour.
+  Widget _tradeTierChip(String trade, PackageTier tier) {
+    final color = TierVisuals.color(tier);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: TierVisuals.tint(tier),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: color.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(TierVisuals.icon(tier), size: 12, color: color),
+          const SizedBox(width: 4),
+          Text('${Verticals.shortLabel(trade)} \u00b7 ${tier.label}',
+              style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.bold)),
         ],
       ),
     );
@@ -4538,6 +4584,7 @@ class _RegistrationRequestsTabState extends ConsumerState<RegistrationRequestsTa
     Map<String, bool>? initialFeatures,
     String initialPackageId = '',
     String initialPlanId = '',
+    PackageTier? initialTier,
   }) {
     OrganizationsTab.showOnboardOrganizationDialog(
       context,
@@ -4553,6 +4600,7 @@ class _RegistrationRequestsTabState extends ConsumerState<RegistrationRequestsTa
       requestId: requestId,
       initialPackageId: initialPackageId,
       initialPlanId: initialPlanId,
+      initialTier: initialTier,
     );
   }
 
@@ -4958,6 +5006,7 @@ class _RegistrationRequestsTabState extends ConsumerState<RegistrationRequestsTa
                   Navigator.pop(ctx);
                   _showOnboardDialogFromRequest(
                     requestId: request.id,
+                    initialTier: LicenceEdits.requestedTier(request.rawData),
                     clientName: request.clientName,
                     shopName: request.shopName,
                     category: request.businessCategory,
@@ -5037,6 +5086,7 @@ class _RegistrationRequestsTabState extends ConsumerState<RegistrationRequestsTa
                   Navigator.pop(ctx);
                   _showOnboardDialogFromRequest(
                     requestId: request.id,
+                    initialTier: LicenceEdits.requestedTier(request.rawData),
                     clientName: request.clientName,
                     shopName: request.shopName,
                     category: request.businessCategory,
@@ -5065,6 +5115,7 @@ class _RegistrationRequestsTabState extends ConsumerState<RegistrationRequestsTa
                   Navigator.pop(ctx);
                   _showOnboardDialogFromRequest(
                     requestId: request.id,
+                    initialTier: LicenceEdits.requestedTier(request.rawData),
                     clientName: request.clientName,
                     shopName: request.shopName,
                     category: request.businessCategory,
@@ -5227,8 +5278,11 @@ class _RegistrationRequestsTabState extends ConsumerState<RegistrationRequestsTa
                         } else if (isEnterprise) {
                           planLabel = 'Enterprise / Custom Setup';
                         } else if (isPaidPkg) {
-                          final prof = PlanProfile.byId(rawPlan);
-                          planLabel = prof.label;
+                          // This trade's package at the tier asked for.
+                          planLabel = PackageCatalog.nameFor(
+                            Verticals.forCategory((d['businessCategory'] ?? d['category'])?.toString()),
+                            LicenceEdits.requestedTier(d),
+                          );
                         } else {
                           planLabel = '14-Day Free Trial';
                         }

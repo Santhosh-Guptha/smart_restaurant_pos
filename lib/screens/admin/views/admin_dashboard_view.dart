@@ -2,11 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../../core/classic_theme.dart';
+import '../../../core/entitlements.dart';
 import '../../../core/package_model.dart';
 import '../../dashboard/restaurant_home_screen.dart';
 import '../../restaurant/branch_management_screen.dart';
 import '../../settings/staff_management_screen.dart';
 import '../../../providers/saas_session_provider.dart';
+import '../widgets/tenant_package_editor.dart';
+import '../widgets/tier_visuals.dart';
 
 /// SaaS Overview & Real-Time Platform Analytics Dashboard.
 class AdminDashboardView extends ConsumerWidget {
@@ -43,9 +46,29 @@ class AdminDashboardView extends ConsumerWidget {
 
                     int activeCount = 0;
                     int expiring7Days = 0;
-                    int pureOfflineCount = 0;
                     int paidAnnualCount = 0;
                     int trialCount = 0;
+
+                    // Tenants by trade (from the organisation, the way the
+                    // app resolves it) and by tier (from the licence, read
+                    // as the app reads it: offline storage is the Offline
+                    // tier whatever an older document says).
+                    final tradeCounts = {for (final v in Verticals.all) v: 0};
+                    final tierCounts = {for (final t in PackageTier.values) t: 0};
+                    final orgMode = <String, String>{};
+                    if (orgSnap.hasData) {
+                      for (final doc in orgSnap.data!.docs) {
+                        final o = doc.data() as Map<String, dynamic>;
+                        if ((o['status'] ?? '').toString().toUpperCase() == 'DELETED') continue;
+                        final v = Verticals.resolve(
+                          vertical: o['vertical']?.toString(),
+                          businessCategory: (o['businessCategory'] ?? o['category'])?.toString(),
+                        );
+                        tradeCounts[v] = (tradeCounts[v] ?? 0) + 1;
+                        final m = (o['storageMode'] ?? '').toString().toUpperCase();
+                        if (m.isNotEmpty) orgMode[doc.id] = m;
+                      }
+                    }
 
                     final now = DateTime.now();
                     final in7Days = now.add(const Duration(days: 7));
@@ -55,11 +78,8 @@ class AdminDashboardView extends ConsumerWidget {
                         final d = doc.data() as Map<String, dynamic>;
                         final status = d['status']?.toString().toUpperCase() ?? 'INACTIVE';
                         final planTier = d['planTier']?.toString().toUpperCase() ?? 'TRIAL';
-                        final features = Map<String, dynamic>.from(d['features'] ?? {});
-
-                        if (features['pureOfflineMode'] == true || features['offline'] == true) {
-                          pureOfflineCount++;
-                        }
+                        final tier = LicenceEdits.tierOf(d, storageMode: orgMode[doc.id]);
+                        tierCounts[tier] = (tierCounts[tier] ?? 0) + 1;
 
                         DateTime? end;
                         if (d['endDate'] is Timestamp) {
@@ -121,10 +141,10 @@ class AdminDashboardView extends ConsumerWidget {
                         );
                         final kpi4 = _buildKpiCard(
                           context,
-                          title: 'Pure Offline Stations',
-                          value: '$pureOfflineCount',
-                          subtitle: 'Single-device POS desks',
-                          icon: Icons.wifi_off_rounded,
+                          title: 'Offline tier',
+                          value: '${tierCounts[PackageTier.offline] ?? 0}',
+                          subtitle: 'One device, one store, one user',
+                          icon: TierVisuals.icon(PackageTier.offline),
                           color: ClassicTheme.successEmerald,
                           isMobile: isMobile,
                           onTap: onNavigateToFeatures,
@@ -207,14 +227,46 @@ class AdminDashboardView extends ConsumerWidget {
                                 total: totalLicenses > 0 ? totalLicenses : 1,
                                 color: ClassicTheme.successEmerald,
                               ),
-                              const SizedBox(height: 14),
-                              _buildDistributionBar(
-                                context,
-                                title: 'Pure Offline Single-Device Clients',
-                                count: pureOfflineCount,
-                                total: totalLicenses > 0 ? totalLicenses : 1,
-                                color: ClassicTheme.warningAmber,
+                              const SizedBox(height: 20),
+                              Text(
+                                'BY TIER',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: 0.6,
+                                  color: context.textSecondary,
+                                ),
                               ),
+                              for (final t in PackageTier.values) ...[
+                                const SizedBox(height: 12),
+                                _buildDistributionBar(
+                                  context,
+                                  title: t.label,
+                                  count: tierCounts[t] ?? 0,
+                                  total: totalLicenses > 0 ? totalLicenses : 1,
+                                  color: TierVisuals.color(t),
+                                ),
+                              ],
+                              const SizedBox(height: 20),
+                              Text(
+                                'BY TRADE',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: 0.6,
+                                  color: context.textSecondary,
+                                ),
+                              ),
+                              for (final v in Verticals.all) ...[
+                                const SizedBox(height: 12),
+                                _buildDistributionBar(
+                                  context,
+                                  title: Verticals.shortLabel(v),
+                                  count: tradeCounts[v] ?? 0,
+                                  total: totalOrgs > 0 ? totalOrgs : 1,
+                                  color: ClassicTheme.secondaryAccent,
+                                ),
+                              ],
                             ],
                           ),
                         );
@@ -251,8 +303,8 @@ class AdminDashboardView extends ConsumerWidget {
                               _quickActionButton(
                                 context,
                                 icon: Icons.layers_rounded,
-                                title: 'Configure Feature Presets',
-                                subtitle: 'Offline vs Cloud allocation',
+                                title: 'Feature Matrix',
+                                subtitle: 'Package, add-ons and limits per client',
                                 color: ClassicTheme.secondaryAccent,
                                 onTap: onNavigateToFeatures,
                               ),

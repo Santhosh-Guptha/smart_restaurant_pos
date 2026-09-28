@@ -726,6 +726,26 @@ class SaasSessionNotifier extends StateNotifier<SaasSessionState> {
       if (license.isExpired) return "License has expired";
       if (license.isPastDue) return "License payment past due";
 
+      // The resolved limits (docs/PLATFORM_STRUCTURE.md §3). An offline
+      // store (by its organisation's storage mode, or the licence's own) is
+      // one device and one user, the owner, whatever the document says.
+      final limitsEnt = Entitlements.fromLicense(
+        license,
+        storageMode: StorageModes.isOffline(organization.storageMode) ? organization.storageMode : null,
+      );
+
+      // Offline has one user: the owner. Staff cannot sign in to it; the
+      // owner (and the platform admin) always can.
+      final roleKey = role.toString().trim().toUpperCase();
+      final isOwnerLogin = roleKey == 'OWNER' || roleKey == 'CLIENT' || isMasterAdmin;
+      // (Only the offline family is checked here: a cloud store's user count
+      // is enforced where staff are created, so an older licence with a low
+      // count never locks existing staff out.)
+      if (!isOwnerLogin && limitsEnt.isPureOffline) {
+        await FirebaseAuthBridge.signOut(firestore);
+        return "Offline stores have one user — the owner. Ask the owner to move to Basic or above to add staff.";
+      }
+
       // 4. Fetch Device limit registration (Except for system master admin)
       String deviceUuid = 'web-device';
       if (role != 'MASTER_ADMIN') {
@@ -743,7 +763,7 @@ class SaasSessionNotifier extends StateNotifier<SaasSessionState> {
           // pure-offline tenant is one device whatever the licence document
           // happens to say, and the previous check let a second till register
           // against an offline plan.
-          final deviceCap = Entitlements.fromLicense(license).maxDevices;
+          final deviceCap = limitsEnt.maxDevices;
           if (orgDevices.docs.length >= deviceCap) {
             // Return structured prefix so the login UI can offer remote logout
             return 'DEVICE_LIMIT:$orgId:${orgDevices.docs.length}:$deviceCap';
@@ -1439,7 +1459,11 @@ class SaasSessionNotifier extends StateNotifier<SaasSessionState> {
   }
 
   bool simulateAddDevice(String uuid) {
-    final limit = Entitlements.fromLicense(state.currentLicense).maxDevices;
+    final orgMode = state.currentOrganization?.storageMode;
+    final limit = Entitlements.fromLicense(
+      state.currentLicense,
+      storageMode: orgMode != null && StorageModes.isOffline(orgMode) ? orgMode : null,
+    ).maxDevices;
     final box = Hive.box('configBox');
     final activeDeviceUuids = List<String>.from(box.get('saas_active_device_uuids', defaultValue: <String>[]));
     

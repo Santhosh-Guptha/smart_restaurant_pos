@@ -35,6 +35,7 @@ import '../settings/staff_management_screen.dart';
 import '../restaurant/store_configuration_screen.dart';
 import '../settings/settings_sidebar_dialog.dart';
 import '../settings/plan_request_sheet.dart';
+import '../admin/widgets/tier_visuals.dart';
 import '../analytics/restaurant_analytics_screen.dart';
 import '../orders/restaurant_order_history_screen.dart';
 import '../expenses/expenses_screen.dart';
@@ -147,7 +148,7 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
       if (mounted) {
         setState(() {
           _sheetAccessVerified = true;
-          _sheetCheckMessage = 'Offline Station · Direct Local POS';
+          _sheetCheckMessage = 'Offline · works on this device';
         });
       }
       return;
@@ -341,6 +342,79 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
           visualDensity: VisualDensity.compact,
         ),
       ),
+    );
+  }
+
+  static const List<String> _monthNames = [
+    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+  ];
+
+  /// "12 Oct 2026".
+  static String _formatDate(DateTime d) => '${d.day} ${_monthNames[d.month - 1]} ${d.year}';
+
+  /// "<Trade> · <Tier>" with the tier's icon, and the plan's validity end.
+  /// The owner can tap either to ask for an upgrade or a renewal.
+  Widget _buildTierLine(Entitlements ent, SaasLicense? licence, {required bool isOwner}) {
+    final tier = ent.tier;
+    final color = TierVisuals.color(tier);
+    final trade = Verticals.shortLabel(Verticals.isValid(ent.vertical) ? ent.vertical : Verticals.restaurant);
+    final ends = licence?.endDate;
+    final expired = licence?.isExpired ?? false;
+    final chipColor = expired
+        ? ClassicTheme.dangerRed
+        : (licence != null && (licence.isNearExpiry || licence.isPastDue))
+            ? ClassicTheme.warningAmber
+            : context.textSecondary;
+    final line = Wrap(
+      spacing: 6,
+      runSpacing: 4,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+          decoration: BoxDecoration(
+            color: TierVisuals.tint(tier),
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(TierVisuals.icon(tier), size: 12, color: color),
+              const SizedBox(width: 4),
+              Text(
+                '$trade · ${tier.label}',
+                style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: color),
+              ),
+            ],
+          ),
+        ),
+        if (ends != null)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            decoration: BoxDecoration(
+              color: chipColor.withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(expired ? Icons.event_busy_rounded : Icons.event_available_rounded,
+                    size: 12, color: chipColor),
+                const SizedBox(width: 4),
+                Text(
+                  expired ? 'Ended ${_formatDate(ends)}' : 'Valid till ${_formatDate(ends)}',
+                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: chipColor),
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
+    if (!isOwner || licence == null) return line;
+    return InkWell(
+      onTap: () => _openPlanRequest(licence),
+      borderRadius: BorderRadius.circular(6),
+      child: line,
     );
   }
 
@@ -630,7 +704,7 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
                                 SizedBox(width: 4),
                                 Flexible(
                                   child: Text(
-                                    'Pure Offline Station',
+                                    'Offline · this device',
                                     style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: ClassicTheme.successEmerald),
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
@@ -792,6 +866,10 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
+                          if (!isMasterAdmin) ...[
+                            const SizedBox(height: 4),
+                            _buildTierLine(ent, saasSession.currentLicense, isOwner: isOwner),
+                          ],
                         ],
                       ),
                     ),

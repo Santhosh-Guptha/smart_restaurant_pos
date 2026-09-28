@@ -173,6 +173,8 @@ class UnifiedClientLead {
       planLabel = d['requestedPlanLabel'].toString();
     } else if (isEnterprise) {
       planLabel = 'Enterprise / Custom Setup';
+    } else if (isPaidPkg && PackageTier.tryParse(rawPlan) != null) {
+      planLabel = PackageCatalog.nameFor(Verticals.forCategory(category), PackageTier.tryParse(rawPlan)!);
     } else if (isPaidPkg) {
       final prof = PlanProfile.byId(rawPlan);
       planLabel = prof.label;
@@ -182,9 +184,21 @@ class UnifiedClientLead {
 
     final isTrial = !isEnterprise && !isPaidPkg;
 
-    final pkgId = d['requestedPackageId']?.toString().trim() ??
-        (isEnterprise ? PlanProfile.omnichannel.id : (isPaidPkg ? rawPlan : Verticals.defaultPackageFor(category)));
-    final planId = isEnterprise ? 'omnichannel' : (isPaidPkg ? rawPlan.toLowerCase() : 'trial');
+    // Packages are the trade's tiers (`<trade>_<tier>`); a plan is only the
+    // validity, so a lead's plan is its requested plan or the trial.
+    final trade = Verticals.forCategory(category);
+    final requestedTier = PackageTier.tryParse(d['requestedTier']?.toString()) ??
+        PackageTier.tryParse(rawPlan) ??
+        (isEnterprise ? PackageTier.enterprise : null);
+    final storedPkg = d['requestedPackageId']?.toString().trim() ?? '';
+    final pkgId = storedPkg.isNotEmpty
+        ? storedPkg
+        : (requestedTier != null
+            ? PackageCatalog.starterId(trade, requestedTier)
+            : Verticals.defaultPackageFor(category,
+                offline: (d['requestedStorageMode'] ?? d['storageMode'] ?? '').toString().toUpperCase() != 'CLIENTS_OWN_SHEETS'));
+    final storedPlan = d['requestedPlanId']?.toString().trim() ?? '';
+    final planId = storedPlan.isNotEmpty ? storedPlan : (isTrial ? 'trial' : 'yearly');
 
     final defaultReqs = isEnterprise
         ? 'Enterprise / Custom multi-store deployment request.'

@@ -284,7 +284,8 @@ void main() {
     test('forProfile builds a plan of the requested length', () {
       final s = TenantPackageSelection.forProfile(PlanProfile.offlineDineIn, validityDays: 90);
       expect(s.validityDays, 90);
-      expect(s.packageId, PlanProfile.offlineDineIn.id);
+      // The trade's own tier package now, not the legacy universal starter.
+      expect(s.packageId, 'restaurant_offline');
       expect(s.effectiveDevices, 1);
     });
 
@@ -327,7 +328,7 @@ void main() {
 
     test('forProfile starts a shop on its own starter', () {
       final s = TenantPackageSelection.forProfile(PlanProfile.offlineDineIn, vertical: 'pharmacy');
-      expect(s.packageId, PlanProfile.offlineRetail.id);
+      expect(s.packageId, 'pharmacy_offline');
     });
 
     test("the guest flags resolve in the tenant's trade", () {
@@ -339,6 +340,268 @@ void main() {
       expect(s.resolved.isEnabled(FeatureKeys.onlineMenu), isTrue, reason: 'the trade-neutral map carries it');
       expect(s.resolvedFor('kirana').isEnabled(FeatureKeys.onlineMenu), isFalse);
       expect(s.resolvedFor('restaurant').isEnabled(FeatureKeys.onlineMenu), isTrue);
+    });
+  });
+
+  group('Selection limits come from the package tier', () {
+    test('forProfile and forTier use the trade tier package, not the plan', () {
+      final s = TenantPackageSelection.forTier(PackageTier.standard,
+          vertical: 'restaurant', plan: _plan(devices: 1, outlets: 9, users: 2));
+      expect(s.packageId, 'restaurant_standard');
+      expect(s.maxDevices, 5);
+      expect(s.maxOutlets, 1);
+      expect(s.maxUsers, 10);
+      expect(s.composed.tier, PackageTier.standard);
+    });
+
+    test('offline is locked at one device, one outlet, one user', () {
+      final s = TenantPackageSelection.forTier(PackageTier.offline, vertical: 'kirana', plan: _plan())
+          .withOverride(true)
+          .withLimits(const TierLimits(maxDevices: 4, maxOutlets: 4, maxUsers: 4));
+      expect(s.limitsLocked, isTrue);
+      expect(s.limitsEditable, isFalse);
+      expect(s.limits, TierLimits.offline);
+      expect(s.effectiveRoles, ['OWNER']);
+    });
+
+    test('enterprise limits are set per client and saved as custom', () {
+      final s = TenantPackageSelection.forTier(PackageTier.enterprise, vertical: 'pharmacy', plan: _plan())
+          .withLimits(const TierLimits(maxDevices: 40, maxOutlets: 12, maxUsers: 90));
+      expect(s.limitsEditable, isTrue);
+      expect(s.limits, const TierLimits(maxDevices: 40, maxOutlets: 12, maxUsers: 90));
+      final f = LicenceEdits.licenceFields(s);
+      expect(f['limitsCustom'], isTrue);
+      expect(f['maxDevices'], 40);
+      expect(f['maxFranchises'], 12);
+      expect(f['maxUsers'], 90);
+      expect(f['tier'], 'enterprise');
+    });
+
+    test('enterprise at its defaults is still custom, so re-applying keeps them', () {
+      final s = TenantPackageSelection.forTier(PackageTier.enterprise, vertical: 'retail', plan: _plan());
+      expect(s.composed.limitsCustom, isTrue);
+      expect(s.limits, TierLimits.enterprise);
+    });
+
+    test('other tiers ignore custom limits unless the admin overrides', () {
+      final base = TenantPackageSelection.forTier(PackageTier.basic, vertical: 'restaurant', plan: _plan());
+      final typed = base.copyWith(customLimits: const TierLimits(maxDevices: 7, maxOutlets: 2, maxUsers: 9));
+      expect(typed.limits, TierLimits.basic);
+      expect(typed.composed.limitsCustom, isFalse);
+
+      final over = base.withOverride(true).withLimits(const TierLimits(maxDevices: 7, maxOutlets: 2, maxUsers: 9));
+      expect(over.limits, const TierLimits(maxDevices: 7, maxOutlets: 2, maxUsers: 9));
+      expect(over.composed.limitsCustom, isTrue);
+
+      final back = over.withOverride(false);
+      expect(back.limits, TierLimits.basic);
+      expect(back.composed.limitsCustom, isFalse);
+    });
+  });
+
+  group('Changing package keeps what still applies', () {
+    test('keepAddOns drops what the new package includes or does not offer', () {
+      final premium = PackageCatalog.starter('restaurant', PackageTier.premium);
+      final offline = PackageCatalog.starter('restaurant', PackageTier.offline);
+      final addOns = {FeatureKeys.emailReceipts, FeatureKeys.onlineMenu, FeatureKeys.barcodeBilling};
+      expect(LicenceEdits.keepAddOns(addOns, premium, trade: 'restaurant'), isEmpty,
+          reason: 'premium includes both; barcode is another trade\'s key');
+      expect(LicenceEdits.keepAddOns(addOns, offline, trade: 'restaurant'), isEmpty,
+          reason: 'an offline package offers no cloud add-on');
+      final standard = PackageCatalog.starter('restaurant', PackageTier.standard);
+      expect(LicenceEdits.keepAddOns(addOns, standard, trade: 'restaurant'), {FeatureKeys.onlineMenu});
+    });
+
+    test('a second-device add-on is not kept on one device', () {
+      final basic = PackageCatalog.starter('restaurant', PackageTier.basic);
+      expect(LicenceEdits.keepAddOns({FeatureKeys.kdsEnabled}, basic, trade: 'restaurant', maxDevices: 2),
+          {FeatureKeys.kdsEnabled});
+      expect(LicenceEdits.keepAddOns({FeatureKeys.kdsEnabled}, basic, trade: 'restaurant', maxDevices: 1), isEmpty);
+    });
+
+    test('withPackage keeps valid add-ons and switched-off features', () {
+      final s = TenantPackageSelection.forTier(PackageTier.basic, vertical: 'kirana', plan: _plan())
+          .withAddOn(FeatureKeys.multiOutlet, true)
+          .withIncluded(FeatureKeys.customerKhata, false);
+      expect(s.composed.features[FeatureKeys.multiOutlet], isTrue);
+      expect(s.composed.features[FeatureKeys.customerKhata], isFalse);
+
+      final standard = s.withPackage(PackageCatalog.starter('kirana', PackageTier.standard));
+      expect(standard.packageId, 'kirana_standard');
+      expect(standard.activeAddOns, {FeatureKeys.multiOutlet});
+      expect(standard.activeRemoved, {FeatureKeys.customerKhata});
+      expect(standard.composed.features[FeatureKeys.emailReceipts], isTrue);
+
+      final premium = s.withPackage(PackageCatalog.starter('kirana', PackageTier.premium));
+      expect(premium.activeAddOns, isEmpty, reason: 'multiple outlets is part of Premium');
+      expect(premium.composed.features[FeatureKeys.multiOutlet], isTrue);
+    });
+
+    test('enterprise limits survive a move to enterprise and are dropped below it', () {
+      const mine = TierLimits(maxDevices: 30, maxOutlets: 15, maxUsers: 70);
+      final ent = TenantPackageSelection.forTier(PackageTier.enterprise, vertical: 'retail', plan: _plan())
+          .withLimits(mine);
+      final custom = PackageCatalog.starter('retail', PackageTier.enterprise);
+      expect(ent.withPackage(custom).limits, mine);
+      expect(ent.withPackage(PackageCatalog.starter('retail', PackageTier.premium)).limits, TierLimits.premium);
+      expect(ent.withPackage(PackageCatalog.starter('retail', PackageTier.offline)).limits, TierLimits.offline);
+    });
+
+    test('an admin override carries over to another tier with fixed defaults', () {
+      const mine = TierLimits(maxDevices: 8, maxOutlets: 2, maxUsers: 12);
+      final s = TenantPackageSelection.forTier(PackageTier.basic, vertical: 'restaurant', plan: _plan())
+          .withOverride(true)
+          .withLimits(mine);
+      final std = s.withPackage(PackageCatalog.starter('restaurant', PackageTier.standard));
+      expect(std.adminOverride, isTrue);
+      expect(std.limits, mine);
+    });
+
+    test('a core feature cannot be switched off; a parent takes its dependants', () {
+      final s = TenantPackageSelection.forTier(PackageTier.premium, vertical: 'restaurant', plan: _plan());
+      expect(s.withIncluded(FeatureKeys.billing, false).composed.features[FeatureKeys.billing], isTrue);
+      final off = s.withIncluded(FeatureKeys.onlineMenu, false);
+      expect(off.composed.features[FeatureKeys.onlineMenu], isFalse);
+      expect(off.composed.features[FeatureKeys.qrOrdering], isFalse);
+      expect(off.composed.features[FeatureKeys.onlineOrderingEnabled], isFalse);
+      expect(LicenceEdits.licenceFields(off)['featuresOff'], containsAll([FeatureKeys.onlineMenu, FeatureKeys.qrOrdering]));
+    });
+  });
+
+  group('Trade packages', () {
+    test('a change of business type moves to the new trade at the same tier', () {
+      const mine = TierLimits(maxDevices: 25, maxOutlets: 4, maxUsers: 60);
+      final rest = TenantPackageSelection.forTier(PackageTier.enterprise, vertical: 'restaurant', plan: _plan())
+          .withLimits(mine);
+      final pharmacy = LicenceEdits.moveToTrade(rest, 'pharmacy', const []);
+      expect(pharmacy.packageId, 'pharmacy_enterprise');
+      expect(pharmacy.limits, mine);
+      expect(pharmacy.composed.features[FeatureKeys.tableManagement], isFalse);
+      expect(pharmacy.composed.features[FeatureKeys.barcodeBilling], isTrue);
+      expect(LicenceEdits.licenceFields(pharmacy)['featuresResolvedFor'], 'pharmacy');
+
+      final basic = TenantPackageSelection.forTier(PackageTier.basic, vertical: 'restaurant', plan: _plan())
+          .withAddOn(FeatureKeys.emailReceipts, true)
+          .withAddOn(FeatureKeys.onlineMenu, true);
+      final kirana = LicenceEdits.moveToTrade(basic, 'kirana', const []);
+      expect(kirana.packageId, 'kirana_basic');
+      expect(kirana.activeAddOns, {FeatureKeys.emailReceipts}, reason: 'a shop has no online menu');
+    });
+
+    test('the picker offers only this trade: five tiers, then its custom packages', () {
+      final custom = TenantPackage(
+        id: 'kirana_big', name: 'Big kirana', description: '', vertical: 'kirana',
+        storageMode: StorageModes.clientsOwnSheets, features: PackageCatalog.featuresFor('kirana', PackageTier.premium),
+        tier: PackageTier.premium,
+      );
+      const other = TenantPackage(
+        id: 'rest_x', name: 'Rest X', description: '', vertical: 'restaurant',
+        storageMode: StorageModes.clientsOwnSheets, features: {},
+      );
+      final all = [...PackageCatalog.starters, ...PackageCatalog.legacyStarters, custom, other];
+      final list = LicenceEdits.packagesForTrade(all, 'kirana');
+      expect(list.map((p) => p.id).toList(),
+          ['kirana_offline', 'kirana_basic', 'kirana_standard', 'kirana_premium', 'kirana_enterprise', 'kirana_big']);
+    });
+
+    test('a lead is approved on the tier it asked for: offline when it asked to run offline, else basic', () {
+      expect(LicenceEdits.requestedTier(const {'requestedTier': 'premium'}), PackageTier.premium);
+      expect(LicenceEdits.requestedTier(const {'requestedPackageId': 'kirana_standard'}), PackageTier.standard);
+      expect(LicenceEdits.requestedTier(const {'requestedStorageMode': 'PURE_OFFLINE'}), PackageTier.offline);
+      expect(LicenceEdits.requestedTier(const {'storage_mode': 'CLIENTS_OWN_SHEETS'}), PackageTier.basic);
+      expect(LicenceEdits.requestedTier(const {'planProfile': 'OFFLINE_DINE_IN'}), PackageTier.offline);
+      expect(LicenceEdits.requestedTier(const {}), PackageTier.basic);
+    });
+
+    test('tierOf reads a licence as the app does', () {
+      expect(LicenceEdits.tierOf(const {'tier': 'premium'}, storageMode: StorageModes.pureOffline), PackageTier.offline);
+      expect(LicenceEdits.tierOf(const {'tier': 'offline'}, storageMode: StorageModes.clientsOwnSheets), PackageTier.basic);
+      expect(LicenceEdits.tierOf(const {'packageId': 'retail_enterprise'}, storageMode: StorageModes.cloudSync),
+          PackageTier.enterprise);
+    });
+
+    test('planLine shows validity only', () {
+      final p = SubscriptionPlan.validityOnly(id: 'y', name: 'Yearly', validityDays: 365, price: 4999);
+      expect(LicenceEdits.planLine(p), 'Yearly · 365 days · ₹4,999');
+    });
+  });
+
+  group('Reading a licence back', () {
+    test('what is written reads back as the same selection', () {
+      final s = TenantPackageSelection.forTier(PackageTier.standard, vertical: 'restaurant', plan: _plan(id: 'yearly'))
+          .withAddOn(FeatureKeys.onlineMenu, true)
+          .withIncluded(FeatureKeys.reservations, false)
+          .withOverride(true)
+          .withLimits(const TierLimits(maxDevices: 6, maxOutlets: 1, maxUsers: 12));
+      final lic = LicenceEdits.licenceFields(s, keepTerm: false);
+      final r = LicenceEdits.read(lic,
+          vertical: 'restaurant', storageMode: StorageModes.clientsOwnSheets, plans: [_plan(id: 'yearly')]);
+      expect(r.realigned, isFalse);
+      expect(r.selection.packageId, 'restaurant_standard');
+      expect(r.selection.activeAddOns, {FeatureKeys.onlineMenu});
+      expect(r.selection.activeRemoved, {FeatureKeys.reservations});
+      expect(r.selection.adminOverride, isTrue);
+      expect(r.selection.limits, const TierLimits(maxDevices: 6, maxOutlets: 1, maxUsers: 12));
+      expect(r.selection.composed.features, s.composed.features);
+    });
+
+    test('without the lists, add-ons and switched-off features come from the map', () {
+      final s = TenantPackageSelection.forTier(PackageTier.basic, vertical: 'pharmacy', plan: _plan())
+          .withAddOn(FeatureKeys.emailReceipts, true)
+          .withIncluded(FeatureKeys.expenseManagement, false);
+      final lic = LicenceEdits.licenceFields(s, keepTerm: false)
+        ..remove('addOns')
+        ..remove('featuresOff');
+      final r = LicenceEdits.read(lic, vertical: 'pharmacy', storageMode: StorageModes.clientsOwnSheets);
+      expect(r.selection.activeAddOns, {FeatureKeys.emailReceipts});
+      expect(r.selection.activeRemoved, {FeatureKeys.expenseManagement});
+    });
+
+    test('a legacy universal package moves to the trade package at its tier', () {
+      final lic = LicenseComposer.compose(TenantPackage.fromProfile(PlanProfile.offlineRetail), _plan())
+          .toLicenseFields();
+      final r = LicenceEdits.read(lic, vertical: 'pharmacy', storageMode: StorageModes.pureOffline);
+      expect(r.realigned, isTrue);
+      expect(r.selection.packageId, 'pharmacy_offline');
+      expect(r.selection.limits, TierLimits.offline);
+    });
+
+    test('another trade\'s package is never kept', () {
+      final lic = TenantPackageSelection.forTier(PackageTier.premium, vertical: 'restaurant', plan: _plan())
+          .composed
+          .toLicenseFields();
+      final r = LicenceEdits.read(lic, vertical: 'supermarket', storageMode: StorageModes.clientsOwnSheets);
+      expect(r.realigned, isTrue);
+      expect(r.selection.packageId, 'supermarket_premium');
+      expect(r.selection.composed.features[FeatureKeys.tableManagement], isFalse);
+    });
+
+    test('offline storage reads as the offline tier, a cloud mode never does', () {
+      final r = LicenceEdits.read(const {'tier': 'offline', 'packageId': 'kirana_offline'},
+          vertical: 'kirana', storageMode: StorageModes.clientsOwnSheets);
+      expect(r.selection.tier, PackageTier.basic);
+      final o = LicenceEdits.read(const {'tier': 'basic', 'packageId': 'kirana_basic'},
+          vertical: 'kirana', storageMode: StorageModes.pureOffline);
+      expect(o.selection.tier, PackageTier.offline);
+    });
+
+    test('a pre-tier licence with bigger limits reads as overridden', () {
+      final r = LicenceEdits.read(const {
+        'packageId': 'restaurant_basic',
+        'maxDevices': 4,
+        'maxFranchises': 1,
+        'maxUsers': 8,
+      }, vertical: 'restaurant', storageMode: StorageModes.cloudSync);
+      expect(r.selection.adminOverride, isTrue);
+      expect(r.selection.limits, const TierLimits(maxDevices: 4, maxOutlets: 1, maxUsers: 8));
+      final flagged = LicenceEdits.read(const {
+        'packageId': 'restaurant_basic',
+        'maxDevices': 4,
+        'maxFranchises': 1,
+        'maxUsers': 8,
+        'limitsCustom': false,
+      }, vertical: 'restaurant', storageMode: StorageModes.cloudSync);
+      expect(flagged.selection.limits, TierLimits.basic);
     });
   });
 }

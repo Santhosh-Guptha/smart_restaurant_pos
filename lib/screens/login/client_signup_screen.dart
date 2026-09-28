@@ -5,8 +5,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../core/classic_theme.dart';
 import '../../core/entitlements.dart';
-import '../../core/license_composer.dart';
 import '../../core/package_model.dart';
+import '../admin/widgets/tier_visuals.dart';
 import '../../widgets/package_features_breakdown_widget.dart';
 import '../../services/package_service.dart';
 import '../../services/otp_verification_service.dart';
@@ -38,8 +38,13 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
 
   String _businessCategory = 'Restaurant & Cafe';
 
-  /// Onboarding option: 'free_trial' | PlanProfile ID | 'enterprise'
+  /// Onboarding option: 'free_trial' | a tier id ('offline', 'basic',
+  /// 'standard', 'premium') asked for with admin approval | 'enterprise'.
   String _selectedOption = 'free_trial';
+
+  /// The free trial's storage choice: offline on this device, or the
+  /// owner's own Google Drive. It selects the trial package.
+  bool _trialOffline = true;
   bool get _isFreeTrial => _selectedOption == 'free_trial';
   bool get _isEnterprise => _selectedOption == 'enterprise';
   bool get _isPaidPackage => !_isFreeTrial && !_isEnterprise;
@@ -207,7 +212,7 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
   String get _freeTrialSubtitle {
     switch (_vertical) {
       case Verticals.restaurant:
-        return "No approval required. Start using POS, tables, KDS, and printing immediately.";
+        return "No approval required. Start using POS, tables, kitchen tickets and printing immediately.";
       case Verticals.kirana:
         return "No approval required. Start using barcode billing, inventory, khata, and receipts immediately.";
       case Verticals.supermarket:
@@ -219,17 +224,6 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
       default:
         return "No approval required. Start using POS billing, inventory, and printing immediately.";
     }
-  }
-
-  /// A package's description as this trade should read it. The shared
-  /// descriptions name restaurant features (kitchen display, waiter
-  /// tablets) that a shop never gets.
-  String _profileSubtitle(PlanProfile profile) {
-    if (_vertical == Verticals.restaurant) return profile.description;
-    if (profile.id == PlanProfile.omnichannel.id) {
-      return 'Connected plus online store and ordering, outlets, stock and e-mail bills.';
-    }
-    return profile.description;
   }
 
   String get _enterpriseSubtitle {
@@ -285,32 +279,105 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
     }
   }
 
-  /// Returns features enabled in [profile] that are relevant to [vertical].
-  static List<FeatureDef> _filteredFeaturesFor(PlanProfile profile, String vertical) {
-    final features = profile.features;
-    return features.entries
-        .where((e) => e.value) // only enabled features
-        .map((e) => FeatureCatalog.find(e.key))
-        .where((def) => def != null)
-        .cast<FeatureDef>()
-        .where((def) => def.verticals.isEmpty || def.verticals.contains(vertical))
-        .toList();
+  /// The trial's tier: the storage choice decides it (contract §3).
+  /// Offline on this device -> `<trade>_offline`; my own Google Drive ->
+  /// `<trade>_basic` ([Verticals.defaultPackageFor]).
+  PackageTier get _trialTier => _trialOffline ? PackageTier.offline : PackageTier.basic;
+
+  /// The tier the chosen option asks for.
+  PackageTier get _selectedTier {
+    if (_isFreeTrial) return _trialTier;
+    if (_isEnterprise) return PackageTier.enterprise;
+    return PackageTier.tryParse(_selectedOption) ?? PackageTier.basic;
   }
 
-  /// Icon for a PlanProfile.
-  static IconData _profileIcon(PlanProfile p) {
-    switch (p.id) {
-      case 'OFFLINE_SINGLE':
-        return Icons.point_of_sale_rounded;
-      case 'OFFLINE_DINE_IN':
-        return Icons.table_restaurant_rounded;
-      case 'CONNECTED':
-        return Icons.cloud_sync_rounded;
-      case 'OMNICHANNEL':
-        return Icons.all_inclusive_rounded;
-      default:
-        return Icons.storefront_rounded;
+  /// The features of this trade's package at [tier] (only keys that apply
+  /// to the trade are ever on).
+  List<FeatureDef> _tierFeatures(PackageTier tier) {
+    final map = PackageCatalog.featuresFor(_vertical, tier);
+    return [
+      for (final def in FeatureCatalog.all)
+        if (map[def.key] == true) def,
+    ];
+  }
+
+  /// "Up to 2 devices · 1 store · 3 users" for [tier] in this trade.
+  String _limitsLine(PackageTier tier) {
+    final shop = Verticals.isShop(_vertical);
+    final l = tier.defaultLimits;
+    String n(int v, String one, String many) => '$v ${v == 1 ? one : many}';
+    final store = shop ? 'store' : 'outlet';
+    final stores = shop ? 'stores' : 'outlets';
+    if (tier.isOffline) return '1 device · 1 $store · 1 user (the owner)';
+    if (tier.allowsCustomLimits) {
+      return 'Devices, $stores and users set for your business '
+          '(usually ${l.maxDevices} · ${l.maxOutlets} · ${l.maxUsers})';
     }
+    return 'Up to ${n(l.maxDevices, 'device', 'devices')} · ${n(l.maxOutlets, store, stores)} · '
+        '${n(l.maxUsers, 'user', 'users')}';
+  }
+
+  /// Contract §7 wording for [tier].
+  static String _tierNotice(PackageTier tier) => tier.isOffline
+      ? '${PackageCatalog.offlineNotice} You can export an encrypted backup of your data '
+          'from Settings → Backup & restore.'
+      : PackageCatalog.driveNotice;
+
+  /// The storage choice for the free trial: it selects the trial package.
+  Widget _trialStorageChoice(Color accent) {
+    Widget option(bool offline, IconData icon, String label) {
+      final selected = _trialOffline == offline;
+      return Expanded(
+        child: InkWell(
+          onTap: () => setState(() {
+            _trialOffline = offline;
+            _selectedOption = 'free_trial';
+          }),
+          borderRadius: BorderRadius.circular(10),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 150),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+            decoration: BoxDecoration(
+              color: selected ? accent.withValues(alpha: 0.14) : context.canvasColor,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: selected ? accent : context.borderColor, width: selected ? 1.4 : 1),
+            ),
+            child: Row(
+              children: [
+                Icon(icon, size: 18, color: selected ? accent : context.textSecondary),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: selected ? FontWeight.bold : FontWeight.w600,
+                      color: context.textPrimary,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Where should your data live?',
+            style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: context.textSecondary)),
+        const SizedBox(height: 6),
+        Row(
+          children: [
+            option(true, TierVisuals.icon(PackageTier.offline), 'Offline on this device'),
+            const SizedBox(width: 8),
+            option(false, TierVisuals.icon(PackageTier.basic), 'My own Google Drive'),
+          ],
+        ),
+      ],
+    );
   }
 
   /// Builds a tappable option card for the plan picker.
@@ -322,6 +389,10 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
     required Widget badge,
     required String subtitle,
     List<FeatureDef>? featureChips,
+    Widget? top,
+    String? heading,
+    String? limits,
+    String? notice,
     bool isFirst = false,
     bool isLast = false,
   }) {
@@ -383,6 +454,32 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
                     subtitle,
                     style: TextStyle(color: context.textSecondary, fontSize: 11.5, height: 1.3),
                   ),
+                  if (top != null) ...[
+                    const SizedBox(height: 10),
+                    top,
+                  ],
+                  if (heading != null) ...[
+                    const SizedBox(height: 10),
+                    Text(
+                      heading,
+                      style: TextStyle(color: context.textPrimary, fontSize: 12, fontWeight: FontWeight.bold),
+                    ),
+                  ],
+                  if (limits != null) ...[
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        Icon(Icons.devices_other_rounded, size: 13, color: context.textSecondary),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: Text(
+                            limits,
+                            style: TextStyle(color: context.textSecondary, fontSize: 11.5, fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                   if (featureChips != null && featureChips.isNotEmpty) ...[
                     const SizedBox(height: 8),
                     PackageFeaturesBreakdownWidget(
@@ -391,6 +488,22 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
                       accentColor: primaryAccent,
                       isCompact: true,
                       showFeatureIcons: false,
+                    ),
+                  ],
+                  if (notice != null) ...[
+                    const SizedBox(height: 8),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(Icons.shield_outlined, size: 13, color: context.textSecondary),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: Text(
+                            notice,
+                            style: TextStyle(color: context.textSecondary, fontSize: 11, height: 1.35),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ],
@@ -535,8 +648,11 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
         //  INSTANT FREE TRIAL ACTIVATION (NO MANUAL ADMIN APPROVAL REQUIRED!)
         // =====================================================================
         // The trial is a package and a plan like every other licence: the
-        // starter package for this business category, on the default trial
-        // plan, composed the same way the console composes them.
+        // storage choice picks the package (offline -> `<trade>_offline`, own
+        // Drive -> `<trade>_basic`), the default trial plan gives the dates
+        // only, and both are composed for this trade the same way the
+        // console composes them (server: START_TRIAL; here:
+        // TenantProvisioningService).
         // Server first: with an e-mail the server verified, Code.gs creates
         // the tenant itself (START_TRIAL) with the password chosen here. The
         // app only writes the tenant documents when the server can't be
@@ -550,6 +666,8 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
             mobile: mobile,
             password: password,
             proof: proof,
+            packageId: Verticals.defaultPackageFor(_businessCategory, offline: _trialOffline),
+            tier: _trialTier,
           );
           if (server != null) {
             if (mounted) {
@@ -569,11 +687,13 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
           }
         }
 
-        final trialPlan = await SubscriptionPlanService.getDefaultTrialPlan();
+        final trialTier = _trialTier;
+        final trialPackageId = Verticals.defaultPackageFor(_businessCategory, offline: _trialOffline);
+        // Validity only: a plan's legacy feature or limit fields never reach
+        // the licence.
+        final trialPlan = (await SubscriptionPlanService.getDefaultTrialPlan()).copyWith(features: const {});
         final trialPackage =
-            (await PackageService.getById(Verticals.defaultPackageFor(_businessCategory))) ??
-                TenantPackage.fromProfile(PlanProfile.offlineDineIn);
-        final composed = LicenseComposer.compose(trialPackage, trialPlan);
+            (await PackageService.getById(trialPackageId)) ?? PackageCatalog.starter(_vertical, trialTier);
 
         final res = await TenantProvisioningService.provisionTenant(
           clientName: clientName,
@@ -581,19 +701,13 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
           email: email,
           mobile: mobile,
           rawPassword: password,
-          plan: trialPlan.copyWith(
-            maxOutlets: composed.maxOutlets,
-            maxDevices: composed.maxDevices,
-            maxUsers: composed.maxUsers,
-            allowedRoles: composed.allowedRoles,
-            features: composed.features,
-          ),
+          plan: trialPlan,
           category: _businessCategory,
           mustChangePassword: false,
-          storageMode: composed.storageMode,
-          planProfile: trialPackage.nearestProfile.id,
+          storageMode: trialPackage.storageMode,
           packageId: trialPackage.id,
           planId: trialPlan.id,
+          tier: trialTier.id,
         );
 
         if (mounted) {
@@ -634,8 +748,10 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
           return;
         }
 
-        final profile = PlanProfile.byId(_selectedOption);
+        final tier = _selectedTier;
         final vertical = Verticals.forCategory(_businessCategory);
+        final packageId = PackageCatalog.starterId(vertical, tier);
+        final packageLabel = PackageCatalog.nameFor(vertical, tier);
         final fallbackSuffix = vertical == Verticals.restaurant
             ? "Restaurant"
             : vertical == Verticals.supermarket
@@ -644,10 +760,6 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
                     ? "Pharmacy"
                     : "Store";
         final effectiveShopName = shopName.isNotEmpty ? shopName : "$clientName $fallbackSuffix";
-
-        final effectivePlanId = profile.id == PlanProfile.offlineSingle.id
-            ? 'offline_counter'
-            : profile.id.toLowerCase();
 
         final reqRef = _firestore.collection('registration_requests').doc();
         await reqRef.set({
@@ -660,10 +772,14 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
           'status': 'PENDING',
           'emailVerified': true,
           if (OtpVerificationService.proofFor(email) != null) 'emailProof': OtpVerificationService.proofFor(email),
-          'requestedPlan': _selectedOption,
-          'requestedPlanLabel': profile.label,
-          'requestedPackageId': profile.id,
-          'requestedPlanId': effectivePlanId,
+          // A package request: this trade's package at the chosen tier. The
+          // administrator picks the plan (validity) when approving.
+          'requestedPlan': tier.id,
+          'requestedPlanLabel': packageLabel,
+          'requestedPackageId': packageId,
+          'requestedTier': tier.id,
+          'requestedStorageMode': tier.defaultStorageMode,
+          'vertical': vertical,
           'isEnterprise': false,
           'createdAt': FieldValue.serverTimestamp(),
           'updatedAt': FieldValue.serverTimestamp(),
@@ -675,9 +791,9 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
           shopName: effectiveShopName,
           businessCategory: _businessCategory,
           mobile: mobile,
-          selectedPlan: profile.label,
-          packageName: profile.id,
-          features: profile.features,
+          selectedPlan: packageLabel,
+          packageName: packageId,
+          features: PackageCatalog.featuresFor(vertical, tier),
         ).catchError((e) {
           debugPrint("Registration email dispatch error: $e");
           return <String, dynamic>{};
@@ -685,7 +801,7 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
 
         if (mounted) {
           setState(() => _isSubmitting = false);
-          _showPackageRequestSubmittedDialog(clientName, email, profile.label);
+          _showPackageRequestSubmittedDialog(clientName, email, packageLabel);
         }
       } else {
         // =====================================================================
@@ -734,9 +850,11 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
           'emailVerified': true,
           if (OtpVerificationService.proofFor(email) != null) 'emailProof': OtpVerificationService.proofFor(email),
           'requestedPlan': 'ENTERPRISE_CUSTOM',
-          'requestedPlanLabel': 'Enterprise / Custom Setup',
-          'requestedPackageId': PlanProfile.omnichannel.id,
-          'requestedPlanId': 'omnichannel',
+          'requestedPlanLabel': PackageCatalog.nameFor(vertical, PackageTier.enterprise),
+          'requestedPackageId': PackageCatalog.starterId(vertical, PackageTier.enterprise),
+          'requestedTier': PackageTier.enterprise.id,
+          'requestedStorageMode': PackageTier.enterprise.defaultStorageMode,
+          'vertical': vertical,
           'isEnterprise': true,
           'createdAt': FieldValue.serverTimestamp(),
           'updatedAt': FieldValue.serverTimestamp(),
@@ -748,9 +866,9 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
           shopName: effectiveShopName,
           businessCategory: _businessCategory,
           mobile: mobile,
-          selectedPlan: 'Enterprise / Custom Setup',
-          packageName: 'Enterprise Custom',
-          features: PlanProfile.omnichannel.features,
+          selectedPlan: PackageCatalog.nameFor(vertical, PackageTier.enterprise),
+          packageName: PackageCatalog.starterId(vertical, PackageTier.enterprise),
+          features: PackageCatalog.featuresFor(vertical, PackageTier.enterprise),
         ).catchError((e) {
           debugPrint("Enterprise registration email dispatch error: $e");
           return <String, dynamic>{};
@@ -789,6 +907,8 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
     required String mobile,
     required String password,
     required String proof,
+    required String packageId,
+    required PackageTier tier,
   }) async {
     try {
       final res = await AppsScriptBackendService.postWithRedirects(
@@ -803,6 +923,13 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
           'business_category': _businessCategory,
           'password': password,
           'email_proof': proof,
+          // The package the storage choice picked; Code.gs composes the
+          // licence from it (tier defaults, trade roles) with the default
+          // trial plan for the dates.
+          'packageId': packageId,
+          'tier': tier.id,
+          'vertical': _vertical,
+          'storageMode': tier.defaultStorageMode,
         }),
         timeout: const Duration(seconds: 40),
       );
@@ -876,15 +1003,11 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
             ),
             const SizedBox(height: 12),
             Builder(builder: (c) {
-              final vertical = Verticals.forCategory(_businessCategory);
-              final highlights = vertical == Verticals.restaurant
-                  ? "Full access to Counter Billing, Table Management, Kitchen KDS, and Dual Printing is now unlocked."
-                  : vertical == Verticals.pharmacy
-                      ? "Full access to POS Billing Desk, Medicines & Stock, and Sales Reports is now unlocked."
-                      : "Full access to POS Billing Desk, Products & Stock, and Sales Reports is now unlocked.";
+              final tier = _trialTier;
               return Text(
-                highlights,
-                style: TextStyle(color: context.textSecondary, fontSize: 12),
+                "Your ${PackageCatalog.nameFor(_vertical, tier)} package is active: ${_limitsLine(tier)}. "
+                "${_tierNotice(tier)}",
+                style: TextStyle(color: context.textSecondary, fontSize: 12, height: 1.4),
               );
             }),
           ],
@@ -926,7 +1049,7 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
           ],
         ),
         content: Text(
-          "Thank you $clientName! Your request for the \"${packageLabel[0].toUpperCase()}${packageLabel.substring(1)}\" plan has been submitted.\n\nOur admin team will review and activate your account at $email shortly.",
+          "Thank you $clientName! Your request for the \"$packageLabel\" package has been submitted.\n\nOur admin team will review and activate your account at $email shortly.",
           style: TextStyle(color: context.textPrimary, fontSize: 13, height: 1.4),
         ),
         actions: [
@@ -1144,12 +1267,9 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
                                 )).toList(),
                                 onChanged: (v) {
                                   if (v != null) {
-                                    setState(() {
-                                      _businessCategory = v;
-                                      if (_vertical != Verticals.restaurant && _selectedOption == PlanProfile.offlineDineIn.id) {
-                                        _selectedOption = 'free_trial';
-                                      }
-                                    });
+                                    // Tiers are the same for every trade; only the
+                                    // package (its features) follows the category.
+                                    setState(() => _businessCategory = v);
                                   }
                                 },
                               ),
@@ -1214,10 +1334,7 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
                     Text("Select Onboarding Option", style: TextStyle(color: context.textSecondary, fontSize: 13, fontWeight: FontWeight.w600)),
                     const SizedBox(height: 8),
                     Builder(builder: (context) {
-                      final defaultPkgId = Verticals.defaultPackageFor(_businessCategory);
-                      final trialProfile = PlanProfile.byId(defaultPkgId);
-                      final trialFeatures = _filteredFeaturesFor(trialProfile, _vertical);
-
+                      final trialTier = _trialTier;
                       return _buildOptionCard(
                         optionValue: 'free_trial',
                         primaryAccent: primaryAccent,
@@ -1236,29 +1353,28 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
                           ),
                         ),
                         subtitle: _freeTrialSubtitle,
-                        featureChips: trialFeatures,
+                        top: _trialStorageChoice(primaryAccent),
+                        heading: PackageCatalog.headingFor(_vertical, trialTier),
+                        limits: _limitsLine(trialTier),
+                        featureChips: _tierFeatures(trialTier),
+                        notice: _tierNotice(trialTier),
                       );
                     }),
                     const SizedBox(height: 8),
-                    // --- Package cards relevant to vertical ---
-                    ...PlanProfile.all.where((profile) {
-                      final isRestaurant = _vertical == Verticals.restaurant;
-                      // Each family sees its own offline starter, not both.
-                      // A chemist has no use for tables and reservations, and a
-                      // restaurant has no use for a shop counter.
-                      if (!isRestaurant && profile.id == PlanProfile.offlineDineIn.id) return false;
-                      if (isRestaurant && profile.id == PlanProfile.offlineRetail.id) return false;
-                      if (!isRestaurant && profile.id == PlanProfile.offlineSingle.id) return false;
-                      return true;
-                    }).map((profile) {
-                      final features = _filteredFeaturesFor(profile, _vertical);
+                    // --- This trade's packages, tier by tier (admin approval) ---
+                    ...const [
+                      PackageTier.offline,
+                      PackageTier.basic,
+                      PackageTier.standard,
+                      PackageTier.premium,
+                    ].map((tier) {
                       return Padding(
                         padding: const EdgeInsets.only(bottom: 8),
                         child: _buildOptionCard(
-                          optionValue: profile.id,
+                          optionValue: tier.id,
                           primaryAccent: primaryAccent,
-                          icon: _profileIcon(profile),
-                          title: profile.label[0].toUpperCase() + profile.label.substring(1),
+                          icon: TierVisuals.icon(tier),
+                          title: PackageCatalog.nameFor(_vertical, tier),
                           badge: Container(
                             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                             decoration: BoxDecoration(
@@ -1270,8 +1386,13 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
                               style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: ClassicTheme.warningAmber),
                             ),
                           ),
-                          subtitle: _profileSubtitle(profile),
-                          featureChips: features,
+                          subtitle: tier.isOffline
+                              ? 'Runs on this device for one store, with the owner as the only user.'
+                              : 'Runs on your own Google Drive, shared across your devices and staff.',
+                          heading: PackageCatalog.headingFor(_vertical, tier),
+                          limits: _limitsLine(tier),
+                          featureChips: _tierFeatures(tier),
+                          notice: _tierNotice(tier),
                         ),
                       );
                     }),
@@ -1280,8 +1401,8 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
                       optionValue: 'enterprise',
                       primaryAccent: primaryAccent,
                       isLast: true,
-                      icon: Icons.business_rounded,
-                      title: "Enterprise / Custom Setup",
+                      icon: TierVisuals.icon(PackageTier.enterprise),
+                      title: PackageCatalog.nameFor(_vertical, PackageTier.enterprise),
                       badge: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                         decoration: BoxDecoration(
@@ -1294,6 +1415,10 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
                         ),
                       ),
                       subtitle: _enterpriseSubtitle,
+                      heading: PackageCatalog.headingFor(_vertical, PackageTier.enterprise),
+                      limits: _limitsLine(PackageTier.enterprise),
+                      featureChips: _tierFeatures(PackageTier.enterprise),
+                      notice: _tierNotice(PackageTier.enterprise),
                     ),
                     const SizedBox(height: 20),
 

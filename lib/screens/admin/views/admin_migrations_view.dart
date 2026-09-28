@@ -10,6 +10,7 @@ import '../../../core/package_model.dart';
 import '../../../services/category_alignment_service.dart';
 import '../../../services/license_migration_service.dart';
 import '../../../utils/ui_feedback.dart';
+import '../widgets/tier_visuals.dart';
 
 /// Every storage-mode change in flight, as the owners' devices report it.
 ///
@@ -59,6 +60,8 @@ class AdminMigrationsView extends ConsumerWidget {
             padding: EdgeInsets.fromLTRB(gutter, DS.space4, gutter, DS.space10),
             children: [
               const _CategoryAlignCard(),
+              const SizedBox(height: DS.space4),
+              const _CategoryPackageMoveCard(),
               const SizedBox(height: DS.space4),
               const _PackagePlanSnapCard(),
               const SizedBox(height: DS.space6),
@@ -712,8 +715,8 @@ class _CategoryAlignCardState extends State<_CategoryAlignCard> {
             'A tenant\'s trade is stored on the organisation, its licence and its owner. Older edits changed '
             'the category without the vertical, and web trials never wrote the vertical at all, so some tenants '
             'open on another trade\'s screens. This resolves each one with the app\'s own rule and writes the '
-            'answer everywhere, and moves a tenant on the other trade\'s free starter package to its own '
-            '(a shop to Shop counter, a restaurant to Offline dine-in). Dry run first.',
+            'answer everywhere, and moves a tenant on another trade\'s package to its own trade\'s package '
+            'at the same tier. Dry run first.',
             style: TextStyle(fontSize: DS.fontCaption, color: context.textSecondary, height: 1.45),
           ),
           const SizedBox(height: DS.space3),
@@ -754,7 +757,7 @@ class _CategoryAlignCardState extends State<_CategoryAlignCard> {
               const SizedBox(height: DS.space2),
               Text(
                 '${bare.length} shop${bare.length == 1 ? ' is' : 's are'} on a restaurant starter package and will move to '
-                '"Shop counter" (barcode billing, khata, stock): ${bare.map((b) => b.orgName).join(', ')}.',
+                'their own trade\'s package (barcode billing, khata, stock): ${bare.map((b) => b.orgName).join(', ')}.',
                 style: const TextStyle(fontSize: DS.fontMicro, color: ClassicTheme.warningAmber),
               ),
             ],
@@ -778,6 +781,218 @@ class _CategoryAlignCardState extends State<_CategoryAlignCard> {
                 ),
             ],
           ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Put every tenant on its trade's tier package (`<trade>_<tier>`), keeping
+/// the add-ons it had and anything it had switched off. Dry run first; the
+/// report is shown before anything is written.
+class _CategoryPackageMoveCard extends StatefulWidget {
+  const _CategoryPackageMoveCard();
+
+  @override
+  State<_CategoryPackageMoveCard> createState() => _CategoryPackageMoveCardState();
+}
+
+class _CategoryPackageMoveCardState extends State<_CategoryPackageMoveCard> {
+  CategoryPackageReport? _report;
+  bool _busy = false;
+
+  Future<void> _dryRun() async {
+    setState(() => _busy = true);
+    try {
+      final r = await CategoryPackageMigrationService.plan();
+      if (mounted) setState(() => _report = r);
+    } catch (e) {
+      if (mounted) AppToast.showError(context, e, title: 'Could not read licences');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _apply() async {
+    final r = _report;
+    if (r == null || r.rows.isEmpty) return;
+    final n = r.rows.length;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Move $n tenant${n == 1 ? '' : 's'} to category packages?'),
+        content: const Text(
+          'Each tenant\'s licence is re-written onto its trade\'s tier package, as shown: features '
+          '(only those for its trade), storage mode, limits and roles. Features it had switched on '
+          'beyond its old package stay on as add-ons where the new package offers them; features it '
+          'had switched off stay off; limits above the tier\'s defaults are kept as custom limits. '
+          'Dates and plans do not change.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: ClassicTheme.primaryAccent, foregroundColor: Colors.white),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Move'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    setState(() => _busy = true);
+    try {
+      final done = await CategoryPackageMigrationService.apply(r);
+      if (!mounted) return;
+      AppToast.showSuccess(context, 'Moved $done tenant${done == 1 ? '' : 's'}');
+      await _dryRun();
+    } catch (e) {
+      if (mounted) AppToast.showError(context, e);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final r = _report;
+    final rows = r?.rows ?? const <CategoryPackageMove>[];
+    return Container(
+      padding: const EdgeInsets.all(DS.space4),
+      decoration: BoxDecoration(
+        color: context.surfaceColor,
+        borderRadius: BorderRadius.circular(DS.radiusLg),
+        border: Border.all(color: context.borderColor),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.swap_horiz_rounded, color: ClassicTheme.primaryAccent, size: 20),
+              const SizedBox(width: DS.space2),
+              Expanded(
+                child: Text('Move tenants to category packages',
+                    style: TextStyle(fontSize: DS.fontBodyLg, fontWeight: FontWeight.w700, color: context.textPrimary)),
+              ),
+              if (_busy) const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
+            ],
+          ),
+          const SizedBox(height: DS.space2),
+          Text(
+            'Every trade has five packages: Offline, Basic, Standard, Premium and Enterprise. This puts each '
+            'tenant on its own trade\'s package at the tier its licence runs today (offline storage is Offline; '
+            'otherwise the stored tier, or one inferred from its old package and device count). Anything the '
+            'client had added stays as a per-client add-on. Dry run first.',
+            style: TextStyle(fontSize: DS.fontCaption, color: context.textSecondary, height: 1.45),
+          ),
+          const SizedBox(height: DS.space3),
+          if (r != null) ...[
+            Text(
+              rows.isEmpty
+                  ? 'Nothing to move: all ${r.alreadyDone} licence${r.alreadyDone == 1 ? ' is' : 's are'} on their trade\'s package.'
+                  : '${rows.length} to move · ${r.alreadyDone} already done'
+                      '${r.skipped.isEmpty ? '' : ' · ${r.skipped.length} skipped'}',
+              style: TextStyle(fontSize: DS.fontCaption, fontWeight: FontWeight.w600, color: context.textPrimary),
+            ),
+            if (rows.isNotEmpty) ...[
+              const SizedBox(height: DS.space2),
+              Container(
+                constraints: const BoxConstraints(maxHeight: 320),
+                decoration: BoxDecoration(
+                  color: context.sunkenSurface,
+                  borderRadius: BorderRadius.circular(DS.radiusMd),
+                  border: Border.all(color: context.borderColor),
+                ),
+                child: ListView.separated(
+                  shrinkWrap: true,
+                  padding: const EdgeInsets.all(DS.space2),
+                  itemCount: rows.length,
+                  separatorBuilder: (context, i) => Divider(height: 1, color: context.borderColor),
+                  itemBuilder: (context, i) => _row(context, rows[i]),
+                ),
+              ),
+            ],
+            if (r.skipped.isNotEmpty) ...[
+              const SizedBox(height: DS.space2),
+              Text(r.skipped.join('\n'),
+                  style: const TextStyle(fontSize: DS.fontMicro, color: ClassicTheme.warningAmber)),
+            ],
+            const SizedBox(height: DS.space3),
+          ],
+          Row(
+            children: [
+              OutlinedButton.icon(
+                onPressed: _busy ? null : _dryRun,
+                icon: const Icon(Icons.search_rounded, size: 16),
+                label: Text(r == null ? 'Dry run' : 'Run again'),
+              ),
+              const SizedBox(width: DS.space2),
+              if (rows.isNotEmpty)
+                ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                      backgroundColor: ClassicTheme.primaryAccent, foregroundColor: Colors.white),
+                  onPressed: _busy ? null : _apply,
+                  icon: const Icon(Icons.check_rounded, size: 16),
+                  label: Text('Move ${rows.length}'),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _row(BuildContext context, CategoryPackageMove m) {
+    final accent = TierVisuals.color(m.tier);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: DS.space1 + 2, horizontal: DS.space1),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text('${m.orgName}  ·  ${m.orgId}',
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        fontSize: DS.fontMicro, fontWeight: FontWeight.w700, color: context.textPrimary)),
+              ),
+              Text(Verticals.shortLabel(m.vertical),
+                  style: TextStyle(fontSize: DS.fontMicro, color: context.textMuted)),
+            ],
+          ),
+          const SizedBox(height: 2),
+          Row(
+            children: [
+              Flexible(
+                child: Text(m.from,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: DS.fontMicro, color: context.textSecondary)),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: DS.space1),
+                child: Icon(Icons.arrow_forward_rounded, size: 13, color: context.textMuted),
+              ),
+              Icon(TierVisuals.icon(m.tier), size: 13, color: accent),
+              const SizedBox(width: 3),
+              Flexible(
+                child: Text(m.to,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: DS.fontMicro, fontWeight: FontWeight.w700, color: accent)),
+              ),
+              if (m.limitsCustom) ...[
+                const SizedBox(width: DS.space1),
+                const Text('· custom limits',
+                    style: TextStyle(fontSize: DS.fontMicro, color: ClassicTheme.warningAmber)),
+              ],
+            ],
+          ),
+          for (final c in m.changes)
+            Padding(
+              padding: const EdgeInsets.only(top: 1, left: DS.space2),
+              child: Text('• $c',
+                  style: TextStyle(fontSize: DS.fontMicro, color: context.textSecondary, height: 1.35)),
+            ),
         ],
       ),
     );

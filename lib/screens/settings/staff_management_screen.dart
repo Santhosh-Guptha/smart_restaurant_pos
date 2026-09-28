@@ -14,6 +14,8 @@ import '../../providers/restaurant_auth_provider.dart';
 import '../../providers/saas_session_provider.dart';
 import '../../services/restaurant_sheets_service.dart';
 import '../../core/vertical_labels.dart';
+import '../../core/package_model.dart';
+import 'plan_request_sheet.dart';
 
 class StaffManagementScreen extends ConsumerStatefulWidget {
   final String? initialOrgId;
@@ -44,55 +46,84 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
     return false;
   }
 
+  /// Active users counted against the licence: the owner plus every active
+  /// staff member (the owner's own staff record, if any, is not counted twice).
+  int _usersInUse(List<StaffMember> staffList) {
+    final ownerEmail =
+        (ref.read(saasSessionProvider).currentOrganization?.ownerGoogleEmail ?? '').trim().toLowerCase();
+    final active = staffList
+        .where((s) => s.isActive && (ownerEmail.isEmpty || s.email.trim().toLowerCase() != ownerEmail))
+        .length;
+    return active + 1;
+  }
+
+  void _showUserLimitDialog({required bool ownerOnly, required int maxUsers, required bool restaurant}) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: context.surfaceColor,
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(18), side: BorderSide(color: context.borderColor)),
+        title: Row(
+          children: [
+            const Icon(Icons.lock_outline_rounded, color: ClassicTheme.warningAmber, size: 24),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                ownerOnly ? 'One user on Offline' : 'User limit reached',
+                style: TextStyle(color: context.textPrimary, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ],
+        ),
+        content: Text(
+          ownerOnly
+              ? 'Offline stores have one user — the owner. Move to Basic or above to add staff.'
+              : 'Your package allows up to $maxUsers users, including the owner.\n\n'
+                  'To add more team members${restaurant ? " across your stations" : ""}, ask for a '
+                  'bigger package, or deactivate someone who no longer needs access.',
+          style: TextStyle(color: context.textSecondary, fontSize: 13, height: 1.4),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('OK'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: ClassicTheme.warningAmber,
+              foregroundColor: Colors.black,
+            ),
+            onPressed: () {
+              Navigator.pop(ctx);
+              PlanRequestSheet.show(context);
+            },
+            child: const Text('Ask for more', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _showAddEditStaffModal([StaffMember? existing]) {
     final vertical = ref.read(currentVerticalProvider);
     final vl = VerticalLabels.of(vertical);
 
     final saasSession = ref.read(saasSessionProvider);
     final license = saasSession.currentLicense;
-    final maxUsers = license?.maxUsers ?? 10;
     final allowedRoles = license?.allowedRoles ??
         ['OWNER', 'MANAGER', 'BILLING', 'KITCHEN', 'WAITER'];
 
+    // User limit (docs/PLATFORM_STRUCTURE.md §3): Offline is one user, the
+    // owner; every other tier allows maxUsers active users, the owner
+    // included. Editing an existing member is always allowed.
+    final seatEnt = ref.read(entitlementsProvider);
     final allStaff = ref.read(restaurantAuthProvider).staffList;
     final staffList = allStaff.where((s) => !_isExcludedStaff(s)).toList();
-
-    // Check user seat limit before creating new staff
-    if (existing == null && staffList.length >= maxUsers) {
-      showDialog(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          backgroundColor: context.surfaceColor,
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(18), side: BorderSide(color: context.borderColor)),
-          title: Row(
-            children: [
-              const Icon(Icons.lock_outline_rounded, color: ClassicTheme.warningAmber, size: 24),
-              const SizedBox(width: 10),
-              Text(
-                'Staff Seat Limit Reached',
-                style:
-                    TextStyle(color: context.textPrimary, fontWeight: FontWeight.bold),
-              ),
-            ],
-          ),
-          content: Text(
-            'Your current subscription allows up to $maxUsers staff members ($maxUsers maximum allocated).\n\n'
-            'To expand staff user capacity and onboard more team members${vl.isRestaurant ? " across your stations" : ""}, please contact your administrator.',
-            style: TextStyle(color: context.textSecondary, fontSize: 13),
-          ),
-          actions: [
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: ClassicTheme.warningAmber,
-                foregroundColor: Colors.black,
-              ),
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('OK', style: TextStyle(fontWeight: FontWeight.bold)),
-            ),
-          ],
-        ),
-      );
+    final usersInUse = _usersInUse(staffList);
+    final ownerOnly = seatEnt.isPureOffline || seatEnt.maxUsers <= 1;
+    if (existing == null && (ownerOnly || usersInUse >= seatEnt.maxUsers)) {
+      _showUserLimitDialog(ownerOnly: ownerOnly, maxUsers: seatEnt.maxUsers, restaurant: vl.isRestaurant);
       return;
     }
 
@@ -907,9 +938,9 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
     final vl = VerticalLabels.of(vertical);
     final allStaff = ref.watch(restaurantAuthProvider).staffList;
     final staffList = allStaff.where((s) => !_isExcludedStaff(s)).toList();
-    final saasSession = ref.watch(saasSessionProvider);
-    final license = saasSession.currentLicense;
-    final maxUsers = license?.maxUsers ?? 10;
+    final ent = ref.watch(entitlementsProvider);
+    final maxUsers = ent.maxUsers;
+    final usersInUse = _usersInUse(staffList);
 
     return Scaffold(
       backgroundColor: context.canvasColor,
@@ -944,7 +975,7 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
                     overflow: TextOverflow.ellipsis,
                   ),
                   Text(
-                    '${staffList.length} / $maxUsers Seats · ${license?.planTier ?? "ACTIVE"} Plan',
+                    '$usersInUse / $maxUsers users · ${PackageCatalog.nameFor(ent.vertical, ent.tier)}',
                     style: TextStyle(fontSize: 12, color: context.textSecondary),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,

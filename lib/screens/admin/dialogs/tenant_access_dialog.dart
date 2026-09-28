@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -6,15 +8,13 @@ import '../../../core/classic_theme.dart';
 import '../../../core/design_tokens.dart';
 import '../../../core/entitlements.dart';
 import '../../../core/package_model.dart';
-import '../../../core/saas_models.dart';
-import '../../../core/subscription_plan_model.dart';
-import '../../../services/license_migration_service.dart';
 import '../../../services/package_service.dart';
 import '../../../services/smtp_email_service.dart';
 import '../../../services/subscription_plan_service.dart';
 import '../../../services/tenant_purge_service.dart';
 import '../../../utils/ui_feedback.dart';
 import '../widgets/tenant_package_editor.dart';
+import '../widgets/tier_visuals.dart';
 
 /// Pause, restore, re-licence or close one tenant.
 ///
@@ -60,7 +60,6 @@ class _TenantAccessDialogState extends ConsumerState<TenantAccessDialog> {
   String _licenceStatus = 'ACTIVE';
   DateTime? _endDate;
   int _maxDevices = 1;
-  String _planProfile = '';
   String _packageId = '';
   String _planId = '';
   String _storageMode = StorageModes.cloudSync;
@@ -78,23 +77,56 @@ class _TenantAccessDialogState extends ConsumerState<TenantAccessDialog> {
   Map<String, dynamic>? _renewal;
   bool _autoOpened = false;
 
+  /// `licenses/{orgId}`, watched: the Feature Matrix, a migration or an
+  /// apply-to-tenants writes the same document, and this dialog shows what
+  /// is stored now, not what it was when it opened.
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _licSub;
+  final Completer<void> _firstLicence = Completer<void>();
+
   @override
   void initState() {
     super.initState();
+    _licSub = _fs.collection('licenses').doc(widget.orgId).snapshots().listen(
+      (snap) {
+        if (!mounted) return;
+        setState(() => _applyLicence(snap.data() ?? const {}));
+        if (!_firstLicence.isCompleted) _firstLicence.complete();
+      },
+      onError: (Object e) {
+        debugPrint('Licence stream for ${widget.orgId}: $e');
+        if (!_firstLicence.isCompleted) _firstLicence.complete();
+      },
+    );
     _load();
   }
+
+  @override
+  void dispose() {
+    _licSub?.cancel();
+    super.dispose();
+  }
+
+  void _applyLicence(Map<String, dynamic> l) {
+    _licenceRaw = l;
+    _licenceStatus = (l['status'] ?? 'ACTIVE').toString().toUpperCase();
+    _endDate = _asDate(l['endDate']);
+    _maxDevices = (l['maxDevices'] is num) ? (l['maxDevices'] as num).toInt() : 1;
+    _packageId = (l['packageId'] ?? '').toString();
+    _planId = (l['planId'] ?? '').toString();
+  }
+
+  /// The licence's tier, read as the app reads it.
+  PackageTier get _tier => LicenceEdits.tierOf(_licenceRaw, storageMode: _storageMode);
 
   Future<void> _load() async {
     try {
       final org = await _fs.collection('organizations').doc(widget.orgId).get();
-      final lic = await _fs.collection('licenses').doc(widget.orgId).get();
       final ren = await _fs.collection('renewal_requests').doc(widget.orgId).get();
+      await _firstLicence.future;
       final o = org.data() ?? {};
-      final l = lic.data() ?? {};
       final r = ren.data();
       if (!mounted) return;
       setState(() {
-        _licenceRaw = l;
         _ownerEmail = (o['ownerEmail'] ?? o['email'] ?? '').toString();
         _vertical = Verticals.resolve(
           vertical: o['vertical']?.toString(),
@@ -104,12 +136,6 @@ class _TenantAccessDialogState extends ConsumerState<TenantAccessDialog> {
         _status = (o['status'] ?? 'ACTIVE').toString().toUpperCase();
         _statusReason = (o['statusReason'] ?? '').toString();
         _purgeAfter = _asDate(o['purgeAfter']);
-        _licenceStatus = (l['status'] ?? 'ACTIVE').toString().toUpperCase();
-        _endDate = _asDate(l['endDate']);
-        _maxDevices = (l['maxDevices'] is num) ? (l['maxDevices'] as num).toInt() : 1;
-        _planProfile = (l['planProfile'] ?? l['planTier'] ?? '').toString();
-        _packageId = (l['packageId'] ?? '').toString();
-        _planId = (l['planId'] ?? '').toString();
         _storageMode = (o['storageMode'] ?? StorageModes.cloudSync).toString().toUpperCase();
         _changePending =
             (o['pendingStorageChange'] is Map) &&
@@ -243,55 +269,43 @@ class _TenantAccessDialogState extends ConsumerState<TenantAccessDialog> {
   /// and write what the resolver says — never what was typed.
   ///
   /// Where the picker starts matters, because "Apply" writes the whole
-  /// licence: a licence that already names a package and a plan starts on
-  /// them; one written before packages existed is snapped to the package and
-  /// plan it *behaves like* (or a custom copy of itself), exactly as the
-  /// migration would, so Apply with nothing changed changes nothing. A
-  /// pending renewal request from the owner overrides both: the picker opens
-  /// on what they asked for, and the admin decides.
+  /// licence: it opens on the licence as stored, read the way the Feature
+  /// Matrix reads it ([LicenceEdits.read]) — the package it names when that
+  /// is this trade's, else this trade's package at the licence's tier — with
+  /// the client's add-ons, switched-off features and custom limits carried,
+  /// so a renewal keeps them. A pending renewal request from the owner
+  /// overrides the package and plan: the picker opens on what they asked
+  /// for, and the admin decides.
+  ///
+  /// Only `licenses/{orgId}` (plus its legacy mirror, the guest flags and a
+  /// requested storage change on this organisation) is written; never a
+  /// package, a plan or another client.
   Future<void> _changePackage({bool renew = false}) async {
     final packages = await PackageService.getAll();
     var plans = await SubscriptionPlanService.getAllPlans();
     if (plans.isEmpty) plans = [SubscriptionPlanService.fallbackTrialPlan];
 
-    TenantPackage? pkg = packages.where((p) => p.id == _packageId).firstOrNull;
-    SubscriptionPlan? plan = plans.where((p) => p.id == _planId).firstOrNull;
-    LicenseSnapPlan? snapped;
-    if (pkg == null || plan == null) {
-      SaasLicense? lic;
-      try {
-        if (_licenceRaw.isNotEmpty) lic = SaasLicense.fromFirestore(_licenceRaw);
-      } catch (_) {}
-      if (lic != null) {
-        snapped = LicenseMigrationService.snapOne(
-          orgId: widget.orgId,
-          orgName: widget.orgName,
-          license: lic,
-          storageMode: _storageMode,
-          packages: packages,
-          plans: plans,
-        );
-        pkg ??= snapped.package;
-        plan ??= snapped.plan;
-      }
-    }
-    // Nothing on record: this trade's own starter, never the restaurant's.
-    final starter = PlanProfile.alignedFor(PlanProfile.offlineDineIn, _vertical);
-    pkg ??= packages.where((p) => p.id == starter.id).firstOrNull ?? TenantPackage.fromProfile(starter);
-    plan ??= plans.first;
+    final read = LicenceEdits.read(
+      _licenceRaw,
+      vertical: _vertical,
+      storageMode: _storageMode,
+      packages: packages,
+      plans: plans,
+    );
+    var selection = read.selection;
 
-    // The owner's request, when there is one and it names things that exist.
+    // The owner's request, when there is one and it names things that exist
+    // (a package only when it is this trade's).
     final req = _renewal;
     final reqPkgId = (req?['requestedPackageId'] ?? '').toString();
     final reqPlanId = (req?['requestedPlanId'] ?? '').toString();
-    final reqPkg = packages.where((p) => p.id == reqPkgId).firstOrNull;
+    final reqPkg =
+        packages.where((p) => p.id == reqPkgId && LicenceEdits.belongsToTrade(p, _vertical)).firstOrNull;
     final reqPlan = plans.where((p) => p.id == reqPlanId).firstOrNull;
-    if (reqPkg != null) pkg = reqPkg;
-    if (reqPlan != null) plan = reqPlan;
+    if (reqPkg != null && reqPkg.id != selection.packageId) selection = selection.withPackage(reqPkg);
+    if (reqPlan != null) selection = selection.copyWith(plan: reqPlan);
     final reqNote = (req?['note'] ?? '').toString().trim();
 
-    var selection =
-        TenantPackageSelection(package: pkg, plan: plan, currentStorageMode: _storageMode, vertical: _vertical);
     // Only the renew actions restart the term and close the owner's request;
     // "Change package or plan" with a request pending just starts on it.
     final isRenewal = renew;
@@ -327,15 +341,15 @@ class _TenantAccessDialogState extends ConsumerState<TenantAccessDialog> {
                           ' \u00b7 ${reqPlan?.name ?? (reqPlanId.isEmpty ? 'their current plan' : reqPlanId)}'
                           '${reqNote.isEmpty ? '' : '. \u201c$reqNote\u201d'}',
                     )
-                  else if (snapped != null && (snapped.packageIsNew || snapped.planIsNew))
+                  else if (read.realigned && _licenceRaw.isNotEmpty)
                     _note(
                       ctx,
                       icon: Icons.info_outline_rounded,
                       color: ClassicTheme.infoBlue,
-                      text: 'This licence predates packages. It is shown on '
-                          '${snapped.packageIsNew ? 'a custom package' : 'the package'} and '
-                          '${snapped.planIsNew ? 'a custom plan' : 'the plan'} it matches today; '
-                          'Apply records that without changing what the tenant has.',
+                      text: 'This licence is on '
+                          '${_packageId.isEmpty ? 'no package' : _packageId}, which is not a '
+                          '${Verticals.shortLabel(_vertical)} package. It is shown on '
+                          '${read.selection.package.name}; Apply moves it there.',
                     ),
                   if (isRenewal)
                     _note(
@@ -369,22 +383,12 @@ class _TenantAccessDialogState extends ConsumerState<TenantAccessDialog> {
     );
     if (saved == null) return;
 
-    // A custom package or plan made for this tenant exists only in memory
-    // until the licence that points at it is written; write it first so the
-    // licence never names a document that is not there.
-    final packageIsNew = !packages.any((p) => p.id == saved.package.id);
-    final planIsNew = !plans.any((p) => p.id == saved.plan.id);
-
     await _run(() async {
-      if (packageIsNew) await PackageService.save(saved.package);
-      if (planIsNew) await SubscriptionPlanService.savePlan(saved.plan);
-
       final now = FieldValue.serverTimestamp();
       final composed = saved.composed;
       final resolvedFeatures = composed.features;
-      // The guest web app's flags are this store's, so resolve in its trade
-      // (the licence itself is written trade-neutral).
-      final preview = saved.copyWith(vertical: _vertical).resolvedFor(_vertical);
+      // The guest web app's flags are this store's, so resolve in its trade.
+      final preview = saved.resolvedFor(_vertical);
       final batch = _fs.batch();
 
       // The term. A renewal or a genuinely different plan starts a new term
@@ -398,20 +402,15 @@ class _TenantAccessDialogState extends ConsumerState<TenantAccessDialog> {
           ? DateTime.now().add(Duration(days: saved.validityDays))
           : _endDate!;
 
+      // The composed licence (package, tier, features, limits, roles, the
+      // client's add-ons), with the term decided here.
       batch.set(_fs.collection('licenses').doc(widget.orgId), {
-        'packageId': saved.packageId,
-        'planId': saved.planId,
-        'packageName': saved.package.name,
-        'planName': saved.plan.name,
-        'planTier': saved.plan.billingCycle,
-        'planProfile': saved.profile.id,
-        'storageMode': composed.storageMode,
-        'features': resolvedFeatures,
-        'featuresResolvedFor': 'any',
-        'maxDevices': composed.maxDevices,
-        'maxFranchises': composed.maxOutlets,
-        'maxUsers': composed.maxUsers,
-        'allowedRoles': composed.allowedRoles,
+        ...LicenceEdits.licenceFields(saved),
+        if (saved.planId.isNotEmpty) ...{
+          'planId': saved.planId,
+          'planName': saved.plan.name,
+          'planTier': saved.plan.billingCycle,
+        },
         if (isRenewal) 'status': 'ACTIVE',
         if (newTerm) 'startDate': Timestamp.fromDate(DateTime.now()),
         'endDate': Timestamp.fromDate(endDate),
@@ -478,12 +477,10 @@ class _TenantAccessDialogState extends ConsumerState<TenantAccessDialog> {
         'organizationId': widget.orgId,
         'targetOrgName': widget.orgName,
         'organizationName': widget.orgName,
-        'details': '${saved.package.name} \u00b7 ${saved.plan.name} \u00b7 '
+        'details': '${saved.package.name} (${composed.tier.label}) \u00b7 ${saved.plan.name} \u00b7 '
             '${composed.maxDevices} device(s), ${composed.maxOutlets} outlet(s), ${composed.maxUsers} staff'
             '${newTerm ? ' \u00b7 until ${_fmt(endDate)}' : ''}'
             '${modeChange ? ' \u00b7 storage $_storageMode \u2192 ${composed.storageMode} (requested)' : ''}'
-            '${packageIsNew ? ' \u00b7 custom package saved' : ''}'
-            '${planIsNew ? ' \u00b7 custom plan saved' : ''}'
             ' \u00b7 on: ${on.join(', ')}',
         'by': 'master_admin',
         'timestamp': now,
@@ -912,9 +909,18 @@ class _TenantAccessDialogState extends ConsumerState<TenantAccessDialog> {
             ],
           ),
           const SizedBox(height: 4),
+          Row(
+            children: [
+              Icon(TierVisuals.icon(_tier), size: 14, color: TierVisuals.color(_tier)),
+              const SizedBox(width: DS.space1),
+              Text('${Verticals.shortLabel(_vertical)} \u00b7 ${_tier.label}',
+                  style: TextStyle(
+                      fontSize: DS.fontMicro, fontWeight: FontWeight.w700, color: TierVisuals.color(_tier))),
+            ],
+          ),
+          const SizedBox(height: 2),
           Text(
             [
-              if (_planProfile.isNotEmpty) _planProfile,
               '$_maxDevices device${_maxDevices == 1 ? '' : 's'}',
               if (_endDate != null) 'ends ${_fmt(_endDate!)}',
             ].join(' · '),
