@@ -5,6 +5,7 @@ import 'package:mailer/mailer.dart';
 import 'package:mailer/smtp_server.dart';
 import '../core/constants.dart';
 import '../core/entitlements.dart';
+import '../core/package_model.dart';
 import '../core/feature_usage.dart';
 import 'apps_script_backend_service.dart';
 
@@ -230,7 +231,7 @@ class SmtpEmailService {
         subject: subject,
         text: plainText,
         html: htmlContent,
-        fromName: fromName ?? 'Smart POS',
+        fromName: fromName ?? 'SmartBizz',
       );
       if (res['success'] == true) {
         debugPrint("SmtpEmailService: Email delivered via Cloud Webhook to $cleanEmail");
@@ -325,7 +326,7 @@ class SmtpEmailService {
               <span style="font-size: 16px; margin-right: 6px;">&#128241;</span>
               <span style="font-size: 12px; font-weight: 700; color: #1e293b;">SmartBizz POS Suite</span>
             </div>
-            <p style="margin: 3px 0 0 0; font-size: 11px; color: #64748b;">Offline POS, Tables, Kitchen Display & Multi-Outlet Management</p>
+            <p style="margin: 3px 0 0 0; font-size: 11px; color: #64748b;">Billing for restaurants, kirana, supermarkets, pharmacies &amp; retail</p>
           </td>
         </tr>
         <tr>
@@ -340,7 +341,7 @@ class SmtpEmailService {
         </tr>
       </table>
       <div style="text-align: center; margin-top: 16px; font-size: 11px; color: #94a3b8;">
-        &copy; 2026 Smart POS Retail Technologies. All rights reserved.
+        &copy; 2026 SmartBizz. All rights reserved.
       </div>
     </div>
     ''';
@@ -364,13 +365,13 @@ class SmtpEmailService {
         badgeText: "Verification Required",
         badgeBg: "#eff6ff",
         badgeColor: "#2563eb",
-        title: "Smart POS Retail",
+        title: "SmartBizz",
         subtitle: "Cloud & Offline Multi-Outlet Billing Platform",
       );
       final footerHtml = _buildFooterHtml();
 
-      final subject = 'Your Smart POS Verification Code: $otpCode';
-      final plainText = 'Hello $clientName,\n\nYour 6-digit verification code is: $otpCode\n\nThis code will expire in 10 minutes.\n\nBest regards,\nSmart POS Team';
+      final subject = 'Your SmartBizz Verification Code: $otpCode';
+      final plainText = 'Hello $clientName,\n\nYour 6-digit verification code is: $otpCode\n\nThis code will expire in 10 minutes.\n\nBest regards,\nSmartBizz Team';
       final htmlContent = '''
 <!DOCTYPE html>
 <html>
@@ -514,7 +515,7 @@ class SmtpEmailService {
         badgeText: "Application Received",
         badgeBg: "#fef3c7",
         badgeColor: "#b45309",
-        title: "Smart POS Retail",
+        title: "SmartBizz",
         subtitle: "Store Registration Under Review",
       );
       final footerHtml = _buildFooterHtml();
@@ -531,7 +532,8 @@ class SmtpEmailService {
           try {
             def = FeatureCatalog.all.firstWhere((f) => f.key == key);
           } catch (_) {}
-          displayItems.add(def?.label ?? key);
+          if (def != null && !def.appliesTo(Verticals.forCategory(businessCategory))) continue;
+          displayItems.add(def?.labelFor(Verticals.forCategory(businessCategory)) ?? key);
         }
         if (displayItems.isNotEmpty) {
           featureListHtml.writeln('<div style="margin-top: 14px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px;">');
@@ -551,7 +553,7 @@ class SmtpEmailService {
       final plainText = '''
 Hello $clientName,
 
-Thank you for choosing Smart POS. We have received your store registration for "$shopName" ($businessCategory).
+Thank you for choosing SmartBizz. We have received your store registration for "$shopName" ($businessCategory).
 
 Selected Package / Plan: $planDisplay
 Status: Under Administrative Review
@@ -559,7 +561,7 @@ Status: Under Administrative Review
 Our administrative team will review your application and onboard your store shortly. Once approved, you will receive an account activation email with your store ID and login credentials.
 
 Best regards,
-Smart POS Team
+SmartBizz Team
 ''';
 
       final htmlContent = '''
@@ -584,7 +586,7 @@ Smart POS Team
   <div class="card">
     $headerHtml
     <p class="greeting">Hello <strong>$clientName</strong>,</p>
-    <p class="note">Thank you for choosing Smart POS. Your store registration request has been successfully submitted and is under administrative review.</p>
+    <p class="note">Thank you for choosing SmartBizz. Your store registration request has been successfully submitted and is under administrative review.</p>
     
     <div class="status-banner">
       <p class="status-text">&#8987; Status: Pending Administrator Approval & Onboarding</p>
@@ -632,6 +634,9 @@ Smart POS Team
     Map<String, bool>? features,
     int? maxStores,
     int? maxDevices,
+    /// The tenant's trade. Only features for this trade are listed, in its
+    /// own words (a pharmacy never reads about tables or dishes).
+    String? vertical,
   }) async {
     final cleanEmail = recipientEmail.trim().toLowerCase();
     if (cleanEmail.isEmpty || !cleanEmail.contains('@')) {
@@ -643,7 +648,7 @@ Smart POS Team
         badgeText: "Account Activated",
         badgeBg: "#dcfce7",
         badgeColor: "#15803d",
-        title: "Welcome to Smart POS!",
+        title: "Welcome to SmartBizz!",
         subtitle: "Your Store Account is Approved & Ready",
       );
       final footerHtml = _buildFooterHtml();
@@ -655,7 +660,8 @@ Smart POS Team
 
       for (final def in FeatureCatalog.all) {
         if (kFeatureUsage[def.key]?.implemented == false) continue;
-        final line = '<strong>${def.label}:</strong> ${def.description}';
+        if (!def.appliesTo(vertical)) continue;
+        final line = '<strong>${def.labelFor(vertical)}:</strong> ${def.descriptionFor(vertical)}';
         if (feat[def.key] == true) {
           activeList.add('&#9989; $line');
         } else {
@@ -666,7 +672,7 @@ Smart POS Team
       final activeFeaturesHtml = activeList.map((item) => '<li style="margin-bottom: 6px; font-size: 12.5px; color: #1e293b;">$item</li>').join('\n');
       final upgradeFeaturesHtml = upgradeList.map((item) => '<li style="margin-bottom: 6px; font-size: 12.5px; color: #64748b;">$item</li>').join('\n');
 
-      final subject = '\u{1F389} Congratulations! Your Smart POS Store Account is Activated';
+      final subject = '\u{1F389} Congratulations! Your SmartBizz Store Account is Activated';
       final plainText = '''
 Hello $clientName,
 
@@ -680,7 +686,7 @@ Default Password: ${defaultPassword ?? "Set by admin"}
 On your first login, you will be prompted to set your private permanent password.
 
 Best regards,
-Smart POS Team
+SmartBizz Team
 ''';
 
       final htmlContent = '''
@@ -779,13 +785,13 @@ Smart POS Team
         badgeText: "Application Update",
         badgeBg: "#fee2e2",
         badgeColor: "#dc2626",
-        title: "Smart POS Retail",
+        title: "SmartBizz",
         subtitle: "Registration Status Update",
       );
       final footerHtml = _buildFooterHtml();
 
-      final subject = 'Update regarding your Smart POS Registration Request';
-      final plainText = 'Hello $clientName,\n\nRegarding your registration request for "$shopName": we were unable to approve your application at this time.\n\nReason: ${reason ?? "Verification could not be completed."}\n\nBest regards,\nSmart POS Team';
+      final subject = 'Update regarding your SmartBizz Registration Request';
+      final plainText = 'Hello $clientName,\n\nRegarding your registration request for "$shopName": we were unable to approve your application at this time.\n\nReason: ${reason ?? "Verification could not be completed."}\n\nBest regards,\nSmartBizz Team';
       final htmlContent = '''
 <!DOCTYPE html>
 <html>
@@ -805,7 +811,7 @@ Smart POS Team
   <div class="card">
     $headerHtml
     <p class="greeting">Hello <strong>$clientName</strong>,</p>
-    <p class="note">Thank you for your interest in Smart POS. We have reviewed your registration application for <strong>$shopName</strong>.</p>
+    <p class="note">Thank you for your interest in SmartBizz. We have reviewed your registration application for <strong>$shopName</strong>.</p>
     
     <div class="reason-box">
       <p class="reason-title">Status Notice:</p>

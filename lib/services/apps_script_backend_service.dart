@@ -482,7 +482,7 @@ class AppsScriptBackendService {
           'subject': subject.trim(),
           'text': text.trim(),
           'html': html ?? '',
-          'from_name': fromName ?? 'Smart POS',
+          'from_name': fromName ?? 'SmartBizz',
         }),
         timeout: const Duration(seconds: 15),
       );

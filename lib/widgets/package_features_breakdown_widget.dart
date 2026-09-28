@@ -140,6 +140,9 @@ class PackageFeaturesBreakdownWidget extends StatefulWidget {
 }
 
 class _PackageFeaturesBreakdownWidgetState extends State<PackageFeaturesBreakdownWidget> {
+  String? get _vertical =>
+      widget.vertical ?? (widget.businessCategory != null ? Verticals.forCategory(widget.businessCategory) : null);
+
   late bool _expanded;
 
   @override
@@ -264,8 +267,8 @@ class _PackageFeaturesBreakdownWidgetState extends State<PackageFeaturesBreakdow
 
                       return Tooltip(
                         message: unbuilt
-                            ? '${def.label}: In catalogue, not yet built'
-                            : def.description,
+                            ? '${def.labelFor(_vertical)}: In catalogue, not yet built'
+                            : def.descriptionFor(_vertical),
                         child: Container(
                           padding: EdgeInsets.symmetric(
                             horizontal: widget.isCompact ? 6 : 8,
@@ -297,7 +300,7 @@ class _PackageFeaturesBreakdownWidgetState extends State<PackageFeaturesBreakdow
                                 const SizedBox(width: 3.5),
                               ],
                               Text(
-                                def.label,
+                                def.labelFor(_vertical),
                                 style: TextStyle(
                                   fontSize: widget.isCompact ? 10 : 11,
                                   color: unbuilt ? ClassicTheme.warningAmber : context.textPrimary,

@@ -134,6 +134,43 @@ class FeatureDef {
     this.verticals = const {},  // empty = universal
   });
 
+  /// Whether this feature means anything for [vertical] (null = any).
+  bool appliesTo(String? vertical) =>
+      vertical == null || vertical.isEmpty || verticals.isEmpty || verticals.contains(vertical);
+
+  /// The name a customer of [vertical] should see (e-mails, sign-up,
+  /// package cards). Restaurant wording stays as [label].
+  String labelFor(String? vertical) => _tradeText(vertical)?.$1 ?? label;
+
+  /// The description a customer of [vertical] should see.
+  String descriptionFor(String? vertical) => _tradeText(vertical)?.$2 ?? description;
+
+  (String, String)? _tradeText(String? vertical) {
+    if (vertical == null || vertical.isEmpty || vertical == 'restaurant') return null;
+    final pharmacy = vertical == 'pharmacy';
+    final things = pharmacy ? 'medicines' : 'products';
+    switch (key) {
+      case FeatureKeys.billing:
+        return ('Billing',
+            'Ring up a sale, apply discounts, settle by cash, UPI QR, card or khata, and print the bill. Voids with a manager PIN.');
+      case FeatureKeys.menuManagement:
+        return (pharmacy ? 'Medicines & pricing' : 'Products & pricing',
+            'Your $things: categories, prices, MRP, units, barcodes${pharmacy ? ', HSN codes' : ''}, and marking an item unavailable.');
+      case FeatureKeys.storeConfiguration:
+        return ('Store settings', 'Store details, GST, UPI IDs, receipt footer and opening hours.');
+      case FeatureKeys.analytics:
+        return ('Sales analytics', 'Sales by $things, hour and staff member, from this device.');
+      case FeatureKeys.cloudSync:
+        return ('Cloud ledger', 'Bills and payments sync to your Google Sheet; staff get access to it and see sales from other tills.');
+      case FeatureKeys.multiOutlet:
+        return ('Multiple stores', 'Branches under one owner login, each with its own sheet and staff.');
+      case FeatureKeys.staffManagement:
+        return ('Staff & roles', 'Cashier and manager logins, roles and PINs on this device.');
+      default:
+        return null;
+    }
+  }
+
   /// Derived from the tier, never stored separately, so the two cannot drift.
   bool get isAddOn => tier.isAddOn;
 
@@ -440,6 +477,7 @@ class FeatureCatalog {
       key: FeatureKeys.inventoryEnabled,
       label: 'Stock & recipes',
       description: 'Ingredient depletion, recipes and waste tracking.',
+      verticals: {'restaurant'},
       tier: CommercialTier.onlineAddOn,
       iconCode: 'inventory_2',
       need: FeatureNeed.cloud,

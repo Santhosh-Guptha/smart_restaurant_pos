@@ -1948,7 +1948,7 @@ function doGet(e) {
 
   return responseJson({
     status: "ONLINE",
-    message: "Smart POS Google Apps Script Webhook is active and running.",
+    message: "SmartBizz Google Apps Script Webhook is active and running.",
     timestamp: new Date().toISOString()
   });
 }
@@ -2973,11 +2973,11 @@ function handleSendOtpEmail(p) {
     return responseJson({ success: false, error: "Missing email or OTP code" });
   }
 
-  var subject = "Your Smart POS Verification Code: " + otpCode;
-  var bodyText = "Hello " + clientName + ",\n\nYour 6-digit verification code is: " + otpCode + "\n\nThis code will expire in 10 minutes. If you did not request this, please ignore this email.\n\nBest regards,\nSmart POS Team";
+  var subject = "Your SmartBizz Verification Code: " + otpCode;
+  var bodyText = "Hello " + clientName + ",\n\nYour 6-digit verification code is: " + otpCode + "\n\nThis code will expire in 10 minutes. If you did not request this, please ignore this email.\n\nBest regards,\nSmartBizz Team";
 
   var htmlBody = '<div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #ffffff;">' +
-    '<h2 style="color: #2563eb; margin-top: 0;">Smart POS Retail</h2>' +
+    '<h2 style="color: #2563eb; margin-top: 0;">SmartBizz</h2>' +
     '<p style="color: #475569; font-size: 15px;">Hello <strong>' + clientName + '</strong>,</p>' +
     '<p style="color: #475569; font-size: 14px;">Thank you for registering your store. Please use the verification code below to verify your email address:</p>' +
     '<div style="text-align: center; margin: 24px 0;">' +
@@ -2996,7 +2996,7 @@ function handleSendOtpEmail(p) {
       subject: subject,
       body: bodyText,
       htmlBody: htmlBody,
-      name: "Smart POS System"
+      name: "SmartBizz"
     });
     return responseJson({ success: true, message: "Email sent successfully to " + email });
   } catch (err) {
@@ -3009,7 +3009,7 @@ function handleSendEmail(p) {
   var subject = String(p.subject || "").trim();
   var body = String(p.text || p.body || "");
   var htmlBody = String(p.html || p.htmlBody || "");
-  var fromName = String(p.from_name || p.fromName || p.name || "Smart POS Platform").trim();
+  var fromName = String(p.from_name || p.fromName || p.name || "SmartBizz").trim();
 
   if (!to || !to.includes("@")) {
     return responseJson({ success: false, error: "Invalid or missing recipient email." });
@@ -5280,7 +5280,7 @@ function handleSubmitInquiry(json) {
       to: adminEmail,
       subject: adminSubject,
       htmlBody: adminHtml,
-      name: "Smart POS Commercial Desk"
+      name: "SmartBizz Sales"
     });
   } catch(e) {
     Logger.log("Inquiry admin email error: " + e);
@@ -5289,9 +5289,9 @@ function handleSubmitInquiry(json) {
   // 2. Send Confirmation Email to Client
   if (email) {
     try {
-      var clientSubject = "Thank You for Contacting Smart POS — We Have Received Your Requirements";
+      var clientSubject = "Thank You for Contacting SmartBizz — We Have Received Your Requirements";
       var clientHtml = '<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:24px;border:1px solid #e2e8f0;border-radius:12px;background:#ffffff;">' +
-        '<h2 style="color:#0f172a;margin-top:0;">Thank You for Your Interest in Smart POS</h2>' +
+        '<h2 style="color:#0f172a;margin-top:0;">Thank You for Your Interest in SmartBizz</h2>' +
         '<p style="color:#475569;font-size:15px;">Hello <strong>' + name + '</strong>,</p>' +
         '<p style="color:#475569;font-size:14px;">We have received your commercial inquiry for <strong>' + brand + '</strong> (' + plan + ').</p>' +
         '<p style="color:#475569;font-size:14px;">Our commercial desk will connect with you within <strong>2 to 4 business hours</strong> with a customized quote and deployment plan.</p>' +
@@ -5302,7 +5302,7 @@ function handleSubmitInquiry(json) {
         to: email,
         subject: clientSubject,
         htmlBody: clientHtml,
-        name: "Smart POS Commercial Sales"
+        name: "SmartBizz Sales"
       });
     } catch(e) {
       Logger.log("Inquiry client email error: " + e);

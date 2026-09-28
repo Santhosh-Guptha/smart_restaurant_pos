@@ -141,7 +141,7 @@ class _FirstLoginPasswordScreenState extends ConsumerState<FirstLoginPasswordScr
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      "Welcome to Smart POS! For your account security, please create your own new password to replace the temporary default password.",
+                      "Welcome to SmartBizz! For your account security, please create your own new password to replace the temporary default password.",
                       textAlign: TextAlign.center,
                       style: TextStyle(fontSize: 13, color: context.textSecondary, height: 1.4),
                     ),

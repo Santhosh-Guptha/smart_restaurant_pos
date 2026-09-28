@@ -59,7 +59,15 @@ class TenantProvisioningService {
     final resolvedMode = StorageModes.all.contains(storageMode.toUpperCase())
         ? storageMode.toUpperCase()
         : StorageModes.clientsOwnSheets;
-    final profile = PlanProfile.byId(planProfile ?? _deriveProfileId(plan, resolvedMode));
+    var profile = PlanProfile.byId(planProfile ?? _deriveProfileId(plan, resolvedMode));
+    // An offline shop belongs on "Shop counter" (barcode, khata, stock), not
+    // the restaurant packages: a pharmacy approved on the bare till or on
+    // offline dine-in could not scan a barcode, and its welcome e-mail listed
+    // tables and kitchen tickets.
+    if (Verticals.isShop(vertical) &&
+        (profile.id == PlanProfile.offlineSingle.id || profile.id == PlanProfile.offlineDineIn.id)) {
+      profile = PlanProfile.offlineRetail;
+    }
     final probe = SaasLicense(
       planTier: plan.billingCycle,
       planProfile: profile.id,
@@ -325,6 +333,7 @@ class TenantProvisioningService {
         planTier: plan.name,
         defaultPassword: rawPassword,
         features: alignedFeatures,
+        vertical: vertical,
         maxStores: alignedOutlets,
         maxDevices: alignedDevices,
       ).catchError((e) {
