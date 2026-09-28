@@ -45,6 +45,26 @@
         "source": "/m",
         "destination": "/r/index.html"
       }
+    ],
+    "headers": [
+      {
+        "source": "/pos/@(index.html|flutter_bootstrap.js|flutter_service_worker.js|version.json|main.dart.js|flutter.js|manifest.json)",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache"
+          }
+        ]
+      },
+      {
+        "source": "/pos",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache"
+          }
+        ]
+      }
     ]
   }
 }

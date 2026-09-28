@@ -49,6 +49,23 @@ void main() {
       expect(console.isEnabled(FeatureKeys.barcodeBilling), isFalse);
     });
 
+    test('an offline shop whose trial licence names "Connected" runs as Shop counter', () {
+      final lic = SaasLicense(
+        planTier: 'TRIAL',
+        status: 'ACTIVE',
+        maxFranchises: 1,
+        maxUsers: 3,
+        maxDevices: 1,
+        features: const {FeatureKeys.barcodeBilling: false},
+        startDate: DateTime.now(),
+        endDate: DateTime.now().add(const Duration(days: 14)),
+      );
+      final app = Entitlements.fromLicense(lic,
+          storageMode: StorageModes.pureOffline, vertical: 'pharmacy', alignStarterToVertical: true);
+      expect(app.isEnabled(FeatureKeys.barcodeBilling), isTrue);
+      expect(app.isEnabled(FeatureKeys.stockManagement), isTrue);
+    });
+
     test('a shop on the right package keeps the owner\'s own choices', () {
       final lic = _lic('OFFLINE_RETAIL', {FeatureKeys.customerKhata: false});
       final app = Entitlements.fromLicense(lic,

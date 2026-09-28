@@ -953,8 +953,21 @@ class Entitlements {
     final stored = PlanProfile.byId(
       profileId ?? license.planProfile ?? license.planTier,
     );
-    final profile = alignStarterToVertical ? PlanProfile.alignedFor(stored, vertical) : stored;
     final explicit = <String, bool>{}..addAll(license.features);
+    // Offline is a mode. The legacy feature flag is honoured as an alias.
+    final legacyFlagEarly = explicit[FeatureKeys.pureOfflineMode] == true;
+    final offlineEarly = StorageModes.isOffline(storageMode != null && storageMode.isNotEmpty
+        ? storageMode.toUpperCase()
+        : (legacyFlagEarly ? StorageModes.pureOffline : stored.storageMode));
+    var profile = alignStarterToVertical ? PlanProfile.alignedFor(stored, vertical) : stored;
+    // An offline store can only use offline features, so whatever package the
+    // licence names (a trial written as "Connected", say), an offline shop
+    // runs as Shop counter and an offline restaurant never as Shop counter.
+    if (alignStarterToVertical && offlineEarly && vertical != 'any' && vertical.isNotEmpty) {
+      final shop = vertical != 'restaurant';
+      if (shop && profile.id != PlanProfile.offlineRetail.id) profile = PlanProfile.offlineRetail;
+      if (!shop && profile.id == PlanProfile.offlineRetail.id) profile = PlanProfile.offlineDineIn;
+    }
     if (profile.id != stored.id) {
       // The licence was composed for the other trade's starter, so its
       // explicit "off" for this trade's own keys (barcode, khata, stock for a

@@ -34,6 +34,20 @@
   </style>
 </head>
 <body>
+  <script>
+    // After a deploy the service worker installs the new build in the
+    // background; when it takes over, reload once so nobody keeps running
+    // yesterday's version (the admin console showed old screens after a
+    // deploy until closed and reopened).
+    if ('serviceWorker' in navigator) {
+      var hadController = !!navigator.serviceWorker.controller;
+      navigator.serviceWorker.addEventListener('controllerchange', function () {
+        if (!hadController) return;
+        try { if (sessionStorage.getItem('sb_sw_reloaded')) return; sessionStorage.setItem('sb_sw_reloaded', '1'); } catch (e) {}
+        window.location.reload();
+      });
+    }
+  </script>
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>

@@ -865,7 +865,7 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
                           ),
                         ),
                         Text(
-                          isOwner ? 'Master Admin Console' : 'Assigned Role Access',
+                          isMasterAdmin ? 'Platform admin · support view' : (isOwner ? 'Everything you can open' : 'Your role\'s screens'),
                           style: TextStyle(fontSize: 12, color: context.textSecondary),
                         ),
                       ],
@@ -1743,7 +1743,11 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
   Widget _buildWelcomeBanner(String userName, String storeName, String role) {
     final now = DateTime.now();
     final hour = now.hour;
-    final shiftName = hour < 12 ? 'Breakfast Shift' : (hour < 17 ? 'Lunch Rush Shift' : 'Dinner Shift');
+    // Meal-time shift names are a restaurant's; a shop just has a day part.
+    final isRest = VerticalLabels.of(ref.read(currentVerticalProvider)).isRestaurant;
+    final shiftName = isRest
+        ? (hour < 12 ? 'Breakfast Shift' : (hour < 17 ? 'Lunch Rush Shift' : 'Dinner Shift'))
+        : (hour < 12 ? 'Morning Shift' : (hour < 17 ? 'Afternoon Shift' : 'Evening Shift'));
 
     return Container(
       width: double.infinity,
@@ -1778,7 +1782,7 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Station assigned: $role · $shiftName',
+                  '${isRest ? 'Station assigned' : 'Signed in as'}: $role · $shiftName',
                   style: TextStyle(color: context.textSecondary, fontSize: 12),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,

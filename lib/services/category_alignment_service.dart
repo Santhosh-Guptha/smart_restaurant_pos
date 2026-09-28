@@ -118,7 +118,17 @@ class CategoryAlignmentService {
       final canonical = Verticals.tryForCategory(category) == vertical
           ? BusinessCategories.canonicalize(category)
           : Verticals.canonicalCategoryFor(vertical);
-      final profile = (lic?['planProfile'] ?? lic?['packageId'] ?? '').toString().toUpperCase();
+      final profile = (lic?['planProfile'] ?? lic?['packageId'] ?? lic?['planTier'] ?? '').toString().toUpperCase();
+      final offlineStore = StorageModes.isOffline((d['storageMode'] ?? '').toString().toUpperCase());
+      var fittedProfile = profile.isEmpty ? '' : PlanProfile.alignedFor(PlanProfile.byId(profile), vertical).id;
+      // Offline stores only use offline features: an offline shop belongs on
+      // Shop counter whatever its licence names (a trial saved as "Connected").
+      if (profile.isNotEmpty && offlineStore) {
+        if (Verticals.isShop(vertical)) fittedProfile = PlanProfile.offlineRetail.id;
+        if (vertical == Verticals.restaurant && fittedProfile == PlanProfile.offlineRetail.id) {
+          fittedProfile = PlanProfile.offlineDineIn.id;
+        }
+      }
 
       final fix = CategoryFix(
         orgId: doc.id,
@@ -133,7 +143,7 @@ class CategoryAlignmentService {
         hasLicense: lic != null,
         shopOnBareTill: Verticals.isShop(vertical) && profile == PlanProfile.offlineSingle.id,
         storedProfile: profile.isEmpty ? '' : PlanProfile.byId(profile).id,
-        alignedProfile: profile.isEmpty ? '' : PlanProfile.alignedFor(PlanProfile.byId(profile), vertical).id,
+        alignedProfile: fittedProfile,
       );
       if (fix.needsWrite || fix.shopOnBareTill) {
         rows.add(fix);

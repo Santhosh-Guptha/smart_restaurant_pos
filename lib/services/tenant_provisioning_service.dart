@@ -63,7 +63,10 @@ class TenantProvisioningService {
     // The starter must fit the trade (PlanProfile.alignedFor): a pharmacy
     // approved on the bare till could not scan a barcode, and its welcome
     // e-mail listed tables and kitchen tickets.
-    final profile = PlanProfile.alignedFor(requestedProfile, vertical);
+    var profile = PlanProfile.alignedFor(requestedProfile, vertical);
+    // An offline shop only uses offline features: Shop counter, whatever
+    // package the trial plan names.
+    if (StorageModes.isOffline(resolvedMode) && Verticals.isShop(vertical)) profile = PlanProfile.offlineRetail;
     final packageRealigned = profile.id != requestedProfile.id;
     if (packageRealigned) packageId = profile.id;
     final probe = SaasLicense(
