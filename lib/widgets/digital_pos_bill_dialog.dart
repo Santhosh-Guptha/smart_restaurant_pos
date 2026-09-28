@@ -260,7 +260,7 @@ class _DigitalPosBillDialogState extends ConsumerState<DigitalPosBillDialog> {
       final pdfBytes = await _getPdfBytes();
       final result = await SmtpEmailService.sendBillInvoiceEmail(
         recipientEmail: email.trim(),
-        customerName: widget.customerName ?? 'Guest',
+        customerName: widget.customerName ?? _labels.defaultGuestName,
         billNumber: widget.billNumber,
         tableName: widget.tableName,
         restaurantName: widget.organizationName ?? _labels.dashboardBrandFallback,
@@ -808,7 +808,7 @@ class _DigitalPosBillDialogState extends ConsumerState<DigitalPosBillDialog> {
                         padding: const EdgeInsets.symmetric(vertical: 13),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                       ),
-                      child: const Text('Done / New Order', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                      child: Text(_labels.isRestaurant ? 'Done / New Order' : 'Done / New Bill', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                     ),
                   ),
                 ],

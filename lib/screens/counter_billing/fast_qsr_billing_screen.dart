@@ -2586,7 +2586,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
             oldOrder['sgstP'] = appendedTotals.sgstPaise;
             oldOrder['roundOffP'] = appendedTotals.roundOffPaise;
             oldOrder['grandTotalP'] = appendedTotals.grandTotalPaise;
-            oldOrder['kitchenStatus'] = 'PENDING';
+            if (_cart.any((i) => i.sendsToKitchen)) oldOrder['kitchenStatus'] = 'PENDING';
             oldOrder['hasNewItems'] = true;
             oldOrder['updatedAt'] = DateTime.now().toIso8601String();
             if (oldOrder['status'] == 'SERVED' || oldOrder['status'] == 'COMPLETED') {
@@ -2618,7 +2618,8 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
             'tableId': tNum,
             'tableNumber': tNum,
             'status': isPaid ? 'PAID' : 'PENDING',
-            'kitchenStatus': 'PENDING',
+            // Nothing for the kitchen (a shop, or cold items only) -> served.
+            'kitchenStatus': _cart.any((i) => i.sendsToKitchen) ? 'PENDING' : 'SERVED',
             'paymentStatus': isPaid ? 'PAID' : 'PENDING',
             'isPaid': isPaid,
             'orderSource': 'POS_COUNTER',
@@ -2944,7 +2945,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
         'tableId': tNum,
         'tableNumber': tNum,
         'status': isPaid ? 'PAID' : 'PENDING',
-        'kitchenStatus': 'PENDING',
+        'kitchenStatus': _cart.any((i) => i.sendsToKitchen) ? 'PENDING' : 'SERVED',
         'hasNewItems': true,
         'isUpdate': existingOrderToAppend != null,
         'paymentStatus': isPaid ? 'PAID' : 'PENDING',

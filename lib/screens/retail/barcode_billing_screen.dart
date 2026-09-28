@@ -1109,7 +1109,7 @@ class _BarcodeBillingScreenState extends ConsumerState<BarcodeBillingScreen> {
         builder: (ctx, setDlgState) => AlertDialog(
           backgroundColor: context.surfaceColor,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          title: Text('Apply Order Discount', style: TextStyle(color: context.textPrimary, fontSize: 16)),
+          title: Text('Apply Bill Discount', style: TextStyle(color: context.textPrimary, fontSize: 16)),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [

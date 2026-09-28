@@ -444,7 +444,7 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
             children: [
               const Icon(Icons.cancel_outlined, color: ClassicTheme.dangerRed, size: 22),
               const SizedBox(width: 8),
-              Text('Void / Cancel Order', style: TextStyle(color: context.textPrimary, fontSize: 16, fontWeight: FontWeight.bold)),
+              Text('Void / Cancel ${VerticalLabels.of(ref.read(currentVerticalProvider)).orderSingular}', style: TextStyle(color: context.textPrimary, fontSize: 16, fontWeight: FontWeight.bold)),
             ],
           ),
           content: SingleChildScrollView(
@@ -453,7 +453,7 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Are you sure you want to void order #$orderId? This will mark the order as CANCELLED and log an audit trail.',
+                  'Are you sure you want to void ${VerticalLabels.of(ref.read(currentVerticalProvider)).orderSingular.toLowerCase()} #$orderId? It will be marked CANCELLED and logged in the audit trail.',
                   style: TextStyle(color: context.textSecondary, fontSize: 12.5),
                 ),
                 const SizedBox(height: 14),
@@ -487,7 +487,7 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
                   runSpacing: 4,
                   children: [
                     'Customer Walkout',
-                    'Order Entered in Error',
+                    '${VerticalLabels.of(ref.read(currentVerticalProvider)).orderSingular} Entered in Error',
                     VerticalLabels.of(ref.read(currentVerticalProvider)).isRestaurant ? 'Duplicate Ticket' : 'Duplicate Bill',
                     VerticalLabels.of(ref.read(currentVerticalProvider)).isRestaurant
                         ? 'Kitchen Shortage'
@@ -537,7 +537,7 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
                 Navigator.pop(ctx);
                 await _performVoidOrderHistory(orderId, tableName, enteredReason, authorizer);
               },
-              child: const Text('Void Order'),
+              child: Text('Void ${VerticalLabels.of(ref.read(currentVerticalProvider)).orderSingular}'),
             ),
           ],
         ),
@@ -622,7 +622,7 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Order #$orderId marked CANCELLED. (Audit logged)'),
+          content: Text('${VerticalLabels.of(ref.read(currentVerticalProvider)).orderSingular} #$orderId marked CANCELLED. (Audit logged)'),
           backgroundColor: ClassicTheme.dangerRed,
         ),
       );
@@ -1077,7 +1077,7 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Text('Total Orders: $totalOrders', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: context.textPrimary)),
+                          Text('Total ${vl.orderPlural}: $totalOrders', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: context.textPrimary)),
                           Text('($_selectedDateFilter)', style: TextStyle(fontSize: 12, color: context.textSecondary)),
                         ],
                       ),
@@ -1328,7 +1328,7 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
     final paymentMode = (order['paymentMode'] ?? 'CASH').toString();
     final rawTotal = (order['totalAmount'] is num) ? (order['totalAmount'] as num).toDouble() : 0.0;
     final total = (rawTotal.isNaN || rawTotal.isInfinite || rawTotal < 0.0) ? 0.0 : rawTotal;
-    final customerName = (order['customerName'] ?? 'Guest').toString();
+    final customerName = (order['customerName'] ?? VerticalLabels.of(ref.read(currentVerticalProvider)).defaultGuestName).toString();
     final customerPhone = (order['customerPhone'] ?? '').toString();
     final tableName = (order['tableName'] ?? order['tableNumber'] ?? '').toString();
     final dt = _parseTimestamp(order['createdAt'] ?? order['timestamp']);
@@ -1339,6 +1339,30 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
     final isPaid = order['isPaid'] == true || rawPay == 'PAID' || rawPay == 'SUCCESS' || status == 'PAID';
     final isCancelled = status == 'CANCELLED' || rawPay == 'VOIDED' || rawPay == 'CANCELLED';
 
+    // Kitchen progress only means something for a restaurant, and only
+    // while the food is still being made. A shop bill is simply paid or not
+    // (it used to read "PAID ✅ (PENDING)" because the kitchen field was
+    // PENDING on bills that never go to a kitchen).
+    final isRestaurantBill = VerticalLabels.of(ref.read(currentVerticalProvider)).isRestaurant;
+    String? kitchenNote;
+    if (isRestaurantBill) {
+      switch (rawKitchen) {
+        case 'PENDING':
+        case 'NEW':
+        case 'SENT':
+        case 'QUEUED':
+          kitchenNote = 'In kitchen';
+          break;
+        case 'PREPARING':
+        case 'COOKING':
+        case 'IN_PROGRESS':
+          kitchenNote = 'Preparing';
+          break;
+        case 'READY':
+          kitchenNote = 'Ready to serve';
+          break;
+      }
+    }
     Color statusColor;
     String statusDisplay;
     if (isCancelled) {
@@ -1346,10 +1370,10 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
       statusDisplay = 'CANCELLED ❌';
     } else if (isPaid) {
       statusColor = ClassicTheme.successEmerald;
-      statusDisplay = rawKitchen.isNotEmpty ? 'PAID ✅ ($rawKitchen)' : 'PAID ✅';
+      statusDisplay = kitchenNote != null ? 'PAID ✅ · $kitchenNote' : 'PAID ✅';
     } else {
       statusColor = ClassicTheme.warningAmber;
-      statusDisplay = rawKitchen.isNotEmpty ? '$rawKitchen ⏳' : (status == 'PENDING' ? 'PENDING ⏳' : status);
+      statusDisplay = kitchenNote != null ? 'UNPAID ⏳ · $kitchenNote' : 'UNPAID ⏳';
     }
 
     Color typeBadgeBg;
@@ -1585,7 +1609,7 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
                       IconButton(
                         visualDensity: VisualDensity.compact,
                         icon: const Icon(Icons.cancel_outlined, size: 16, color: ClassicTheme.dangerRed),
-                        tooltip: 'Void / Cancel Order',
+                        tooltip: 'Void / Cancel ${VerticalLabels.of(ref.read(currentVerticalProvider)).orderSingular}',
                         onPressed: () => _showVoidOrderDialog(order),
                       ),
                   ],
