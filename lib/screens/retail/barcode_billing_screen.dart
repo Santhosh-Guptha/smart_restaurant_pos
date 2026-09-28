@@ -5,12 +5,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 
 import '../../core/classic_theme.dart';
+import '../../core/entitlements.dart';
 import '../../core/package_model.dart';
 import '../../core/receipt/receipt_context_builder.dart';
 import '../../core/receipt/receipt_print_service.dart';
 import '../../core/receipt/receipt_template.dart';
 import '../../core/retail_models.dart';
 import '../../core/vertical_labels.dart';
+import '../../providers/entitlements_provider.dart';
 import '../../providers/saas_session_provider.dart';
 import '../../services/thermal_printer_service.dart';
 import '../../utils/ui_feedback.dart';
@@ -527,6 +529,8 @@ class _BarcodeBillingScreenState extends ConsumerState<BarcodeBillingScreen> {
     } else if (paymentMode == 'Card') {
       _completeSale(paymentMode: 'Card', isPaid: true);
     } else if (paymentMode == 'Khata') {
+      // Only a store with Customer khata in its package can sell on credit.
+      if (!ref.read(featureEnabledProvider(FeatureKeys.customerKhata))) return;
       _showKhataCustomerDialog();
     }
   }
@@ -1606,7 +1610,7 @@ class _BarcodeBillingScreenState extends ConsumerState<BarcodeBillingScreen> {
           ),
           const SizedBox(height: 12),
 
-          // Payment Buttons: Cash, UPI, Card, Khata
+          // Payment Buttons: Cash, UPI, Card, and Khata when the package has it
           Row(
             children: [
               Expanded(
@@ -1650,6 +1654,9 @@ class _BarcodeBillingScreenState extends ConsumerState<BarcodeBillingScreen> {
                   onPressed: _isSettling ? null : () => _startCheckout('Card'),
                 ),
               ),
+              // Khata only when the package includes Customer khata; the
+              // other three buttons then share the row.
+              if (ref.watch(featureEnabledProvider(FeatureKeys.customerKhata))) ...[
               const SizedBox(width: 8),
               Expanded(
                 child: ElevatedButton.icon(
@@ -1664,6 +1671,7 @@ class _BarcodeBillingScreenState extends ConsumerState<BarcodeBillingScreen> {
                   onPressed: _isSettling ? null : () => _startCheckout('Khata'),
                 ),
               ),
+              ],
             ],
           ),
         ],

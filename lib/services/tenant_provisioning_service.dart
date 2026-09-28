@@ -193,6 +193,7 @@ class TenantProvisioningService {
         'maxDevices': alignedDevices,
         'allowedRoles': plan.allowedRoles,
         'features': alignedFeatures,
+        'featuresResolvedFor': vertical,
         'expiryWarningDays': 3,
         'createdAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),

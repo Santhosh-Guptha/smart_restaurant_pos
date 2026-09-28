@@ -968,6 +968,20 @@ class Entitlements {
       if (shop && profile.id != PlanProfile.offlineRetail.id) profile = PlanProfile.offlineRetail;
       if (!shop && profile.id == PlanProfile.offlineRetail.id) profile = PlanProfile.offlineDineIn;
     }
+    if (alignStarterToVertical &&
+        license.featuresResolvedFor == null &&
+        vertical != 'any' &&
+        vertical != 'restaurant') {
+      // Written before 28 Sep 2026: the console resolved every licence as a
+      // restaurant, which put a false against each shop-only key (barcode,
+      // khata, stock). That false was never anyone's choice, so this trade's
+      // own keys fall back to the package.
+      for (final def in FeatureCatalog.all) {
+        if (def.verticals.isEmpty || def.verticals.contains('restaurant')) continue;
+        if (!def.verticals.contains(vertical)) continue;
+        if (explicit[def.key] == false) explicit.remove(def.key);
+      }
+    }
     if (profile.id != stored.id) {
       // The licence was composed for the other trade's starter, so its
       // explicit "off" for this trade's own keys (barcode, khata, stock for a
@@ -1026,7 +1040,10 @@ class Entitlements {
     if (def.tier == CommercialTier.offlineBasic) return BlockReason.none;
 
     // Rule 3.5: wrong line of business.
-    if (def.verticals.isNotEmpty && !def.verticals.contains(vertical)) {
+    // 'any' is the trade-neutral view the console composes licences in: the
+    // written map then carries every trade's keys as the package has them,
+    // and each tenant's own trade is applied here at run time.
+    if (vertical != 'any' && def.verticals.isNotEmpty && !def.verticals.contains(vertical)) {
       return BlockReason.verticalMismatch;
     }
 
@@ -1103,7 +1120,7 @@ class Entitlements {
   /// the app will refuse.
   List<FeatureDef> togglableFor() => FeatureCatalog.all.where((f) {
         if (!f.isAddOn) return false;
-        if (f.verticals.isNotEmpty && !f.verticals.contains(vertical)) {
+        if (vertical != 'any' && f.verticals.isNotEmpty && !f.verticals.contains(vertical)) {
           return false;
         }
         if (isPureOffline &&

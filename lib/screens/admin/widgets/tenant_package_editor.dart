@@ -101,7 +101,7 @@ class TenantPackageSelection {
         endDate: DateTime.now().add(Duration(days: plan.validityDays)),
       );
 
-  Entitlements get resolved => Entitlements.fromLicense(probe, storageMode: package.storageMode);
+  Entitlements get resolved => Entitlements.fromLicense(probe, storageMode: package.storageMode, vertical: 'any');
 
   Map<String, bool> get resolvedFeatures => composed.features;
   int get effectiveDevices => composed.maxDevices;

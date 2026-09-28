@@ -66,6 +66,7 @@ class ComposedLicense {
         'maxDevices': maxDevices,
         'allowedRoles': allowedRoles,
         'features': features,
+        'featuresResolvedFor': 'any',
         'expiryWarningDays': 3,
       };
 
@@ -110,6 +111,10 @@ class LicenseComposer {
         ? current
         : package.storageMode;
 
+    // Resolved trade-neutral ('any'): the licence is written before, and
+    // independently of, which trade reads it. Resolving as the default
+    // 'restaurant' wrote barcodeBilling/customerKhata/stockManagement false
+    // into every shop's licence, so a pharmacy on Shop counter lost them.
     // Ask the resolver what it would make of this. Whatever it clamps, we
     // write clamped, so the document and the running app agree from the
     // first read. The probe is dated now/tomorrow on purpose: dates take no
@@ -129,7 +134,7 @@ class LicenseComposer {
       startDate: probeNow,
       endDate: probeNow.add(const Duration(days: 1)),
     );
-    final resolved = Entitlements.fromLicense(probe, storageMode: mode);
+    final resolved = Entitlements.fromLicense(probe, storageMode: mode, vertical: 'any');
 
     final features = <String, bool>{
       for (final def in FeatureCatalog.all) def.key: resolved.isEnabled(def.key),
@@ -222,7 +227,7 @@ class LicenseComposer {
       startDate: DateTime.now(),
       endDate: DateTime.now().add(const Duration(days: 1)),
     );
-    final r = Entitlements.fromLicense(probe, storageMode: mode);
+    final r = Entitlements.fromLicense(probe, storageMode: mode, vertical: 'any');
     return {for (final def in FeatureCatalog.all) if (r.isEnabled(def.key)) def.key};
   }
 

@@ -392,6 +392,7 @@ class _TenantAccessDialogState extends ConsumerState<TenantAccessDialog> {
         'planProfile': saved.profile.id,
         'storageMode': composed.storageMode,
         'features': resolvedFeatures,
+        'featuresResolvedFor': 'any',
         'maxDevices': composed.maxDevices,
         'maxFranchises': composed.maxOutlets,
         'maxUsers': composed.maxUsers,

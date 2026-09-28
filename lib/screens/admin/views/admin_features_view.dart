@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../../core/classic_theme.dart';
 import '../../../core/design_tokens.dart';
 import '../../../core/entitlements.dart';
+import '../../../core/package_model.dart';
 import '../../../core/responsive.dart';
 import '../../../core/saas_models.dart';
 import '../../../providers/dashboard_layout_provider.dart';
@@ -56,6 +57,15 @@ class _AdminFeaturesViewState extends ConsumerState<AdminFeaturesView> {
   /// `organizations/{orgId}.pendingStorageChange`, if any.
   Map<String, dynamic>? _pending;
 
+  /// The store's line of business. The matrix shows only this trade's
+  /// features, worded for it, and resolves exactly as the store's app does.
+  String _vertical = Verticals.restaurant;
+
+  /// Set when what is stored differs from what the store actually runs (a
+  /// shop on a restaurant starter, or a licence written before the console
+  /// resolved per trade). The editor shows the running state; saving stores it.
+  String? _realignNote;
+
   bool get _targetIsOffline => StorageModes.isOffline(_targetStorageMode);
   bool get _modeChangeRequested => _targetStorageMode != _liveStorageMode;
 
@@ -83,19 +93,65 @@ class _AdminFeaturesViewState extends ConsumerState<AdminFeaturesView> {
         legacy = featDoc.data();
       }
 
-      final profileId =
-          (lic?['planProfile'] ?? legacy?['planProfile'])?.toString();
-      final profile = profileId != null
+      final vertical = Verticals.resolve(
+        vertical: org?['vertical']?.toString(),
+        businessCategory: org?['businessCategory']?.toString(),
+      );
+      final profileId = (lic?['planProfile'] ?? legacy?['planProfile'] ?? lic?['packageId'])?.toString();
+      final stored = profileId != null
           ? PlanProfile.byId(profileId)
           : PlanProfile.forTier(lic?['planTier']?.toString());
 
-      final resolved = <String, bool>{}..addAll(profile.features);
+      final storedFeatures = <String, bool>{};
       final raw = lic?['features'] ?? legacy?['features'];
       if (raw is Map) {
         for (final e in raw.entries) {
-          resolved[e.key.toString()] = e.value == true;
+          storedFeatures[e.key.toString()] = e.value == true;
         }
       }
+      final liveMode = (org?['storageMode'] ?? lic?['storageMode'] ?? stored.storageMode).toString().toUpperCase();
+
+      // Resolve the way the store's own app does (entitlementsProvider), so
+      // the switches show what the owner actually has.
+      final running = Entitlements.fromLicense(
+        SaasLicense(
+          planTier: (lic?['planTier'] ?? 'TRIAL').toString(),
+          planProfile: stored.id,
+          status: 'ACTIVE',
+          maxFranchises: _readInt(lic?['maxFranchises'], stored.maxOutlets),
+          maxUsers: 99,
+          maxDevices: _readInt(lic?['maxDevices'], stored.maxDevices),
+          features: storedFeatures,
+          startDate: DateTime.now(),
+          endDate: DateTime.now().add(const Duration(days: 1)),
+          vertical: vertical,
+          featuresResolvedFor: lic?['featuresResolvedFor']?.toString(),
+        ),
+        storageMode: liveMode,
+        vertical: vertical,
+        alignStarterToVertical: true,
+      );
+      final profile = running.profile;
+
+      final resolved = <String, bool>{}
+        ..addAll(profile.features)
+        ..addAll(storedFeatures);
+      final turnedOn = <String>[];
+      for (final def in FeatureCatalog.all) {
+        if (!def.appliesTo(vertical)) continue;
+        final on = running.isEnabled(def.key);
+        if (on && storedFeatures[def.key] != true && def.isAddOn) turnedOn.add(def.labelFor(vertical));
+        resolved[def.key] = on;
+      }
+      final realigned = profile.id != stored.id || turnedOn.isNotEmpty;
+      _vertical = vertical;
+      _realignNote = !realigned
+          ? null
+          : [
+              if (profile.id != stored.id) 'Package: ${stored.label} → ${profile.label} for ${Verticals.label(vertical)}.',
+              if (turnedOn.isNotEmpty) 'On in the store\'s app but off in the stored licence: ${turnedOn.join(', ')}.',
+              'Save to store it this way.',
+            ].join(' ');
 
       final live = (org?['storageMode'] ?? profile.storageMode).toString();
       final pending = org?['pendingStorageChange'];
@@ -110,6 +166,7 @@ class _AdminFeaturesViewState extends ConsumerState<AdminFeaturesView> {
           ? (_pending!['to'] ?? live).toString().toUpperCase()
           : _liveStorageMode;
       _applyHardConstraints();
+      _dirty = realigned;
     } catch (e) {
       if (mounted) AppToast.showError(context, 'Could not read this store: $e');
     } finally {
@@ -219,8 +276,10 @@ class _AdminFeaturesViewState extends ConsumerState<AdminFeaturesView> {
       features: Map<String, bool>.from(_features),
       startDate: DateTime.now(),
       endDate: DateTime.now().add(const Duration(days: 365)),
+      vertical: _vertical,
+      featuresResolvedFor: _vertical,
     );
-    return Entitlements.fromLicense(license, storageMode: _targetStorageMode);
+    return Entitlements.fromLicense(license, storageMode: _targetStorageMode, vertical: _vertical);
   }
 
   Future<void> _save() async {
@@ -237,7 +296,10 @@ class _AdminFeaturesViewState extends ConsumerState<AdminFeaturesView> {
       // The authority.
       batch.set(fs.collection('licenses').doc(orgId), {
         'features': _features,
+        'featuresResolvedFor': _vertical,
+        'vertical': _vertical,
         'planProfile': _profileId,
+        'packageId': _profileId,
         'maxDevices': _maxDevices,
         'maxFranchises': _maxOutlets,
         'updatedAt': now,
@@ -303,6 +365,7 @@ class _AdminFeaturesViewState extends ConsumerState<AdminFeaturesView> {
       if (mounted) {
         setState(() {
           _dirty = false;
+          _realignNote = null;
           if (_modeChangeRequested) {
             _pending = {
               'from': _liveStorageMode,
@@ -394,6 +457,7 @@ class _AdminFeaturesViewState extends ConsumerState<AdminFeaturesView> {
                   else ...[
                     if (_pending != null && _pending!['status'] != 'DONE')
                       _pendingBanner(),
+                    if (_realignNote != null) _realignBanner(),
                     _profileSection(),
                     const SizedBox(height: DS.space5),
                     _storageSection(),
@@ -521,6 +585,29 @@ class _AdminFeaturesViewState extends ConsumerState<AdminFeaturesView> {
         ),
       );
 
+  Widget _realignBanner() => Container(
+        margin: const EdgeInsets.only(bottom: DS.space5),
+        padding: const EdgeInsets.all(DS.space4),
+        decoration: BoxDecoration(
+          color: ClassicTheme.primaryAccent.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(DS.radiusLg),
+          border: Border.all(color: ClassicTheme.primaryAccent.withValues(alpha: 0.4)),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(Icons.auto_fix_high_rounded, color: ClassicTheme.primaryAccent, size: 20),
+            const SizedBox(width: DS.space3),
+            Expanded(
+              child: Text(
+                'Aligned to this store\'s business type. $_realignNote',
+                style: TextStyle(fontSize: DS.fontCaption, color: context.textPrimary, height: 1.45),
+              ),
+            ),
+          ],
+        ),
+      );
+
   Widget _pendingBanner() {
     final p = _pending!;
     final steps = (p['steps'] is Map) ? Map<String, dynamic>.from(p['steps']) : {};
@@ -603,6 +690,7 @@ class _AdminFeaturesViewState extends ConsumerState<AdminFeaturesView> {
                   crossAxisSpacing: DS.space3,
                   childAspectRatio: columns == 1 ? 4.2 : 1.35,
                   children: PlanProfile.all
+                      .where((p) => PlanProfile.alignedFor(p, _vertical).id == p.id)
                       .map((p) => _profileCard(p, columns == 1))
                       .toList(),
                 );
@@ -939,7 +1027,7 @@ class _AdminFeaturesViewState extends ConsumerState<AdminFeaturesView> {
     final sections = <Widget>[];
     for (final tier in CommercialTier.values) {
       if (_targetIsOffline && tier.isOnline) continue;
-      final defs = FeatureCatalog.byTier(tier);
+      final defs = FeatureCatalog.byTier(tier).where((d) => d.appliesTo(_vertical)).toList();
       if (defs.isEmpty) continue;
 
       sections.add(Container(
@@ -993,10 +1081,16 @@ class _AdminFeaturesViewState extends ConsumerState<AdminFeaturesView> {
             const SizedBox(width: DS.space3),
             Expanded(
               child: Text(
-                'This store runs offline on one device, so the online tiers — '
-                'cloud ledger, analytics, kitchen display, waiter ordering, QR '
-                'and online ordering, outlets, stock, e-mail bills — are not '
-                'offered. Choose a cloud storage mode to use them.',
+                Verticals.isShop(_vertical)
+                    ? 'This store runs offline on one device, so the online '
+                        'tiers \u2014 cloud ledger, outlets, online orders and '
+                        'e-mail bills \u2014 are not offered. Barcode billing, '
+                        'khata and stock work offline. Choose a cloud storage '
+                        'mode for the rest.'
+                    : 'This store runs offline on one device, so the online tiers \u2014 '
+                        'cloud ledger, kitchen display, waiter ordering, QR '
+                        'and online ordering, outlets, e-mail bills \u2014 are not '
+                        'offered. Choose a cloud storage mode to use them.',
                 style: TextStyle(
                     fontSize: DS.fontMicro,
                     color: context.textSecondary,
@@ -1014,14 +1108,14 @@ class _AdminFeaturesViewState extends ConsumerState<AdminFeaturesView> {
     final on = !def.isAddOn || (_features[def.key] ?? false);
     final missingDep = def.dependsOn
         .where((d) => _features[d] != true)
-        .map((d) => FeatureCatalog.find(d)?.label ?? d)
+        .map((d) => FeatureCatalog.find(d)?.labelFor(_vertical) ?? d)
         .toList();
     final blockedByDep = def.isAddOn && !on && missingDep.isNotEmpty;
     final blockedByDevices = def.need == FeatureNeed.secondDevice &&
         _maxDevices <= 1 &&
         !_targetIsOffline;
 
-    String note = def.description;
+    String note = def.descriptionFor(_vertical);
     Color noteColor = context.textSecondary;
     if (blockedByDevices) {
       note = 'Needs a second device — raise the device count first.';
@@ -1039,7 +1133,7 @@ class _AdminFeaturesViewState extends ConsumerState<AdminFeaturesView> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(def.label,
+                Text(def.labelFor(_vertical),
                     style: TextStyle(
                         fontSize: DS.fontBody,
                         fontWeight: FontWeight.w600,

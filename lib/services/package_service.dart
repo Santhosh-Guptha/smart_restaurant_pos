@@ -206,6 +206,7 @@ class PackageService {
         'planProfile': p.nearestProfile.id,
         'storageMode': composed.storageMode,
         'features': composed.features,
+        'featuresResolvedFor': 'any',
         'maxDevices': composed.maxDevices,
         'maxFranchises': composed.maxOutlets,
         'allowedRoles': composed.allowedRoles,

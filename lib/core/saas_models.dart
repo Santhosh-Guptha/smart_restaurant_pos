@@ -28,6 +28,12 @@ class SaasLicense {
   final int expiryWarningDays;
   final String vertical;
 
+  /// Which trade the stored feature map was resolved for: 'any' (trade-
+  /// neutral, what the console writes now) or a vertical. Null on licences
+  /// written before 28 Sep 2026, which were resolved as a restaurant and so
+  /// carry a false for every shop-only key; the resolver discounts those.
+  final String? featuresResolvedFor;
+
   SaasLicense({
     required this.planTier,
     this.planProfile,
@@ -42,6 +48,7 @@ class SaasLicense {
     this.expiryWarningDays = 3,
     this.maxTables = 15,
     this.vertical = Verticals.restaurant,
+    this.featuresResolvedFor,
   });
 
   final int maxTables;
@@ -60,6 +67,7 @@ class SaasLicense {
     int? expiryWarningDays,
     int? maxTables,
     String? vertical,
+    String? featuresResolvedFor,
   }) {
     return SaasLicense(
       planTier: planTier ?? this.planTier,
@@ -75,6 +83,7 @@ class SaasLicense {
       expiryWarningDays: expiryWarningDays ?? this.expiryWarningDays,
       maxTables: maxTables ?? this.maxTables,
       vertical: vertical ?? this.vertical,
+      featuresResolvedFor: featuresResolvedFor ?? this.featuresResolvedFor,
     );
   }
 
@@ -153,6 +162,7 @@ class SaasLicense {
       expiryWarningDays: json['expiryWarningDays'] is num ? (json['expiryWarningDays'] as num).toInt() : 3,
       maxTables: (json['maxTables'] ?? json['tableCount'] ?? 15) as int,
       vertical: json['vertical']?.toString() ?? Verticals.restaurant,
+      featuresResolvedFor: json['featuresResolvedFor']?.toString(),
     );
   }
 
@@ -171,6 +181,7 @@ class SaasLicense {
       'expiryWarningDays': expiryWarningDays,
       'maxTables': maxTables,
       'vertical': vertical,
+      if (featuresResolvedFor != null) 'featuresResolvedFor': featuresResolvedFor,
     };
   }
 
@@ -193,6 +204,7 @@ class SaasLicense {
       expiryWarningDays: data['expiryWarningDays'] is num ? (data['expiryWarningDays'] as num).toInt() : 3,
       maxTables: (data['maxTables'] ?? data['tableCount'] ?? 15) as int,
       vertical: data['vertical']?.toString() ?? Verticals.restaurant,
+      featuresResolvedFor: data['featuresResolvedFor']?.toString(),
     );
   }
 
@@ -210,6 +222,7 @@ class SaasLicense {
       'endDate': Timestamp.fromDate(endDate),
       'expiryWarningDays': expiryWarningDays,
       'vertical': vertical,
+      if (featuresResolvedFor != null) 'featuresResolvedFor': featuresResolvedFor,
     };
   }
 
