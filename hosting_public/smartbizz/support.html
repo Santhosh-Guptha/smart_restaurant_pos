@@ -77,6 +77,18 @@
   footer{border-top:1px solid var(--rule);padding:40px 0 50px;margin-top:80px;font-size:14px;color:var(--fg-2)}
   footer .wrap{display:flex;justify-content:space-between;flex-wrap:wrap;gap:20px;align-items:center}
   footer ul{display:flex;gap:20px;list-style:none;margin:0;padding:0}
+  /* Shared chrome fixes: a legal page must not scroll sideways on a 360px phone */
+  .card-h{font-size:19px;margin-top:0;padding-top:0;border-top:0}
+  footer .trades{width:100%;flex-wrap:wrap;gap:8px 18px;font-size:13.5px}
+  @media(max-width:720px){
+    .wrap{padding:0 16px}
+    nav .wrap{height:auto;flex-wrap:wrap;gap:10px 16px;padding-top:12px;padding-bottom:12px}
+    nav ul{order:3;width:100%;flex-wrap:wrap;gap:6px 16px}
+    nav .btn{padding:8px 14px}
+    footer ul{flex-wrap:wrap;gap:8px 16px}
+    table{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch}
+    code{overflow-wrap:anywhere}
+  }
 </style>
 </head>
 <body>
@@ -104,7 +116,7 @@
   </div>
 
   <div class="card highlight-card">
-    <h3 style="margin-top:0;color:var(--lamp)">📞 Need Immediate Assistance During Service?</h3>
+    <h2 class="card-h" style="color:var(--lamp)">📞 Need Immediate Assistance During Service?</h2>
     <p>If your restaurant is currently mid-shift and you need rapid assistance with hardware pairing, printer connection, or table standees, reach our operations team directly:</p>
     <p style="margin-bottom:0"><strong>Email:</strong> <a href="mailto:smartdine.platform@gmail.com">smartdine.platform@gmail.com</a></p>
   </div>
@@ -130,7 +142,7 @@
   </ul>
 
   <h3>3. Does SmartDine work when the internet goes down?</h3>
-  <p><strong>Yes, 100%.</strong> SmartDine runs on local Hive databases embedded inside your physical tablet. Even during a complete broadband outage, your staff can punch KOTs, print thermal bills, open the cash drawer, and run service uninterrupted. When internet returns, all bills sync automatically to Google Sheets.</p>
+  <p><strong>Yes.</strong> SmartDine records bills in a database on the device itself, so during a broadband outage your staff can keep punching KOTs, printing thermal bills and opening the cash drawer. On the Offline plan it works securely on your device without depending on the cloud. On Basic and above, bills sync to the Google Sheet in your own Google Drive when the connection returns.</p>
 
   <h2>Direct Developer Contact</h2>
   <div class="card">
@@ -150,6 +162,13 @@
       <li><a href="/terms.html">Terms of Service</a></li>
       <li><a href="/deletion.html">Data Deletion</a></li>
       <li><a href="/support.html">Support</a></li>
+    </ul>
+    <ul class="trades" aria-label="Trades">
+      <li><a href="/restaurants/">Restaurants</a></li>
+      <li><a href="/kirana/">Kirana</a></li>
+      <li><a href="/supermarket/">Supermarket</a></li>
+      <li><a href="/pharmacy/">Pharmacy</a></li>
+      <li><a href="/retail/">Retail</a></li>
     </ul>
     <span>&copy; 2026 DevMonks Studio. All rights reserved.</span>
   </div>

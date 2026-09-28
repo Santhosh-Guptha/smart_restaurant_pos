@@ -181,7 +181,12 @@ class CategoryAlignmentService {
           'vertical': r.vertical,
           if (r.packageChanges) ...{
             'planProfile': fitted.id,
-            'packageId': fitted.id,
+            // The trade's own tier starter (`pharmacy_offline`) rather than
+            // the legacy universal one; only offline starters are swapped.
+            'packageId': fitted.isOffline
+                ? PackageCatalog.starterId(r.vertical, PackageTier.offline)
+                : fitted.id,
+            if (fitted.isOffline) 'tier': PackageTier.offline.id,
             // The new starter's own features on (the old one had them off).
             for (final k in fitted.extraKeys) 'features.$k': true,
           },

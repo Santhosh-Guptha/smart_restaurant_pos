@@ -99,9 +99,13 @@ void main() {
       expect(pkg.features[FeatureKeys.billing], isTrue);
     });
 
-    test('the default package for any business category is offline dine-in', () {
-      expect(Verticals.defaultPackageFor('Cafe'), PlanProfile.offlineDineIn.id);
-      expect(Verticals.defaultPackageFor(null), PlanProfile.offlineDineIn.id);
+    test('the default package for a restaurant category is its Offline starter', () {
+      // Was the universal OFFLINE_DINE_IN starter; now the trade's own tier
+      // package, which still falls back to the offline dine-in profile.
+      expect(Verticals.defaultPackageFor('Cafe'), 'restaurant_offline');
+      expect(Verticals.defaultPackageFor(null), 'restaurant_offline');
+      expect(Verticals.defaultPackageFor('Cafe', offline: false), 'restaurant_basic');
+      expect(PlanProfile.byId(Verticals.defaultPackageFor('Cafe')).id, PlanProfile.offlineDineIn.id);
     });
   });
 
@@ -117,30 +121,36 @@ void main() {
       expect(c.storageMode, StorageModes.pureOffline);
     });
 
-    test('a one-device licence drops the second-device roles', () {
+    test('an offline licence is the owner alone', () {
+      // Contract §5: offline -> OWNER only (was OWNER, MANAGER, BILLING).
       final c = LicenseComposer.compose(
         TenantPackage.fromProfile(PlanProfile.offlineDineIn),
         _plan(devices: 1),
       );
-      expect(c.allowedRoles, ['OWNER', 'MANAGER', 'BILLING']);
+      expect(c.allowedRoles, ['OWNER']);
+      expect(c.maxUsers, 1);
     });
 
-    test('a multi-device cloud licence keeps waiter and kitchen', () {
+    test('a multi-device cloud licence keeps waiter and kitchen; limits come from the tier', () {
+      // The legacy Connected package is Standard: 5 devices, 1 outlet,
+      // 10 users. The plan's 3 devices and 2 outlets are ignored.
       final c = LicenseComposer.compose(
         TenantPackage.fromProfile(PlanProfile.connected),
         _plan(devices: 3, outlets: 2),
       );
       expect(c.allowedRoles, containsAll(['WAITER', 'KITCHEN']));
-      expect(c.maxDevices, 3);
-      expect(c.maxOutlets, 2);
+      expect(c.tier, PackageTier.standard);
+      expect(c.maxDevices, 5);
+      expect(c.maxOutlets, 1);
+      expect(c.maxUsers, 10);
     });
 
-    test('OWNER is always present and unknown roles are dropped', () {
+    test('roles come from the trade and tier, never from the plan', () {
       final c = LicenseComposer.compose(
         TenantPackage.fromProfile(PlanProfile.connected),
         _plan(devices: 2, roles: const ['billing', 'JANITOR']),
       );
-      expect(c.allowedRoles, ['OWNER', 'BILLING']);
+      expect(c.allowedRoles, ['OWNER', 'MANAGER', 'BILLING', 'WAITER', 'KITCHEN']);
     });
 
     test('the term comes from the plan', () {
@@ -160,7 +170,9 @@ void main() {
       expect(f['packageId'], pkg.id);
       expect(f['planId'], 'annual');
       expect(f['storageMode'], StorageModes.cloudSync);
-      expect(f['maxDevices'], 3);
+      expect(f['maxDevices'], 5, reason: 'the Standard default, not the plan');
+      expect(f['tier'], 'standard');
+      expect(f['maxUsers'], 10);
       expect((f['features'] as Map).containsKey(FeatureKeys.pureOfflineMode), isTrue);
     });
 

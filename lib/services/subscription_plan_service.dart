@@ -1,7 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import '../core/subscription_plan_model.dart';
-import '../core/entitlements.dart';
 
 class SubscriptionPlanService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -9,36 +8,39 @@ class SubscriptionPlanService {
 
   /// Default fallback trial plan used if Firestore is offline or unseeded.
   ///
-  /// Mirrors the Offline Dine-In profile: pure offline, 1 device, 1 outlet,
-  /// the full offline feature suite (14 keys, since analytics moved to the
-  /// offline tier on 17 Sep).
-  static final SubscriptionPlan fallbackTrialPlan = _fromProfile(
+  /// Validity only (docs/PLATFORM_STRUCTURE.md §2): fourteen days. What the
+  /// trial can do comes from the package it is composed with (the trade's
+  /// Offline starter, `Verticals.defaultPackageFor`), never from here.
+  static final SubscriptionPlan fallbackTrialPlan = SubscriptionPlan.validityOnly(
     id: 'trial',
-    profile: PlanProfile.offlineDineIn,
     name: 'Free Trial (14 Days)',
-    description:
-        'Fourteen days of the Basic tier for your type of business: billing, '
-        'receipt printing, expenses, day-end reports and sales analytics, '
-        'plus the tools for your trade \u2014 all on one device, no internet '
-        'needed.',
-    isDefaultTrial: true,
+    description: 'Fourteen days free, on the package for your type of business.',
     validityDays: 14,
     billingCycle: 'TRIAL',
-    maxUsers: 1,
-    tableCount: 15,
+    isDefaultTrial: true,
   );
 
-  /// Creates the standard plans when they are missing. Never rewrites one
-  /// that exists.
-  ///
-  /// One plan per [PlanProfile] to start from. Prices are not stored anywhere
-  /// in the product (D5): pricing is agreed with the platform admin, not read
-  /// from a document.
+  /// The standard plans: validity only (name, days, price, billing cycle).
+  /// Trial 14 days, Monthly 30, Quarterly 90, Half-yearly 180, Yearly 365.
+  /// Prices are not stored in the product (D5).
+  static final List<SubscriptionPlan> defaultPlans = [
+    fallbackTrialPlan,
+    SubscriptionPlan.validityOnly(id: 'monthly', name: 'Monthly', validityDays: 30, billingCycle: 'MONTHLY'),
+    SubscriptionPlan.validityOnly(id: 'quarterly', name: 'Quarterly', validityDays: 90, billingCycle: 'QUARTERLY'),
+    SubscriptionPlan.validityOnly(
+        id: 'half_yearly', name: 'Half-yearly', validityDays: 180, billingCycle: 'HALF_YEARLY'),
+    SubscriptionPlan.validityOnly(id: 'yearly', name: 'Yearly', validityDays: 365, billingCycle: 'YEARLY'),
+  ];
+
+  /// Creates the standard plans ([defaultPlans]) when they are missing.
+  /// Never rewrites one that exists.
   ///
   /// This runs on **every app start** (`main.dart`) on **every device**, so it
-  /// must be idempotent and must not fight the console: a plan's term,
-  /// outlets, devices, staff and roles are the admin's to edit on the Plans
-  /// screen, and features live on the package, not here.
+  /// must be idempotent and must not fight the console: a plan's name, term
+  /// and price are the admin's to edit on the Plans screen. Plans seeded by
+  /// older builds (`offline_counter`, `offline_dine_in`, `connected`,
+  /// `omnichannel`) are left as they are; their legacy limit, role and
+  /// feature fields are ignored by the composer.
   static Future<void> ensureDefaultPlansExist() async {
     try {
       final col = _firestore.collection(_collection);
@@ -49,71 +51,14 @@ class SubscriptionPlanService {
       final existing = {for (final d in snapshot.docs) d.id};
 
       final batch = _firestore.batch();
-      final plans = <SubscriptionPlan>[
-        fallbackTrialPlan,
-        _fromProfile(
-          id: 'offline_counter',
-          profile: PlanProfile.offlineSingle,
-          name: 'Offline Counter (Annual)',
-          description:
-              'One device, billing and menu on the device. No cloud, nothing to configure.',
-          validityDays: 365,
-          billingCycle: 'YEARLY',
-          maxUsers: 3,
-          tableCount: 0,
-          operatingMode: 'payFirstQSR',
-        ),
-        _fromProfile(
-          id: 'offline_dine_in',
-          profile: PlanProfile.offlineDineIn,
-          name: 'Offline Dine-In (Annual)',
-          description:
-              'One device with tables, running tabs, reservations, KOT slips and expenses.',
-          validityDays: 365,
-          billingCycle: 'YEARLY',
-          maxUsers: 5,
-          tableCount: 15,
-        ),
-        _fromProfile(
-          id: 'connected',
-          profile: PlanProfile.connected,
-          name: 'Connected (Annual)',
-          description:
-              'Cloud ledger, up to five devices, analytics. Online add-ons switched on per store.',
-          validityDays: 365,
-          billingCycle: 'YEARLY',
-          maxUsers: 10,
-          tableCount: 25,
-        ),
-        _fromProfile(
-          id: 'omnichannel',
-          profile: PlanProfile.omnichannel,
-          name: 'Everything (Annual)',
-          description:
-              'Every feature: kitchen screens, waiter pads, QR ordering, online menu, outlets.',
-          validityDays: 365,
-          billingCycle: 'YEARLY',
-          maxUsers: 50,
-          tableCount: 60,
-        ),
-      ];
 
-      // Create-if-missing only. A plan is the platform admin's document —
-      // term, outlets, devices, staff, roles — and the Plans screen edits it;
-      // rewriting any of it on launch would revert those edits the next time
-      // a till opened. Features and storage mode belong to the *package*
-      // since 18 Sep 2026; the copies written here at creation are legacy
-      // fields older builds tolerate, and nothing reads them to decide.
+      // Create-if-missing only.
       var created = 0;
-      for (final plan in plans) {
+      for (final plan in defaultPlans) {
         if (existing.contains(plan.id)) continue;
         created++;
-        final profile = _planProfileFor(plan.id);
         batch.set(col.doc(plan.id), {
           ...plan.toFirestore(),
-          'planProfile': profile.id,
-          'storageMode': profile.storageMode,
-          'allowedStorageModes': profile.allowedStorageModes.toList(),
           'createdAt': FieldValue.serverTimestamp(),
         });
       }
@@ -135,56 +80,6 @@ class SubscriptionPlanService {
     } catch (e) {
       debugPrint("SubscriptionPlanService ensureDefaultPlansExist error: $e");
     }
-  }
-
-  static PlanProfile _planProfileFor(String planId) {
-    switch (planId) {
-      case 'trial':
-      case 'offline_dine_in':
-        return PlanProfile.offlineDineIn;
-      case 'offline_counter':
-        return PlanProfile.offlineSingle;
-      case 'omnichannel':
-        return PlanProfile.omnichannel;
-      default:
-        return PlanProfile.connected;
-    }
-  }
-
-  static SubscriptionPlan _fromProfile({
-    required String id,
-    required PlanProfile profile,
-    required String name,
-    required String description,
-    required int validityDays,
-    required String billingCycle,
-    required int maxUsers,
-    required int tableCount,
-    bool isDefaultTrial = false,
-    String operatingMode = 'dineFirstPostpaid',
-  }) {
-    final features = Map<String, bool>.from(profile.features)
-      ..[FeatureKeys.pureOfflineMode] = profile.isOffline;
-    return SubscriptionPlan(
-      id: id,
-      name: name,
-      description: description,
-      isDefaultTrial: isDefaultTrial,
-      validityDays: validityDays,
-      price: 0.0, // D5: no prices in the product
-      billingCycle: billingCycle,
-      maxOutlets: profile.maxOutlets,
-      maxUsers: maxUsers,
-      maxDevices: profile.maxDevices,
-      tableCount: tableCount,
-      operatingMode: operatingMode,
-      allowedRoles: id == 'trial'
-          ? const ['OWNER']
-          : (profile.isOffline
-              ? const ['OWNER', 'MANAGER', 'BILLING']
-              : const ['OWNER', 'MANAGER', 'BILLING', 'KITCHEN', 'WAITER']),
-      features: features,
-    );
   }
 
   /// Live stream of all subscription plans.

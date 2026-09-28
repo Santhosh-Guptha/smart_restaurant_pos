@@ -78,6 +78,17 @@ class RestaurantFeatureCatalog {
 }
 
 /// --- SUBSCRIPTION PLAN MODEL ---
+///
+/// A plan is **validity only** (docs/PLATFORM_STRUCTURE.md §2): [name],
+/// [validityDays], [price] and [billingCycle]. It sets a licence's dates and
+/// nothing else.
+///
+/// The remaining fields — [maxOutlets], [maxUsers], [maxDevices],
+/// [tableCount], [operatingMode], [allowedRoles] and [features] — are legacy.
+/// They are still read so that old plan documents parse, and still written so
+/// older builds reading the same documents keep working, but they are
+/// **ignored**: `LicenseComposer.compose` takes features, storage, limits and
+/// roles from the package and its tier. Consoles should not show or edit them.
 class SubscriptionPlan {
   final String id;
   final String name;
@@ -85,13 +96,26 @@ class SubscriptionPlan {
   final bool isDefaultTrial;
   final int validityDays;
   final double price;
-  final String billingCycle; // TRIAL, MONTHLY, YEARLY, LIFETIME
+  final String billingCycle; // TRIAL, MONTHLY, QUARTERLY, HALF_YEARLY, YEARLY, LIFETIME
+
+  /// Legacy, ignored (limits come from the package tier).
   final int maxOutlets;
+  /// Legacy, ignored (limits come from the package tier).
   final int maxUsers;
+
+  /// Legacy, ignored (limits come from the package tier).
   final int maxDevices;
+
+  /// Legacy, ignored.
   final int tableCount;
+
+  /// Legacy, ignored.
   final String operatingMode; // dineFirstPostpaid, payFirstQSR, hybrid
+
+  /// Legacy, ignored (roles come from the trade and tier).
   final List<String> allowedRoles;
+
+  /// Legacy, ignored (features come from the package).
   final Map<String, bool> features;
   final DateTime? createdAt;
   final DateTime? updatedAt;
@@ -114,6 +138,28 @@ class SubscriptionPlan {
     this.createdAt,
     this.updatedAt,
   });
+
+  /// A plan as the contract defines it: name, validity, price and billing
+  /// cycle. The legacy fields keep their neutral defaults and no features.
+  factory SubscriptionPlan.validityOnly({
+    required String id,
+    required String name,
+    required int validityDays,
+    String description = '',
+    double price = 0.0,
+    String billingCycle = 'YEARLY',
+    bool isDefaultTrial = false,
+  }) =>
+      SubscriptionPlan(
+        id: id,
+        name: name,
+        description: description,
+        isDefaultTrial: isDefaultTrial,
+        validityDays: validityDays,
+        price: price,
+        billingCycle: billingCycle,
+        features: const {},
+      );
 
   SubscriptionPlan copyWith({
     String? id,

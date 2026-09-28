@@ -84,9 +84,12 @@ void main() {
     test('every shop vertical starts on it, and restaurants do not', () {
       for (final c in ['Kirana / Grocery Store', 'Supermarket / Departmental Store',
                        'Pharmacy / Medical Store', 'General Retail / Fashion / Electronics']) {
-        expect(Verticals.defaultPackageFor(c), PlanProfile.offlineRetail.id, reason: c);
+        // The trade's own Offline starter, which falls back to Shop counter.
+        expect(Verticals.defaultPackageFor(c), '${Verticals.forCategory(c)}_offline', reason: c);
+        expect(PlanProfile.byId(Verticals.defaultPackageFor(c)).id, PlanProfile.offlineRetail.id, reason: c);
       }
-      expect(Verticals.defaultPackageFor('Restaurant & Cafe'), PlanProfile.offlineDineIn.id);
+      expect(Verticals.defaultPackageFor('Restaurant & Cafe'), 'restaurant_offline');
+      expect(PlanProfile.byId(Verticals.defaultPackageFor('Restaurant & Cafe')).id, PlanProfile.offlineDineIn.id);
     });
 
     test('extraKeys cannot invent a key the catalogue does not have', () {

@@ -1,8 +1,11 @@
 /// A package: *what a tenant can do*.
 ///
-/// A named bundle of feature keys plus the storage mode they run in. The four
-/// shipped packages are the [PlanProfile]s the resolver already knows; the
-/// platform admin can add their own. Nothing here is about days, counts or
+/// A named bundle of feature keys plus the storage mode they run in, at a
+/// [PackageTier] (docs/PLATFORM_STRUCTURE.md §3). The shipped starters are
+/// one package per trade and tier, ids `<trade>_<tier>` ([PackageCatalog]);
+/// the five older universal starters (the [PlanProfile] ids) are still read
+/// for the licences that name them and are marked [TenantPackage.isLegacy].
+/// The platform admin can add their own. Nothing here is about days, counts or
 /// money — that is the plan's business (see `subscription_plan_model.dart`),
 /// and a tenant is the join of one package and one plan.
 ///
@@ -43,6 +46,16 @@ class TenantPackage {
   final DateTime? createdAt;
   final DateTime? updatedAt;
 
+  /// The tier as stored (the `tier` field), or null on a document written
+  /// before tiers existed. Read [tier], which infers it when this is null.
+  final PackageTier? storedTier;
+
+  /// The default limits as stored on the package, or null when the document
+  /// does not carry them. Read [limits], which falls back to the tier's.
+  final TierLimits? storedLimits;
+
+  /// [tier] and [limits] are optional: a package that does not name them has
+  /// them inferred (see [tier]) and uses the tier's default limits.
   const TenantPackage({
     required this.id,
     required this.name,
@@ -54,9 +67,53 @@ class TenantPackage {
     this.sortOrder = 100,
     this.createdAt,
     this.updatedAt,
-  });
+    PackageTier? tier,
+    TierLimits? limits,
+  })  : storedTier = tier,
+        storedLimits = limits;
 
   bool get isOffline => StorageModes.isOffline(storageMode);
+
+  /// The package's tier. Offline storage is always [PackageTier.offline];
+  /// otherwise the stored tier, else inferred from the id and the nearest
+  /// profile ([PackageTier.fromPackageOrProfile]): a legacy Connected
+  /// package is Standard (five devices), Everything on is Premium.
+  PackageTier get tier {
+    if (isOffline) return PackageTier.offline;
+    final t = storedTier;
+    if (t != null && !t.isOffline) return t;
+    final fromId = PackageTier.fromStarterId(id);
+    if (fromId != null && !fromId.isOffline) return fromId;
+    return PackageTier.fromPackageOrProfile(
+      packageId: id,
+      profileId: nearestProfile.id,
+      storageMode: storageMode,
+    );
+  }
+
+  /// Default devices / outlets / users for a tenant put on this package.
+  /// Offline is always 1 / 1 / 1. Otherwise what the package stores, else
+  /// the tier's [PackageTier.defaultLimits].
+  TierLimits get limits =>
+      tier.isOffline ? TierLimits.offline : (storedLimits ?? tier.defaultLimits).clamped;
+
+  int get maxDevices => limits.maxDevices;
+  int get maxOutlets => limits.maxOutlets;
+  int get maxUsers => limits.maxUsers;
+
+  /// One of the five universal starters that predate per-trade packages
+  /// (`OFFLINE_SINGLE`, `OFFLINE_RETAIL`, `OFFLINE_DINE_IN`, `CONNECTED`,
+  /// `OMNICHANNEL`). Still readable, because live licences name them;
+  /// consoles hide them from pickers.
+  bool get isLegacy => isStarter && PlanProfile.all.any((p) => p.id == id);
+
+  /// "Features available for Pharmacy — Basic" (contract §3). A universal
+  /// package reads "Features available for all business types — <Tier>".
+  String get featuresHeading => PackageCatalog.headingFor(vertical, tier);
+
+  /// The starter for [vertical] at [tier]: id `<vertical>_<tier>`.
+  static TenantPackage starterFor(String vertical, PackageTier tier) =>
+      PackageCatalog.starter(vertical, tier);
 
   /// Derived, exactly as [PlanProfile.allowedStorageModes] derives it.
   Set<String> get allowedStorageModes => isOffline
@@ -76,6 +133,13 @@ class TenantPackage {
   PlanProfile get nearestProfile {
     for (final p in PlanProfile.all) {
       if (p.id == id) return p;
+    }
+    // A trade's tier package: the profile that tier falls back to (a shop's
+    // offline tier is Shop counter, a restaurant's offline dine-in, Basic and
+    // Standard are Connected, Premium and Enterprise are Everything on).
+    final t = storedTier ?? PackageTier.fromStarterId(id);
+    if (t != null && t.isOffline == isOffline && !(t.isOffline && Verticals.isAny(vertical))) {
+      return t.profileFor(vertical);
     }
     // Not a starter: pick the profile whose feature set is the closest
     // superset in the same storage family, so the resolver's fallback errs
@@ -99,6 +163,9 @@ class TenantPackage {
   /// A starter, as data. The resolver's own [PlanProfile] is the source, so
   /// the seeded document and the code can never disagree about what
   /// "Offline dine-in" contains.
+  ///
+  /// These are the legacy universal starters ([isLegacy]); new tenants are
+  /// put on a trade's tier package ([starterFor]).
   factory TenantPackage.fromProfile(PlanProfile p, {int sortOrder = 0}) =>
       TenantPackage(
         id: p.id,
@@ -108,6 +175,7 @@ class TenantPackage {
         features: _complete(p.features),
         isStarter: true,
         sortOrder: sortOrder,
+        tier: PackageTier.fromPackageOrProfile(profileId: p.id, storageMode: p.storageMode),
       );
 
   TenantPackage copyWith({
@@ -117,6 +185,8 @@ class TenantPackage {
     String? storageMode,
     Map<String, bool>? features,
     int? sortOrder,
+    PackageTier? tier,
+    TierLimits? limits,
   }) =>
       TenantPackage(
         id: id,
@@ -129,6 +199,8 @@ class TenantPackage {
         sortOrder: sortOrder ?? this.sortOrder,
         createdAt: createdAt,
         updatedAt: DateTime.now(),
+        tier: tier ?? storedTier,
+        limits: limits ?? storedLimits,
       );
 
   /// Apply the catalogue's own rules to a raw tick-box map, so a package can
@@ -191,7 +263,10 @@ class TenantPackage {
         'allowedStorageModes': allowedStorageModes.toList(),
         'features': features,
         'isStarter': isStarter,
+        'isLegacy': isLegacy,
         'sortOrder': sortOrder,
+        'tier': tier.id,
+        ...limits.toJson(),
       };
 
   factory TenantPackage.fromJson(Map<String, dynamic> j, String id) {
@@ -212,10 +287,19 @@ class TenantPackage {
     // existed: the editor never offered a vertical, so the stored
     // 'restaurant' was a default, not a choice. Only a package explicitly
     // marked as scoped to one vertical is read as one.
-    final vert = (j['isStarter'] != true && j['verticalScoped'] == true)
-        ? Verticals.normalizePackageVertical(j['vertical']?.toString())
-        : Verticals.any;
-    return TenantPackage(
+    //
+    // A trade's tier starter (`pharmacy_basic`) is the exception: its id
+    // names its trade, and that is what it is for.
+    final starterTrade = j['isStarter'] == true ? PackageTier.tradeOfStarterId(id) : null;
+    final String vert;
+    if (starterTrade != null) {
+      vert = starterTrade;
+    } else if (j['isStarter'] != true && j['verticalScoped'] == true) {
+      vert = Verticals.normalizePackageVertical(j['vertical']?.toString());
+    } else {
+      vert = Verticals.any;
+    }
+    final base = TenantPackage(
       id: id,
       name: (j['name'] ?? id).toString(),
       description: (j['description'] ?? '').toString(),
@@ -226,8 +310,37 @@ class TenantPackage {
       sortOrder: (j['sortOrder'] is num) ? (j['sortOrder'] as num).toInt() : 100,
       createdAt: _date(j['createdAt']),
       updatedAt: _date(j['updatedAt']),
+      tier: PackageTier.tryParse(j['tier']?.toString()),
     );
+    // Old documents carry no limits: the tier's defaults apply ([limits]).
+    int? count(String k) => (j[k] is num) ? (j[k] as num).toInt() : null;
+    final devices = count('maxDevices');
+    final outlets = count('maxOutlets');
+    final users = count('maxUsers');
+    if (devices == null && outlets == null && users == null) return base;
+    final d = base.tier.defaultLimits;
+    return base._withLimits(TierLimits(
+      maxDevices: devices ?? d.maxDevices,
+      maxOutlets: outlets ?? d.maxOutlets,
+      maxUsers: users ?? d.maxUsers,
+    ));
   }
+
+  /// This package with [l] as its stored limits; nothing else changes.
+  TenantPackage _withLimits(TierLimits l) => TenantPackage(
+        id: id,
+        name: name,
+        description: description,
+        vertical: vertical,
+        storageMode: storageMode,
+        features: features,
+        isStarter: isStarter,
+        sortOrder: sortOrder,
+        createdAt: createdAt,
+        updatedAt: updatedAt,
+        tier: storedTier,
+        limits: l,
+      );
 
   static DateTime? _date(dynamic v) {
     if (v == null) return null;
@@ -239,6 +352,240 @@ class TenantPackage {
       if (d is DateTime) return d;
     } catch (_) {}
     return DateTime.tryParse(v.toString());
+  }
+}
+
+/// The trade × tier grid of docs/PLATFORM_STRUCTURE.md §3, in code: which
+/// features each tier of each trade includes, which add-ons a client may be
+/// given on top, and the 25 starter packages (`<trade>_<tier>`).
+///
+/// Only keys that apply to the trade are ever on, and a key that is coming
+/// soon ([FeatureCatalog.comingSoon]) is never on or offered.
+class PackageCatalog {
+  PackageCatalog._();
+
+  /// `<vertical>_<tier>`, e.g. `pharmacy_offline`.
+  static String starterId(String vertical, PackageTier tier) =>
+      '${_trade(vertical)}_${tier.id}';
+
+  /// True for every shipped starter id: the 25 tier starters and the five
+  /// legacy universal ones.
+  static bool isStarterId(String id) =>
+      PackageTier.fromStarterId(id) != null || PlanProfile.all.any((p) => p.id == id);
+
+  /// True for one of the five universal starters that predate tiers.
+  static bool isLegacyId(String id) => PlanProfile.all.any((p) => p.id == id);
+
+  /// The feature map of [vertical]'s package at [tier]: every catalogue key
+  /// present; only keys that apply to the trade may be true.
+  ///
+  /// | tier | restaurant | shops |
+  /// |---|---|---|
+  /// | offline | core + dine-in, tables, reservations, kitchen tickets, expenses, analytics | core + barcode, khata, stock, expenses, analytics |
+  /// | basic | + cloud ledger | + cloud ledger |
+  /// | standard | + e-mail bills, kitchen display, waiter ordering | + e-mail bills |
+  /// | premium | + online menu, QR ordering, online orders, multiple outlets | + multiple outlets |
+  /// | enterprise | = premium | = premium |
+  ///
+  /// A [vertical] that is not a trade is read as a restaurant.
+  static Map<String, bool> featuresFor(String vertical, PackageTier tier) {
+    final v = _trade(vertical);
+    final shop = Verticals.isShop(v);
+    final standard = tier.includesTier(PackageTier.standard);
+    final premium = tier.includesTier(PackageTier.premium);
+    final on = <String>{
+      for (final d in FeatureCatalog.all)
+        if (d.tier == CommercialTier.offlineBasic) d.key,
+      FeatureKeys.expenseManagement,
+      FeatureKeys.analytics,
+      if (shop) ...[
+        FeatureKeys.barcodeBilling,
+        FeatureKeys.customerKhata,
+        FeatureKeys.stockManagement,
+      ] else ...[
+        FeatureKeys.dineInBilling,
+        FeatureKeys.tableManagement,
+        FeatureKeys.reservations,
+        FeatureKeys.dualPrinting,
+      ],
+      if (tier.includesTier(PackageTier.basic)) FeatureKeys.cloudSync,
+      if (standard) FeatureKeys.emailReceipts,
+      if (standard && !shop) ...[FeatureKeys.kdsEnabled, FeatureKeys.waiterOrdering],
+      if (premium) FeatureKeys.multiOutlet,
+      if (premium && !shop) ...[
+        FeatureKeys.onlineMenu,
+        FeatureKeys.qrOrdering,
+        FeatureKeys.onlineOrderingEnabled,
+      ],
+    };
+    return {
+      for (final d in FeatureCatalog.all)
+        d.key: on.contains(d.key) && d.appliesTo(v) && !FeatureCatalog.isComingSoon(d.key),
+    };
+  }
+
+  /// The add-ons a client of [vertical] may be given on top of their
+  /// package: keys that apply to the trade, are not in the package, that the
+  /// storage mode and device count allow, and that are not coming soon.
+  /// Never another trade's key, never a core key.
+  ///
+  /// The package is [package] when given, else [vertical]'s package at
+  /// [tier] (Basic when neither is given). [storageMode] and [maxDevices]
+  /// default to the package's (for a client, pass the licence's own). A
+  /// [vertical] of 'any' uses the package's trade; when that is 'any' too,
+  /// only universal keys are offered.
+  static List<FeatureDef> addOnsFor(
+    String vertical, {
+    PackageTier? tier,
+    TenantPackage? package,
+    String? storageMode,
+    int? maxDevices,
+  }) {
+    final trade = !Verticals.isAny(vertical)
+        ? vertical.trim().toLowerCase()
+        : (package == null ? Verticals.any : package.vertical);
+    final t = tier ?? package?.tier ?? PackageTier.basic;
+    final included = package?.features ??
+        featuresFor(Verticals.isAny(trade) ? Verticals.restaurant : trade, t);
+    final mode = storageMode ?? package?.storageMode ?? t.defaultStorageMode;
+    final offline = StorageModes.isOffline(mode) || t.isOffline;
+    final devices = offline ? 1 : (maxDevices ?? package?.maxDevices ?? t.defaultLimits.maxDevices);
+    return FeatureCatalog.all.where((def) {
+      if (def.tier == CommercialTier.offlineBasic) return false;
+      if (FeatureCatalog.isComingSoon(def.key)) return false;
+      if (Verticals.isAny(trade)) {
+        if (def.verticals.isNotEmpty) return false;
+      } else if (def.verticals.isNotEmpty && !def.verticals.contains(trade)) {
+        return false;
+      }
+      if (included[def.key] == true) return false;
+      if (offline && (def.need != FeatureNeed.none || def.tier.isOnline)) return false;
+      if (devices <= 1 && def.need == FeatureNeed.secondDevice) return false;
+      return true;
+    }).toList();
+  }
+
+  /// "Features available for Pharmacy — Basic" (contract §3).
+  static String headingFor(String vertical, PackageTier tier) {
+    final name = Verticals.isAny(vertical) ? 'all business types' : Verticals.shortLabel(_trade(vertical));
+    return 'Features available for $name — ${tier.label}';
+  }
+
+  /// "Pharmacy Basic".
+  static String nameFor(String vertical, PackageTier tier) =>
+      '${Verticals.shortLabel(_trade(vertical))} ${tier.label}';
+
+  /// What [vertical]'s package at [tier] gives, generated from its features
+  /// and worded per contract §7: offline "works securely on your device
+  /// without depending on the cloud"; every other tier says the business
+  /// data stays in the client's own Google Drive.
+  static String descriptionFor(String vertical, PackageTier tier) {
+    final v = _trade(vertical);
+    final shop = Verticals.isShop(v);
+    final trade = Verticals.shortLabel(v);
+    final mine = featuresFor(v, tier);
+    List<String> names(Iterable<String> keys) {
+      final set = keys.toSet();
+      return [
+        for (final def in FeatureCatalog.all)
+          if (set.contains(def.key) && mine[def.key] == true) _featureName(def, v),
+      ];
+    }
+
+    if (tier.isOffline) {
+      final things = v == Verticals.pharmacy ? 'medicines' : 'products';
+      final core = shop
+          ? 'Billing, $things and pricing, receipt printing and day-end'
+          : 'Billing, menu, receipt printing and day-end';
+      final extras = names([
+        for (final e in mine.entries)
+          if (e.value && FeatureCatalog.find(e.key)?.tier != CommercialTier.offlineBasic) e.key,
+      ]);
+      return '$core${extras.isEmpty ? '' : ', plus ${_and(extras)}'}, for one device, one store '
+          'and one user. Works securely on your device without depending on the cloud.';
+    }
+
+    final previous = PackageTier.values[tier.index - 1];
+    final before = featuresFor(v, previous);
+    final added = names([
+      for (final e in mine.entries)
+        if (e.value && before[e.key] != true) e.key,
+    ]);
+    final l = tier.defaultLimits;
+    final stores = shop ? 'stores' : 'outlets';
+    final String reach;
+    if (tier.allowsCustomLimits) {
+      reach = 'Devices, $stores and users are set for your business.';
+    } else {
+      reach = 'Up to ${l.maxDevices} devices, ${l.maxOutlets} ${l.maxOutlets == 1 ? (shop ? 'store' : 'outlet') : stores} '
+          'and ${l.maxUsers} users.';
+    }
+    return 'Everything in $trade ${previous.label}${added.isEmpty ? '' : ' plus ${_and(added)}'}. $reach '
+        '$driveNotice';
+  }
+
+  /// Contract §7 wording for every tier except offline.
+  static const String driveNotice =
+      'Your business data stays in your own Google Drive. We do not take your '
+      'business data; only limited usage analytics such as bill counts are collected.';
+
+  /// Contract §7 wording for the offline tier.
+  static const String offlineNotice = 'Works securely on your device without depending on the cloud.';
+
+  /// The starter package for [vertical] at [tier]. Its limits are the tier's
+  /// defaults; its storage is on the device for offline and the client's own
+  /// Google Sheets otherwise.
+  static TenantPackage starter(String vertical, PackageTier tier) {
+    final v = _trade(vertical);
+    final mode = tier.defaultStorageMode;
+    return TenantPackage(
+      id: starterId(v, tier),
+      name: nameFor(v, tier),
+      description: descriptionFor(v, tier),
+      vertical: v,
+      storageMode: mode,
+      features: TenantPackage.normalise(featuresFor(v, tier), mode, vertical: v),
+      isStarter: true,
+      sortOrder: Verticals.all.indexOf(v) * 10 + tier.index,
+      tier: tier,
+      limits: tier.defaultLimits,
+    );
+  }
+
+  /// The 25 starters: every trade at every tier, trade by trade.
+  static List<TenantPackage> get starters => [
+        for (final v in Verticals.all)
+          for (final t in PackageTier.values) starter(v, t),
+      ];
+
+  /// The five universal starters that predate tiers, marked
+  /// [TenantPackage.isLegacy]. Sorted after the tier starters.
+  static List<TenantPackage> get legacyStarters => [
+        for (var i = 0; i < PlanProfile.all.length; i++)
+          TenantPackage.fromProfile(PlanProfile.all[i], sortOrder: 1000 + i),
+      ];
+
+  /// A trade id, or restaurant for anything that is not one.
+  static String _trade(String? vertical) {
+    final v = (vertical ?? '').trim().toLowerCase();
+    return Verticals.all.contains(v) ? v : Verticals.restaurant;
+  }
+
+  static String _featureName(FeatureDef def, String v) {
+    if (def.key == FeatureKeys.stockManagement && v == Verticals.pharmacy) {
+      return 'stock with batches and expiry';
+    }
+    final s = def.labelFor(v);
+    if (s.length < 2) return s.toLowerCase();
+    final second = s[1];
+    if (second != second.toLowerCase()) return s;
+    return s[0].toLowerCase() + s.substring(1);
+  }
+
+  static String _and(List<String> xs) {
+    if (xs.isEmpty) return '';
+    if (xs.length == 1) return xs.first;
+    return '${xs.sublist(0, xs.length - 1).join(', ')} and ${xs.last}';
   }
 }
 
@@ -288,6 +635,20 @@ class Verticals {
   static String normalizePackageVertical(String? v) {
     final t = (v ?? '').trim().toLowerCase();
     return all.contains(t) ? t : any;
+  }
+
+  /// The trade's one-word name: "Restaurant", "Kirana", "Supermarket",
+  /// "Pharmacy", "Retail" ("All business types" for [any]).
+  static String shortLabel(String vertical) {
+    switch (vertical) {
+      case restaurant:  return 'Restaurant';
+      case kirana:      return 'Kirana';
+      case supermarket: return 'Supermarket';
+      case pharmacy:    return 'Pharmacy';
+      case retail:      return 'Retail';
+      case any:         return 'All business types';
+      default:          return vertical;
+    }
   }
 
   /// Human-readable label for a vertical.
@@ -383,15 +744,15 @@ class Verticals {
     return null;
   }
 
-  /// Default package for signup. Restaurants get dine-in;
-  /// all retail verticals get the shop counter.
-  static String defaultPackageFor(String? businessCategory) {
-    final v = forCategory(businessCategory);
-    if (v == restaurant) return PlanProfile.offlineDineIn.id;
-    // A shop counter, not the bare till: the barcode scanner and the khata
-    // are the two things a kirana or a chemist buys this for.
-    return PlanProfile.offlineRetail.id;
-  }
+  /// Default package for signup: the trade's own Offline starter
+  /// (`restaurant_offline`, `pharmacy_offline`, ...), or its Basic starter
+  /// (`<trade>_basic`) when [offline] is false.
+  ///
+  /// A shop's offline starter carries the barcode scanner, the khata and
+  /// stock; a restaurant's the tables and running tabs.
+  static String defaultPackageFor(String? businessCategory, {bool offline = true}) =>
+      PackageCatalog.starterId(
+          forCategory(businessCategory), offline ? PackageTier.offline : PackageTier.basic);
 
   /// The business category to store for a vertical when all we know is the
   /// vertical (the console's type switch, a repaired document).

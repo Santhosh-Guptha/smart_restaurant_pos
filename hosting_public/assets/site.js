@@ -272,7 +272,7 @@ async function handleTrialSubmit(e) {
       '<div style="margin-top:4px"><strong>📱 Fastest route:</strong> message us on WhatsApp below and we will do it while you wait.</div>';
   }
 
-  const waMsg = encodeURIComponent(`Hi SmartDine Team, I just registered for a 14-Day Free Trial for my restaurant "${shopName}" (${businessCategory}) in ${address}. My email is ${email}. Please help me get onboarded!`);
+  const waMsg = encodeURIComponent(`Hi SmartDine Team, I just registered for a 14-Day Free Trial for my business "${shopName}" (${businessCategory}) in ${address}. My email is ${email}. Please help me get onboarded!`);
   document.getElementById('trialWhatsAppBtn').href = `https://wa.me/917997970420?text=${waMsg}`;
 
   document.getElementById('trialFormContainer').style.display = 'none';

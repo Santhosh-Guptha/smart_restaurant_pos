@@ -1,5 +1,11 @@
 /// One package plus one plan equals one licence.
 ///
+/// The package decides everything the client can do: features, storage
+/// mode, tier, limits (the tier's defaults) and roles. The plan decides only
+/// how long: its validity sets the dates. Limits, roles and features on a
+/// plan document are legacy fields and are ignored here
+/// (docs/PLATFORM_STRUCTURE.md §2).
+///
 /// This is the only place the join happens. Onboarding, approving a lead,
 /// editing a tenant, the migration and the reports all call [compose], so the
 /// console cannot write a licence in a shape the app would resolve
@@ -36,6 +42,19 @@ class ComposedLicense {
   /// builds read.
   final Map<String, bool> features;
 
+  /// The package's tier (offline when the licence runs offline).
+  final PackageTier tier;
+
+  /// The trade the feature map was resolved for: the package's own trade
+  /// for a trade package (`pharmacy_basic`), `'any'` for a universal or
+  /// legacy package. Written as `featuresResolvedFor`.
+  final String featuresResolvedFor;
+
+  /// True when the limits are not the package's defaults (Enterprise, or an
+  /// admin override). Written as `limitsCustom`, so re-applying the package
+  /// later keeps them.
+  final bool limitsCustom;
+
   const ComposedLicense({
     required this.package,
     required this.plan,
@@ -47,7 +66,13 @@ class ComposedLicense {
     required this.allowedRoles,
     required this.storageMode,
     required this.features,
+    this.tier = PackageTier.basic,
+    this.featuresResolvedFor = 'any',
+    this.limitsCustom = false,
   });
+
+  /// [maxDevices], [maxOutlets] and [maxUsers] together.
+  TierLimits get limits => TierLimits(maxDevices: maxDevices, maxOutlets: maxOutlets, maxUsers: maxUsers);
 
   /// The `licenses/{orgId}` document, minus timestamps the writer stamps.
   Map<String, dynamic> toLicenseFields({String status = 'ACTIVE'}) => {
@@ -66,7 +91,12 @@ class ComposedLicense {
         'maxDevices': maxDevices,
         'allowedRoles': allowedRoles,
         'features': features,
-        'featuresResolvedFor': 'any',
+        'featuresResolvedFor': featuresResolvedFor,
+        'tier': tier.id,
+        'limitsCustom': limitsCustom,
+        // A trade package names its trade; a universal one leaves the
+        // licence's own vertical alone.
+        if (featuresResolvedFor != 'any') 'vertical': featuresResolvedFor,
         'expiryWarningDays': 3,
       };
 
@@ -97,7 +127,19 @@ class LicenseComposer {
   /// and no kitchen to cook in.
   static const Set<String> restaurantOnlyRoles = {'WAITER', 'KITCHEN'};
 
-  static const Set<String> _shopTrades = {'kirana', 'supermarket', 'pharmacy', 'retail'};
+  /// Roles for a licence (contract §5): offline -> OWNER only; a shop ->
+  /// OWNER, MANAGER, BILLING; a restaurant (or an unknown trade) on
+  /// Standard or above with more than one device also WAITER and KITCHEN.
+  static List<String> rolesFor(String vertical, PackageTier tier, int maxDevices) {
+    if (tier.isOffline) return ['OWNER'];
+    final shop = Verticals.isShop(vertical.trim().toLowerCase());
+    return [
+      'OWNER',
+      'MANAGER',
+      'BILLING',
+      if (!shop && tier.includesTier(PackageTier.standard) && maxDevices > 1) ...['WAITER', 'KITCHEN'],
+    ];
+  }
 
   /// [currentStorageMode] is the organisation's mode today, when there is
   /// one. A package names a storage *family* (offline, or cloud); inside the
@@ -105,15 +147,30 @@ class LicenseComposer {
   /// tenant on their own Sheets keeps that when the package agrees, and only a
   /// change of family is a change of mode.
   ///
-  /// [vertical] is the tenant's trade when the caller knows it. The feature
-  /// map is written trade-neutral whatever it is; it only decides the roles
-  /// (a shop gets no waiter or kitchen role). 'any' keeps every role.
+  /// [vertical] is the tenant's trade when the caller knows it. It decides
+  /// the roles (a shop gets no waiter or kitchen role; 'any' falls back to
+  /// the package's trade, and is read as a restaurant when that is 'any'
+  /// too). The feature map is resolved for the *package's* trade when the
+  /// package has one (a trade package such as `pharmacy_basic`), and
+  /// trade-neutral ('any') for a universal or legacy package.
+  ///
+  /// Limits come from the package ([TenantPackage.limits], the tier's
+  /// defaults), never from the plan. [limits] replaces them only when the
+  /// tier allows custom limits (Enterprise) or [adminOverride] is true. An
+  /// offline licence is always 1 device, 1 outlet, 1 user and OWNER only.
+  ///
+  /// [addOns] are per-client extras switched on over the package; only keys
+  /// [PackageCatalog.addOnsFor] offers for this trade, storage and device
+  /// count are honoured, and the resolver still applies dependencies.
   static ComposedLicense compose(
     TenantPackage package,
     SubscriptionPlan plan, {
     DateTime? startDate,
     String? currentStorageMode,
     String vertical = 'any',
+    TierLimits? limits,
+    bool adminOverride = false,
+    Set<String> addOns = const {},
   }) {
     final start = startDate ?? DateTime.now();
     final end = start.add(Duration(days: plan.validityDays < 1 ? 1 : plan.validityDays));
@@ -122,10 +179,48 @@ class LicenseComposer {
         ? current
         : package.storageMode;
 
-    // Resolved trade-neutral ('any'): the licence is written before, and
-    // independently of, which trade reads it. Resolving as the default
-    // 'restaurant' wrote barcodeBilling/customerKhata/stockManagement false
-    // into every shop's licence, so a pharmacy on Shop counter lost them.
+    final tier = StorageModes.isOffline(mode) ? PackageTier.offline : package.tier;
+
+    // Limits: the package's (its tier's defaults), unless custom limits are
+    // allowed here. Offline is fixed.
+    var lim = package.limits;
+    var limitsCustom = false;
+    final requested = limits;
+    if (tier.isOffline) {
+      lim = TierLimits.offline;
+    } else if (requested != null && (tier.allowsCustomLimits || adminOverride)) {
+      final c = requested.clamped;
+      limitsCustom = c != lim;
+      lim = c;
+    }
+
+    // The trade the map is resolved for, and the trade the roles follow.
+    final packageTrade = Verticals.isAny(package.vertical) ? null : package.vertical;
+    final resolveFor = packageTrade ?? Verticals.any;
+    final roleTrade = Verticals.isAny(vertical) ? (packageTrade ?? Verticals.any) : vertical.trim().toLowerCase();
+
+    final input = Map<String, bool>.from(package.features);
+    if (addOns.isNotEmpty) {
+      final offered = {
+        for (final d in PackageCatalog.addOnsFor(
+          Verticals.isAny(roleTrade) ? resolveFor : roleTrade,
+          package: package,
+          storageMode: mode,
+          maxDevices: lim.maxDevices,
+        ))
+          d.key,
+      };
+      for (final k in addOns) {
+        if (offered.contains(k)) input[k] = true;
+      }
+    }
+
+    // A universal package is resolved trade-neutral ('any'): the licence is
+    // written before, and independently of, which trade reads it. Resolving
+    // as the default 'restaurant' wrote barcodeBilling/customerKhata/
+    // stockManagement false into every shop's licence, so a pharmacy on Shop
+    // counter lost them. A trade package is resolved for its own trade, so
+    // the stored map is exactly what that trade gets (contract §5).
     // Ask the resolver what it would make of this. Whatever it clamps, we
     // write clamped, so the document and the running app agree from the
     // first read. The probe is dated now/tomorrow on purpose: dates take no
@@ -137,33 +232,24 @@ class LicenseComposer {
       planTier: plan.billingCycle,
       planProfile: package.nearestProfile.id,
       status: 'ACTIVE',
-      maxFranchises: plan.maxOutlets,
-      maxUsers: plan.maxUsers,
-      maxDevices: plan.maxDevices,
-      allowedRoles: plan.allowedRoles,
-      features: Map<String, bool>.from(package.features),
+      maxFranchises: lim.maxOutlets,
+      maxUsers: lim.maxUsers,
+      maxDevices: lim.maxDevices,
+      features: input,
       startDate: probeNow,
       endDate: probeNow.add(const Duration(days: 1)),
+      tier: tier.id,
     );
-    final resolved = Entitlements.fromLicense(probe, storageMode: mode, vertical: 'any');
+    final resolved = Entitlements.fromLicense(probe, storageMode: mode, vertical: resolveFor);
 
     final features = <String, bool>{
       for (final def in FeatureCatalog.all) def.key: resolved.isEnabled(def.key),
       FeatureKeys.pureOfflineMode: resolved.isPureOffline,
     };
 
-    // A role that needs a second device is meaningless on a one-device
-    // licence; drop it rather than let a manager create a waiter who can never
-    // sign in anywhere.
-    final shop = _shopTrades.contains(vertical.trim().toLowerCase());
-    final roles = <String>{'OWNER'};
-    for (final r in plan.allowedRoles) {
-      final up = r.trim().toUpperCase();
-      if (!allRoles.contains(up)) continue;
-      if (resolved.maxDevices <= 1 && secondDeviceRoles.contains(up)) continue;
-      if (shop && restaurantOnlyRoles.contains(up)) continue;
-      roles.add(up);
-    }
+    // Roles from the trade and tier, never from the plan. A role that needs
+    // a second device is meaningless on a one-device licence.
+    final roles = rolesFor(roleTrade, tier, resolved.maxDevices);
 
     return ComposedLicense(
       package: package,
@@ -172,10 +258,13 @@ class LicenseComposer {
       endDate: end,
       maxDevices: resolved.maxDevices,
       maxOutlets: resolved.maxOutlets,
-      maxUsers: plan.maxUsers < 1 ? 1 : plan.maxUsers,
-      allowedRoles: [for (final r in allRoles) if (roles.contains(r)) r],
+      maxUsers: tier.isOffline ? 1 : lim.maxUsers,
+      allowedRoles: roles,
       storageMode: resolved.storageMode,
       features: features,
+      tier: tier,
+      featuresResolvedFor: resolveFor,
+      limitsCustom: limitsCustom,
     );
   }
 

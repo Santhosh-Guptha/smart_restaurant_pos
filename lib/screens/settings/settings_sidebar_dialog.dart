@@ -22,6 +22,8 @@ import '../../services/thermal_printer_service.dart';
 import '../../utils/ui_feedback.dart';
 import '../restaurant/store_configuration_screen.dart';
 import '../../services/backup_service.dart';
+import '../../services/offline_backup_service.dart';
+import 'backup_restore_screen.dart';
 
 class SettingsSidebarDialog extends ConsumerStatefulWidget {
   final int initialTab;
@@ -509,6 +511,13 @@ class _SettingsSidebarDialogState extends ConsumerState<SettingsSidebarDialog> {
             const SizedBox(height: 20),
           ],
 
+          // ── Backup & restore (owner only; PLATFORM_STRUCTURE §6) ──
+          if ((effectiveRole == StaffRole.owner || userRole == 'OFFLINE OWNER') &&
+              ref.watch(entitlementsProvider).isEnabled(FeatureKeys.backupRestore)) ...[
+            _buildBackupSection(context),
+            const SizedBox(height: 20),
+          ],
+
           // User Actions
           Wrap(
             spacing: 12,
@@ -790,10 +799,6 @@ class _SettingsSidebarDialogState extends ConsumerState<SettingsSidebarDialog> {
                 );
               },
             ),
-          if (ref.watch(entitlementsProvider).isEnabled(FeatureKeys.backupRestore)) ...[
-            const SizedBox(height: 28),
-            _buildBackupSection(context),
-          ],
         ],
       ),
     );
@@ -801,60 +806,64 @@ class _SettingsSidebarDialogState extends ConsumerState<SettingsSidebarDialog> {
 
   // ── Backup & Restore ───────────────────────────────────────────────────────
   //
-  // BackupService was hardened in X-12 (AES-256-GCM under a passphrase, restore
-  // allowlist) but had no call sites: the feature existed only as code. This is
-  // the UI. The passphrase is asked for at the moment of use and never stored -
-  // without it a leaked .sbk is unreadable, and that is the whole point.
+  // The full screen (export with passphrase + confirm, restore with summary)
+  // is BackupRestoreScreen on OfflineBackupService (.sbzbak, works on web,
+  // Windows and Android). The older Android-only .sbk restore below stays so
+  // a file made by a previous version can still be opened.
 
   bool _backupBusy = false;
 
   Widget _buildBackupSection(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildSectionHeading(
-          'Backup & Restore',
-          'Encrypted backup of bills, ${VerticalLabels.of(ref.watch(currentVerticalProvider)).isRestaurant ? 'menu' : 'products'}, customers and settings. Staff logins are not included - they are re-created by owner sign-in on a new device.',
-        ),
-        const SizedBox(height: 12),
-        Row(
-          children: [
-            Expanded(
-              child: OutlinedButton.icon(
-                onPressed: _backupBusy ? null : () => _runBackupExport(context),
-                icon: const Icon(Icons.lock_outline_rounded, size: 18),
-                label: const Text('Export encrypted backup'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: context.textPrimary,
-                  side: BorderSide(color: context.borderColor),
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                ),
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: context.canvasColor,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: context.borderColor),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildSectionHeading(
+            'Backup & restore',
+            'Encrypted backup of this store\'s bills, ${VerticalLabels.of(ref.watch(currentVerticalProvider)).isRestaurant ? 'menu' : 'products'}, customers and settings on this device, to restore on another device after signing in.',
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: _backupBusy
+                  ? null
+                  : () {
+                      final nav = Navigator.of(context);
+                      nav.pop();
+                      nav.push(MaterialPageRoute<void>(builder: (_) => const BackupRestoreScreen()));
+                    },
+              icon: const Icon(Icons.shield_outlined, size: 18),
+              label: const Text('Open Backup & restore'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: ClassicTheme.primaryAccent,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               ),
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: OutlinedButton.icon(
-                onPressed: _backupBusy ? null : () => _runBackupImport(context),
-                icon: const Icon(Icons.restore_rounded, size: 18),
-                label: const Text('Restore from backup'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: context.textPrimary,
-                  side: BorderSide(color: context.borderColor),
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                ),
-              ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Your backup is encrypted with your passphrase. Keep it safe — without it the file cannot be restored.',
+            style: TextStyle(color: context.textSecondary, fontSize: 12),
+          ),
+          if (OfflineBackupService.supportsLegacySbk) ...[
+            const SizedBox(height: 4),
+            TextButton.icon(
+              onPressed: _backupBusy ? null : () => _runBackupImport(context),
+              icon: const Icon(Icons.history_rounded, size: 16),
+              label: const Text('Restore an older .sbk backup'),
             ),
           ],
-        ),
-        const SizedBox(height: 8),
-        Text(
-          'You choose a passphrase when exporting and must enter the same one to restore. '
-          'It is not stored anywhere - a lost passphrase means a lost backup.',
-          style: TextStyle(color: context.textSecondary, fontSize: 12),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -932,20 +941,6 @@ class _SettingsSidebarDialogState extends ConsumerState<SettingsSidebarDialog> {
     c1.dispose();
     c2.dispose();
     return result;
-  }
-
-  Future<void> _runBackupExport(BuildContext context) async {
-    final pass = await _askPassphrase(context, confirm: true);
-    if (pass == null || !mounted || !context.mounted) return;
-    setState(() => _backupBusy = true);
-    final err = await BackupService.exportBackup(passphrase: pass);
-    if (!mounted || !context.mounted) return;
-    setState(() => _backupBusy = false);
-    if (err == null) {
-      AppToast.showSuccess(context, 'Backup exported', subtitle: 'Keep the passphrase somewhere safe.');
-    } else {
-      AppToast.showError(context, err);
-    }
   }
 
   Future<void> _runBackupImport(BuildContext context) async {

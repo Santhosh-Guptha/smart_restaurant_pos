@@ -45,16 +45,16 @@ def restaurant():
 
 
 def kirana():
-    return (_bar('Barcode Billing', 'Counter 1 · Shift open 7:02', 'Offline ✓') +
+    return (_bar('Barcode Billing', 'Counter 1 · Shift open 7:02', 'Shift ✓') +
             '<div class="split"><div class="main">'
             '<div class="scan"><span>▮▯▮▮▯▮</span> 8901063 <i></i></div>' +
-            _lines([('Atta 5 kg', '1 × ₹265', '₹265'), ('Toor dal (loose)', '1.5 kg × ₹140', '₹210'),
+            _lines([('Atta 5 kg', '1 × ₹265', '₹265'), ('Toor dal 1 kg', '1 × ₹150', '₹150'),
                     ('Salt 1 kg', '2 × ₹28', '₹56'), ('Butter 500 g', '1 × ₹285', '₹285')]) +
             '</div><div class="side"><div class="side-h">Customer khata</div>'
             '<div class="khata"><b>Ramesh K.</b><small>Regular · since Mar</small>'
             '<div class="due">₹2,340 <span>due</span></div>'
             '<div class="mini">Paid ₹1,000 · last Tue</div></div>' +
-            _total('Bill', '₹816', 'Add to khata or UPI') + '</div></div>')
+            _total('Bill', '₹756', 'Add to khata or UPI') + '</div></div>')
 
 
 def supermarket():
@@ -66,7 +66,7 @@ def supermarket():
                  '%"></i></div><b>' + str(p) + '%</b></div>' for n, p in depts)
     return (_bar('Analytics &amp; Rush', 'Today · 4 tills', 'Cloud ✓') +
             '<div class="tills">' + tt + '</div>'
-            '<div class="split"><div class="main"><div class="side-h">By department</div>' + dd + '</div>'
+            '<div class="split"><div class="main"><div class="side-h">By category</div>' + dd + '</div>'
             '<div class="side"><div class="side-h">Rush hours</div><div class="heat">' +
             ''.join('<i style="--h:' + str(h) + '"></i>' for h in (2, 3, 5, 4, 6, 8, 9, 7, 5, 6, 9, 10, 8, 4)) +
             '</div><div class="tot"><span>Day so far</span><b>₹65,565</b></div>'
@@ -74,10 +74,10 @@ def supermarket():
 
 
 def pharmacy():
-    return (_bar('Billing', 'Window 1 · INV-00412', 'GST ✓') +
+    return (_bar('Billing', 'Window 1 · INV-00412', 'DL No. ✓') +
             '<div class="split"><div class="main">'
             '<div class="scan"><span>🔍</span> para <i></i></div>' +
-            _lines([('Paracetamol 650', 'HSN 3004 · 2 strips', '₹60'), ('Vitamin C chewable', 'HSN 2106 · 1', '₹95'),
+            _lines([('Paracetamol 650', 'Batch B24 · exp 03/27 · 2', '₹60'), ('Vitamin C chewable', 'HSN 2106 · 1', '₹95'),
                     ('ORS sachet', 'HSN 3004 · 5', '₹110'), ('Cough syrup 100 ml', 'HSN 3004 · 1', '₹120')]) +
             '</div><div class="side"><div class="side-h">Tax invoice</div>'
             '<div class="inv"><div><span>Taxable</span><b>₹343.75</b></div><div><span>CGST 6%</span><b>₹20.63</b></div>'
@@ -86,11 +86,11 @@ def pharmacy():
 
 
 def retail():
-    return (_bar('Barcode Billing', 'Counter · Sat rush', 'Offline ✓') +
+    return (_bar('Barcode Billing', 'Counter · Sat rush', 'Shift ✓') +
             '<div class="split"><div class="main">'
             '<div class="scan"><span>▮▯▮▮▯▮</span> DJ-M-IND <i></i></div>' +
-            _lines([('Denim jacket', 'M · Indigo', '₹1,899'), ('Cotton tee', 'L · White ×2', '₹998'),
-                    ('Sneakers', 'UK 9 · Grey', '₹2,499'), ('Socks pack', 'Free size', '₹299')]) +
+            _lines([('Denim jacket M', '1 × ₹1,899', '₹1,899'), ('Cotton tee L', '2 × ₹499', '₹998'),
+                    ('Sneakers UK 9', '1 × ₹2,499', '₹2,499'), ('Socks pack', '1 × ₹299', '₹299')]) +
             '</div><div class="side"><div class="side-h">Customer</div>'
             '<div class="khata"><b>Priya S.</b><small>6 visits · last 12 Aug</small>'
             '<div class="due">₹0 <span>due</span></div><div class="mini">Part-paid ₹2,000 cleared</div></div>' +
@@ -105,7 +105,7 @@ def phone(slug):
                 '<div class="ph-dish"><span><b>Filter Coffee</b><small>₹60 · veg</small></span><i>+</i></div>'
                 '<div class="ph-dish"><span><b>Chicken 65</b><small>₹280</small></span><i>+</i></div>'
                 '<div class="ph-cta"><span>2 items</span><b>Order ₹200</b></div>')
-    amt = {'kirana': '₹816', 'supermarket': '₹1,248', 'pharmacy': '₹385', 'retail': '₹5,695'}.get(slug, '₹816')
+    amt = {'kirana': '₹756', 'supermarket': '₹1,248', 'pharmacy': '₹385', 'retail': '₹5,695'}.get(slug, '₹816')
     return ('<div class="ph-top"><b>Pay</b><small>UPI</small></div>'
             '<div class="ph-qr"><span class="upi-qr big"></span></div>'
             '<div class="ph-amt">' + amt + '</div><div class="ph-note">Straight to the shop\'s bank</div>'

@@ -34,6 +34,12 @@ class SaasLicense {
   /// carry a false for every shop-only key; the resolver discounts those.
   final String? featuresResolvedFor;
 
+  /// The package tier (`offline`, `basic`, `standard`, `premium`,
+  /// `enterprise`; see `PackageTier`). Null on licences written before tiers
+  /// existed; `Entitlements.fromLicense` infers it from the profile, storage
+  /// mode and device count.
+  final String? tier;
+
   SaasLicense({
     required this.planTier,
     this.planProfile,
@@ -49,6 +55,7 @@ class SaasLicense {
     this.maxTables = 15,
     this.vertical = Verticals.restaurant,
     this.featuresResolvedFor,
+    this.tier,
   });
 
   final int maxTables;
@@ -68,6 +75,7 @@ class SaasLicense {
     int? maxTables,
     String? vertical,
     String? featuresResolvedFor,
+    String? tier,
   }) {
     return SaasLicense(
       planTier: planTier ?? this.planTier,
@@ -84,6 +92,7 @@ class SaasLicense {
       maxTables: maxTables ?? this.maxTables,
       vertical: vertical ?? this.vertical,
       featuresResolvedFor: featuresResolvedFor ?? this.featuresResolvedFor,
+      tier: tier ?? this.tier,
     );
   }
 
@@ -163,6 +172,7 @@ class SaasLicense {
       maxTables: (json['maxTables'] ?? json['tableCount'] ?? 15) as int,
       vertical: json['vertical']?.toString() ?? Verticals.restaurant,
       featuresResolvedFor: json['featuresResolvedFor']?.toString(),
+      tier: json['tier']?.toString(),
     );
   }
 
@@ -182,6 +192,7 @@ class SaasLicense {
       'maxTables': maxTables,
       'vertical': vertical,
       if (featuresResolvedFor != null) 'featuresResolvedFor': featuresResolvedFor,
+      if (tier != null) 'tier': tier,
     };
   }
 
@@ -205,6 +216,7 @@ class SaasLicense {
       maxTables: (data['maxTables'] ?? data['tableCount'] ?? 15) as int,
       vertical: data['vertical']?.toString() ?? Verticals.restaurant,
       featuresResolvedFor: data['featuresResolvedFor']?.toString(),
+      tier: data['tier']?.toString(),
     );
   }
 
@@ -223,6 +235,7 @@ class SaasLicense {
       'expiryWarningDays': expiryWarningDays,
       'vertical': vertical,
       if (featuresResolvedFor != null) 'featuresResolvedFor': featuresResolvedFor,
+      if (tier != null) 'tier': tier,
     };
   }
 

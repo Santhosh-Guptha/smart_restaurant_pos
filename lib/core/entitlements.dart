@@ -645,6 +645,239 @@ class StorageModes {
   }
 }
 
+/// The five steps every trade is sold in (docs/PLATFORM_STRUCTURE.md §3).
+///
+/// A package is *a trade's features at a tier*: `pharmacy_basic`,
+/// `restaurant_premium`. The tier decides the storage family (offline, or the
+/// client's own Google Drive), the default limits ([defaultLimits]) and, with
+/// the trade, the roles a licence carries. Each tier includes everything in
+/// the tier before it.
+///
+/// [id] is the database value (the `tier` field on packages and licences, and
+/// the suffix of a starter package id). [label] is what people see.
+enum PackageTier {
+  offline,
+  basic,
+  standard,
+  premium,
+  enterprise;
+
+  /// Database value: `offline`, `basic`, `standard`, `premium`, `enterprise`.
+  String get id {
+    switch (this) {
+      case PackageTier.offline:
+        return 'offline';
+      case PackageTier.basic:
+        return 'basic';
+      case PackageTier.standard:
+        return 'standard';
+      case PackageTier.premium:
+        return 'premium';
+      case PackageTier.enterprise:
+        return 'enterprise';
+    }
+  }
+
+  /// What people see: "Offline", "Basic", "Standard", "Premium", "Enterprise".
+  String get label {
+    switch (this) {
+      case PackageTier.offline:
+        return 'Offline';
+      case PackageTier.basic:
+        return 'Basic';
+      case PackageTier.standard:
+        return 'Standard';
+      case PackageTier.premium:
+        return 'Premium';
+      case PackageTier.enterprise:
+        return 'Enterprise';
+    }
+  }
+
+  /// One device, one store, one user, on the device only.
+  bool get isOffline => this == PackageTier.offline;
+
+  /// Only Enterprise has limits set per client. Every other tier uses
+  /// [defaultLimits] unless a platform admin explicitly overrides them.
+  bool get allowsCustomLimits => this == PackageTier.enterprise;
+
+  /// True when this tier includes everything in [other].
+  bool includesTier(PackageTier other) => index >= other.index;
+
+  /// The contract's default devices / outlets / users for this tier.
+  TierLimits get defaultLimits {
+    switch (this) {
+      case PackageTier.offline:
+        return TierLimits.offline;
+      case PackageTier.basic:
+        return TierLimits.basic;
+      case PackageTier.standard:
+        return TierLimits.standard;
+      case PackageTier.premium:
+        return TierLimits.premium;
+      case PackageTier.enterprise:
+        return TierLimits.enterprise;
+    }
+  }
+
+  /// The storage mode a package on this tier is created with. Offline runs
+  /// on the device; every other tier on the client's own Google Sheets
+  /// (a cloud package still accepts `CLOUD_SYNC` for tenants already on it).
+  String get defaultStorageMode =>
+      isOffline ? StorageModes.pureOffline : StorageModes.clientsOwnSheets;
+
+  /// The [PlanProfile] id the resolver falls back to for a package on this
+  /// tier in [vertical]: a shop's offline tier is Shop counter, a
+  /// restaurant's (or an unknown trade's) offline dine-in; Basic and Standard
+  /// are Connected; Premium and Enterprise are Everything on. Profile ids are
+  /// database values existing licences depend on, so they do not change.
+  PlanProfile profileFor(String? vertical) {
+    switch (this) {
+      case PackageTier.offline:
+        return _shopTrades.contains((vertical ?? '').trim().toLowerCase())
+            ? PlanProfile.offlineRetail
+            : PlanProfile.offlineDineIn;
+      case PackageTier.basic:
+      case PackageTier.standard:
+        return PlanProfile.connected;
+      case PackageTier.premium:
+      case PackageTier.enterprise:
+        return PlanProfile.omnichannel;
+    }
+  }
+
+  static const Set<String> _trades = {'restaurant', 'kirana', 'supermarket', 'pharmacy', 'retail'};
+  static const Set<String> _shopTrades = {'kirana', 'supermarket', 'pharmacy', 'retail'};
+
+  /// A stored tier (id or label, any case), or null when [value] is none.
+  static PackageTier? tryParse(String? value) {
+    final v = (value ?? '').trim().toLowerCase();
+    if (v.isEmpty) return null;
+    for (final t in PackageTier.values) {
+      if (t.id == v || t.label.toLowerCase() == v) return t;
+    }
+    return null;
+  }
+
+  /// The tier named by a starter package id (`pharmacy_basic` -> basic), or
+  /// null when [packageId] is not `<trade>_<tier>`.
+  static PackageTier? fromStarterId(String? packageId) {
+    final t = (packageId ?? '').trim().toLowerCase();
+    final i = t.lastIndexOf('_');
+    if (i <= 0 || i == t.length - 1) return null;
+    if (!_trades.contains(t.substring(0, i))) return null;
+    return tryParse(t.substring(i + 1));
+  }
+
+  /// The trade named by a starter package id (`pharmacy_basic` -> pharmacy),
+  /// or null when [packageId] is not `<trade>_<tier>`.
+  static String? tradeOfStarterId(String? packageId) {
+    if (fromStarterId(packageId) == null) return null;
+    final t = packageId!.trim().toLowerCase();
+    return t.substring(0, t.lastIndexOf('_'));
+  }
+
+  /// The tier of a document that may not say it (licences and packages
+  /// written before tiers existed). First rule that applies wins:
+  ///
+  /// 1. an explicit stored [tier];
+  /// 2. a starter id `<trade>_<tier>` in [packageId];
+  /// 3. offline storage ([storageMode], or the profile's own when no mode is
+  ///    given) -> offline;
+  /// 4. the Everything-on profile (OMNICHANNEL) -> premium;
+  /// 5. otherwise (CONNECTED, custom) -> standard when it has more than two
+  ///    devices ([maxDevices], else the profile's default), basic otherwise.
+  ///
+  /// [profileId] is a [PlanProfile] id (or alias); when it is empty the
+  /// [packageId] is looked up as one, so a legacy starter id resolves.
+  static PackageTier fromPackageOrProfile({
+    String? tier,
+    String? packageId,
+    String? profileId,
+    String? storageMode,
+    int? maxDevices,
+  }) {
+    final explicit = tryParse(tier);
+    if (explicit != null) return explicit;
+    final fromId = fromStarterId(packageId);
+    if (fromId != null) return fromId;
+    final hasProfile = profileId != null && profileId.trim().isNotEmpty;
+    final profile = PlanProfile.byId(hasProfile ? profileId : packageId);
+    final mode = (storageMode ?? '').trim().toUpperCase();
+    if (mode.isNotEmpty) {
+      if (StorageModes.isOffline(mode)) return PackageTier.offline;
+    } else if (profile.isOffline) {
+      return PackageTier.offline;
+    }
+    if (profile.id == PlanProfile.omnichannel.id) return PackageTier.premium;
+    final devices = (maxDevices != null && maxDevices > 0) ? maxDevices : profile.maxDevices;
+    return devices > 2 ? PackageTier.standard : PackageTier.basic;
+  }
+}
+
+/// Devices, outlets (stores) and users: the three limits a licence carries.
+///
+/// A plan never sets these (a plan is validity only). They come from the
+/// package's tier ([PackageTier.defaultLimits]) and are changed per client
+/// only for Enterprise, or by an explicit platform-admin override.
+class TierLimits {
+  final int maxDevices;
+  final int maxOutlets;
+  final int maxUsers;
+
+  const TierLimits({
+    required this.maxDevices,
+    required this.maxOutlets,
+    required this.maxUsers,
+  });
+
+  /// Offline: one device, one store, one user (the owner). Never editable.
+  static const TierLimits offline = TierLimits(maxDevices: 1, maxOutlets: 1, maxUsers: 1);
+  static const TierLimits basic = TierLimits(maxDevices: 2, maxOutlets: 1, maxUsers: 3);
+  static const TierLimits standard = TierLimits(maxDevices: 5, maxOutlets: 1, maxUsers: 10);
+  static const TierLimits premium = TierLimits(maxDevices: 10, maxOutlets: 3, maxUsers: 25);
+
+  /// Enterprise defaults; the client chooses their own.
+  static const TierLimits enterprise = TierLimits(maxDevices: 20, maxOutlets: 10, maxUsers: 50);
+
+  /// Every value at least 1.
+  TierLimits get clamped => TierLimits(
+        maxDevices: maxDevices < 1 ? 1 : maxDevices,
+        maxOutlets: maxOutlets < 1 ? 1 : maxOutlets,
+        maxUsers: maxUsers < 1 ? 1 : maxUsers,
+      );
+
+  /// True when any of the three is larger than in [other].
+  bool exceeds(TierLimits other) =>
+      maxDevices > other.maxDevices || maxOutlets > other.maxOutlets || maxUsers > other.maxUsers;
+
+  TierLimits copyWith({int? maxDevices, int? maxOutlets, int? maxUsers}) => TierLimits(
+        maxDevices: maxDevices ?? this.maxDevices,
+        maxOutlets: maxOutlets ?? this.maxOutlets,
+        maxUsers: maxUsers ?? this.maxUsers,
+      );
+
+  /// The licence / package field names: `maxDevices`, `maxOutlets`, `maxUsers`.
+  Map<String, int> toJson() => {
+        'maxDevices': maxDevices,
+        'maxOutlets': maxOutlets,
+        'maxUsers': maxUsers,
+      };
+
+  @override
+  bool operator ==(Object other) =>
+      other is TierLimits &&
+      other.maxDevices == maxDevices &&
+      other.maxOutlets == maxOutlets &&
+      other.maxUsers == maxUsers;
+
+  @override
+  int get hashCode => Object.hash(maxDevices, maxOutlets, maxUsers);
+
+  @override
+  String toString() => 'TierLimits($maxDevices devices, $maxOutlets outlets, $maxUsers users)';
+}
+
 /// A named starting point a platform admin can apply in one click. A profile
 /// sets defaults; individual toggles still apply afterwards, except where
 /// [Entitlements] applies a hard constraint.
@@ -981,6 +1214,10 @@ class PlanProfile {
   /// Looks a profile up by its stored id, accepting the commercial names as
   /// well so a document written with either form resolves.
   static PlanProfile byId(String? id) {
+    // A trade's starter package id (`pharmacy_offline`, `restaurant_basic`)
+    // resolves to the profile that tier falls back to.
+    final starterTier = PackageTier.fromStarterId(id);
+    if (starterTier != null) return starterTier.profileFor(PackageTier.tradeOfStarterId(id));
     switch ((id ?? '').toUpperCase()) {
       case 'OFFLINE_SINGLE':
       case 'OFFLINE_BASIC':
@@ -1054,6 +1291,15 @@ class Entitlements {
   /// specific verticals. Defaults to `'restaurant'` for backward compatibility.
   final String vertical;
 
+  /// The package tier the licence is on: its stored `tier`, or inferred from
+  /// the profile, storage mode and device count for licences written before
+  /// tiers existed ([PackageTier.fromPackageOrProfile]). Always offline when
+  /// the store runs offline.
+  final PackageTier tier;
+
+  /// Staff logins allowed. An offline store is one user (the owner).
+  final int maxUsers;
+
   const Entitlements({
     required this.profile,
     required this.explicit,
@@ -1063,6 +1309,8 @@ class Entitlements {
     required this.maxOutlets,
     this.isMasterAdmin = false,
     this.vertical = 'restaurant',
+    this.tier = PackageTier.offline,
+    this.maxUsers = 1,
   });
 
   /// Before a licence has loaded, or offline from a cold cache: the
@@ -1096,6 +1344,8 @@ class Entitlements {
     maxDevices: 99,
     maxOutlets: 999,
     isMasterAdmin: true,
+    tier: PackageTier.enterprise,
+    maxUsers: 999,
   );
 
   factory Entitlements.fromLicense(
@@ -1176,6 +1426,25 @@ class Entitlements {
     final licenceOutlets =
         license.maxFranchises > 0 ? license.maxFranchises : profile.maxOutlets;
 
+    // The stored tier, unless it contradicts the mode the store runs in (an
+    // "offline" licence on a cloud store is read by its profile and devices).
+    var tier = PackageTier.fromPackageOrProfile(
+      tier: license.tier,
+      profileId: profile.id,
+      storageMode: mode,
+      maxDevices: licenceDevices,
+    );
+    if (offline) {
+      tier = PackageTier.offline;
+    } else if (tier.isOffline) {
+      tier = PackageTier.fromPackageOrProfile(
+        profileId: profile.id,
+        storageMode: mode,
+        maxDevices: licenceDevices,
+      );
+    }
+    final licenceUsers = license.maxUsers > 0 ? license.maxUsers : tier.defaultLimits.maxUsers;
+
     return Entitlements(
       profile: profile,
       explicit: explicit,
@@ -1184,6 +1453,8 @@ class Entitlements {
       maxDevices: offline ? 1 : licenceDevices,
       maxOutlets: offline ? 1 : licenceOutlets,
       vertical: vertical,
+      tier: tier,
+      maxUsers: offline ? 1 : licenceUsers,
     );
   }
 
@@ -1317,6 +1588,8 @@ class Entitlements {
     int? maxDevices,
     int? maxOutlets,
     String? vertical,
+    PackageTier? tier,
+    int? maxUsers,
   }) =>
       Entitlements(
         profile: profile ?? this.profile,
@@ -1327,5 +1600,7 @@ class Entitlements {
         maxOutlets: maxOutlets ?? this.maxOutlets,
         isMasterAdmin: isMasterAdmin,
         vertical: vertical ?? this.vertical,
+        tier: tier ?? this.tier,
+        maxUsers: maxUsers ?? this.maxUsers,
       );
 }

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Register your business · SmartBizz</title>
-<meta name="description" content="Tell us about your restaurant. We review every request personally and set you up within a business day.">
+<meta name="description" content="Tell us about your business. We review every request personally and set you up within a business day.">
 <meta name="theme-color" content="#0f1219">
 <meta name="robots" content="index,follow">
 <link rel="icon" href="/assets/logo.png">
@@ -93,13 +93,13 @@
 
 <main>
   <aside>
-    <p class="kicker">Register your restaurant</p>
-    <h1>Tell us about<br>your <em>room.</em></h1>
+    <p class="kicker" id="regKicker">Register your business</p>
+    <h1>Tell us about<br>your <em>business.</em></h1>
     <p class="lede">Every request is read by a person, not a robot. <strong>We set you up within one business day</strong> and send your login details to the email you give us here.</p>
     <ol class="steps">
-      <li><i>1</i><div><b>You tell us about the restaurant</b>Name, type, how many outlets and tables. Two minutes.</div></li>
+      <li><i>1</i><div><b>You tell us about the business</b>Name, type and how many outlets (and tables, for restaurants). Two minutes.</div></li>
       <li><i>2</i><div><b>We review it</b>Someone on our team looks it over, usually the same day.</div></li>
-      <li><i>3</i><div><b>You get your keys</b>An email with your login and a first-time password. Add your menu, print your table QRs, hand the kitchen a tablet.</div></li>
+      <li><i>3</i><div><b>You get your keys</b>An email with your login and a first-time password. Add your products or menu, connect your printer and start billing.</div></li>
     </ol>
   </aside>
 
@@ -111,7 +111,7 @@
         <div class="f"><label for="clientName">Your name <span>*</span></label><input id="clientName" name="clientName" autocomplete="name" required maxlength="80"><div class="err"></div></div>
         <div class="f"><label for="mobile">Mobile <span>* WhatsApp preferred</span></label><input id="mobile" name="mobile" type="tel" inputmode="tel" autocomplete="tel" placeholder="+91 98765 43210" required><div class="err"></div></div>
         <div class="f full"><label for="email">Email <span>* your login will be sent here</span></label><input id="email" name="email" type="email" autocomplete="email" required maxlength="120"><div class="err"></div></div>
-        <div class="f full"><label for="shopName">Restaurant / brand name <span>*</span></label><input id="shopName" name="shopName" autocomplete="organization" required maxlength="100"><div class="err"></div></div>
+        <div class="f full"><label for="shopName">Business / brand name <span>*</span></label><input id="shopName" name="shopName" autocomplete="organization" required maxlength="100"><div class="err"></div></div>
         <div class="f"><label for="businessCategory">Type of business</label>
           <select id="businessCategory" name="businessCategory">
             <optgroup label="Food &amp; hospitality">
@@ -169,6 +169,23 @@ const docPath = (id) => `projects/${FB.projectId}/databases/(default)/documents/
 
 const $ = (id) => document.getElementById(id);
 const form = $('reg');
+
+// A trade page links here as /register/?category=<trade>; preselect that type.
+(function presetCategory() {
+  const map = {
+    restaurant: 'Restaurant & Cafe', restaurants: 'Restaurant & Cafe',
+    kirana: 'Kirana / Grocery Store',
+    supermarket: 'Supermarket / Departmental Store',
+    pharmacy: 'Pharmacy / Medical Store',
+    retail: 'General Retail / Fashion / Electronics',
+  };
+  let want = '';
+  try { want = map[(new URLSearchParams(location.search).get('category') || '').toLowerCase()] || ''; } catch (_) {}
+  const sel = $('businessCategory');
+  if (!want || !sel) return;
+  const hit = Array.from(sel.options).find(o => o.value === want || o.text === want);
+  if (hit) sel.value = hit.value;
+})();
 const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
 function fieldError(input, msg) {
@@ -183,7 +200,7 @@ function validate() {
   fieldError(email, emailRe.test(email.value.trim()) ? '' : 'Enter a valid email — your login goes here.'); ok &&= emailRe.test(email.value.trim());
   const digits = mobile.value.replace(/\D/g, '');
   fieldError(mobile, digits.length < 10 ? 'Enter a mobile number we can reach you on.' : ''); ok &&= digits.length >= 10;
-  fieldError(shop, shop.value.trim().length < 2 ? 'What is the restaurant called?' : ''); ok &&= shop.value.trim().length >= 2;
+  fieldError(shop, shop.value.trim().length < 2 ? 'What is the business called?' : ''); ok &&= shop.value.trim().length >= 2;
   return ok;
 }
 

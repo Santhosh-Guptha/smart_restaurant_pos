@@ -656,3 +656,76 @@ footer{padding:64px 0 28px}
 .t-plan.tier,.mx.p,.plan-tag{color:color-mix(in srgb,var(--lamp) 72%,var(--fg))}
 .inv span{white-space:nowrap}
 @media (max-width:560px){ .tablet-scr .split{grid-template-columns:1.15fr 1fr;gap:6px} .inv{font-size:.92em} }
+
+
+/* ═══════════════════════════════════════════════════════════════════════
+   PLATFORM STRUCTURE LAYER — trade pages and the five plans
+   (docs/PLATFORM_STRUCTURE.md: Offline, Basic, Standard, Premium, Enterprise)
+   ═════════════════════════════════════════════════════════════════════ */
+.cats.three{grid-template-columns:repeat(3,1fr)}
+@media (max-width:860px){ .cats.three{grid-template-columns:1fr} .cats.three > :last-child:nth-child(odd){grid-column:auto} }
+.cat-k{margin:14px 0 0!important;font-size:11px!important;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--c)!important}
+.cat-k + .cat-f{margin-top:6px}
+
+/* Problems → how SmartBizz solves them */
+.probs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-top:44px}
+@media (max-width:1000px){ .probs{grid-template-columns:repeat(2,minmax(0,1fr))} }
+@media (max-width:640px){ .probs{grid-template-columns:minmax(0,1fr)} }
+.prob{display:flex;flex-direction:column;align-items:flex-start;background:var(--bg-2);border:1px solid var(--rule);border-radius:18px;padding:22px 20px 20px;min-width:0}
+.prob h3{font-size:19px;margin:0 0 4px}
+.prob p{margin:0 0 14px;font-size:14.5px;color:var(--fg-2);line-height:1.55}
+.prob .prob-k{margin:0 0 6px;font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--flame)}
+.prob .prob-k.fix{margin-top:12px;color:var(--mint)}
+.prob .tier{margin-top:auto}
+
+/* Tier rows: one row per plan, limits on the left, features on the right */
+.trows{display:grid;gap:16px;margin-top:44px}
+.trow{display:grid;grid-template-columns:minmax(0,340px) minmax(0,1fr);gap:28px;background:var(--bg-2);border:1px solid var(--rule);border-radius:20px;padding:26px 24px}
+@media (max-width:860px){ .trow{grid-template-columns:minmax(0,1fr);gap:18px;padding:22px 18px} }
+.trow-h{display:flex;flex-direction:column;align-items:flex-start;gap:10px;min-width:0}
+.trow-h h3{font-size:21px;overflow-wrap:anywhere}
+.trow-h .btn{margin-top:6px}
+.lims{display:grid;grid-template-columns:auto minmax(0,1fr);gap:6px 14px;margin:4px 0 0;font-size:14px;width:100%}
+.lims div{display:contents}
+.lims dt{color:var(--fg-2);font-weight:500}
+.lims dd{margin:0;color:var(--fg);font-weight:600;overflow-wrap:anywhere}
+.tfeat{list-style:none;padding:0;margin:0;display:grid;gap:9px;font-size:15px;line-height:1.5;color:var(--fg-2);min-width:0}
+.tfeat li{position:relative;padding-left:26px;overflow-wrap:anywhere}
+.tfeat li::before{content:"✓";position:absolute;left:0;top:2px;width:18px;height:18px;border-radius:50%;display:grid;place-items:center;font-size:10.5px;font-weight:700;color:var(--mint);background:color-mix(in srgb,var(--mint) 18%,transparent)}
+.tfeat li b{color:var(--fg);font-weight:600}
+.tfeat li.inc::before{content:"＋";color:var(--lamp);background:color-mix(in srgb,var(--lamp) 16%,transparent)}
+.addons{margin:24px 0 0;padding:16px 18px;border:1px dashed var(--rule);border-radius:14px;font-size:15px;color:var(--fg-2);max-width:none}
+.addons b{color:var(--fg)}
+
+/* Five plan cards on the hub */
+.plans.five{grid-template-columns:repeat(5,minmax(0,1fr));gap:14px}
+@media (max-width:1180px){ .plans.five{grid-template-columns:repeat(3,minmax(0,1fr))} }
+@media (max-width:900px){ .plans.five{grid-template-columns:repeat(2,minmax(0,1fr))} }
+@media (max-width:560px){ .plans.five{grid-template-columns:minmax(0,1fr)} }
+.plans.five .plan{padding:24px 20px;min-width:0}
+.plans.five .plan h3{font-size:24px}
+.plan-store{margin:4px 0 0;font-size:12.5px;color:var(--fg-2)}
+.plans.five .btn{white-space:normal;text-align:center}
+
+/* Your data */
+.data-cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-top:40px}
+@media (max-width:760px){ .data-cards{grid-template-columns:minmax(0,1fr)} }
+.data-card{display:flex;flex-direction:column;align-items:flex-start;background:var(--bg);border:1px solid var(--rule);border-radius:18px;padding:24px 22px}
+section:not(.band) .data-card{background:var(--bg-2)}
+.data-card h3{font-size:22px;margin:0 0 8px}
+.data-card p{margin:0;font-size:15.5px;color:var(--fg-2);line-height:1.6}
+.data-more{margin:20px 0 0;font-size:14px;color:var(--fg-2)}
+.data-more a{color:var(--lamp);text-decoration:underline;text-underline-offset:3px}
+
+/* Matrix cells now name the first plan */
+.mx.tx{width:auto;height:auto;padding:3px 9px;border-radius:999px;font-size:11px;letter-spacing:.02em;white-space:nowrap}
+
+/* Footer headings are h2 for a clean outline; styled as the old h4 */
+.foot .foot-h{margin:0 0 12px;font-family:var(--body);font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--fg);font-weight:600;line-height:1.4}
+
+/* Narrow phones (360px): nothing may widen the page */
+@media (max-width:400px){
+  .hero-cta .btn{white-space:normal;text-align:center;justify-content:center}
+  .final .btn{white-space:normal;text-align:center;justify-content:center}
+  h2{overflow-wrap:anywhere}
+}

@@ -22,7 +22,12 @@ class PackageService {
 
   static CollectionReference<Map<String, dynamic>> get _col => _db.collection(collection);
 
-  /// Create the starters that are missing, re-align the ones that exist.
+  /// Create the 25 trade starters (`<trade>_<tier>`) that are missing, and
+  /// re-align the resolver-owned fields of every starter that exists.
+  ///
+  /// The five legacy universal starters (`OFFLINE_SINGLE` ... `OMNICHANNEL`)
+  /// are never created any more, but where they exist they are kept in step
+  /// with code and marked `isLegacy`, because live licences still name them.
   static Future<void> ensureStarters() async {
     try {
       final existing = await _col.get();
@@ -30,9 +35,11 @@ class PackageService {
       final batch = _db.batch();
       var writes = 0;
 
-      var order = 0;
-      for (final profile in PlanProfile.all) {
-        final starter = TenantPackage.fromProfile(profile, sortOrder: order++);
+      bool sameFeatures(Object? current, TenantPackage starter) =>
+          current is Map &&
+          FeatureCatalog.all.every((d) => (current[d.key] == true) == (starter.features[d.key] == true));
+
+      for (final starter in PackageCatalog.starters) {
         final current = byId[starter.id];
         if (current == null) {
           batch.set(_col.doc(starter.id), {
@@ -43,12 +50,45 @@ class PackageService {
           writes++;
           continue;
         }
-        // Resolver-owned fields only.
-        final currentFeatures = current['features'];
-        final same = currentFeatures is Map &&
-            FeatureCatalog.all.every((d) => (currentFeatures[d.key] == true) == (starter.features[d.key] == true)) &&
+        // Resolver-owned fields only; names, descriptions and limits an
+        // admin edited are left alone (limits are filled in when missing).
+        final hasLimits = current['maxDevices'] is num && current['maxOutlets'] is num && current['maxUsers'] is num;
+        final same = sameFeatures(current['features'], starter) &&
             (current['storageMode'] ?? '').toString().toUpperCase() == starter.storageMode &&
             current['isStarter'] == true &&
+            current['isLegacy'] == false &&
+            (current['vertical'] ?? '').toString() == starter.vertical &&
+            current['verticalScoped'] == true &&
+            (current['tier'] ?? '').toString() == starter.tier.id &&
+            hasLimits;
+        if (!same) {
+          batch.set(
+            _col.doc(starter.id),
+            {
+              'features': starter.features,
+              'storageMode': starter.storageMode,
+              'allowedStorageModes': starter.allowedStorageModes.toList(),
+              'isStarter': true,
+              'isLegacy': false,
+              'vertical': starter.vertical,
+              'verticalScoped': true,
+              'tier': starter.tier.id,
+              if (!hasLimits) ...starter.limits.toJson(),
+              'updatedAt': FieldValue.serverTimestamp(),
+            },
+            SetOptions(merge: true),
+          );
+          writes++;
+        }
+      }
+
+      for (final starter in PackageCatalog.legacyStarters) {
+        final current = byId[starter.id];
+        if (current == null) continue;
+        final same = sameFeatures(current['features'], starter) &&
+            (current['storageMode'] ?? '').toString().toUpperCase() == starter.storageMode &&
+            current['isStarter'] == true &&
+            current['isLegacy'] == true &&
             // Seeded before starters were universal: rewrite once so the
             // document says what the app now reads.
             (current['vertical'] ?? '').toString() == starter.vertical;
@@ -60,6 +100,7 @@ class PackageService {
               'storageMode': starter.storageMode,
               'allowedStorageModes': starter.allowedStorageModes.toList(),
               'isStarter': true,
+              'isLegacy': true,
               'vertical': starter.vertical,
               'verticalScoped': false,
               'updatedAt': FieldValue.serverTimestamp(),
@@ -81,8 +122,7 @@ class PackageService {
   static Future<List<TenantPackage>> getAll() async {
     try {
       final snap = await _col.get();
-      final list = snap.docs.map((d) => TenantPackage.fromJson(d.data(), d.id)).toList();
-      if (list.isEmpty) return starters;
+      final list = _withCodeStarters(snap.docs.map((d) => TenantPackage.fromJson(d.data(), d.id)).toList());
       list.sort(_order);
       return list;
     } catch (e) {
@@ -106,14 +146,13 @@ class PackageService {
   }
 
   static Stream<List<TenantPackage>> watchAll() => _col.snapshots().map((snap) {
-        final list = snap.docs.map((d) => TenantPackage.fromJson(d.data(), d.id)).toList();
-        if (list.isEmpty) return starters;
+        final list = _withCodeStarters(snap.docs.map((d) => TenantPackage.fromJson(d.data(), d.id)).toList());
         list.sort(_order);
         return list;
       });
 
   static Future<void> save(TenantPackage p) async {
-    final clean = p.copyWith(features: TenantPackage.normalise(p.features, p.storageMode));
+    final clean = p.copyWith(features: TenantPackage.normalise(p.features, p.storageMode, vertical: p.vertical));
     await _col.doc(p.id).set({
       ...clean.toJson(),
       'createdAt': p.createdAt != null ? Timestamp.fromDate(p.createdAt!) : FieldValue.serverTimestamp(),
@@ -124,7 +163,7 @@ class PackageService {
   /// Starters cannot be deleted, and neither can a package with tenants on
   /// it — the caller checks [tenantCount] first and says so.
   static Future<bool> delete(String id) async {
-    if (PlanProfile.all.any((p) => p.id == id)) return false;
+    if (PackageCatalog.isStarterId(id)) return false;
     await _col.doc(id).delete();
     return true;
   }
@@ -133,11 +172,11 @@ class PackageService {
   ///
   /// Each licence is re-composed through [LicenseComposer] with its own plan
   /// and the organisation's current storage mode, so what lands is exactly
-  /// what onboarding would write today for that package and plan: features
-  /// and storage mode from the package; the device and outlet caps and the
-  /// roles re-derived from the plan under the package's clamps (an offline
-  /// package pins a tenant to one device however many the plan allows, and
-  /// drops waiter and kitchen roles with it). Dates and the plan itself are
+  /// what onboarding would write today for that package and plan: features,
+  /// storage mode, tier and roles from the package; limits from the package
+  /// tier, except a licence marked `limitsCustom` keeps its own (an offline
+  /// package still pins a tenant to one device, one outlet and one user, and
+  /// OWNER only). Dates and the plan itself are
   /// not touched. A package that moved to the other storage family does not
   /// flip a tenant's mode: a `pendingStorageChange` is raised on the
   /// organisation for the owner to complete, as the tenant dialog does.
@@ -189,7 +228,22 @@ class PackageService {
             ((o['pendingStorageChange'] as Map)['status']?.toString() == 'PENDING');
       } catch (_) {}
       if (currentMode.isEmpty) currentMode = StorageModes.cloudSync;
-      final composed = LicenseComposer.compose(p, plan, currentStorageMode: currentMode, vertical: vertical);
+      // Limits the admin set for this client survive a re-apply.
+      final custom = d['limitsCustom'] == true;
+      final composed = LicenseComposer.compose(
+        p,
+        plan,
+        currentStorageMode: currentMode,
+        vertical: vertical,
+        limits: custom
+            ? TierLimits(
+                maxDevices: (d['maxDevices'] as num?)?.toInt() ?? p.maxDevices,
+                maxOutlets: (d['maxFranchises'] as num?)?.toInt() ?? p.maxOutlets,
+                maxUsers: (d['maxUsers'] as num?)?.toInt() ?? p.maxUsers,
+              )
+            : null,
+        adminOverride: custom,
+      );
 
       // A change of storage *family* is requested, never applied here — the
       // owner completes the migration on their device and the mode flips
@@ -215,9 +269,13 @@ class PackageService {
         'planProfile': p.nearestProfile.id,
         'storageMode': composed.storageMode,
         'features': composed.features,
-        'featuresResolvedFor': 'any',
+        'featuresResolvedFor': composed.featuresResolvedFor,
+        'tier': composed.tier.id,
+        'limitsCustom': composed.limitsCustom,
+        if (composed.featuresResolvedFor != Verticals.any) 'vertical': composed.featuresResolvedFor,
         'maxDevices': composed.maxDevices,
         'maxFranchises': composed.maxOutlets,
+        'maxUsers': composed.maxUsers,
         'allowedRoles': composed.allowedRoles,
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
@@ -256,19 +314,37 @@ class PackageService {
     final taken = (existing ?? await getAll()).map((p) => p.id).toSet();
     var id = base.isEmpty ? 'package' : base;
     var n = 2;
-    while (taken.contains(id) || PlanProfile.all.any((p) => p.id == id.toUpperCase())) {
+    while (taken.contains(id) || PackageCatalog.isStarterId(id) || PlanProfile.all.any((p) => p.id == id.toUpperCase())) {
       id = '${base}_$n';
       n++;
     }
     return id;
   }
 
+  /// Every shipped starter as code has it: the 25 trade starters, then the
+  /// five legacy universal ones ([TenantPackage.isLegacy]).
   static List<TenantPackage> get starters => [
-        for (var i = 0; i < PlanProfile.all.length; i++) TenantPackage.fromProfile(PlanProfile.all[i], sortOrder: i),
+        ...PackageCatalog.starters,
+        ...PackageCatalog.legacyStarters,
       ];
+
+  /// [stored] plus every trade starter that is not seeded yet, so a
+  /// console that opens before [ensureStarters] has run still offers the 25
+  /// tier packages. An empty collection reads as every code starter.
+  static List<TenantPackage> _withCodeStarters(List<TenantPackage> stored) {
+    if (stored.isEmpty) return starters;
+    final have = {for (final p in stored) p.id};
+    return [
+      ...stored,
+      for (final s in PackageCatalog.starters)
+        if (!have.contains(s.id)) s,
+    ];
+  }
 
   static int _order(TenantPackage a, TenantPackage b) {
     if (a.isStarter != b.isStarter) return a.isStarter ? -1 : 1;
+    // Legacy universal starters after the trade starters.
+    if (a.isLegacy != b.isLegacy) return a.isLegacy ? 1 : -1;
     final s = a.sortOrder.compareTo(b.sortOrder);
     if (s != 0) return s;
     return a.name.toLowerCase().compareTo(b.name.toLowerCase());

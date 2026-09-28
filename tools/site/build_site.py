@@ -12,7 +12,7 @@ import os, sys, html
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, '..', '..'))
-OUT = os.path.join(ROOT, 'hosting_public')
+OUT = os.environ.get('SB_OUT', os.path.join(ROOT, 'hosting_public'))
 sys.path.insert(0, HERE)
 import site_data as D
 import hashlib
@@ -60,6 +60,11 @@ def head(title, desc, cat, canonical):
 
 
 import screens as S
+
+
+def tcls(tier):
+    """CSS colour class for a tier: Offline is mint, every paid tier is lamp."""
+    return 't-free' if tier == 'offline' else 't-plan'
 
 TRADE_ORDER = [c['vertical'] for c in D.CATEGORIES]
 TRADE_BY_V = {c['vertical']: c for c in D.CATEGORIES}
@@ -115,11 +120,11 @@ def device(slugs, interactive):
 
 def orbit(slugs):
     """Module chips circling the device: one app, many parts."""
-    pool = [m for m in D.MODULES if m['tier'] != 'soon' and any(v in m['trades'] for v in slugs)]
+    pool = [m for m in D.MODULES if any(v in m['trades'] for v in slugs)]
     if len(slugs) > 1:
         pick = [m for m in pool if m['name'] in ('Counter billing', 'Tables & floor', 'Kitchen display',
-                'Barcode billing', 'Customer khata', 'UPI QR at the till', 'GST bills', 'Analytics & rush',
-                'Guest QR ordering', 'Outlets & franchise')]
+                'Barcode billing', 'Customer khata', 'UPI QR at the till', 'GST bills', 'Sales analytics',
+                'QR table ordering', 'Multiple outlets')]
     else:
         pick = pool[:10]
     n = len(pick)
@@ -131,12 +136,12 @@ def orbit(slugs):
 def layers():
     """The exploded app: five planes that separate as you scroll."""
     groups = [('Till', 'Bill, print and get paid'), ('Floor', 'Tables, kitchen and guests'),
-              ('Customers', 'Khata and bills that reach them'), ('Office', 'Staff, shifts, numbers, backup'),
-              ('Growth', 'More tills, the cloud, more branches')]
+              ('Customers', 'Khata and bills that reach them'), ('Office', 'Stock, staff, shifts, numbers, backup'),
+              ('Growth', 'More tills, your own Drive, more branches')]
     planes = ''
     for i, (g, line) in enumerate(groups):
         ms = [m for m in D.MODULES if m['group'] == g]
-        icons = ''.join('<span class="ly-m t-' + m['tier'] + '">' + m['icon'] + '<small>' + E(m['name']) +
+        icons = ''.join('<span class="ly-m ' + tcls(m['tier']) + '">' + m['icon'] + '<small>' + E(m['name']) +
                         '</small></span>' for m in ms)
         planes += ('<div class="ly" style="--i:' + str(i) + '"><div class="ly-h"><b>' + E(g) + '</b><span>' + E(line) +
                    '</span></div><div class="ly-ms">' + icons + '</div></div>')
@@ -152,8 +157,8 @@ def layers():
 
 
 def stats():
-    items = [('5', 'trades, one app'), ('0%', 'taken from your UPI'), ('58 · 80mm', 'any ESC/POS printer'),
-             ('Offline', 'bills with the Wi-Fi down'), ('14 days', 'free, no card')]
+    items = [('5', 'trades, one app'), ('5', 'plans, Offline to Enterprise'), ('0%', 'taken from your UPI'),
+             ('58 · 80mm', 'thermal printers'), ('14 days', 'free, no card')]
     def num(a):
         import re
         m = re.match(r'^(\d+)(.*)$', a)
@@ -169,10 +174,10 @@ def module_cards(trade=None):
             continue
         dots = ''.join('<i class="td" data-c="' + t + '" title="' + E(TRADE_BY_V[t]['short']) + '"></i>'
                        for t in TRADE_ORDER if t in m['trades'])
-        demo = ('<a class="md-demo" href="' + m['demo'] + '">Try the demo →</a>') if m.get('demo') else ''
+        demo = ('<a class="md-demo" href="' + E(m['demo']) + '">Try the demo →</a>') if m.get('demo') else ''
         out.append('<article class="md" data-tier="' + m['tier'] + '" data-trades="' + ' '.join(m['trades']) + '">'
-                   '<div class="md-top"><span class="md-ico">' + m['icon'] + '</span>'
-                   '<span class="tier t-' + m['tier'] + '">' + E(D.TIER_LABEL[m['tier']]) + '</span></div>'
+                   '<div class="md-top"><span class="md-ico" aria-hidden="true">' + m['icon'] + '</span>'
+                   '<span class="tier ' + tcls(m['tier']) + '">' + E(D.TIER_LABEL[m['tier']]) + '</span></div>'
                    '<h3>' + E(m['name']) + '</h3><p>' + E(m['line']) + '</p>' + demo +
                    ('' if trade else '<div class="md-dots" aria-label="Trades">' + dots + '</div>') + '</article>')
     return '<div class="mods" id="mods">' + ''.join(out) + '</div>'
@@ -183,7 +188,7 @@ def module_filters():
     for c in D.CATEGORIES:
         chips += ('<button type="button" class="chip" data-f="' + c['vertical'] + '" data-c="' + c['vertical'] +
                   '" aria-pressed="false">' + c['icon'] + ' ' + E(c['short']) + '</button>')
-    tiers = ''.join('<button type="button" class="chip sm t-' + k + '" data-t="' + k + '" aria-pressed="true">' +
+    tiers = ''.join('<button type="button" class="chip sm ' + tcls(k) + '" data-t="' + k + '" aria-pressed="true">' +
                     E(v) + '</button>' for k, v in D.TIER_LABEL.items())
     return ('<div class="filters"><div class="chips" role="group" aria-label="Filter by trade">' + chips + '</div>'
             '<div class="chips" role="group" aria-label="Filter by plan">' + tiers + '</div></div>'
@@ -191,53 +196,116 @@ def module_filters():
 
 
 def matrix():
-    head_ = ''.join('<th scope="col"><span>' + c['icon'] + '</span>' + E(c['short']) + '</th>' for c in D.CATEGORIES)
-    sym = {'free': '<span class="mx f" title="In the free trial">✓</span>',
-           'plan': '<span class="mx p" title="On a plan">◆</span>',
-           'soon': '<span class="mx s" title="Coming">○</span>'}
+    head_ = ''.join('<th scope="col"><span aria-hidden="true">' + c['icon'] + '</span>' + E(c['short']) + '</th>'
+                    for c in D.CATEGORIES)
     rows = ''
     for m in D.MODULES:
-        cells = ''.join('<td>' + (sym[m['tier']] if v in m['trades'] else '<span class="mx n">—</span>') + '</td>'
+        cell = '<span class="mx tx ' + ('f' if m['tier'] == 'offline' else 'p') + '">' + E(D.TIER_NAME[m['tier']]) + '</span>'
+        cells = ''.join('<td>' + (cell if v in m['trades'] else '<span class="mx n" aria-label="Not for this trade">—</span>') + '</td>'
                         for v in TRADE_ORDER)
-        rows += '<tr><th scope="row">' + m['icon'] + ' ' + E(m['name']) + '</th>' + cells + '</tr>'
-    return ('<div class="mx-wrap rv"><table class="matrix"><thead><tr><th scope="col">Module</th>' + head_ +
+        rows += '<tr><th scope="row"><span aria-hidden="true">' + m['icon'] + '</span> ' + E(m['name']) + '</th>' + cells + '</tr>'
+    return ('<div class="mx-wrap rv" tabindex="0" role="region" aria-label="Modules by trade and plan">'
+            '<table class="matrix"><thead><tr><th scope="col">Module</th>' + head_ +
             '</tr></thead><tbody>' + rows + '</tbody></table></div>'
-            '<p class="mx-key"><span class="mx f">✓</span> in the free trial <span class="mx p">◆</span> on a plan '
-            '<span class="mx s">○</span> coming, not built yet</p>')
+            '<p class="mx-key">Each cell names the first plan that includes the module. Every higher plan includes it too. '
+            '<span class="mx n">—</span> not part of that trade.</p>')
 
 
 def plans(context):
     cards = ''
     for i, p in enumerate(D.PLANS, 1):
-        cta = ('<a class="btn lamp" href="javascript:void(0)" onclick="openTrialModal()">Start free →</a>' if i == 1 else
+        name = D.TIER_NAME[p['tier']]
+        cta = ('<a class="btn lamp" href="javascript:void(0)" onclick="openTrialModal()">Start free trial →</a>' if p['tier'] == 'offline' else
                '<a class="btn ' + ('lamp' if p['hot'] else 'ghost') + '" href="javascript:void(0)" '
-               'onclick="openContactModal(\'' + E(p['name']) + ' plan — ' + E(context) + '\')">Ask for a quote</a>')
-        cards += ('<div class="plan rv d' + str(i) + (' hot' if p['hot'] else '') + '">'
-                  '<span class="plan-tag">' + E(p['tag']) + '</span><h3>' + E(p['name']) + '</h3>'
-                  '<p class="plan-lim">' + E(p['limits']) + '</p><p class="plan-blurb">' + E(p['blurb']) + '</p>'
+               'onclick="openContactModal(\'' + E(name) + ' plan — ' + E(context) + '\')">Ask for a quote</a>')
+        cards += ('<div class="plan rv d' + str(min(i, 5)) + (' hot' if p['hot'] else '') + '">'
+                  '<span class="plan-tag">' + E(p['tag']) + '</span><h3>' + E(name) + '</h3>'
+                  '<p class="plan-lim">' + E(D.limits_line(p['tier'])) + '</p>'
+                  '<p class="plan-store">' + E(D.STORAGE[p['tier']]) + '</p>'
+                  '<p class="plan-blurb">' + E(p['blurb']) + '</p>'
                   '<ul>' + ''.join('<li>' + E(x) + '</li>' for x in p['points']) + '</ul>' + cta + '</div>')
-    return '<div class="plans">' + cards + '</div>'
+    return '<div class="plans five">' + cards + '</div>'
+
+
+def data_section(trade_name=None):
+    """The wording rules, verbatim. Offline first, then Basic and above."""
+    return ('<section id="data"' + (' class="band"' if trade_name else '') + '>\n  <div class="wrap">\n'
+            '    <p class="kicker rv">Your data</p>\n'
+            '    <h2 class="rv d1">Where your records live.</h2>\n'
+            '    <div class="data-cards">'
+            '<div class="data-card rv d1"><span class="plan-tag">Offline</span><h3>On your device</h3>'
+            '<p>' + E(D.DATA_OFFLINE) + '</p></div>'
+            '<div class="data-card rv d2"><span class="plan-tag">Basic · Standard · Premium · Enterprise</span>'
+            '<h3>In your own Google Drive</h3><p>' + E(D.DATA_CLOUD) + '</p></div>'
+            '</div>\n'
+            '    <p class="data-more rv d3">Payments are settled by cash, your card machine or a UPI QR for your own UPI ID. '
+            + D.BRAND + ' is not a payment gateway. Read the <a href="/privacy.html">privacy policy</a>.</p>\n'
+            '  </div>\n</section>\n\n')
+
+
+def problems(c):
+    cards = ''
+    for i, (prob, fix, tier) in enumerate(c['problems'], 1):
+        cards += ('<article class="prob rv d' + str(min(i, 5)) + '">'
+                  '<p class="prob-k">The problem</p><h3>' + E(prob) + '</h3>'
+                  '<p class="prob-k fix">How ' + D.BRAND + ' solves it</p><p>' + E(fix) + '</p>'
+                  '<span class="tier ' + tcls(tier) + '">' + E(D.TIER_LABEL[tier]) + '</span></article>')
+    return '<div class="probs">' + cards + '</div>'
+
+
+def tier_rows(c):
+    feats = D.tier_features(c['vertical'])
+    rows = ''
+    prev = None
+    for t in D.TIERS:
+        name = D.TIER_NAME[t]
+        items = ''
+        if prev:
+            items += '<li class="inc"><b>Everything in ' + E(D.TIER_NAME[prev]) + '</b></li>'
+        items += ''.join('<li><b>' + E(n) + '</b> — ' + E(l) + '</li>' for n, l in feats[t])
+        cta = ('<a class="btn lamp sm" href="javascript:void(0)" onclick="openTrialModal()">Start free trial</a>'
+               if t == 'offline' else
+               '<a class="btn ghost sm" href="javascript:void(0)" onclick="openContactModal(\'' + E(name) + ' plan — ' +
+               E(c['name']) + '\')">Ask for a quote</a>')
+        lim = (lambda k: 'Tailored to you') if t == 'enterprise' else (lambda k: D.LIMITS[t][k])
+        rows += ('<article class="trow rv" id="tier-' + t + '">'
+                 '<div class="trow-h"><span class="tier ' + tcls(t) + '">' + E(name) + '</span>'
+                 '<h3>Features available for ' + E(c['trade']) + ' — ' + E(name) + '</h3>'
+                 '<dl class="lims">'
+                 '<div><dt>Devices</dt><dd>' + E(lim('devices')) + '</dd></div>'
+                 '<div><dt>Outlets</dt><dd>' + E(lim('outlets')) + '</dd></div>'
+                 '<div><dt>Users</dt><dd>' + E(lim('users')) + '</dd></div>'
+                 '<div><dt>Roles</dt><dd>' + E(D.roles(c['vertical'], t)) + '</dd></div>'
+                 '<div><dt>Data</dt><dd>' + E(D.STORAGE[t]) + '</dd></div>'
+                 '</dl>' + cta + '</div>'
+                 '<ul class="tfeat">' + items + '</ul></article>')
+        prev = t
+    return '<div class="trows">' + rows + '</div>'
+
+
+def register_href(c):
+    return '/register/?category=' + c['vertical']
 
 
 def day_flow():
     steps = [('Open', '🌅', 'Sign in with your own PIN, open the shift, count the float.'),
              ('Bill', '🧾', 'Scan, tap or take the table order. KOT and bill print together.'),
-             ('Get paid', '💸', 'UPI QR for the exact amount, cash, card or the khata.'),
+             ('Get paid', '💸', 'Cash, your card machine, a UPI QR for your own UPI ID, or the khata.'),
              ('Close', '🌙', 'Count the drawer, print the Z-report, back up in one tap.')]
     return ('<ol class="flow">' + ''.join(
-        '<li class="rv d' + str(i) + '"><span class="fl-n">' + str(i) + '</span><span class="fl-i">' + ic + '</span>'
+        '<li class="rv d' + str(i) + '"><span class="fl-n">' + str(i) + '</span><span class="fl-i" aria-hidden="true">' + ic + '</span>'
         '<h3>' + E(t) + '</h3><p>' + E(d) + '</p></li>' for i, (t, ic, d) in enumerate(steps, 1)) + '</ol>')
 
 
 def demos():
     return ('<div class="demos">'
-            '<a class="demo rv d1" href="/r/?org=DEMO&amp;table=1"><span class="demo-i">🔳</span>'
-            '<div><h3>Order as a guest</h3><p>The table QR menu your diners see — browse, add, order. Runs on the demo '
+            '<a class="demo rv d1" href="/r/?org=DEMO&amp;table=1"><span class="demo-i" aria-hidden="true">🔳</span>'
+            '<div><h3>Order as a guest</h3><p>The table QR menu diners see (a restaurant Premium feature). Runs on the demo '
             'restaurant.</p><span class="go">Open the guest menu</span></div></a>'
-            '<a class="demo rv d2" href="/pos/"><span class="demo-i">💻</span>'
+            '<a class="demo rv d2" href="/pos/"><span class="demo-i" aria-hidden="true">💻</span>'
             '<div><h3>The till in your browser</h3><p>The same SmartBizz app, on the web. Sign in with the '
             'organisation ID we e-mail you.</p><span class="go">Open the web till</span></div></a>'
-            '<div class="demo rv d3"><span class="demo-i">📲</span>'
+            '<div class="demo rv d3"><span class="demo-i" aria-hidden="true">📲</span>'
             '<div><h3>Android &amp; Windows</h3><p>Runs on the phone, tablet or PC already at your counter. '
             'Message us and we will get it installed with you.</p><span class="go plain">Included with every plan</span></div></div>'
             '</div>')
@@ -248,24 +316,13 @@ def marquee(words):
     return '<div class="ribbon" aria-hidden="true"><div class="marquee">' + row + row + '</div></div>'
 
 
-def getlist(items):
-    out = []
-    for it in items:
-        soon = len(it) > 2 and it[2]
-        icon = '<span class="soon-i">·</span>' if soon else '<span class="tick">✓</span>'
-        tag = '<span class="soon">coming</span>' if soon else ''
-        out.append('<li>' + icon + '<span><b>' + E(it[0]) + '</b>' + tag +
-                   ' — ' + E(it[1]) + '</span></li>')
-    return '<ul class="getlist">' + ''.join(out) + '</ul>'
-
-
 def stations(cards):
     out = []
     for i, (name, ico, line) in enumerate(cards, 1):
         out.append('<div class="cat rv d' + str(i) + '" style="--c:var(--lamp)">'
-                   '<span class="ico">' + ico + '</span><h3>' + E(name) + '</h3>'
+                   '<span class="ico" aria-hidden="true">' + ico + '</span><h3>' + E(name) + '</h3>'
                    '<p>' + E(line) + '</p></div>')
-    return '<div class="cats">' + ''.join(out) + '</div>'
+    return '<div class="cats three">' + ''.join(out) + '</div>'
 
 
 def faq(items):
@@ -280,18 +337,19 @@ def footer(category_value):
         '\n</main>\n<footer>\n  <div class="wrap foot">\n'
         '    <div class="foot-brand"><span class="logo" style="font-size:20px"><img src="/assets/logo.png" alt="" '
         'width="28" height="28">' + D.BRAND + '</span>\n'
-        '    <p>' + E(D.TAGLINE) + ' Billing software for Indian counters, built to keep going when the '
-        'internet does not.</p>'
+        '    <p>' + E(D.TAGLINE) + ' Billing software for Indian counters, from a single Offline till to '
+        'many outlets.</p>'
         '<a class="btn lamp sm" href="javascript:void(0)" onclick="openTrialModal()">Start 14-day free trial</a></div>\n'
-        '    <div><h4>Trades</h4><ul>' + trades + '</ul></div>\n'
-        '    <div><h4>Product</h4><ul><li><a href="/#suite">The suite</a></li><li><a href="/#compare">Compare trades</a></li>'
-        '<li><a href="/#plans">Plans</a></li><li><a href="/r/?org=DEMO&amp;table=1">Guest QR demo</a></li>'
+        '    <div><h2 class="foot-h">Trades</h2><ul>' + trades + '</ul></div>\n'
+        '    <div><h2 class="foot-h">Product</h2><ul><li><a href="/#suite">The suite</a></li><li><a href="/#compare">Compare trades</a></li>'
+        '<li><a href="/#plans">Plans</a></li><li><a href="/#data">Your data</a></li><li><a href="/register/">Register your business</a></li>'
+        '<li><a href="/r/?org=DEMO&amp;table=1">Guest QR demo</a></li>'
         '<li><a href="/pos/">Web till sign-in</a></li></ul></div>\n'
-        '    <div><h4>Help</h4><ul><li><a href="/support.html">Support</a></li>'
+        '    <div><h2 class="foot-h">Help</h2><ul><li><a href="/support.html">Support</a></li>'
         '<li><a href="javascript:void(0)" onclick="openContactModal(\'General enquiry\')">Talk to us</a></li>'
         '<li><a href="/privacy.html">Privacy</a></li><li><a href="/terms.html">Terms</a></li>'
         '<li><a href="/deletion.html">Delete your data</a></li></ul></div>\n'
-        '  </div>\n  <div class="wrap foot-base"><span>© ' + D.BRAND + '. Not a payment gateway — your money goes '
+        '  </div>\n  <div class="wrap foot-base"><span>© ' + D.BRAND + ' by DevMonks. Not a payment gateway — your money goes '
         'straight to your bank.</span><a href="#top">Back to top ↑</a></div>\n</footer>\n' + MODALS +
         '\n<script>window.SB_CATEGORY = ' + category_value + ';</script>\n'
         '<script src="/assets/site.js?v=' + ASSET_V + '"></script>\n'
@@ -307,7 +365,7 @@ def category_page(c):
     others = ''.join('<a href="/' + o['slug'] + '/">' + o['icon'] + ' ' + E(o['name']) + '</a>'
                      for o in D.CATEGORIES if o['slug'] != c['slug'])
     first_trade = c['who'].split(',')[0]
-    n_mods = sum(1 for m in D.MODULES if c['vertical'] in m['trades'])
+    reg = register_href(c)
 
     body = (
         '\n<section class="hero" id="top">\n  <div class="lamp-glow"></div>\n  <div class="wrap">\n    <div>\n'
@@ -316,41 +374,35 @@ def category_page(c):
         '      <p class="lede">' + c['lede'] + '</p>\n'
         '      <div class="hero-cta">\n'
         '        <a class="btn lamp" href="javascript:void(0)" onclick="openTrialModal()">Start 14-day free trial →</a>\n'
-        '        <a class="btn ghost" href="#modules">See every module</a>\n'
+        '        <a class="btn ghost" href="#tiers">See features by plan</a>\n'
         '      </div>\n'
-        '      <p class="hero-note"><b>Free to start.</b> Runs on the phone or tablet you already own. '
-        'No card, no payment gateway, no internet needed.</p>\n'
+        '      <p class="hero-note"><b>Free to start.</b> Runs on the phone, tablet or PC you already own. '
+        'No card. Not a payment gateway: bills are paid to your own UPI ID, in cash or on your card machine.</p>\n'
         '    </div>\n    ' + device([c['vertical']], False) + '\n  </div>\n</section>\n\n' + marquee(c['marquee']) + '\n\n'
 
-        '<section id="stations">\n  <div class="wrap">\n'
+        '<section id="problems">\n  <div class="wrap">\n'
         '    <p class="kicker rv">Built around the counter you actually run</p>\n'
-        '    <h2 class="rv d1">Where the day happens.</h2>\n'
+        '    <h2 class="rv d1">Problems you face,<br>and how ' + D.BRAND + ' solves them.</h2>\n'
+        '    <p class="lede rv d2">Each answer names the first plan that includes it.</p>\n'
+        '    ' + problems(c) + '\n  </div>\n</section>\n\n'
+
+        '<section class="band" id="stations">\n  <div class="wrap">\n'
+        '    <p class="kicker rv">Where the day happens</p>\n'
+        '    <h2 class="rv d1">One app, every station.</h2>\n'
         '    <p class="lede rv d2">Each station sees what its job needs and nothing else.</p>\n'
         '    ' + stations(c['stations']) + '\n  </div>\n</section>\n\n'
 
-        '<section class="band" id="modules">\n  <div class="wrap">\n'
-        '    <p class="kicker rv">Inside the app</p>\n'
-        '    <h2 class="rv d1">' + str(n_mods) + ' modules for<br>' + E(first_trade) + '.</h2>\n'
-        '    <p class="lede rv d2">Every one of them is in the same app. Each says plainly whether it is in the free '
-        'trial, needs a plan, or is still being built.</p>\n'
-        '    ' + module_cards(c['vertical']) + '\n  </div>\n</section>\n\n'
+        '<section id="tiers">\n  <div class="wrap">\n'
+        '    <p class="kicker rv">Plans for ' + E(first_trade) + '</p>\n'
+        '    <h2 class="rv d1">Features and limits,<br>plan by plan.</h2>\n'
+        '    <p class="lede rv d2">Five plans: Offline, Basic, Standard, Premium and Enterprise. Each one includes '
+        'everything in the plan before it, and only features that apply to ' + E(c['trade'].lower()) +
+        ' businesses are listed. The 14-day free trial is the Offline plan.</p>\n'
+        '    ' + tier_rows(c) + '\n'
+        '    <p class="addons rv"><b>Add-ons.</b> ' + E(D.ADDONS) + '</p>\n'
+        '  </div>\n</section>\n\n'
 
-        '<section id="included">\n  <div class="wrap two">\n'
-        '    <div><p class="kicker rv">The 14-day free trial</p>\n'
-        '    <h2 class="rv d1">What you get<br>without paying.</h2>\n'
-        '    <p class="lede rv d2">One device, no internet, nothing held back to make you upgrade. '
-        'This is the whole offline till for ' + E(first_trade) + '.</p>\n'
-        '    ' + getlist(D.CORE_FREE + c['free']) + '</div>\n'
-        '    <div><p class="kicker rv">When you outgrow one counter</p>\n'
-        '    <h2 class="rv d1">What a plan adds.</h2>\n'
-        '    <p class="lede rv d2">Only what needs the cloud or a second device. Anything marked '
-        '<span class="soon">coming</span> is not built yet.</p>\n'
-        '    ' + getlist(c['paid'] + D.PAID_ADDS) + '</div>\n  </div>\n</section>\n\n'
-
-        '<section class="band" id="plans">\n  <div class="wrap">\n'
-        '    <p class="kicker rv">Plans</p>\n'
-        '    <h2 class="rv d1">Start free. Grow when you need to.</h2>\n'
-        '    ' + plans(c['name']) + '\n  </div>\n</section>\n\n'
+        + data_section(c['trade']) +
 
         '<section>\n  <div class="wrap">\n'
         '    <p class="kicker rv">Straight answers</p>\n'
@@ -359,11 +411,11 @@ def category_page(c):
 
         '<section class="final" id="start">\n  <div class="fx-floor" aria-hidden="true"><i></i></div><div class="lamp-glow"></div>\n  <div class="wrap">\n'
         '    <h2 class="rv">Try it on tomorrow’s counter.</h2>\n'
-        '    <p class="lede rv d1" style="margin-left:auto;margin-right:auto">Fourteen days, the whole '
-        'offline till, no card. If it does not fit the way you work, you have lost an evening.</p>\n'
+        '    <p class="lede rv d1" style="margin-left:auto;margin-right:auto">Fourteen days on the Offline plan, no card. '
+        'Running more than one counter or outlet? Register and we will set you up on the right plan.</p>\n'
         '    <div class="hero-cta rv d2" style="justify-content:center">\n'
         '      <a class="btn lamp" href="javascript:void(0)" onclick="openTrialModal()">Start 14-day free trial →</a>\n'
-        '      <a class="btn ghost" href="javascript:void(0)" onclick="openContactModal(\'' + E(c['name']) + '\')">Talk to us first</a>\n'
+        '      <a class="btn ghost" href="' + reg + '">Register your ' + E(c['short'].lower()) + ' business</a>\n'
         '    </div>\n'
         '    <p class="kicker" style="margin-top:56px">The same app also runs</p>\n'
         '    <div class="alsofor" style="justify-content:center">' + others + '</div>\n'
@@ -377,12 +429,12 @@ def hub():
     cards = ''
     for i, c in enumerate(D.CATEGORIES, 1):
         who = c['who'][0].upper() + c['who'][1:]
-        feats = ''.join('<li>' + E(f[0]) + '</li>' for f in c['free'][:3])
+        feats = ''.join('<li>' + E(p[0]) + '</li>' for p in c['problems'][:3])
         cards += ('\n      <a class="cat rv d' + str(i) + '" data-c="' + c['accent'] + '" href="/' + c['slug'] + '/">'
-                  '<span class="ico">' + c['icon'] + '</span>'
+                  '<span class="ico" aria-hidden="true">' + c['icon'] + '</span>'
                   '<h3>' + E(c['name']) + '</h3>'
-                  '<p>' + E(who) + '.</p><ul class="cat-f">' + feats + '</ul>'
-                  '<span class="go">See the ' + E(c['short'].lower()) + ' counter</span></a>')
+                  '<p>' + E(who) + '.</p><p class="cat-k">Solves</p><ul class="cat-f">' + feats + '</ul>'
+                  '<span class="go">See the ' + E(c['short'].lower()) + ' page</span></a>')
 
     body = (
         '\n<section class="hero hub-hero" id="top">\n  <div class="lamp-glow"></div>\n  <div class="wrap">\n    <div>\n'
@@ -390,24 +442,24 @@ def hub():
         '      <h1>One till.<br>Every kind of<br>'
         '<em class="grad" style="font-style:italic;font-weight:500">counter.</em></h1>\n'
         '      <p class="lede">A restaurant needs tables and kitchen tickets. A kirana needs a scanner and a '
-        'khata. A chemist needs an invoice that stands up. <strong>' + D.BRAND + ' is one app that knows the '
-        'difference</strong> — and every one of them keeps billing when the internet goes down.</p>\n'
+        'khata. A chemist needs batches, expiry dates and a proper invoice. <strong>' + D.BRAND + ' is one app that knows the '
+        'difference</strong>, from a single Offline till to many outlets.</p>\n'
         '      <div class="hero-cta">\n'
         '        <a class="btn lamp" href="javascript:void(0)" onclick="openTrialModal()">Start 14-day free trial →</a>\n'
-        '        <a class="btn ghost" href="#suite">Explore the suite</a>\n'
+        '        <a class="btn ghost" href="#pick">Choose your business</a>\n'
         '      </div>\n'
         '      <p class="hero-note"><b>Free to start.</b> Fourteen days on the device you already own. '
-        'No card, no payment gateway, no internet.</p>\n'
+        'No card. Not a payment gateway.</p>\n'
         '    </div>\n    ' + device(TRADE_ORDER, True) + '\n  </div>\n  <div class="wrap">' + stats() + '</div>\n</section>\n\n'
-        + marquee(['Barcode billing', 'Table QR ordering', 'Customer khata', 'Kitchen display',
-                   'GST invoices', 'UPI QR at the counter', 'Works offline', 'Every branch, one view']) + '\n\n'
+        + marquee(['Barcode billing', 'QR table ordering', 'Customer khata', 'Kitchen display',
+                   'Batches & expiry', 'GST invoices', 'Your own UPI QR', 'Data in your own Google Drive']) + '\n\n'
 
         '<section id="pick">\n  <div class="wrap">\n'
-        '    <p class="kicker rv">Pick the counter you run</p>\n'
+        '    <p class="kicker rv">Choose your business</p>\n'
         '    <h2 class="rv d1">Five trades.<br>One product.</h2>\n'
         '    <p class="lede rv d2">The till, the products, the staff logins and the day-end are the same '
-        'everywhere. What changes is the screen you spend your day on — and that is decided by the trade '
-        'you pick when you sign up.</p>\n'
+        'everywhere. What changes is the screen you spend your day on, decided by the trade '
+        'you pick when you sign up. Each page shows the problems it solves and the features in every plan.</p>\n'
         '    <div class="cats">' + cards + '\n    </div>\n  </div>\n</section>\n\n'
 
         + layers() +
@@ -415,21 +467,20 @@ def hub():
         '    <p class="kicker rv">The suite</p>\n'
         '    <h2 class="rv d1">Everything we make,<br>in one application.</h2>\n'
         '    <p class="lede rv d2">' + str(len(D.MODULES)) + ' modules, one sign-in. Filter by the trade you run to '
-        'see exactly what your counter gets — and what is free, what needs a plan, and what is still coming.</p>\n'
+        'see exactly what your counter gets, and the first plan that includes it.</p>\n'
         '    ' + module_filters() + module_cards() + '\n  </div>\n</section>\n\n'
 
         '<section id="day">\n  <div class="wrap">\n'
         '    <p class="kicker rv">A day on ' + D.BRAND + '</p>\n'
         '    <h2 class="rv d1">Shutters up to Z-report.</h2>\n'
-        '    <p class="lede rv d2">The same four steps whatever you sell — so a cashier who knows one counter '
+        '    <p class="lede rv d2">The same four steps whatever you sell, so a cashier who knows one counter '
         'knows them all.</p>\n'
         '    ' + day_flow() + '\n  </div>\n</section>\n\n'
 
         '<section class="band" id="compare">\n  <div class="wrap">\n'
         '    <p class="kicker rv">Side by side</p>\n'
         '    <h2 class="rv d1">What each counter gets.</h2>\n'
-        '    <p class="lede rv d2">One table, every module, every trade. Nothing here is a promise that the '
-        'product does not keep.</p>\n'
+        '    <p class="lede rv d2">One table, every module, every trade, and the first plan that includes it.</p>\n'
         '    ' + matrix() + '\n  </div>\n</section>\n\n'
 
         '<section id="try">\n  <div class="wrap">\n'
@@ -440,34 +491,37 @@ def hub():
         '<section class="band" id="plans">\n  <div class="wrap">\n'
         '    <p class="kicker rv">Plans</p>\n'
         '    <h2 class="rv d1">Start free.<br>Grow when you need to.</h2>\n'
-        '    <p class="lede rv d2">' + D.BRAND + ' is not a payment gateway and never handles your money. The till '
-        'shows a UPI QR for the exact amount and it goes straight from the customer\'s bank to yours. You pay for '
-        'the software — and only when you need more than one offline counter.</p>\n'
-        '    ' + plans('More than one outlet') + '\n  </div>\n</section>\n\n'
+        '    <p class="lede rv d2">Five plans for every trade. Each includes everything in the one before it, and '
+        'your trade page lists exactly which features you get in each. ' + D.BRAND + ' is not a payment gateway: '
+        'bills are settled by cash, your card machine or a UPI QR for your own UPI ID. You pay only for the software.</p>\n'
+        '    ' + plans('More than one outlet') + '\n'
+        '    <p class="addons rv"><b>Add-ons.</b> ' + E(D.ADDONS) + '</p>\n'
+        '  </div>\n</section>\n\n'
 
-        '<section>\n  <div class="wrap">\n'
+        + data_section() +
+
+        '<section class="band">\n  <div class="wrap">\n'
         '    <p class="kicker rv">Straight answers</p>\n'
         '    <h2 class="rv d1">Before you ask.</h2>\n'
         '    <div class="faqs rv d2">' + faq(D.HUB_FAQ) + '</div>\n  </div>\n</section>\n\n'
 
         '<section class="final" id="start">\n  <div class="fx-floor" aria-hidden="true"><i></i></div><div class="lamp-glow"></div>\n  <div class="wrap">\n'
         '    <h2 class="rv">Start on tomorrow’s counter.</h2>\n'
-        '    <p class="lede rv d1" style="margin-left:auto;margin-right:auto">Fourteen days, the whole '
-        'offline till, no card.</p>\n'
+        '    <p class="lede rv d1" style="margin-left:auto;margin-right:auto">Fourteen days on the Offline plan, no card.</p>\n'
         '    <div class="hero-cta rv d2" style="justify-content:center">\n'
         '      <a class="btn lamp" href="javascript:void(0)" onclick="openTrialModal()">Start 14-day free trial →</a>\n'
-        '      <a class="btn ghost" href="javascript:void(0)" onclick="openContactModal(\'More than one outlet\')">Talk to us first</a>\n'
+        '      <a class="btn ghost" href="/register/">Register your business</a>\n'
         '    </div>\n  </div>\n</section>\n')
 
     desc = (D.BRAND + ' is one billing app for Indian counters: restaurants, kirana shops, supermarkets, '
-            'pharmacies and retail. A complete offline till, free for 14 days.')
+            'pharmacies and retail. Five plans from Offline to Enterprise; start with a 14-day free trial.')
     return head(D.BRAND + ' — ' + D.TAGLINE, desc, 'hub', '/') + nav(hub=True) + body + footer("''")
 
 
 def write(path, content):
     full = os.path.join(OUT, path)
     os.makedirs(os.path.dirname(full), exist_ok=True)
-    open(full, 'w', encoding='utf-8').write(content)
+    open(full, 'w', encoding='utf-8', newline='\n').write(content)
     print('  %-32s %5d lines' % (path, len(content.splitlines())))
 
 

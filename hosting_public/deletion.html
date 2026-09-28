@@ -77,6 +77,18 @@
   footer{border-top:1px solid var(--rule);padding:40px 0 50px;margin-top:80px;font-size:14px;color:var(--fg-2)}
   footer .wrap{display:flex;justify-content:space-between;flex-wrap:wrap;gap:20px;align-items:center}
   footer ul{display:flex;gap:20px;list-style:none;margin:0;padding:0}
+  /* Shared chrome fixes: a legal page must not scroll sideways on a 360px phone */
+  .card-h{font-size:19px;margin-top:0;padding-top:0;border-top:0}
+  footer .trades{width:100%;flex-wrap:wrap;gap:8px 18px;font-size:13.5px}
+  @media(max-width:720px){
+    .wrap{padding:0 16px}
+    nav .wrap{height:auto;flex-wrap:wrap;gap:10px 16px;padding-top:12px;padding-bottom:12px}
+    nav ul{order:3;width:100%;flex-wrap:wrap;gap:6px 16px}
+    nav .btn{padding:8px 14px}
+    footer ul{flex-wrap:wrap;gap:8px 16px}
+    table{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch}
+    code{overflow-wrap:anywhere}
+  }
 </style>
 </head>
 <body>
@@ -104,7 +116,7 @@
   </div>
 
   <div class="card alert-card">
-    <h3 style="margin-top:0;color:var(--mint)">✓ Full Control Over Your Data</h3>
+    <h2 class="card-h" style="color:var(--mint)">✓ Full Control Over Your Data</h2>
     <p>In accordance with <strong>Google Play Developer Data Safety &amp; Account Deletion Policies</strong>, SmartDine provides users and restaurant owners with direct mechanisms to delete their account and associated cloud data without requiring access to the physical till.</p>
   </div>
 
@@ -175,6 +187,13 @@
       <li><a href="/terms.html">Terms of Service</a></li>
       <li><a href="/deletion.html">Data Deletion</a></li>
       <li><a href="/support.html">Support</a></li>
+    </ul>
+    <ul class="trades" aria-label="Trades">
+      <li><a href="/restaurants/">Restaurants</a></li>
+      <li><a href="/kirana/">Kirana</a></li>
+      <li><a href="/supermarket/">Supermarket</a></li>
+      <li><a href="/pharmacy/">Pharmacy</a></li>
+      <li><a href="/retail/">Retail</a></li>
     </ul>
     <span>&copy; 2026 DevMonks Studio. All rights reserved.</span>
   </div>
