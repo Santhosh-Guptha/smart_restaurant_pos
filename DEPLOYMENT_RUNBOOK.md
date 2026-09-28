@@ -766,11 +766,12 @@ npx firebase appdistribution:distribute "build/app/outputs/flutter-apk/app-relea
   --testers "santhoshbukka5@gmail.com,smartdine.platform@gmail.com"
 ```
 
-### 3. Active Release Profile (v1.2.0+44)
-- **Release Version**: `1.2.0 (44)`
+### 3. Active Release Profile (v1.2.0+55)
+- **Release Version**: `1.2.0 (55)`
 - **Distribution Channel**: Firebase App Distribution
-- **Direct Tester Download Link**: [Download v1.2.0 (44)](https://appdistribution.firebase.google.com/testerapps/1:486476143616:android:ce2cd4881dc37bdf928ce5/releases/21j1r5bj855eg)
+- **Direct Tester Download Link**: [Download v1.2.0 (55)](https://appdistribution.firebase.google.com/testerapps/1:486476143616:android:ce2cd4881dc37bdf928ce5/releases/7earfkrlebg2o)
 - **Authorized Testers**: `santhoshbukka5@gmail.com`, `smartdine.platform@gmail.com`
+- **Release Notes**: SmartBizz v1.2.0+55: Per-trade Google Sheets layouts, loose-weight and scale barcodes, retail variants, and restaurant modifier options editor
 
 ### 4. Release Verification Checklist
 - [x] Zero analyzer lints or errors (`flutter analyze` -> `No issues found!`)
