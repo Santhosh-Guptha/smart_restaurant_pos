@@ -634,6 +634,8 @@ If cloud connectivity or internet fails completely:
 
 ## 💎 8. Dynamic Subscription Plans & Automated Provisioning
 
+> Superseded (Sep 2026): plans are validity only and features/limits come from the trade × tier package. See `docs/PLATFORM_STRUCTURE.md` and the platform-structure release below. The text of this section describes the earlier design.
+
 ### 1. Zero-Approval Instant Free Trials
 - **Client Flow**: When a restaurant owner navigates to **Sign Up**, they can choose **14-Day Full Access Free Trial**.
 - **Zero Human Latency**: The system immediately calls TenantProvisioningService.provisionTenant(...) with default plan limits (14 days, 1 outlet, 5 staff, 20 tables, 150 dishes, core restaurant feature catalog enabled).
@@ -774,7 +776,7 @@ npx firebase appdistribution:distribute "build/app/outputs/flutter-apk/app-relea
 - [x] Zero analyzer lints or errors (`flutter analyze` -> `No issues found!`)
 - [x] All 143 unit and regression tests passing (`flutter test` -> `143/143 green`)
 - [x] Receipt template engine R1 byte-identical to legacy ESC/POS goldens
-- [x] Canonical trial plan strictly configured as `PlanProfile.offlineDineIn` under `PURE_OFFLINE`
+- [x] (v1.2.0+44, since superseded) Trial configured as `PlanProfile.offlineDineIn` under `PURE_OFFLINE` — today the trial is `<trade>_offline` or `<trade>_basic`
 - [x] Master Admin protected by Salted SHA-256 + Bcrypt and 2MFA Email verification
 - [x] Operational collections (`/orders`, `/bills`, `/tables`, `/kitchen_kots`) locked to `allow read, write: if false;` in Firestore rules
 - [x] Tested on Mobile Phone viewports (360px - 480px width)
@@ -792,3 +794,28 @@ npx firebase appdistribution:distribute "build/app/outputs/flutter-apk/app-relea
 5. Console → Migrations → Align business types (dry run → apply).
 6. Change the master-admin password.
 Troubleshooting for this branch: `TROUBLESHOOTING.md`.
+
+## 🧱 Release — platform structure (trade × tier), 28 Sep 2026
+
+Order matters: app first, then Apps Script, then data migration.
+
+1. **App + website.** `powershell -ExecutionPolicy Bypass -File .\claude_run.ps1` (no switch): analyze,
+   tests, web build copied to `hosting_public/pos`, hosting deploy (includes the generated site pages).
+   Check `claude_run_log.txt`. Open the web till and hard refresh once (Ctrl+Shift+R).
+2. **Apps Script.** Paste `google_apps_script/Code.gs` into the existing project (`firestore.gs`, `bcrypt.gs`
+   unchanged), save, run `smokeTestTrialProvisioning` from the editor (must return `OK`), then Deploy →
+   Manage deployments → edit the **existing** deployment → New version (same `/exec` URL). See
+   `google_apps_script/DEPLOY.md`. Until this is done, server trials and leases follow the old rules.
+3. **Admin console → Migrations → Align business types**: dry run, review, Align.
+4. **Admin console → Migrations → Move tenants to category packages**: dry run, review each row (from → to,
+   changes, custom limits), then Move.
+5. **Admin console → Packages**: for each trade, check the five tier packages (heading, features, limits,
+   add-ons). Edit if needed; use "Apply to tenants on this package" only deliberately (it keeps client add-ons/switched-off
+   features).
+6. **Plans**: confirm the validity-only plans (trial 14, monthly, quarterly, half-yearly, yearly).
+7. **Tell existing tenants** to open Settings → Receipts & Slips and **Reset** each starter slip they have
+   not customised, so shop labels and the pharmacy invoice take effect.
+8. Smoke test: one offline trial and one own-Drive trial per a shop trade and restaurant; check tier, limits
+   and features in the Feature Matrix; an offline backup → restore on a second browser profile.
+
+Troubleshooting: `TROUBLESHOOTING.md` → "Packages, licences and backup".

@@ -76,7 +76,7 @@ def nav(active=None, hub=False):
         cur = ' aria-current="page"' if c['slug'] == active else ''
         items += '<li><a href="/' + c['slug'] + '/"' + cur + '>' + E(c['short']) + '</a></li>'
     extra = ('<li class="nav-sep" aria-hidden="true"></li>'
-             '<li><a href="/#suite">The suite</a></li><li><a href="/#plans">Plans</a></li>')
+             '<li><a href="/#suite">The suite</a></li><li><a href="/#plans">Packages</a></li>')
     return ('\n<a class="skip" href="#main">Skip to content</a>'
             '\n<div class="fx-progress" aria-hidden="true"><i></i></div>'
             '\n<nav>\n  <div class="wrap">\n'
@@ -157,7 +157,7 @@ def layers():
 
 
 def stats():
-    items = [('5', 'trades, one app'), ('5', 'plans, Offline to Enterprise'), ('0%', 'taken from your UPI'),
+    items = [('5', 'trades, one app'), ('5', 'packages, Offline to Enterprise'), ('0%', 'taken from your UPI'),
              ('58 · 80mm', 'thermal printers'), ('14 days', 'free, no card')]
     def num(a):
         import re
@@ -191,7 +191,7 @@ def module_filters():
     tiers = ''.join('<button type="button" class="chip sm ' + tcls(k) + '" data-t="' + k + '" aria-pressed="true">' +
                     E(v) + '</button>' for k, v in D.TIER_LABEL.items())
     return ('<div class="filters"><div class="chips" role="group" aria-label="Filter by trade">' + chips + '</div>'
-            '<div class="chips" role="group" aria-label="Filter by plan">' + tiers + '</div></div>'
+            '<div class="chips" role="group" aria-label="Filter by package">' + tiers + '</div></div>'
             '<p class="mods-count" id="modsCount" aria-live="polite"></p>')
 
 
@@ -204,10 +204,10 @@ def matrix():
         cells = ''.join('<td>' + (cell if v in m['trades'] else '<span class="mx n" aria-label="Not for this trade">—</span>') + '</td>'
                         for v in TRADE_ORDER)
         rows += '<tr><th scope="row"><span aria-hidden="true">' + m['icon'] + '</span> ' + E(m['name']) + '</th>' + cells + '</tr>'
-    return ('<div class="mx-wrap rv" tabindex="0" role="region" aria-label="Modules by trade and plan">'
+    return ('<div class="mx-wrap rv" tabindex="0" role="region" aria-label="Modules by trade and package">'
             '<table class="matrix"><thead><tr><th scope="col">Module</th>' + head_ +
             '</tr></thead><tbody>' + rows + '</tbody></table></div>'
-            '<p class="mx-key">Each cell names the first plan that includes the module. Every higher plan includes it too. '
+            '<p class="mx-key">Each cell names the first package that includes the module. Every higher package includes it too. '
             '<span class="mx n">—</span> not part of that trade.</p>')
 
 
@@ -217,7 +217,7 @@ def plans(context):
         name = D.TIER_NAME[p['tier']]
         cta = ('<a class="btn lamp" href="javascript:void(0)" onclick="openTrialModal()">Start free trial →</a>' if p['tier'] == 'offline' else
                '<a class="btn ' + ('lamp' if p['hot'] else 'ghost') + '" href="javascript:void(0)" '
-               'onclick="openContactModal(\'' + E(name) + ' plan — ' + E(context) + '\')">Ask for a quote</a>')
+               'onclick="openContactModal(\'' + E(name) + ' package — ' + E(context) + '\')">Ask for a quote</a>')
         cards += ('<div class="plan rv d' + str(min(i, 5)) + (' hot' if p['hot'] else '') + '">'
                   '<span class="plan-tag">' + E(p['tag']) + '</span><h3>' + E(name) + '</h3>'
                   '<p class="plan-lim">' + E(D.limits_line(p['tier'])) + '</p>'
@@ -265,7 +265,7 @@ def tier_rows(c):
         items += ''.join('<li><b>' + E(n) + '</b> — ' + E(l) + '</li>' for n, l in feats[t])
         cta = ('<a class="btn lamp sm" href="javascript:void(0)" onclick="openTrialModal()">Start free trial</a>'
                if t == 'offline' else
-               '<a class="btn ghost sm" href="javascript:void(0)" onclick="openContactModal(\'' + E(name) + ' plan — ' +
+               '<a class="btn ghost sm" href="javascript:void(0)" onclick="openContactModal(\'' + E(name) + ' package — ' +
                E(c['name']) + '\')">Ask for a quote</a>')
         lim = (lambda k: 'Tailored to you') if t == 'enterprise' else (lambda k: D.LIMITS[t][k])
         rows += ('<article class="trow rv" id="tier-' + t + '">'
@@ -307,7 +307,7 @@ def demos():
             'organisation ID we e-mail you.</p><span class="go">Open the web till</span></div></a>'
             '<div class="demo rv d3"><span class="demo-i" aria-hidden="true">📲</span>'
             '<div><h3>Android &amp; Windows</h3><p>Runs on the phone, tablet or PC already at your counter. '
-            'Message us and we will get it installed with you.</p><span class="go plain">Included with every plan</span></div></div>'
+            'Message us and we will get it installed with you.</p><span class="go plain">Included with every package</span></div></div>'
             '</div>')
 
 
@@ -342,7 +342,7 @@ def footer(category_value):
         '<a class="btn lamp sm" href="javascript:void(0)" onclick="openTrialModal()">Start 14-day free trial</a></div>\n'
         '    <div><h2 class="foot-h">Trades</h2><ul>' + trades + '</ul></div>\n'
         '    <div><h2 class="foot-h">Product</h2><ul><li><a href="/#suite">The suite</a></li><li><a href="/#compare">Compare trades</a></li>'
-        '<li><a href="/#plans">Plans</a></li><li><a href="/#data">Your data</a></li><li><a href="/register/">Register your business</a></li>'
+        '<li><a href="/#plans">Packages</a></li><li><a href="/#data">Your data</a></li><li><a href="/register/">Register your business</a></li>'
         '<li><a href="/r/?org=DEMO&amp;table=1">Guest QR demo</a></li>'
         '<li><a href="/pos/">Web till sign-in</a></li></ul></div>\n'
         '    <div><h2 class="foot-h">Help</h2><ul><li><a href="/support.html">Support</a></li>'
@@ -374,7 +374,7 @@ def category_page(c):
         '      <p class="lede">' + c['lede'] + '</p>\n'
         '      <div class="hero-cta">\n'
         '        <a class="btn lamp" href="javascript:void(0)" onclick="openTrialModal()">Start 14-day free trial →</a>\n'
-        '        <a class="btn ghost" href="#tiers">See features by plan</a>\n'
+        '        <a class="btn ghost" href="#tiers">See features by package</a>\n'
         '      </div>\n'
         '      <p class="hero-note"><b>Free to start.</b> Runs on the phone, tablet or PC you already own. '
         'No card. Not a payment gateway: bills are paid to your own UPI ID, in cash or on your card machine.</p>\n'
@@ -383,7 +383,7 @@ def category_page(c):
         '<section id="problems">\n  <div class="wrap">\n'
         '    <p class="kicker rv">Built around the counter you actually run</p>\n'
         '    <h2 class="rv d1">Problems you face,<br>and how ' + D.BRAND + ' solves them.</h2>\n'
-        '    <p class="lede rv d2">Each answer names the first plan that includes it.</p>\n'
+        '    <p class="lede rv d2">Each answer names the first package that includes it.</p>\n'
         '    ' + problems(c) + '\n  </div>\n</section>\n\n'
 
         '<section class="band" id="stations">\n  <div class="wrap">\n'
@@ -393,11 +393,11 @@ def category_page(c):
         '    ' + stations(c['stations']) + '\n  </div>\n</section>\n\n'
 
         '<section id="tiers">\n  <div class="wrap">\n'
-        '    <p class="kicker rv">Plans for ' + E(first_trade) + '</p>\n'
-        '    <h2 class="rv d1">Features and limits,<br>plan by plan.</h2>\n'
-        '    <p class="lede rv d2">Five plans: Offline, Basic, Standard, Premium and Enterprise. Each one includes '
-        'everything in the plan before it, and only features that apply to ' + E(c['trade'].lower()) +
-        ' businesses are listed. The 14-day free trial is the Offline plan.</p>\n'
+        '    <p class="kicker rv">Packages for ' + E(first_trade) + '</p>\n'
+        '    <h2 class="rv d1">Features and limits,<br>package by package.</h2>\n'
+        '    <p class="lede rv d2">Five packages: Offline, Basic, Standard, Premium and Enterprise. Each one includes '
+        'everything in the package before it, and only features that apply to ' + E(c['trade'].lower()) +
+        ' businesses are listed. The 14-day free trial is the Offline package.</p>\n'
         '    ' + tier_rows(c) + '\n'
         '    <p class="addons rv"><b>Add-ons.</b> ' + E(D.ADDONS) + '</p>\n'
         '  </div>\n</section>\n\n'
@@ -411,8 +411,8 @@ def category_page(c):
 
         '<section class="final" id="start">\n  <div class="fx-floor" aria-hidden="true"><i></i></div><div class="lamp-glow"></div>\n  <div class="wrap">\n'
         '    <h2 class="rv">Try it on tomorrow’s counter.</h2>\n'
-        '    <p class="lede rv d1" style="margin-left:auto;margin-right:auto">Fourteen days on the Offline plan, no card. '
-        'Running more than one counter or outlet? Register and we will set you up on the right plan.</p>\n'
+        '    <p class="lede rv d1" style="margin-left:auto;margin-right:auto">Fourteen days on the Offline package, no card. '
+        'Running more than one counter or outlet? Register and we will set you up on the right package.</p>\n'
         '    <div class="hero-cta rv d2" style="justify-content:center">\n'
         '      <a class="btn lamp" href="javascript:void(0)" onclick="openTrialModal()">Start 14-day free trial →</a>\n'
         '      <a class="btn ghost" href="' + reg + '">Register your ' + E(c['short'].lower()) + ' business</a>\n'
@@ -459,7 +459,7 @@ def hub():
         '    <h2 class="rv d1">Five trades.<br>One product.</h2>\n'
         '    <p class="lede rv d2">The till, the products, the staff logins and the day-end are the same '
         'everywhere. What changes is the screen you spend your day on, decided by the trade '
-        'you pick when you sign up. Each page shows the problems it solves and the features in every plan.</p>\n'
+        'you pick when you sign up. Each page shows the problems it solves and the features in every package.</p>\n'
         '    <div class="cats">' + cards + '\n    </div>\n  </div>\n</section>\n\n'
 
         + layers() +
@@ -467,7 +467,7 @@ def hub():
         '    <p class="kicker rv">The suite</p>\n'
         '    <h2 class="rv d1">Everything we make,<br>in one application.</h2>\n'
         '    <p class="lede rv d2">' + str(len(D.MODULES)) + ' modules, one sign-in. Filter by the trade you run to '
-        'see exactly what your counter gets, and the first plan that includes it.</p>\n'
+        'see exactly what your counter gets, and the first package that includes it.</p>\n'
         '    ' + module_filters() + module_cards() + '\n  </div>\n</section>\n\n'
 
         '<section id="day">\n  <div class="wrap">\n'
@@ -480,7 +480,7 @@ def hub():
         '<section class="band" id="compare">\n  <div class="wrap">\n'
         '    <p class="kicker rv">Side by side</p>\n'
         '    <h2 class="rv d1">What each counter gets.</h2>\n'
-        '    <p class="lede rv d2">One table, every module, every trade, and the first plan that includes it.</p>\n'
+        '    <p class="lede rv d2">One table, every module, every trade, and the first package that includes it.</p>\n'
         '    ' + matrix() + '\n  </div>\n</section>\n\n'
 
         '<section id="try">\n  <div class="wrap">\n'
@@ -489,9 +489,9 @@ def hub():
         '    ' + demos() + '\n  </div>\n</section>\n\n'
 
         '<section class="band" id="plans">\n  <div class="wrap">\n'
-        '    <p class="kicker rv">Plans</p>\n'
+        '    <p class="kicker rv">Packages</p>\n'
         '    <h2 class="rv d1">Start free.<br>Grow when you need to.</h2>\n'
-        '    <p class="lede rv d2">Five plans for every trade. Each includes everything in the one before it, and '
+        '    <p class="lede rv d2">Five packages for every trade. Each includes everything in the one before it, and '
         'your trade page lists exactly which features you get in each. ' + D.BRAND + ' is not a payment gateway: '
         'bills are settled by cash, your card machine or a UPI QR for your own UPI ID. You pay only for the software.</p>\n'
         '    ' + plans('More than one outlet') + '\n'
@@ -507,14 +507,14 @@ def hub():
 
         '<section class="final" id="start">\n  <div class="fx-floor" aria-hidden="true"><i></i></div><div class="lamp-glow"></div>\n  <div class="wrap">\n'
         '    <h2 class="rv">Start on tomorrow’s counter.</h2>\n'
-        '    <p class="lede rv d1" style="margin-left:auto;margin-right:auto">Fourteen days on the Offline plan, no card.</p>\n'
+        '    <p class="lede rv d1" style="margin-left:auto;margin-right:auto">Fourteen days on the Offline package, no card.</p>\n'
         '    <div class="hero-cta rv d2" style="justify-content:center">\n'
         '      <a class="btn lamp" href="javascript:void(0)" onclick="openTrialModal()">Start 14-day free trial →</a>\n'
         '      <a class="btn ghost" href="/register/">Register your business</a>\n'
         '    </div>\n  </div>\n</section>\n')
 
     desc = (D.BRAND + ' is one billing app for Indian counters: restaurants, kirana shops, supermarkets, '
-            'pharmacies and retail. Five plans from Offline to Enterprise; start with a 14-day free trial.')
+            'pharmacies and retail. Five packages from Offline to Enterprise; start with a 14-day free trial.')
     return head(D.BRAND + ' — ' + D.TAGLINE, desc, 'hub', '/') + nav(hub=True) + body + footer("''")
 
 

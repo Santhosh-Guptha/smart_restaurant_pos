@@ -40,6 +40,8 @@ class WhatsAppNotificationService {
     String downloadUrl = defaultDownloadUrl,
     /// The tenant's trade (`Verticals.*`); a shop is welcomed to its store.
     String vertical = Verticals.restaurant,
+    /// The package the tenant is on ("Kirana Basic"); the plan is its term.
+    String? packageName,
   }) {
     final welcome = Verticals.isShop(vertical)
         ? '🏪 *Welcome to SmartBizz POS!*\nHi $clientName, your store account for *$shopName* is now active.'
@@ -51,7 +53,7 @@ $welcome
 • Store / Org ID: *$orgId*
 • Username: *$username*
 • Password: *$password*
-• Plan: *$planName*
+${packageName != null && packageName.trim().isNotEmpty ? '• Package: *${packageName.trim()}*\n' : ''}• Plan: *$planName*
 
 🌐 *Web Portal & Counter Billing:*
 $portalUrl
@@ -76,6 +78,7 @@ _Need assistance? Reply directly to this WhatsApp number for support._
     String downloadUrl = defaultDownloadUrl,
     /// The tenant's trade (`Verticals.*`), passed to [formatWelcomeMessage].
     String vertical = Verticals.restaurant,
+    String? packageName,
   }) async {
     final cleanPhone = sanitizePhone(phone);
     final msg = formatWelcomeMessage(
@@ -88,6 +91,7 @@ _Need assistance? Reply directly to this WhatsApp number for support._
       portalUrl: portalUrl,
       downloadUrl: downloadUrl,
       vertical: vertical,
+      packageName: packageName,
     );
 
     try {

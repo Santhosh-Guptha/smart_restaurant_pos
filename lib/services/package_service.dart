@@ -254,13 +254,16 @@ class PackageService {
         addOns: clientAddOns,
       );
       final features = Map<String, bool>.from(composed.features);
+      final keptOff = <String>[];
       for (final k in clientOff) {
         final def = FeatureCatalog.find(k);
         // Core features are never off; a key the package no longer has is
         // already off.
         if (def == null || def.tier == CommercialTier.offlineBasic) continue;
+        keptOff.add(k);
         if (features[k] == true) features[k] = false;
       }
+      keptOff.sort();
       // A dependant never stays on without its parent.
       var changed = true;
       while (changed) {
@@ -306,6 +309,10 @@ class PackageService {
         'maxFranchises': composed.maxOutlets,
         'maxUsers': composed.maxUsers,
         'allowedRoles': composed.allowedRoles,
+        // The client's own choices, as the Feature Matrix records them:
+        // add-ons still offered, and the switched-off keys that applied.
+        'addOns': composed.addOns,
+        'featuresOff': keptOff,
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
       // Legacy mirror, one more release.

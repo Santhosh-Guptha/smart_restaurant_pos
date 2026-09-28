@@ -1,5 +1,8 @@
 # Client Network Database — implementation plan
 
+> **Note (28 Sep 2026):** not built. Tiers and storage now follow `docs/PLATFORM_STRUCTURE.md` (Offline on the device; Basic and above on the client's own Google Drive). Any network-database option would need a change to that contract first.
+
+
 **Status:** proposal, 2026-09-15. Nothing in this document is built yet.
 **Branch target:** a new branch off `develop` after `feature/ux-entitlements-v2` merges (`feature/network-db`).
 **Owner:** Sharon (product), Santhosh (build/verify).

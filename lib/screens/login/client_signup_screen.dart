@@ -7,6 +7,7 @@ import '../../core/classic_theme.dart';
 import '../../core/entitlements.dart';
 import '../../core/package_model.dart';
 import '../admin/widgets/tier_visuals.dart';
+import '../admin/widgets/trade_selector.dart';
 import '../../widgets/package_features_breakdown_widget.dart';
 import '../../services/package_service.dart';
 import '../../services/otp_verification_service.dart';
@@ -124,22 +125,8 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
 
   String get _vertical => Verticals.forCategory(_businessCategory);
 
-  IconData get _categoryHeaderIcon {
-    switch (_vertical) {
-      case Verticals.restaurant:
-        return Icons.restaurant_rounded;
-      case Verticals.kirana:
-        return Icons.storefront_rounded;
-      case Verticals.supermarket:
-        return Icons.shopping_cart_rounded;
-      case Verticals.pharmacy:
-        return Icons.local_pharmacy_rounded;
-      case Verticals.retail:
-        return Icons.shopping_bag_rounded;
-      default:
-        return Icons.storefront_rounded;
-    }
-  }
+  /// The trade's icon, the same one the console uses everywhere.
+  IconData get _categoryHeaderIcon => TradeSelector.iconFor(_vertical);
 
   String get _categoryHeaderTitle {
     switch (_vertical) {

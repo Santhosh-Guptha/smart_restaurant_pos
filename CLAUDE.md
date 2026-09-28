@@ -5,7 +5,10 @@ Brand is **SmartBizz** everywhere a user sees it (formerly SmartDine). Data iden
 old name on purpose: crypto salt, Drive folder `SmartDine_Menu_Images`, Firebase project
 `smartdine-pos`, admin e-mail `smartdine.platform@gmail.com`, Android app id.
 
-Deeper docs: `ARCHITECTURE.md` (§9 = current model), `FLOWS_AND_SCENARIOS.md` (15–20),
+**Contract: `docs/PLATFORM_STRUCTURE.md`** (trade × tier packages, plans, add-ons, licence, roles, wording) —
+if code disagrees with it, the code is wrong. Read-only unless the owner changes the structure.
+
+Deeper docs: `ARCHITECTURE.md` (§9 current model, §10 platform structure), `FLOWS_AND_SCENARIOS.md` (15–29),
 `ISSUES_AND_RESOLUTIONS.md` (§3 = this branch), `TROUBLESHOOTING.md`, `SECURITY_NOTES.md`.
 
 ## Commands
@@ -24,8 +27,19 @@ Deeper docs: `ARCHITECTURE.md` (§9 = current model), `FLOWS_AND_SCENARIOS.md` (
 - **Trade** is resolved only by `Verticals.resolve()` (`lib/core/package_model.dart`): business category
   wins when it names a trade, else a valid stored `vertical`, else restaurant. Writers store
   `businessCategory` and `vertical` together (organisation, licence, owner user). Apps Script twin: `verticalFor_()`.
-- Customer-pickable categories: `BusinessCategories`. Starter packages are universal (`Verticals.any`);
-  per-trade filtering is in the resolver (`BlockReason.verticalMismatch`).
+- Customer-pickable categories: `BusinessCategories`.
+- **Packages = trade × tier.** 25 starters `<trade>_<tier>` (offline, basic, standard, premium, enterprise;
+  `PackageTier`, `TierLimits`, `PackageCatalog`). Offline = device only, 1 device/1 outlet/1 user (owner);
+  other tiers = client's own Drive. Legacy universal profiles (Offline counter, Shop counter, Connected,
+  Everything on…) are read only, `isLegacy`, never offered.
+- **Plans = validity only** (name, days, price, cycle). Never put features, limits or roles on a plan.
+- **Licence** `licenses/{orgId}` is composed by `LicenseComposer` (twin: `composeLicence_` in Code.gs). A trade
+  package resolves for its trade and stamps `featuresResolvedFor=<trade>`; universal/legacy packages resolve
+  `'any'`; an unstamped legacy map is read as `'restaurant'` (other-trade `false`s fall back to the package).
+  Add-ons and switched-off features live on the client's licence. Feature Matrix and the licence dialog
+  write that one document only, live-synced; applying a package to tenants keeps add-ons/featuresOff.
+- Roles: offline OWNER only; shops OWNER/MANAGER/BILLING; restaurant standard+ with >1 device adds WAITER/KITCHEN.
+- Wording (contract §7): never "100% local"/"fully offline"/absolute guarantees.
 - Trade-specific words go through `VerticalLabels`. Shops never send to a kitchen (`sendsToKitchen` false).
   Restaurant receipt bytes are golden-tested — shop footers go via `ReceiptContextBuilder.tradeDefaultFooter`.
 - **Storage modes offered at onboarding: `PURE_OFFLINE` and `CLIENTS_OWN_SHEETS` only.** `CLOUD_SYNC` is
@@ -57,7 +71,13 @@ Deeper docs: `ARCHITECTURE.md` (§9 = current model), `FLOWS_AND_SCENARIOS.md` (
 d22139a licence lease · 90c6314 store owners per outlet · 0e036ce two storage modes, sheet per store +
 sharing reconciler, tenant metrics, admin Business Analytics.
 
-## Status (25 Sep 2026)
+## Status (28 Sep 2026)
+- Platform structure commits: 230617a (trade × tier, plans validity-only, offline backup, site per trade),
+  4669865, 4d576a2 (admin console, app and Code.gs follow it), c20163e. Before that: f77d353 (one shop
+  Billing card, pharmacy batches/expiry, receipts per trade), 559bf61, afd3d5d.
+- Deploy order and post-deploy migrations: `DEPLOYMENT_RUNBOOK.md` → "Release — platform structure".
+
+### Earlier status (25 Sep 2026)
 - Run on ba8498d (everything so far): analyze clean, **338/338 tests**, **hosting deployed** (25 Sep ~20:13 IST).
 - After that: mock/demo mode removed (admin "Showcase Demo POS", mock login, setMockRole, proMock, old LoginScreen).
 - Since then (not yet run): 860f7be icons · next commit: trade wording fixes in store settings / branches /
@@ -67,6 +87,9 @@ sharing reconciler, tenant metrics, admin Business Analytics.
 - Hosting currently serves an older build; redeploy after the rerun passes.
 
 ## Next steps, in order
+0. Platform structure release: `claude_run.ps1` deploy → Code.gs new version + `smokeTestTrialProvisioning` →
+   Migrations "Align business types" then "Move tenants to category packages" (dry run first) → check Packages
+   per trade → ask existing tenants to Reset receipt slips. (Items below are from 25 Sep; some are done.)
 1. Rerun `claude_run.ps1 -NoDeploy` on 0e036ce; fix anything it reports; then run it without `-NoDeploy`.
 2. `firebase deploy --only firestore:rules` (adds `tenant_metrics`; everything else unchanged).
 3. Paste `google_apps_script/Code.gs` into Apps Script and redeploy; add Script properties

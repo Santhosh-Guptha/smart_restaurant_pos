@@ -745,7 +745,7 @@ class _CategoryAlignCardState extends State<_CategoryAlignCard> {
                         '${row.categoryChanges ? '  \u00b7 category \u201c${row.category.isEmpty ? '(none)' : row.category}\u201d \u2192 \u201c${row.canonicalCategory}\u201d' : ''}'
                         '${row.licenseChanges ? '  \u00b7 licence' : ''}'
                         '${row.ownerChanges ? '  \u00b7 owner' : ''}'
-                        '${row.packageChanges ? '  \u00b7 package ${PlanProfile.byId(row.storedProfile).label} \u2192 ${PlanProfile.byId(row.alignedProfile).label}' : ''}',
+                        '${row.packageChanges ? '  \u00b7 package ${row.storedProfile} \u2192 ${PackageCatalog.nameFor(row.vertical, PackageTier.fromPackageOrProfile(profileId: row.alignedProfile))}' : ''}',
                         style: TextStyle(fontSize: DS.fontMicro, color: context.textSecondary),
                       ),
                     );

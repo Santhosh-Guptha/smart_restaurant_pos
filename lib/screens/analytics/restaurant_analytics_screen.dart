@@ -9,6 +9,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../core/classic_theme.dart';
 import '../../core/restaurant_models.dart';
 import '../../providers/saas_session_provider.dart';
+import '../../providers/entitlements_provider.dart';
 import '../../sync/local_store.dart';
 import '../../core/entitlements.dart';
 import '../../core/feature_route_guard.dart';
@@ -1742,7 +1743,8 @@ class _RestaurantAnalyticsScreenState
     final license = saasSession.currentLicense;
     final planTier = license?.planTier ?? 'ACTIVE';
     final daysRemaining = license?.daysRemaining ?? 30;
-    final maxFranchises = license?.maxFranchises ?? _availableOutlets.length;
+    // The resolved limit (offline is one store), not the raw licence field.
+    final maxFranchises = ref.watch(entitlementsProvider).maxOutlets;
 
     // Payment tender totals
     final upiAmt = _paymentSplit['UPI'] ?? 0.0;

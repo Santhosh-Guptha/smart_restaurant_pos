@@ -36,6 +36,7 @@ import '../restaurant/store_configuration_screen.dart';
 import '../settings/settings_sidebar_dialog.dart';
 import '../settings/plan_request_sheet.dart';
 import '../admin/widgets/tier_visuals.dart';
+import '../admin/widgets/trade_selector.dart';
 import '../analytics/restaurant_analytics_screen.dart';
 import '../orders/restaurant_order_history_screen.dart';
 import '../expenses/expenses_screen.dart';
@@ -317,7 +318,7 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
     );
     if (sent == true && mounted) {
       AppToast.showSuccess(context, 'Request sent',
-          subtitle: 'Your administrator will confirm the final plan with you.');
+          subtitle: 'Your administrator will confirm the final package and plan with you.');
     }
   }
 
@@ -541,7 +542,7 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
     // Check if user is locked to an outlet or allowed to switch branches
     final bool isStaffLockedToOutlet = user?.franchiseId != null && user!.franchiseId!.isNotEmpty;
     final bool canSwitchBranch = isMasterAdmin || 
-        (!isStaffLockedToOutlet && (isOwner || isManager) && (saasSession.currentLicense?.maxFranchises ?? 1) > 1 && _tenantOutletCount > 1);
+        (!isStaffLockedToOutlet && (isOwner || isManager) && ent.maxOutlets > 1 && _tenantOutletCount > 1);
 
     // Feature enablement, resolved from the tenant's plan. A card whose feature
     // is not in the plan is absent from the dashboard entirely — the filtering
@@ -611,11 +612,7 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Icon(
-                ent.vertical == Verticals.restaurant
-                    ? Icons.restaurant_rounded
-                    : (ent.vertical == Verticals.pharmacy
-                        ? Icons.local_pharmacy_rounded
-                        : Icons.storefront_rounded),
+                TradeSelector.iconFor(ent.vertical),
                 color: ClassicTheme.warningAmber,
                 size: 22,
               ),

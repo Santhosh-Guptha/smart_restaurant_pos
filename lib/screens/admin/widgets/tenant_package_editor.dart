@@ -444,6 +444,7 @@ class LicenceEdits {
       tier: base.tier,
       featuresResolvedFor: base.featuresResolvedFor,
       limitsCustom: base.limitsCustom || limitsCustom,
+      addOns: base.addOns,
     );
   }
 
@@ -646,7 +647,10 @@ class LicenceEdits {
         .toUpperCase();
     if (profile.startsWith('OFFLINE')) return PackageTier.offline;
     if (profile == 'OMNICHANNEL') return PackageTier.premium;
-    return PackageTier.basic;
+    // The website's enquiry names the package it came from ("Standard
+    // package — More than one outlet").
+    final named = s(const ['selectedPlan', 'selected_plan', 'plan']).split(RegExp(r'\s+')).first;
+    return PackageTier.tryParse(named) ?? PackageTier.basic;
   }
 
   /// "Yearly · 365 days · ₹4,999" (plans are validity only, §2).

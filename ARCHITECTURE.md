@@ -163,11 +163,13 @@ The entitlements system provides deterministic, compile-time verified feature ga
    - `onlineOrderingEnabled`: Guest self-checkout and kitchen injection.
    - `multiOutlet`: Multi-branch franchise network governance.
 
-### Canonical Plan Profiles:
-1. **`PlanProfile.offlineSingle`** (`OFFLINE_SINGLE`): 1 device, 1 outlet, `PURE_OFFLINE`. Includes 9 Offline Basic features.
-2. **`PlanProfile.offlineDineIn`** (`OFFLINE_DINE_IN`): 1 device, 1 outlet, `PURE_OFFLINE`. Includes 13 offline features. **Powers the 14-day Free Trial.**
-3. **`PlanProfile.connected`** (`CONNECTED`): Up to 5 devices, 1 outlet, `CLOUD_SYNC`. Adds cloud ledger and analytics.
-4. **`PlanProfile.omnichannel`** (`OMNICHANNEL`): Up to 15 devices, 25 outlets, `CLOUD_SYNC`. Unlocks all 23 features including KDS, waiter pads, and QR ordering.
+### Plan profiles (legacy)
+`PlanProfile` (`OFFLINE_SINGLE`, `OFFLINE_RETAIL`, `OFFLINE_DINE_IN`, `CONNECTED`, `OMNICHANNEL` —
+"Offline counter", "Shop counter", "Offline dine-in", "Connected", "Everything on") is no longer a sellable
+package. The ids are kept only so older licences stay readable (`TenantPackage.isLegacy`) and as the
+`planProfile` field the resolver still reads. What is sold today is a **trade × tier package** — see §10 and
+`docs/PLATFORM_STRUCTURE.md`. The `CommercialTier` groups above are feature groupings used by the resolver
+and the Feature Guide, not packages.
 
 ---
 
@@ -327,4 +329,138 @@ with `dart run flutter_launcher_icons`.
 (batch no., expiry, qty, cost). Both tills call `StockService.consumeForSale`, which takes from the batch that
 expires first and never sells an expired batch; a product whose every batch has expired is refused at the
 barcode till. Every change is logged in `stock_movements`. Screen: `StockManagerScreen` (Stock · Expiry ·
-History), on the home card "Stock Manager"; Shop counter (OFFLINE_RETAIL) now includes `stockManagement`.
+History), on the home card "Stock Manager". `stockManagement` is in every shop tier package (§10.2); the batch
+contract is in §10.8.
+
+---
+
+## 🧱 10. Platform structure — trade × tier (Sep 2026)
+
+The contract is `docs/PLATFORM_STRUCTURE.md`; if this section or the code disagrees with it, the contract
+wins. This section says where each rule lives in code.
+
+### 10.1 Trade
+`Verticals` (`lib/core/package_model.dart`): restaurant · kirana · supermarket · pharmacy · retail. Resolved
+only by `Verticals.resolve()` (server twin `verticalFor_()`). A feature applies to a trade when
+`FeatureDef.verticals` is empty or contains it (`FeatureDef.appliesTo`).
+
+### 10.2 Tiers and packages
+`PackageTier` (`lib/core/entitlements.dart`): `offline`, `basic`, `standard`, `premium`, `enterprise`.
+`TierLimits` holds the defaults (devices / outlets / users): offline 1/1/1 (fixed), basic 2/1/3,
+standard 5/1/10, premium 10/3/25, enterprise 20/10/50 (set per client). Offline stores data on the device;
+every other tier uses the client's own Google Drive (`CLIENTS_OWN_SHEETS`).
+
+There are 25 starter packages, id `<trade>_<tier>` (`PackageCatalog.starterId`). `PackageCatalog.featuresFor`
+gives a trade's features at a tier (only keys that apply to the trade are ever on), `addOnsFor` the add-ons
+the trade, storage mode and device count allow, and `headingFor` the heading "Features available for
+<Trade> — <Tier>". `PackageService.ensureStarters()` seeds them to `packages/`. The old universal starters are
+kept readable and flagged `isLegacy`; the Packages view hides them.
+
+### 10.3 Plans
+A plan (`subscription_plans/`) is name, validity days, price and billing cycle only
+(`SubscriptionPlan.validityOnly`; defaults: trial 14, monthly 30, quarterly 90, half-yearly 180, yearly 365).
+Legacy feature/limit/role fields on old plan documents are ignored and never shown.
+
+### 10.4 Licence composition
+`LicenseComposer.compose` (`lib/core/license_composer.dart`) builds `licenses/{orgId}` from package + plan
++ storage mode + add-ons: packageId, planId, tier, vertical, storageMode, the full feature map, maxDevices,
+maxFranchises (outlets), maxUsers, allowedRoles, dates, `featuresResolvedFor`, `limitsCustom`.
+
+- **Features.** A trade package (`pharmacy_basic`) is resolved for its trade and stamped
+  `featuresResolvedFor = <trade>`. A universal or legacy package is resolved `'any'` and stamped `'any'`.
+  A licence with no stamp (written before 28 Sep 2026) is read as resolved for `'restaurant'`: a `false`
+  against a key that only another trade has is treated as "not chosen" and falls back to the package
+  (`Entitlements.fromLicense`), so a shop does not lose barcode billing, khata or stock.
+- **Limits.** From the package tier; custom only on Enterprise or with an admin override
+  (`limitsCustom: true`). Offline is always 1 device, 1 outlet, 1 user.
+- **Roles** (`LicenseComposer.rolesFor`): offline → OWNER only; shops → OWNER, MANAGER, BILLING; restaurant
+  Standard and above with more than one device → also WAITER, KITCHEN.
+- Apps Script `composeLicence_()` in `Code.gs` mirrors the composer for server-created trials
+  (`START_TRIAL`, tier from the request: offline or basic).
+
+### 10.5 Add-ons and client edits
+An add-on is a key that applies to the client's trade, is not in its package, and that the storage mode and
+device count allow. Add-ons and switched-off features are per client, stored on the client's licence.
+
+- **Feature Matrix** (`admin_features_view.dart`) and the **tenant licence dialog**
+  (`tenant_access_dialog.dart` + `tenant_package_editor.dart`) read and write the same `licenses/{orgId}`
+  document, subscribed with a Firestore snapshot. An edit in one shows in the other; with unsaved edits a
+  "This licence changed — Reload" banner appears instead of overwriting. Neither writes a package or another
+  client. They also update the legacy `features/{orgId}` mirror and the guest flags in `public_stores`.
+- **Change of business type** (`LicenceEdits.moveToTrade`): the new trade's package at the same tier;
+  add-ons the new trade also offers and switched-off features its package still has are kept; limits kept.
+- **Apply package to tenants** (`PackageService.applyToTenants`, Packages view, confirmed): recomposes every
+  licence on that package, keeping each client's add-ons and switched-off features; a change of storage
+  family is raised as `pendingStorageChange`, never flipped.
+- **Migrations** (`admin_migrations_view.dart`): "Align business types" (repairs trade fields) and "Move
+  tenants to category packages" (`CategoryPackageMigrationService`: every licence to `<trade>_<tier>`,
+  keeping add-ons, switched-off features and limits that are higher than the defaults). Both run as a dry run
+  first; licences already aligned are counted as done.
+
+### 10.6 Limits at run time
+The session (`saas_session_provider.dart`) enforces the device cap from the resolved entitlements; an
+offline store is one device and one user whatever its document says, and a non-owner sign-in to an offline
+store is refused. Staff creation (`staff_management_screen.dart`) enforces `maxUsers`; offline shows "one
+user — the owner". The signed licence lease from Code.gs carries tier and limits (§9.6).
+
+### 10.7 App surfaces
+- Sign-up (`client_signup_screen.dart`): free trial chooses **Offline on this device** (`<trade>_offline`) or
+  **My own Google Drive** (`<trade>_basic`); a paid request names a tier (Enterprise with requested limits)
+  and writes a lead.
+- Plan request (`plan_request_sheet.dart`): lists the trade's five tiers and the plans by validity; writes
+  `renewal_requests/{orgId}` (Enterprise includes `requestedLimits`); changes nothing by itself.
+- Home (`dashboard_layout_provider.dart`): a shop has **one Billing card** (`counter_billing`) that opens
+  barcode billing when licensed, else the counter desk; saved layouts with the old `barcode_billing` card are
+  migrated. The banner shows trade and tier.
+- Admin views: Plans (validity only), Packages (trade selector, five tiers, limits, add-ons, "Reset to the
+  tier defaults"), Feature Matrix, Feature Guide (`admin_encyclopedia_view.dart`, same structure), Migrations.
+
+### 10.8 Stock batches contract (shops)
+`StockService` (`lib/services/stock_service.dart`). Quantity on the product as `stockQuantity` (old
+`stock` / `stock_quantity` read and kept in sync); no quantity = not tracked (never blocks). Pharmacy
+`batches`: `{batchNo, expiry, qty, cost}` per delivery (`receive`); with batches, quantity = their sum.
+`sellableQtyOf` excludes expired batches; `consumeForSale(lines, billId)` takes first-expiring-first (FEFO),
+never below zero, logs one SALE movement per batch used in `stock_movements` (last 2 000), and returns the
+batches taken per product so the bill line records batch and expiry. `writeOffExpired`, `adjust`,
+`setReorderLevel`, `startTracking`; the till asks `StockService` for a block message (expired / out of
+stock). Stock is only touched when Stock management is on.
+
+### 10.9 Receipts per trade
+`lib/core/receipt/`: `ReceiptTrade.licenceLabel` prints FSSAI (restaurant), DL No. (pharmacy) or Trade Lic.
+(other shops); shops get no LOCATION/TOKEN lines and "Store copy" instead of "Restaurant copy". Starter
+`inv_pharmacy` (batch, expiry and MRP under every line) is the default invoice for pharmacies and offered
+only to them (`StarterTemplates.isOfferedTo`). `ReceiptTemplateStore.ensureSeeded` adds starters a tenant
+lacks (so `inv_pharmacy` reaches existing tenants) but never overwrites one, so an existing tenant keeps its
+old copy of the other slips until the owner uses Settings → Receipts & Slips → **Reset** on that
+slip (`ReceiptTemplateStore.resetToStarter`, stamped so template sync reaches other tills). Restaurant bytes
+stay golden-tested.
+
+### 10.10 Offline backup format
+`OfflineBackupService` (`lib/services/offline_backup_service.dart`), Settings → Backup & restore (owner,
+`backupRestore` feature). File `.sbzbak`:
+
+```
+'SBZBK1' | uint32 BE header length | header JSON {v, kdf, cipher, salt, nonce, iter, orgId, createdAt} | ciphertext
+```
+
+- Key: PBKDF2-HMAC-SHA256(passphrase, 16-byte random salt, 150 000 iterations) → 32 bytes. Files asking for
+  fewer than 100 000 iterations are refused. Passphrase at least 8 characters.
+- Cipher: AES-256-GCM, 12-byte random nonce, 128-bit tag, the header bytes as additional data (editing the
+  header, e.g. the orgId, makes the file fail to open).
+- Plaintext: JSON `{format:'smartbizz-backup', version:1, orgId, orgName, vertical, createdAt, appVersion,
+  boxes, intKeys, counts}`. Max file 200 MB.
+- Contents: the store's business boxes (products, customers, ledger, bills, stock movements, suppliers,
+  purchase orders, returns, expenses, outlet-scoped `v2_*` boxes, receipt templates), settings boxes filtered
+  key by key, and the staff roster without PINs/passwords.
+- Never included or restored: device identity, sessions, sync outbox and cursors, licence/lease, shop users,
+  and any key matching the secret list (passwords, tokens, SMTP, licence, device, login…).
+- Restore: only after signing in to the same store (`orgId` must match); a wrong passphrase fails the GCM
+  check. Data boxes are cleared and refilled; settings and token boxes are merged; staff are merged by id and
+  restored staff need a new PIN.
+
+### 10.11 Website generator
+The marketing site in `hosting_public/` is generated by `tools/site/build_site.py` from `site_data.py`
+(one entry per trade: restaurants, kirana, supermarket, pharmacy, retail) and `screens.py`, with shared
+partials. It writes a page per trade, the home and register pages, and legal pages, adding an asset
+cache-buster `?v=<hash>`. Wording follows contract §7 (no "100% local" or absolute guarantees). Edit the data
+files and rerun the script; do not hand-edit the generated HTML.

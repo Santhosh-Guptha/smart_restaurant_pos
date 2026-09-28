@@ -55,6 +55,11 @@ class ComposedLicense {
   /// later keeps them.
   final bool limitsCustom;
 
+  /// The per-client add-ons the composer honoured (offered for this trade,
+  /// storage and device count), sorted. Written as `addOns`; the licence's
+  /// `featuresOff` starts empty here and is set by the console's editors.
+  final List<String> addOns;
+
   const ComposedLicense({
     required this.package,
     required this.plan,
@@ -69,6 +74,7 @@ class ComposedLicense {
     this.tier = PackageTier.basic,
     this.featuresResolvedFor = 'any',
     this.limitsCustom = false,
+    this.addOns = const [],
   });
 
   /// [maxDevices], [maxOutlets] and [maxUsers] together.
@@ -94,6 +100,8 @@ class ComposedLicense {
         'featuresResolvedFor': featuresResolvedFor,
         'tier': tier.id,
         'limitsCustom': limitsCustom,
+        'addOns': List<String>.from(addOns),
+        'featuresOff': const <String>[],
         // A trade package names its trade; a universal one leaves the
         // licence's own vertical alone.
         if (featuresResolvedFor != 'any') 'vertical': featuresResolvedFor,
@@ -200,6 +208,7 @@ class LicenseComposer {
     final roleTrade = Verticals.isAny(vertical) ? (packageTrade ?? Verticals.any) : vertical.trim().toLowerCase();
 
     final input = Map<String, bool>.from(package.features);
+    final honoured = <String>[];
     if (addOns.isNotEmpty) {
       final offered = {
         for (final d in PackageCatalog.addOnsFor(
@@ -211,8 +220,12 @@ class LicenseComposer {
           d.key,
       };
       for (final k in addOns) {
-        if (offered.contains(k)) input[k] = true;
+        if (offered.contains(k)) {
+          input[k] = true;
+          honoured.add(k);
+        }
       }
+      honoured.sort();
     }
 
     // A universal package is resolved trade-neutral ('any'): the licence is
@@ -265,6 +278,7 @@ class LicenseComposer {
       tier: tier,
       featuresResolvedFor: resolveFor,
       limitsCustom: limitsCustom,
+      addOns: honoured,
     );
   }
 

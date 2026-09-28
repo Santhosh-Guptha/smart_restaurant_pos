@@ -3431,6 +3431,8 @@ function handleStartTrial(json) {
       featuresResolvedFor: plan.featuresResolvedFor,
       tier: plan.tier,
       limitsCustom: plan.limitsCustom,
+      addOns: plan.addOns || [],
+      featuresOff: plan.featuresOff || [],
       expiryWarningDays: 3,
       createdAt: now,
       updatedAt: now
@@ -3832,6 +3834,8 @@ function composeLicence_(vertical, tier, planDoc, opts) {
     featuresResolvedFor: v,
     tier: t,
     limitsCustom: limitsCustom,
+    addOns: [],
+    featuresOff: [],
     vertical: v,
     expiryWarningDays: 3,
     validityDays: validityDays
@@ -5524,18 +5528,18 @@ function handleSubmitInquiry(json) {
   var model = p.business_model || p.category || "Retail / Restaurant";
   var outlets = p.outlets_count || p.outlets || "1";
   var stations = p.stations_count || p.stations || "Standard";
-  var plan = p.selected_plan || p.plan || "Commercial Plan";
+  var plan = p.selected_plan || p.plan || "Package not specified";
   var reqs = p.requirements || p.notes || "None specified";
 
   var adminEmail = PropertiesService.getScriptProperties().getProperty("admin_email") || "smartdine.platform@gmail.com";
 
   // 1. Send Admin Notification Email
   try {
-    var adminSubject = "💼 Commercial Plan Inquiry: " + brand + " (" + plan + " - " + model + ")";
+    var adminSubject = "💼 Package Inquiry: " + brand + " (" + plan + " - " + model + ")";
     var adminHtml = '<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:24px;border:1px solid #e2e8f0;border-radius:12px;background:#ffffff;">' +
       '<div style="background:#0f172a;color:#ffffff;padding:16px 20px;border-radius:8px;margin-bottom:20px;">' +
-        '<h2 style="margin:0;font-size:20px;">💼 Commercial Plan Inquiry</h2>' +
-        '<p style="margin:4px 0 0;font-size:13px;opacity:0.9;">Plan of Interest: <strong>' + plan + '</strong></p>' +
+        '<h2 style="margin:0;font-size:20px;">💼 Package Inquiry</h2>' +
+        '<p style="margin:4px 0 0;font-size:13px;opacity:0.9;">Package of Interest: <strong>' + plan + '</strong></p>' +
       '</div>' +
       '<table style="width:100%;border-collapse:collapse;font-size:14px;">' +
         '<tr style="background:#f8fafc;"><td colspan="2" style="padding:8px 12px;font-weight:bold;color:#1e293b;">👤 Contact Details</td></tr>' +

@@ -19,7 +19,7 @@ extension AdminSectionMeta on AdminSection {
       case AdminSection.tenants:
         return 'Tenant & Store Governance';
       case AdminSection.features:
-        return 'Plans & Feature Allocation';
+        return 'Feature Matrix';
       case AdminSection.audit:
         return 'System Audit Logs';
       case AdminSection.settings:

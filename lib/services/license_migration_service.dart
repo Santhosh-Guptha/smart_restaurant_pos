@@ -306,6 +306,8 @@ class CategoryPackageMove {
         'maxFranchises': composed.maxOutlets,
         'maxUsers': composed.maxUsers,
         'limitsCustom': composed.limitsCustom,
+        'addOns': addOns.toList()..sort(),
+        'featuresOff': keptOff.toList()..sort(),
       };
 }
 

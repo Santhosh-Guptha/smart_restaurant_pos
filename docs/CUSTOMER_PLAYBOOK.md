@@ -3,7 +3,7 @@
 Who asks for what, what we can actually give them today, and what to do when
 the answer is no. Written for whoever picks up the WhatsApp message.
 
-Last updated 17 Sep 2026. If you change what the product does, change this too
+Last updated 28 Sep 2026 (packages per `docs/PLATFORM_STRUCTURE.md`). If you change what the product does, change this too
 — a playbook that promises something the build does not do is worse than no
 playbook.
 
@@ -14,38 +14,50 @@ playbook.
 Every request resolves to the same question: **does the restaurant need a
 second device or a network, or not?**
 
-- **Neither** → it works on the free trial and on every offline plan. Say yes.
-- **A second device** (kitchen screen, waiter's phone) → offline plans cannot
-  do it. It is a paid add-on.
-- **A network** (other outlets, guest phones, e-mail, cloud reports) → offline
-  plans cannot do it, and never will. It is a paid add-on.
+- **Neither** → it works on the Offline tier (and the Offline trial). Say yes.
+- **A second device** (kitchen screen, waiter's phone, a second till) → the
+  Offline tier cannot do it. It needs Basic or above (restaurant waiter and
+  kitchen roles: Standard or above).
+- **A network** (other outlets, guest phones, e-mail) → the Offline tier cannot
+  do it. It needs the matching tier on the client's own Google Drive.
 
 Everything below is that rule applied to the requests that actually come in.
 
 ---
 
-## 2. What each plan gives them
+## 2. What each package gives them
 
-| | Offline counter | Offline dine-in *(the free trial)* | Connected | Omnichannel |
-|---|---|---|---|---|
-| Devices | 1 | 1 | more than 1 | more than 1 |
-| Outlets | 1 | 1 | 1 | many |
-| Storage | on the device | on the device | device + cloud | device + cloud |
+A **plan** is only how long (trial 14 days, monthly, quarterly, half-yearly,
+yearly). What the store can do is its **package**: its trade at a tier.
 
-**Always included, every plan:** billing, counter till, menu, receipt printing,
-store settings, shift & day-end, staff & roles, backup & restore.
+| | Offline | Basic | Standard | Premium | Enterprise |
+|---|---|---|---|---|---|
+| Storage | this device | own Google Drive | own Drive | own Drive | own Drive |
+| Devices | 1 | 2 | 5 | 10 | agreed per client |
+| Outlets | 1 | 1 | 1 | 3 | agreed per client |
+| Users | 1 (owner) | 3 | 10 | 25 | agreed per client |
 
-**Offline dine-in adds:** running tabs, tables & floor plan, reservations,
-kitchen ticket printing, expenses, sales analytics.
+**Always included:** billing, counter till, products/menu, receipt printing,
+store settings, day-end, staff, backup & restore.
 
-**Connected adds:** the cloud ledger — which is what unlocks e-mail receipts,
-the online menu, QR table ordering, online ordering and multiple outlets.
+**Offline — restaurant:** + dine-in, tables, reservations, kitchen ticket
+printing, expenses, analytics. **Offline — shops:** + barcode billing, khata,
+stock (pharmacy: batches & expiry), expenses, analytics.
 
-**Second-device features** — kitchen display and waiter order taking — need
-more than one device, so they are not on any offline plan.
+**Basic:** Offline + cloud ledger on the client's own Drive.
+**Standard:** + e-mail bills; restaurants also kitchen display and waiter ordering.
+**Premium:** + multiple outlets; restaurants also online menu, QR and online orders.
+**Enterprise:** Premium with limits agreed per client.
 
-The free trial is **offline dine-in**, one device, one outlet, fourteen days.
-Everything stays on that device. Nothing is uploaded.
+Single features outside the package can be added per client (add-ons) when the
+storage and device count allow.
+
+The free trial is the trade's **Offline** (on this device) or **Basic** (own
+Drive) package, chosen at sign-up, fourteen days. How to say it (contract §7):
+Offline — "Works securely on your device without depending on the cloud."
+Basic and above — "Your business data stays in your own Google Drive. We do not
+take your business data; only limited usage analytics such as bill counts are
+collected."
 
 ---
 
@@ -57,8 +69,8 @@ Everything stays on that device. Nothing is uploaded.
 
 **Trial answer:** no. The trial is one device. Tell them plainly: on the trial
 the order is punched at the counter, and that is a real way to run a floor —
-plenty of restaurants do exactly that. If they want the pad, it is the
-Connected plan.
+plenty of restaurants do exactly that. If they want the pad, it is
+Standard or above.
 
 **Do not** tell them to install the app on a second phone "to try it". The
 device limit is enforced; they will hit a lockout screen and think the product
@@ -86,8 +98,8 @@ say clearly it is a paid feature, and move on.
 **Needs:** multiple outlets → cloud ledger.
 
 **Trial answer:** the trial covers one outlet. Suggest they trial it in the
-busiest branch, because that is where they will learn the most, and quote the
-Omnichannel plan for the rollout.
+busiest branch, because that is where they will learn the most, and quote
+Premium (3 outlets) or Enterprise for the rollout.
 
 **Watch for:** an owner who assumes the trial will "just work" across branches
 and sets up three devices. They will hit the outlet limit. Ask up front how
@@ -98,24 +110,23 @@ many branches they have.
 **Needs:** e-mail receipts → cloud ledger.
 
 **Trial answer:** no, but the printed slip and the on-screen bill are there,
-and the bill can be shared from the order history as text. E-mail is Connected
+and the bill can be shared from the order history as text. E-mail is Standard
 and up.
 
 ### "Does it work when the internet goes down?"
 
-**Yes, and this is our best answer to anything.** On an offline plan there is
-no internet in the loop at all. On a connected plan the till keeps billing and
-catches up when the line comes back. Lead with this — it is the thing most
+**Yes.** On the Offline tier billing does not depend on the internet (the
+licence is checked online from time to time). On Basic and above the till keeps
+billing and catches up when the line comes back. Do not promise "never needs
+internet". Lead with this — it is the thing most
 competitors are worst at and most restaurants have been burned by.
 
 ### "Can I track stock?"
 
-**Needs:** stock & recipes.
-
-**Honest answer: not yet.** This is listed in the catalogue but **there is no
-code behind it.** Do not sell it, do not demo it, do not say "it's coming in
-the next release" unless someone has actually scheduled it. If a deal hinges on
-stock, escalate rather than promise.
+**Shops: yes.** Stock management is in every shop package: quantity on hand,
+reorder level, stock movements; pharmacies also get batches and expiry, and
+sales take from the batch that expires first. **Restaurants: recipe/ingredient
+stock is not built yet** (`inventoryEnabled` is "coming soon") — do not sell it.
 
 ### "Can I change what the bill looks like?"
 
@@ -145,7 +156,8 @@ Ask, in this order:
    printer did not take the slip.
 3. **Does the message mention the template?** If it says the slip is empty,
    the printer is fine and the *template* is the problem — someone has deleted
-   every block. Settings → Receipts & Slips → Reset that slip.
+   every block. Settings → Receipts & Slips → Reset that slip. (Reset is also how an
+   existing shop or pharmacy gets the new per-trade slips.)
 
 ### "The bill printed but the kitchen got nothing"
 
@@ -186,21 +198,24 @@ in the admin console. Do not work around it in the app.
 
 ### "I'm on two devices and my receipt layout is different on each"
 
-If they are on a Connected plan or above, template sync handles it: open
+If they are on Basic or above, template sync handles it: open
 Settings → Receipts & Slips on each till and they reconcile, newest edit wins.
-On an offline plan each device keeps its own layouts — that is by design, and
-the way to copy one across is the Export/Import buttons on that screen.
+On the Offline tier there is one device, so this does not arise; to move a
+layout to another device use the Export/Import buttons on that screen. To move
+a whole Offline store to a new device, use Settings → Backup & restore
+(encrypted file, passphrase; restore after signing in to the same store).
 
 ---
 
 ## 5. Onboarding a new customer
 
 1. **Ask how many devices and how many outlets** before anything else. It
-   decides the plan and it is the question that prevents every unhappy
+   decides the tier and it is the question that prevents every unhappy
    conversation later.
-2. **Trial sign-up** is on the website. It creates the organisation and e-mails
-   a temporary password. If the e-mail has not arrived in a few minutes, check
-   the admin console for the lead and set them up by hand.
+2. **Trial sign-up** is on the website. The owner verifies their e-mail with a code,
+   picks Offline or own Drive and sets their own password; the server creates
+   the organisation. If it fails, check the admin console for the lead and set
+   them up by hand.
 3. **First session, in this order:** store settings (name, address, GSTIN,
    FSSAI, GST rate, UPI ID) → menu → printer → one test bill. Do not skip the
    test bill; almost every setup problem shows up there.
@@ -228,9 +243,9 @@ roughly when it happened. Then hand it over.
 
 ## 7. Things not to say
 
-- Do not promise stock tracking.
+- Do not promise recipe/ingredient stock for restaurants.
 - Do not promise a date for an unbuilt feature.
-- Do not say the trial "is the full product with a time limit". It is not; it
-  is the offline dine-in set.
-- Do not suggest a second device on an offline plan.
-- Do not describe the offline plans as syncing anything, anywhere.
+- Do not say the trial "is the full product with a time limit". It is the
+  trade's Offline or Basic package.
+- Do not suggest a second device on the Offline tier.
+- Do not say "100% local", "fully offline" or give absolute guarantees.

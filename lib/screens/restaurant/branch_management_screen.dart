@@ -72,7 +72,7 @@ class _BranchManagementScreenState
             ],
           ),
           content: Text(
-            'Your current subscription allows up to $maxBranches ${vl.subscriptionBranchQuota}.\n\n'
+            'Your package allows up to $maxBranches ${vl.subscriptionBranchQuota}.\n\n'
             'To expand your franchise scale and onboard additional outlets, please contact your account manager or platform administrator.',
             style: TextStyle(color: context.textSecondary, fontSize: 14),
           ),
@@ -443,6 +443,22 @@ class _BranchManagementScreenState
                         if (userCheck.docs.isNotEmpty) {
                           throw Exception(
                               'Email "$adminEmail" is already registered.');
+                        }
+
+                        // The branch's store admin is a user too: the
+                        // licence's user limit applies (resolved, so an
+                        // offline store is the owner only).
+                        final seatCap = ref.read(entitlementsProvider).maxUsers;
+                        final orgUsers = await firestore
+                            .collection('users')
+                            .where('organizationId', isEqualTo: orgId)
+                            .get();
+                        final activeUsers = orgUsers.docs
+                            .where((d) => (d.data()['status'] ?? 'ACTIVE').toString().toUpperCase() == 'ACTIVE')
+                            .length;
+                        if (activeUsers >= seatCap) {
+                          throw Exception('Your package allows $seatCap users and all are in use. '
+                              'Remove one or ask for a larger package.');
                         }
 
                         // Generate unique outlet doc id
@@ -1781,7 +1797,9 @@ class _BranchManagementScreenState
                     outletId: outlet.id,
                     outletName: outlet.name,
                     businessCategory: session.currentOrganization?.businessCategory ?? '',
-                    maxUsers: session.currentLicense?.maxUsers ?? 0,
+                    // The resolved limit (offline is the owner only), not
+                    // the raw licence field.
+                    maxUsers: ref.read(entitlementsProvider).maxUsers,
                   ).then((_) {
                     if (context.mounted) _syncSheetAccess(context, outletId: outlet.id, quiet: true);
                   });

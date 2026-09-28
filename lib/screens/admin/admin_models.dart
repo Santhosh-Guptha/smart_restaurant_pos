@@ -93,7 +93,7 @@ class UnifiedClientLead {
         'Restaurant & Cafe';
     final plan = d['selectedPlan']?.toString().trim() ??
         d['plan']?.toString().trim() ??
-        'Commercial Plan';
+        'Package not specified';
     final outlets = d['outletsCount']?.toString().trim() ??
         d['outlets']?.toString().trim() ??
         '1 Outlet';

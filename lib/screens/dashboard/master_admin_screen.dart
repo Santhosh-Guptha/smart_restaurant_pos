@@ -192,8 +192,8 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
                 children: [
                   Text(
                     "This action will remove all client organizations, licenses, outlets, bills, and registration requests from the database.\n\n"
-                    "🛡️ Master Admin Protection Guarantee:\n"
-                    "The master admin user ($kAdminEmail) will NEVER be deleted and will remain fully active.",
+                    "🛡️ Master admin protection:\n"
+                    "The master admin user ($kAdminEmail) is kept and stays active.",
                     style: TextStyle(color: context.textPrimary, fontSize: 13, height: 1.4),
                   ),
                   const SizedBox(height: 16),
@@ -1086,10 +1086,14 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
       ("Dashboard & SaaS Analytics", "Live platform metrics, active tenants & pending alerts"),
       ("Inquiries & Pricing Desk", "Dual-feed commercial proposals and trial requests"),
       ("Tenant & Store Governance", "Manage client organizations, licenses, and branches"),
-      ("Plan & Feature Allocation", "1-Click plan presets and interactive feature toggle matrix"),
-      ("Subscription Plan Templates", "Platform tiers, limits, and public pricing definitions"),
+      ("Feature Matrix", "Each client's package features and add-ons, on its own licence"),
+      ("Plans", "Validity, price and billing cycle — a plan carries no features or limits"),
       ("Platform Audit Logs", "Comprehensive chronological security and admin audit trail"),
       ("App Updates & Maintenance", "Version management, release channels, and updates"),
+      ("Feature Guide", "Every trade's packages, tier by tier, and the add-ons each can take"),
+      ("Packages", "Five tiers per trade: features, storage and default limits"),
+      ("Migrations", "Move existing tenants onto their trade's packages"),
+      ("Business Analytics", "Tenant mix by trade, storage and tier, and daily trading totals"),
     ];
 
     final currentTitle = _selectedNavIndex < sectionTitles.length
@@ -1985,7 +1989,7 @@ class OrganizationsTab extends ConsumerStatefulWidget {
                       borderRadius: BorderRadius.circular(6),
                     ),
                     child: Text(
-                      "Dynamic Plan Onboarding",
+                      "Package & plan onboarding",
                       style: TextStyle(color: primaryAccent, fontSize: 12, fontWeight: FontWeight.bold),
                     ),
                   ),
@@ -2419,6 +2423,8 @@ class OrganizationsTab extends ConsumerStatefulWidget {
                               tier: composed.tier.id,
                               limits: selection.limitsEditable ? selection.requestedLimits : null,
                               adminOverride: selection.adminOverride && selection.limitsEditable,
+                              tableCount: effectiveTableCount,
+                              operatingMode: effectiveOperatingMode,
                             );
 
                             if (result['success'] != true) {
@@ -3886,7 +3892,7 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                                     ),
                                     IconButton(
                                       icon: const Icon(Icons.card_membership_rounded, color: ClassicTheme.successEmerald, size: 20),
-                                      tooltip: "Edit License & Plan Entitlements",
+                                      tooltip: "Edit licence (package & plan)",
                                       onPressed: () => _showRenewLicenseDialog(docId, name),
                                     ),
                                     IconButton(
@@ -4742,7 +4748,7 @@ class _RegistrationRequestsTabState extends ConsumerState<RegistrationRequestsTa
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
-                            isTrial ? "14-Day Full Access Free Trial Request" : "Commercial Plan: ${request.selectedPlan}",
+                            isTrial ? "14-Day Free Trial Request" : "Package enquiry: ${request.selectedPlan}",
                             style: TextStyle(
                               fontWeight: FontWeight.bold,
                               fontSize: 13,
@@ -5169,7 +5175,7 @@ class _RegistrationRequestsTabState extends ConsumerState<RegistrationRequestsTa
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      "Real-time incoming Free Trial signups & commercial plan leads",
+                      "Real-time incoming Free Trial signups & package leads",
                       style: TextStyle(
                         color: context.textSecondary,
                         fontSize: 12,
@@ -5230,7 +5236,7 @@ class _RegistrationRequestsTabState extends ConsumerState<RegistrationRequestsTa
                 const SizedBox(width: 6),
                 _filterChip("Free Trials", 'TRIALS', ClassicTheme.successEmerald),
                 const SizedBox(width: 6),
-                _filterChip("Plan Inquiries", 'INQUIRIES', ClassicTheme.secondaryAccent),
+                _filterChip("Package Inquiries", 'INQUIRIES', ClassicTheme.secondaryAccent),
                 const SizedBox(width: 6),
                 _filterChip("Approved / Done", 'APPROVED', ClassicTheme.successEmerald),
                 const SizedBox(width: 6),
@@ -5330,7 +5336,7 @@ class _RegistrationRequestsTabState extends ConsumerState<RegistrationRequestsTa
                           mobile: d['phone'] ?? d['mobile'] ?? '',
                           cityOrAddress: d['city'] ?? d['address'] ?? '',
                           referralSource: d['referralSource'] ?? 'Website Inquiry',
-                          selectedPlan: d['selectedPlan'] ?? d['plan'] ?? 'Commercial Plan',
+                          selectedPlan: d['selectedPlan'] ?? d['plan'] ?? 'Package not specified',
                           outlets: d['outletsCount']?.toString() ?? '1 Outlet',
                           stations: d['stationsCount']?.toString() ?? 'Standard Setup',
                           notes: d['requirements'] ?? d['notes'] ?? '',

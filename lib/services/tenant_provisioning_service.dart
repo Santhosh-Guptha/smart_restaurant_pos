@@ -69,6 +69,11 @@ class TenantProvisioningService {
     /// [adminOverride]); ignored for every other tier.
     TierLimits? limits,
     bool adminOverride = false,
+    /// Store set-up the package does not decide: tables and service style.
+    /// A shop has no tables and bills at the counter; a restaurant starts
+    /// with 15 tables, dine-in postpaid. Never read from the plan.
+    int? tableCount,
+    String? operatingMode,
   }) async {
     final cleanEmail = email.trim().toLowerCase();
     final cleanCategory = category?.trim().isNotEmpty == true ? category!.trim() : 'Restaurant & Cafe';
@@ -116,12 +121,9 @@ class TenantProvisioningService {
         if (e.value && package.features[e.key] != true && FeatureCatalog.find(e.key) != null) e.key,
     };
     // Limits come from the package's tier. Only Enterprise (or an explicit
-    // admin override) takes the caller's: [limits], else the counts on the
-    // plan object older console builds put them in.
-    final customLimits = limits ??
-        ((package.tier.allowsCustomLimits || adminOverride)
-            ? TierLimits(maxDevices: plan.maxDevices, maxOutlets: plan.maxOutlets, maxUsers: plan.maxUsers).clamped
-            : null);
+    // admin override) takes the caller's [limits]; the counts on a plan
+    // document are legacy and never read (a plan is validity only).
+    final customLimits = limits;
     final composed = LicenseComposer.compose(
       package,
       plan,
@@ -137,6 +139,11 @@ class TenantProvisioningService {
     final alignedUsers = composed.maxUsers;
     storageMode = composed.storageMode;
     final cleanName = clientName.trim();
+    final shop = Verticals.isShop(vertical);
+    final storeTables = shop ? 0 : (tableCount != null && tableCount >= 0 ? tableCount : 15);
+    final storeMode = shop
+        ? 'counterPrepaid'
+        : ((operatingMode ?? '').trim().isNotEmpty ? operatingMode!.trim() : 'dineFirstPostpaid');
     final cleanShopName = shopName.trim().isNotEmpty
         ? shopName.trim()
         : "$cleanName ${_fallbackShopSuffix(vertical)}";
@@ -194,8 +201,8 @@ class TenantProvisioningService {
         'ownerEmail': cleanEmail,
         'ownerUserId': newUserId,
         'ownerUsername': cleanUsername,
-        'tableCount': plan.tableCount,
-        'operatingMode': plan.operatingMode,
+        'tableCount': storeTables,
+        'operatingMode': storeMode,
         'aadhaar': aadhaar?.trim() ?? '',
         'pan': pan?.trim().toUpperCase() ?? '',
         'gstNo': gstNo?.trim().toUpperCase() ?? '',
@@ -264,8 +271,8 @@ class TenantProvisioningService {
         'name': '$cleanShopName (Main Branch)',
         'storeAdminEmail': cleanEmail,
         'storeAdminName': cleanName,
-        'tableCount': plan.tableCount,
-        'operatingMode': plan.operatingMode,
+        'tableCount': storeTables,
+        'operatingMode': storeMode,
         'address': address?.trim().isNotEmpty == true ? address!.trim() : 'Main Outlet',
         'phone': cleanMobile,
         'settlementUpiId': settlementUpiId?.trim() ?? '',
@@ -297,9 +304,9 @@ class TenantProvisioningService {
         'name': cleanShopName,
         'phone': cleanMobile,
         'address': address?.trim().isNotEmpty == true ? address!.trim() : 'Main Outlet',
-        'tableCount': plan.tableCount,
+        'tableCount': storeTables,
         'upiId': settlementUpiId?.trim() ?? '',
-        'operatingMode': plan.operatingMode,
+        'operatingMode': storeMode,
         'googleSheetId': '',
         'googleSheetUrl': '',
         'status': 'ACTIVE',
@@ -380,6 +387,8 @@ class TenantProvisioningService {
         vertical: vertical,
         maxStores: alignedOutlets,
         maxDevices: alignedDevices,
+        packageName: package.name,
+        offline: composed.tier.isOffline,
       ).catchError((e) {
         debugPrint("Background welcome email send warning: $e");
         return <String, dynamic>{};
@@ -396,6 +405,7 @@ class TenantProvisioningService {
           password: rawPassword,
           planName: plan.name,
           vertical: vertical,
+          packageName: package.name,
         ).catchError((e) {
           debugPrint("Background welcome WhatsApp send warning: $e");
           return <String, dynamic>{};

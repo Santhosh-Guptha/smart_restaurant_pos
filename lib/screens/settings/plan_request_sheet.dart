@@ -260,9 +260,9 @@ class _PlanRequestSheetState extends ConsumerState<PlanRequestSheet> {
                     color: context.textPrimary)),
             const SizedBox(height: DS.space2),
             Text(
-              'Your plan has not changed. An administrator reviews what you asked '
-              'for and confirms the final plan with you — you will see it here '
-              'once it is applied.',
+              'Your package has not changed yet. An administrator reviews what you '
+              'asked for and confirms the final package and plan with you — you will '
+              'see it here once it is applied.',
               style: TextStyle(
                   fontSize: DS.fontBody, height: 1.55, color: context.textSecondary),
             ),

@@ -2765,7 +2765,7 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen>
                 if (_tables.length >= maxAllowed) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
-                      content: Text('Cannot add table: Plan license limit reached ($maxAllowed tables). Please upgrade your plan in Store Settings.'),
+                      content: Text('Cannot add table: this store is set up for $maxAllowed tables. Ask your administrator to raise the table count.'),
                       backgroundColor: ClassicTheme.dangerRed,
                     ),
                   );

@@ -103,7 +103,7 @@ class _OutletOwnersDialogState extends State<OutletOwnersDialog> {
       final orgUsers = await _db.collection('users').where('organizationId', isEqualTo: widget.orgId).get();
       final active = orgUsers.docs.where((d) => (d.data()['status'] ?? 'ACTIVE').toString().toUpperCase() == 'ACTIVE').length;
       if (widget.maxUsers > 0 && active >= widget.maxUsers) {
-        throw 'This plan allows ${widget.maxUsers} users and all are in use. Remove one or ask for a larger plan.';
+        throw 'Your package allows ${widget.maxUsers} users and all are in use. Remove one or ask for a larger package.';
       }
 
       var username = email.split('@').first.replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_');

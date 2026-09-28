@@ -63,7 +63,7 @@ class FeatureGatedButton extends ConsumerWidget {
             const SizedBox(width: DS.space3),
             Expanded(
               child: Text(
-                'Not in this plan',
+                'Not in this package',
                 style: TextStyle(
                   fontSize: DS.fontTitle,
                   fontWeight: FontWeight.w700,

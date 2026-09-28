@@ -1,5 +1,8 @@
 # Packages, onboarding, encyclopedia, token printing & expiry alerts — implementation plan
 
+> **Superseded by `docs/PLATFORM_STRUCTURE.md`** (28 Sep 2026) wherever this plan describes plans carrying features, limits or roles, or package profiles as sellable packages. Plans are validity only; packages are trade × tier. Kept for history.
+
+
 **Status:** proposal, 2026-09-16. Supersedes the draft plan reviewed on 15 Sep;
 the differences are called out inline so nobody has to diff the two.
 **Branch:** `feature/packages-onboarding` off `develop` after

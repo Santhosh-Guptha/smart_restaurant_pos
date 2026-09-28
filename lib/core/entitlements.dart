@@ -1065,7 +1065,7 @@ class PlanProfile {
       final till = shop
           ? 'a complete ${trade.isEmpty ? 'shop' : trade} till'
           : (extras.isEmpty ? 'a complete counter till' : 'a complete dine-in till');
-      return 'One device, no internet. $core'
+      return 'One device, one store, one user. $core'
           '${extras.isEmpty ? '' : ', plus ${_and(extras)}'} — $till.$addOnHint';
     }
 
@@ -1110,8 +1110,8 @@ class PlanProfile {
     id: 'OFFLINE_SINGLE',
     label: 'Offline counter',
     description:
-        'One device, no internet. Billing, menu, printing, settings, day-end. '
-        'A complete till on its own.',
+        'One device, one store, one user. Billing, menu, printing, settings, '
+        'day-end. Works securely on your device without depending on the cloud.',
     storageMode: StorageModes.pureOffline,
     maxDevices: 1,
     maxOutlets: 1,
@@ -1131,8 +1131,9 @@ class PlanProfile {
     id: 'OFFLINE_RETAIL',
     label: 'Shop counter',
     description:
-        'One device, no internet. Barcode billing, customer khata, products '
-        'and pricing, expenses and day-end \u2014 a complete shop till.',
+        'One device, one store, one user. Barcode billing, customer khata, '
+        'products and pricing, stock, expenses and day-end. Works securely on '
+        'your device without depending on the cloud.',
     storageMode: StorageModes.pureOffline,
     maxDevices: 1,
     maxOutlets: 1,
@@ -1150,8 +1151,8 @@ class PlanProfile {
     id: 'OFFLINE_DINE_IN',
     label: 'Offline dine-in',
     description:
-        'Everything in Offline counter plus tables, running tabs, '
-        'reservations, kitchen tickets and expenses. Still one device.',
+        'The offline till plus tables, running tabs, reservations, kitchen '
+        'tickets and expenses. One device, one store, one user.',
     storageMode: StorageModes.pureOffline,
     maxDevices: 1,
     maxOutlets: 1,
@@ -1178,8 +1179,8 @@ class PlanProfile {
     id: 'OMNICHANNEL',
     label: 'Everything on',
     description:
-        'Connected plus kitchen display, waiter tablets, QR and online '
-        'ordering, outlets, stock and e-mail bills.',
+        'The cloud package plus kitchen display, waiter tablets, QR and '
+        'online ordering, outlets and e-mail bills.',
     storageMode: StorageModes.cloudSync,
     maxDevices: 15,
     maxOutlets: 25,

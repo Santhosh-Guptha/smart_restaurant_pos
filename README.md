@@ -102,33 +102,44 @@ In SmartDine, operational and control planes are strictly segregated:
 ## 📦 Storage Modes & Plan Profiles
 
 ### Commercial Storage Modes
-SmartDine supports three storage operating modes:
-1. **`PURE_OFFLINE`**: 100% local operation on device via Hive. No internet, cloud synchronization, or Google Sheets setup required. Maximum privacy, zero latency.
-2. **`CLIENTS_OWN_SHEETS`**: Orders and financial records synchronize directly to the restaurant owner's personal Google Drive spreadsheet via Apps Script Webhook.
-3. **`CLOUD_SYNC`**: Managed multi-device cloud synchronization supporting real-time cross-terminal orders, waiter pads, and KDS.
+1. **`PURE_OFFLINE`** (Offline tier): works on the device without depending on the cloud (Hive). One device,
+   one store, one user (the owner). Only the licence check and daily aggregates (bill counts, totals) go online.
+2. **`CLIENTS_OWN_SHEETS`** (Basic, Standard, Premium, Enterprise): business data stays in the client's own
+   Google Drive (a Sheet per store written via Apps Script). Only limited usage analytics such as bill counts
+   are collected by the platform.
+3. **`CLOUD_SYNC`**: legacy; shown only for tenants already on it.
 
-### Canonical Subscription Plans & Profiles
-Every tenant resolves through one of four canonical **Plan Profiles**:
+### Packages and plans
+The platform contract is [`docs/PLATFORM_STRUCTURE.md`](./docs/PLATFORM_STRUCTURE.md). In short:
 
-| Plan Profile | Plan ID | Default Mode | Allowed Modes | Devices | Outlets | Features Included |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **`OFFLINE_SINGLE`** | `offline_counter` | `PURE_OFFLINE` | `PURE_OFFLINE` | 1 | 1 | 9 Basic Offline (Billing, Menu, Taxes, Receipts, Day-End) |
-| **`OFFLINE_DINE_IN`** | `trial` / `offline_dine_in` | `PURE_OFFLINE` | `PURE_OFFLINE` | 1 | 1 | 13 Offline (Adds Tables, KOT, Reservations, Floor Plan, Expenses) |
-| **`CONNECTED`** | `connected` | `CLOUD_SYNC` | `CLOUD_SYNC`, `CLIENTS_OWN_SHEETS` | 5 | 1 | 15 Features (Adds Cloud Sync Ledger & Sales Analytics) |
-| **`OMNICHANNEL`** | `omnichannel` | `CLOUD_SYNC` | `CLOUD_SYNC`, `CLIENTS_OWN_SHEETS` | 15 | 25 | All 23 Features (Adds KDS, Waiter Pad, Online Menu, QR Orders) |
+- Each trade (restaurant, kirana, supermarket, pharmacy, retail) has five packages `<trade>_<tier>`:
 
-> **Free Trial Identity**: The 14-Day Free Trial is strictly provisioned as `PlanProfile.offlineDineIn` under `PURE_OFFLINE` mode. It delivers complete dining table management and KOT billing on the device with zero server configuration or cloud dependency.
+| Tier | Storage | Devices | Outlets | Users |
+| :--- | :--- | :--- | :--- | :--- |
+| offline | this device | 1 | 1 | 1 (owner) |
+| basic | own Drive | 2 | 1 | 3 |
+| standard | own Drive | 5 | 1 | 10 |
+| premium | own Drive | 10 | 3 | 25 |
+| enterprise | own Drive | per client (default 20) | per client (10) | per client (50) |
+
+- A **plan** is validity only (trial 14 days, monthly, quarterly, half-yearly, yearly).
+- **Add-ons** are per client and per trade; the client's licence (`licenses/{orgId}`) holds the resolved state.
+- The free trial is the trade's Offline or Basic (own Drive) package, chosen at sign-up.
+- The older profiles (Offline counter, Shop counter, Offline dine-in, Connected, Everything on) are legacy.
 
 ---
 
 ## 🛡️ Entitlements Engine & RBAC
 
-### 23-Feature Granular Catalogue
-Features are categorized into four commercial tiers:
-- **Offline Basic**: `billing`, `inventory`, `customReceiptHeader`, `splitPayments`, `operatingShifts`, `dayEndReports`, `salesAnalyticsOffline`, `offlineDeviceDatabase`, `pureOfflineMode`.
-- **Offline Add-Ons**: `tableManagement`, `kotPrinting`, `reservations`, `expenseManagement`.
-- **Online Basic**: `cloudSync`, `analytics`.
-- **Online Add-Ons**: `emailReceipts`, `digitalBillReceipts`, `kdsEnabled`, `waiterOrdering`, `onlineMenu`, `qrOrdering`, `onlineOrderingEnabled`, `multiOutlet`.
+### Feature catalogue
+Feature keys are grouped for the resolver (these groups are not packages; which keys a package has is set per trade and tier):
+- **Always included (core)**: `billing`, `qsrBilling`, `menuManagement`, `thermalPrinting`, `storeConfiguration`, `dayEndReports`, `staffManagement`, `backupRestore`.
+- **Offline add-ons**: `dineInBilling`, `tableManagement`, `reservations`, `dualPrinting`, `expenseManagement` (restaurant floor keys are restaurant-only).
+- **Online basic**: `cloudSync`, `analytics` (analytics is nonetheless in every tier's package from Offline up).
+- **Online add-ons**: `emailReceipts`, `kdsEnabled`, `waiterOrdering`, `onlineMenu`, `qrOrdering`, `onlineOrderingEnabled`, `multiOutlet`, `inventoryEnabled` (coming soon).
+- **Shops**: `barcodeBilling`, `customerKhata`, `stockManagement`.
+
+Source of truth: `FeatureCatalog` in `lib/core/entitlements.dart`.
 
 ### Fail-Closed Role-Based Access Control (RBAC)
 Staff members authenticate via Google Sign-In with role-scoped access:
@@ -240,7 +251,8 @@ For detailed technical specifications and operational manuals:
 * [**`ARCHITECTURE.md`**](./ARCHITECTURE.md) — Comprehensive architectural blueprint, storage modes, cryptographic specifications, and data models.
 * [**`SYSTEM_DOCUMENTATION.md`**](./SYSTEM_DOCUMENTATION.md) — Zero-Firebase operational pipeline manual, Google Sheets Schema v2, and tranche completion history.
 * [**`DEPLOYMENT_RUNBOOK.md`**](./DEPLOYMENT_RUNBOOK.md) — Step-by-step production deployment guide, serverless webhook configuration, and incident runbook.
-* [**`FLOWS_AND_SCENARIOS.md`**](./FLOWS_AND_SCENARIOS.md) — 14 end-to-end operational user journeys with sequence diagrams.
+* [**`docs/PLATFORM_STRUCTURE.md`**](./docs/PLATFORM_STRUCTURE.md) — the platform contract (trade × tier packages, plans, add-ons, licence, roles, wording).
+* [**`FLOWS_AND_SCENARIOS.md`**](./FLOWS_AND_SCENARIOS.md) — end-to-end user journeys (1–29).
 * [**`ISSUES_AND_RESOLUTIONS.md`**](./ISSUES_AND_RESOLUTIONS.md) — Complete resolution register of architectural improvements, security hardening, and bug fixes.
 
 ---
@@ -251,3 +263,6 @@ For detailed technical specifications and operational manuals:
 - Tenant → stores → store owners → staff, each seeing only their scope.
 - Platform admin **Business Analytics**: tenants by trade/storage/plan, payment mix, gross and bills — from daily aggregates only.
 - Tests: 333 (see `claude_run.ps1`). Docs: `CLAUDE.md`, `ARCHITECTURE.md` §9, `TROUBLESHOOTING.md`.
+- Platform structure (28 Sep 2026): trade × tier packages, validity-only plans, per-client add-ons, encrypted
+  offline backup/restore, receipts per trade, pharmacy batches/expiry, site page per trade. See
+  `docs/PLATFORM_STRUCTURE.md` and `ARCHITECTURE.md` §10.

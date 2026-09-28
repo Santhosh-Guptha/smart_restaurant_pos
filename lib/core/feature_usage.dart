@@ -213,7 +213,7 @@ const Map<String, FeatureUsage> kFeatureUsage = {
         'offline queued and sent when the connection returns. This is what '
         'makes a second device possible at all.',
     whenOff:
-        'The store is a single till with its own records. Nothing leaves the '
+        'The store is a single till with its own records, kept on the '
         'device: no sync, no Refresh, no Google grants, no new-order chime, '
         'and the queue simply holds anything that would have been sent.',
     controls: [
@@ -327,7 +327,7 @@ const Map<String, FeatureUsage> kFeatureUsage = {
   ),
   FeatureKeys.customerKhata: FeatureUsage(
     note:
-        'Offline-first customer credit ledger (Udhar) to record sales on credit, '
+        'Customer credit ledger (Udhar) that works on the device, to record sales on credit, '
         'track running balances, enforce credit limits, record payments received, '
         'and generate statements.',
     whenOff: 'The Customer Khata card is hidden from the dashboard.',

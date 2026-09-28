@@ -573,8 +573,8 @@ class _SaaSLoginScreenState extends ConsumerState<SaaSLoginScreen> {
         Center(
           child: Text(
             _deviceCap <= 1
-                ? "Your plan supports only 1 device and it's already in use."
-                : "Your plan supports $_deviceCap devices and $_deviceCount are already registered.",
+                ? "Your package allows only 1 device and it's already in use."
+                : "Your package allows $_deviceCap devices and $_deviceCount are already registered.",
             style: TextStyle(
               color: context.textSecondary,
               fontSize: 13,

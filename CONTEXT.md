@@ -12,9 +12,9 @@
 SmartDine is a **multi-tenant SaaS POS platform** built with Flutter. It targets small-to-mid businesses across **5 verticals**: Restaurant, Kirana, Supermarket, Pharmacy, and Retail. A single codebase produces **Android APKs**, **Web PWA** (Firebase Hosting), and **Windows desktop `.exe`**, with experimental iOS support.
 
 **Key value props:**
-- Works **fully offline** on a single device (Hive local DB) — no internet required for billing
+- **Offline tier** runs on one device without depending on the cloud (Hive local DB); billing does not need the internet
 - Scales to **cloud-synced multi-outlet** deployments with KDS, waiter ordering, analytics, and online menus
-- **Feature-gated entitlements** — the platform admin assigns a package + plan to each tenant, unlocking features progressively
+- **Feature-gated entitlements** — each tenant has a trade × tier package (features, limits) and a plan (validity only); see `docs/PLATFORM_STRUCTURE.md`
 - **Multi-role RBAC** — Owner, Manager, Billing/Cashier, Kitchen/Chef, Waiter/Captain
 
 ---
@@ -119,12 +119,12 @@ SmartDine is a **multi-tenant SaaS POS platform** built with Flutter. It targets
 | `restaurant_models.dart` (1591 lines) | `MenuItem`, `KotOrder`, `TableStatus`, `RestaurantConfig`, and ~20 other domain models |
 | `saas_models.dart` (820 lines) | `SaasLicense`, `SaasOrganization`, `SaasUser`, `AuditEntry` — multi-tenant data structures |
 | `entitlements.dart` (843 lines) | `FeatureKeys` catalogue + `EntitlementResolver` — decides what each tenant can do based on package + license |
-| `package_model.dart` | `TenantPackage` — named feature bundles (OFFLINE_SINGLE, OFFLINE_DINE_IN, CONNECTED, OMNICHANNEL) |
+| `package_model.dart` | `TenantPackage`, `PackageCatalog` (25 starters `<trade>_<tier>`), `Verticals`; legacy profile starters kept as `isLegacy` |
 | `rbac_permissions.dart` | `StaffRole` enum + permission checks (`canAccessBilling`, `canManageMenu`, etc.) |
 | `classic_theme.dart` (727 lines) | `ClassicTheme` — dual dark/light palette, accent system, `ThemeData` builder, `ThemeContextExtension` |
 | `design_tokens.dart` | `DS` — raw color/spacing/typography constants consumed by `ClassicTheme` |
 | `accent_palettes.dart` | `AccentPalette` — user-selectable accent color schemes |
-| `license_composer.dart` | Builds a `SaasLicense` from package + plan + overrides |
+| `license_composer.dart` | Builds the licence from package + plan + storage + add-ons: trade-resolved features (`featuresResolvedFor`), tier limits, roles |
 | `license_guard.dart` | Runtime feature gate checks |
 | `feature_usage.dart` | Tracks feature usage for analytics and upsell prompts |
 | `responsive.dart` | Breakpoint helpers and responsive layout utilities |
@@ -223,8 +223,8 @@ Master Admin (smartdine.platform@gmail.com)
         ├── Tenant Organizations
         │     ├── SaasOrganization (Firestore: /organizations/{orgId})
         │     ├── SaasLicense (features, limits, expiry)
-        │     ├── TenantPackage (OFFLINE_SINGLE → OMNICHANNEL)
-        │     └── SubscriptionPlan (TRIAL, MONTHLY, YEARLY, LIFETIME)
+        │     ├── TenantPackage (<trade>_<tier>: offline/basic/standard/premium/enterprise)
+        │     └── SubscriptionPlan (validity only: trial 14, monthly, quarterly, half-yearly, yearly)
         ├── Platform Admin Views
         │     ├── Dashboard, Features, Packages, Plans
         │     ├── Inquiries, Migrations, Encyclopedia
@@ -241,16 +241,20 @@ Tenant (Restaurant Owner)
         └── Store Configuration
 ```
 
-### Operating Modes
+### Tiers (per trade)
 
-| Mode | Storage | Network | Use Case |
-|------|---------|---------|----------|
-| **OFFLINE_SINGLE** | Hive only | None | Single-device street food stall |
-| **OFFLINE_DINE_IN** | Hive only | None | Small restaurant, one device |
-| **CONNECTED** | Hive + Google Sheets | Required for sync | Multi-device, cloud backup |
-| **OMNICHANNEL** | Hive + Firebase | Always-on | KDS, waiter apps, online ordering, multi-outlet |
+| Tier | Storage | Devices / outlets / users |
+|------|---------|---------------------------|
+| **offline** | This device only | 1 / 1 / 1 (owner), fixed |
+| **basic** | Client's own Google Drive | 2 / 1 / 3 |
+| **standard** | Client's own Drive | 5 / 1 / 10 |
+| **premium** | Client's own Drive | 10 / 3 / 25 |
+| **enterprise** | Client's own Drive | set per client (default 20 / 10 / 50) |
 
-### Entitlement Tiers
+The old profiles (OFFLINE_SINGLE, OFFLINE_DINE_IN, CONNECTED, OMNICHANNEL) are legacy and only read for old
+licences. Contract: `docs/PLATFORM_STRUCTURE.md`.
+
+### Feature groups (`CommercialTier`, used by the resolver and Feature Guide — not packages)
 
 ```
 offlineBasic (always on)
@@ -259,10 +263,10 @@ offlineBasic (always on)
 offlineAddOn (purchasable)
   → dineInBilling, tableManagement, reservations, dualPrinting, expenseManagement
 
-onlineBasic (requires CONNECTED+)
+onlineBasic (needs a cloud storage mode)
   → cloudSync, analytics
 
-onlineAddOn (requires CONNECTED+ or OMNICHANNEL)
+onlineAddOn (cloud storage mode; some need a second device)
   → emailReceipts, kdsEnabled, waiterOrdering, onlineMenu, qrOrdering, onlineOrderingEnabled, multiOutlet, inventoryEnabled
 ```
 
@@ -361,7 +365,7 @@ c:\Users\santhosh\Downloads\smart_restaurant_pos
 
 ### Completed (v1.2.0)
 - [x] Multi-tenant SaaS platform with entitlement-based feature gating
-- [x] Package + Plan system (4 tiers: OFFLINE_SINGLE → OMNICHANNEL)
+- [x] Package + Plan system (first version: 4 profiles OFFLINE_SINGLE → OMNICHANNEL; replaced by trade × tier, §17)
 - [x] RBAC with 5 roles
 - [x] Offline-first sync with outbox and adaptive sync engine
 - [x] Dark/light theme with accent selection
@@ -525,12 +529,12 @@ Each tenant org maps to a **private Google Spreadsheet** in Drive. Apps Script p
   - Passes `requestedPackageId` and `requestedPlanId` through to the onboard dialog.
 - **Dynamic Master Admin Onboard Modal (`lib/screens/dashboard/master_admin_screen.dart`)**:
   - Automatically matches client's registered category (`Supermarket / Departmental Store`, `Kirana`, etc.).
-  - Preselects the client's requested package (e.g. `omnichannel` Everything on) and plan (e.g. `omnichannel` Annual).
+  - Preselects the client's requested package (`<trade>_<tier>`), tier, plan and (Enterprise) limits.
   - Hides dine-in table quotas and restaurant operating modes for retail stores, displaying a clean retail indicator.
   - Dynamically renders action button ("Onboard Supermarket") and confirmation feedback.
 - **Vertical-Aware Package & Plan Editor (`lib/screens/admin/widgets/tenant_package_editor.dart`)**:
-  - Automatically filters out `offlineDineIn` and `offline_dine_in` plans for non-restaurant verticals.
-  - Dynamically renders retail-adapted descriptions for counter, connected, and omnichannel tiers.
+  - Offers only the tenant trade's five tier packages (and its custom packages) and that trade's add-ons.
+  - Limits: Offline fixed, Enterprise per client, others tier defaults unless an admin overrides them.
 
 ---
 
@@ -544,3 +548,10 @@ Product renamed **SmartBizz** (data ids keep "smartdine"). New modules: `lib/cor
 `tenant_metrics_service.dart`, `lib/widgets/outlet_owners_dialog.dart`,
 `lib/screens/login/license_revalidate_screen.dart`, `lib/screens/admin/views/admin_business_analytics_view.dart`.
 Storage at onboarding: Offline or Client's own Google Sheets. See `CLAUDE.md` and `ARCHITECTURE.md` §9.
+
+## 17. Platform structure (28 Sep 2026)
+Trade × tier packages, validity-only plans, per-client add-ons, one licence document per client kept in
+live sync between the Feature Matrix and the licence dialog, roles by trade and tier, encrypted offline
+backup/restore (`.sbzbak`), receipts per trade, a single shop Billing card, pharmacy batches/expiry, website
+page per trade. Contract: `docs/PLATFORM_STRUCTURE.md`; code map: `ARCHITECTURE.md` §10; flows:
+`FLOWS_AND_SCENARIOS.md` 21–29; deploy: `DEPLOYMENT_RUNBOOK.md` (platform structure release).

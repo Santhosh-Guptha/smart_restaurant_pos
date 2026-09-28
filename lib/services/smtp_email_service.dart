@@ -520,7 +520,7 @@ class SmtpEmailService {
       );
       final footerHtml = _buildFooterHtml();
 
-      final planDisplay = selectedPlan ?? 'Standard Plan';
+      final planDisplay = selectedPlan ?? 'Not specified';
 
       // Build key features list if provided
       final featureListHtml = StringBuffer();
@@ -637,6 +637,12 @@ SmartBizz Team
     /// The tenant's trade. Only features for this trade are listed, in its
     /// own words (a pharmacy never reads about tables or dishes).
     String? vertical,
+    /// The package the tenant is on ("Pharmacy Basic"); [planTier] is the
+    /// plan (the term) only.
+    String? packageName,
+    /// True for the Offline tier: the data notice is then the offline wording
+    /// of contract §7 instead of the own-Google-Drive one.
+    bool offline = false,
   }) async {
     final cleanEmail = recipientEmail.trim().toLowerCase();
     if (cleanEmail.isEmpty || !cleanEmail.contains('@')) {
@@ -644,6 +650,8 @@ SmartBizz Team
     }
 
     try {
+      final pkgName = (packageName ?? '').trim();
+      final dataNotice = offline ? PackageCatalog.offlineNotice : PackageCatalog.driveNotice;
       final headerHtml = _buildHeaderHtml(
         badgeText: "Account Activated",
         badgeBg: "#dcfce7",
@@ -660,6 +668,7 @@ SmartBizz Team
 
       for (final def in FeatureCatalog.all) {
         if (kFeatureUsage[def.key]?.implemented == false) continue;
+        if (FeatureCatalog.isComingSoon(def.key)) continue;
         if (!def.appliesTo(vertical)) continue;
         final line = '<strong>${def.labelFor(vertical)}:</strong> ${def.descriptionFor(vertical)}';
         if (feat[def.key] == true) {
@@ -679,11 +688,13 @@ Hello $clientName,
 Your store "$shopName" has been approved and activated!
 
 Organization ID: $organizationId
-Plan: $planTier
+${pkgName.isEmpty ? '' : 'Package: $pkgName\n'}Plan: $planTier
 Login Email: $cleanEmail
 Default Password: ${defaultPassword ?? "Set by admin"}
 
 On your first login, you will be prompted to set your private permanent password.
+
+$dataNotice
 
 Best regards,
 SmartBizz Team
@@ -717,7 +728,8 @@ SmartBizz Team
     <div class="creds-box">
       <div class="cred-row"><span class="cred-label">Organization ID:</span> <span class="cred-val">$organizationId</span></div>
       <div class="cred-row"><span class="cred-label">Login Email:</span> <span class="cred-val">$cleanEmail</span></div>
-      <div class="cred-row"><span class="cred-label">Active Plan Tier:</span> <span class="cred-val">$planTier</span></div>
+      ${pkgName.isEmpty ? '' : '<div class="cred-row"><span class="cred-label">Package:</span> <span class="cred-val">$pkgName</span></div>'}
+      <div class="cred-row"><span class="cred-label">Plan:</span> <span class="cred-val">$planTier</span></div>
       ${maxStores != null ? '<div class="cred-row"><span class="cred-label">Store Quota:</span> <span class="cred-val">$maxStores store(s)</span></div>' : ''}
       ${maxDevices != null ? '<div class="cred-row"><span class="cred-label">Device Quota:</span> <span class="cred-val">$maxDevices device(s)</span></div>' : ''}
       ${defaultPassword != null && defaultPassword.isNotEmpty ? '<div class="cred-row" style="margin-bottom: 0;"><span class="cred-label">Default Password:</span> <span class="cred-val">$defaultPassword</span></div>' : ''}
@@ -728,11 +740,13 @@ SmartBizz Team
     </div>
 
     <div class="section-title" style="color: #15803d;">
-      &#9989; Features Unlocked & Ready in Your Plan:
+      &#9989; Features Unlocked & Ready in Your Package:
     </div>
     <ul class="feature-list">
       $activeFeaturesHtml
     </ul>
+
+    <div class="notice-box">$dataNotice</div>
 
     ${upgradeList.isNotEmpty ? '''
     <div class="upgrade-box">

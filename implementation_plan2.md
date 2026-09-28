@@ -1,5 +1,8 @@
 # SmartDine Comprehensive Implementation Plan: Restaurant Operations, Time Analytics, Dynamic Plans, UI/UX & Instant Onboarding
 
+> **Superseded by `docs/PLATFORM_STRUCTURE.md`** (28 Sep 2026) wherever this plan describes plans carrying features, limits or roles, or package profiles as sellable packages. Plans are validity only; packages are trade × tier. Kept for history.
+
+
 ## Overview & Vision
 This implementation plan covers the complete transformation of **SmartDine Restaurant POS**:
 1. **Restaurant Operations & Menu Architecture**:

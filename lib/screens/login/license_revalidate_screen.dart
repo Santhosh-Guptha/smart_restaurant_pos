@@ -96,9 +96,9 @@ class _LicenseRevalidateScreenState extends ConsumerState<LicenseRevalidateScree
                         rolledBack
                             ? 'This device\'s clock is earlier than a time it has already recorded. '
                                 'Set the correct date and time, then connect to the internet once so the licence can be checked.'
-                            : 'SmartBizz works without internet, but the licence has to be confirmed online at least '
+                            : 'SmartBizz keeps billing on this device when the connection drops, but the licence has to be confirmed online at least '
                                 'once every ${widget.lease.graceDays} days.$lastText Connect to Wi-Fi or a phone hotspot '
-                                'for a few seconds and tap Check now. Your bills are safe on this device.',
+                                'for a few seconds and tap Check now. Your bills stay on this device.',
                         style: TextStyle(fontSize: DS.fontBody, height: 1.55, color: context.textSecondary),
                       ),
                       if (_result != null) ...[

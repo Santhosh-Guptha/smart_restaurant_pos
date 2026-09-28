@@ -1,5 +1,8 @@
 # Enterprise Client Onboarding, Google Sheet Automation & Multi-Store Hierarchy Plan
 
+> **Superseded by `docs/PLATFORM_STRUCTURE.md`** (28 Sep 2026) wherever this plan describes plans carrying features, limits or roles, or package profiles as sellable packages. Plans are validity only; packages are trade × tier. Kept for history.
+
+
 ## Overview
 This architectural upgrade delivers an enterprise-grade multi-tenant platform for **SmartDine Restaurant POS**, enabling:
 1. **Application Admin Master Control**: App Admin (`santhoshbukka5@gmail.com`) can onboard unlimited client organizations with tailored licenses (7/14/custom day trials, max users, allowed roles, multi-store caps, feature toggles).

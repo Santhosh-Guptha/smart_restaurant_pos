@@ -734,9 +734,9 @@ class _TenantAccessDialogState extends ConsumerState<TenantAccessDialog> {
                         subtitle: _changePending
                             ? 'A storage-mode change is already pending for this tenant \u2014 '
                                 'finish or cancel it before changing the package again.'
-                            : 'What they can do (package) and for how long, how many outlets, '
-                                'devices and staff (plan). Saved through the resolver, so the '
-                                'tenant gets exactly what you see.',
+                            : 'What they can do and how many outlets, devices and staff '
+                                '(package), and for how long (plan). Saved through the resolver, '
+                                'so the tenant gets exactly what you see.',
                         onTap: _changePending
                             ? () => AppToast.showWarning(context,
                                 'A storage change is already pending',

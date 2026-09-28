@@ -25,6 +25,7 @@ import '../restaurant/store_configuration_screen.dart';
 import '../../services/backup_service.dart';
 import '../../services/offline_backup_service.dart';
 import 'backup_restore_screen.dart';
+import '../admin/widgets/tier_visuals.dart';
 
 class SettingsSidebarDialog extends ConsumerStatefulWidget {
   final int initialTab;
@@ -441,12 +442,21 @@ class _SettingsSidebarDialogState extends ConsumerState<SettingsSidebarDialog> {
                       Flexible(
                         child: Builder(builder: (_) {
                           final ent = ref.watch(entitlementsProvider);
-                          return Text(
-                            PackageCatalog.nameFor(ent.vertical, ent.tier),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            textAlign: TextAlign.end,
-                            style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: ClassicTheme.secondaryAccent),
+                          return Row(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: [
+                              Icon(TierVisuals.icon(ent.tier), size: 14, color: TierVisuals.color(ent.tier)),
+                              const SizedBox(width: 4),
+                              Flexible(
+                                child: Text(
+                                  PackageCatalog.nameFor(ent.vertical, ent.tier),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  textAlign: TextAlign.end,
+                                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: ClassicTheme.secondaryAccent),
+                                ),
+                              ),
+                            ],
                           );
                         }),
                       ),

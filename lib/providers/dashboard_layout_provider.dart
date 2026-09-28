@@ -275,7 +275,8 @@ final List<DashboardCardMeta> kAllDashboardCards = [
     defaultColor: ClassicTheme.warningAmber,
     requiredFeature: FeatureKeys.customerKhata,
     allowedRoles: ['OWNER', 'MANAGER', 'BILLING', 'CASHIER'],
-    allowedVerticals: {Verticals.kirana, Verticals.pharmacy, Verticals.retail},
+    // Every shop trade: the khata is in every shop package (contract §3).
+    allowedVerticals: {Verticals.kirana, Verticals.supermarket, Verticals.pharmacy, Verticals.retail},
   ),
   DashboardCardMeta(
     id: 'stock',

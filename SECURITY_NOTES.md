@@ -42,7 +42,7 @@ This can't be fixed by tightening rules alone, because the app does its own sign
 
 | Area | What it does | Limits |
 |---|---|---|
-| Offline licence lease (`LicenseLease`) | 30 days offline (7 cloud), renewed on every server read, blocks on clock rollback. **Signed:** Code.gs `LICENSE_LEASE` returns an RSA-signed lease (org, status, end date, issued, valid-until); the app checks it with the public key in `lib/core/lease_public_key.dart`. Once a device has one, it trusts only signed leases — editing or deleting it blocks until the next online check | Needs Script property `LEASE_SIGNING_KEY` (the PEM in `secrets/lease_signing_key.pem`, git-ignored). A patched app binary can still skip checks |
+| Offline licence lease (`LicenseLease`) | 30 days offline (7 cloud), renewed on every server read, blocks on clock rollback. **Signed:** Code.gs `LICENSE_LEASE` returns an RSA-signed lease (org, status, end date, storage mode, issued, valid-until, and since Sep 2026 tier and max devices/outlets/users — offline always 1/1/1); the app checks it with the public key in `lib/core/lease_public_key.dart`. Once a device has one, it trusts only signed leases — editing or deleting it blocks until the next online check | Needs Script property `LEASE_SIGNING_KEY` (the PEM in `secrets/lease_signing_key.pem`, git-ignored). A patched app binary can still skip checks |
 | Credential cache | bcrypt hash cached only after a server-verified login | First login on a device must be online |
 | Sheet sharing (`SheetAccessReconciler`) | Each store's sheet shared only with that store's people; everyone else revoked; audited | Runs on the tenant owner's signed-in device only |
 | `tenant_metrics` | Daily aggregates per store (count, gross, payment split). No bill lines, no customer data | Rules open today; `firestore.rules.next` limits write to the tenant and read to the admin |
@@ -72,3 +72,14 @@ Apps Script `SEND_EMAIL` / `SEND_OTP_EMAIL` accept mail from any caller (tills u
 2. Apps Script → Project settings → Script properties → add `LEASE_SIGNING_KEY` = the whole file, including the BEGIN/END lines.
 3. Keep a copy somewhere safe (password manager). Do not e-mail it or paste it into chat.
 4. Rotating it: generate a new pair, update the property and `lib/core/lease_public_key.dart`, ship a build. Devices re-fetch on their next online check.
+
+## Platform structure round (28 Sep 2026)
+
+| Area | What it does | Limits |
+|---|---|---|
+| Offline backup (`OfflineBackupService`, `.sbzbak`) | AES-256-GCM (12-byte random nonce, 128-bit tag) with a key from PBKDF2-HMAC-SHA256 (16-byte random salt, 150 000 iterations; files asking for < 100 000 are refused). The clear header (format, salt, nonce, iterations, orgId, date) is GCM additional data, so it cannot be edited. Passphrase ≥ 8 characters, never stored or logged | A weak passphrase can be brute-forced offline from a copied file. A lost passphrase means the backup cannot be opened |
+| Backup exclusions | Never exported or restored: device identity, sessions, sync outbox/cursors, shop users, terminal keys, licence/lease, and every key matching the secret list (password, PIN hash, tokens, API keys, SMTP, credential, licence, device, login, trial…). Staff records lose `pin`/`pinHash`/`password`; restored staff set a new PIN | The file still holds business data (bills, customers, products) — treat it like the till itself |
+| Restore scope | Only after signing in, only into the same `orgId`; only whitelisted boxes are written | — |
+| Lease limits | The signed lease carries tier and limits, so an offline device cannot raise its own device/user count by editing Hive | Older app builds ignore the new fields |
+| Offline owner-only sign-in | An offline store has one user: a non-owner sign-in is refused and signed out (`saas_session_provider.dart`); the staff screen does not add users on Offline; device cap from the resolved licence | Cloud stores' user count is enforced where staff are created, not at sign-in |
+| Licence writes | Feature Matrix / licence dialog write only `licenses/{orgId}` (+ legacy mirror, `public_stores` flags) for that client; package apply is a separate confirmed action | Firestore rules are still open until `firestore.rules.next` is deployed |

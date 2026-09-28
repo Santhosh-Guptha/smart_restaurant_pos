@@ -20,6 +20,14 @@
 12. [Scenario 12: Tenant Package Editor & Granular Feature Gating](#scenario-12-tenant-package-editor--granular-feature-gating)
 13. [Scenario 13: Advisory Renewal Requests & Platform Admin Binding Resolution](#scenario-13-advisory-renewal-requests--platform-admin-binding-resolution)
 14. [Scenario 14: Receipt Template Engine & Thermal Printing Flow](#scenario-14-receipt-template-engine--thermal-printing-flow)
+15. Scenarios 15–20: SmartBizz storage choice, stores, staff, offline till, trade change, analytics
+16. Scenarios 21–29: platform structure (trade × tier) — sign-up, onboarding, upgrade request, Feature Matrix
+    live sync, business-type change, apply package, migrate to category packages, offline backup/restore,
+    pharmacy goods-in and sale by expiry
+
+Package/plan rules for every scenario: `docs/PLATFORM_STRUCTURE.md`. Where an older scenario below names
+package profiles (Offline dine-in, Connected, Omnichannel), read it as the trade × tier packages of
+Scenarios 21–29.
 
 ---
 
@@ -300,6 +308,8 @@ sequenceDiagram
 
 ## Scenario 12: Tenant Package Editor & Granular Feature Gating
 
+> Superseded: the editor now picks the tenant's trade × tier package, not a profile. See Scenarios 22, 24 and 25.
+
 ```mermaid
 sequenceDiagram
     autonumber
@@ -324,6 +334,8 @@ sequenceDiagram
 ---
 
 ## Scenario 13: Advisory Renewal Requests & Platform Admin Binding Resolution
+
+> Superseded in part: the sheet now lists the trade's five tiers and plans by validity. See Scenario 23.
 
 ```mermaid
 sequenceDiagram
@@ -379,7 +391,7 @@ sequenceDiagram
 ## Scenario 15: Onboarding with a storage choice (SmartBizz)
 1. Web trial or platform admin → onboarding form. Storage: **Offline** or **Client's own Google Sheets**
    (default). `CLOUD_SYNC` appears only when editing a tenant already on it.
-2. Code.gs creates organisation, licence (trade-correct plan: shops get Shop counter), owner user
+2. Code.gs creates organisation, licence (the trade's `<trade>_offline` or `<trade>_basic` package, see Scenario 21), owner user
    (`businessCategory` + `vertical`), and outlet `outlet_<orgId>`.
 3. Offline: the till works with no network after the first licence check. Own Sheets: the owner signs in
    with Google on first launch and the main store's sheet is created in their Drive.
@@ -402,8 +414,96 @@ sequenceDiagram
 
 ## Scenario 19: Trade change by the platform admin
 Admin edits the tenant's category → organisation `vertical`, licence `vertical` and owner `businessCategory`
-are rewritten together; on next launch the app shows the new trade's screens, words and accent.
+are rewritten together, and the licence moves to the new trade's package at the same tier (Scenario 25); on
+next launch the app shows the new trade's screens, words and accent.
 
 ## Scenario 20: Platform business analytics
 Each till uploads daily aggregates (no bill lines). Admin → Business Analytics → pick 7/30/90 days → pies
 and bars across all tenants; top tenants by gross.
+
+---
+
+## Scenarios 21–29: platform structure (trade × tier)
+
+Rules: `docs/PLATFORM_STRUCTURE.md`. Code map: `ARCHITECTURE.md` §10.
+
+## Scenario 21: Self sign-up — Offline or own Drive
+1. Website or app → Sign up → business category (trade) → e-mail code (`SIGNUP_SEND_CODE` / `SIGNUP_VERIFY_CODE`).
+2. Free trial: the owner picks **Offline on this device** or **My own Google Drive**. The screen shows the
+   package heading, features, limits and the contract wording for that tier.
+3. The app calls `START_TRIAL` with `tier` = `offline` or `basic`. Code.gs `trialPlan_()` reads
+   `packages/<trade>_<tier>` (falls back to its code table) and `composeLicence_()` writes the licence:
+   features resolved for the trade (`featuresResolvedFor = <trade>`), tier limits, trade roles, 14-day trial plan.
+4. Offline: 1 device, 1 store, owner only; data on the device. Own Drive: the owner signs in with Google on
+   first launch and the store's sheet is created in their Drive.
+5. Paid request instead of trial: the owner picks a tier (Enterprise: devices, outlets and users asked for);
+   a lead is written with `requestedPackageId`, `requestedTier`, `requestedPlan`, requested limits. Nothing is
+   provisioned until the admin onboards it.
+
+## Scenario 22: Admin onboarding — category → tier → plan → limits
+1. Console → lead (or new tenant) → onboarding dialog, pre-filled from the lead's requested package/tier/plan.
+2. Category decides the trade; only that trade's five packages are offered.
+3. Tier decides storage (Offline = device; others = own Drive) and default limits.
+4. Plan decides validity only.
+5. Limits: fixed on Offline, defaults on Basic/Standard/Premium (admin may override → `limitsCustom`),
+   entered per client on Enterprise.
+6. `TenantProvisioningService` writes organisation, licence (via `LicenseComposer`), owner user and outlet.
+
+## Scenario 23: Upgrade / renewal request from the app
+1. Owner → banner or Settings → Upgrade / Renew → `PlanRequestSheet`.
+2. The sheet lists the trade's five tiers (heading, features, limits) and the plans by validity. No prices.
+3. Enterprise: the owner enters devices, outlets and users needed.
+4. Submit → `renewal_requests/{orgId}` (`requestedPackageId`, `requestedTier`, `requestedPlanId`,
+   `requestedStorageMode`, `requestedLimits`). The licence does not change.
+5. Admin reviews it in the console and applies the change in the tenant licence dialog or Feature Matrix.
+
+## Scenario 24: Feature Matrix ↔ licence dialog live sync
+1. Admin opens Feature Matrix for client A, and (elsewhere) the tenant licence dialog for A.
+2. Both subscribe to `licenses/A`. Saving in one updates the other within a snapshot.
+3. If the other view has unsaved edits, it shows "This licence changed — Reload" instead of overwriting.
+4. Edits are limited to A's trade: its packages, its add-ons, limits per tier rules. Nothing is written to a
+   package or to another client.
+
+## Scenario 25: Business type changes (e.g. kirana → pharmacy)
+1. Admin changes the category (console tenant edit), or "Align business types" repairs it.
+2. Organisation, licence and owner get the new `businessCategory` + `vertical` together.
+3. The licence moves to `<newTrade>_<same tier>`; add-ons the new trade also offers and switched-off features
+   its package still has are kept; limits kept; plan and storage unchanged. `featuresResolvedFor` = new trade.
+4. Next app start shows the new trade's screens, receipt labels and icon.
+
+## Scenario 26: Apply a changed package to its tenants
+1. Console → Packages → edit e.g. `kirana_standard` → Save (changes the package only).
+2. "Apply to tenants on this package" (confirmed) → `PackageService.applyToTenants` recomposes each licence on it.
+3. Each client's add-ons and switched-off features are kept; features that depend on a switched-off key are
+   switched off too.
+4. If the package moved storage family, the organisation gets a `pendingStorageChange` for the owner to
+   complete; the mode is not flipped.
+
+## Scenario 27: Move existing tenants to category packages
+1. Console → Migrations → **Align business types** → dry run → Align.
+2. Console → Migrations → **Move tenants to category packages** → dry run lists each tenant: from → to
+   `<trade>_<tier>`, and the changes (features, limits, roles, `featuresResolvedFor`).
+3. Tier: offline stays offline; a cloud tenant on an offline-tier package goes to basic; others by their
+   package/profile and device count.
+4. Kept: add-ons, switched-off features that were a real choice (maps resolved for another trade or unstamped
+   are not treated as choices for that trade's keys), limits above the new defaults.
+5. Move N → licences written; already aligned licences are counted as done and not listed.
+
+## Scenario 28: Offline store — backup and restore on a new device
+1. Old device: Settings → Backup & restore → Create backup → passphrase (≥ 8 characters, not stored) →
+   `.sbzbak` file saved / downloaded. Summary shows record counts per box.
+2. New device: install, sign in online as the owner of the same store (first login must be online).
+3. Settings → Backup & restore → choose file. The clear-text header is checked first: another store's file is
+   refused. Enter the passphrase: a wrong one fails to decrypt.
+4. A summary (store, trade, date, counts) is shown; confirm → data boxes replaced, settings merged, staff
+   merged (restored staff set a new PIN). Licence, sessions, device ids and secrets are never restored.
+5. Web build reloads; the till continues with the restored data.
+
+## Scenario 29: Pharmacy goods in and sale by expiry
+1. Products → a medicine → Stock → Receive: quantity, batch no., expiry (cost optional) → a new batch.
+2. The product's quantity is the sum of its batches; the Expiry tab lists batches expired or expiring soon.
+3. At the till, sellable quantity excludes expired batches; a product whose every batch is expired is blocked
+   with a message.
+4. On settle, `consumeForSale` takes from the batch expiring first (FEFO); the bill line records batch and
+   expiry, printed by the pharmacy invoice (batch, exp, MRP).
+5. Expired stock can be written off (logged in `stock_movements`).

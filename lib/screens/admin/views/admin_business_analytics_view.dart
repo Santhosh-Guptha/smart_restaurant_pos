@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
 import '../../../core/classic_theme.dart';
+import '../../../core/entitlements.dart';
 import '../../../core/package_model.dart';
 
 /// Platform-wide business analytics for the platform admin.
@@ -73,7 +74,14 @@ class _AdminBusinessAnalyticsViewState extends State<AdminBusinessAnalyticsView>
     for (final d in licDocs) {
       final m = d.data() as Map<String, dynamic>;
       final org = (m['orgId'] ?? d.id).toString();
-      plans[org] = (m['planProfile'] ?? m['planTier'] ?? 'TRIAL').toString();
+      // The tier, by its name (never a legacy profile id such as CONNECTED).
+      plans[org] = PackageTier.fromPackageOrProfile(
+        tier: m['tier']?.toString(),
+        packageId: m['packageId']?.toString(),
+        profileId: m['planProfile']?.toString(),
+        storageMode: m['storageMode']?.toString(),
+        maxDevices: (m['maxDevices'] as num?)?.toInt(),
+      ).label;
     }
     final byTrade = <String, double>{}, byStorage = <String, double>{}, byPlan = <String, double>{};
     final orgNames = <String, String>{}, orgTrade = <String, String>{};
@@ -163,7 +171,7 @@ class _AdminBusinessAnalyticsViewState extends State<AdminBusinessAnalyticsView>
         grid([
           _card(context, 'Tenants by trade', _Pie(data: byTrade, palette: _palette)),
           _card(context, 'Storage mode', _Pie(data: byStorage, palette: _palette)),
-          _card(context, 'Plan', _Pie(data: byPlan, palette: _palette)),
+          _card(context, 'Package tier', _Pie(data: byPlan, palette: _palette)),
           _card(context, 'Payment mix ($_days d)', _Pie(data: payMix, palette: _palette, money: true)),
           _card(context, 'Gross by trade ($_days d)',
               _Bars(data: gmvByTrade.entries.toList(), color: _palette[0], format: _money)),

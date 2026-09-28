@@ -28,7 +28,7 @@ DATA_CLOUD = ("Your business data stays in your own Google Drive. We do not take
               "only limited usage analytics such as bill counts are collected.")
 DATA_OFFLINE = ("Works securely on your device without depending on the cloud. Export an encrypted backup "
                 "whenever you like and restore it on another device.")
-ADDONS = ("Extra features for your trade can be added to your plan. Tell us what your counter needs and we "
+ADDONS = ("Extra features for your trade can be added to your package. Tell us what your counter needs and we "
           "will switch on the ones that apply to your trade.")
 
 TIERS = ["offline", "basic", "standard", "premium", "enterprise"]
@@ -155,12 +155,12 @@ CATEGORIES = [
              "offline"),
         ],
         faq=[("Does it keep working if the internet drops?",
-              "The Offline plan works on the device without depending on the cloud. On Basic and above, bills "
+              "The Offline package works on the device without depending on the cloud. On Basic and above, bills "
               "sync to the cloud ledger in your own Google Drive."),
              ("Do my guests need an app to order by QR?",
               "No. QR table ordering (Premium) opens in the guest's browser. Nothing to install."),
              ("Is stock or recipe costing included?",
-              "Not today. Ingredient stock and recipes are not part of SmartBizz for restaurants yet, so we do not include them in any plan."),
+              "Not today. Ingredient stock and recipes are not part of SmartBizz for restaurants yet, so we do not include them in any package."),
              ("Can I keep my printer?",
               "If it speaks ESC/POS over Bluetooth, USB or the network, as most 58mm and 80mm thermal printers do, yes."),
              ("Do you take a cut of UPI payments?",
@@ -206,7 +206,7 @@ CATEGORIES = [
         faq=[("Do I need a barcode scanner?",
               "It helps, but no. A USB or Bluetooth scanner works, and you can always search by name or type the code."),
              ("What about customers who buy on credit?",
-              "That is the khata: a running balance per customer, every bill and every payment against it. It is in every plan, including Offline."),
+              "That is the khata: a running balance per customer, every bill and every payment against it. It is in every package, including Offline."),
              ("Can I bill loose items by weight from a scale?",
               "Not yet. Loose-weight billing is not supported today; packed items and items with a fixed unit price bill normally."),
              ("Do you take a cut of UPI payments?",
@@ -296,7 +296,7 @@ CATEGORIES = [
         faq=[("Does it track batch numbers and expiry?",
               "Yes. Medicines take a batch number and expiry date when stock comes in, the Expiry tab lists what is running out, and the till sells first-to-expire."),
              ("Can I keep a monthly account for a family?",
-              "Yes, that is the khata, included from the Offline plan: a running balance per customer."),
+              "Yes, that is the khata, included from the Offline package: a running balance per customer."),
              ("Does the drug licence number print on the bill?",
               "Yes. Enter it once in pharmacy settings with your GSTIN, and it prints on the bill."),
              ("Do you take a cut of UPI payments?",
@@ -341,7 +341,7 @@ CATEGORIES = [
         faq=[("Can it handle sizes and colours?",
               "Size and colour variants are not supported yet. Today you add each size or colour as its own product with its own barcode and price."),
              ("Can I handle returns and exchanges?",
-              "Sales returns are not a feature today, so we do not list them in any plan. Tell us how you handle them and we will tell you what fits."),
+              "Sales returns are not a feature today, so we do not list them in any package. Tell us how you handle them and we will tell you what fits."),
              ("Do I get the customer's balance?",
               "Yes. The khata shows every credit bill and payment per customer, and what they still owe."),
              ("Can I take UPI at the counter?",
@@ -414,13 +414,13 @@ PLANS = [
          blurb="The complete till on one device. Restaurants get tables, KOTs and reservations; shops get barcode billing, the khata and stock.",
          points=["Billing, printing and your own UPI QR", "Products, staff, shifts and day-end",
                  "Expenses and sales analytics", "Encrypted backup you can restore"]),
-    dict(tier="basic", tag="Plan", hot=False,
+    dict(tier="basic", tag="Package", hot=False,
          blurb="Everything in Offline, plus the cloud ledger in your own Google Drive and a second device.",
          points=["Everything in Offline", "Cloud ledger in your own Drive", "Up to 2 devices"]),
-    dict(tier="standard", tag="Plan", hot=True,
+    dict(tier="standard", tag="Package", hot=True,
          blurb="Everything in Basic, plus e-mailed bills. Restaurants also get the kitchen display and waiter ordering.",
          points=["Everything in Basic", "E-mail bills", "Restaurants: kitchen display & waiter ordering"]),
-    dict(tier="premium", tag="Plan", hot=False,
+    dict(tier="premium", tag="Package", hot=False,
          blurb="Everything in Standard, plus more than one outlet. Restaurants also get the online menu, QR table ordering and online orders.",
          points=["Everything in Standard", "Up to 3 outlets", "Restaurants: online menu, QR & online ordering"]),
     dict(tier="enterprise", tag="Tailored", hot=False,
@@ -434,9 +434,9 @@ HUB_FAQ = [
     ("What does it run on?",
      "Android phones and tablets, Windows PCs, and in the browser. Receipts go to 58mm or 80mm thermal printers over Bluetooth, USB or the network."),
     ("Where is my data kept?",
-     "Offline plan: " + DATA_OFFLINE + " Basic and above: " + DATA_CLOUD),
+     "Offline package: " + DATA_OFFLINE + " Basic and above: " + DATA_CLOUD),
     ("Do you take a cut of my UPI payments?",
      "No. SmartBizz is not a payment gateway. Bills are settled by cash, your card machine or a UPI QR for your own UPI ID, and the money goes straight to your bank."),
-    ("Can I move up a plan later?",
+    ("Can I move up a package later?",
      "Yes. Start on Offline and move to Basic, Standard, Premium or Enterprise when you need more devices, the cloud ledger or more outlets. Talk to us and we will move you across."),
 ]

@@ -10,6 +10,7 @@ import '../../settings/staff_management_screen.dart';
 import '../../../providers/saas_session_provider.dart';
 import '../widgets/tenant_package_editor.dart';
 import '../widgets/tier_visuals.dart';
+import '../widgets/trade_selector.dart';
 
 /// SaaS Overview & Real-Time Platform Analytics Dashboard.
 class AdminDashboardView extends ConsumerWidget {
@@ -838,7 +839,7 @@ class AdminDashboardView extends ConsumerWidget {
                   businessCategory: (data['businessCategory'] ?? data['category'])?.toString(),
                 );
                 final category = (data['businessCategory'] ?? Verticals.label(vertical)).toString();
-                final tradeIcon = _tradeIcon(vertical);
+                final tradeIcon = TradeSelector.iconFor(vertical);
 
                 return Container(
                   padding: const EdgeInsets.all(12),
@@ -1034,15 +1035,5 @@ class AdminDashboardView extends ConsumerWidget {
         ],
       ),
     );
-  }
-}
-
-IconData _tradeIcon(String vertical) {
-  switch (vertical) {
-    case Verticals.kirana:      return Icons.local_grocery_store_rounded;
-    case Verticals.supermarket: return Icons.shopping_cart_rounded;
-    case Verticals.pharmacy:    return Icons.local_pharmacy_rounded;
-    case Verticals.retail:      return Icons.storefront_rounded;
-    default:                    return Icons.restaurant_rounded;
   }
 }

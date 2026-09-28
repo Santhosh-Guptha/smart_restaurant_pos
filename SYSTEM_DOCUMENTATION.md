@@ -251,7 +251,7 @@ When a spreadsheet is connected, `ensureV2Sheets(ss)` automatically provisions a
 
 ### **Phase 10 — Tenant Package Editor & Storage Migration Gate**
 - **3-Step Tenant Package Editor (`TenantPackageEditor`)**:
-  - Step 1: Package profile selection (`offlineSingle`, `offlineDineIn`, `connected`, `omnichannel`).
+  - Step 1: Package profile selection (`offlineSingle`, `offlineDineIn`, `connected`, `omnichannel`). *Superseded by Phase 16: the editor now offers the tenant trade's five tier packages.*
   - Step 2: Granular add-on selection with real-time dependency resolution and feature count badge.
   - Step 3: Hardware and resource limits confirmation (`maxDevices`, `maxOutlets`, `maxUsers`, `storageMode`).
 - **Owner-Only Expiry Alerts & Advisory Plan Requests**:
@@ -263,6 +263,7 @@ When a spreadsheet is connected, `ensureV2Sheets(ss)` automatically provisions a
   - Counter billing remains completely accessible during migration to prevent operational interruption.
 
 ### **Phase 11 — Canonical Trial Identity & Plan Reseeding**
+> Superseded by Phase 16: the trial is the trade's Offline or Basic package, and plans are validity only.
 - **Free Trial as Offline Dine-In**:
   - Established canonical trial identity: the 14-day Free Trial is strictly `PlanProfile.offlineDineIn` operating in `PURE_OFFLINE` mode.
   - 1 device, 1 outlet, 13 full offline features (counter billing, tables, reservations, KOT printing, floor plan, expenses). Zero cloud roundtrips and zero sheet provisioning overhead.
@@ -358,3 +359,14 @@ locked rules); licence lease for offline tills; store owners per outlet; onboard
 Client's own Google Sheets; one sheet per store with sharing kept in sync by `SheetAccessReconciler`;
 `tenant_metrics` aggregates and the admin **Business Analytics** screen. Details: `ARCHITECTURE.md` §9,
 `ISSUES_AND_RESOLUTIONS.md` §3, `TROUBLESHOOTING.md`.
+
+### **Phase 16 — Platform structure: trade × tier (28 Sep 2026)**
+Contract: `docs/PLATFORM_STRUCTURE.md`. Each trade has five packages `<trade>_<tier>` (Offline on the device,
+1/1/1 owner only; Basic, Standard, Premium on the client's own Google Drive with tier limits; Enterprise with
+limits per client). Plans are validity only. Add-ons are per client and per trade. `LicenseComposer` (and
+`composeLicence_` in Code.gs) writes one licence per client with trade-resolved features
+(`featuresResolvedFor`), limits and roles; the Feature Matrix and the tenant licence dialog edit that document
+with live sync. Migrations: "Align business types", "Move tenants to category packages". Also: encrypted
+offline backup/restore (`.sbzbak`), receipts per trade with a pharmacy invoice, one shop Billing card,
+pharmacy batches/expiry with FEFO, website page per trade. Details: `ARCHITECTURE.md` §10,
+`FLOWS_AND_SCENARIOS.md` 21–29, `ISSUES_AND_RESOLUTIONS.md` §3 (38–54).

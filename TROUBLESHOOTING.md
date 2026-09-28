@@ -23,7 +23,7 @@ Firebase CLI in headless shells) are in `DEPLOYMENT_RUNBOOK.md` §5.
 | Symptom | Cause | Fix |
 |---|---|---|
 | A kirana/pharmacy tenant opens restaurant screens / tables / KOT | Trade was read from different fields in different places | `Verticals.resolve()` everywhere; run console → Migrations → **Align business types** once to repair old docs. |
-| Shop trial lost barcode/khata | Starter packages were vertical-scoped and stripped keys | Starter packages are `Verticals.any`; `OFFLINE_RETAIL` (Shop counter) carries barcode/khata/expenses/analytics. |
+| Shop trial lost barcode/khata | Licences were resolved as a restaurant, writing `false` for shop keys | Trade packages now resolve for their trade; unstamped maps fall back to the package for other-trade keys. See "Packages, licences and backup" below. |
 | Admin password reset itself after every app start | `ensureMasterAdminUserExists` rewrote it | It no longer writes a password (7ea6379). |
 | Second branch writes into the first branch's sheet | Sheet de-dup searched by org id, and provisioning overwrote the till's active sheet | Sheets are keyed by outlet id and `saveAsActive:false` for other branches (0e036ce). Existing tenants: open Branches → **Sync Google Sheet access** to create the missing sheets. |
 | A removed staff member can still open the sheet | Sharing was only done at creation | `SheetAccessReconciler` revokes anyone not in the desired set (runs every 3 h on the owner's device, after store-owner edits, and from the Branches button). Needs the owner signed in with Google on that device. |
@@ -75,3 +75,22 @@ Claude will not type passwords, create accounts, or permanently delete data on y
 | Till never gets a signed lease | `LEASE_SIGNING_KEY` not set, or the device has no Firebase sign-in (old login, service-account properties missing) | Set the property; sign out and in once online. Until then the unsigned 30-day lease still works. |
 | "This device needs to sign in again online to renew its licence" | Signed lease expired/removed and no Firebase session on the device | Sign out, sign in with internet. |
 | All tills blocked after removing the signing key | Devices that had a signed lease only trust signed leases | Put the key back (same one), or ship a build with a new public key. |
+
+## Packages, licences and backup (trade × tier)
+
+Rules: `docs/PLATFORM_STRUCTURE.md`; code map: `ARCHITECTURE.md` §10.
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| A feature is missing for one shop (barcode, khata, stock, e-mail bills…) | Licence on a legacy package, resolved for another trade, or a lower tier than expected | Open the Feature Matrix for that client: check trade, tier and `featuresResolvedFor` on `licenses/{orgId}` (trade package → `<trade>`; legacy/universal → `any`; missing → read as `restaurant`). Run Migrations → **Move tenants to category packages** (dry run first). If the key is not in the tier, add it as an add-on or change tier. |
+| Feature Matrix shows "This licence changed — Reload" | The same licence was saved elsewhere (tenant licence dialog, another admin, a migration) while this view had unsaved edits | Tap Reload, then redo the edit. The view never overwrites a newer licence silently. |
+| Offline store cannot add staff; staff cannot sign in to it | By design: Offline is one user, the owner | Move the client to Basic or above (own Drive). |
+| "User limit reached" when adding staff | `maxUsers` for the tier (owner included) | Raise the tier, or on Enterprise raise the client's limits. |
+| Restore refused: "This backup belongs to a different store" | The file's `orgId` is not the signed-in store | Sign in to the store the backup was made for. The header cannot be edited — GCM authenticates it. |
+| Restore refused: wrong passphrase | GCM tag check failed (wrong passphrase, or the file was altered) | Use the passphrase set when the backup was made. It is not stored anywhere and cannot be recovered. |
+| Restore says "Sign in to your store before restoring a backup" | No store signed in on this device | Sign in online as the owner first, then restore. |
+| Web till still shows old screens after a deploy | Browser kept the previous bundle | Hard refresh once (Ctrl+Shift+R). New builds use no-cache headers and reload when the new service worker takes over; tabs opened before that change may need one manual refresh. |
+| Shop bill still prints "FSSAI", "Restaurant copy" or TOKEN/LOCATION; pharmacy bill without batch/expiry | The tenant's stored slips are copies of the old starters (seeding never overwrites) | Settings → Receipts & Slips → open the slip → **Reset**. For pharmacies: order types with no mapping use the "Pharmacy invoice"; one mapped to another invoice keeps it until changed. |
+| New trials still get the old packages / old limits, or the lease lacks limits | Code.gs in Apps Script is an older version | Paste `google_apps_script/Code.gs` as a new version of the existing deployment, run `smokeTestTrialProvisioning`; see `DEPLOYMENT_RUNBOOK.md` (release checklist). |
+| Packages view shows fewer than five tiers for a trade | Starters not yet seeded to `packages/` | Open the Packages view as admin (it calls `PackageService.ensureStarters`), or use "Reset to the tier defaults" on a starter. |
+| Migration dry run lists no tenants | Every licence is already on `<trade>_<tier>` and aligned | Nothing to do; the count of already-done tenants is shown. |
