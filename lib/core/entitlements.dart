@@ -803,6 +803,18 @@ class PlanProfile {
     omnichannel,
   ];
 
+  /// The starter package that fits [vertical]: a shop never runs on the
+  /// restaurant starters (bare till, offline dine-in) and a restaurant never
+  /// on Shop counter. Paid and online packages are universal and returned
+  /// as they are (the resolver drops other trades' features from them).
+  static PlanProfile alignedFor(PlanProfile p, String? vertical) {
+    if (vertical == null || vertical.isEmpty || vertical == 'any') return p;
+    final shop = vertical != 'restaurant';
+    if (shop && (p.id == offlineSingle.id || p.id == offlineDineIn.id)) return offlineRetail;
+    if (!shop && p.id == offlineRetail.id) return offlineDineIn;
+    return p;
+  }
+
   /// Looks a profile up by its stored id, accepting the commercial names as
   /// well so a document written with either form resolves.
   static PlanProfile byId(String? id) {
@@ -929,14 +941,28 @@ class Entitlements {
     String? storageMode,
     String? profileId,
     String vertical = 'restaurant',
+    /// True for the running app (entitlementsProvider), which knows the
+    /// tenant's real trade: a licence written on the other trade's starter
+    /// package is read as the right one. Consoles and composers leave it off
+    /// so they show exactly what is stored.
+    bool alignStarterToVertical = false,
   }) {
     if (isMasterAdmin) return Entitlements.platformAdmin;
     if (license == null) return Entitlements.grace;
 
-    final profile = PlanProfile.byId(
+    final stored = PlanProfile.byId(
       profileId ?? license.planProfile ?? license.planTier,
     );
+    final profile = alignStarterToVertical ? PlanProfile.alignedFor(stored, vertical) : stored;
     final explicit = <String, bool>{}..addAll(license.features);
+    if (profile.id != stored.id) {
+      // The licence was composed for the other trade's starter, so its
+      // explicit "off" for this trade's own keys (barcode, khata, stock for a
+      // shop) is part of that mistake, not a choice. Other toggles stand.
+      for (final k in profile.extraKeys) {
+        if (explicit[k] == false) explicit.remove(k);
+      }
+    }
 
     // Offline is a mode. The legacy feature flag is honoured as an alias.
     final legacyFlag = explicit[FeatureKeys.pureOfflineMode] == true;

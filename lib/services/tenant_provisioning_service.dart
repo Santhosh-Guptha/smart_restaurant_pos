@@ -59,15 +59,13 @@ class TenantProvisioningService {
     final resolvedMode = StorageModes.all.contains(storageMode.toUpperCase())
         ? storageMode.toUpperCase()
         : StorageModes.clientsOwnSheets;
-    var profile = PlanProfile.byId(planProfile ?? _deriveProfileId(plan, resolvedMode));
-    // An offline shop belongs on "Shop counter" (barcode, khata, stock), not
-    // the restaurant packages: a pharmacy approved on the bare till or on
-    // offline dine-in could not scan a barcode, and its welcome e-mail listed
-    // tables and kitchen tickets.
-    if (Verticals.isShop(vertical) &&
-        (profile.id == PlanProfile.offlineSingle.id || profile.id == PlanProfile.offlineDineIn.id)) {
-      profile = PlanProfile.offlineRetail;
-    }
+    final requestedProfile = PlanProfile.byId(planProfile ?? _deriveProfileId(plan, resolvedMode));
+    // The starter must fit the trade (PlanProfile.alignedFor): a pharmacy
+    // approved on the bare till could not scan a barcode, and its welcome
+    // e-mail listed tables and kitchen tickets.
+    final profile = PlanProfile.alignedFor(requestedProfile, vertical);
+    final packageRealigned = profile.id != requestedProfile.id;
+    if (packageRealigned) packageId = profile.id;
     final probe = SaasLicense(
       planTier: plan.billingCycle,
       planProfile: profile.id,
@@ -75,7 +73,9 @@ class TenantProvisioningService {
       maxFranchises: plan.maxOutlets,
       maxUsers: plan.maxUsers,
       maxDevices: plan.maxDevices,
-      features: Map<String, bool>.from(plan.features),
+      // A realigned starter keeps none of the old package's "off" for its own keys.
+      features: Map<String, bool>.from(plan.features)
+        ..removeWhere((k, v) => packageRealigned && v == false && profile.extraKeys.contains(k)),
       startDate: DateTime.now(),
       endDate: DateTime.now().add(Duration(days: plan.validityDays)),
       vertical: vertical,

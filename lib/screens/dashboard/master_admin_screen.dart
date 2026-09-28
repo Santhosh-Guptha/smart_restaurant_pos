@@ -1962,12 +1962,13 @@ class OrganizationsTab extends ConsumerStatefulWidget {
         (await PackageService.getById(Verticals.defaultPackageFor(businessCategory))) ??
         TenantPackage.fromProfile(PlanProfile.offlineSingle);
 
-    // If not a restaurant, never start on offline dine-in
-    if (!isRestaurantInitial && startPackage.id == PlanProfile.offlineDineIn.id) {
-      final fallbackPkg = await PackageService.getById(Verticals.defaultPackageFor(businessCategory));
-      if (fallbackPkg != null) {
-        startPackage = fallbackPkg;
-      }
+    // The requested package must fit the business type: a shop that asked
+    // for the bare till or offline dine-in starts on Shop counter, a
+    // restaurant that asked for Shop counter on offline dine-in.
+    final alignedId = PlanProfile.alignedFor(PlanProfile.byId(startPackage.id), Verticals.forCategory(businessCategory)).id;
+    if (PlanProfile.byId(startPackage.id).id != alignedId) {
+      final fitted = await PackageService.getById(alignedId);
+      startPackage = fitted ?? TenantPackage.fromProfile(PlanProfile.byId(alignedId));
     }
     if (!context.mounted) return;
     TenantPackageSelection selection =

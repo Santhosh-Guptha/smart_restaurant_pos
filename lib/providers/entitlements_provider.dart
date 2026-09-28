@@ -23,6 +23,7 @@ final entitlementsProvider = Provider<Entitlements>((ref) {
     // feature flag. The legacy flag is still honoured inside fromLicense.
     storageMode: session.currentOrganization?.storageMode,
     vertical: vertical,
+    alignStarterToVertical: true,
   );
 
   // The one place the network switch is set. Everything that talks to the

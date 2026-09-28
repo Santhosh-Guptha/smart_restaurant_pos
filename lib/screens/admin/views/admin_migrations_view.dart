@@ -712,7 +712,8 @@ class _CategoryAlignCardState extends State<_CategoryAlignCard> {
             'A tenant\'s trade is stored on the organisation, its licence and its owner. Older edits changed '
             'the category without the vertical, and web trials never wrote the vertical at all, so some tenants '
             'open on another trade\'s screens. This resolves each one with the app\'s own rule and writes the '
-            'answer everywhere. Dry run first.',
+            'answer everywhere, and moves a tenant on the other trade\'s free starter package to its own '
+            '(a shop to Shop counter, a restaurant to Offline dine-in). Dry run first.',
             style: TextStyle(fontSize: DS.fontCaption, color: context.textSecondary, height: 1.45),
           ),
           const SizedBox(height: DS.space3),
@@ -740,7 +741,8 @@ class _CategoryAlignCardState extends State<_CategoryAlignCard> {
                         '${row.orgVerticalChanges ? '  \u00b7 vertical $from \u2192 ${row.vertical}' : ''}'
                         '${row.categoryChanges ? '  \u00b7 category \u201c${row.category.isEmpty ? '(none)' : row.category}\u201d \u2192 \u201c${row.canonicalCategory}\u201d' : ''}'
                         '${row.licenseChanges ? '  \u00b7 licence' : ''}'
-                        '${row.ownerChanges ? '  \u00b7 owner' : ''}',
+                        '${row.ownerChanges ? '  \u00b7 owner' : ''}'
+                        '${row.packageChanges ? '  \u00b7 package ${PlanProfile.byId(row.storedProfile).label} \u2192 ${PlanProfile.byId(row.alignedProfile).label}' : ''}',
                         style: TextStyle(fontSize: DS.fontMicro, color: context.textSecondary),
                       ),
                     );
@@ -751,9 +753,8 @@ class _CategoryAlignCardState extends State<_CategoryAlignCard> {
             if (bare.isNotEmpty) ...[
               const SizedBox(height: DS.space2),
               Text(
-                '${bare.length} shop${bare.length == 1 ? ' is' : 's are'} on "Offline counter", which has no barcode '
-                'billing or khata: ${bare.map((b) => b.orgName).join(', ')}. Move them to "Shop counter" from the '
-                'tenant editor if they should have both \u2014 this card does not change packages.',
+                '${bare.length} shop${bare.length == 1 ? ' is' : 's are'} on a restaurant starter package and will move to '
+                '"Shop counter" (barcode billing, khata, stock): ${bare.map((b) => b.orgName).join(', ')}.',
                 style: const TextStyle(fontSize: DS.fontMicro, color: ClassicTheme.warningAmber),
               ),
             ],

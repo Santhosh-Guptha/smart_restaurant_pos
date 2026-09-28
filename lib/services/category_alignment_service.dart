@@ -23,9 +23,16 @@ class CategoryFix {
   final bool hasLicense;
 
   /// A shop still on the bare till ("Offline counter"), which denies the
-  /// barcode scanner and the khata. Reported, never changed here: moving a
-  /// tenant to another package is a commercial decision for the tenant editor.
+  /// barcode scanner and the khata.
   final bool shopOnBareTill;
+
+  /// Stored starter package id, and the one that fits the trade
+  /// (PlanProfile.alignedFor). Different = the licence is moved to the
+  /// right starter: a shop on the bare till or offline dine-in goes to Shop
+  /// counter, a restaurant on Shop counter to offline dine-in. Only the free
+  /// starters are ever swapped; paid packages are left alone.
+  final String storedProfile;
+  final String alignedProfile;
 
   const CategoryFix({
     required this.orgId,
@@ -39,13 +46,17 @@ class CategoryFix {
     required this.ownerUserId,
     required this.hasLicense,
     required this.shopOnBareTill,
+    this.storedProfile = '',
+    this.alignedProfile = '',
   });
+
+  bool get packageChanges => hasLicense && storedProfile.isNotEmpty && alignedProfile != storedProfile;
 
   bool get categoryChanges => category != canonicalCategory;
   bool get orgVerticalChanges => orgVertical != vertical;
   bool get licenseChanges => hasLicense && licenseVertical != vertical;
   bool get ownerChanges => ownerUserId != null && ownerCategory != canonicalCategory;
-  bool get needsWrite => categoryChanges || orgVerticalChanges || licenseChanges || ownerChanges;
+  bool get needsWrite => categoryChanges || orgVerticalChanges || licenseChanges || ownerChanges || packageChanges;
 }
 
 class CategoryAlignmentReport {
@@ -54,7 +65,7 @@ class CategoryAlignmentReport {
   const CategoryAlignmentReport({required this.rows, required this.alreadyAligned});
 
   List<CategoryFix> get toWrite => rows.where((r) => r.needsWrite).toList();
-  List<CategoryFix> get bareTillShops => rows.where((r) => r.shopOnBareTill).toList();
+  List<CategoryFix> get bareTillShops => rows.where((r) => r.packageChanges && Verticals.isShop(r.vertical)).toList();
 }
 
 /// Makes every tenant's business type say one thing in every document.
@@ -121,6 +132,8 @@ class CategoryAlignmentService {
         ownerUserId: ownerExists ? ownerId : null,
         hasLicense: lic != null,
         shopOnBareTill: Verticals.isShop(vertical) && profile == PlanProfile.offlineSingle.id,
+        storedProfile: profile.isEmpty ? '' : PlanProfile.byId(profile).id,
+        alignedProfile: profile.isEmpty ? '' : PlanProfile.alignedFor(PlanProfile.byId(profile), vertical).id,
       );
       if (fix.needsWrite || fix.shopOnBareTill) {
         rows.add(fix);
@@ -151,10 +164,17 @@ class CategoryAlignmentService {
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
       inBatch++;
-      if (r.licenseChanges) {
+      if (r.licenseChanges || r.packageChanges) {
         // update(), inside the batch: only licences that exist are touched.
+        final fitted = PlanProfile.byId(r.alignedProfile);
         batch.update(_db.collection('licenses').doc(r.orgId), {
           'vertical': r.vertical,
+          if (r.packageChanges) ...{
+            'planProfile': fitted.id,
+            'packageId': fitted.id,
+            // The new starter's own features on (the old one had them off).
+            for (final k in fitted.extraKeys) 'features.$k': true,
+          },
           'updatedAt': FieldValue.serverTimestamp(),
         });
         inBatch++;
