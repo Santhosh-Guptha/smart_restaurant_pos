@@ -73,17 +73,17 @@ class _ChangePasswordDialogState extends ConsumerState<ChangePasswordDialog> {
     });
     try {
       final db = FirebaseFirestore.instance;
-      DocumentReference<Map<String, dynamic>>? ref;
+      DocumentReference<Map<String, dynamic>>? docRef;
       Map<String, dynamic>? data;
       for (final col in const ['users', 'staff_users']) {
         final doc = await db.collection(col).doc(widget.userId).get();
         if (doc.exists) {
-          ref = doc.reference;
+          docRef = doc.reference;
           data = doc.data();
           break;
         }
       }
-      if (ref == null || data == null) throw 'Your account record was not found. Sign in again and retry.';
+      if (docRef == null || data == null) throw 'Your account record was not found. Sign in again and retry.';
 
       final hash = (data['passwordHash'] ?? '').toString();
       final plain = (data['password'] ?? '').toString();
@@ -94,7 +94,7 @@ class _ChangePasswordDialogState extends ConsumerState<ChangePasswordDialog> {
       if (_current.text == _next.text) throw 'Choose a password different from the current one.';
 
       final newHash = BCrypt.hashpw(_next.text, BCrypt.gensalt());
-      await ref.update({
+      await docRef.update({
         'passwordHash': newHash,
         'password': FieldValue.delete(),
         'mustChangePassword': false,
