@@ -600,7 +600,9 @@ class ItemModifierGroup {
         .toList(),
   );
 
-  /// Standard presets for quick restaurant configuration
+  /// Sample groups the menu editor may offer as a starting point. They are
+  /// never applied implicitly: an item has exactly the groups saved on it,
+  /// and one without groups has no modifiers (see ItemModifierDialog).
   static List<ItemModifierGroup> get standardPresets => [
     const ItemModifierGroup(
       id: 'portion_size',

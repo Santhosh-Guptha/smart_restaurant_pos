@@ -10,6 +10,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../core/classic_theme.dart';
 import '../../core/constants.dart';
+import '../../core/item_model_contract.dart';
 import '../../core/license_guard.dart';
 import '../../core/restaurant_models.dart';
 import '../../providers/daily_token_provider.dart';
@@ -26,6 +27,7 @@ import '../../core/vertical_labels.dart';
 import '../../core/package_model.dart';
 import '../../core/upi_payment.dart';
 import 'widgets/upi_qr_payment_sheet.dart';
+import 'widgets/weighed_and_variant_pickers.dart';
 import '../../core/receipt/receipt_context.dart';
 import '../../core/receipt/receipt_context_builder.dart';
 import '../../core/receipt/receipt_print_service.dart';
@@ -504,17 +506,22 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
       q == q.roundToDouble() ? q.toStringAsFixed(0) : q.toStringAsFixed(2);
 
   /// A message when one more of [itemId] would exceed the sellable stock.
+  /// [itemId] may be a variant line id (`<product>::<variant>`).
   String? _stockLimitMessage(String itemId, double wantedQty) {
     Map<String, dynamic>? item;
-    for (final d in _menuItems) {
-      if ((d['id'] ?? d['productId'] ?? '').toString() == itemId) {
-        item = d;
-        break;
+    if (itemId.contains(ItemContract.lineIdSeparator)) {
+      item = StockService.lineItem(itemId, _menuItems);
+    } else {
+      for (final d in _menuItems) {
+        if ((d['id'] ?? d['productId'] ?? '').toString() == itemId) {
+          item = d;
+          break;
+        }
       }
     }
     if (item == null) return null;
     final stock = _tillStockOf(item);
-    if (stock == null || wantedQty <= stock) return null;
+    if (stock == null || wantedQty <= stock + 1e-9) return null;
     return stock <= 0
         ? '${item['name']} is ${_vl.isRestaurant ? 'sold out' : 'out of stock'}'
         : 'Cannot add more: only ${_fmtStockQty(stock)} in stock';
@@ -545,12 +552,65 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
     }
   }
 
-  int _getCartQty(String itemId) {
-    final idx = _cart.indexWhere((c) => c.productId == itemId);
-    return idx >= 0 ? _cart[idx].qty.toInt() : 0;
+  /// Everything of [itemId] in the cart (weighed goods may be fractional).
+  double _getCartQty(String itemId) => _cartQtyOf(itemId);
+
+  /// Shops only: the product is sold by weight/volume.
+  bool _isWeighedItem(Map item) => !_vl.isRestaurant && ItemContract.isWeighed(item);
+
+  /// Product ids of the weighed goods on the menu (shops only), for the
+  /// receipt's "0.500 kg" lines.
+  Set<String> get _weighedProductIds => _vl.isRestaurant
+      ? const <String>{}
+      : {
+          for (final d in _menuItems)
+            if (ItemContract.isWeighed(d)) (d['id'] ?? '').toString(),
+        };
+
+  bool _isWeighedLine(KotItem line) =>
+      !_vl.isRestaurant && _weighedProductIds.contains(line.productId);
+
+  /// A cart quantity for display: "0.500 kg" for weighed lines, "3" otherwise.
+  String _qtyLabel(KotItem line) =>
+      WeighedQty.label(line.qty, line.unit, weighed: _isWeighedLine(line));
+
+  /// "x3", or " 0.500 kg" for a stored shop line saved with a weighed unit
+  /// (only weighed lines are saved with one).
+  String _storedQtyText(KotItem it) =>
+      !_vl.isRestaurant && ItemContract.weighedUnits.contains(it.unit.trim().toLowerCase())
+          ? ' ${ItemContract.formatQty(it.qty, it.unit)}'
+          : ' x${it.qty.toInt()}';
+
+  /// The one entry point for "Add": a shop product with variants asks which
+  /// one, a weighed product asks for the weight, an item with option groups
+  /// opens them, anything else goes straight on the bill.
+  Future<void> _onAddTapped(Map<String, dynamic> item) async {
+    if (!_vl.isRestaurant && ItemContract.hasVariants(item)) {
+      final view = await VariantPickerSheet.show(context, product: item, stockOn: _stockOn);
+      if (view == null || !mounted) return;
+      _addToCart(view);
+      return;
+    }
+    if (_isWeighedItem(item)) {
+      final qty = await WeightEntryDialog.show(context, item: item);
+      if (qty == null || qty <= 0 || !mounted) return;
+      _addToCart(item, qty: qty);
+      return;
+    }
+    if (_hasCustomizeOptions(item)) {
+      await _customizeAndAddToCart(item);
+      return;
+    }
+    _addToCart(item);
   }
 
-  void _addToCart(Map<String, dynamic> item, {List<ItemModifierOption>? customModifiers}) {
+  void _addToCart(Map<String, dynamic> item, {List<ItemModifierOption>? customModifiers, double qty = 1}) {
+    // A shop product with variants is only sold as one of them.
+    if (!_vl.isRestaurant && ItemContract.hasVariants(item)) {
+      _onAddTapped(item);
+      return;
+    }
+    final weighed = _isWeighedItem(item);
     // Expired medicine cannot be billed.
     final blocked = _stockOn ? StockService.blockReason(item) : null;
     if (blocked != null) {
@@ -577,7 +637,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
 
     final stock = _tillStockOf(item);
     final itemId = (item['id'] ?? item['productId'] ?? '').toString();
-    if (stock != null && stock > 0 && _cartQtyOf(itemId) + 1 > stock) {
+    if (stock != null && stock > 0 && _cartQtyOf(itemId) + qty > stock + 1e-9) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text("Cannot add more: only ${_fmtStockQty(stock)} in stock"),
@@ -603,13 +663,16 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
       final mods = customModifiers ?? const <ItemModifierOption>[];
       final modSummary = mods.map((m) => m.name).join(', ');
 
-      final existingIndex = _cart.indexWhere((c) =>
-          c.productId == item['id'] &&
-          c.modifiersSummary == modSummary);
+      // Each weighing of a weighed product is its own line.
+      final existingIndex = weighed
+          ? -1
+          : _cart.indexWhere((c) =>
+              c.productId == item['id'] &&
+              c.modifiersSummary == modSummary);
 
       if (existingIndex >= 0) {
         final existing = _cart[existingIndex];
-        _cart[existingIndex] = existing.copyWith(qty: existing.qty + 1);
+        _cart[existingIndex] = existing.copyWith(qty: existing.qty + qty);
       } else {
         // A shop's products never go to a kitchen, whatever an older save
         // stored on them.
@@ -622,7 +685,8 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
             productId: item['id']?.toString() ?? UniqueKey().toString(),
             name: item['name']?.toString() ?? _vl.itemSingular,
             price: basePrice + delta,
-            qty: 1,
+            qty: qty,
+            unit: weighed ? ItemContract.unitOf(item) : 'plate',
             isVeg: item['isVeg'] != false,
             sendsToKitchen: sendsToKitchen,
             kitchenStatus: sendsToKitchen ? 'PENDING' : 'SERVED',
@@ -634,24 +698,17 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
     });
   }
 
-  /// Restaurants: always (built-in portion/spice/add-ons). Shops: only when
-  /// the product has its own option groups.
-  bool _hasCustomizeOptions(Map<String, dynamic> item) =>
-      _vl.isRestaurant || (item['modifierGroups'] is List && (item['modifierGroups'] as List).isNotEmpty);
+  /// Only when the item has its own option groups (restaurants and shops
+  /// alike). There are no built-in options: an item without groups is
+  /// added directly.
+  bool _hasCustomizeOptions(Map<String, dynamic> item) => ItemModifierDialog.needsDialog(item);
 
   Future<void> _customizeAndAddToCart(Map<String, dynamic> item) async {
     final itemName = (item['name'] ?? _vl.itemSingular).toString();
     final basePrice = (item['price'] as num?)?.toDouble() ?? 0.0;
 
-    List<ItemModifierGroup>? groups;
-    if (item['modifierGroups'] is List && (item['modifierGroups'] as List).isNotEmpty) {
-      groups = (item['modifierGroups'] as List)
-          .map((g) => ItemModifierGroup.fromMap(Map<String, dynamic>.from(g as Map)))
-          .toList();
-    }
-    // The built-in options (portion, spice, add-ons) are food. A shop only
-    // sees options it set up on the product itself.
-    if (groups == null && !_vl.isRestaurant) {
+    final groups = ItemModifierDialog.groupsFor(item);
+    if (groups.isEmpty) {
       _addToCart(item);
       return;
     }
@@ -673,7 +730,8 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
     setState(() {
       final idx = _cart.indexWhere((c) => c.productId == itemId);
       if (idx >= 0) {
-        if (_cart[idx].qty > 1) {
+        // A weighed line is one weighing: "-" takes it off.
+        if (!_isWeighedLine(_cart[idx]) && _cart[idx].qty > 1) {
           _cart[idx] = _cart[idx].copyWith(qty: _cart[idx].qty - 1);
         } else {
           _cart.removeAt(idx);
@@ -715,7 +773,47 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
   //  WIDE SCREENS: the running bill as a side panel
   // =========================================================================
 
+  /// Weighed line: +/- opens the weight (0 removes the line).
+  Future<void> _editWeighedLine(int index) async {
+    if (index < 0 || index >= _cart.length) return;
+    final line = _cart[index];
+    final newQty = await WeightEntryDialog.show(
+      context,
+      item: {'name': line.name, 'unit': line.unit, 'price': line.unitPriceWithModifiers},
+      initial: line.qty,
+      allowZero: true,
+    );
+    if (newQty == null || !mounted) return;
+    final i = _cart.indexOf(line);
+    if (i < 0) return;
+    if (newQty > line.qty) {
+      final limit = _stockLimitMessage(line.productId, _cartQtyOf(line.productId) - line.qty + newQty);
+      if (limit != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(limit),
+            backgroundColor: ClassicTheme.warningAmber,
+            duration: const Duration(milliseconds: 1400),
+          ),
+        );
+        return;
+      }
+    }
+    setState(() {
+      if (newQty <= 0) {
+        _cart.removeAt(i);
+      } else {
+        _cart[i] = line.copyWith(qty: newQty);
+      }
+      if (_cart.isEmpty) _appliedDiscount = null;
+    });
+  }
+
   void _bumpCartLine(int index, int delta) {
+    if (index >= 0 && index < _cart.length && _isWeighedLine(_cart[index])) {
+      _editWeighedLine(index);
+      return;
+    }
     if (delta > 0 && index >= 0 && index < _cart.length) {
       final pid = _cart[index].productId;
       final limit = _stockLimitMessage(pid, _cartQtyOf(pid) + delta);
@@ -746,7 +844,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
 
   Widget _buildCurrentBillPanel() {
     final t = _billTotals;
-    final count = _cart.fold<int>(0, (total, i) => total + i.qty.toInt());
+    final count = _cart.fold<int>(0, (total, i) => total + (_isWeighedLine(i) ? 1 : i.qty.toInt()));
     Widget amountRow(String label, double v, {bool strong = false, Color? color}) => Padding(
           padding: const EdgeInsets.symmetric(vertical: 2),
           child: Row(
@@ -833,7 +931,10 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                                         maxLines: 2,
                                         overflow: TextOverflow.ellipsis,
                                         style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: context.textPrimary)),
-                                    Text('₹${unit.toStringAsFixed(2)} each',
+                                    Text(
+                                        _isWeighedLine(line)
+                                            ? '₹${unit.toStringAsFixed(2)} / ${line.unit}'
+                                            : '₹${unit.toStringAsFixed(2)} each',
                                         style: TextStyle(fontSize: 11.5, color: context.textSecondary)),
                                   ],
                                 ),
@@ -845,9 +946,11 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                                 onPressed: () => _bumpCartLine(i, -1),
                               ),
                               SizedBox(
-                                width: 26,
+                                width: _isWeighedLine(line) ? 64 : 26,
                                 child: Text(
-                                  line.qty % 1 == 0 ? line.qty.toInt().toString() : line.qty.toStringAsFixed(2),
+                                  _isWeighedLine(line)
+                                      ? _qtyLabel(line)
+                                      : (line.qty % 1 == 0 ? line.qty.toInt().toString() : line.qty.toStringAsFixed(2)),
                                   textAlign: TextAlign.center,
                                   style: TextStyle(fontWeight: FontWeight.w800, color: context.textPrimary),
                                 ),
@@ -2594,6 +2697,9 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
       'kitchenStatus': i.sendsToKitchen ? 'PENDING' : 'SERVED',
       'selectedModifiers': i.selectedModifiers.map((m) => m.toMap()).toList(),
       'modifiersSummary': i.modifiersSummary,
+      // Weighed goods (shops) keep their unit so receipts print "0.500 kg".
+      if (_isWeighedLine(i)) 'unit': i.unit,
+      if (_isWeighedLine(i)) 'soldByWeight': true,
     }).toList();
 
     try {
@@ -2628,6 +2734,8 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                 'is_tax_exempt': cartItem.isTaxExempt,
                 'sendsToKitchen': cartItem.sendsToKitchen,
                 'kitchenStatus': cartItem.sendsToKitchen ? 'PENDING' : 'SERVED',
+                if (_isWeighedLine(cartItem)) 'unit': cartItem.unit,
+                if (_isWeighedLine(cartItem)) 'soldByWeight': true,
               });
             }
 
@@ -2829,6 +2937,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
         paymentReference: _transactionReference(splitPayments),
         payments: splitPayments ?? const [],
         enabledFeatures: features,
+        weighedProductIds: _weighedProductIds,
       )..values.addAll(overrides);
 
       // The kitchen ticket belongs to dualPrinting (rule 1), and only ever
@@ -4038,7 +4147,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                                     children: [
                                       Expanded(
                                         child: Text(
-                                          '${it.name} x${it.qty.toInt()}',
+                                          '${it.name}${_storedQtyText(it)}',
                                           style: TextStyle(fontSize: 12.5, color: context.textPrimary),
                                         ),
                                       ),
@@ -4785,7 +4894,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                     final waiterName = (order['waiterName'] ?? '').toString();
                     final items = _parseOrderItems(order['items']);
                     final itemsSummary = items.isNotEmpty
-                        ? items.map((i) => '${i.name} x${i.qty.toInt()}').join(', ')
+                        ? items.map((i) => '${i.name}${_storedQtyText(i)}').join(', ')
                         : (order['itemsSummary'] ?? _vl.itemPlural).toString();
 
                     return Container(
@@ -5547,7 +5656,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                                                         if (_hasCustomizeOptions(item))
                                                         IconButton(
                                                           icon: const Icon(Icons.tune_rounded, size: 18, color: ClassicTheme.infoBlue),
-                                                          tooltip: _vl.isRestaurant ? 'Customize (Spice, Add-ons, Portion)' : 'Choose options',
+                                                          tooltip: _vl.isRestaurant ? 'Customize' : 'Choose options',
                                                           visualDensity: VisualDensity.compact,
                                                           padding: EdgeInsets.zero,
                                                           constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
@@ -5564,13 +5673,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                                                           ),
                                                           icon: const Icon(Icons.add_rounded, size: 16),
                                                           label: const Text('Add', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-                                                          onPressed: () {
-                                                            if (item['modifierGroups'] != null && (item['modifierGroups'] as List).isNotEmpty) {
-                                                              _customizeAndAddToCart(item);
-                                                            } else {
-                                                              _addToCart(item);
-                                                            }
-                                                          },
+                                                          onPressed: () => _onAddTapped(item),
                                                         ),
                                                       ],
                                                     )
@@ -5581,7 +5684,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                                                         if (_hasCustomizeOptions(item))
                                                         IconButton(
                                                           icon: const Icon(Icons.tune_rounded, size: 18, color: ClassicTheme.infoBlue),
-                                                          tooltip: _vl.isRestaurant ? 'Customize (Spice, Add-ons, Portion)' : 'Choose options',
+                                                          tooltip: _vl.isRestaurant ? 'Customize' : 'Choose options',
                                                           visualDensity: VisualDensity.compact,
                                                           padding: EdgeInsets.zero,
                                                           constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
@@ -5608,7 +5711,9 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                                                               Padding(
                                                                 padding: const EdgeInsets.symmetric(horizontal: 8.0),
                                                                 child: Text(
-                                                                  '$qtyInCart',
+                                                                  _isWeighedItem(item)
+                                                                      ? ItemContract.formatQty(qtyInCart, ItemContract.unitOf(item))
+                                                                      : ItemContract.formatQty(qtyInCart, 'pcs'),
                                                                   style: TextStyle(
                                                                     fontWeight: FontWeight.bold,
                                                                     fontSize: 13,
@@ -5617,7 +5722,13 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                                                                 ),
                                                               ),
                                                               InkWell(
-                                                                onTap: () => _addToCart(item),
+                                                                onTap: () {
+                                                                  if (_isWeighedItem(item)) {
+                                                                    _onAddTapped(item);
+                                                                  } else {
+                                                                    _addToCart(item);
+                                                                  }
+                                                                },
                                                                 borderRadius: BorderRadius.circular(6),
                                                                 child: Padding(
                                                                   padding: EdgeInsets.all(6.0),
@@ -5673,7 +5784,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 Text(
-                                  '${_cart.fold<int>(0, (total, i) => total + i.qty.toInt())} Items Added',
+                                  '${_cart.fold<int>(0, (total, i) => total + (_isWeighedLine(i) ? 1 : i.qty.toInt()))} Items Added',
                                   style: TextStyle(
                                       fontSize: 12, color: context.textSecondary),
                                 ),

@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:uuid/uuid.dart';
 import '../core/cloud_gate.dart';
+import 'sheet_layout.dart';
 
 /// Service that interacts with the Zero-Cost Google Apps Script Webhook
 /// for automated Multi-Tenant Organization, Outlet, and Spreadsheet management.
@@ -200,6 +201,9 @@ class AppsScriptBackendService {
     String? phone,
     String? address,
     String? customSpreadsheetId,
+    /// The store's trade, so the server creates that trade's tabs; the
+    /// signed-in store's when omitted.
+    String? vertical,
   }) async {
     try {
       final sanitizedCustom = customSpreadsheetId?.trim();
@@ -244,6 +248,7 @@ class AppsScriptBackendService {
           'phone': phone ?? '',
           'address': address ?? '',
           'spreadsheet_id': allocatedSheetId,
+          'vertical': vertical ?? SheetLayout.activeVertical,
         }),
         timeout: const Duration(seconds: 18),
       );
@@ -373,6 +378,7 @@ class AppsScriptBackendService {
           'spreadsheet_id': resolvedSheetId ?? '',
           'items': items,
           'replace_all': replaceAll,
+          'vertical': SheetLayout.activeVertical,
         }),
         timeout: const Duration(seconds: 18),
       );

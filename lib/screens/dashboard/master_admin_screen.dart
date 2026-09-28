@@ -3198,6 +3198,8 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                                                     authenticatedClient: clientToUse,
                                                     storeName: nameController.text.trim().isNotEmpty ? nameController.text.trim() : orgName,
                                                     storeId: orgId,
+                                                    // The tenant's trade, not the admin's own session.
+                                                    vertical: Verticals.forCategory(businessCategory),
                                                   );
                                                   if (prov['success'] == true) {
                                                     existingSheetId = prov['spreadsheetId'];

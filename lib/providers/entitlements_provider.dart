@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/cloud_gate.dart';
 import '../core/entitlements.dart';
+import '../services/sheet_layout.dart';
 import 'saas_session_provider.dart';
 
 /// The tenant's resolved entitlements, derived from the active session.
@@ -29,6 +30,8 @@ final entitlementsProvider = Provider<Entitlements>((ref) {
   // The one place the network switch is set. Everything that talks to the
   // cloud consults CloudGate first, so an offline tenant makes no requests.
   CloudGate.setOffline(resolved.isPureOffline && !isPlatformAdmin);
+  // The store's Google Sheet layout (tab names, headers) follows its trade.
+  SheetLayout.setActiveVertical(vertical);
   return resolved;
 });
 

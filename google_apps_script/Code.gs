@@ -226,8 +226,201 @@ function getInventorySheet(ss) {
          ss.getSheetByName("Catalog");
 }
 
-function getOrCreateInventorySheet(ss) {
+/**
+ * Per-trade sheet layout. The JavaScript twin of SheetLayout in
+ * lib/services/sheet_layout.dart: same shop tab names, same header rows.
+ * Change one, change the other. A restaurant keeps exactly the tabs this
+ * backend always created; the shop trades (kirana, supermarket, pharmacy,
+ * retail) get products, stock, a counter and a khata instead of dishes,
+ * a kitchen and tables.
+ */
+var SHOP_TABS_ = {
+  products: "Products & Stock",
+  sales: "Sales Bills",
+  stockMovements: "Stock Movements",
+  khata: "Customers & Khata",
+  expenses: "Expenses",
+  dayClose: "Day Close"
+};
+
+function shopProductHeaders_(vertical) {
+  var head = ["Product ID", "Product Name", "Category", "Barcode", "SKU", "Unit", "Price", "MRP",
+              "Cost Price", "HSN", "Tax Exempt", "Stock", "Reorder Level"];
+  var batch = String(vertical || "").trim().toLowerCase() === "pharmacy" ? ["Batch No.", "Expiry (nearest batch)"] : [];
+  var tail = ["Available", "Image", "Sold By Weight", "PLU", "Variants"];
+  return head.concat(batch, tail);
+}
+
+function sheetLayoutFor_(vertical) {
+  return {
+    products: shopProductHeaders_(vertical),
+    sales: ["Bill ID", "Date & Time", "Customer Name", "Customer Phone", "Payment Mode", "Subtotal",
+            "Discount", "Total Amount", "Items Summary", "Status", "Counter", "Transaction ID"],
+    stockMovements: ["Movement ID", "Date & Time", "Product ID", "Product Name",
+                     "Type (Sale/Purchase/Adjustment/Return)", "Quantity", "Stock After", "Batch No.", "Reference", "By"],
+    khata: ["Transaction ID", "Date", "Customer Name", "Customer Phone", "Type (Credit/Payment)", "Amount (Rs)", "Notes"],
+    expenses: ["Expense ID", "Date", "Category", "Amount (Rs)", "Vendor / Supplier", "Note"],
+    dayClose: ["Date", "Total Revenue", "Walk-in Sales", "Delivery Sales", "Online Sales",
+               "Cash Collected", "UPI Collected", "Discounts Given"]
+  };
+}
+
+function isShopVertical_(vertical) {
+  return !!SHOP_TRADES_[String(vertical || "").trim().toLowerCase()];
+}
+
+/** The request's trade: `vertical`, else the business category, else the tenant registry, else restaurant. */
+function requestVertical_(data) {
+  var d = data || {};
+  var v = String(d.vertical || "").trim().toLowerCase();
+  if (TRADES_.indexOf(v) >= 0) return v;
+  var cat = d.business_category || d.businessCategory;
+  if (cat) return verticalFor_(cat);
+  var orgId = d.org_id || d.org || d.outlet_id;
+  var info = orgId ? getTenantInfo(String(orgId)) : null;
+  if (info && TRADES_.indexOf(String(info.vertical || "")) >= 0) return String(info.vertical);
+  return "restaurant";
+}
+
+/** Creates a shop's tabs (the first one reuses "Sheet1") with bold, frozen header rows. */
+function createShopTabs_(ss, vertical) {
+  var layout = sheetLayoutFor_(vertical);
+  var order = ["products", "sales", "stockMovements", "khata", "expenses", "dayClose"];
+  order.forEach(function (role, i) {
+    var name = SHOP_TABS_[role];
+    var sheet = ss.getSheetByName(name);
+    if (!sheet) {
+      var first = i === 0 ? ss.getSheetByName("Sheet1") : null;
+      if (first) { first.setName(name); sheet = first; } else { sheet = ss.insertSheet(name); }
+    }
+    if (sheet.getLastRow() === 0) {
+      sheet.appendRow(layout[role]);
+      sheet.getRange(1, 1, 1, layout[role].length).setFontWeight("bold");
+      sheet.setFrozenRows(1);
+    }
+  });
+}
+
+/** Header -> item field; the twin of SheetLayout.fieldForHeader. null for a column the app does not own. */
+function sheetFieldFor_(header) {
+  var h = String(header || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  var map = {
+    productid: "id", dishid: "id", itemid: "id", id: "id",
+    productname: "name", dishname: "name", itemname: "name", name: "name",
+    category: "category", barcode: "barcode", sku: "sku", unit: "unit", unitkggmlpcs: "unit",
+    price: "price", pricers: "price", sellingprice: "price", mrp: "mrp",
+    costprice: "costPrice", purchaseprice: "costPrice", hsn: "hsnCode", hsncode: "hsnCode",
+    taxexempt: "isTaxExempt", stock: "stock", stockquantity: "stock", reorderlevel: "reorderLevel",
+    batchno: "batchNo", expiry: "expiry", expirynearestbatch: "expiry",
+    available: "isAvailable", isavailable: "isAvailable", image: "imageUrl", imageurl: "imageUrl",
+    soldbyweight: "soldByWeight", plu: "pluCode", variants: "variants"
+  };
+  return map.hasOwnProperty(h) ? map[h] : null;
+}
+
+function sheetNum_(v) {
+  if (typeof v === "number") return v;
+  if (v === undefined || v === null || v === "") return null;
+  var n = parseFloat(String(v).replace(/[^0-9.\-]/g, ""));
+  return isNaN(n) ? null : n;
+}
+
+function sheetNearestBatch_(p) {
+  var best = null, bestAt = null;
+  (Array.isArray(p.batches) ? p.batches : []).forEach(function (b) {
+    if (!b || (sheetNum_(b.qty !== undefined ? b.qty : b.quantity) || 0) <= 0) return;
+    var at = b.expiry ? new Date(b.expiry) : null;
+    if (at && isNaN(at.getTime())) at = null;
+    if (!best || (at && (!bestAt || at < bestAt))) { best = b; bestAt = at; }
+  });
+  return best;
+}
+
+function sheetStockOf_(p) {
+  var q = sheetNum_(p.stockQuantity);
+  if (q === null) q = sheetNum_(p.stock_quantity);
+  if (q === null) q = sheetNum_(p.stock);
+  if (q !== null) return q;
+  if (!Array.isArray(p.batches) || p.batches.length === 0) return null;
+  return p.batches.reduce(function (s, b) { return s + (sheetNum_(b && (b.qty !== undefined ? b.qty : b.quantity)) || 0); }, 0);
+}
+
+function sheetVariantsSummary_(raw) {
+  if (!Array.isArray(raw)) return "";
+  return raw.filter(function (v) { return v && typeof v === "object"; }).map(function (v) {
+    var label = String(v.label || "").trim();
+    if (!label) label = [v.size, v.color].filter(function (x) { return x !== undefined && x !== null && String(x).trim() !== ""; }).join("/");
+    if (!label) label = String(v.id || "");
+    var price = sheetNum_(v.price);
+    var stock = sheetStockOf_(v);
+    return label + (price !== null ? " ₹" + price : "") + (stock !== null ? " (" + stock + ")" : "");
+  }).join("; ");
+}
+
+function sheetText_(v) {
+  var s = String(v === undefined || v === null ? "" : v).trim();
+  return /^[0-9]+$/.test(s) ? "'" + s : s;
+}
+
+function sheetYesNo_(v) { return (v === true || String(v).toLowerCase() === "true") ? "Yes" : "No"; }
+
+/** The cell of `field` for item `p`; undefined for a column the app does not own. Twin of SheetLayout.valueForHeader. */
+function sheetValueFor_(field, p) {
+  switch (field) {
+    case "id": return sheetText_(p.id);
+    case "name": return String(p.name || "");
+    case "category": return String(p.category || "");
+    case "barcode": return sheetText_(p.barcode);
+    case "sku": return sheetText_(p.sku);
+    case "unit": return String(p.unit || "");
+    case "price": return p.price !== undefined ? p.price : (p.selling_price !== undefined ? p.selling_price : "");
+    case "mrp": return p.mrp !== undefined && p.mrp !== null ? p.mrp : "";
+    case "costPrice": return p.costPrice !== undefined ? p.costPrice : (p.purchase_price !== undefined ? p.purchase_price : (p.cost_price !== undefined ? p.cost_price : ""));
+    case "hsnCode": return sheetText_(p.hsnCode !== undefined ? p.hsnCode : p.hsn);
+    case "isTaxExempt": return sheetYesNo_(p.isTaxExempt !== undefined ? p.isTaxExempt : p.is_tax_exempt);
+    case "stock": var s = sheetStockOf_(p); return s === null ? "" : s;
+    case "reorderLevel": return p.reorderLevel !== undefined && p.reorderLevel !== null ? p.reorderLevel : "";
+    case "batchNo": var b = sheetNearestBatch_(p); return b ? String(b.batchNo || "") : "";
+    case "expiry":
+      var nb = sheetNearestBatch_(p);
+      var at = nb && nb.expiry ? new Date(nb.expiry) : null;
+      return at && !isNaN(at.getTime()) ? Utilities.formatDate(at, "UTC", "yyyy-MM-dd") : "";
+    case "isAvailable":
+      var a = p.isAvailable !== undefined ? p.isAvailable : p.is_available;
+      return a === false ? "Sold Out" : "Available";
+    case "imageUrl": return String(p.imageUrl || "");
+    case "soldByWeight": return p.hasOwnProperty("soldByWeight") ? sheetYesNo_(p.soldByWeight) : "";
+    case "pluCode": return sheetText_(p.pluCode);
+    case "variants": return sheetVariantsSummary_(p.variants);
+  }
+  return undefined;
+}
+
+/** True for a products tab written with the shop layout (header-mapped writes). */
+function isShopLayoutSheet_(headers) {
+  var n = headers.map(function (h) { return String(h || "").toLowerCase().replace(/[^a-z0-9]/g, ""); });
+  return n.indexOf("productid") >= 0 && n.indexOf("barcode") >= 0 && n.indexOf("sku") >= 0 && n.indexOf("mrp") >= 0;
+}
+
+/** Row for item `p` under `headers`; columns the app does not own keep `oldRow`'s cells. */
+function shopProductRow_(headers, p, oldRow) {
+  return headers.map(function (h, c) {
+    var f = sheetFieldFor_(h);
+    var v = f ? sheetValueFor_(f, p) : undefined;
+    if (v !== undefined) return v;
+    return oldRow && oldRow.length > c && oldRow[c] !== undefined ? oldRow[c] : "";
+  });
+}
+
+function getOrCreateInventorySheet(ss, vertical) {
   var sheet = getInventorySheet(ss);
+  if (!sheet && isShopVertical_(vertical)) {
+    var headers = shopProductHeaders_(vertical);
+    sheet = ss.insertSheet(SHOP_TABS_.products);
+    sheet.appendRow(headers);
+    sheet.getRange(1, 1, 1, headers.length).setFontWeight("bold").setBackground("#FEF3C7");
+    sheet.setFrozenRows(1);
+  }
   if (!sheet) {
     sheet = ss.insertSheet("Products & Stock");
     sheet.appendRow([
@@ -410,7 +603,7 @@ function resolveTenantId(data, json) {
 }
 
 function getOrCreateBillsSheet(ss) {
-  var sheet = ss.getSheetByName("Dining Bills") || ss.getSheetByName("Bills") || ss.getSheetByName("Orders") || ss.getSheetByName("Table_Orders") || ss.getSheetByName("Sheet1");
+  var sheet = ss.getSheetByName("Dining Bills") || ss.getSheetByName(SHOP_TABS_.sales) || ss.getSheetByName("Bills") || ss.getSheetByName("Orders") || ss.getSheetByName("Table_Orders") || ss.getSheetByName("Sheet1");
   if (!sheet) {
     sheet = ss.insertSheet("Bills");
     sheet.appendRow([
@@ -426,7 +619,8 @@ function getOrCreateBillsSheet(ss) {
   try {
     var headerRange = sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), 12));
     var headers = headerRange.getValues()[0].map(function(h) { return String(h || "").trim(); });
-    if (headers.length < 12 || headers[7] !== "Total Amount" || headers[8] !== "Items Summary" || headers[10] !== "Table") {
+    // A shop's "Sales Bills" holds the counter where a restaurant has the table.
+    if (headers.length < 12 || headers[7] !== "Total Amount" || headers[8] !== "Items Summary" || (headers[10] !== "Table" && headers[10] !== "Counter")) {
       sheet.getRange(1, 1, 1, 12).setValues([[
         "Bill ID", "Date & Time", "Customer Name", "Customer Phone", 
         "Payment Mode", "Subtotal", "Discount", "Total Amount", "Items Summary", "Status", "Table", "Transaction ID", "Kitchen Status", "Payment Status"
@@ -1061,7 +1255,7 @@ function migrateDiningBillsToV2(ss, isDryRun) {
   if (!ss) return { success: false, error: "No spreadsheet provided." };
   ensureV2Sheets(ss);
   
-  var legacySheet = ss.getSheetByName("Dining Bills") || ss.getSheetByName("Bills");
+  var legacySheet = ss.getSheetByName("Dining Bills") || ss.getSheetByName(SHOP_TABS_.sales) || ss.getSheetByName("Bills");
   if (!legacySheet || legacySheet.getLastRow() < 2) {
     return { success: true, dryRun: isDryRun, message: "No legacy bills found to migrate.", totalScanned: 0, migratedOrders: 0, unmappedRows: 0 };
   }
@@ -1524,7 +1718,8 @@ function doGet(e) {
           if (h.indexOf("veg") !== -1 || h.indexOf("diet") !== -1 || h.indexOf("food type") !== -1) vegIdx = idx;
           if (h.indexOf("desc") !== -1 || h.indexOf("detail") !== -1) descIdx = idx;
           if (h.indexOf("id") !== -1 && h.indexOf("cat") === -1) idIdx = idx;
-          if (h.indexOf("avail") !== -1 || h.indexOf("status") !== -1 || h.indexOf("sold") !== -1) availIdx = idx;
+          // "Sold By Weight" (shop layout) is not an availability column.
+          if (h.indexOf("avail") !== -1 || h.indexOf("status") !== -1 || (h.indexOf("sold") !== -1 && h.indexOf("weight") === -1)) availIdx = idx;
           if (h.indexOf("timerestrict") !== -1 || h.indexOf("time_restrict") !== -1 || h.indexOf("restricted") !== -1) restrictIdx = idx;
           if (h.indexOf("availablefrom") !== -1 || h.indexOf("available_from") !== -1 || h.indexOf("from_time") !== -1) fromIdx = idx;
           if (h.indexOf("availableto") !== -1 || h.indexOf("available_to") !== -1 || h.indexOf("to_time") !== -1) toIdx = idx;
@@ -1967,6 +2162,11 @@ function handleCreateOutlet(data) {
 
   // NOTE: Sheet remains 100% PRIVATE in Google Drive. No public ANYONE_WITH_LINK permission granted!
 
+  // A shop gets the shop layout (sheetLayoutFor_); a restaurant exactly the tabs below, as always.
+  const vertical = requestVertical_(data);
+  if (isShopVertical_(vertical)) {
+    createShopTabs_(ss, vertical);
+  } else {
   // 1. Setup Bills Sheet
   let billsSheet = ss.getSheetByName("Sheet1");
   if (!billsSheet) {
@@ -2013,6 +2213,7 @@ function handleCreateOutlet(data) {
   ]);
   zSheet.getRange("A1:I1").setFontWeight("bold").setBackground("#F3E8FF");
   zSheet.setFrozenRows(1);
+  }
 
   const sheetId = ss.getId();
   const sheetUrl = ss.getUrl();
@@ -2023,6 +2224,7 @@ function handleCreateOutlet(data) {
       org_id: orgId.trim(),
       spreadsheet_id: sheetId,
       org_name: outletName,
+      vertical: vertical,
       updated_at: new Date().toISOString()
     }));
   } catch (e) {}
@@ -2652,8 +2854,18 @@ function handleSyncInventory(data) {
   }
 
   const ss = SpreadsheetApp.openById(spreadsheetId);
-  const sheet = getOrCreateInventorySheet(ss);
+  const vertical = requestVertical_(data);
+  const sheet = getOrCreateInventorySheet(ss, vertical);
   const sheetName = sheet.getName();
+
+  // A products tab in the shop layout is written by header name (same
+  // request and response shapes as below); every other tab as before.
+  const layoutHeaders = sheet.getLastColumn() > 0
+    ? sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(function (h) { return String(h || "").trim(); })
+    : [];
+  if (isShopLayoutSheet_(layoutHeaders)) {
+    return syncShopInventory_(sheet, layoutHeaders, data, orgId);
+  }
 
   const isProductsAndStock = sheetName.indexOf("Products") !== -1;
   const items = data.items || (data.product ? [data.product] : (data.item ? [data.item] : []));
@@ -2748,6 +2960,58 @@ function handleSyncInventory(data) {
 
     return responseJson({ success: true, updated: updatedCount, appended: appendedCount });
   }
+}
+
+/** SYNC_INVENTORY for a shop-layout products tab; see handleSyncInventory. */
+function syncShopInventory_(sheet, headers, data, orgId) {
+  const items = data.items || (data.product ? [data.product] : (data.item ? [data.item] : []));
+  const replaceAll = data.replace_all === true || data.replaceAll === true;
+  const idCol = headers.map(sheetFieldFor_).indexOf("id");
+  const nameCol = headers.map(sheetFieldFor_).indexOf("name");
+  const lastRow = sheet.getLastRow();
+  const existing = lastRow > 1 ? sheet.getRange(2, 1, lastRow - 1, headers.length).getValues() : [];
+  const norm = function (v) { return String(v === undefined || v === null ? "" : v).trim().replace(/^'/, ""); };
+
+  function findRow(p) {
+    const pId = norm(p.id);
+    const pName = norm(p.name).toLowerCase();
+    for (let i = 0; i < existing.length; i++) {
+      if (pId && idCol >= 0 && norm(existing[i][idCol]) === pId) return i;
+      if (pName && nameCol >= 0 && norm(existing[i][nameCol]).toLowerCase() === pName) return i;
+    }
+    return -1;
+  }
+
+  if (replaceAll) {
+    const rows = items.map(function (p) {
+      const at = findRow(p);
+      return shopProductRow_(headers, p, at >= 0 ? existing[at] : null);
+    });
+    if (lastRow > 1) {
+      sheet.getRange(2, 1, lastRow - 1, Math.max(sheet.getLastColumn(), headers.length)).clearContent();
+    }
+    if (rows.length > 0) {
+      sheet.getRange(2, 1, rows.length, headers.length).setValues(rows);
+    }
+    return responseJson({ success: true, count: rows.length, mode: "REPLACE_ALL", rev: getAndBumpRev(orgId) });
+  }
+
+  let updatedCount = 0;
+  let appendedCount = 0;
+  items.forEach(function (p) {
+    const at = findRow(p);
+    const row = shopProductRow_(headers, p, at >= 0 ? existing[at] : null);
+    if (at >= 0) {
+      sheet.getRange(at + 2, 1, 1, headers.length).setValues([row]);
+      existing[at] = row;
+      updatedCount++;
+    } else {
+      sheet.appendRow(row);
+      existing.push(row);
+      appendedCount++;
+    }
+  });
+  return responseJson({ success: true, updated: updatedCount, appended: appendedCount });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -3104,7 +3368,7 @@ function handleRecordPayment(json) {
     if (verified && targetOrderId) {
       if (ss) {
         // 1. Update legacy Dining Bills sheet if present
-        var legacySheet = ss.getSheetByName("Dining Bills") || ss.getSheetByName("Bills");
+        var legacySheet = ss.getSheetByName("Dining Bills") || ss.getSheetByName(SHOP_TABS_.sales) || ss.getSheetByName("Bills");
         if (legacySheet && legacySheet.getLastRow() >= 2) {
           ensureBillStatusColumns(legacySheet);
           var lData = legacySheet.getDataRange().getValues();
@@ -4968,7 +5232,7 @@ function handleVoidOrder(json) {
     }
 
     // Also update legacy Dining Bills sheet if present
-    var legacySheet = ss.getSheetByName("Dining Bills") || ss.getSheetByName("Bills");
+    var legacySheet = ss.getSheetByName("Dining Bills") || ss.getSheetByName(SHOP_TABS_.sales) || ss.getSheetByName("Bills");
     if (legacySheet && legacySheet.getLastRow() >= 2) {
       ensureBillStatusColumns(legacySheet);
       var lData = legacySheet.getDataRange().getValues();

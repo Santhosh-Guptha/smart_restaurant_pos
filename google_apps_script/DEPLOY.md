@@ -110,3 +110,39 @@ above: that is now true of the Offline tier, which remains the trial default.
 the existing deployment → New version → Deploy**. Do not create a new
 deployment and do not change the deployment id: the `/exec` URL the app and
 the website use must stay the same.
+
+## 2026-09-28 — Store sheets follow the trade (per-trade sheet layout)
+
+`Code.gs` now mirrors the app's `SheetLayout` (`lib/services/sheet_layout.dart`)
+through `sheetLayoutFor_(vertical)`. The trade comes from the request's
+`vertical` (the app now sends it on `CREATE_OUTLET` and `SYNC_INVENTORY`),
+else `business_category`, else the tenant registry, else restaurant.
+
+- **Restaurant: unchanged.** `CREATE_OUTLET` still creates Bills, Inventory,
+  Customers, Expenses and Z_Reports with the same headers, and every
+  restaurant read/write path is as before.
+- **Shops (kirana, supermarket, pharmacy, retail):** `CREATE_OUTLET` creates
+  `Products & Stock`, `Sales Bills`, `Stock Movements`, `Customers & Khata`,
+  `Expenses`, `Day Close`. Product headers: Product ID, Product Name,
+  Category, Barcode, SKU, Unit, Price, MRP, Cost Price, HSN, Tax Exempt,
+  Stock, Reorder Level, (pharmacy: Batch No., Expiry (nearest batch)),
+  Available, Image, Sold By Weight, PLU, Variants. `Sales Bills` has the
+  restaurant bill columns with `Counter` in place of `Table`.
+- **Bills:** `getOrCreateBillsSheet` and the legacy-bill updaters also find
+  `Sales Bills`; its `Counter` column is accepted in place of `Table` (the
+  header row is no longer rewritten for it).
+- **SYNC_INVENTORY:** a products tab in the shop layout (has Product ID,
+  Barcode, SKU and MRP headers) is written by header name, keeping any
+  column the app does not own (such as `rev`). Every other tab is written
+  exactly as before. Request and response shapes are unchanged.
+- **GET_MENU:** a `Sold By Weight` column is no longer mistaken for the
+  availability column.
+- The tenant registry entry written by `CREATE_OUTLET` also records
+  `vertical`. Nothing is deleted or renamed in existing sheets: a shop sheet
+  made with the old restaurant tab names keeps working (the app uses the old
+  tab when the new one is absent and only adds tabs that have no old
+  equivalent).
+
+**To deploy:** paste the new `Code.gs` into the existing Apps Script project,
+save, then **Deploy → Manage deployments → edit the existing deployment → New
+version → Deploy** (same deployment id, same `/exec` URL).

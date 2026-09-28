@@ -19,6 +19,9 @@ import '../../core/package_model.dart';
 import '../../core/vertical_labels.dart';
 import '../../providers/entitlements_provider.dart';
 import '../../services/stock_service.dart';
+import '../../core/item_model_contract.dart';
+import 'widgets/modifier_group_editor.dart';
+import 'widgets/variant_editor.dart';
 
 class RestaurantMenuManagementScreen extends ConsumerStatefulWidget {
   const RestaurantMenuManagementScreen({super.key});
@@ -37,6 +40,20 @@ class _RestaurantMenuManagementScreenState
   static const Set<String> _privateItemKeys = {
     'costPrice', 'batches', 'reorderLevel', 'stock', 'stockQuantity', 'stock_quantity', 'hsnCode',
   };
+
+  /// An item as the public web menu may see it: private keys removed from
+  /// the item and from each of its variants.
+  static Map<String, dynamic> _publicItem(Map d) {
+    final m = Map<String, dynamic>.from(d)..removeWhere((k, _) => _privateItemKeys.contains(k));
+    final vs = m['variants'];
+    if (vs is List) {
+      m['variants'] = [
+        for (final v in vs)
+          if (v is Map) Map<String, dynamic>.from(v)..removeWhere((k, _) => _privateItemKeys.contains(k)),
+      ];
+    }
+    return m;
+  }
 
   String _selectedCategory = 'All';
   String _selectedSubcategory = 'All';
@@ -253,6 +270,7 @@ class _RestaurantMenuManagementScreenState
               'barcode', 'mrp', 'unit', 'sku', 'hsnCode', 'costPrice', 'reorderLevel',
               'stock', 'stockQuantity', 'stock_quantity', 'batches',
               'isTaxExempt', 'is_tax_exempt', 'imageUrl',
+              'soldByWeight', 'pluCode', 'variantAttributes', 'variants', 'modifierGroups',
             ])
               if (data[k] != null) k: data[k],
           });
@@ -299,7 +317,7 @@ class _RestaurantMenuManagementScreenState
       if (_onlineMenuOn) {
         try {
           final publicItems = _dishes
-              .map((d) => Map<String, dynamic>.from(d)..removeWhere((k, _) => _privateItemKeys.contains(k)))
+              .map(_publicItem)
               .toList();
           await FirebaseFirestore.instance.collection('public_stores').doc(orgId).set({
             'menu_items': publicItems,
@@ -1081,6 +1099,27 @@ class _RestaurantMenuManagementScreenState
     bool isTimeRestricted = _vl.hasTimeRestrictedServing && (existing?['isTimeRestricted'] ?? false);
     bool isTaxExempt = existing?['isTaxExempt'] == true || existing?['is_tax_exempt'] == true;
 
+    // Shops: sold by weight / volume (price per kg, g, l or ml) and an
+    // optional scale PLU code. See ItemContract.
+    bool soldByWeight = isShop && existing?['soldByWeight'] == true;
+    if (soldByWeight) {
+      final u = ItemContract.normalizeUnit(unitCtrl.text);
+      unitCtrl.text = ItemContract.weighedUnits.contains(u) ? u : 'kg';
+    }
+    final pluCtrl = TextEditingController(text: existing?['pluCode']?.toString() ?? '');
+    String weighedUnit() {
+      final u = ItemContract.normalizeUnit(unitCtrl.text);
+      return ItemContract.weighedUnits.contains(u) ? u : 'kg';
+    }
+
+    // Shops: sizes / variants. The product becomes a container that is
+    // sold only as one of its variants.
+    bool hasVariants = isShop && !soldByWeight && existing != null && ItemContract.hasVariants(existing);
+    final variantCtrl = VariantEditorController.fromItem(existing);
+
+    // Restaurants: option groups (portion, spice, add-ons...).
+    final modifierCtrl = ModifierGroupEditorController.fromItem(existing);
+
     Future<void> pickAndUpload(ImageSource source, StateSetter setDialogState) async {
       try {
         final picker = ImagePicker();
@@ -1408,7 +1447,9 @@ class _RestaurantMenuManagementScreenState
                             keyboardType: const TextInputType.numberWithOptions(decimal: true),
                             style: TextStyle(color: context.textPrimary, fontSize: 13),
                             decoration: InputDecoration(
-                              labelText: 'Selling Price (₹) *',
+                              labelText: soldByWeight
+                                  ? 'Price per ${weighedUnit()} (₹) *'
+                                  : (hasVariants ? 'Default Price (₹) *' : 'Selling Price (₹) *'),
                               labelStyle: TextStyle(color: context.textSecondary, fontSize: 12),
                               hintText: 'e.g. 240',
                               hintStyle: TextStyle(color: context.textSecondary, fontSize: 12),
@@ -1462,6 +1503,67 @@ class _RestaurantMenuManagementScreenState
 
                     // Retail / Kirana: Barcode & SKU Row
                     if (_vertical != Verticals.restaurant) ...[
+                      // Sold by weight / volume
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: context.inputFill,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: soldByWeight ? ClassicTheme.infoBlue : context.borderColor),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.scale_rounded, size: 18, color: ClassicTheme.infoBlue),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text('Sold by weight / volume',
+                                      style: TextStyle(color: context.textPrimary, fontSize: 12.5, fontWeight: FontWeight.bold)),
+                                  Text('Price per kg, g, litre or ml; quantity can be fractional',
+                                      style: TextStyle(color: context.textSecondary, fontSize: 11)),
+                                ],
+                              ),
+                            ),
+                            Switch(
+                              value: soldByWeight,
+                              activeThumbColor: ClassicTheme.infoBlue,
+                              onChanged: (v) => setDialogState(() {
+                                soldByWeight = v;
+                                if (v) {
+                                  hasVariants = false;
+                                  unitCtrl.text = weighedUnit();
+                                } else if (unitCtrl.text == 'l') {
+                                  unitCtrl.text = 'liter';
+                                }
+                              }),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      if (soldByWeight) ...[
+                        TextField(
+                          controller: pluCtrl,
+                          keyboardType: TextInputType.number,
+                          inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(6)],
+                          style: TextStyle(color: context.textPrimary, fontSize: 13),
+                          decoration: InputDecoration(
+                            labelText: 'Scale PLU code (optional)',
+                            labelStyle: TextStyle(color: context.textSecondary, fontSize: 12),
+                            hintText: '4-6 digits, as set on the weighing scale',
+                            hintStyle: TextStyle(color: context.textSecondary, fontSize: 12),
+                            prefixIcon: const Icon(Icons.pin_outlined, size: 18),
+                            filled: true,
+                            fillColor: context.inputFill,
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: context.borderColor)),
+                            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: context.borderColor)),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                      ],
+                      if (!hasVariants) ...[
                       Row(
                         children: [
                           Expanded(
@@ -1487,7 +1589,7 @@ class _RestaurantMenuManagementScreenState
                             tooltip: 'Generate Random Barcode',
                             icon: const Icon(Icons.auto_fix_high_rounded, color: ClassicTheme.infoBlue, size: 20),
                             onPressed: () {
-                              final generated = '890${DateTime.now().millisecondsSinceEpoch.toString().substring(3)}';
+                              final generated = generateStoreBarcode();
                               setDialogState(() => barcodeCtrl.text = generated);
                             },
                           ),
@@ -1512,6 +1614,7 @@ class _RestaurantMenuManagementScreenState
                         ],
                       ),
                       const SizedBox(height: 12),
+                      ],
 
                       // Unit & Stock Quantity Row
                       Row(
@@ -1525,7 +1628,25 @@ class _RestaurantMenuManagementScreenState
                                 border: Border.all(color: context.borderColor),
                               ),
                               child: DropdownButtonHideUnderline(
-                                child: DropdownButton<String>(
+                                child: soldByWeight
+                                    ? DropdownButton<String>(
+                                        value: weighedUnit(),
+                                        isExpanded: true,
+                                        dropdownColor: context.surfaceColor,
+                                        style: TextStyle(color: context.textPrimary, fontSize: 13),
+                                        items: const [
+                                          DropdownMenuItem(value: 'kg', child: Text('Per kilogram (kg)')),
+                                          DropdownMenuItem(value: 'g', child: Text('Per gram (g)')),
+                                          DropdownMenuItem(value: 'l', child: Text('Per litre (l)')),
+                                          DropdownMenuItem(value: 'ml', child: Text('Per millilitre (ml)')),
+                                        ],
+                                        onChanged: (val) {
+                                          if (val != null) {
+                                            setDialogState(() => unitCtrl.text = val);
+                                          }
+                                        },
+                                      )
+                                    : DropdownButton<String>(
                                   value: unitOptions.containsKey(unitCtrl.text) ? unitCtrl.text : 'pcs',
                                   isExpanded: true,
                                   dropdownColor: context.surfaceColor,
@@ -1542,7 +1663,7 @@ class _RestaurantMenuManagementScreenState
                               ),
                             ),
                           ),
-                          if (stockOn) ...[
+                          if (stockOn && !hasVariants) ...[
                             const SizedBox(width: 12),
                             Expanded(
                               child: TextField(
@@ -1551,9 +1672,11 @@ class _RestaurantMenuManagementScreenState
                                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
                                 style: TextStyle(color: context.textPrimary, fontSize: 13),
                                 decoration: InputDecoration(
-                                  labelText: existingTracked ? 'Stock on hand' : 'Opening Stock Qty',
+                                  labelText: soldByWeight
+                                      ? '${existingTracked ? 'Stock on hand' : 'Opening Stock Qty'} (${weighedUnit()})'
+                                      : (existingTracked ? 'Stock on hand' : 'Opening Stock Qty'),
                                   labelStyle: TextStyle(color: context.textSecondary, fontSize: 12),
-                                  hintText: 'e.g. 50',
+                                  hintText: soldByWeight ? (weighedUnit() == 'kg' || weighedUnit() == 'l' ? 'e.g. 12.5' : 'e.g. 500') : 'e.g. 50',
                                   helperText: existingTracked ? 'Change stock in Stock Manager' : null,
                                   helperStyle: TextStyle(color: context.textSecondary, fontSize: 11),
                                   hintStyle: TextStyle(color: context.textSecondary, fontSize: 12),
@@ -1570,7 +1693,7 @@ class _RestaurantMenuManagementScreenState
                       const SizedBox(height: 12),
 
                       // Pharmacy: batch & expiry for the opening stock
-                      if (stockOn && isPharmacy && !existingTracked) ...[
+                      if (stockOn && isPharmacy && !existingTracked && !hasVariants) ...[
                         Row(
                           children: [
                             Expanded(
@@ -1653,7 +1776,7 @@ class _RestaurantMenuManagementScreenState
                               ),
                             ),
                           ),
-                          if (stockOn) ...[
+                          if (stockOn && !hasVariants) ...[
                             const SizedBox(width: 12),
                             Expanded(
                               child: TextField(
@@ -1674,6 +1797,65 @@ class _RestaurantMenuManagementScreenState
                             ),
                           ],
                         ],
+                      ),
+                      const SizedBox(height: 12),
+
+                      // Sizes / variants
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: context.isDark ? ClassicTheme.cardSurfaceDark : context.canvasColor,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: hasVariants ? ClassicTheme.infoBlue : context.borderColor),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                const Icon(Icons.style_rounded, size: 18, color: ClassicTheme.infoBlue),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text('Has sizes / variants',
+                                          style: TextStyle(color: context.textPrimary, fontSize: 12.5, fontWeight: FontWeight.bold)),
+                                      Text(
+                                        soldByWeight
+                                            ? 'Not available for items sold by weight'
+                                            : (existingTracked && !hasVariants)
+                                                ? 'This ${_vl.itemSingular.toLowerCase()} already tracks its own stock'
+                                                : 'Each size / colour gets its own barcode, price and stock',
+                                        style: TextStyle(color: context.textSecondary, fontSize: 11),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                Switch(
+                                  value: hasVariants,
+                                  activeThumbColor: ClassicTheme.infoBlue,
+                                  onChanged: (soldByWeight || (existingTracked && !hasVariants))
+                                      ? null
+                                      : (v) => setDialogState(() {
+                                            hasVariants = v;
+                                            if (v && variantCtrl.rows.isEmpty) {
+                                              variantCtrl.addRow(defaultPrice: priceCtrl.text.trim());
+                                            }
+                                          }),
+                                ),
+                              ],
+                            ),
+                            if (hasVariants) ...[
+                              Divider(color: context.borderColor, height: 16),
+                              VariantEditor(
+                                controller: variantCtrl,
+                                stockOn: stockOn,
+                                defaultPrice: () => priceCtrl.text.trim(),
+                              ),
+                            ],
+                          ],
+                        ),
                       ),
                       const SizedBox(height: 12),
                     ],
@@ -2084,6 +2266,30 @@ class _RestaurantMenuManagementScreenState
                     ],
                     const SizedBox(height: 14),
 
+                    // Restaurant option groups (portion, spice, add-ons...)
+                    if (_vl.isRestaurant) ...[
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: context.isDark ? ClassicTheme.cardSurfaceDark : context.canvasColor,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: context.borderColor),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Options & add-ons',
+                                style: TextStyle(color: context.textPrimary, fontSize: 13, fontWeight: FontWeight.bold)),
+                            Text('e.g. Portion size, spice level, extra cheese',
+                                style: TextStyle(color: context.textSecondary, fontSize: 12)),
+                            const SizedBox(height: 8),
+                            ModifierGroupEditor(controller: modifierCtrl),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                    ],
+
                     // Tax Exemption Toggle
                     InkWell(
                       onTap: () => setDialogState(() => isTaxExempt = !isTaxExempt),
@@ -2233,9 +2439,53 @@ class _RestaurantMenuManagementScreenState
                     return;
                   }
 
+                  // Weighed items, variants and option groups (see ItemContract).
+                  final selfId = existing?['id']?.toString();
+                  final plu = soldByWeight ? pluCtrl.text.trim() : '';
+                  String? formErr;
+                  if (plu.isNotEmpty) {
+                    if (!ItemContract.isValidPlu(plu)) {
+                      formErr = 'Scale PLU code must be 4 to 6 digits.';
+                    } else if (_dishes.any((d) => d['id']?.toString() != selfId && ItemContract.pluOf(d) == plu)) {
+                      formErr = 'PLU code $plu is already used by another ${_vl.itemSingular.toLowerCase()}.';
+                    }
+                  }
+                  // Barcodes are unique across products and variants. An
+                  // unchanged product barcode is not re-checked.
+                  final otherCodes = isShop ? ItemContract.allBarcodes(_dishes, excludeItemId: selfId) : const <String>{};
+                  final productCode = barcodeCtrl.text.trim();
+                  if (formErr == null &&
+                      isShop &&
+                      !hasVariants &&
+                      productCode.isNotEmpty &&
+                      productCode != (existing?['barcode'] ?? '').toString().trim() &&
+                      otherCodes.contains(productCode)) {
+                    formErr = 'Barcode $productCode is already used by another ${_vl.itemSingular.toLowerCase()}.';
+                  }
+                  if (formErr == null && stockOn && !existingTracked && !hasVariants) {
+                    final t = stockCtrl.text.trim();
+                    final q = double.tryParse(t);
+                    if (t.isNotEmpty && (q == null || q < 0)) {
+                      formErr = 'Enter a valid opening stock quantity.';
+                    }
+                  }
+                  if (formErr == null && isShop && hasVariants) {
+                    formErr = variantCtrl.validate(takenBarcodes: otherCodes, stockOn: stockOn);
+                  }
+                  if (formErr == null && !isShop) {
+                    formErr = modifierCtrl.validate();
+                  }
+                  if (formErr != null) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text(formErr), backgroundColor: ClassicTheme.warningAmber),
+                    );
+                    return;
+                  }
+
                   // Opening stock is only taken for a shop item that is not tracked yet.
+                  // A product with variants keeps its stock on the variants instead.
                   final openingQty = double.tryParse(stockCtrl.text.trim()) ?? 0;
-                  final wantsOpening = stockOn && !existingTracked && openingQty > 0;
+                  final wantsOpening = stockOn && !existingTracked && !hasVariants && openingQty > 0;
                   final batchNo = batchCtrl.text.trim();
                   if (wantsOpening && isPharmacy) {
                     String? stockErr;
@@ -2301,13 +2551,50 @@ class _RestaurantMenuManagementScreenState
                     if (existing != null) ...existing,
                     ...formFields,
                   };
-                  if (stockOn) {
+                  if (stockOn && !hasVariants) {
                     final reorder = double.tryParse(reorderCtrl.text.trim());
                     if (reorder == null) {
                       newDish.remove('reorderLevel');
                     } else {
                       newDish['reorderLevel'] = reorder;
                     }
+                  }
+                  if (isShop) {
+                    if (soldByWeight) {
+                      newDish['soldByWeight'] = true;
+                      newDish['unit'] = weighedUnit();
+                      if (plu.isEmpty) {
+                        newDish.remove('pluCode');
+                      } else {
+                        newDish['pluCode'] = plu;
+                      }
+                    } else {
+                      newDish.remove('soldByWeight');
+                      newDish.remove('pluCode');
+                    }
+                    if (hasVariants) {
+                      // The product is a container: barcode, SKU, stock and
+                      // reorder level live on each variant.
+                      newDish['variantAttributes'] = variantCtrl.attributes;
+                      newDish['variants'] = variantCtrl.toMaps(productPrice: price, stockOn: stockOn);
+                      newDish.remove('barcode');
+                      newDish.remove('sku');
+                      newDish.remove('reorderLevel');
+                    } else {
+                      newDish.remove('variants');
+                      newDish.remove('variantAttributes');
+                    }
+                  } else {
+                    // No groups = no modifiers: the key is removed.
+                    final groups = modifierCtrl.toMaps();
+                    if (groups.isEmpty) {
+                      newDish.remove('modifierGroups');
+                    } else {
+                      newDish['modifierGroups'] = groups;
+                    }
+                    // The legacy key was loaded into the editor; drop it so it
+                    // cannot bring back groups that were removed.
+                    if (newDish['modifiers'] is List) newDish.remove('modifiers');
                   }
 
                   setState(() {
@@ -3028,6 +3315,22 @@ class _RestaurantMenuManagementScreenState
                                                     ],
                                                   ),
                                                 ),
+                                              ] else if (_vertical != Verticals.restaurant && ItemContract.hasVariants(dish)) ...[
+                                                const SizedBox(width: 6),
+                                                Container(
+                                                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                                  decoration: BoxDecoration(
+                                                    color: context.inputFill,
+                                                    borderRadius: BorderRadius.circular(4),
+                                                    border: Border.all(color: context.borderColor),
+                                                  ),
+                                                  child: Text(
+                                                    ItemContract.variantsOf(dish).length == 1
+                                                        ? '1 variant'
+                                                        : '${ItemContract.variantsOf(dish).length} variants',
+                                                    style: TextStyle(color: context.textSecondary, fontSize: 10),
+                                                  ),
+                                                ),
                                               ],
                                               if (stockFeatureOn && _vertical != Verticals.restaurant && StockService.qtyOf(dish) != null) ...[
                                                 const SizedBox(width: 6),
@@ -3038,7 +3341,9 @@ class _RestaurantMenuManagementScreenState
                                                     borderRadius: BorderRadius.circular(4),
                                                   ),
                                                   child: Text(
-                                                    'Stock: ${_fmtQty(StockService.qtyOf(dish)!)} ${dish['unit'] ?? 'pcs'}',
+                                                    ItemContract.isWeighed(dish)
+                                                        ? 'Stock: ${ItemContract.formatQty(StockService.qtyOf(dish)!, ItemContract.unitOf(dish))}'
+                                                        : 'Stock: ${_fmtQty(StockService.qtyOf(dish)!)} ${dish['unit'] ?? 'pcs'}',
                                                     style: const TextStyle(color: ClassicTheme.successEmerald, fontSize: 10, fontWeight: FontWeight.bold),
                                                   ),
                                                 ),
@@ -3052,7 +3357,9 @@ class _RestaurantMenuManagementScreenState
 
                                     // Price
                                     Text(
-                                      '₹${((dish['price'] ?? 0.0) as num).toStringAsFixed(0)}',
+                                      ItemContract.isWeighed(dish)
+                                          ? '₹${_fmtQty(((dish['price'] ?? 0.0) as num).toDouble())} / ${ItemContract.unitOf(dish)}'
+                                          : '₹${((dish['price'] ?? 0.0) as num).toStringAsFixed(0)}',
                                       style: TextStyle(color: context.textPrimary, fontWeight: FontWeight.w900, fontSize: 14),
                                     ),
                                     const SizedBox(width: 8),

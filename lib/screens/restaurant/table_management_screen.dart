@@ -28,6 +28,7 @@ import '../../core/receipt/receipt_print_service.dart';
 import '../../core/receipt/receipt_template.dart';
 import '../../services/thermal_printer_service.dart';
 import '../../services/restaurant_sheets_service.dart';
+import '../../services/sheet_layout.dart';
 import '../../services/client_ledger_cloud_router_service.dart';
 import '../../providers/restaurant_auth_provider.dart';
 import '../../core/entitlements.dart';
@@ -702,7 +703,15 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen>
 
     // 2. Fallback: If cloud backend returned no orders and sheetId is known, try GViz
     if (fetchedFromRemote.isEmpty && sheetId.isNotEmpty && !sheetId.startsWith('sheet_ORG')) {
-      final candidateTabs = ['Bills', 'Dining Bills', 'Sales & Invoices', 'Orders', 'Table_Orders', 'Sheet1'];
+      final candidateTabs = <String>{
+        'Bills',
+        SheetLayout.active.salesTab,
+        'Dining Bills',
+        'Sales & Invoices',
+        'Orders',
+        'Table_Orders',
+        'Sheet1',
+      }.toList();
       for (final tab in candidateTabs) {
         try {
           final url = 'https://docs.google.com/spreadsheets/d/$sheetId/gviz/tq?tqx=out:json&sheet=$tab';

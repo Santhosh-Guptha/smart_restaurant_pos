@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart';
 import '../../../core/classic_theme.dart';
+import '../../../core/item_model_contract.dart';
 import '../../../core/restaurant_models.dart';
 
-/// Modal dialog allowing staff and customers to configure dish options & modifiers:
-/// - Spice Level: Mild / Medium / Spicy
-/// - Add-ons: Extra Cheese (+₹30), Double Patty (+₹60), Extra Butter (+₹20)
-/// - Portion Size: Half / Full
+/// Modal dialog for the option groups an item was set up with in the menu
+/// (`modifierGroups`): single-select ("Choose 1") or multi-select groups,
+/// optionally required.
+///
+/// There are no built-in options. An item without groups has no modifiers
+/// and is added straight to the bill ([needsDialog] is false) - a drink is
+/// never offered "Double Patty".
 class ItemModifierDialog extends StatefulWidget {
   final String itemName;
   final double basePrice;
@@ -20,7 +24,19 @@ class ItemModifierDialog extends StatefulWidget {
     this.initialSelectedModifiers = const [],
   });
 
-  /// Shows the dialog and returns the selected modifiers (or null if cancelled).
+  /// The item's own option groups (empty when it has none). Groups with no
+  /// options are dropped: there is nothing to pick in them.
+  static List<ItemModifierGroup> groupsFor(Map item) => [
+        for (final g in ItemContract.modifierGroupsOf(item))
+          if ((g['options'] as List).isNotEmpty) ItemModifierGroup.fromMap(g),
+      ];
+
+  /// Whether adding [item] asks for options first: only when it has groups.
+  static bool needsDialog(Map item) => groupsFor(item).isNotEmpty;
+
+  /// Shows the dialog and returns the selected modifiers (or null if
+  /// cancelled). With no [modifierGroups] nothing is shown and the result is
+  /// an empty selection, so the caller adds the item as it is.
   static Future<List<ItemModifierOption>?> show({
     required BuildContext context,
     required String itemName,
@@ -28,9 +44,12 @@ class ItemModifierDialog extends StatefulWidget {
     List<ItemModifierGroup>? modifierGroups,
     List<ItemModifierOption> initialSelectedModifiers = const [],
   }) {
-    final effectiveGroups = (modifierGroups != null && modifierGroups.isNotEmpty)
-        ? modifierGroups
-        : ItemModifierGroup.standardPresets;
+    final effectiveGroups = (modifierGroups ?? const <ItemModifierGroup>[])
+        .where((g) => g.options.isNotEmpty)
+        .toList();
+    if (effectiveGroups.isEmpty) {
+      return Future.value(const <ItemModifierOption>[]);
+    }
 
     return showDialog<List<ItemModifierOption>>(
       context: context,

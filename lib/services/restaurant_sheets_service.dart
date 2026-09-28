@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/foundation.dart';
 import 'package:googleapis/sheets/v4.dart' as sheets;
 import 'package:googleapis/drive/v3.dart' as drive;
@@ -5,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'package:hive_flutter/hive_flutter.dart';
 import '../core/constants.dart';
 import '../core/restaurant_models.dart';
+import 'sheet_layout.dart';
 
 class RestaurantSheetsService {
   static const String boxName = 'restaurant_config_box';
@@ -18,19 +21,25 @@ class RestaurantSheetsService {
 
   /// Uploads a menu dish image to the restaurant's connected Google Drive in a dedicated folder.
   /// Sets public reader permission and returns the direct Google Edge CDN thumbnail URL.
+  /// The folder and file names follow the trade's [SheetLayout]
+  /// ([vertical], default the signed-in store's): a restaurant keeps
+  /// "SmartDine_Menu_Images" / "dish_", a shop uses
+  /// "SmartBizz_Product_Images" / "product_".
   static Future<Map<String, dynamic>> uploadDishImageToDrive({
     required http.Client authenticatedClient,
     required List<int> imageBytes,
     required String dishId,
     String? mimeType,
+    String? vertical,
   }) async {
+    final layout = SheetLayout.forVertical(vertical ?? SheetLayout.activeVertical);
     try {
       final driveApi = drive.DriveApi(authenticatedClient);
 
-      // 1. Check or create "SmartDine_Menu_Images" folder in Google Drive
+      // 1. Check or create the layout's images folder in Google Drive
       String folderId;
       final folderQuery =
-          "mimeType = 'application/vnd.google-apps.folder' and name = 'SmartDine_Menu_Images' and trashed = false";
+          "mimeType = 'application/vnd.google-apps.folder' and name = '${layout.imagesFolder}' and trashed = false";
       final folderList = await driveApi.files.list(q: folderQuery, spaces: 'drive');
 
       if (folderList.files != null && folderList.files!.isNotEmpty) {
@@ -38,9 +47,9 @@ class RestaurantSheetsService {
       } else {
         final newFolder = await driveApi.files.create(
           drive.File(
-            name: 'SmartDine_Menu_Images',
+            name: layout.imagesFolder,
             mimeType: 'application/vnd.google-apps.folder',
-            description: 'Public menu item images for SmartBizz POS and QR ordering',
+            description: layout.imagesFolderDescription,
           ),
         );
         folderId = newFolder.id!;
@@ -50,9 +59,9 @@ class RestaurantSheetsService {
       final timestamp = DateTime.now().millisecondsSinceEpoch;
       final effectiveMime = mimeType ?? 'image/jpeg';
       final fileMetadata = drive.File(
-        name: 'dish_${dishId}_$timestamp.jpg',
+        name: layout.imageFileName(dishId, timestamp),
         parents: [folderId],
-        description: 'Menu dish image for dish: $dishId',
+        description: layout.imageDescriptionFor(dishId),
       );
 
       final media = drive.Media(
@@ -184,117 +193,56 @@ class RestaurantSheetsService {
     }
   }
 
-  /// Ensures all 7 required tabs exist in the spreadsheet so append/update never fails with parse error
+  /// Ensures all 7 required tabs exist in the spreadsheet so append/update never fails with parse error.
+  /// The tabs are the trade's [SheetLayout] ([vertical], default the
+  /// signed-in store's). Missing tabs are added with their header row;
+  /// nothing is ever removed or renamed.
   static Future<void> ensureRestaurantTabsExist({
     required http.Client authenticatedClient,
     required String sheetId,
+    String? vertical,
+  }) async {
+    await ensureSheetTabs(
+      authenticatedClient: authenticatedClient,
+      sheetId: sheetId,
+      layout: SheetLayout.forVertical(vertical ?? SheetLayout.activeVertical),
+    );
+  }
+
+  /// Adds the tabs of [layout] that the spreadsheet lacks and returns which
+  /// tab serves each role there ([SheetLayout.resolveTabs]): a shop sheet
+  /// made with the old restaurant tab names keeps using them (legacy mode)
+  /// and only gets the tabs that have no old equivalent. `null` when the
+  /// spreadsheet could not be read.
+  static Future<ResolvedSheetTabs?> ensureSheetTabs({
+    required http.Client authenticatedClient,
+    required String sheetId,
+    required SheetLayout layout,
   }) async {
     try {
       final api = sheets.SheetsApi(authenticatedClient);
       final ss = await api.spreadsheets.get(sheetId);
       final existingTitles = (ss.sheets ?? []).map((s) => s.properties?.title).whereType<String>().toSet();
 
-      final requiredTabs = [
-        'Menu & Modifiers',
-        'Dining Bills',
-        'KOT History',
-        'Tables & QR',
-        'Recipe Inventory (BOM)',
-        'Kitchen Expenses',
-        'Day End Reports',
-      ];
-
+      final resolved = layout.resolveTabs(existingTitles);
       final tabHeaders = <String, List<String>>{
-        'Menu & Modifiers': [
-          'Item ID',
-          'Dish Name',
-          'Category',
-          'Price (Rs)',
-          'Food Type (Veg/NonVeg)',
-          'Prep Time (Mins)',
-          'Kitchen Station',
-          'Is Available',
-          'Available From',
-          'Available To',
-          'Is Time Restricted',
-          'Image URL',
-        ],
-        'Dining Bills': [
-          'Bill ID',
-          'Date & Time',
-          'Customer Name',
-          'Customer Phone',
-          'Payment Mode',
-          'Subtotal',
-          'Discount',
-          'Total Amount',
-          'Items Summary',
-          'Status',
-          'Table',
-          'Transaction ID',
-        ],
-        'KOT History': [
-          'KOT ID',
-          'Token Number',
-          'Table Location',
-          'Kitchen Station',
-          'Punched By',
-          'Items Description',
-          'Status',
-          'Timestamp',
-        ],
-        'Tables & QR': [
-          'Table ID',
-          'Table Number',
-          'Section',
-          'Capacity',
-          'Status',
-          'QR Menu Link',
-        ],
-        'Recipe Inventory (BOM)': [
-          'Material ID',
-          'Ingredient Name',
-          'Stock Quantity',
-          'Unit (kg/g/ml/pcs)',
-          'Reorder Level',
-          'Cost Per Unit',
-        ],
-        'Kitchen Expenses': [
-          'Expense ID',
-          'Date',
-          'Category (Dairy/Veggies/Gas)',
-          'Amount (Rs)',
-          'Vendor / Supplier',
-          'Note',
-        ],
-        'Day End Reports': [
-          'Date',
-          'Total Revenue',
-          'Dine-In Sales',
-          'Takeaway Sales',
-          'Online QR Sales',
-          'Cash Collected',
-          'UPI Collected',
-          'Discounts Given',
-        ],
+        for (final e in layout.tabsByRole.entries) e.value: layout.ensureHeadersFor(e.key),
       };
 
       final requests = <sheets.Request>[];
       final newlyAddedTabs = <String>[];
-      for (final title in requiredTabs) {
-        if (!existingTitles.contains(title)) {
-          newlyAddedTabs.add(title);
-          requests.add(
-            sheets.Request(
-              addSheet: sheets.AddSheetRequest(
-                properties: sheets.SheetProperties(
-                  title: title,
-                  gridProperties: sheets.GridProperties(frozenRowCount: 1),
-                ),
+      for (final title in resolved.missing) {
+        newlyAddedTabs.add(title);
+        requests.add(
+          sheets.Request(
+            addSheet: sheets.AddSheetRequest(
+              properties: sheets.SheetProperties(
+                title: title,
+                gridProperties: sheets.GridProperties(frozenRowCount: 1),
               ),
             ),
-          );
-        }
+          ),
+        );
       }
 
       if (requests.isNotEmpty) {
@@ -306,12 +254,11 @@ class RestaurantSheetsService {
         // Populate initial headers for newly created tabs
         final headerRanges = <sheets.ValueRange>[];
         for (final title in newlyAddedTabs) {
-          if (tabHeaders.containsKey(title)) {
-            final headers = tabHeaders[title]!;
-            final endCol = String.fromCharCode(65 + headers.length - 1);
+          final headers = tabHeaders[title];
+          if (headers != null && headers.isNotEmpty) {
             headerRanges.add(
               sheets.ValueRange(
-                range: "'$title'!A1:${endCol}1",
+                range: SheetLayout.headerRange(title, headers.length),
                 values: [headers],
               ),
             );
@@ -331,8 +278,28 @@ class RestaurantSheetsService {
           }
         }
       }
+      return resolved;
     } catch (e) {
       debugPrint('ensureRestaurantTabsExist notice: $e');
+      return null;
+    }
+  }
+
+  /// Which tab serves each role of [layout] in the spreadsheet, without
+  /// changing it. `null` when the spreadsheet could not be read.
+  static Future<ResolvedSheetTabs?> resolveSheetTabs({
+    required http.Client authenticatedClient,
+    required String sheetId,
+    required SheetLayout layout,
+  }) async {
+    try {
+      final api = sheets.SheetsApi(authenticatedClient);
+      final ss = await api.spreadsheets.get(sheetId, $fields: 'sheets.properties.title');
+      final titles = (ss.sheets ?? []).map((s) => s.properties?.title).whereType<String>();
+      return layout.resolveTabs(titles);
+    } catch (e) {
+      debugPrint('resolveSheetTabs notice: $e');
+      return null;
     }
   }
 
@@ -379,14 +346,20 @@ class RestaurantSheetsService {
   /// the outlet id, so a second branch no longer finds — and silently shares —
   /// the first branch's sheet. [saveAsActive] is false when an owner creates a
   /// sheet for *another* branch, so their own till keeps writing to its own.
+  ///
+  /// The tabs and header rows are the trade's [SheetLayout] ([vertical],
+  /// default the signed-in store's). An existing shop sheet found on Drive
+  /// gets any tab it lacks added ([ensureSheetTabs]).
   static Future<Map<String, dynamic>> provisionRestaurantSheet({
     required http.Client authenticatedClient,
     required String restaurantName,
     required String orgId,
     String? outletId,
     bool saveAsActive = true,
+    String? vertical,
   }) async {
     final ledgerKey = (outletId != null && outletId.isNotEmpty) ? outletId : orgId;
+    final layout = SheetLayout.forVertical(vertical ?? SheetLayout.activeVertical);
     try {
       final sheetsApi = sheets.SheetsApi(authenticatedClient);
       final driveApi = drive.DriveApi(authenticatedClient);
@@ -400,6 +373,13 @@ class RestaurantSheetsService {
           final existingId = existing.files!.first.id;
           if (existingId != null && existingId.isNotEmpty) {
             debugPrint('Found existing Restaurant Sheet on Drive: $existingId');
+            if (layout.isShop) {
+              await ensureSheetTabs(
+                authenticatedClient: authenticatedClient,
+                sheetId: existingId,
+                layout: layout,
+              );
+            }
             return {
               'success': true,
               'spreadsheetId': existingId,
@@ -417,48 +397,13 @@ class RestaurantSheetsService {
           title: 'SmartBizz Ledger - $restaurantName ($ledgerKey)',
         ),
         sheets: [
-          sheets.Sheet(
-            properties: sheets.SheetProperties(
-              title: 'Menu & Modifiers',
-              gridProperties: sheets.GridProperties(frozenRowCount: 1),
+          for (final title in layout.tabs)
+            sheets.Sheet(
+              properties: sheets.SheetProperties(
+                title: title,
+                gridProperties: sheets.GridProperties(frozenRowCount: 1),
+              ),
             ),
-          ),
-          sheets.Sheet(
-            properties: sheets.SheetProperties(
-              title: 'Dining Bills',
-              gridProperties: sheets.GridProperties(frozenRowCount: 1),
-            ),
-          ),
-          sheets.Sheet(
-            properties: sheets.SheetProperties(
-              title: 'KOT History',
-              gridProperties: sheets.GridProperties(frozenRowCount: 1),
-            ),
-          ),
-          sheets.Sheet(
-            properties: sheets.SheetProperties(
-              title: 'Tables & QR',
-              gridProperties: sheets.GridProperties(frozenRowCount: 1),
-            ),
-          ),
-          sheets.Sheet(
-            properties: sheets.SheetProperties(
-              title: 'Recipe Inventory (BOM)',
-              gridProperties: sheets.GridProperties(frozenRowCount: 1),
-            ),
-          ),
-          sheets.Sheet(
-            properties: sheets.SheetProperties(
-              title: 'Kitchen Expenses',
-              gridProperties: sheets.GridProperties(frozenRowCount: 1),
-            ),
-          ),
-          sheets.Sheet(
-            properties: sheets.SheetProperties(
-              title: 'Day End Reports',
-              gridProperties: sheets.GridProperties(frozenRowCount: 1),
-            ),
-          ),
         ],
       );
 
@@ -473,113 +418,11 @@ class RestaurantSheetsService {
         sheets.BatchUpdateValuesRequest(
           valueInputOption: 'USER_ENTERED',
           data: [
-            sheets.ValueRange(
-              range: "'Menu & Modifiers'!A1:L1",
-              values: [
-                [
-                  'Dish ID',
-                  'Name',
-                  'Category',
-                  'Price (Rs)',
-                  'Food Type (Veg/NonVeg)',
-                  'Prep Time (Mins)',
-                  'Kitchen Station',
-                  'Is Available',
-                  'Available From',
-                  'Available To',
-                  'Is Time Restricted',
-                  'Image URL',
-                ]
-              ],
-            ),
-            sheets.ValueRange(
-              range: "'Dining Bills'!A1:L1",
-              values: [
-                [
-                  'Bill ID',
-                  'Date & Time',
-                  'Customer Name',
-                  'Customer Phone',
-                  'Payment Mode',
-                  'Subtotal',
-                  'Discount',
-                  'Total Amount',
-                  'Items Summary',
-                  'Status',
-                  'Table',
-                  'Transaction ID',
-                ]
-              ],
-            ),
-            sheets.ValueRange(
-              range: "'KOT History'!A1:H1",
-              values: [
-                [
-                  'KOT ID',
-                  'Token Number',
-                  'Table Location',
-                  'Kitchen Station',
-                  'Punched By',
-                  'Items Description',
-                  'Status',
-                  'Timestamp',
-                ]
-              ],
-            ),
-            sheets.ValueRange(
-              range: "'Tables & QR'!A1:F1",
-              values: [
-                [
-                  'Table ID',
-                  'Table Number',
-                  'Section',
-                  'Capacity',
-                  'Status',
-                  'QR Menu Link',
-                ]
-              ],
-            ),
-            sheets.ValueRange(
-              range: "'Recipe Inventory (BOM)'!A1:F1",
-              values: [
-                [
-                  'Material ID',
-                  'Ingredient Name',
-                  'Stock Quantity',
-                  'Unit (kg/g/ml/pcs)',
-                  'Reorder Level',
-                  'Cost Per Unit',
-                ]
-              ],
-            ),
-            sheets.ValueRange(
-              range: "'Kitchen Expenses'!A1:F1",
-              values: [
-                [
-                  'Expense ID',
-                  'Date',
-                  'Category (Dairy/Veggies/Gas)',
-                  'Amount (Rs)',
-                  'Vendor / Supplier',
-                  'Note',
-                ]
-              ],
-            ),
-            sheets.ValueRange(
-              range: "'Day End Reports'!A1:H1",
-              values: [
-                [
-                  'Date',
-                  'Total Revenue',
-                  'Dine-In Sales',
-                  'Takeaway Sales',
-                  'Online QR Sales',
-                  'Cash Collected',
-                  'UPI Collected',
-                  'Discounts Given',
-                ]
-              ],
-            ),
+            for (final e in layout.tabsByRole.entries)
+              sheets.ValueRange(
+                range: SheetLayout.headerRange(e.value, layout.headersFor(e.key).length),
+                values: [layout.headersFor(e.key)],
+              ),
           ],
         ),
         sheetId,
@@ -604,16 +447,29 @@ class RestaurantSheetsService {
   }
 
 
-  /// Overwrites and syncs dishes to the 'Menu & Modifiers' tab in Google Sheets
+  /// Overwrites and syncs dishes to the 'Menu & Modifiers' tab in Google Sheets.
+  /// A shop ([vertical], default the signed-in store's) writes its products
+  /// tab instead, by header name - see [_syncShopProducts].
   static Future<bool> syncMenuDishes({
     required http.Client authenticatedClient,
     required String sheetId,
     required List<Map<String, dynamic>> dishes,
+    String? vertical,
   }) async {
+    final layout = SheetLayout.forVertical(vertical ?? SheetLayout.activeVertical);
+    if (layout.isShop) {
+      return _syncShopProducts(
+        authenticatedClient: authenticatedClient,
+        sheetId: sheetId,
+        items: dishes,
+        layout: layout,
+      );
+    }
     try {
       await ensureRestaurantTabsExist(
         authenticatedClient: authenticatedClient,
         sheetId: sheetId,
+        vertical: layout.vertical,
       );
 
       final api = sheets.SheetsApi(authenticatedClient);
@@ -640,7 +496,7 @@ class RestaurantSheetsService {
         await api.spreadsheets.values.clear(
           sheets.ClearValuesRequest(),
           sheetId,
-          "'Menu & Modifiers'!A2:L1000",
+          SheetLayout.range(layout.productsTab, layout.productHeaders.length),
         );
       } catch (_) {}
 
@@ -648,7 +504,7 @@ class RestaurantSheetsService {
         await api.spreadsheets.values.update(
           sheets.ValueRange(values: rows),
           sheetId,
-          "'Menu & Modifiers'!A2",
+          SheetLayout.anchor(layout.productsTab),
           valueInputOption: 'USER_ENTERED',
         );
       }
@@ -659,17 +515,93 @@ class RestaurantSheetsService {
     }
   }
 
+  /// A shop's products, written under the header row the products tab
+  /// already has (or the layout's, on an empty tab). Layout columns the
+  /// tab lacks are appended to its header row, never moved; columns the
+  /// app does not own (the server's `rev`, a user's notes) keep their
+  /// values. A legacy shop sheet keeps its "Menu & Modifiers" tab.
+  static Future<bool> _syncShopProducts({
+    required http.Client authenticatedClient,
+    required String sheetId,
+    required List<Map<String, dynamic>> items,
+    required SheetLayout layout,
+  }) async {
+    try {
+      final resolved = await ensureSheetTabs(
+        authenticatedClient: authenticatedClient,
+        sheetId: sheetId,
+        layout: layout,
+      );
+      final tab = resolved?.tab(SheetRole.products) ?? layout.productsTab;
+      final api = sheets.SheetsApi(authenticatedClient);
+
+      List<List<Object?>> current = const [];
+      try {
+        final got = await api.spreadsheets.values.get(sheetId, SheetLayout.quoteTab(tab));
+        current = got.values ?? const [];
+      } catch (_) {}
+
+      final existingHeader = current.isEmpty ? const <Object?>[] : current.first;
+      final existingRows = current.length > 1 ? current.sublist(1) : const <List<Object?>>[];
+      final headers = SheetLayout.mergeHeaders(existingHeader, layout.productHeaders);
+      final rows = SheetLayout.buildRows(headers: headers, items: items, existingRows: existingRows);
+
+      final headerChanged = existingHeader.length != headers.length ||
+          [for (var i = 0; i < headers.length; i++) (existingHeader[i] ?? '').toString() == headers[i]].contains(false);
+      if (headerChanged) {
+        await api.spreadsheets.values.update(
+          sheets.ValueRange(values: [headers]),
+          sheetId,
+          SheetLayout.headerRange(tab, headers.length),
+          valueInputOption: 'USER_ENTERED',
+        );
+      }
+
+      var width = headers.length;
+      for (final r in existingRows) {
+        width = math.max(width, r.length);
+      }
+      final lastRow = math.max(1000, math.max(existingRows.length, rows.length) + 1);
+      try {
+        await api.spreadsheets.values.clear(
+          sheets.ClearValuesRequest(),
+          sheetId,
+          SheetLayout.range(tab, width, lastRow: lastRow),
+        );
+      } catch (_) {}
+
+      if (rows.isNotEmpty) {
+        await api.spreadsheets.values.update(
+          sheets.ValueRange(values: rows),
+          sheetId,
+          SheetLayout.anchor(tab),
+          valueInputOption: 'USER_ENTERED',
+        );
+      }
+      return true;
+    } catch (e) {
+      debugPrint('Failed to sync products to Google Sheet: $e');
+      return false;
+    }
+  }
+
 
   /// Syncs restaurant tables to 'Tables & QR' tab in Google Sheet
   static Future<bool> syncTables({
     required http.Client authenticatedClient,
     required String sheetId,
     required List<RestaurantTable> tables,
+    String? vertical,
   }) async {
+    final layout = SheetLayout.forVertical(vertical ?? SheetLayout.activeVertical);
+    final tablesTab = layout.tablesTab;
+    // A shop has no tables tab; its sheet is never given one.
+    if (tablesTab == null) return true;
     try {
       await ensureRestaurantTabsExist(
         authenticatedClient: authenticatedClient,
         sheetId: sheetId,
+        vertical: layout.vertical,
       );
 
       final api = sheets.SheetsApi(authenticatedClient);
@@ -689,7 +621,7 @@ class RestaurantSheetsService {
         await api.spreadsheets.values.clear(
           sheets.ClearValuesRequest(),
           sheetId,
-          "'Tables & QR'!A2:F500",
+          SheetLayout.range(tablesTab, layout.headersFor(SheetRole.tables).length, lastRow: 500),
         );
       } catch (_) {}
 
@@ -697,7 +629,7 @@ class RestaurantSheetsService {
         await api.spreadsheets.values.update(
           sheets.ValueRange(values: rows),
           sheetId,
-          "'Tables & QR'!A2",
+          SheetLayout.anchor(tablesTab),
           valueInputOption: 'USER_ENTERED',
         );
       }

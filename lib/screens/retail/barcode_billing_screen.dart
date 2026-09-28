@@ -4,8 +4,10 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 
+import '../../billing/scale_barcode.dart';
 import '../../core/classic_theme.dart';
 import '../../core/entitlements.dart';
+import '../../core/item_model_contract.dart';
 import '../../core/feature_route_guard.dart';
 import '../../core/package_model.dart';
 import '../../core/receipt/receipt_context_builder.dart';
@@ -18,8 +20,14 @@ import '../../providers/saas_session_provider.dart';
 import '../../services/thermal_printer_service.dart';
 import '../../utils/ui_feedback.dart';
 import '../counter_billing/widgets/upi_qr_payment_sheet.dart';
+import '../counter_billing/widgets/weighed_and_variant_pickers.dart';
 
 /// In-memory representation of an item added to the retail cart.
+///
+/// [quantity] is a double: whole numbers for counted goods (int semantics,
+/// stored as an int), fractional for goods sold by weight/volume
+/// ([soldByWeight], price per [unit]). A variant line has
+/// `id` = `<productId>::<variantId>` and the variant's name/price.
 class RetailCartItem {
   final String id;
   final String name;
@@ -29,7 +37,8 @@ class RetailCartItem {
   final double price;
   final double? mrp;
   final bool isTaxExempt;
-  int quantity;
+  final bool soldByWeight;
+  double quantity;
 
   RetailCartItem({
     required this.id,
@@ -40,13 +49,22 @@ class RetailCartItem {
     required this.price,
     this.mrp,
     this.isTaxExempt = false,
+    this.soldByWeight = false,
     this.quantity = 1,
   });
 
-  double get lineTotal => price * quantity;
+  /// What one tap of +/- changes the quantity by.
+  double get qtyStep => ItemContract.qtyStep({'soldByWeight': soldByWeight, 'unit': unit});
+
+  /// Weighed lines are rounded to the paisa (0.333 kg x 120 = 39.96).
+  double get lineTotal => soldByWeight ? (price * quantity * 100).round() / 100 : price * quantity;
   double get savings => (mrp != null && mrp! > price) ? (mrp! - price) * quantity : 0.0;
 
+  /// The quantity as the cart shows it: "0.500 kg" or "3".
+  String get qtyLabel => WeighedQty.label(quantity, unit, weighed: soldByWeight);
+
   Map<String, dynamic> toMap() {
+    final (productId, variantId) = ItemContract.splitLineId(id);
     return {
       'id': id,
       'name': name,
@@ -55,10 +73,14 @@ class RetailCartItem {
       'unit': unit,
       'price': price,
       'mrp': mrp,
-      'quantity': quantity,
+      // Counted goods keep the int they always stored.
+      'quantity': soldByWeight ? quantity : quantity.round(),
       'lineTotal': lineTotal,
       'amount': lineTotal,
       'isTaxExempt': isTaxExempt,
+      if (soldByWeight) 'soldByWeight': true,
+      if (variantId != null) 'productId': productId,
+      if (variantId != null) 'variantId': variantId,
     };
   }
 
@@ -72,7 +94,8 @@ class RetailCartItem {
       price: (map['price'] as num?)?.toDouble() ?? 0.0,
       mrp: (map['mrp'] as num?)?.toDouble(),
       isTaxExempt: map['isTaxExempt'] == true,
-      quantity: (map['quantity'] as num?)?.toInt() ?? 1,
+      soldByWeight: map['soldByWeight'] == true,
+      quantity: (map['quantity'] as num?)?.toDouble() ?? 1,
     );
   }
 }
@@ -121,6 +144,9 @@ class _BarcodeBillingScreenState extends ConsumerState<BarcodeBillingScreen>
   double _discountPercent = 0.0;
   double _taxRate = 0.0; // In % (e.g. 5.0 for 5% GST)
 
+  /// Weighing-scale label layout (Store configuration → Weighing scale labels).
+  ScaleConfig _scaleCfg = const ScaleConfig();
+
   bool _isSettling = false;
 
   @override
@@ -156,6 +182,7 @@ class _BarcodeBillingScreenState extends ConsumerState<BarcodeBillingScreen>
         // an older key kept only as a fallback.
         final gst = configBox.get('restaurant_gst_percentage') ?? configBox.get('gst_tax_rate');
         _taxRate = gst is num ? gst.toDouble() : (double.tryParse('${gst ?? ''}') ?? 0.0);
+        _scaleCfg = ScaleConfig.fromValues(configBox.get);
       }
     } catch (e) {
       debugPrint('Error loading retail catalog: $e');
@@ -197,7 +224,9 @@ class _BarcodeBillingScreenState extends ConsumerState<BarcodeBillingScreen>
 
   double get _grandTotal => _rawGrandTotal + _roundOff;
 
-  int get _totalItemUnits => _cart.fold(0, (sum, item) => sum + item.quantity);
+  /// A weighed line (0.500 kg) counts as one unit.
+  int get _totalItemUnits =>
+      _cart.fold<int>(0, (sum, item) => sum + (item.soldByWeight ? 1 : item.quantity.round()));
 
   double get _totalSavings => _cart.fold(0.0, (sum, item) => sum + item.savings);
 
@@ -207,14 +236,42 @@ class _BarcodeBillingScreenState extends ConsumerState<BarcodeBillingScreen>
     final query = code.trim();
     if (query.isEmpty) return;
 
-    // 1. Try exact barcode match
-    final barcodeMatch = _catalogDishes.firstWhere(
-      (d) => (d['barcode']?.toString() ?? '') == query,
-      orElse: () => {},
-    );
+    // 1. Try exact barcode match: product or variant barcode (a variant's
+    //    barcode adds that variant directly).
+    final barcodeMatch = ItemContract.findByBarcode(_catalogDishes, query);
 
-    if (barcodeMatch.isNotEmpty) {
-      _addItemToCart(barcodeMatch);
+    if (barcodeMatch != null) {
+      final variant = barcodeMatch.variant;
+      if (variant != null) {
+        _addItemToCart(StockService.variantView(barcodeMatch.item, variant));
+      } else {
+        _chooseAndAdd(barcodeMatch.item);
+      }
+      _scanCtrl.clear();
+      _scanFocusNode.requestFocus();
+      return;
+    }
+
+    // 1b. A weighing-scale label: PLU + weight (or price).
+    final label = ScaleBarcode.parse(query, _scaleCfg);
+    if (label != null) {
+      final item = ScaleBarcode.findByPlu(_catalogDishes, label.plu);
+      final weighed = item != null && ItemContract.isWeighed(item);
+      final qty = (item != null && weighed) ? ScaleBarcode.quantityFor(item, label) : null;
+      if (item == null || !weighed || qty == null || qty <= 0) {
+        HapticFeedback.heavyImpact();
+        AppToast.showWarning(
+          context,
+          item == null
+              ? 'Scale label: no item has PLU ${label.plu}'
+              : !weighed
+                  ? '${item['name'] ?? 'This item'} has PLU ${label.plu} but is not sold by weight'
+                  : 'Scale label for ${item['name'] ?? 'item'} could not be read (check its price)',
+        );
+        _scanCtrl.selection = TextSelection(baseOffset: 0, extentOffset: _scanCtrl.text.length);
+        return;
+      }
+      _addItemToCart(item, qty: qty);
       _scanCtrl.clear();
       _scanFocusNode.requestFocus();
       return;
@@ -227,7 +284,7 @@ class _BarcodeBillingScreenState extends ConsumerState<BarcodeBillingScreen>
     );
 
     if (skuMatch.isNotEmpty) {
-      _addItemToCart(skuMatch);
+      _chooseAndAdd(skuMatch);
       _scanCtrl.clear();
       _scanFocusNode.requestFocus();
       return;
@@ -240,7 +297,7 @@ class _BarcodeBillingScreenState extends ConsumerState<BarcodeBillingScreen>
     );
 
     if (nameMatch.isNotEmpty) {
-      _addItemToCart(nameMatch);
+      _chooseAndAdd(nameMatch);
       _scanCtrl.clear();
       _scanFocusNode.requestFocus();
       return;
@@ -254,7 +311,7 @@ class _BarcodeBillingScreenState extends ConsumerState<BarcodeBillingScreen>
     }).toList();
 
     if (fuzzyMatches.length == 1) {
-      _addItemToCart(fuzzyMatches.first);
+      _chooseAndAdd(fuzzyMatches.first);
       _scanCtrl.clear();
       _scanFocusNode.requestFocus();
       return;
@@ -272,26 +329,50 @@ class _BarcodeBillingScreenState extends ConsumerState<BarcodeBillingScreen>
   /// Stock checks at the till only run when the store has Stock management.
   bool get _stockOn => ref.read(featureEnabledProvider(FeatureKeys.stockManagement));
 
-  static String _fmtQty(double q) => q == q.roundToDouble() ? q.toStringAsFixed(0) : q.toStringAsFixed(2);
+  /// Up to three decimals (a weighed item's 0.125 kg), trailing zeros dropped.
+  static String _fmtQty(double q) => ItemContract.formatQty(q, 'pcs');
 
-  Map<String, dynamic>? _catalogItem(String id) {
-    for (final d in _catalogDishes) {
-      if ((d['id']?.toString() ?? '') == id) return d;
-    }
-    return null;
-  }
+  /// The product for [id], or for `<product>::<variant>` the variant's view.
+  Map<String, dynamic>? _catalogItem(String id) => StockService.lineItem(id, _catalogDishes);
+
+  /// Everything of [id] already in the cart (a weighed item can be on several
+  /// lines, one per weighing).
+  double _inCartQty(String id) =>
+      _cart.where((c) => c.id == id).fold<double>(0, (s, c) => s + c.quantity);
 
   /// A message when [wantedQty] of [dish] is more than can be sold (expired
   /// batches excluded), else null. Untracked products always pass.
-  String? _stockLimitMessage(Map<String, dynamic>? dish, int wantedQty) {
+  String? _stockLimitMessage(Map<String, dynamic>? dish, num wantedQty) {
     if (dish == null || !_stockOn) return null;
     final sellable = StockService.sellableQtyOf(dish);
     if (sellable == null) return null;
-    if (wantedQty <= sellable) return null;
+    // A hair of float tolerance so 0.3 + 0.2 kg against 0.5 kg passes.
+    if (wantedQty <= sellable + 1e-9) return null;
     final name = dish['name']?.toString() ?? 'This item';
     final unit = dish['unit']?.toString() ?? 'pcs';
     if (sellable <= 0) return '$name is out of stock.';
     return 'Only ${_fmtQty(sellable)} $unit of $name in stock.';
+  }
+
+  /// Tap / search / plain-barcode entry point: a product with variants asks
+  /// which one, a weighed product asks for the weight, anything else is
+  /// added as one piece.
+  Future<void> _chooseAndAdd(Map<String, dynamic> dish) async {
+    if (ItemContract.hasVariants(dish)) {
+      final view = await VariantPickerSheet.show(context, product: dish, stockOn: _stockOn);
+      if (view == null || !mounted) return;
+      _addItemToCart(view);
+      _scanFocusNode.requestFocus();
+      return;
+    }
+    if (ItemContract.isWeighed(dish)) {
+      final qty = await WeightEntryDialog.show(context, item: dish);
+      if (qty == null || qty <= 0 || !mounted) return;
+      _addItemToCart(dish, qty: qty);
+      _scanFocusNode.requestFocus();
+      return;
+    }
+    _addItemToCart(dish);
   }
 
   void _showStockBlock(String message) {
@@ -301,9 +382,22 @@ class _BarcodeBillingScreenState extends ConsumerState<BarcodeBillingScreen>
     );
   }
 
-  void _addItemToCart(Map<String, dynamic> dish) {
+  /// Adds [qty] of [dish] (a product or a variant view). Counted goods merge
+  /// into their existing line; each weighing of a weighed item is its own
+  /// line, as on the scale label.
+  void _addItemToCart(Map<String, dynamic> dish, {double qty = 1}) {
     final dishId = dish['id']?.toString() ?? '';
-    final existingIdx = _cart.indexWhere((item) => item.id == dishId);
+    final weighed = ItemContract.isWeighed(dish);
+    final existingIdx = weighed ? -1 : _cart.indexWhere((item) => item.id == dishId);
+    if (ItemContract.hasVariants(dish)) {
+      // A product with variants is only sold as one of them.
+      _chooseAndAdd(dish);
+      return;
+    }
+    if (!ItemContract.variantAvailable(dish) && (dish['variantId'] ?? '').toString().isNotEmpty) {
+      _showStockBlock('${dish['name'] ?? 'This option'} is not available.');
+      return;
+    }
     if (_stockOn) {
       // Expired medicine cannot be billed.
       final blocked = StockService.blockReason(dish);
@@ -311,8 +405,7 @@ class _BarcodeBillingScreenState extends ConsumerState<BarcodeBillingScreen>
         _showStockBlock(blocked);
         return;
       }
-      final inCart = existingIdx != -1 ? _cart[existingIdx].quantity : 0;
-      final limit = _stockLimitMessage(dish, inCart + 1);
+      final limit = _stockLimitMessage(dish, _inCartQty(dishId) + qty);
       if (limit != null) {
         _showStockBlock(limit);
         return;
@@ -334,18 +427,19 @@ class _BarcodeBillingScreenState extends ConsumerState<BarcodeBillingScreen>
 
     setState(() {
       if (existingIdx != -1) {
-        _cart[existingIdx].quantity += 1;
+        _cart[existingIdx].quantity += qty;
       } else {
         _cart.add(RetailCartItem(
           id: dishId,
           name: dish['name']?.toString() ?? 'Product',
           barcode: dish['barcode']?.toString(),
           sku: dish['sku']?.toString(),
-          unit: dish['unit']?.toString() ?? 'pcs',
+          unit: weighed ? ItemContract.unitOf(dish) : (dish['unit']?.toString() ?? 'pcs'),
           price: (dish['price'] as num?)?.toDouble() ?? 0.0,
           mrp: (dish['mrp'] as num?)?.toDouble(),
           isTaxExempt: dish['isTaxExempt'] == true || dish['is_tax_exempt'] == true,
-          quantity: 1,
+          soldByWeight: weighed,
+          quantity: qty,
         ));
       }
     });
@@ -388,8 +482,8 @@ class _BarcodeBillingScreenState extends ConsumerState<BarcodeBillingScreen>
                       ),
                       onTap: () {
                         Navigator.pop(ctx);
-                        _addItemToCart(d);
                         _scanCtrl.clear();
+                        _chooseAndAdd(d);
                         _scanFocusNode.requestFocus();
                       },
                     );
@@ -403,10 +497,13 @@ class _BarcodeBillingScreenState extends ConsumerState<BarcodeBillingScreen>
     );
   }
 
+  /// +/- on a cart line: [delta] steps of the line's [RetailCartItem.qtyStep]
+  /// (1 for counted goods, 1 g / 0.001 kg for weighed ones).
   void _updateItemQuantity(int index, int delta) {
+    final step = _cart[index].qtyStep * delta;
     if (delta > 0) {
       final item = _cart[index];
-      final limit = _stockLimitMessage(_catalogItem(item.id), item.quantity + delta);
+      final limit = _stockLimitMessage(_catalogItem(item.id), _inCartQty(item.id) + step);
       if (limit != null) {
         _showStockBlock(limit);
         return;
@@ -415,16 +512,50 @@ class _BarcodeBillingScreenState extends ConsumerState<BarcodeBillingScreen>
     HapticFeedback.selectionClick();
     setState(() {
       final item = _cart[index];
-      item.quantity += delta;
+      final next = item.quantity + step;
+      // Weighed lines to the gram / millilitre; counted lines stay whole.
+      item.quantity = item.soldByWeight ? double.parse(next.toStringAsFixed(3)) : next.roundToDouble();
       if (item.quantity <= 0) {
         _cart.removeAt(index);
       }
     });
   }
 
+  Future<void> _editWeighedQuantity(int index) async {
+    final item = _cart[index];
+    final catalogue = _catalogItem(item.id);
+    final newQty = await WeightEntryDialog.show(
+      context,
+      item: {'name': item.name, 'unit': item.unit, 'price': item.price},
+      initial: item.quantity,
+      allowZero: true,
+    );
+    if (newQty == null || !mounted) return;
+    if (index >= _cart.length || !identical(_cart[index], item)) return;
+    if (newQty > item.quantity) {
+      final limit = _stockLimitMessage(catalogue, _inCartQty(item.id) - item.quantity + newQty);
+      if (limit != null) {
+        _showStockBlock(limit);
+        return;
+      }
+    }
+    setState(() {
+      if (newQty <= 0) {
+        _cart.removeAt(index);
+      } else {
+        item.quantity = newQty;
+      }
+    });
+    _scanFocusNode.requestFocus();
+  }
+
   void _editQuantityDirectly(int index) {
     final item = _cart[index];
-    final ctrl = TextEditingController(text: item.quantity.toString());
+    if (item.soldByWeight) {
+      _editWeighedQuantity(index);
+      return;
+    }
+    final ctrl = TextEditingController(text: item.qtyLabel);
 
     showDialog(
       context: context,
@@ -451,7 +582,7 @@ class _BarcodeBillingScreenState extends ConsumerState<BarcodeBillingScreen>
           ),
           ElevatedButton(
             onPressed: () {
-              final newQty = int.tryParse(ctrl.text.trim()) ?? item.quantity;
+              final newQty = int.tryParse(ctrl.text.trim())?.toDouble() ?? item.quantity;
               if (newQty > item.quantity) {
                 final limit = _stockLimitMessage(_catalogItem(item.id), newQty);
                 if (limit != null) {
@@ -1387,7 +1518,7 @@ class _BarcodeBillingScreenState extends ConsumerState<BarcodeBillingScreen>
                     final unit = dish['unit']?.toString() ?? 'pcs';
 
                     return InkWell(
-                      onTap: () => _addItemToCart(dish),
+                      onTap: () => _chooseAndAdd(dish),
                       borderRadius: BorderRadius.circular(12),
                       child: Container(
                         padding: const EdgeInsets.all(10),
@@ -1430,7 +1561,7 @@ class _BarcodeBillingScreenState extends ConsumerState<BarcodeBillingScreen>
                             Row(
                               children: [
                                 Text(
-                                  '₹${price.toStringAsFixed(0)}',
+                                  '₹${price.toStringAsFixed(0)}${ItemContract.isWeighed(dish) ? '/${ItemContract.unitOf(dish)}' : ''}',
                                   style: const TextStyle(color: ClassicTheme.infoBlue, fontWeight: FontWeight.w900, fontSize: 14),
                                 ),
                                 if (mrp != null && mrp > price) ...[
@@ -1446,6 +1577,13 @@ class _BarcodeBillingScreenState extends ConsumerState<BarcodeBillingScreen>
                                 ],
                               ],
                             ),
+
+                            if (ItemContract.hasVariants(dish))
+                              Text(
+                                '${ItemContract.variantsOf(dish).length} options',
+                                maxLines: 1,
+                                style: TextStyle(color: context.textSecondary, fontSize: 10, fontWeight: FontWeight.w600),
+                              ),
 
                             // Stock status
                             if (stock != null)
@@ -1574,7 +1712,7 @@ class _BarcodeBillingScreenState extends ConsumerState<BarcodeBillingScreen>
                         border: Border.all(color: context.borderColor),
                       ),
                       child: Text(
-                        '${item.quantity}',
+                        item.qtyLabel,
                         style: TextStyle(color: context.textPrimary, fontWeight: FontWeight.bold, fontSize: 13),
                       ),
                     ),

@@ -14,6 +14,7 @@ library;
 import 'package:hive_flutter/hive_flutter.dart';
 
 import '../../billing/bill_calculator.dart';
+import '../item_model_contract.dart';
 import '../restaurant_models.dart';
 import 'receipt_context.dart';
 
@@ -74,6 +75,10 @@ class ReceiptContextBuilder {
     Set<String> enabledFeatures = const {},
     double serviceChargeRate = 0,
     String? vertical,
+    /// Product ids of lines sold by weight/volume (a shop's loose goods).
+    /// Those lines print "0.500 kg" and a per-unit rate; every other line is
+    /// untouched. Empty for restaurants.
+    Set<String> weighedProductIds = const {},
   }) {
     final store = _store(vertical: vertical);
     final now = DateTime.now();
@@ -122,7 +127,7 @@ class ReceiptContextBuilder {
       'bill.change': 0,
       'bill.balance': 0,
       'bill.itemCount': items.length,
-      'bill.qtyCount': _qtyCount(items),
+      'bill.qtyCount': _qtyCount(items, weighedProductIds),
 
       'payment.mode': paymentMode,
       'payment.modeLabel': paymentMode,
@@ -152,7 +157,9 @@ class ReceiptContextBuilder {
 
     return ReceiptContext(
       values: values,
-      items: [for (final i in items) itemOf(i)],
+      items: [
+        for (final i in items) itemOf(i, weighed: weighedProductIds.contains(i.productId)),
+      ],
       payments: [for (final p in payments) _payment(p)],
       enabledFeatures: enabledFeatures,
       currencySymbol: 'Rs. ',
@@ -440,7 +447,9 @@ class ReceiptContextBuilder {
   // ── pieces ──────────────────────────────────────────────────
 
   /// One line item, in the shape the `items` block reads.
-  static Map<String, Object?> itemOf(KotItem i) => {
+  /// [weighed]: the line is sold by weight/volume ([ItemContract.isWeighed]);
+  /// only then is the `weighed` flag present.
+  static Map<String, Object?> itemOf(KotItem i, {bool weighed = false}) => {
         'name': i.displayNameWithModifiers,
         'qty': i.qty,
         'unit': i.unit,
@@ -450,6 +459,7 @@ class ReceiptContextBuilder {
         'modifiers': i.modifiersSummary,
         'station': i.station ?? '',
         'isVeg': i.isVeg,
+        if (weighed && ItemContract.weighedUnits.contains(i.unit.trim().toLowerCase())) 'weighed': true,
       };
 
   /// The store's own details, read from the two boxes the app keeps them in.
@@ -559,12 +569,18 @@ class ReceiptContextBuilder {
   static Object _rate(double v) =>
       v == v.roundToDouble() ? v.toInt() : v;
 
-  static int _qtyCount(List<KotItem> items) =>
-      items.fold<double>(0, (a, i) => a + i.qty).round();
+  static int _qtyCount(List<KotItem> items, [Set<String> weighedProductIds = const {}]) => items
+      .fold<double>(0, (a, i) => a + (weighedProductIds.contains(i.productId) ? 1 : i.qty))
+      .round();
 
+  /// A weighed line (0.500 kg of rice) counts as one item, not half of one.
   static int _qtyCountMaps(List<Map<String, Object?>> items) => items
       .fold<double>(
-          0, (a, i) => a + ((i['qty'] is num) ? (i['qty'] as num).toDouble() : 0))
+          0,
+          (a, i) => a +
+              (i['weighed'] == true
+                  ? 1
+                  : ((i['qty'] is num) ? (i['qty'] as num).toDouble() : 0)))
       .round();
 
   static int _paidPaise(List<Map<String, dynamic>> payments) {
@@ -663,6 +679,9 @@ class ReceiptContextBuilder {
         'batchNo': _str(m, ['batchNo', 'batch_no', 'batch']),
         'expiry': _expiryLabel(m['expiry'] ?? m['expiryDate'] ?? m['expiry_date']),
         'hsn': _str(m, ['hsnCode', 'hsn', 'hsn_code']),
+        // Only on lines sold by weight/volume, so every other line's map (and
+        // so every existing receipt) is exactly what it was.
+        if (ItemContract.isWeighed(m)) 'weighed': true,
       });
     }
     return out;

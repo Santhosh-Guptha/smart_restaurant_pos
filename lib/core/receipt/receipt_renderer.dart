@@ -12,6 +12,7 @@
 /// counter (FEATURE_MASTER_PLAN.md rule 7: billing survives everything).
 library;
 
+import '../item_model_contract.dart';
 import 'receipt_condition.dart';
 import 'receipt_context.dart';
 import 'receipt_layout.dart';
@@ -380,6 +381,15 @@ class ReceiptRenderer {
             ),
         ]));
 
+        // A line sold by weight: the cells above may be too narrow for
+        // "0.500 kg" and "120.00/kg", so the full measure and the per-unit
+        // rate always follow on their own line. Only weighed lines have it.
+        if (scoped['weighed'] == true) {
+          for (final line in LayoutFit.wrap(weighedDetail(scoped, ctx), chars > 2 ? chars - 2 : chars)) {
+            out.add(LayoutText('  $line'));
+          }
+        }
+
         final note = (scoped['notes'] ?? '').toString().trim();
         if (showNotes && note.isNotEmpty) {
           for (final line in LayoutFit.wrap('  * $note', chars)) {
@@ -417,9 +427,23 @@ class ReceiptRenderer {
     return out;
   }
 
+  /// `0.500 kg x Rs. 120.00/kg` for a weighed line.
+  static String weighedDetail(Map<String, Object?> item, ReceiptContext ctx) {
+    final unit = (item['unit'] ?? '').toString().trim().toLowerCase();
+    final q = item['qty'];
+    final qty = ItemContract.formatQty(q is num ? q : (num.tryParse('${q ?? ''}') ?? 0), unit);
+    final rate = ReceiptFormat.money(item['rate'], symbol: ctx.currencySymbol, decimals: 2);
+    return '$qty x $rate/$unit';
+  }
+
   static String _itemCell(String col, Map<String, Object?> item, ReceiptContext ctx) {
     switch (col) {
       case 'qty':
+        if (item['weighed'] == true) {
+          final q = item['qty'];
+          return ItemContract.formatQty(
+              q is num ? q : (num.tryParse('${q ?? ''}') ?? 0), (item['unit'] ?? '').toString());
+        }
         return ReceiptFormat.qty(item['qty']);
       case 'rate':
       case 'amount':

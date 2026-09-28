@@ -5,6 +5,7 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:googleapis/sheets/v4.dart' as sheets;
 import 'package:google_sign_in/google_sign_in.dart';
 import 'restaurant_sheets_service.dart';
+import 'sheet_layout.dart';
 import '../core/constants.dart';
 
 
@@ -134,11 +135,14 @@ class ClientLedgerCloudRouterService {
     required http.Client authenticatedClient,
     required String storeName,
     required String storeId,
+    /// The store's trade; the signed-in store's when omitted.
+    String? vertical,
   }) async {
     return RestaurantSheetsService.provisionRestaurantSheet(
       authenticatedClient: authenticatedClient,
       restaurantName: storeName,
       orgId: storeId,
+      vertical: vertical,
     );
   }
 
@@ -273,6 +277,50 @@ class ClientLedgerCloudRouterService {
       // Use direct client if provided, or try to get authenticated client
       directClient ??= await getAuthenticatedClientIfAvailable();
 
+      final layout = SheetLayout.active;
+      if (directClient != null && layout.isShop) {
+        // A shop appends to its sales tab ("Sales Bills", or "Dining Bills"
+        // on a sheet made before per-trade layouts), in that tab's columns.
+        final tabs = await RestaurantSheetsService.resolveSheetTabs(
+          authenticatedClient: directClient,
+          sheetId: sheetId,
+          layout: layout,
+        );
+        final tab = tabs?.tab(SheetRole.sales) ?? layout.salesTab;
+        final items = (billData['items'] is List) ? (billData['items'] as List) : const [];
+        final summary = items
+            .whereType<Map>()
+            .map((i) => '${i['name'] ?? ''} x${i['quantity'] ?? i['qty'] ?? 1}')
+            .join(', ');
+        final values = <String, Object?>{
+          'billid': billId,
+          'datetime': dateStr,
+          'customername': customerName,
+          'customerphone': customerPhone,
+          'paymentmode': paymentMode,
+          'subtotal': billData['subtotal'] ?? totalAmount,
+          'discount': billData['discount'] ?? 0,
+          'totalamount': totalAmount,
+          'itemssummary': summary,
+          'status': billData['status']?.toString() ?? 'PAID',
+          'counter': billData['counter']?.toString() ?? cashierName,
+          'table': billData['tableName']?.toString() ?? billData['counter']?.toString() ?? cashierName,
+          'transactionid': billData['transactionId']?.toString() ?? '',
+        };
+        final headers = layout.salesHeaders;
+        final shopRow = [
+          for (final h in headers) values[h.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '')] ?? '',
+        ];
+        final sheetsApi = sheets.SheetsApi(directClient);
+        await sheetsApi.spreadsheets.values.append(
+          sheets.ValueRange(values: [shopRow]),
+          sheetId,
+          '${SheetLayout.quoteTab(tab)}!A:${SheetLayout.colLetter(headers.length)}',
+          valueInputOption: "USER_ENTERED",
+        );
+        return true;
+      }
+
       if (directClient != null) {
         final sheetsApi = sheets.SheetsApi(directClient);
         await sheetsApi.spreadsheets.values.append(
@@ -320,10 +368,11 @@ class ClientLedgerCloudRouterService {
 
       if (directClient != null) {
         final sheetsApi = sheets.SheetsApi(directClient);
+        final khataTab = SheetLayout.active.khataTab ?? 'Customers & Khata';
         await sheetsApi.spreadsheets.values.append(
           sheets.ValueRange(values: [row]),
           sheetId,
-          "Customers & Khata!A:G",
+          '${SheetLayout.quoteTab(khataTab)}!A:${SheetLayout.colLetter(row.length)}',
           valueInputOption: "USER_ENTERED",
         );
         return true;
@@ -366,6 +415,11 @@ class ClientLedgerCloudRouterService {
       ];
 
       directClient ??= await getAuthenticatedClientIfAvailable();
+
+      final layout = SheetLayout.active;
+      if (directClient != null && layout.isShop) {
+        return _upsertShopProduct(directClient, sheetId, productData, layout);
+      }
 
       if (directClient != null) {
         final sheetsApi = sheets.SheetsApi(directClient);
@@ -412,6 +466,78 @@ class ClientLedgerCloudRouterService {
     }
   }
 
+  /// A shop's product, updated in place (matched by id, then name) or
+  /// appended, in the columns its products tab has - by header name, so a
+  /// legacy "Menu & Modifiers" tab and the new "Products & Stock" both work.
+  static Future<bool> _upsertShopProduct(
+    http.Client client,
+    String sheetId,
+    Map<String, dynamic> productData,
+    SheetLayout layout,
+  ) async {
+    try {
+      final resolved = await RestaurantSheetsService.ensureSheetTabs(
+        authenticatedClient: client,
+        sheetId: sheetId,
+        layout: layout,
+      );
+      final tab = resolved?.tab(SheetRole.products) ?? layout.productsTab;
+      final api = sheets.SheetsApi(client);
+      final got = await api.spreadsheets.values.get(sheetId, SheetLayout.quoteTab(tab));
+      final current = got.values ?? const <List<Object?>>[];
+      final existingHeader = current.isEmpty ? const <Object?>[] : current.first;
+      final headers = SheetLayout.mergeHeaders(existingHeader, layout.productHeaders);
+      if (headers.length != existingHeader.length) {
+        await api.spreadsheets.values.update(
+          sheets.ValueRange(values: [headers]),
+          sheetId,
+          SheetLayout.headerRange(tab, headers.length),
+          valueInputOption: "USER_ENTERED",
+        );
+      }
+      final idCol = headers.indexWhere((h) => SheetLayout.fieldForHeader(h) == 'id');
+      final nameCol = headers.indexWhere((h) => SheetLayout.fieldForHeader(h) == 'name');
+      final id = (productData['id'] ?? '').toString().trim();
+      final name = (productData['name'] ?? '').toString().trim().toLowerCase();
+      var target = -1;
+      for (var i = 1; i < current.length; i++) {
+        final r = current[i];
+        final rid = (idCol >= 0 && r.length > idCol) ? (r[idCol] ?? '').toString().trim() : '';
+        final rname = (nameCol >= 0 && r.length > nameCol) ? (r[nameCol] ?? '').toString().trim().toLowerCase() : '';
+        if ((id.isNotEmpty && rid == id) || (name.isNotEmpty && rname == name)) {
+          target = i;
+          break;
+        }
+      }
+      final row = SheetLayout.buildRows(
+        headers: headers,
+        items: [productData],
+        existingRows: target > 0 ? [current[target]] : const [],
+      ).first;
+      final end = SheetLayout.colLetter(headers.length);
+      if (target > 0) {
+        final r = target + 1; // 1-indexed for Sheets A1 notation
+        await api.spreadsheets.values.update(
+          sheets.ValueRange(values: [row]),
+          sheetId,
+          '${SheetLayout.quoteTab(tab)}!A$r:$end$r',
+          valueInputOption: "USER_ENTERED",
+        );
+      } else {
+        await api.spreadsheets.values.append(
+          sheets.ValueRange(values: [row]),
+          sheetId,
+          '${SheetLayout.quoteTab(tab)}!A:$end',
+          valueInputOption: "USER_ENTERED",
+        );
+      }
+      return true;
+    } catch (e) {
+      debugPrint("Direct sheetsApi error on shop products tab: $e");
+      return false;
+    }
+  }
+
   /// 9. Bulk Sync All Products to Google Sheets Router
   static Future<bool> syncAllProductsToRouter({
     required String storeId,
@@ -427,6 +553,15 @@ class ClientLedgerCloudRouterService {
           .toList();
 
       directClient ??= await getAuthenticatedClientIfAvailable();
+
+      if (directClient != null && SheetLayout.active.isShop) {
+        return RestaurantSheetsService.syncMenuDishes(
+          authenticatedClient: directClient,
+          sheetId: sheetId,
+          dishes: activeProducts,
+          vertical: SheetLayout.activeVertical,
+        );
+      }
 
       if (directClient != null) {
         final sheetsApi = sheets.SheetsApi(directClient);

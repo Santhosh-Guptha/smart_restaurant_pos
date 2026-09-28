@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/classic_theme.dart';
 import '../../core/entitlements.dart';
 import '../../core/feature_route_guard.dart';
+import '../../core/item_model_contract.dart';
 import '../../core/package_model.dart';
 import '../../core/vertical_labels.dart';
 import '../../providers/saas_session_provider.dart';
@@ -41,7 +42,18 @@ class _StockManagerScreenState extends ConsumerState<StockManagerScreen>
 
   void _reload() => setState(() => _items = StockService.items());
 
-  String _fmt(double? v) => v == null ? '—' : (v % 1 == 0 ? v.toStringAsFixed(0) : v.toStringAsFixed(2));
+  /// Up to three decimals (weighed goods: 12.345 kg), trailing zeros dropped.
+  String _fmt(double? v) => v == null ? '—' : ItemContract.formatQty(v, 'pcs');
+
+  /// "12.500 kg" for weighed goods, "12 pcs" otherwise.
+  String _qtyText(double v, Map d) => ItemContract.isWeighed(d)
+      ? ItemContract.formatQty(v, ItemContract.unitOf(d))
+      : '${_fmt(v)} ${StockService.unitOf(d)}';
+
+  /// A product with variants is listed as a heading with one row per
+  /// variant (each tracked on its own); anything else is one row.
+  List<Map<String, dynamic>> _stockUnits(Map<String, dynamic> d) =>
+      ItemContract.hasVariants(d) ? StockService.variantViews(d) : [d];
 
   static String _date(DateTime d) =>
       '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
@@ -78,7 +90,7 @@ class _StockManagerScreenState extends ConsumerState<StockManagerScreen>
   // ── Stock ──────────────────────────────────────────────────────────────
   Widget _stockTab(VerticalLabels vl) {
     final q = _query.trim().toLowerCase();
-    final list = _items.where((d) {
+    bool matches(Map<String, dynamic> d) {
       if (q.isNotEmpty) {
         final hay = '${StockService.nameOf(d)} ${d['barcode'] ?? ''} ${d['sku'] ?? ''}'.toLowerCase();
         if (!hay.contains(q)) return false;
@@ -93,11 +105,29 @@ class _StockManagerScreenState extends ConsumerState<StockManagerScreen>
         case _Filter.untracked:
           return StockService.qtyOf(d) == null;
       }
-    }).toList()
-      ..sort((a, b) => StockService.nameOf(a).toLowerCase().compareTo(StockService.nameOf(b).toLowerCase()));
+    }
 
-    final low = _items.where((d) => StockService.isLow(d) && !StockService.isOut(d)).length;
-    final out = _items.where(StockService.isOut).length;
+    final sorted = List<Map<String, dynamic>>.from(_items)
+      ..sort((a, b) => StockService.nameOf(a).toLowerCase().compareTo(StockService.nameOf(b).toLowerCase()));
+    // Rows: plain products, or a product heading followed by its matching
+    // variants.
+    final list = <({Map<String, dynamic> d, bool heading})>[];
+    for (final d in sorted) {
+      if (!ItemContract.hasVariants(d)) {
+        if (matches(d)) list.add((d: d, heading: false));
+        continue;
+      }
+      final views = StockService.variantViews(d).where(matches).toList();
+      if (views.isEmpty) continue;
+      list.add((d: d, heading: true));
+      for (final v in views) {
+        list.add((d: v, heading: false));
+      }
+    }
+
+    final units = [for (final d in _items) ..._stockUnits(d)];
+    final low = units.where((d) => StockService.isLow(d) && !StockService.isOut(d)).length;
+    final out = units.where(StockService.isOut).length;
 
     return Column(
       children: [
@@ -152,16 +182,33 @@ class _StockManagerScreenState extends ConsumerState<StockManagerScreen>
               : ListView.separated(
                   itemCount: list.length,
                   separatorBuilder: (_, __) => Divider(height: 1, color: context.borderColor),
-                  itemBuilder: (_, i) => _row(list[i]),
+                  itemBuilder: (_, i) => list[i].heading ? _variantHeading(list[i].d) : _row(list[i].d),
                 ),
         ),
       ],
     );
   }
 
+  /// The product line above its variant rows: total of the tracked variants.
+  Widget _variantHeading(Map<String, dynamic> d) {
+    final views = StockService.variantViews(d);
+    final tracked = views.map(StockService.qtyOf).whereType<double>().toList();
+    final total = tracked.fold<double>(0, (s, x) => s + x);
+    return ListTile(
+      dense: true,
+      tileColor: context.inputFill,
+      title: Text(StockService.nameOf(d),
+          maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w800)),
+      subtitle: Text('${views.length} variant${views.length == 1 ? '' : 's'}',
+          style: TextStyle(fontSize: 12, color: context.textSecondary)),
+      trailing: Text(tracked.isEmpty ? '—' : _qtyText(total, d),
+          style: TextStyle(fontWeight: FontWeight.w700, color: context.textSecondary)),
+    );
+  }
+
   Widget _row(Map<String, dynamic> d) {
+    final isVariant = (d['variantId'] ?? '').toString().isNotEmpty;
     final qty = StockService.qtyOf(d);
-    final unit = StockService.unitOf(d);
     final lowLvl = StockService.reorderLevelOf(d);
     final isOut = StockService.isOut(d);
     final isLow = StockService.isLow(d);
@@ -176,7 +223,9 @@ class _StockManagerScreenState extends ConsumerState<StockManagerScreen>
                 : ClassicTheme.successEmerald;
     return ListTile(
       onTap: () => _openItem(d),
-      title: Text(StockService.nameOf(d), maxLines: 1, overflow: TextOverflow.ellipsis),
+      contentPadding: isVariant ? const EdgeInsets.only(left: 36, right: 16) : null,
+      title: Text(isVariant ? (d['variantLabel'] ?? StockService.nameOf(d)).toString() : StockService.nameOf(d),
+          maxLines: 1, overflow: TextOverflow.ellipsis),
       subtitle: Text(
         [
           if (lowLvl != null) 'Reorder at ${_fmt(lowLvl)}',
@@ -190,7 +239,7 @@ class _StockManagerScreenState extends ConsumerState<StockManagerScreen>
         mainAxisAlignment: MainAxisAlignment.center,
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          Text(qty == null ? '—' : '${_fmt(qty)} $unit',
+          Text(qty == null ? '—' : _qtyText(qty, d),
               style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15, color: color)),
           if (qty != null)
             Text(isOut ? 'Out' : (isLow ? 'Low' : 'OK'), style: TextStyle(fontSize: 11, color: color)),
@@ -206,7 +255,8 @@ class _StockManagerScreenState extends ConsumerState<StockManagerScreen>
       isScrollControlled: true,
       showDragHandle: true,
       builder: (ctx) {
-        final item = StockService.items().firstWhere((x) => StockService.idOf(x) == id, orElse: () => d);
+        // A variant row's id is `<product>::<variant>`; lineItem resolves both.
+        final item = StockService.lineItem(id) ?? d;
         final qty = StockService.qtyOf(item);
         final batches = StockService.batchesOf(item);
         return SafeArea(
@@ -218,7 +268,7 @@ class _StockManagerScreenState extends ConsumerState<StockManagerScreen>
               children: [
                 Text(StockService.nameOf(item), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
                 const SizedBox(height: 4),
-                Text(qty == null ? 'Not tracked yet' : 'On hand: ${_fmt(qty)} ${StockService.unitOf(item)}',
+                Text(qty == null ? 'Not tracked yet' : 'On hand: ${_qtyText(qty, item)}',
                     style: TextStyle(color: context.textSecondary)),
                 const SizedBox(height: 16),
                 Wrap(

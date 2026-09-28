@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../../billing/scale_barcode.dart';
 import '../../core/classic_theme.dart';
 import '../../core/design_tokens.dart';
 import '../../core/cloud_gate.dart';
@@ -102,6 +103,13 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
   List<String> _categories = [];
   final TextEditingController _newCategoryCtrl = TextEditingController();
 
+  // ── Shops: weighing-scale label barcodes (ScaleConfig) ──
+  bool _scaleEnabled = false;
+  final TextEditingController _scalePrefixesCtrl =
+      TextEditingController(text: ScaleConfig.defaultPrefixes.join(', '));
+  int _scalePluLength = ScaleConfig.defaultPluLength;
+  ScaleValueType _scaleValueType = ScaleValueType.weight;
+
   @override
   void initState() {
     super.initState();
@@ -183,6 +191,7 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
     _printerFooterCtrl.dispose();
     _printerNotesCtrl.dispose();
     _newCategoryCtrl.dispose();
+    _scalePrefixesCtrl.dispose();
     super.dispose();
   }
 
@@ -264,6 +273,13 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
     _printerShowCustomer = pState.showCustomer;
     _printerBoldItems = pState.boldItems;
     _printerFeedLines = pState.feedLines.toDouble();
+
+    // 5b. Weighing-scale labels (shops)
+    final scale = ScaleConfig.fromValues((k) => rBox?.get(k));
+    _scaleEnabled = scale.enabled;
+    _scalePrefixesCtrl.text = scale.prefixes.join(', ');
+    _scalePluLength = scale.pluLength;
+    _scaleValueType = scale.valueType;
 
     // 6. Expenses
     final defaultCategories = VerticalLabels.of(_vertical).defaultExpenseCategories;
@@ -352,6 +368,20 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
       await rBox.put('auto_print_bill', _autoPrintBill);
       await rBox.put('bill_copies', _billCopies);
       await rBox.put('restaurant_expense_categories', _categories);
+
+      // Weighing-scale labels: a shop setting; a restaurant never sees it.
+      if (!VerticalLabels.of(_vertical).isRestaurant) {
+        final prefixes = ScaleConfig.parsePrefixes(_scalePrefixesCtrl.text);
+        final scale = ScaleConfig(
+          enabled: _scaleEnabled,
+          prefixes: prefixes.isEmpty ? ScaleConfig.defaultPrefixes : prefixes,
+          pluLength: _scalePluLength,
+          valueType: _scaleValueType,
+        );
+        for (final e in scale.toValues().entries) {
+          await rBox.put(e.key, e.value);
+        }
+      }
 
       // ── 2. Dual-Sync to configBox for Backward Compatibility ──
       await cBox.put('shop_name_$email', rName);
@@ -928,8 +958,94 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
               ],
             ],
           ),
+          if (!isRest) ...[
+            const SizedBox(height: 20),
+            _buildSectionHeader('Weighing scale labels', Icons.qr_code_2_rounded),
+            const SizedBox(height: 12),
+            _buildScaleLabelsCard(),
+          ],
         ],
       ),
+    );
+  }
+
+  /// Shops: how the label printed by the weighing scale is read at the till.
+  Widget _buildScaleLabelsCard() {
+    final digits = 12 - ScaleConfig.valueLength - _scalePluLength;
+    return _buildCard(
+      children: [
+        _buildToggleRow(
+          'Read weighing-scale label barcodes at the till',
+          _scaleEnabled,
+          (v) => setState(() => _scaleEnabled = v),
+        ),
+        Text(
+          'An EAN-13 label: prefix, the item\'s PLU code, then the weight (grams) or price (paise), then a check digit. '
+          'Set the PLU on each item sold by weight.',
+          style: TextStyle(color: context.textSecondary, fontSize: 12),
+        ),
+        if (_scaleEnabled) ...[
+          const SizedBox(height: 12),
+          _buildTextField(
+            _scalePrefixesCtrl,
+            'Label prefixes (e.g. 2, or 20-29, or 21, 22)',
+            Icons.qr_code_scanner_rounded,
+            onChanged: (_) => setState(() {}),
+          ),
+          const SizedBox(height: 12),
+          ResponsiveFieldRow(
+            children: [
+              DropdownButtonFormField<int>(
+                initialValue: _scalePluLength,
+                dropdownColor: context.surfaceColor,
+                style: TextStyle(color: context.textPrimary, fontSize: 13),
+                decoration: InputDecoration(
+                  labelText: 'PLU digits',
+                  labelStyle: TextStyle(color: context.textSecondary, fontSize: 12),
+                  filled: true,
+                  fillColor: context.canvasColor,
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: context.borderColor)),
+                  enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: context.borderColor)),
+                ),
+                items: const [
+                  DropdownMenuItem(value: 4, child: Text('4 digits')),
+                  DropdownMenuItem(value: 5, child: Text('5 digits')),
+                  DropdownMenuItem(value: 6, child: Text('6 digits')),
+                ],
+                onChanged: (v) {
+                  if (v != null) setState(() => _scalePluLength = v);
+                },
+              ),
+              DropdownButtonFormField<ScaleValueType>(
+                initialValue: _scaleValueType,
+                dropdownColor: context.surfaceColor,
+                style: TextStyle(color: context.textPrimary, fontSize: 13),
+                decoration: InputDecoration(
+                  labelText: 'Label carries',
+                  labelStyle: TextStyle(color: context.textSecondary, fontSize: 12),
+                  filled: true,
+                  fillColor: context.canvasColor,
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: context.borderColor)),
+                  enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: context.borderColor)),
+                ),
+                items: const [
+                  DropdownMenuItem(value: ScaleValueType.weight, child: Text('Weight (grams)')),
+                  DropdownMenuItem(value: ScaleValueType.price, child: Text('Price (paise)')),
+                ],
+                onChanged: (v) {
+                  if (v != null) setState(() => _scaleValueType = v);
+                },
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(
+            'Layout: ${'P' * digits} prefix · ${'L' * _scalePluLength} PLU · VVVVV ${_scaleValueType == ScaleValueType.weight ? 'grams' : 'paise'} · C check digit. '
+            'Prefixes in use: ${ScaleConfig.parsePrefixes(_scalePrefixesCtrl.text).isEmpty ? ScaleConfig.defaultPrefixes.join(', ') : ScaleConfig.parsePrefixes(_scalePrefixesCtrl.text).join(', ')}.',
+            style: TextStyle(color: context.textSecondary, fontSize: 12),
+          ),
+        ],
+      ],
     );
   }
 

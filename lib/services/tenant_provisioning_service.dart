@@ -345,6 +345,7 @@ class TenantProvisioningService {
         outletId: primaryOutletId,
         outletName: '$cleanShopName (Main Branch)',
         address: address?.trim().isNotEmpty == true ? address!.trim() : 'Main Outlet',
+        vertical: vertical,
       ).then((res) {
         final sheetId = res['spreadsheet_id'] ?? '';
         final sheetUrl = res['sheet_url'] ?? '';

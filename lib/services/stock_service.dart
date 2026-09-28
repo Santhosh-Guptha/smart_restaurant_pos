@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 
+import '../core/item_model_contract.dart';
+
 /// One delivery of a product: how many came in, and for medicines the batch
 /// number and expiry date printed on the strip.
 class StockBatch {
@@ -114,6 +116,14 @@ double? _num(dynamic v) {
 ///   product has batches, its quantity is their sum and sales take from the
 ///   batch that expires first (FEFO). Expired batches are never sold.
 /// * Every change is logged in `stock_movements` (last 2 000 entries).
+/// * Variants: an id of the form `<productId>::<variantId>` (a till's line id,
+///   see [ItemContract.lineIdFor]) addresses one entry of the product's
+///   `variants` list. Its stock keys, batches and reorder level live on the
+///   variant map; movements are logged under the line id with the name
+///   `<Product> (<label>)`. [variantViews] / [lineItem] give a variant as a
+///   product-shaped map so every read helper below works on it unchanged.
+/// * Quantities are doubles throughout, so weighed goods (kg, l) may hold and
+///   sell fractional amounts.
 class StockService {
   StockService._();
 
@@ -137,6 +147,48 @@ class StockService {
   static String idOf(Map item) => (item['id'] ?? '').toString();
   static String nameOf(Map item) => (item['name'] ?? '').toString();
   static String unitOf(Map item) => (item['unit'] ?? item['uom'] ?? 'pcs').toString();
+
+  /// Keys that belong to a product's own stock/identity and must not leak into
+  /// a variant's view of it.
+  static const _variantOwnKeys = [
+    'stockQuantity', 'stock_quantity', 'stock', 'batches', 'reorderLevel',
+    'barcode', 'sku', 'price', 'mrp', 'isAvailable', 'is_available', 'variants',
+  ];
+
+  /// [variant] of [product] as a product-shaped map: the product's details
+  /// (unit, category, tax...) with the variant's price, stock and batches,
+  /// `id` = `<productId>::<variantId>` and `name` = `<Product> (<label>)`.
+  static Map<String, dynamic> variantView(Map product, Map variant) {
+    final view = Map<String, dynamic>.from(product);
+    for (final k in _variantOwnKeys) {
+      view.remove(k);
+    }
+    view.addAll(Map<String, dynamic>.from(variant));
+    final pid = idOf(product);
+    final vid = (variant['id'] ?? '').toString();
+    view['id'] = ItemContract.lineIdFor(pid, vid);
+    view['name'] = ItemContract.lineNameFor(nameOf(product), variant);
+    view['productId'] = pid;
+    view['variantId'] = vid;
+    view['variantLabel'] = ItemContract.variantLabel(variant);
+    return view;
+  }
+
+  /// Every variant of [product] as a [variantView] (empty for a plain product).
+  static List<Map<String, dynamic>> variantViews(Map product) =>
+      [for (final v in ItemContract.variantsOf(product)) variantView(product, v)];
+
+  /// The product, or the variant view, a till line id refers to.
+  static Map<String, dynamic>? lineItem(String lineId, [List<Map<String, dynamic>>? catalogue]) {
+    final (pid, vid) = ItemContract.splitLineId(lineId);
+    for (final d in catalogue ?? items()) {
+      if (idOf(d) != pid) continue;
+      if (vid == null) return d;
+      final v = ItemContract.variantById(d, vid);
+      return v == null ? null : variantView(d, v);
+    }
+    return null;
+  }
 
   /// null = not tracked.
   static double? qtyOf(Map item) {
@@ -227,13 +279,46 @@ class StockService {
         .toList();
   }
 
+  /// Applies [change] to the product (or, for `<p>::<v>`, to the variant map
+  /// inside the product) and saves. Returns the changed product, or the
+  /// variant's [variantView], so callers can read its name and quantity.
   static Future<Map<String, dynamic>?> _update(String itemId, void Function(Map<String, dynamic> item) change) async {
     final list = items();
-    final i = list.indexWhere((d) => idOf(d) == itemId);
+    final (pid, vid) = ItemContract.splitLineId(itemId);
+    final i = list.indexWhere((d) => idOf(d) == pid);
     if (i < 0) return null;
-    change(list[i]);
+    if (vid == null) {
+      change(list[i]);
+      await _saveItems(list);
+      return list[i];
+    }
+    final target = _variantIn(list[i], vid);
+    if (target == null) return null;
+    change(target);
+    _putVariant(list[i], target);
     await _saveItems(list);
-    return list[i];
+    return variantView(list[i], target);
+  }
+
+  /// A mutable copy of variant [vid] of [product], or null.
+  static Map<String, dynamic>? _variantIn(Map<String, dynamic> product, String vid) {
+    final raw = product['variants'];
+    if (raw is! List) return null;
+    for (final v in raw) {
+      if (v is Map && (v['id'] ?? '').toString() == vid) return Map<String, dynamic>.from(v);
+    }
+    return null;
+  }
+
+  /// Writes [variant] back over the entry with the same id in [product].
+  static void _putVariant(Map<String, dynamic> product, Map<String, dynamic> variant) {
+    final raw = product['variants'];
+    if (raw is! List) return;
+    final vid = (variant['id'] ?? '').toString();
+    product['variants'] = [
+      for (final v in raw)
+        if (v is Map && (v['id'] ?? '').toString() == vid) variant else v,
+    ];
   }
 
   /// Goods in. With [batchNo]/[expiry] the delivery is kept as its own batch.
@@ -344,6 +429,9 @@ class StockService {
 
   /// Sold at the till. [lines]: {id or productId, name, qty or quantity}.
   /// Untracked products are ignored; tracked ones never go below zero.
+  /// A line id `<productId>::<variantId>` takes from that variant's stock
+  /// (the result and the movements are keyed by the line id). Quantities may
+  /// be fractional (weighed goods).
   ///
   /// Only the quantity actually taken is logged (one SALE movement per batch
   /// used, carrying [billId]). Returns, per product id, the batches the sale
@@ -359,26 +447,43 @@ class StockService {
       final logs = <StockMovement>[];
       var changed = false;
       for (final line in lines) {
-        final id = (line['productId'] ?? line['id'] ?? '').toString().trim();
+        // A variant line carries `<p>::<v>` as its id; some tills also put the
+        // bare product id in `productId`, so the id wins when it names a
+        // variant.
+        final lineIdRaw = (line['id'] ?? '').toString().trim();
+        final id = lineIdRaw.contains(ItemContract.lineIdSeparator)
+            ? lineIdRaw
+            : (line['productId'] ?? line['id'] ?? '').toString().trim();
         final name = (line['name'] ?? '').toString().trim().toLowerCase();
         final qty = _num(line['qty'] ?? line['quantity']) ?? 1;
         if (qty <= 0) continue;
+        final (pid, vid) = ItemContract.splitLineId(id);
         final i = list.indexWhere((d) =>
-            (id.isNotEmpty && idOf(d) == id) || (id.isEmpty && nameOf(d).toLowerCase() == name));
+            (pid.isNotEmpty && idOf(d) == pid) || (pid.isEmpty && nameOf(d).toLowerCase() == name));
         if (i < 0) continue;
-        final item = list[i];
+        final product = list[i];
+        final Map<String, dynamic> item;
+        if (vid == null) {
+          item = product;
+        } else {
+          final v = _variantIn(product, vid);
+          if (v == null) continue;
+          item = v;
+        }
+        final itemName = vid == null ? nameOf(item) : ItemContract.lineNameFor(nameOf(product), item);
         final tracked = qtyOf(item);
         if (tracked == null) continue;
         final batches = List<StockBatch>.from(batchesOf(item));
-        final itemId = idOf(item);
+        final itemId = vid == null ? idOf(item) : ItemContract.lineIdFor(idOf(product), vid);
         if (batches.isEmpty) {
           final onHand = tracked < 0 ? 0.0 : tracked;
           final take = qty > onHand ? onHand : qty;
           _writeQty(item, (tracked - qty) < 0 ? 0 : tracked - qty);
+          if (vid != null) _putVariant(product, item);
           changed = true;
           if (take > 0) {
             logs.add(StockMovement(
-                itemId: itemId, itemName: nameOf(item), type: 'SALE', qty: -take,
+                itemId: itemId, itemName: itemName, type: 'SALE', qty: -take,
                 balance: qtyOf(item) ?? 0, note: billId, billId: billId, at: DateTime.now()));
           }
         } else {
@@ -399,12 +504,13 @@ class StockService {
               'qty': take,
             });
             moves.add(StockMovement(
-                itemId: itemId, itemName: nameOf(item), type: 'SALE', qty: -take,
+                itemId: itemId, itemName: itemName, type: 'SALE', qty: -take,
                 balance: balance, note: billId, batchNo: batches[b].batchNo, billId: billId,
                 at: DateTime.now()));
           }
           if (used.isEmpty) continue;
           _writeQty(item, batches.fold<double>(0, (s, x) => s + x.qty), batches: batches);
+          if (vid != null) _putVariant(product, item);
           changed = true;
           logs.addAll(moves);
           consumed.putIfAbsent(itemId, () => <Map<String, dynamic>>[]).addAll(used);
@@ -424,10 +530,12 @@ class StockService {
   /// Batches that are expired or expire within [days], soonest first.
   static List<({Map<String, dynamic> item, StockBatch batch})> expiring({int days = 90}) {
     final out = <({Map<String, dynamic> item, StockBatch batch})>[];
-    for (final item in items()) {
-      for (final b in batchesOf(item)) {
-        final left = b.daysLeft();
-        if (left != null && left <= days) out.add((item: item, batch: b));
+    for (final product in items()) {
+      for (final item in [product, ...variantViews(product)]) {
+        for (final b in batchesOf(item)) {
+          final left = b.daysLeft();
+          if (left != null && left <= days) out.add((item: item, batch: b));
+        }
       }
     }
     out.sort((a, b) => a.batch.expiry!.compareTo(b.batch.expiry!));
