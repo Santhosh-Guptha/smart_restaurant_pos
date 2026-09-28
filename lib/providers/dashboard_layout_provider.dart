@@ -44,14 +44,20 @@ class DashboardCardMeta {
   }) {
     final normRole = role?.toUpperCase() ?? 'UNASSIGNED';
     if (normRole == 'UNASSIGNED') return false;
-    if (normRole == 'MASTER_ADMIN') return true;
 
-    // Vertical check: hide cards not meant for this business type
+    // Trade check first, for everyone — the platform admin included. An admin
+    // opening a shop in support view sees that shop's dashboard, not Tables,
+    // KDS and a Waiter Pad it can never use.
+    // No trade given: the tenant's own. A trade-neutral ('any') view checks none.
+    final givenTrade = vertical ?? entitlements?.vertical;
+    final String? trade = Verticals.isAny(givenTrade) ? null : givenTrade;
     if (allowedVerticals.isNotEmpty &&
-        vertical != null &&
-        !allowedVerticals.contains(vertical)) {
+        trade != null &&
+        !allowedVerticals.contains(trade)) {
       return false;
     }
+
+    if (normRole == 'MASTER_ADMIN') return true;
 
     if (allowedRoles != null && allowedRoles!.isNotEmpty) {
       if (!allowedRoles!.map((r) => r.toUpperCase()).contains(normRole)) {
@@ -61,6 +67,12 @@ class DashboardCardMeta {
 
     if (checkFeature && requiredFeature != null) {
       final ent = entitlements ?? Entitlements.none;
+      // A shop's single billing card stands for both desks: it exists when
+      // either barcode billing or plain counter billing is in the plan.
+      if (id == kBillingCardId && (trade == null || Verticals.isShop(trade))) {
+        return ent.isEnabled(requiredFeature!) ||
+            ent.isEnabled(FeatureKeys.barcodeBilling);
+      }
       return ent.isEnabled(requiredFeature!);
     }
 
@@ -68,41 +80,72 @@ class DashboardCardMeta {
   }
 
   /// Dynamic title based on tenant's business vertical.
-  String titleFor(String? vertical) {
+  ///
+  /// [entitlements] lets a card name what the plan actually gives (a shop's
+  /// billing card, a catalogue without stock tracking); without it the
+  /// trade's default wording is used.
+  String titleFor(String? vertical, {Entitlements? entitlements}) {
     if (vertical == null) return title;
     final vl = VerticalLabels.of(vertical);
     switch (id) {
       case 'counter_billing':
-        return vl.counterBillingTitle;
+        return Verticals.isShop(vertical)
+            ? vl.shopBillingTitle
+            : vl.counterBillingTitle;
       case 'orders_history':
         return vl.ordersHistoryTitle;
       case 'menu':
-        return vl.menuScreenTitle;
+        return entitlements == null
+            ? vl.menuScreenTitle
+            : vl.menuCardTitle(
+                withStock: entitlements.isEnabled(FeatureKeys.stockManagement));
       case 'store_config':
         return vl.storeSettingsTitle;
+      case 'stock':
+        return vl.stockCardTitle;
       default:
         return title;
     }
   }
 
   /// Dynamic subtitle based on tenant's business vertical.
-  String subtitleFor(String? vertical) {
+  String subtitleFor(String? vertical, {Entitlements? entitlements}) {
     if (vertical == null) return subtitle;
     final vl = VerticalLabels.of(vertical);
     switch (id) {
       case 'counter_billing':
-        return vl.counterBillingSubtitle;
+        return Verticals.isShop(vertical)
+            ? vl.shopBillingSubtitle(
+                scan: entitlements?.isEnabled(FeatureKeys.barcodeBilling) ?? false)
+            : vl.counterBillingSubtitle;
       case 'orders_history':
         return vl.ordersHistorySubtitle;
       case 'menu':
         return vl.menuScreenSubtitle;
       case 'store_config':
         return vl.storeSettingsSubtitleShort;
+      case 'stock':
+        return vl.stockCardSubtitle;
       default:
         return subtitle;
     }
   }
 }
+
+/// The billing card. For a restaurant it is the counter (QSR) desk; for a
+/// shop it is the shop's one billing card, which opens the barcode desk when
+/// barcode billing is in the plan and the counter desk otherwise.
+const String kBillingCardId = 'counter_billing';
+
+/// Card ids that no longer exist on their own and the card that replaced them.
+/// Saved and pinned layouts still carry the old ids; they resolve here.
+const Map<String, String> kMergedDashboardCardIds = {
+  // Shops used to see "Barcode Billing" and "POS Billing Desk" side by side.
+  'barcode_billing': kBillingCardId,
+};
+
+/// The live card id for a saved one.
+String canonicalDashboardCardId(String id) => kMergedDashboardCardIds[id] ?? id;
 
 /// All available dashboard cards registered for the restaurant POS with RBAC constraints.
 final List<DashboardCardMeta> kAllDashboardCards = [
@@ -221,17 +264,8 @@ final List<DashboardCardMeta> kAllDashboardCards = [
   ),
 
   // ── Retail / Kirana cards ─────────────────────────────────────────────
-  DashboardCardMeta(
-    id: 'barcode_billing',
-    title: 'Barcode Billing',
-    subtitle: 'Scan & bill products fast',
-    badge: 'POS',
-    icon: Icons.qr_code_scanner_rounded,
-    defaultColor: ClassicTheme.infoBlue,
-    requiredFeature: FeatureKeys.barcodeBilling,
-    allowedRoles: ['OWNER', 'MANAGER', 'BILLING', 'CASHIER'],
-    allowedVerticals: {Verticals.kirana, Verticals.supermarket, Verticals.pharmacy, Verticals.retail},
-  ),
+  // Barcode billing is not a card of its own: it is what a shop's billing
+  // card ([kBillingCardId]) opens when the feature is on.
   DashboardCardMeta(
     id: 'customer_khata',
     title: 'Customer Khata',
@@ -246,7 +280,7 @@ final List<DashboardCardMeta> kAllDashboardCards = [
   DashboardCardMeta(
     id: 'stock',
     title: 'Stock Manager',
-    subtitle: 'Levels, reorders & suppliers',
+    subtitle: 'Levels, units & reorders',
     badge: 'Inventory',
     icon: Icons.inventory_2_rounded,
     defaultColor: ClassicTheme.successEmerald,
@@ -263,11 +297,11 @@ List<String> defaultPrimaryCardsFor(String vertical) {
       return const ['counter_billing', 'tables', 'orders_history', 'kds', 'menu', 'store_config', 'analytics'];
     case Verticals.kirana:
     case Verticals.pharmacy:
-      return const ['barcode_billing', 'counter_billing', 'orders_history', 'menu', 'customer_khata', 'stock', 'store_config'];
+      return const ['counter_billing', 'orders_history', 'menu', 'customer_khata', 'stock', 'store_config'];
     case Verticals.supermarket:
-      return const ['barcode_billing', 'counter_billing', 'orders_history', 'menu', 'stock', 'analytics', 'store_config'];
+      return const ['counter_billing', 'orders_history', 'menu', 'stock', 'analytics', 'store_config'];
     case Verticals.retail:
-      return const ['barcode_billing', 'counter_billing', 'orders_history', 'menu', 'customer_khata', 'stock', 'store_config'];
+      return const ['counter_billing', 'orders_history', 'menu', 'customer_khata', 'stock', 'store_config'];
     default:
       return const ['counter_billing', 'orders_history', 'menu', 'store_config'];
   }
@@ -289,6 +323,55 @@ const List<String> kDefaultPrimaryCardIds = [
 const List<String> kDefaultDropdownCardIds = [
   'outlets', 'staff', 'expenses', 'waiter',
 ];
+
+/// A saved layout, brought up to date with the cards that exist now.
+///
+/// Old ids are mapped to the card that replaced them
+/// ([kMergedDashboardCardIds]); an id is kept once, in the first list that
+/// holds it (on screen, then More Tools, then hidden), so a shop that had both
+/// billing cards pinned gets one; ids of cards that no longer exist are
+/// dropped; and cards the saved layout has never seen are added — on screen
+/// when the trade pins them by default, else in More Tools.
+DashboardLayoutState reconcileDashboardLayout({
+  required String vertical,
+  List<dynamic>? savedPrimary,
+  List<dynamic>? savedDropdown,
+  List<dynamic>? savedHidden,
+}) {
+  final known = kAllDashboardCards.map((c) => c.id).toSet();
+  final seen = <String>{};
+  List<String> clean(List<dynamic>? raw) {
+    final out = <String>[];
+    for (final e in raw ?? const <dynamic>[]) {
+      if (e == null) continue;
+      final id = canonicalDashboardCardId(e.toString());
+      if (!known.contains(id)) continue;
+      if (seen.add(id)) out.add(id);
+    }
+    return out;
+  }
+
+  final primary = clean(savedPrimary);
+  final dropdown = clean(savedDropdown);
+  final hidden = clean(savedHidden);
+
+  final verticalPrimary = defaultPrimaryCardsFor(vertical);
+  for (final card in kAllDashboardCards) {
+    if (seen.contains(card.id)) continue;
+    seen.add(card.id);
+    if (verticalPrimary.contains(card.id)) {
+      primary.add(card.id);
+    } else {
+      dropdown.add(card.id);
+    }
+  }
+
+  return DashboardLayoutState(
+    primaryCardIds: primary,
+    dropdownCardIds: dropdown,
+    hiddenCardIds: hidden,
+  );
+}
 
 class DashboardLayoutState {
   final List<String> primaryCardIds;
@@ -352,25 +435,13 @@ class DashboardLayoutNotifier extends StateNotifier<DashboardLayoutState> {
     final verticalPrimary = defaultPrimaryCardsFor(_vertical);
 
     if (savedPrimary != null || savedDropdown != null) {
-      final primary = savedPrimary != null ? List<String>.from(savedPrimary) : <String>[];
-      final dropdown = savedDropdown != null ? List<String>.from(savedDropdown) : <String>[];
-      final hidden = savedHidden != null ? List<String>.from(savedHidden) : <String>[];
-
-      // Reconcile new cards if any
-      for (final card in kAllDashboardCards) {
-        if (!primary.contains(card.id) && !dropdown.contains(card.id) && !hidden.contains(card.id)) {
-          if (verticalPrimary.contains(card.id)) {
-            primary.add(card.id);
-          } else {
-            dropdown.add(card.id);
-          }
-        }
-      }
-
-      state = DashboardLayoutState(
-        primaryCardIds: primary,
-        dropdownCardIds: dropdown,
-        hiddenCardIds: hidden,
+      // Reconcile: merged ids (barcode_billing → the billing card), no
+      // duplicates, retired ids dropped, new cards added.
+      state = reconcileDashboardLayout(
+        vertical: _vertical,
+        savedPrimary: savedPrimary,
+        savedDropdown: savedDropdown,
+        savedHidden: savedHidden,
       );
       return;
     }
@@ -383,6 +454,7 @@ class DashboardLayoutNotifier extends StateNotifier<DashboardLayoutState> {
   }
 
   Future<void> moveToScreen(String cardId) async {
+    cardId = canonicalDashboardCardId(cardId);
     final updatedDropdown = List<String>.from(state.dropdownCardIds)..remove(cardId);
     final updatedHidden = List<String>.from(state.hiddenCardIds)..remove(cardId);
     final updatedPrimary = List<String>.from(state.primaryCardIds);
@@ -399,6 +471,7 @@ class DashboardLayoutNotifier extends StateNotifier<DashboardLayoutState> {
   }
 
   Future<void> moveToDropdown(String cardId) async {
+    cardId = canonicalDashboardCardId(cardId);
     final updatedPrimary = List<String>.from(state.primaryCardIds)..remove(cardId);
     final updatedHidden = List<String>.from(state.hiddenCardIds)..remove(cardId);
     final updatedDropdown = List<String>.from(state.dropdownCardIds);
@@ -415,6 +488,7 @@ class DashboardLayoutNotifier extends StateNotifier<DashboardLayoutState> {
   }
 
   Future<void> hideCard(String cardId) async {
+    cardId = canonicalDashboardCardId(cardId);
     final updatedPrimary = List<String>.from(state.primaryCardIds)..remove(cardId);
     final updatedDropdown = List<String>.from(state.dropdownCardIds)..remove(cardId);
     final updatedHidden = List<String>.from(state.hiddenCardIds);
@@ -431,6 +505,7 @@ class DashboardLayoutNotifier extends StateNotifier<DashboardLayoutState> {
   }
 
   Future<void> restoreCard(String cardId) async {
+    cardId = canonicalDashboardCardId(cardId);
     final verticalPrimary = defaultPrimaryCardsFor(_vertical);
     if (verticalPrimary.contains(cardId)) {
       await moveToScreen(cardId);

@@ -91,6 +91,10 @@ const Map<String, int> _itemColumnWeights = {
   'notes': 4,
   'station': 3,
   'veg': 2,
+  'mrp': 2,
+  'batch': 3,
+  'expiry': 2,
+  'hsn': 2,
 };
 
 const Map<String, String> _itemColumnHeaders = {
@@ -103,6 +107,10 @@ const Map<String, String> _itemColumnHeaders = {
   'notes': 'NOTE',
   'station': 'STN',
   'veg': 'TYPE',
+  'mrp': 'MRP',
+  'batch': 'BATCH',
+  'expiry': 'EXP',
+  'hsn': 'HSN',
 };
 
 const Map<String, TextAlign_> _itemColumnAligns = {
@@ -115,6 +123,10 @@ const Map<String, TextAlign_> _itemColumnAligns = {
   'notes': TextAlign_.left,
   'station': TextAlign_.left,
   'veg': TextAlign_.left,
+  'mrp': TextAlign_.right,
+  'batch': TextAlign_.left,
+  'expiry': TextAlign_.center,
+  'hsn': TextAlign_.left,
 };
 
 class ReceiptRenderer {
@@ -314,6 +326,8 @@ class ReceiptRenderer {
     if (cols.isEmpty) cols = ['name', 'qty'];
 
     final showNotes = b.props['showNotes'] == true;
+    final detailLine = (b.props['detailLine'] ?? '').toString();
+    final detailWhen = (b.props['detailWhen'] ?? '').toString();
     final showHeader = b.props['header'] != false;
     final groupByStation = b.props['groupByStation'] == true &&
         ctx.enabledFeatures.contains(PlaceholderFeatures.kds);
@@ -372,6 +386,19 @@ class ReceiptRenderer {
             out.add(LayoutText(line));
           }
         }
+
+        // An optional second line per item — a pharmacy's batch, expiry and
+        // MRP — written as a template string so no trade gets a special case
+        // here. `detailWhen` is evaluated with the line in scope.
+        if (detailLine.trim().isNotEmpty &&
+            ReceiptCondition.evaluate(detailWhen, ctx, item: scoped)) {
+          final detail = ctx.substitute(detailLine, item: scoped).trimRight();
+          if (detail.trim().isNotEmpty) {
+            for (final line in LayoutFit.wrap(detail, chars)) {
+              out.add(LayoutText(line));
+            }
+          }
+        }
       }
     }
 
@@ -396,7 +423,10 @@ class ReceiptRenderer {
         return ReceiptFormat.qty(item['qty']);
       case 'rate':
       case 'amount':
+      case 'mrp':
         return ReceiptFormat.money(item[col], symbol: '', decimals: 2);
+      case 'batch':
+        return (item['batchNo'] ?? '').toString();
       case 'index':
         return '${item['index'] ?? ''}';
       case 'station':

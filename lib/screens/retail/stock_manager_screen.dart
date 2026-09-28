@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/classic_theme.dart';
+import '../../core/entitlements.dart';
+import '../../core/feature_route_guard.dart';
 import '../../core/package_model.dart';
 import '../../core/vertical_labels.dart';
 import '../../providers/saas_session_provider.dart';
@@ -21,7 +23,8 @@ class StockManagerScreen extends ConsumerStatefulWidget {
 
 enum _Filter { all, low, out, untracked }
 
-class _StockManagerScreenState extends ConsumerState<StockManagerScreen> {
+class _StockManagerScreenState extends ConsumerState<StockManagerScreen>
+    with FeatureRouteGuard<StockManagerScreen> {
   String _query = '';
   _Filter _filter = _Filter.all;
   List<Map<String, dynamic>> _items = [];
@@ -31,6 +34,8 @@ class _StockManagerScreenState extends ConsumerState<StockManagerScreen> {
   @override
   void initState() {
     super.initState();
+    guardFeature(FeatureKeys.stockManagement);
+    if (guardTripped) return;
     _reload();
   }
 

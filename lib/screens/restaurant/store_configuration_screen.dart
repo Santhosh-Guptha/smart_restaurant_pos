@@ -821,7 +821,7 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildSectionHeader('Taxes, Service Charges & Surcharges', Icons.receipt_rounded),
+          _buildSectionHeader(isRest ? 'Taxes, Service Charges & Surcharges' : 'Taxes & Charges', Icons.receipt_rounded),
           const SizedBox(height: 12),
           _buildCard(
             children: [
@@ -834,6 +834,8 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
                       keyboardType: const TextInputType.numberWithOptions(decimal: true),
                       onChanged: (_) => setState(() {}),
                     ),
+                  // A shop does not add a service charge to its bills.
+                  if (isRest)
                   _buildTextField(
                       _serviceChargeCtrl,
                       'Service Charge (%)',
@@ -866,7 +868,7 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
               if (isRest) ...[
               const SizedBox(height: 16),
               _buildToggleRow(
-                'Default Service Charge Enabled for Dine-In Orders',
+                'Default Service Charge Enabled for Dine-in Orders',
                 _defaultServiceChargeOn,
                 (v) => setState(() => _defaultServiceChargeOn = v),
               ),
@@ -894,7 +896,7 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
               const SizedBox(height: 16),
               Divider(color: context.borderColor),
               const SizedBox(height: 12),
-              Text('Dine-In Bill Settlement Timing Policy:',
+              Text('Dine-in Bill Settlement Timing Policy:',
                   style: TextStyle(color: context.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
               const SizedBox(height: 4),
               Text(
@@ -1108,17 +1110,18 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
   // TAB 4: HOURS & SHIFTS
   // ─────────────────────────────────────────────────────────────
   Widget _buildHoursAndShiftsTab() {
+    final isRest = VerticalLabels.of(_vertical).isRestaurant;
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildSectionHeader('Store Operating Hours & Ordering Timings', Icons.access_time_filled_rounded),
+          _buildSectionHeader(isRest ? 'Store Operating Hours & Ordering Timings' : 'Store Operating Hours', Icons.access_time_filled_rounded),
           const SizedBox(height: 12),
           _buildCard(
             children: [
               _buildToggleRow(
-                'Accepting Orders Now (Store Open Status)',
+                isRest ? 'Accepting Orders Now (Store Open Status)' : 'Store Open Now',
                 _isStoreOpen,
                 (v) => setState(() => _isStoreOpen = v),
               ),

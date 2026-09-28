@@ -6,6 +6,7 @@ import 'package:hive_flutter/hive_flutter.dart';
 
 import '../../core/classic_theme.dart';
 import '../../core/entitlements.dart';
+import '../../core/feature_route_guard.dart';
 import '../../core/package_model.dart';
 import '../../core/receipt/receipt_context_builder.dart';
 import '../../core/receipt/receipt_print_service.dart';
@@ -99,7 +100,8 @@ class BarcodeBillingScreen extends ConsumerStatefulWidget {
   ConsumerState<BarcodeBillingScreen> createState() => _BarcodeBillingScreenState();
 }
 
-class _BarcodeBillingScreenState extends ConsumerState<BarcodeBillingScreen> {
+class _BarcodeBillingScreenState extends ConsumerState<BarcodeBillingScreen>
+    with FeatureRouteGuard<BarcodeBillingScreen> {
   final TextEditingController _scanCtrl = TextEditingController();
   final FocusNode _scanFocusNode = FocusNode();
 
@@ -124,6 +126,8 @@ class _BarcodeBillingScreenState extends ConsumerState<BarcodeBillingScreen> {
   @override
   void initState() {
     super.initState();
+    guardFeature(FeatureKeys.barcodeBilling);
+    if (guardTripped) return;
     _loadCatalogAndConfig();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _scanFocusNode.requestFocus();
@@ -148,7 +152,10 @@ class _BarcodeBillingScreenState extends ConsumerState<BarcodeBillingScreen> {
               .where((d) => d['isAvailable'] != false)
               .toList();
         }
-        _taxRate = (configBox.get('gst_tax_rate') as num?)?.toDouble() ?? 0.0;
+        // Same key the counter till and GST settings use; 'gst_tax_rate' is
+        // an older key kept only as a fallback.
+        final gst = configBox.get('restaurant_gst_percentage') ?? configBox.get('gst_tax_rate');
+        _taxRate = gst is num ? gst.toDouble() : (double.tryParse('${gst ?? ''}') ?? 0.0);
       }
     } catch (e) {
       debugPrint('Error loading retail catalog: $e');
@@ -262,18 +269,68 @@ class _BarcodeBillingScreenState extends ConsumerState<BarcodeBillingScreen> {
     _scanCtrl.selection = TextSelection(baseOffset: 0, extentOffset: _scanCtrl.text.length);
   }
 
-  void _addItemToCart(Map<String, dynamic> dish) {
-    // Expired medicine cannot be billed.
-    final blocked = StockService.blockReason(dish);
-    if (blocked != null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(blocked), backgroundColor: ClassicTheme.dangerRed),
-      );
-      return;
+  /// Stock checks at the till only run when the store has Stock management.
+  bool get _stockOn => ref.read(featureEnabledProvider(FeatureKeys.stockManagement));
+
+  static String _fmtQty(double q) => q == q.roundToDouble() ? q.toStringAsFixed(0) : q.toStringAsFixed(2);
+
+  Map<String, dynamic>? _catalogItem(String id) {
+    for (final d in _catalogDishes) {
+      if ((d['id']?.toString() ?? '') == id) return d;
     }
-    HapticFeedback.lightImpact();
+    return null;
+  }
+
+  /// A message when [wantedQty] of [dish] is more than can be sold (expired
+  /// batches excluded), else null. Untracked products always pass.
+  String? _stockLimitMessage(Map<String, dynamic>? dish, int wantedQty) {
+    if (dish == null || !_stockOn) return null;
+    final sellable = StockService.sellableQtyOf(dish);
+    if (sellable == null) return null;
+    if (wantedQty <= sellable) return null;
+    final name = dish['name']?.toString() ?? 'This item';
+    final unit = dish['unit']?.toString() ?? 'pcs';
+    if (sellable <= 0) return '$name is out of stock.';
+    return 'Only ${_fmtQty(sellable)} $unit of $name in stock.';
+  }
+
+  void _showStockBlock(String message) {
+    HapticFeedback.heavyImpact();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), backgroundColor: ClassicTheme.dangerRed),
+    );
+  }
+
+  void _addItemToCart(Map<String, dynamic> dish) {
     final dishId = dish['id']?.toString() ?? '';
     final existingIdx = _cart.indexWhere((item) => item.id == dishId);
+    if (_stockOn) {
+      // Expired medicine cannot be billed.
+      final blocked = StockService.blockReason(dish);
+      if (blocked != null) {
+        _showStockBlock(blocked);
+        return;
+      }
+      final inCart = existingIdx != -1 ? _cart[existingIdx].quantity : 0;
+      final limit = _stockLimitMessage(dish, inCart + 1);
+      if (limit != null) {
+        _showStockBlock(limit);
+        return;
+      }
+      // Pharmacy: warn when the batch that will be sold expires soon.
+      if (existingIdx == -1 && ref.read(currentVerticalProvider) == Verticals.pharmacy) {
+        final batch = StockService.nextSellableBatch(dish);
+        final days = batch?.daysLeft();
+        if (batch != null && days != null && days <= 30) {
+          final name = dish['name']?.toString() ?? 'Medicine';
+          AppToast.showWarning(
+            context,
+            '$name: batch ${batch.batchNo} expires ${days <= 0 ? 'today' : days == 1 ? 'in 1 day' : 'in $days days'}',
+          );
+        }
+      }
+    }
+    HapticFeedback.lightImpact();
 
     setState(() {
       if (existingIdx != -1) {
@@ -309,7 +366,7 @@ class _BarcodeBillingScreenState extends ConsumerState<BarcodeBillingScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Select Product (${matches.length} matches)',
+                'Select ${VerticalLabels.of(ref.read(currentVerticalProvider)).itemSingular} (${matches.length} matches)',
                 style: TextStyle(color: context.textPrimary, fontWeight: FontWeight.bold, fontSize: 16),
               ),
               const SizedBox(height: 12),
@@ -347,6 +404,14 @@ class _BarcodeBillingScreenState extends ConsumerState<BarcodeBillingScreen> {
   }
 
   void _updateItemQuantity(int index, int delta) {
+    if (delta > 0) {
+      final item = _cart[index];
+      final limit = _stockLimitMessage(_catalogItem(item.id), item.quantity + delta);
+      if (limit != null) {
+        _showStockBlock(limit);
+        return;
+      }
+    }
     HapticFeedback.selectionClick();
     setState(() {
       final item = _cart[index];
@@ -387,6 +452,13 @@ class _BarcodeBillingScreenState extends ConsumerState<BarcodeBillingScreen> {
           ElevatedButton(
             onPressed: () {
               final newQty = int.tryParse(ctrl.text.trim()) ?? item.quantity;
+              if (newQty > item.quantity) {
+                final limit = _stockLimitMessage(_catalogItem(item.id), newQty);
+                if (limit != null) {
+                  _showStockBlock(limit);
+                  return;
+                }
+              }
               Navigator.pop(ctx);
               setState(() {
                 if (newQty <= 0) {
@@ -806,12 +878,25 @@ class _BarcodeBillingScreenState extends ConsumerState<BarcodeBillingScreen> {
 
       final orderItemsList = _cart.map((i) => i.toMap()).toList();
 
+      // Take the sale out of stock first (batches first-to-expire first) so
+      // each line can carry the batch it was sold from for the receipt.
+      if (_stockOn) {
+        final consumed = await StockService.consumeForSale(orderItemsList, billId: billId);
+        for (final line in orderItemsList) {
+          final used = consumed[line['id']?.toString() ?? ''];
+          if (used == null || used.isEmpty) continue;
+          line['batches'] = used;
+          line['batchNo'] = used.first['batchNo'];
+          line['expiry'] = used.first['expiry'];
+        }
+      }
+
       final orderMap = {
         'id': billId,
         'kotNumber': billId,
         'orderNumber': billId,
         'createdAt': now.toIso8601String(),
-        'orderType': 'Takeaway',
+        'orderType': 'Walk-in',
         'channel': 'Retail POS',
         'status': isPaid ? 'COMPLETED' : 'CREDIT_PENDING',
         'paymentMode': paymentMode,
@@ -859,7 +944,7 @@ class _BarcodeBillingScreenState extends ConsumerState<BarcodeBillingScreen> {
             type: 'SALE_ON_CREDIT',
             amount: _grandTotal,
             billId: billId,
-            notes: 'Retail POS Bill #$billId (${_cart.length} items)',
+            notes: 'Bill #$billId (${_cart.length == 1 ? '1 item' : '${_cart.length} items'})',
             balanceAfter: newBal,
           );
           final updatedCust = c.copyWith(
@@ -872,8 +957,8 @@ class _BarcodeBillingScreenState extends ConsumerState<BarcodeBillingScreen> {
         }
       }
 
-      // 3. Decrement local stock in restaurant_menu_dishes
-      _decrementLocalStock(orderItemsList);
+      // 3. Stock was taken above; refresh the catalogue's quantities.
+      if (_stockOn && mounted) _loadCatalogAndConfig();
 
       // 4. Print thermal receipt
       _printThermalReceipt(orderMap);
@@ -900,13 +985,6 @@ class _BarcodeBillingScreenState extends ConsumerState<BarcodeBillingScreen> {
     } finally {
       if (mounted) setState(() => _isSettling = false);
     }
-  }
-
-  void _decrementLocalStock(List<Map<String, dynamic>> soldItems) {
-    // Stock on hand, batches first-to-expire first (StockService).
-    StockService.consumeForSale(soldItems).then((_) {
-      if (mounted) _loadCatalogAndConfig();
-    });
   }
 
   Future<void> _printThermalReceipt(Map<String, dynamic> order) async {
@@ -960,7 +1038,9 @@ class _BarcodeBillingScreenState extends ConsumerState<BarcodeBillingScreen> {
               style: TextStyle(color: context.textPrimary, fontWeight: FontWeight.bold, fontSize: 16),
             ),
             Text(
-              '${Verticals.label(vertical)} Mode • ${_cart.length} items in cart',
+              '${Verticals.label(vertical)} • ${_cart.length == 1 ? '1 item' : '${_cart.length} items'}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: TextStyle(color: context.textSecondary, fontSize: 11),
             ),
           ],
@@ -1232,6 +1312,7 @@ class _BarcodeBillingScreenState extends ConsumerState<BarcodeBillingScreen> {
   }
 
   Widget _buildCatalogSection() {
+    final stockOn = ref.watch(featureEnabledProvider(FeatureKeys.stockManagement));
     // Collect distinct categories
     final categories = ['All'];
     for (final d in _catalogDishes) {
@@ -1301,7 +1382,8 @@ class _BarcodeBillingScreenState extends ConsumerState<BarcodeBillingScreen> {
                     final dish = filtered[idx];
                     final price = (dish['price'] as num?)?.toDouble() ?? 0.0;
                     final mrp = (dish['mrp'] as num?)?.toDouble();
-                    final stock = (dish['stockQuantity'] ?? dish['stock_quantity'] as num?)?.toDouble();
+                    final stock = stockOn ? StockService.sellableQtyOf(dish) : null;
+                    final stockLow = stock != null && (stock <= 0 || StockService.isLow(dish));
                     final unit = dish['unit']?.toString() ?? 'pcs';
 
                     return InkWell(
@@ -1368,9 +1450,11 @@ class _BarcodeBillingScreenState extends ConsumerState<BarcodeBillingScreen> {
                             // Stock status
                             if (stock != null)
                               Text(
-                                'Stock: ${stock.toStringAsFixed(0)} $unit',
+                                stock <= 0 ? 'Out of stock' : 'Stock: ${_fmtQty(stock)} $unit',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
-                                  color: stock <= 5 ? ClassicTheme.dangerRed : ClassicTheme.successEmerald,
+                                  color: stockLow ? ClassicTheme.dangerRed : ClassicTheme.successEmerald,
                                   fontSize: 10,
                                   fontWeight: FontWeight.w600,
                                 ),

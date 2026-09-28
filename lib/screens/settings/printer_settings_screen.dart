@@ -219,10 +219,13 @@ class _PrinterSettingsScreenState extends ConsumerState<PrinterSettingsScreen> {
   /// print that agrees with nothing a customer is handed is worse than none.
   ReceiptContext _sampleSlip() {
     final ent = ref.read(entitlementsProvider);
-    final slip = ReceiptContext.sample(enabledFeatures: {
-      for (final def in FeatureCatalog.all)
-        if (ent.isEnabled(def.key)) def.key,
-    });
+    final slip = ReceiptContext.sample(
+      enabledFeatures: {
+        for (final def in FeatureCatalog.all)
+          if (ent.isEnabled(def.key)) def.key,
+      },
+      vertical: ref.read(currentVerticalProvider),
+    );
     final printer = ref.read(thermalPrinterProvider);
     slip.values.addAll(ReceiptContextBuilder.printerOverrides(
       customName: _nameCtrl.text.trim(),
@@ -243,7 +246,8 @@ class _PrinterSettingsScreenState extends ConsumerState<PrinterSettingsScreen> {
   Future<void> _loadInvoiceTemplate() async {
     if (mounted && _templateFailed) setState(() => _templateFailed = false);
     try {
-      final t = await ReceiptTemplateStore.resolve(_orgId(), ReceiptKind.invoice);
+      final t = await ReceiptTemplateStore.resolve(_orgId(), ReceiptKind.invoice,
+          vertical: ref.read(currentVerticalProvider));
       if (!mounted) return;
       setState(() => _invoiceTemplate = t);
     } catch (_) {

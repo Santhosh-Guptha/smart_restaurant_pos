@@ -13,6 +13,21 @@ import 'whatsapp_notification_service.dart';
 class TenantProvisioningService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
+  /// The word after the owner's name when no shop name was given — the same
+  /// words the sign-up screen uses.
+  static String _fallbackShopSuffix(String vertical) {
+    switch (vertical) {
+      case Verticals.restaurant:
+        return 'Restaurant';
+      case Verticals.supermarket:
+        return 'Supermarket';
+      case Verticals.pharmacy:
+        return 'Pharmacy';
+      default:
+        return 'Store';
+    }
+  }
+
   static String generateUniqueOrgId() {
     final now = DateTime.now();
     final year = now.year.toString().substring(2);
@@ -92,7 +107,16 @@ class TenantProvisioningService {
     final alignedOutlets = resolved.maxOutlets;
     storageMode = resolvedMode;
     final cleanName = clientName.trim();
-    final cleanShopName = shopName.trim().isNotEmpty ? shopName.trim() : "$cleanName Restaurant";
+    final cleanShopName = shopName.trim().isNotEmpty
+        ? shopName.trim()
+        : "$cleanName ${_fallbackShopSuffix(vertical)}";
+    // A shop has no kitchen and no tables: the Kitchen and Waiter roles open
+    // nothing on its dashboard, so they are not written into its licence.
+    final provisionedRoles = Verticals.isShop(vertical)
+        ? plan.allowedRoles
+            .where((r) => r.toUpperCase() != 'WAITER' && r.toUpperCase() != 'KITCHEN')
+            .toList()
+        : plan.allowedRoles;
     final cleanMobile = mobile.trim();
     final candidateUsername = (username != null && username.trim().isNotEmpty)
         ? username.trim().toLowerCase().replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '')
@@ -191,7 +215,7 @@ class TenantProvisioningService {
         'maxFranchises': alignedOutlets,
         'maxUsers': plan.maxUsers,
         'maxDevices': alignedDevices,
-        'allowedRoles': plan.allowedRoles,
+        'allowedRoles': provisionedRoles,
         'features': alignedFeatures,
         'featuresResolvedFor': vertical,
         'expiryWarningDays': 3,
@@ -355,6 +379,7 @@ class TenantProvisioningService {
           username: cleanUsername,
           password: rawPassword,
           planName: plan.name,
+          vertical: vertical,
         ).catchError((e) {
           debugPrint("Background welcome WhatsApp send warning: $e");
           return <String, dynamic>{};

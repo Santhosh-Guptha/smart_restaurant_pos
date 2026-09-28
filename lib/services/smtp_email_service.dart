@@ -391,7 +391,7 @@ class SmtpEmailService {
   <div class="card">
     $headerHtml
     <p class="greeting">Hello <strong>$clientName</strong>,</p>
-    <p class="note">Thank you for registering your retail business. Please use the 6-digit verification code below to verify your email address:</p>
+    <p class="note">Thank you for registering your business. Please use the 6-digit verification code below to verify your email address:</p>
     
     <div class="otp-box">
       <div class="otp-code">$otpCode</div>
@@ -889,7 +889,7 @@ SmartBizz Team
     </div>
 
     <p style="color: #475569; font-size: 13px; line-height: 1.5;">
-      You can approve and grant a new subscription period (+7, +14, +30, or +365 days) directly from the <strong>Organizations</strong> tab in the SmartBiz Control Panel. All client data, tables, and dining menus are fully preserved.
+      You can approve and grant a new subscription period (+7, +14, +30, or +365 days) directly from the <strong>Organizations</strong> tab in the SmartBiz Control Panel. All client data, catalogue and settings are fully preserved.
     </p>
 
     $footerHtml
@@ -921,11 +921,19 @@ SmartBizz Team
     required DateTime validUntil,
     required int maxUsers,
     required int maxFranchises,
+    /// The tenant's trade (`Verticals.*`). A shop has store branches and no
+    /// kitchen display or table QR to switch back on.
+    String vertical = Verticals.restaurant,
   }) async {
     final cleanEmail = recipientEmail.trim().toLowerCase();
     if (cleanEmail.isEmpty || !cleanEmail.contains('@')) {
       return {'success': false, 'error': 'Invalid recipient email.'};
     }
+    final isShop = Verticals.isShop(vertical);
+    final branchLabel = isShop ? 'Store Branches' : 'Restaurant Branches';
+    final activeSentence = isShop
+        ? 'Your POS terminals and billing are active again. No app restart or re-login is required.'
+        : 'Your POS terminals, Kitchen Display System (KDS), and customer table QR ordering links are instantly active. No app restart or re-login is required.';
 
     try {
       final formattedDate = "${validUntil.day.toString().padLeft(2, '0')}/${validUntil.month.toString().padLeft(2, '0')}/${validUntil.year}";
@@ -939,7 +947,7 @@ SmartBizz Team
       final footerHtml = _buildFooterHtml();
 
       final subject = 'License Renewed: Welcome back to SmartBizz POS!';
-      final plainText = 'Hello $orgName,\n\nYour SmartBizz POS subscription license has been successfully renewed!\n\nPlan Tier: $planTier\nValid Until: $formattedDate\nPermitted Staff Seats: $maxUsers\nPermitted Restaurant Branches: $maxFranchises\n\nYour POS terminals will unblock automatically in real-time.\n\nBest regards,\nSmartBizz Support Team';
+      final plainText = 'Hello $orgName,\n\nYour SmartBizz POS subscription license has been successfully renewed!\n\nPlan Tier: $planTier\nValid Until: $formattedDate\nPermitted Staff Seats: $maxUsers\nPermitted $branchLabel: $maxFranchises\n\nYour POS terminals will unblock automatically in real-time.\n\nBest regards,\nSmartBizz Support Team';
       final htmlContent = '''
 <!DOCTYPE html>
 <html>
@@ -964,11 +972,11 @@ SmartBizz Team
       <div style="font-size: 13px; margin-bottom: 6px;"><strong>Subscription Tier:</strong> $planTier</div>
       <div style="font-size: 13px; margin-bottom: 6px;"><strong>Valid Until:</strong> $formattedDate</div>
       <div style="font-size: 13px; margin-bottom: 6px;"><strong>Staff User Accounts:</strong> Up to $maxUsers seats</div>
-      <div style="font-size: 13px; margin-bottom: 6px;"><strong>Restaurant Branches:</strong> Up to $maxFranchises outlets</div>
+      <div style="font-size: 13px; margin-bottom: 6px;"><strong>$branchLabel:</strong> Up to $maxFranchises outlets</div>
     </div>
 
     <p style="color: #475569; font-size: 13px; line-height: 1.5;">
-      Your POS terminals, Kitchen Display System (KDS), and customer table QR ordering links are instantly active. No app restart or re-login is required.
+      $activeSentence
     </p>
 
     $footerHtml
@@ -1002,11 +1010,24 @@ SmartBizz Team
     required String paymentMode,
     required Uint8List pdfBytes,
     String? organizationId,
+    /// The tenant's trade (`Verticals.*`). A shop thanks the customer for
+    /// shopping and has no table to name.
+    String vertical = Verticals.restaurant,
   }) async {
     final cleanEmail = recipientEmail.trim().toLowerCase();
     if (cleanEmail.isEmpty || !cleanEmail.contains('@')) {
       return {'success': false, 'error': 'Invalid recipient email address.'};
     }
+    final isShop = Verticals.isShop(vertical);
+    final thanksPlain = isShop
+        ? 'Thank you for shopping at $restaurantName!'
+        : 'Thank you for dining at $restaurantName!';
+    final tablePlain = isShop ? '' : 'Table: $tableName\n';
+    final thanksHtml = isShop
+        ? 'Thank you for shopping at <strong>$restaurantName</strong>.'
+        : 'Thank you for dining with us at <strong>$restaurantName</strong>.';
+    final refLabel = isShop ? 'Bill:' : 'Table / Order:';
+    final refValue = isShop ? billNumber : tableName;
 
     try {
       final config = await getEffectiveSmtpConfig(organizationId: organizationId);
@@ -1027,13 +1048,13 @@ SmartBizz Team
       final cleanBillId = billNumber.replaceAll(RegExp(r'[^a-zA-Z0-9_\-]'), '_');
       final cleanCust = customerName.trim().isNotEmpty && customerName != 'Guest' && customerName != 'Dine-In Guest' && customerName != 'Walk-in Customer'
           ? customerName.trim()
-          : 'Valued Guest';
+          : (isShop ? 'Valued Customer' : 'Valued Guest');
 
       final message = Message()
         ..from = Address(config.username.trim(), config.fromName.isNotEmpty ? config.fromName : restaurantName)
         ..recipients.add(cleanEmail)
         ..subject = 'Your Tax Invoice #$billNumber from $restaurantName'
-        ..text = 'Hello $cleanCust,\n\nThank you for dining at $restaurantName!\n\nInvoice Number: $billNumber\nTable: $tableName\nTotal Amount: Rs. ${totalAmount.toStringAsFixed(2)}\nPayment Mode: $paymentMode\nStatus: PAID IN FULL\n\nPlease find your official digital POS bill Tax Invoice attached as a PDF.\n\nBest regards,\n$restaurantName'
+        ..text = 'Hello $cleanCust,\n\n$thanksPlain\n\nInvoice Number: $billNumber\n${tablePlain}Total Amount: Rs. ${totalAmount.toStringAsFixed(2)}\nPayment Mode: $paymentMode\nStatus: PAID IN FULL\n\nPlease find your official digital POS bill Tax Invoice attached as a PDF.\n\nBest regards,\n$restaurantName'
         ..html = '''
 <!DOCTYPE html>
 <html>
@@ -1056,12 +1077,12 @@ SmartBizz Team
     $headerHtml
     <p class="greeting">Hello <strong>$cleanCust</strong>,</p>
     <p style="color: #475569; font-size: 13px; line-height: 1.5;">
-      Thank you for dining with us at <strong>$restaurantName</strong>. Your bill has been settled in full.
+      $thanksHtml Your bill has been settled in full.
     </p>
 
     <div class="bill-box">
       <div class="bill-row"><span class="bill-label">Invoice Number:</span> <span class="bill-val">$billNumber</span></div>
-      <div class="bill-row"><span class="bill-label">Table / Order:</span> <span class="bill-val">$tableName</span></div>
+      <div class="bill-row"><span class="bill-label">$refLabel</span> <span class="bill-val">$refValue</span></div>
       <div class="bill-row"><span class="bill-label">Payment Mode:</span> <span class="bill-val">${paymentMode.toUpperCase()}</span></div>
       <div class="bill-row total-row">
         <span class="bill-label" style="font-size: 14px;">Total Amount Paid:</span>
@@ -1099,7 +1120,7 @@ SmartBizz Team
       return await _dispatchEmail(
         recipientEmail: cleanEmail,
         subject: 'Your Tax Invoice #$billNumber from $restaurantName',
-        plainText: 'Hello $cleanCust,\n\nThank you for dining at $restaurantName!\n\nInvoice Number: $billNumber\nTable: $tableName\nTotal Amount: Rs. ${totalAmount.toStringAsFixed(2)}\nPayment Mode: $paymentMode\nStatus: PAID IN FULL\n\nBest regards,\n$restaurantName',
+        plainText: 'Hello $cleanCust,\n\n$thanksPlain\n\nInvoice Number: $billNumber\n${tablePlain}Total Amount: Rs. ${totalAmount.toStringAsFixed(2)}\nPayment Mode: $paymentMode\nStatus: PAID IN FULL\n\nBest regards,\n$restaurantName',
         htmlContent: message.html ?? '',
         fromName: restaurantName,
         organizationId: organizationId,

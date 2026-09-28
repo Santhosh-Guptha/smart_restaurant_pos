@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import '../../core/classic_theme.dart';
 import '../../core/design_tokens.dart';
 import '../../core/entitlements.dart';
+import '../../core/package_model.dart';
 import '../../core/responsive.dart';
 import '../../providers/restaurant_auth_provider.dart';
 import '../../providers/saas_session_provider.dart';
@@ -345,6 +346,7 @@ class _StorageMigrationGateScreenState extends ConsumerState<StorageMigrationGat
   }
 
   List<Widget> _staffBody(BuildContext context) {
+    final isRestaurant = ref.read(currentVerticalProvider) == Verticals.restaurant;
     return [
       Container(
         padding: const EdgeInsets.all(DS.space4),
@@ -362,8 +364,11 @@ class _StorageMigrationGateScreenState extends ConsumerState<StorageMigrationGat
                 style: TextStyle(fontSize: DS.fontTitle, fontWeight: FontWeight.w700, color: context.textPrimary)),
             const SizedBox(height: DS.space2),
             Text(
-              'Tables, kitchen and the other screens come back once the owner finishes the change on their device. '
-              'You can keep billing at the counter as usual.',
+              isRestaurant
+                  ? 'Tables, kitchen and the other screens come back once the owner finishes the change on their device. '
+                      'You can keep billing at the counter as usual.'
+                  : 'The other screens come back once the owner finishes the change on their device. '
+                      'You can keep billing at the counter as usual.',
               style: TextStyle(fontSize: DS.fontBody, height: 1.5, color: context.textSecondary),
             ),
           ],

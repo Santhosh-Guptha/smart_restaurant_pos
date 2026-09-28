@@ -52,6 +52,9 @@ class _RestaurantAnalyticsScreenState
   List<Map<String, dynamic>> _dayOfWeekData = [];
   List<Map<String, dynamic>> _topSubcategories = [];
   int _totalTransactionsCount = 0;
+  // Revenue in the period of the same length just before the selected one;
+  // null when there is nothing recorded there to compare against.
+  double? _previousPeriodRevenue;
   Map<String, double> _paymentSplit = {'UPI': 0.0, 'CASH': 0.0, 'CARD': 0.0};
 
   @override
@@ -276,6 +279,46 @@ class _RestaurantAnalyticsScreenState
             return true;
         }
       }).toList();
+
+      // 2b. Revenue in the previous period of the same length, for the
+      // "vs previous period" change on the revenue card.
+      final todayStart = DateTime(now.year, now.month, now.day);
+      DateTime prevStart;
+      DateTime prevEnd;
+      switch (_selectedPeriod) {
+        case 'Today':
+          // Yesterday up to this same time of day.
+          prevStart = todayStart.subtract(const Duration(days: 1));
+          prevEnd = now.subtract(const Duration(days: 1));
+          break;
+        case 'Yesterday':
+          prevStart = todayStart.subtract(const Duration(days: 2));
+          prevEnd = todayStart.subtract(const Duration(days: 1));
+          break;
+        case 'Last 7 Days':
+          prevStart = now.subtract(const Duration(days: 14));
+          prevEnd = now.subtract(const Duration(days: 7));
+          break;
+        case 'This Month':
+        default:
+          // The first days of last month, up to the same day and time.
+          final lastDayPrevMonth = DateTime(now.year, now.month, 0).day;
+          final day = now.day > lastDayPrevMonth ? lastDayPrevMonth : now.day;
+          prevStart = DateTime(now.year, now.month - 1, 1);
+          prevEnd = DateTime(now.year, now.month - 1, day, now.hour, now.minute, now.second);
+          break;
+      }
+      double prevRevenue = 0.0;
+      int prevCount = 0;
+      for (final t in allTransactions) {
+        final dt = _parseDt(t['createdAt'] ?? t['timestamp'] ?? t['paidAt']);
+        if (dt == null) continue;
+        if (!dt.isBefore(prevStart) && dt.isBefore(prevEnd)) {
+          final amt = (t['grandTotal'] ?? t['totalAmount'] ?? t['subtotal'] ?? 0.0) as num;
+          prevRevenue += amt.toDouble();
+          prevCount++;
+        }
+      }
 
       // 3. Hourly Aggregation
       final Map<int, Map<String, dynamic>> hourly = {};
@@ -511,6 +554,7 @@ class _RestaurantAnalyticsScreenState
           _perStoreData = perStoreList;
           _paymentSplit = {'UPI': upiRev, 'CASH': cashRev, 'CARD': cardRev};
           _totalTransactionsCount = filtered.length;
+          _previousPeriodRevenue = (prevCount > 0 && prevRevenue > 0) ? prevRevenue : null;
         });
       }
     } catch (e) {
@@ -535,6 +579,33 @@ class _RestaurantAnalyticsScreenState
       totalOrders += (h['orders'] as int);
     }
     final avgAov = totalOrders > 0 ? (totalRevenue / totalOrders) : 0.0;
+
+    // Real change against the previous period of the same length. With
+    // nothing recorded there, there is no change to show.
+    final prevRev = _previousPeriodRevenue;
+    String revenueSubtitle;
+    if (prevRev != null && prevRev > 0) {
+      final pct = (totalRevenue - prevRev) / prevRev * 100;
+      revenueSubtitle = '${pct >= 0 ? '+' : ''}${pct.toStringAsFixed(1)}% vs previous period';
+    } else {
+      revenueSubtitle = vl.isRestaurant ? 'Settled sales this period' : 'Billed sales this period';
+    }
+
+    // Busiest hour in the selected period, from the same hourly data the
+    // heatmap uses.
+    int? peakHour;
+    int peakCount = 0;
+    _hourlyData.forEach((h, data) {
+      final c = (data['orders'] as num?)?.toInt() ?? 0;
+      if (c > peakCount) {
+        peakCount = c;
+        peakHour = h;
+      }
+    });
+    final peakValue = peakHour == null ? '—' : _formatHourRange(peakHour!);
+    final peakTitle = vl.isRestaurant ? 'PEAK RUSH HOUR' : 'PEAK HOUR';
+    final aovTitleNarrow = vl.isRestaurant ? 'AVERAGE ORDER VALUE' : 'AVG BILL VALUE';
+    final aovTitleWide = vl.isRestaurant ? 'AVG ORDER VALUE' : 'AVG BILL VALUE';
 
     return Scaffold(
       backgroundColor: context.canvasColor,
@@ -728,7 +799,9 @@ class _RestaurantAnalyticsScreenState
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            'No settled orders recorded for this period yet. Data populates automatically in real-time as bills are settled.',
+                            vl.isRestaurant
+                                ? 'No settled orders recorded for this period yet. Data populates automatically in real-time as bills are settled.'
+                                : 'No settled bills recorded for this period yet. Data populates automatically in real-time as bills are settled.',
                             style: TextStyle(color: context.textSecondary, fontSize: 12),
                           ),
                         ],
@@ -754,7 +827,7 @@ class _RestaurantAnalyticsScreenState
                       _buildKpiCard(
                         title: 'TOTAL REVENUE',
                         value: '₹ ${totalRevenue.toStringAsFixed(0)}',
-                        subtitle: '+18.4% vs last period',
+                        subtitle: revenueSubtitle,
                         icon: Icons.currency_rupee_rounded,
                         accentColor: emeraldAccent,
                       ),
@@ -766,9 +839,9 @@ class _RestaurantAnalyticsScreenState
                         accentColor: amberAccent,
                       ),
                       _buildKpiCard(
-                        title: 'AVERAGE ORDER VALUE',
+                        title: aovTitleNarrow,
                         value: '₹ ${avgAov.toStringAsFixed(0)}',
-                        subtitle: vl.isRestaurant ? 'Highest at Dinner' : 'Highest at Evening',
+                        subtitle: vl.isRestaurant ? 'Per settled order' : 'Per settled bill',
                         icon: Icons.trending_up_rounded,
                         accentColor: ClassicTheme.infoBlue,
                       ),
@@ -780,8 +853,8 @@ class _RestaurantAnalyticsScreenState
                         accentColor: ClassicTheme.secondaryAccent,
                       ),
                       _buildKpiCard(
-                        title: 'PEAK RUSH HOUR',
-                        value: '8:00 - 10:00 PM',
+                        title: peakTitle,
+                        value: peakValue,
                         subtitle: vl.rushHourSubtitle,
                         icon: Icons.local_fire_department_rounded,
                         accentColor: coralAccent,
@@ -795,7 +868,7 @@ class _RestaurantAnalyticsScreenState
                         child: _buildKpiCard(
                           title: 'TOTAL REVENUE',
                           value: '₹ ${totalRevenue.toStringAsFixed(0)}',
-                          subtitle: '+18.4% vs last period',
+                          subtitle: revenueSubtitle,
                           icon: Icons.currency_rupee_rounded,
                           accentColor: emeraldAccent,
                         ),
@@ -813,9 +886,9 @@ class _RestaurantAnalyticsScreenState
                       const SizedBox(width: 10),
                       Expanded(
                         child: _buildKpiCard(
-                          title: 'AVG ORDER VALUE',
+                          title: aovTitleWide,
                           value: '₹ ${avgAov.toStringAsFixed(0)}',
-                          subtitle: vl.isRestaurant ? 'Highest at Dinner' : 'Highest at Evening',
+                          subtitle: vl.isRestaurant ? 'Per settled order' : 'Per settled bill',
                           icon: Icons.trending_up_rounded,
                           accentColor: ClassicTheme.infoBlue,
                         ),
@@ -833,8 +906,8 @@ class _RestaurantAnalyticsScreenState
                       const SizedBox(width: 10),
                       Expanded(
                         child: _buildKpiCard(
-                          title: 'PEAK RUSH HOUR',
-                          value: '8:00 - 10:00 PM',
+                          title: peakTitle,
+                          value: peakValue,
                           subtitle: vl.rushHourSubtitle,
                           icon: Icons.local_fire_department_rounded,
                           accentColor: coralAccent,
@@ -1020,7 +1093,7 @@ class _RestaurantAnalyticsScreenState
                             ],
                           ),
                           Text(
-                            'Orders: ${_hourlyData[_selectedHour]!['orders']}',
+                            '${_isShop ? 'Bills' : 'Orders'}: ${_hourlyData[_selectedHour]!['orders']}',
                             style: TextStyle(color: context.textSecondary, fontSize: 12),
                           ),
                           Text(
@@ -1107,6 +1180,18 @@ class _RestaurantAnalyticsScreenState
       ),
     )),
   );
+  }
+
+  /// True for the shop verticals, which count bills rather than orders.
+  bool get _isShop => ref.read(currentVerticalProvider) != Verticals.restaurant;
+
+  /// '8:00 - 9:00 PM', or '11:00 AM - 12:00 PM' across the meridiem.
+  String _formatHourRange(int hour) {
+    final end = (hour + 1) % 24;
+    String h12(int h) => '${h % 12 == 0 ? 12 : h % 12}:00';
+    String mer(int h) => h >= 12 ? 'PM' : 'AM';
+    if (mer(hour) == mer(end)) return '${h12(hour)} - ${h12(end)} ${mer(end)}';
+    return '${h12(hour)} ${mer(hour)} - ${h12(end)} ${mer(end)}';
   }
 
   Widget _buildKpiCard({
@@ -1223,7 +1308,7 @@ class _RestaurantAnalyticsScreenState
             style: TextStyle(color: color, fontSize: 17, fontWeight: FontWeight.w900),
           ),
           Text(
-            '${shift['orders']} orders · AOV ₹ ${(shift['aov'] as double).toStringAsFixed(0)}',
+            '${shift['orders']} ${_isShop ? 'bills' : 'orders'} · AOV ₹ ${(shift['aov'] as double).toStringAsFixed(0)}',
             style: TextStyle(color: context.textSecondary, fontSize: 12),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
@@ -1286,7 +1371,7 @@ class _RestaurantAnalyticsScreenState
           ),
           const SizedBox(height: 4),
           Text(
-            'Weekly distribution across all service days',
+            _isShop ? 'Weekly distribution across all trading days' : 'Weekly distribution across all service days',
             style: TextStyle(color: context.textSecondary, fontSize: 12),
           ),
           const SizedBox(height: 16),
@@ -1973,7 +2058,7 @@ class _RestaurantAnalyticsScreenState
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text(
-                        '📦 $orders Orders',
+                        '📦 $orders ${_isShop ? 'Bills' : 'Orders'}',
                         style: TextStyle(fontSize: 12, color: context.textSecondary),
                       ),
                       Text(

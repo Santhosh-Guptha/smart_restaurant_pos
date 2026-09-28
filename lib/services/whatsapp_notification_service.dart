@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../core/package_model.dart';
 import 'apps_script_backend_service.dart';
 
 /// Automated WhatsApp Notification Service for SmartBizz POS.
@@ -37,10 +38,14 @@ class WhatsAppNotificationService {
     required String planName,
     String portalUrl = defaultPortalUrl,
     String downloadUrl = defaultDownloadUrl,
+    /// The tenant's trade (`Verticals.*`); a shop is welcomed to its store.
+    String vertical = Verticals.restaurant,
   }) {
+    final welcome = Verticals.isShop(vertical)
+        ? '🏪 *Welcome to SmartBizz POS!*\nHi $clientName, your store account for *$shopName* is now active.'
+        : '🍽️ *Welcome to SmartBizz POS!*\nHi $clientName, your restaurant account for *$shopName* is now active.';
     return '''
-🍽️ *Welcome to SmartBizz POS!*
-Hi $clientName, your restaurant account for *$shopName* is now active.
+$welcome
 
 🔑 *Your Login Credentials:*
 • Store / Org ID: *$orgId*
@@ -69,6 +74,8 @@ _Need assistance? Reply directly to this WhatsApp number for support._
     required String planName,
     String portalUrl = defaultPortalUrl,
     String downloadUrl = defaultDownloadUrl,
+    /// The tenant's trade (`Verticals.*`), passed to [formatWelcomeMessage].
+    String vertical = Verticals.restaurant,
   }) async {
     final cleanPhone = sanitizePhone(phone);
     final msg = formatWelcomeMessage(
@@ -80,6 +87,7 @@ _Need assistance? Reply directly to this WhatsApp number for support._
       planName: planName,
       portalUrl: portalUrl,
       downloadUrl: downloadUrl,
+      vertical: vertical,
     );
 
     try {
@@ -115,7 +123,7 @@ _Need assistance? Reply directly to this WhatsApp number for support._
   }
 
   /// Formats the Day-End Z-Report summary into the concise executive string:
-  /// “Today’s Close: 118 Bills · ₹42,800 Total (UPI: ₹28,400, Cash: ₹14,400) · Top Seller: Butter Chicken (24 orders)”
+  /// “Today’s Close: 118 Bills · ₹42,800 Total (UPI: ₹28,400, Cash: ₹14,400) · Top Seller: Butter Chicken (24 sold)”
   static String formatDayEndSummary({
     required int billsCount,
     required double totalAmount,
@@ -133,7 +141,8 @@ _Need assistance? Reply directly to this WhatsApp number for support._
     }
 
     final topSellerPart = topSellerName.isNotEmpty && topSellerCount > 0
-        ? ' · Top Seller: $topSellerName ($topSellerCount orders)'
+        // Units sold, not orders: [deriveTopSeller] sums line quantities.
+        ? ' · Top Seller: $topSellerName ($topSellerCount sold)'
         : '';
 
     return "Today’s Close: $billsCount Bills · ₹${totalAmount.toStringAsFixed(0)} Total (${payments.join(', ')})$topSellerPart";

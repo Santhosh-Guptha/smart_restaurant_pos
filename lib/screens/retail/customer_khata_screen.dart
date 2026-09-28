@@ -6,6 +6,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 
 import '../../core/classic_theme.dart';
+import '../../core/entitlements.dart';
+import '../../core/feature_route_guard.dart';
 import '../../core/retail_models.dart';
 import '../../providers/saas_session_provider.dart';
 import '../../utils/ui_feedback.dart';
@@ -19,7 +21,8 @@ class CustomerKhataScreen extends ConsumerStatefulWidget {
   ConsumerState<CustomerKhataScreen> createState() => _CustomerKhataScreenState();
 }
 
-class _CustomerKhataScreenState extends ConsumerState<CustomerKhataScreen> {
+class _CustomerKhataScreenState extends ConsumerState<CustomerKhataScreen>
+    with FeatureRouteGuard<CustomerKhataScreen> {
   List<CustomerKhata> _customers = [];
   String _searchQuery = '';
   String _activeFilter = 'All'; // 'All', 'Dues', 'Settled', 'OverLimit'
@@ -27,6 +30,8 @@ class _CustomerKhataScreenState extends ConsumerState<CustomerKhataScreen> {
   @override
   void initState() {
     super.initState();
+    guardFeature(FeatureKeys.customerKhata);
+    if (guardTripped) return;
     _loadCustomers();
   }
 

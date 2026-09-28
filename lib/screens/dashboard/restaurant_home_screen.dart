@@ -494,7 +494,7 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
     final String roleDisplayName = isMasterAdmin
         ? 'Platform Admin (Support View)'
         : (activeStaff != null
-            ? '${activeStaff.name} (${activeStaff.role.displayName})'
+            ? '${activeStaff.name} (${activeStaff.role.displayNameFor(ent.vertical)})'
             : isOwner
                 ? VerticalLabels.of(ent.vertical).ownerRoleLabel
                 : isManager
@@ -1051,7 +1051,7 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
                                                 Text(
                                                   // The trade's own words ("Products & Stock",
                                                   // "Sales History"), as on the pinned cards.
-                                                  card.titleFor(ent.vertical),
+                                                  card.titleFor(ent.vertical, entitlements: entitlements),
                                                   style: TextStyle(
                                                     color: context.textPrimary,
                                                     fontSize: 13,
@@ -1061,7 +1061,7 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
                                                   overflow: TextOverflow.ellipsis,
                                                 ),
                                                 Text(
-                                                  card.subtitleFor(ent.vertical),
+                                                  card.subtitleFor(ent.vertical, entitlements: entitlements),
                                                   style: TextStyle(
                                                     color: context.textSecondary,
                                                     fontSize: 12,
@@ -1080,7 +1080,8 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
                                      switch (cardId) {
                                        case 'counter_billing':
                                          if (roleBilling) {
-                                           Navigator.push(context, MaterialPageRoute(builder: (_) => const FastQsrBillingScreen()));
+                                           // A shop's one billing card: barcode desk when the plan has it.
+                                           Navigator.push(context, MaterialPageRoute(builder: (_) => _billingScreenFor(ent.vertical)));
                                          }
                                          break;
                                        case 'tables':
@@ -1133,17 +1134,12 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
                                            Navigator.push(context, MaterialPageRoute(builder: (_) => const WaiterTablePickerScreen()));
                                          }
                                          break;
-                                       case 'barcode_billing':
-                                         if (roleBilling) {
-                                           Navigator.push(context, MaterialPageRoute(builder: (_) => const BarcodeBillingScreen()));
-                                         }
-                                         break;
                                        case 'customer_khata':
                                          Navigator.push(context, MaterialPageRoute(builder: (_) => const CustomerKhataScreen()));
                                          break;
                                        case 'stock':
                                          if (roleMenu) {
-                                           Navigator.push(context, MaterialPageRoute(builder: (_) => const RestaurantMenuManagementScreen()));
+                                           Navigator.push(context, MaterialPageRoute(builder: (_) => const StockManagerScreen()));
                                          }
                                          break;
                                      }
@@ -1168,6 +1164,17 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
    }
 
 
+  /// The desk a billing card opens. A shop has one billing card: with barcode
+  /// billing in the plan it opens the scan-first desk, otherwise the counter
+  /// desk. A restaurant's billing card is always the counter (QSR) desk.
+  Widget _billingScreenFor(String vertical) {
+    if (Verticals.isShop(vertical) &&
+        ref.read(entitlementsProvider).isEnabled(FeatureKeys.barcodeBilling)) {
+      return const BarcodeBillingScreen();
+    }
+    return const FastQsrBillingScreen();
+  }
+
   Widget? _buildCardById(
     String id,
     BuildContext context,
@@ -1186,6 +1193,24 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
     switch (id) {
       case 'counter_billing':
         if (!roleBilling) return null;
+        if (Verticals.isShop(vertical)) {
+          // One billing card for a shop, gated on the desk it opens.
+          final shopEnt = ref.read(entitlementsProvider);
+          final scan = shopEnt.isEnabled(FeatureKeys.barcodeBilling);
+          if (!scan && !shopEnt.isEnabled(FeatureKeys.qsrBilling)) return null;
+          final shopVl = VerticalLabels.of(vertical);
+          return _buildFeatureCard(
+            title: shopVl.shopBillingTitle,
+            subtitle: shopVl.shopBillingSubtitle(scan: scan),
+            badge: scan ? 'Scan & Bill' : 'Counter',
+            icon: scan ? Icons.qr_code_scanner_rounded : Icons.point_of_sale_rounded,
+            accentColor: ClassicTheme.warningAmber,
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => _billingScreenFor(vertical)),
+            ),
+          );
+        }
         return FeatureGatedCard(
           featureKey: 'qsrBilling',
           featureLabel: 'Counter POS Billing',
@@ -1258,7 +1283,9 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
           featureLabel: VerticalLabels.of(vertical).menuScreenTitle,
           onTap: null,
           child: _buildFeatureCard(
-            title: VerticalLabels.of(vertical).menuScreenTitle,
+            title: VerticalLabels.of(vertical).menuCardTitle(
+              withStock: ref.read(entitlementsProvider).isEnabled(FeatureKeys.stockManagement),
+            ),
             subtitle: VerticalLabels.of(vertical).menuScreenSubtitle,
             badge: 'Dynamic',
             icon: vertical == Verticals.restaurant
@@ -1311,11 +1338,11 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
         if (!roleStoreConfig) return null;
         return FeatureGatedCard(
           featureKey: 'storeConfiguration',
-          featureLabel: 'Store Settings',
+          featureLabel: VerticalLabels.of(vertical).storeSettingsTitle,
           onTap: null,
           child: _buildFeatureCard(
-            title: 'Store Settings',
-            subtitle: 'Shifts, taxes, UPI & printer',
+            title: VerticalLabels.of(vertical).storeSettingsTitle,
+            subtitle: VerticalLabels.of(vertical).storeSettingsSubtitleShort,
             badge: 'Operations',
             icon: Icons.tune_rounded,
             accentColor: ClassicTheme.primaryAccent,
@@ -1379,24 +1406,6 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
             ),
           ),
         );
-      case 'barcode_billing':
-        if (!roleBilling) return null;
-        return FeatureGatedCard(
-          featureKey: FeatureKeys.barcodeBilling,
-          featureLabel: 'Barcode Billing Desk',
-          onTap: null,
-          child: _buildFeatureCard(
-            title: 'Barcode Billing',
-            subtitle: 'Scan & bill products fast',
-            badge: 'POS',
-            icon: Icons.qr_code_scanner_rounded,
-            accentColor: ClassicTheme.infoBlue,
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const BarcodeBillingScreen()),
-            ),
-          ),
-        );
       case 'customer_khata':
         return FeatureGatedCard(
           featureKey: FeatureKeys.customerKhata,
@@ -1418,11 +1427,11 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
         if (!roleMenu) return null;
         return FeatureGatedCard(
           featureKey: FeatureKeys.stockManagement,
-          featureLabel: 'Stock Manager',
+          featureLabel: VerticalLabels.of(vertical).stockCardTitle,
           onTap: null,
           child: _buildFeatureCard(
-            title: 'Stock Manager',
-            subtitle: 'Levels, units & reorders',
+            title: VerticalLabels.of(vertical).stockCardTitle,
+            subtitle: VerticalLabels.of(vertical).stockCardSubtitle,
             badge: 'Inventory',
             icon: Icons.inventory_2_rounded,
             accentColor: ClassicTheme.successEmerald,
@@ -1586,11 +1595,11 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
                                     child: Icon(card.icon, size: 18, color: card.defaultColor),
                                   ),
                                   title: Text(
-                                    card.title,
+                                    card.titleFor(entitlements.vertical, entitlements: entitlements),
                                     style: TextStyle(color: context.textPrimary, fontSize: 13, fontWeight: FontWeight.bold),
                                   ),
                                   subtitle: Text(
-                                    card.subtitle,
+                                    card.subtitleFor(entitlements.vertical, entitlements: entitlements),
                                     style: TextStyle(color: context.textSecondary, fontSize: 12),
                                   ),
                                   trailing: Row(
@@ -1658,11 +1667,11 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
                                     child: Icon(card.icon, size: 18, color: card.defaultColor),
                                   ),
                                   title: Text(
-                                    card.title,
+                                    card.titleFor(entitlements.vertical, entitlements: entitlements),
                                     style: TextStyle(color: context.textPrimary, fontSize: 13, fontWeight: FontWeight.bold),
                                   ),
                                   subtitle: Text(
-                                    card.subtitle,
+                                    card.subtitleFor(entitlements.vertical, entitlements: entitlements),
                                     style: TextStyle(color: context.textSecondary, fontSize: 12),
                                   ),
                                   trailing: Row(
@@ -1715,7 +1724,7 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
                                   dense: true,
                                   leading: Icon(card.icon, size: 18, color: Colors.grey),
                                   title: Text(
-                                    card.title,
+                                    card.titleFor(entitlements.vertical, entitlements: entitlements),
                                     style: TextStyle(color: context.textSecondary, fontSize: 13),
                                   ),
                                   trailing: TextButton.icon(
@@ -1837,7 +1846,7 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
                   style: TextStyle(color: context.textPrimary, fontWeight: FontWeight.bold, fontSize: 13),
                 ),
                 Text(
-                  _sheetCheckMessage.isNotEmpty ? _sheetCheckMessage : 'Authorize your Google account to sync live orders with store database.',
+                  _sheetCheckMessage.isNotEmpty ? _sheetCheckMessage : 'Authorize your Google account to sync ${VerticalLabels.of(ref.read(currentVerticalProvider)).liveSyncSubject} with store database.',
                   style: TextStyle(color: context.textSecondary, fontSize: 12),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,

@@ -26,6 +26,22 @@ void main() {
       expect(msg, contains('rajesh_spice'));
       expect(msg, contains('TempPassword123'));
       expect(msg, contains('https://smartdine-pos.web.app'));
+      expect(msg, contains('your restaurant account'));
+    });
+
+    test('formatWelcomeMessage welcomes a shop to its store', () {
+      final msg = WhatsAppNotificationService.formatWelcomeMessage(
+        clientName: 'Meena',
+        shopName: 'Meena Kirana',
+        orgId: 'ORG26013',
+        username: 'meena',
+        password: 'TempPassword123',
+        planName: 'Starter',
+        vertical: 'kirana',
+      );
+
+      expect(msg, contains('your store account for *Meena Kirana*'));
+      expect(msg, isNot(contains('restaurant')));
     });
 
     test('formatDayEndSummary formats executive 1-line summary correctly', () {
@@ -38,7 +54,7 @@ void main() {
         topSellerCount: 24,
       );
 
-      expect(summary, 'Today’s Close: 118 Bills · ₹42800 Total (UPI: ₹28400, Cash: ₹14400) · Top Seller: Butter Chicken (24 orders)');
+      expect(summary, 'Today’s Close: 118 Bills · ₹42800 Total (UPI: ₹28400, Cash: ₹14400) · Top Seller: Butter Chicken (24 sold)');
     });
 
     test('deriveTopSeller identifies the most frequently ordered item across bills', () {

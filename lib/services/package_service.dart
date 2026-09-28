@@ -172,15 +172,24 @@ class PackageService {
           );
       String currentMode = '';
       var changePending = false;
+      // The tenant's trade decides the roles (a shop gets no waiter or
+      // kitchen); the feature map is written trade-neutral whatever it is.
+      var vertical = Verticals.any;
       try {
         final org = await _db.collection('organizations').doc(doc.id).get();
         final o = org.data() ?? {};
         currentMode = (o['storageMode'] ?? '').toString().toUpperCase();
+        if (o.isNotEmpty) {
+          vertical = Verticals.resolve(
+            vertical: o['vertical']?.toString(),
+            businessCategory: (o['businessCategory'] ?? o['category'])?.toString(),
+          );
+        }
         changePending = (o['pendingStorageChange'] is Map) &&
             ((o['pendingStorageChange'] as Map)['status']?.toString() == 'PENDING');
       } catch (_) {}
       if (currentMode.isEmpty) currentMode = StorageModes.cloudSync;
-      final composed = LicenseComposer.compose(p, plan, currentStorageMode: currentMode);
+      final composed = LicenseComposer.compose(p, plan, currentStorageMode: currentMode, vertical: vertical);
 
       // A change of storage *family* is requested, never applied here — the
       // owner completes the migration on their device and the mode flips

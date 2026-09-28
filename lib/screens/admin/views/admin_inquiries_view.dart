@@ -250,7 +250,7 @@ class _AdminInquiriesViewState extends ConsumerState<AdminInquiriesView> {
                   controller: _searchCtrl,
                   style: TextStyle(color: context.textPrimary, fontSize: 13),
                   decoration: InputDecoration(
-                    hintText: 'Search leads by restaurant name, contact, phone, city, or plan...',
+                    hintText: 'Search leads by business name, contact, phone, city, or plan...',
                     hintStyle: TextStyle(color: context.textSecondary, fontSize: 13),
                     prefixIcon: Icon(Icons.search_rounded, size: 18, color: context.textSecondary),
                     suffixIcon: _searchQuery.isNotEmpty

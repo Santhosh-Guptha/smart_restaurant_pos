@@ -287,6 +287,9 @@ class SmartBizzApp extends ConsumerWidget {
         saasSession.currentOrganization != null && Verticals.isShop(saasSession.vertical)
             ? 'Thank you for shopping with us! Please visit again.'
             : '';
+    // Receipts built without an explicit trade print this store's wording.
+    ReceiptContextBuilder.tradeVertical =
+        saasSession.currentOrganization != null ? saasSession.vertical : 'restaurant';
     ref.read(accentProvider.notifier).bind(
           userId: saasSession.currentUser?.id,
           // Before sign-in there is no tenant, and the login screen stays neutral.
@@ -346,7 +349,7 @@ class _LoadingSplashScreenState extends State<LoadingSplashScreen>
   int _stepIndex = 0;
 
   final List<String> _statusSteps = [
-    'Initializing restaurant system...',
+    'Initializing SmartBizz…',
     'Connecting to cloud services...',
     'Verifying account access...',
     'Loading SmartBizz POS...',
@@ -456,7 +459,7 @@ class _LoadingSplashScreenState extends State<LoadingSplashScreen>
               ),
               const SizedBox(height: 6),
               Text(
-                'Restaurant Management System',
+                'Smart Billing for Every Business',
                 style: TextStyle(
                   fontSize: 13,
                   color: Colors.white.withValues(alpha: 0.6),

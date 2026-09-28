@@ -148,7 +148,8 @@ class _AdminFeaturesViewState extends ConsumerState<AdminFeaturesView> {
       _realignNote = !realigned
           ? null
           : [
-              if (profile.id != stored.id) 'Package: ${stored.label} → ${profile.label} for ${Verticals.label(vertical)}.',
+              if (profile.id != stored.id)
+                'Package: ${stored.labelFor(vertical)} → ${profile.labelFor(vertical)} for ${Verticals.label(vertical)}.',
               if (turnedOn.isNotEmpty) 'On in the store\'s app but off in the stored licence: ${turnedOn.join(', ')}.',
               'Save to store it this way.',
             ].join(' ');
@@ -181,7 +182,22 @@ class _AdminFeaturesViewState extends ConsumerState<AdminFeaturesView> {
 
   /// Whatever the operator clicks, an offline target ends up with one device,
   /// one outlet and nothing that needs the cloud or a second screen.
+  ///
+  /// The stored package follows the mode: an offline store is on its trade's
+  /// offline starter (Shop counter for a shop; a restaurant keeps the bare
+  /// till or offline dine-in, and a cloud package becomes offline dine-in),
+  /// and a cloud store is never recorded on an offline starter.
   void _applyHardConstraints() {
+    final current = PlanProfile.byId(_profileId);
+    if (_targetIsOffline) {
+      if (!current.isOffline) {
+        _profileId = Verticals.isShop(_vertical) ? PlanProfile.offlineRetail.id : PlanProfile.offlineDineIn.id;
+      } else {
+        _profileId = PlanProfile.alignedFor(current, _vertical).id;
+      }
+    } else if (current.isOffline) {
+      _profileId = PlanProfile.connected.id;
+    }
     if (_targetIsOffline) {
       _maxDevices = 1;
       _maxOutlets = 1;
@@ -239,7 +255,7 @@ class _AdminFeaturesViewState extends ConsumerState<AdminFeaturesView> {
     });
     AppToast.showSuccess(
       context,
-      '${profile.label} loaded into the editor',
+      '${profile.labelFor(_vertical)} loaded into the editor',
       subtitle: 'Nothing is live until you save.',
     );
   }
@@ -279,7 +295,12 @@ class _AdminFeaturesViewState extends ConsumerState<AdminFeaturesView> {
       vertical: _vertical,
       featuresResolvedFor: _vertical,
     );
-    return Entitlements.fromLicense(license, storageMode: _targetStorageMode, vertical: _vertical);
+    return Entitlements.fromLicense(
+      license,
+      storageMode: _targetStorageMode,
+      vertical: _vertical,
+      alignStarterToVertical: true,
+    );
   }
 
   Future<void> _save() async {
@@ -298,8 +319,9 @@ class _AdminFeaturesViewState extends ConsumerState<AdminFeaturesView> {
         'features': _features,
         'featuresResolvedFor': _vertical,
         'vertical': _vertical,
+        // packageId is left as stored: it names the package document the
+        // tenant was given, which a starter id here would silently replace.
         'planProfile': _profileId,
-        'packageId': _profileId,
         'maxDevices': _maxDevices,
         'maxFranchises': _maxOutlets,
         'updatedAt': now,
@@ -696,6 +718,12 @@ class _AdminFeaturesViewState extends ConsumerState<AdminFeaturesView> {
                 );
               },
             ),
+            const SizedBox(height: DS.space2),
+            Text(
+              'Each plan is a tier for ${Verticals.label(_vertical)}. Anything '
+              'beyond it is added for this client with its add-on switch below.',
+              style: TextStyle(fontSize: DS.fontMicro, color: context.textSecondary, height: 1.4),
+            ),
           ],
         ),
       );
@@ -734,7 +762,7 @@ class _AdminFeaturesViewState extends ConsumerState<AdminFeaturesView> {
                 ),
                 const SizedBox(width: DS.space2),
                 Expanded(
-                  child: Text(profile.label,
+                  child: Text(profile.labelFor(_vertical),
                       style: TextStyle(
                           fontSize: DS.fontBody,
                           fontWeight: FontWeight.w700,
@@ -748,7 +776,7 @@ class _AdminFeaturesViewState extends ConsumerState<AdminFeaturesView> {
             const SizedBox(height: DS.space2),
             Flexible(
               child: Text(
-                profile.description,
+                profile.descriptionFor(_vertical),
                 style: TextStyle(
                     fontSize: DS.fontMicro,
                     color: context.textSecondary,
@@ -905,8 +933,11 @@ class _AdminFeaturesViewState extends ConsumerState<AdminFeaturesView> {
                   label: 'Devices',
                   help: _targetIsOffline
                       ? 'Offline stores run on one device. Fixed.'
-                      : 'Tills, kitchen screens and waiter tablets together. '
-                          'One device switches off anything that needs a second.',
+                      : Verticals.isShop(_vertical)
+                          ? 'Tills and other devices together. '
+                              'One device switches off anything that needs a second.'
+                          : 'Tills, kitchen screens and waiter tablets together. '
+                              'One device switches off anything that needs a second.',
                   value: _maxDevices,
                   min: 1,
                   max: 30,
@@ -1027,7 +1058,11 @@ class _AdminFeaturesViewState extends ConsumerState<AdminFeaturesView> {
     final sections = <Widget>[];
     for (final tier in CommercialTier.values) {
       if (_targetIsOffline && tier.isOnline) continue;
-      final defs = FeatureCatalog.byTier(tier).where((d) => d.appliesTo(_vertical)).toList();
+      // Only this trade's features, and never one that is coming soon (a
+      // switch that changes nothing is worse than no switch).
+      final defs = FeatureCatalog.byTier(tier)
+          .where((d) => d.appliesTo(_vertical) && !FeatureCatalog.isComingSoon(d.key))
+          .toList();
       if (defs.isEmpty) continue;
 
       sections.add(Container(
@@ -1040,7 +1075,7 @@ class _AdminFeaturesViewState extends ConsumerState<AdminFeaturesView> {
             Row(
               children: [
                 Expanded(
-                  child: Text(tier.label.toUpperCase(),
+                  child: Text(_sectionTitle(tier).toUpperCase(),
                       style: ClassicTheme.sectionLabel(context)),
                 ),
                 if (!tier.isAddOn)
@@ -1056,6 +1091,13 @@ class _AdminFeaturesViewState extends ConsumerState<AdminFeaturesView> {
                   ),
               ],
             ),
+            if (tier.isAddOn) ...[
+              const SizedBox(height: DS.space1),
+              Text(
+                'Beyond the tier: switch on per client.',
+                style: TextStyle(fontSize: DS.fontMicro, color: context.textMuted, height: 1.4),
+              ),
+            ],
             const SizedBox(height: DS.space2),
             ...defs.map(_featureRow),
           ],
@@ -1102,6 +1144,21 @@ class _AdminFeaturesViewState extends ConsumerState<AdminFeaturesView> {
       ));
     }
     return sections;
+  }
+
+  /// The tier sections, named as the client buys them: Basic is the offline
+  /// till, Standard adds the cloud, Premium the rest.
+  String _sectionTitle(CommercialTier tier) {
+    switch (tier) {
+      case CommercialTier.offlineBasic:
+        return 'Included in Basic';
+      case CommercialTier.offlineAddOn:
+        return 'Add-ons for Basic';
+      case CommercialTier.onlineBasic:
+        return 'Standard (cloud)';
+      case CommercialTier.onlineAddOn:
+        return 'Premium add-ons';
+    }
   }
 
   Widget _featureRow(FeatureDef def) {
@@ -1163,7 +1220,7 @@ class _AdminFeaturesViewState extends ConsumerState<AdminFeaturesView> {
   Widget _previewSection() {
     final ent = _preview();
     final cards = kAllDashboardCards
-        .where((c) => c.isAllowedFor(entitlements: ent, role: 'OWNER'))
+        .where((c) => c.isAllowedFor(entitlements: ent, role: 'OWNER', vertical: _vertical))
         .toList();
     return _card(
       child: Column(
@@ -1197,7 +1254,7 @@ class _AdminFeaturesViewState extends ConsumerState<AdminFeaturesView> {
                         children: [
                           Icon(c.icon, size: 16, color: c.defaultColor),
                           const SizedBox(width: DS.space2),
-                          Text(c.title,
+                          Text(c.titleFor(_vertical),
                               style: TextStyle(
                                   fontSize: DS.fontCaption,
                                   fontWeight: FontWeight.w600,

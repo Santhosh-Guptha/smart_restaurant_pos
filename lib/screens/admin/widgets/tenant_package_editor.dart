@@ -5,6 +5,7 @@ import '../../../core/design_tokens.dart';
 import '../../../core/entitlements.dart';
 import '../../../core/license_composer.dart';
 import '../../../core/package_model.dart';
+import '../../../core/rbac_permissions.dart';
 import '../../../core/saas_models.dart';
 import '../../../core/subscription_plan_model.dart';
 import '../../../widgets/package_features_breakdown_widget.dart';
@@ -31,7 +32,18 @@ class TenantPackageSelection {
   /// a change of mode. Null for a tenant that does not exist yet.
   final String? currentStorageMode;
 
-  const TenantPackageSelection({required this.package, required this.plan, this.currentStorageMode});
+  /// The tenant's trade, or [Verticals.any] when it is not known. It decides
+  /// the roles the licence carries (a shop gets no waiter or kitchen) and
+  /// which features are counted; the feature map itself is always written
+  /// trade-neutral.
+  final String vertical;
+
+  const TenantPackageSelection({
+    required this.package,
+    required this.plan,
+    this.currentStorageMode,
+    this.vertical = Verticals.any,
+  });
 
   /// The shape older call sites build: a profile and a term. Resolved to the
   /// starter package of that profile and a plan of that length.
@@ -40,8 +52,9 @@ class TenantPackageSelection {
     int validityDays = 365,
     Map<String, bool> addOns = const {},
     SubscriptionPlan? plan,
+    String vertical = Verticals.any,
   }) {
-    final pkg = TenantPackage.fromProfile(profile);
+    final pkg = TenantPackage.fromProfile(PlanProfile.alignedFor(profile, vertical));
     // No plan given: a stand-in with an empty id. It is never written — the
     // editor replaces it with a real plan document as soon as the list loads,
     // and a request that never got that far sends an empty planId, which the
@@ -56,14 +69,15 @@ class TenantPackageSelection {
           maxDevices: profile.maxDevices,
           isDefaultTrial: false,
         );
-    return TenantPackageSelection(package: pkg, plan: p);
+    return TenantPackageSelection(package: pkg, plan: p, vertical: vertical);
   }
 
-  TenantPackageSelection copyWith({TenantPackage? package, SubscriptionPlan? plan}) =>
+  TenantPackageSelection copyWith({TenantPackage? package, SubscriptionPlan? plan, String? vertical}) =>
       TenantPackageSelection(
         package: package ?? this.package,
         plan: plan ?? this.plan,
         currentStorageMode: currentStorageMode,
+        vertical: vertical ?? this.vertical,
       );
 
   /// A new tenant (no current mode) on a cloud package is set up on its own
@@ -71,7 +85,7 @@ class TenantPackageSelection {
   /// device, or the client's own Sheets — and the platform ledger
   /// (CLOUD_SYNC) is kept only for tenants already on it.
   ComposedLicense get composed => LicenseComposer.compose(package, plan,
-      currentStorageMode: currentStorageMode ?? StorageModes.clientsOwnSheets);
+      currentStorageMode: currentStorageMode ?? StorageModes.clientsOwnSheets, vertical: vertical);
 
   // ── the contract the four consumers read ────────────────────────────────
 
@@ -103,12 +117,32 @@ class TenantPackageSelection {
 
   Entitlements get resolved => Entitlements.fromLicense(probe, storageMode: package.storageMode, vertical: 'any');
 
+  /// What the licence this writes resolves to in [trade]'s own app — for
+  /// the flags the guest web app reads (`public_stores`), which must say
+  /// what this store actually has, not what the trade-neutral map carries.
+  Entitlements resolvedFor(String trade) => Entitlements.fromLicense(
+        probe.copyWith(
+          features: Map<String, bool>.from(composed.features),
+          featuresResolvedFor: Verticals.any,
+        ),
+        storageMode: composed.storageMode,
+        vertical: trade,
+        alignStarterToVertical: true,
+      );
+
   Map<String, bool> get resolvedFeatures => composed.features;
   int get effectiveDevices => composed.maxDevices;
   int get effectiveOutlets => composed.maxOutlets;
   List<String> get effectiveRoles => composed.allowedRoles;
 
-  int get onCount => FeatureCatalog.all.where((d) => composed.features[d.key] == true).length;
+  /// Features on that mean something to this trade; a key that is coming
+  /// soon (no code behind it) is not counted as something they get.
+  int get onCount {
+    final f = composed.features;
+    return FeatureCatalog.all
+        .where((d) => d.appliesTo(vertical) && !FeatureCatalog.isComingSoon(d.key) && f[d.key] == true)
+        .length;
+  }
 }
 
 /// Package, then plan, then what that adds up to.
@@ -169,12 +203,21 @@ class _TenantPackageEditorState extends State<TenantPackageEditor> {
     var plans = await SubscriptionPlanService.getAllPlans();
     if (plans.isEmpty) plans = [SubscriptionPlanService.fallbackTrialPlan];
 
-    final vertical = Verticals.forCategory(widget.businessCategory);
+    final vertical = _vertical;
     final isRestaurant = vertical == Verticals.restaurant;
 
-    // Filter packages and plans if not a restaurant
+    // Only this trade's starters (a shop never sees the restaurant's bare
+    // till or offline dine-in, a restaurant never Shop counter), and only
+    // packages made for every trade or for this one.
+    packages = packages.where((p) {
+      if (p.isStarter) {
+        final profile = PlanProfile.byId(p.id);
+        if (profile.id != p.id) return true;
+        return PlanProfile.alignedFor(profile, vertical).id == p.id;
+      }
+      return Verticals.isAny(p.vertical) || p.vertical == vertical;
+    }).toList();
     if (!isRestaurant) {
-      packages = packages.where((p) => p.id != PlanProfile.offlineDineIn.id).toList();
       plans = plans.where((p) => p.id != 'offline_dine_in').toList();
     }
 
@@ -186,12 +229,13 @@ class _TenantPackageEditorState extends State<TenantPackageEditor> {
 
     // Check if current package is valid for this vertical
     TenantPackage currentPkg = widget.value.package;
-    if (!isRestaurant && currentPkg.id == PlanProfile.offlineDineIn.id) {
-      final fallbackPkgId = Verticals.defaultPackageFor(widget.businessCategory);
-      currentPkg = packages.firstWhere(
-        (p) => p.id == fallbackPkgId,
-        orElse: () => packages.isNotEmpty ? packages.first : currentPkg,
-      );
+    final currentProfile = PlanProfile.byId(currentPkg.id);
+    if (currentPkg.isStarter && currentProfile.id == currentPkg.id) {
+      final alignedId = PlanProfile.alignedFor(currentProfile, vertical).id;
+      if (alignedId != currentPkg.id) {
+        currentPkg = packages.where((p) => p.id == alignedId).firstOrNull ??
+            TenantPackage.fromProfile(PlanProfile.byId(alignedId));
+      }
     }
 
     final pkg = packages.where((p) => p.id == currentPkg.id).firstOrNull;
@@ -212,13 +256,26 @@ class _TenantPackageEditorState extends State<TenantPackageEditor> {
     }
     final effectivePkg = pkg ?? currentPkg;
     final effectivePlan = plan ?? widget.value.plan;
-    if (effectivePkg != widget.value.package || effectivePlan != widget.value.plan) {
+    if (effectivePkg != widget.value.package ||
+        effectivePlan != widget.value.plan ||
+        widget.value.vertical != vertical) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) widget.onChanged(widget.value.copyWith(package: effectivePkg, plan: effectivePlan));
+        if (mounted) {
+          widget.onChanged(widget.value.copyWith(package: effectivePkg, plan: effectivePlan, vertical: vertical));
+        }
       });
     }
     return (packages, plans);
   }
+
+  /// The tenant's trade, from what the caller passed (a vertical or a
+  /// business category; nothing reads as a restaurant, the original trade).
+  String get _vertical => Verticals.forCategory(widget.businessCategory);
+
+  /// The selection as this trade composes it, even before the first
+  /// [widget.onChanged] has carried the trade back to the caller.
+  TenantPackageSelection get _selection =>
+      widget.value.vertical == _vertical ? widget.value : widget.value.copyWith(vertical: _vertical);
 
   @override
   Widget build(BuildContext context) {
@@ -253,13 +310,22 @@ class _TenantPackageEditorState extends State<TenantPackageEditor> {
 
   Widget _packageCard(BuildContext context, TenantPackage p) {
     final selected = p.id == widget.value.package.id;
-    final on = p.enabledKeys.length;
-    final desc = _packageDescriptionFor(p, widget.businessCategory);
+    final v = _vertical;
+    final on = p.enabledKeys.where((k) {
+      final def = FeatureCatalog.find(k);
+      return def != null && def.appliesTo(v) && !FeatureCatalog.isComingSoon(k);
+    }).length;
+    final profile = PlanProfile.byId(p.id);
+    final starter = p.isStarter && profile.id == p.id;
+    // A starter is named and described for this trade from the features
+    // that apply to it (Basic / Standard / Premium); a custom package keeps
+    // the admin's own words.
+    final desc = starter ? profile.descriptionFor(v) : p.description;
     return _card(
       context,
       selected: selected,
-      onTap: () => widget.onChanged(widget.value.copyWith(package: p)),
-      title: p.name,
+      onTap: () => widget.onChanged(widget.value.copyWith(package: p, vertical: v)),
+      title: starter ? '${profile.labelFor(v)} · ${p.name}' : p.name,
       trailing: '$on feature${on == 1 ? '' : 's'} \u00b7 ${StorageModes.label(p.storageMode)}',
       body: desc,
       badge: p.isStarter ? null : 'Custom',
@@ -278,28 +344,18 @@ class _TenantPackageEditorState extends State<TenantPackageEditor> {
     );
   }
 
-  String _packageDescriptionFor(TenantPackage p, String? businessCategory) {
-    final vertical = Verticals.forCategory(businessCategory);
-    if (vertical == Verticals.restaurant) return p.description;
-    if (p.id == PlanProfile.offlineSingle.id) {
-      return 'One till, no internet. Fast barcode billing, product catalog, receipt printing, store settings, and day-end.';
-    }
-    if (p.id == PlanProfile.connected.id) {
-      return 'Multi-till barcode billing with cloud sync, sales ledger, and analytics on up to 5 devices.';
-    }
-    if (p.id == PlanProfile.omnichannel.id) {
-      return 'Multi-store chain setup, central warehouse, multiple outlets, stock management, staff and digital bills.';
-    }
-    return p.description;
-  }
-
   Widget _planCard(BuildContext context, SubscriptionPlan p) {
     final selected = p.id == widget.value.plan.id;
-    final roles = p.allowedRoles.map(_roleLabel).join(', ');
+    final v = _vertical;
+    final shop = Verticals.isShop(v);
+    final roles = p.allowedRoles
+        .where((r) => !(shop && LicenseComposer.restaurantOnlyRoles.contains(r.trim().toUpperCase())))
+        .map((r) => _roleLabel(r, v))
+        .join(', ');
     return _card(
       context,
       selected: selected,
-      onTap: () => widget.onChanged(widget.value.copyWith(plan: p)),
+      onTap: () => widget.onChanged(widget.value.copyWith(plan: p, vertical: v)),
       title: p.name,
       trailing: _term(p.validityDays),
       body: '${p.maxOutlets} outlet${p.maxOutlets == 1 ? '' : 's'} \u00b7 '
@@ -387,12 +443,18 @@ class _TenantPackageEditorState extends State<TenantPackageEditor> {
   // ── summary ─────────────────────────────────────────────────────────────
 
   Widget _summary(BuildContext context) {
-    final c = widget.value.composed;
+    final v = _vertical;
+    final sel = _selection;
+    final c = sel.composed;
     final clampedDevices = c.maxDevices != widget.value.plan.maxDevices;
     final clampedOutlets = c.maxOutlets != widget.value.plan.maxOutlets;
+    // A shop never had waiter or kitchen roles to lose, so they are not
+    // reported as dropped for want of a second device.
+    final shop = Verticals.isShop(v);
     final droppedRoles = widget.value.plan.allowedRoles
-        .map((r) => r.toUpperCase())
+        .map((r) => r.trim().toUpperCase())
         .where((r) => !c.allowedRoles.contains(r))
+        .where((r) => !(shop && LicenseComposer.restaurantOnlyRoles.contains(r)))
         .toList();
 
     return Container(
@@ -409,7 +471,7 @@ class _TenantPackageEditorState extends State<TenantPackageEditor> {
             spacing: DS.space3,
             runSpacing: DS.space2,
             children: [
-              _stat(context, '${widget.value.onCount}', 'features on'),
+              _stat(context, '${sel.onCount}', 'features on'),
               _stat(context, '${c.maxDevices}', 'device${c.maxDevices == 1 ? '' : 's'}'),
               _stat(context, '${c.maxOutlets}', 'outlet${c.maxOutlets == 1 ? '' : 's'}'),
               _stat(context, '${c.maxUsers}', 'staff'),
@@ -419,7 +481,7 @@ class _TenantPackageEditorState extends State<TenantPackageEditor> {
           ),
           const SizedBox(height: DS.space2),
           Text(
-            'Roles: ${c.allowedRoles.map(_roleLabel).join(', ')}',
+            'Roles: ${c.allowedRoles.map((r) => _roleLabel(r, v)).join(', ')}',
             style: TextStyle(fontSize: DS.fontMicro, color: context.textSecondary),
           ),
           if (clampedDevices || clampedOutlets || droppedRoles.isNotEmpty) ...[
@@ -431,7 +493,7 @@ class _TenantPackageEditorState extends State<TenantPackageEditor> {
                 if (clampedOutlets)
                   'The plan allows ${widget.value.plan.maxOutlets} outlets, but an offline package runs at one.',
                 if (droppedRoles.isNotEmpty)
-                  '${droppedRoles.map(_roleLabel).join(' and ')} need a second device, so they are not on this licence.',
+                  '${droppedRoles.map((r) => _roleLabel(r, v)).join(' and ')} need a second device, so they are not on this licence.',
               ].join(' '),
               style: const TextStyle(fontSize: DS.fontMicro, color: ClassicTheme.warningAmber, height: 1.4),
             ),
@@ -503,7 +565,13 @@ class _TenantPackageEditorState extends State<TenantPackageEditor> {
         ),
       );
 
-  static String _roleLabel(String r) {
+  /// The role's name in [vertical]'s words when the trade is known
+  /// ("Restaurant Owner", "Store Owner"), else the short generic name.
+  static String _roleLabel(String r, [String? vertical]) {
+    if (vertical != null && !Verticals.isAny(vertical)) {
+      final role = StaffRoleExtension.fromKey(r.trim());
+      if (role != StaffRole.unassigned) return role.displayNameFor(vertical);
+    }
     switch (r.toUpperCase()) {
       case 'OWNER':
         return 'Owner';

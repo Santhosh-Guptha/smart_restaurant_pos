@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:smart_restaurant_pos/core/entitlements.dart';
+import 'package:smart_restaurant_pos/core/feature_usage.dart';
 import 'package:smart_restaurant_pos/core/license_composer.dart';
 import 'package:smart_restaurant_pos/core/package_model.dart';
 import 'package:smart_restaurant_pos/core/saas_models.dart';
@@ -126,6 +127,201 @@ void main() {
       final e = Entitlements.fromLicense(_lic('OFFLINE_RETAIL', const {}),
           storageMode: StorageModes.pureOffline, vertical: 'any');
       expect(e.isEnabled(FeatureKeys.barcodeBilling), isTrue);
+    });
+  });
+
+  group('a change of business type', () {
+    SaasLicense stamped(String profile, Map<String, bool> f, String stamp) => SaasLicense(
+          planTier: 'YEARLY',
+          planProfile: profile,
+          status: 'ACTIVE',
+          maxFranchises: 1,
+          maxUsers: 5,
+          maxDevices: 3,
+          features: f,
+          startDate: DateTime.now(),
+          endDate: DateTime.now().add(const Duration(days: 30)),
+          featuresResolvedFor: stamp,
+        );
+
+    test('kirana turned restaurant on Connected keeps tables and running tabs', () {
+      // What the Feature Matrix wrote for the kirana: every restaurant key
+      // off. The console stamps the old trade when the type changes.
+      final lic = stamped('CONNECTED', {
+        FeatureKeys.tableManagement: false,
+        FeatureKeys.dineInBilling: false,
+        FeatureKeys.reservations: false,
+        FeatureKeys.barcodeBilling: true,
+      }, 'kirana');
+      final app = Entitlements.fromLicense(lic,
+          storageMode: StorageModes.cloudSync, vertical: 'restaurant', alignStarterToVertical: true);
+      expect(app.isEnabled(FeatureKeys.tableManagement), isTrue);
+      expect(app.isEnabled(FeatureKeys.dineInBilling), isTrue);
+      expect(app.isEnabled(FeatureKeys.reservations), isTrue);
+      expect(app.isEnabled(FeatureKeys.barcodeBilling), isFalse, reason: 'not a restaurant feature');
+    });
+
+    test('restaurant turned pharmacy on Connected keeps barcode, khata and stock', () {
+      final lic = stamped('CONNECTED', {
+        FeatureKeys.barcodeBilling: false,
+        FeatureKeys.customerKhata: false,
+        FeatureKeys.stockManagement: false,
+        FeatureKeys.expenseManagement: false,
+      }, 'restaurant');
+      final app = Entitlements.fromLicense(lic,
+          storageMode: StorageModes.cloudSync, vertical: 'pharmacy', alignStarterToVertical: true);
+      expect(app.isEnabled(FeatureKeys.barcodeBilling), isTrue);
+      expect(app.isEnabled(FeatureKeys.customerKhata), isTrue);
+      expect(app.isEnabled(FeatureKeys.stockManagement), isTrue);
+      expect(app.isEnabled(FeatureKeys.expenseManagement), isFalse,
+          reason: 'a key every trade has: the off was a choice and stands');
+      expect(app.isEnabled(FeatureKeys.tableManagement), isFalse);
+    });
+
+    test('a map resolved for the running trade keeps its offs', () {
+      final lic = stamped('CONNECTED', {FeatureKeys.tableManagement: false}, 'restaurant');
+      final app = Entitlements.fromLicense(lic,
+          storageMode: StorageModes.cloudSync, vertical: 'restaurant', alignStarterToVertical: true);
+      expect(app.isEnabled(FeatureKeys.tableManagement), isFalse);
+    });
+
+    test("an 'any' map is read as it stands", () {
+      final lic = stamped('CONNECTED', {FeatureKeys.customerKhata: false}, 'any');
+      final app = Entitlements.fromLicense(lic,
+          storageMode: StorageModes.cloudSync, vertical: 'pharmacy', alignStarterToVertical: true);
+      expect(app.isEnabled(FeatureKeys.customerKhata), isFalse);
+    });
+
+    test('consoles still see exactly what is stored', () {
+      final lic = stamped('CONNECTED', {FeatureKeys.tableManagement: false}, 'kirana');
+      final console = Entitlements.fromLicense(lic, storageMode: StorageModes.cloudSync, vertical: 'restaurant');
+      expect(console.isEnabled(FeatureKeys.tableManagement), isFalse);
+    });
+  });
+
+  group('roles follow the trade', () {
+    final plan = SubscriptionPlan(
+      id: 'multi',
+      name: 'Multi',
+      description: '',
+      validityDays: 365,
+      price: 0.0,
+      billingCycle: 'YEARLY',
+      maxOutlets: 1,
+      maxUsers: 10,
+      maxDevices: 5,
+      allowedRoles: const ['OWNER', 'MANAGER', 'BILLING', 'WAITER', 'KITCHEN'],
+      features: const {},
+    );
+    final pkg = TenantPackage.fromProfile(PlanProfile.connected);
+
+    test('a shop gets no waiter or kitchen role', () {
+      for (final v in Verticals.shops) {
+        expect(LicenseComposer.compose(pkg, plan, vertical: v).allowedRoles, ['OWNER', 'MANAGER', 'BILLING'],
+            reason: v);
+      }
+    });
+
+    test('a restaurant, and a caller that does not know the trade, keep them', () {
+      expect(LicenseComposer.compose(pkg, plan, vertical: 'restaurant').allowedRoles,
+          containsAll(['WAITER', 'KITCHEN']));
+      expect(LicenseComposer.compose(pkg, plan).allowedRoles, containsAll(['WAITER', 'KITCHEN']));
+    });
+
+    test('the feature map is the same whatever the trade', () {
+      final shop = LicenseComposer.compose(pkg, plan, vertical: 'pharmacy');
+      expect(shop.features, LicenseComposer.compose(pkg, plan).features);
+      expect(shop.toLicenseFields()['featuresResolvedFor'], 'any');
+    });
+  });
+
+  group('tiers per business type', () {
+    test('Basic, Standard and Premium; ids unchanged', () {
+      expect(PlanProfile.offlineSingle.tierLabel, 'Basic');
+      expect(PlanProfile.offlineDineIn.tierLabel, 'Basic');
+      expect(PlanProfile.offlineRetail.tierLabel, 'Basic');
+      expect(PlanProfile.connected.tierLabel, 'Standard');
+      expect(PlanProfile.omnichannel.tierLabel, 'Premium');
+      expect(PlanProfile.offlineSingle.tierLabelFor('restaurant'), 'Basic · Counter');
+      expect(PlanProfile.offlineDineIn.tierLabelFor('restaurant'), 'Basic · Dine-in');
+      expect(PlanProfile.offlineRetail.tierLabelFor('kirana'), 'Basic');
+      expect(PlanProfile.connected.labelFor('pharmacy'), 'Pharmacy Standard');
+      expect(PlanProfile.omnichannel.labelFor('restaurant'), 'Restaurant Premium');
+      expect(PlanProfile.offlineRetail.labelFor('supermarket'), 'Supermarket Basic');
+      expect(PlanProfile.all.map((p) => p.id).toList(),
+          ['OFFLINE_SINGLE', 'OFFLINE_RETAIL', 'OFFLINE_DINE_IN', 'CONNECTED', 'OMNICHANNEL']);
+    });
+
+    test('a shop tier never mentions tables, kitchens or waiters', () {
+      for (final v in Verticals.shops) {
+        for (final p in PlanProfile.all.where((p) => PlanProfile.alignedFor(p, v).id == p.id)) {
+          final d = p.descriptionFor(v).toLowerCase();
+          for (final word in ['table', 'kitchen', 'waiter', 'dine-in', 'reservation', 'menu']) {
+            expect(d.contains(word), isFalse, reason: '$v ${p.id}: $d');
+          }
+        }
+      }
+    });
+
+    test('shop tiers name their own tools; a pharmacy also gets expiry', () {
+      for (final v in Verticals.shops) {
+        final basic = PlanProfile.offlineRetail.descriptionFor(v).toLowerCase();
+        expect(basic, contains('barcode'), reason: v);
+        expect(basic, contains('khata'), reason: v);
+        expect(basic, contains('stock'), reason: v);
+      }
+      expect(PlanProfile.offlineRetail.descriptionFor('pharmacy'), contains('expiry'));
+      final standard = PlanProfile.connected.descriptionFor('pharmacy');
+      expect(standard, startsWith('Everything in Basic'));
+      expect(standard, contains('cloud ledger'));
+      expect(standard, contains('multiple billing counters'));
+    });
+
+    test('restaurant Premium names the kitchen display, waiters and QR', () {
+      final d = PlanProfile.omnichannel.descriptionFor('restaurant');
+      expect(d, contains('kitchen display'));
+      expect(d, contains('waiter'));
+      expect(d, contains('QR'));
+      expect(d.toLowerCase().contains('khata'), isFalse);
+      expect(d.toLowerCase().contains('stock'), isFalse, reason: 'stock & recipes is coming soon, not sold');
+    });
+
+    test('the trade-neutral view keeps the stored description', () {
+      for (final p in PlanProfile.all) {
+        expect(p.descriptionFor(null), p.description);
+        expect(p.descriptionFor('any'), p.description);
+      }
+    });
+  });
+
+  group('catalogue per trade', () {
+    test('the counter till is universal; the khata includes supermarkets', () {
+      final qsr = FeatureCatalog.find(FeatureKeys.qsrBilling)!;
+      for (final v in Verticals.all) {
+        expect(qsr.appliesTo(v), isTrue, reason: v);
+      }
+      expect(FeatureCatalog.find(FeatureKeys.customerKhata)!.appliesTo('supermarket'), isTrue);
+    });
+
+    test('coming soon is exactly the unbuilt keys', () {
+      final unbuilt = {
+        for (final e in kFeatureUsage.entries)
+          if (!e.value.implemented) e.key,
+      };
+      expect(FeatureCatalog.comingSoon, unbuilt);
+    });
+
+    test('the platform console reads in the trade it is shown', () {
+      final e = Entitlements.fromLicense(null, isMasterAdmin: true, vertical: 'pharmacy');
+      expect(e.isMasterAdmin, isTrue);
+      expect(e.vertical, 'pharmacy');
+      expect(e.isEnabled(FeatureKeys.kdsEnabled), isTrue);
+    });
+
+    test('explain speaks the trade', () {
+      final e = Entitlements.fromLicense(_lic('OFFLINE_RETAIL', const {}, scope: 'any'),
+          storageMode: StorageModes.pureOffline, vertical: 'pharmacy');
+      expect(e.explain(FeatureKeys.multiOutlet), startsWith('Multiple stores'));
     });
   });
 }

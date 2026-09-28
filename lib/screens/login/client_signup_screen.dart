@@ -221,6 +221,17 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
     }
   }
 
+  /// A package's description as this trade should read it. The shared
+  /// descriptions name restaurant features (kitchen display, waiter
+  /// tablets) that a shop never gets.
+  String _profileSubtitle(PlanProfile profile) {
+    if (_vertical == Verticals.restaurant) return profile.description;
+    if (profile.id == PlanProfile.omnichannel.id) {
+      return 'Connected plus online store and ordering, outlets, stock and e-mail bills.';
+    }
+    return profile.description;
+  }
+
   String get _enterpriseSubtitle {
     switch (_vertical) {
       case Verticals.restaurant:
@@ -1044,7 +1055,7 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
-          "Store Registration",
+          "Business Registration",
           style: TextStyle(color: context.textPrimary, fontWeight: FontWeight.bold, fontSize: 18),
         ),
       ),
@@ -1259,7 +1270,7 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
                               style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: ClassicTheme.warningAmber),
                             ),
                           ),
-                          subtitle: profile.description,
+                          subtitle: _profileSubtitle(profile),
                           featureChips: features,
                         ),
                       );

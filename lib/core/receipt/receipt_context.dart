@@ -50,6 +50,44 @@ class PlaceholderFeatures {
   static const String dualPrinting = 'dualPrinting';
 }
 
+/// The words a slip changes by trade.
+///
+/// Plain strings rather than an import of `Verticals`, so this library stays
+/// free of the app's models; the values match `Verticals` in
+/// `package_model.dart` (`restaurant`, `kirana`, `supermarket`, `pharmacy`,
+/// `retail`). Anything unknown reads as a restaurant, which is what every
+/// slip printed before the trades existed.
+class ReceiptTrade {
+  ReceiptTrade._();
+
+  static const String restaurant = 'restaurant';
+  static const String pharmacy = 'pharmacy';
+  static const Set<String> shops = {'kirana', 'supermarket', 'pharmacy', 'retail'};
+
+  static String normalise(String? vertical) {
+    final v = (vertical ?? '').trim().toLowerCase();
+    return (v == restaurant || shops.contains(v)) ? v : restaurant;
+  }
+
+  static bool isShop(String? vertical) => shops.contains(normalise(vertical));
+
+  /// The statutory licence the header prints beside its number.
+  static String licenceLabel(String? vertical) {
+    final v = normalise(vertical);
+    if (v == restaurant) return 'FSSAI';
+    if (v == pharmacy) return 'DL No.';
+    return 'Trade Lic.';
+  }
+
+  /// The heading printed on the counterfoil the till keeps.
+  static String copyHeading(String? vertical) =>
+      isShop(vertical) ? 'STORE COPY' : 'RESTAURANT COPY';
+
+  /// The counterfoil's name on screen.
+  static String copyName(String? vertical) =>
+      isShop(vertical) ? 'Store copy' : 'Restaurant copy';
+}
+
 class PlaceholderCatalog {
   PlaceholderCatalog._();
 
@@ -64,6 +102,10 @@ class PlaceholderCatalog {
     PlaceholderDef(path: 'store.upiId', label: 'UPI id', group: 'Store', sample: 'spicegarden@upi'),
     PlaceholderDef(path: 'store.upiName', label: 'UPI payee name', group: 'Store', sample: 'Spice Garden'),
     PlaceholderDef(path: 'store.outlet', label: 'Outlet name', group: 'Store', sample: 'MG Road'),
+    PlaceholderDef(path: 'store.vertical', label: 'Business type (code)', group: 'Store', sample: 'restaurant'),
+    PlaceholderDef(path: 'store.isShop', label: 'Is a shop (not a restaurant)', group: 'Store', sample: false),
+    PlaceholderDef(path: 'store.licenseLabel', label: 'Licence label', group: 'Store', sample: 'FSSAI'),
+    PlaceholderDef(path: 'store.copyLabel', label: 'Counterfoil heading', group: 'Store', sample: 'RESTAURANT COPY'),
 
     // ── order ────────────────────────────────────────────────────────────
     PlaceholderDef(path: 'order.id', label: 'Bill number', group: 'Order', sample: 'INV-000412'),
@@ -151,7 +193,30 @@ class PlaceholderCatalog {
         feature: PlaceholderFeatures.kds,
         itemScope: true),
     PlaceholderDef(path: 'item.isVeg', label: 'Is vegetarian', group: 'Items', sample: true, itemScope: true),
+    PlaceholderDef(path: 'item.mrp', label: 'MRP', group: 'Items', sample: 25000, itemScope: true),
+    PlaceholderDef(path: 'item.batchNo', label: 'Batch number', group: 'Items', sample: 'B2409', itemScope: true),
+    PlaceholderDef(path: 'item.expiry', label: 'Expiry (MM/yy)', group: 'Items', sample: '08/27', itemScope: true),
+    PlaceholderDef(path: 'item.hsn', label: 'HSN code', group: 'Items', sample: '3004', itemScope: true),
   ];
+
+  /// The catalogue label as a tenant of [vertical] would say it. The
+  /// catalogue itself is const, so the per-trade wording lives here.
+  static String labelFor(PlaceholderDef d, String vertical) {
+    final v = ReceiptTrade.normalise(vertical);
+    if (v == ReceiptTrade.restaurant) return d.label;
+    switch (d.path) {
+      case 'store.fssai':
+        return v == ReceiptTrade.pharmacy ? 'Drug licence number' : 'Trade licence number';
+      case 'order.table':
+        return 'Counter / reference';
+      case 'order.staff':
+        return 'Cashier';
+      case 'store.footer':
+        return 'Footer note';
+      default:
+        return d.label;
+    }
+  }
 
   static final Map<String, PlaceholderDef> _byPath = {
     for (final d in all) d.path: d,
@@ -209,11 +274,26 @@ class ReceiptContext {
   /// [enabledFeatures] lets a caller show the sample as a real tenant would
   /// see it — a test print on a till without the KDS add-on must not print
   /// station names the owner cannot get.
-  factory ReceiptContext.sample({Set<String>? enabledFeatures}) {
+  ///
+  /// [vertical] picks the sample shop: a restaurant sees the dinner it always
+  /// saw, a kirana sees groceries, a pharmacy sees medicines with batch and
+  /// expiry, so the preview looks like the bill the tenant will hand over.
+  factory ReceiptContext.sample({
+    Set<String>? enabledFeatures,
+    String vertical = ReceiptTrade.restaurant,
+  }) {
     final vals = <String, Object?>{};
     for (final d in PlaceholderCatalog.all) {
       if (d.itemScope || d.path.startsWith('items.') || d.path == 'now') continue;
       vals[d.path] = d.sample;
+    }
+    final trade = ReceiptTrade.normalise(vertical);
+    final shopItems = _sampleShopItems(trade);
+    if (shopItems != null) {
+      vals.addAll(_sampleShopValues(trade));
+      vals['bill.itemCount'] = shopItems.length;
+      vals['bill.qtyCount'] = shopItems.fold<num>(
+          0, (a, i) => a + ((i['qty'] as num?) ?? 0)).round();
     }
     final now = DateTime(2026, 9, 16, 19, 42);
     vals['now'] = now;
@@ -222,7 +302,7 @@ class ReceiptContext {
     vals['shift.openedAt'] = DateTime(2026, 9, 16, 17, 0);
     return ReceiptContext(
       values: vals,
-      items: [
+      items: shopItems ?? [
         {'name': 'Paneer Butter Masala', 'qty': 2, 'rate': 24000, 'amount': 48000, 'unit': 'plate', 'station': 'Tandoor', 'isVeg': true, 'notes': 'less spicy'},
         {'name': 'Butter Naan', 'qty': 4, 'rate': 5000, 'amount': 20000, 'unit': 'pc', 'station': 'Tandoor', 'isVeg': true, 'notes': ''},
         {'name': 'Masala Chai', 'qty': 2, 'rate': 8000, 'amount': 16000, 'unit': 'cup', 'station': 'Beverages', 'isVeg': true, 'notes': ''},
@@ -237,6 +317,77 @@ class ReceiptContext {
             PlaceholderFeatures.dualPrinting,
           },
     );
+  }
+
+  /// The store and order fields a shop's sample differs in. Every line of
+  /// money stays the restaurant sample's, so the totals still foot.
+  static Map<String, Object?> _sampleShopValues(String trade) {
+    final String name;
+    final String licence;
+    switch (trade) {
+      case 'pharmacy':
+        name = 'CarePlus Pharmacy';
+        licence = 'KA-B1-20-123456';
+        break;
+      case 'supermarket':
+        name = 'FreshMart Supermarket';
+        licence = 'TL/2026/04512';
+        break;
+      case 'retail':
+        name = 'Trendy Fashions';
+        licence = 'TL/2026/07781';
+        break;
+      default:
+        name = 'Sharma General Store';
+        licence = 'TL/2026/03318';
+    }
+    return {
+      'store.name': name,
+      'store.fssai': licence,
+      'store.footer': 'Thank you for shopping with us! Please visit again.',
+      'store.upiId': 'store@upi',
+      'store.upiName': name,
+      'store.vertical': trade,
+      'store.isShop': true,
+      'store.licenseLabel': ReceiptTrade.licenceLabel(trade),
+      'store.copyLabel': ReceiptTrade.copyHeading(trade),
+      'order.type': 'Walk-in',
+      'order.typeLabel': 'Walk-in',
+      'order.table': '',
+      'order.section': '',
+      'order.token': '',
+      'order.notes': '',
+      'order.roundLabel': '',
+      'payment.upiUri': 'upi://pay?pa=store@upi&am=840.00',
+    };
+  }
+
+  /// Lines that add up to the restaurant sample's Rs. 840.00 subtotal, or
+  /// null for a restaurant, which keeps its own.
+  static List<Map<String, Object?>>? _sampleShopItems(String trade) {
+    switch (trade) {
+      case 'pharmacy':
+        return [
+          {'name': 'Paracetamol 650mg (15 tab)', 'qty': 2, 'rate': 3000, 'amount': 6000, 'unit': 'strip', 'mrp': 3200, 'batchNo': 'PCM2409', 'expiry': '08/27', 'hsn': '3004', 'notes': ''},
+          {'name': 'Amoxicillin 500mg (10 cap)', 'qty': 3, 'rate': 12000, 'amount': 36000, 'unit': 'strip', 'mrp': 12800, 'batchNo': 'AMX1187', 'expiry': '03/27', 'hsn': '3004', 'notes': ''},
+          {'name': 'Cough Syrup 100ml', 'qty': 2, 'rate': 21000, 'amount': 42000, 'unit': 'bottle', 'mrp': 22500, 'batchNo': 'CS5521', 'expiry': '11/26', 'hsn': '3004', 'notes': ''},
+        ];
+      case 'kirana':
+      case 'supermarket':
+        return [
+          {'name': 'Basmati Rice 5kg', 'qty': 1, 'rate': 52000, 'amount': 52000, 'unit': 'bag', 'mrp': 56000, 'batchNo': '', 'expiry': '', 'hsn': '1006', 'notes': ''},
+          {'name': 'Toor Dal 1kg', 'qty': 2, 'rate': 14000, 'amount': 28000, 'unit': 'pkt', 'mrp': 15000, 'batchNo': '', 'expiry': '', 'hsn': '0713', 'notes': ''},
+          {'name': 'Sugar 1kg', 'qty': 1, 'rate': 4000, 'amount': 4000, 'unit': 'kg', 'mrp': 4500, 'batchNo': '', 'expiry': '', 'hsn': '1701', 'notes': ''},
+        ];
+      case 'retail':
+        return [
+          {'name': 'Cotton T-Shirt (M)', 'qty': 2, 'rate': 25000, 'amount': 50000, 'unit': 'pc', 'mrp': 29900, 'batchNo': '', 'expiry': '', 'hsn': '6109', 'notes': ''},
+          {'name': 'Denim Jeans (32)', 'qty': 1, 'rate': 26000, 'amount': 26000, 'unit': 'pc', 'mrp': 29900, 'batchNo': '', 'expiry': '', 'hsn': '6203', 'notes': ''},
+          {'name': 'Socks (3 pair)', 'qty': 1, 'rate': 8000, 'amount': 8000, 'unit': 'pack', 'mrp': 9900, 'batchNo': '', 'expiry': '', 'hsn': '6115', 'notes': ''},
+        ];
+      default:
+        return null;
+    }
   }
 
   bool _featureAllows(String path) {

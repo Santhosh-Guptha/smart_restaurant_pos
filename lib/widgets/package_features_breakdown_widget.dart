@@ -36,6 +36,14 @@ class PackageFeaturesBreakdownWidget extends StatefulWidget {
   final bool initiallyExpanded;
   final String? emptyMessage;
 
+  /// Heads the list with the tier a starter package is sold as, named and
+  /// described for the trade ("Pharmacy Basic: One device, no internet…").
+  /// Needs [package] or [profile]; nothing is shown for a custom package.
+  final bool showTierHeader;
+
+  /// The starter to name in the tier header when there is no [package].
+  final PlanProfile? profile;
+
   const PackageFeaturesBreakdownWidget({
     super.key,
     this.features,
@@ -51,6 +59,8 @@ class PackageFeaturesBreakdownWidget extends StatefulWidget {
     this.collapsible = false,
     this.initiallyExpanded = true,
     this.emptyMessage,
+    this.showTierHeader = false,
+    this.profile,
   });
 
   @override
@@ -163,13 +173,59 @@ class _PackageFeaturesBreakdownWidgetState extends State<PackageFeaturesBreakdow
       list = FeatureCatalog.all;
     }
 
-    final vert = widget.vertical ??
-        (widget.businessCategory != null ? Verticals.forCategory(widget.businessCategory) : null);
+    final vert = _vertical;
 
-    if (vert != null && vert.isNotEmpty) {
-      list = list.where((def) => def.verticals.isEmpty || def.verticals.contains(vert));
+    if (vert != null && vert.isNotEmpty && !Verticals.isAny(vert)) {
+      list = list.where((def) => def.appliesTo(vert));
+    }
+    // A key with no code behind it is not something the client gets. Shown
+    // (in amber) only where the caller asked for the unbuilt warnings.
+    if (!widget.showUnbuiltWarnings) {
+      list = list.where((def) => !FeatureCatalog.isComingSoon(def.key) && kFeatureUsage[def.key]?.implemented != false);
     }
     return list.toList();
+  }
+
+  /// The starter this list describes, when it is one.
+  PlanProfile? get _tierProfile {
+    if (widget.profile != null) return widget.profile;
+    final p = widget.package;
+    if (p == null || !p.isStarter) return null;
+    final profile = PlanProfile.byId(p.id);
+    return profile.id == p.id ? profile : null;
+  }
+
+  Widget? _tierHeader(BuildContext context, Color accent) {
+    if (!widget.showTierHeader) return null;
+    final profile = _tierProfile;
+    if (profile == null) return null;
+    final v = _vertical;
+    return Padding(
+      padding: EdgeInsets.only(bottom: widget.isCompact ? 6.0 : 10.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            profile.labelFor(v),
+            style: TextStyle(
+              fontSize: widget.isCompact ? 11.5 : 13,
+              fontWeight: FontWeight.w700,
+              color: accent,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            profile.descriptionFor(v),
+            style: TextStyle(
+              fontSize: widget.isCompact ? 10.5 : 11.5,
+              color: context.textSecondary,
+              height: 1.4,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -191,11 +247,13 @@ class _PackageFeaturesBreakdownWidgetState extends State<PackageFeaturesBreakdow
 
     final totalCount = resolved.length;
     final catCount = grouped.length;
+    final header = _tierHeader(context, effectiveAccent);
 
     Widget content = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
+        if (header != null) header,
         ...grouped.entries.map((entry) {
           final categoryName = entry.key;
           final catFeatures = entry.value;

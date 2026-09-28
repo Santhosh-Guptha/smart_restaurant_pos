@@ -46,6 +46,34 @@ class VerticalLabels {
     }
   }
 
+  /// A shop has one billing card on its dashboard, whichever desk it opens.
+  String get shopBillingTitle => 'Billing';
+
+  /// Subtitle of a shop's single billing card: scan-first when barcode
+  /// billing is in the plan, search-and-tap otherwise.
+  String shopBillingSubtitle({required bool scan}) =>
+      scan ? 'Scan or search, then bill' : 'Quick billing & receipts';
+
+  /// The product-catalogue card. A shop without stock management keeps its
+  /// catalogue but does not track stock, so the card does not promise it.
+  String menuCardTitle({required bool withStock}) {
+    if (isRestaurant || withStock) return menuScreenTitle;
+    return vertical == Verticals.pharmacy ? 'Medicines' : 'Products';
+  }
+
+  String get stockCardTitle => 'Stock Manager';
+
+  /// One string for the stock card everywhere (home tile, More Tools, Customize).
+  String get stockCardSubtitle {
+    switch (vertical) {
+      case Verticals.pharmacy: return 'Levels, batches & expiry';
+      default:                 return 'Levels, units & reorders';
+    }
+  }
+
+  /// What the Google Sheets sync carries, in the trade's words.
+  String get liveSyncSubject => isRestaurant ? 'live orders' : 'live bills';
+
   String get billingDeskTitle {
     switch (vertical) {
       case Verticals.pharmacy:   return 'Pharmacy POS';
@@ -103,9 +131,19 @@ class VerticalLabels {
     }
   }
 
-  String get managerRoleLabel => 'Manager';
+  String get managerRoleLabel {
+    switch (vertical) {
+      case Verticals.restaurant: return 'Restaurant Manager';
+      default:                   return 'Store Manager';
+    }
+  }
 
-  String get billingRoleLabel => 'Billing / Cashier';
+  String get billingRoleLabel {
+    switch (vertical) {
+      case Verticals.restaurant: return 'Billing / Cashier';
+      default:                   return 'Cashier';
+    }
+  }
 
   String get kitchenRoleLabel {
     switch (vertical) {

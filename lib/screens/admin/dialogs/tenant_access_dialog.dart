@@ -69,6 +69,11 @@ class _TenantAccessDialogState extends ConsumerState<TenantAccessDialog> {
   Map<String, dynamic> _licenceRaw = const {};
   String _ownerEmail = '';
 
+  /// The tenant's trade, read off the organisation the way the app reads it.
+  /// Decides which packages are offered, the roles the licence carries and
+  /// the guest web app's flags.
+  String _vertical = Verticals.restaurant;
+
   /// The tenant's own PENDING renewal request, when there is one.
   Map<String, dynamic>? _renewal;
   bool _autoOpened = false;
@@ -91,6 +96,10 @@ class _TenantAccessDialogState extends ConsumerState<TenantAccessDialog> {
       setState(() {
         _licenceRaw = l;
         _ownerEmail = (o['ownerEmail'] ?? o['email'] ?? '').toString();
+        _vertical = Verticals.resolve(
+          vertical: o['vertical']?.toString(),
+          businessCategory: (o['businessCategory'] ?? o['category'])?.toString(),
+        );
         _renewal = (r != null && r['status']?.toString() == 'PENDING') ? r : null;
         _status = (o['status'] ?? 'ACTIVE').toString().toUpperCase();
         _statusReason = (o['statusReason'] ?? '').toString();
@@ -266,7 +275,9 @@ class _TenantAccessDialogState extends ConsumerState<TenantAccessDialog> {
         plan ??= snapped.plan;
       }
     }
-    pkg ??= packages.firstOrNull ?? TenantPackage.fromProfile(PlanProfile.offlineDineIn);
+    // Nothing on record: this trade's own starter, never the restaurant's.
+    final starter = PlanProfile.alignedFor(PlanProfile.offlineDineIn, _vertical);
+    pkg ??= packages.where((p) => p.id == starter.id).firstOrNull ?? TenantPackage.fromProfile(starter);
     plan ??= plans.first;
 
     // The owner's request, when there is one and it names things that exist.
@@ -279,7 +290,8 @@ class _TenantAccessDialogState extends ConsumerState<TenantAccessDialog> {
     if (reqPlan != null) plan = reqPlan;
     final reqNote = (req?['note'] ?? '').toString().trim();
 
-    var selection = TenantPackageSelection(package: pkg, plan: plan, currentStorageMode: _storageMode);
+    var selection =
+        TenantPackageSelection(package: pkg, plan: plan, currentStorageMode: _storageMode, vertical: _vertical);
     // Only the renew actions restart the term and close the owner's request;
     // "Change package or plan" with a request pending just starts on it.
     final isRenewal = renew;
@@ -334,6 +346,7 @@ class _TenantAccessDialogState extends ConsumerState<TenantAccessDialog> {
                     ),
                   TenantPackageEditor(
                     value: selection,
+                    businessCategory: _vertical,
                     onChanged: (v) => setSheet(() => selection = v),
                   ),
                 ],
@@ -369,7 +382,9 @@ class _TenantAccessDialogState extends ConsumerState<TenantAccessDialog> {
       final now = FieldValue.serverTimestamp();
       final composed = saved.composed;
       final resolvedFeatures = composed.features;
-      final preview = saved.resolved;
+      // The guest web app's flags are this store's, so resolve in its trade
+      // (the licence itself is written trade-neutral).
+      final preview = saved.copyWith(vertical: _vertical).resolvedFor(_vertical);
       final batch = _fs.batch();
 
       // The term. A renewal or a genuinely different plan starts a new term
@@ -487,6 +502,7 @@ class _TenantAccessDialogState extends ConsumerState<TenantAccessDialog> {
             validUntil: endDate,
             maxUsers: composed.maxUsers,
             maxFranchises: composed.maxOutlets,
+            vertical: _vertical,
           );
         } catch (e) {
           debugPrint('Renewal e-mail not sent: $e');

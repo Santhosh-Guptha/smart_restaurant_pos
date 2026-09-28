@@ -28,7 +28,7 @@ mixin FeatureRouteGuard<T extends ConsumerStatefulWidget> on ConsumerState<T> {
     final ent = ref.read(entitlementsProvider);
     if (ent.isEnabled(key)) return;
     _guardTripped = true;
-    final name = label ?? FeatureCatalog.find(key)?.label ?? key;
+    final name = label ?? FeatureCatalog.find(key)?.labelFor(ent.vertical) ?? key;
     final why = ent.explain(key);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;

@@ -17,9 +17,9 @@ class SubscriptionPlanService {
     profile: PlanProfile.offlineDineIn,
     name: 'Free Trial (14 Days)',
     description:
-        'Fourteen days of the Offline Dine-In plan: counter till, tables and '
-        'running tabs, reservations, kitchen tickets, expenses, day-end '
-        'reports and sales analytics \u2014 all on one device, no internet '
+        'Fourteen days of the Basic tier for your type of business: billing, '
+        'receipt printing, expenses, day-end reports and sales analytics, '
+        'plus the tools for your trade \u2014 all on one device, no internet '
         'needed.',
     isDefaultTrial: true,
     validityDays: 14,

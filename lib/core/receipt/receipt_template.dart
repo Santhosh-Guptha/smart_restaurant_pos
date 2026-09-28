@@ -26,6 +26,18 @@ extension ReceiptKindX on ReceiptKind {
     }
   }
 
+  /// [label] as a tenant of [vertical] reads it: a shop keeps a store copy,
+  /// not a restaurant copy. `Verticals.*` values; anything else is a
+  /// restaurant.
+  String labelFor(String vertical) {
+    const shops = {'kirana', 'supermarket', 'pharmacy', 'retail'};
+    if (this == ReceiptKind.restaurantCopy &&
+        shops.contains(vertical.trim().toLowerCase())) {
+      return 'Store copy';
+    }
+    return label;
+  }
+
   static ReceiptKind parse(String? raw) {
     switch ((raw ?? '').trim()) {
       case 'restaurantCopy':

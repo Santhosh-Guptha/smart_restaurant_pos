@@ -121,10 +121,18 @@ class _ReceiptsSlipsScreenState extends ConsumerState<ReceiptsSlipsScreen>
     if (result.changedLocally && mounted) await _load();
   }
 
+  /// The tenant's trade (`Verticals.*`): which order types and starters to
+  /// offer, and what the counterfoil is called.
+  String get _vertical => ref.read(currentVerticalProvider);
+
   Future<void> _load() async {
     final org = _orgId;
     try {
-      final templates = await ReceiptTemplateStore.all(org, kind: _kind);
+      // A trade-specific starter (the pharmacy invoice) is seeded for every
+      // tenant but only offered to its own trade.
+      final templates = (await ReceiptTemplateStore.all(org, kind: _kind))
+          .where((t) => StarterTemplates.isOfferedTo(t.id, _vertical))
+          .toList();
       final mapping = await ReceiptTemplateStore.mapping(org, _kind);
       if (!mounted) return;
       setState(() {
@@ -170,7 +178,10 @@ class _ReceiptsSlipsScreenState extends ConsumerState<ReceiptsSlipsScreen>
     if (mounted) await _openEditor(copy);
   }
 
-  Future<void> _deleteOrReset(ReceiptTemplate t) async {
+  Future<void> _deleteOrReset(ReceiptTemplate source) async {
+    // Named as the list shows it; only the name is swapped, the id is kept.
+    final t = source.copyWith(
+        name: StarterTemplates.displayName(source, _vertical));
     final isStarter = ReceiptTemplateStore.isStarter(t.id);
     final ok = await showDialog<bool>(
       context: context,
@@ -321,7 +332,7 @@ class _ReceiptsSlipsScreenState extends ConsumerState<ReceiptsSlipsScreen>
         children: [
           for (final k in _kinds)
             ChoiceChip(
-              label: Text(k.label,
+              label: Text(k.labelFor(_vertical),
                   style: const TextStyle(
                       fontSize: DS.fontCaption, fontWeight: FontWeight.w700)),
               selected: _kind == k,
@@ -359,7 +370,7 @@ class _ReceiptsSlipsScreenState extends ConsumerState<ReceiptsSlipsScreen>
                 TextStyle(fontSize: DS.fontMicro, color: context.textSecondary),
           ),
           const SizedBox(height: DS.space3),
-          for (final channel in OrderChannel.all)
+          for (final channel in OrderChannel.forVertical(_vertical))
             Padding(
               padding: const EdgeInsets.only(bottom: DS.space2),
               child: Row(
@@ -409,7 +420,8 @@ class _ReceiptsSlipsScreenState extends ConsumerState<ReceiptsSlipsScreen>
                         for (final t in _templates)
                           DropdownMenuItem<String>(
                               value: t.id,
-                              child: Text(t.name, overflow: TextOverflow.ellipsis)),
+                              child: Text(StarterTemplates.displayName(t, _vertical),
+                                  overflow: TextOverflow.ellipsis)),
                       ],
                       onChanged: (value) async {
                         await ReceiptTemplateStore.setMapping(
@@ -432,7 +444,8 @@ class _ReceiptsSlipsScreenState extends ConsumerState<ReceiptsSlipsScreen>
     // The tenant's own features, not the catalogue's defaults: a thumbnail
     // that shows station names to a restaurant without the KDS add-on is
     // advertising something they cannot switch on.
-    final sample = ReceiptContext.sample(enabledFeatures: _sampleFeatures);
+    final sample = ReceiptContext.sample(
+        enabledFeatures: _sampleFeatures, vertical: _vertical);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -450,7 +463,8 @@ class _ReceiptsSlipsScreenState extends ConsumerState<ReceiptsSlipsScreen>
               // A new slip starts from the one that ships with the app rather
               // than from a blank page: an owner wants to change a slip, not
               // rebuild one.
-              onPressed: () => _duplicate(StarterTemplates.defaultFor(_kind)),
+              onPressed: () => _duplicate(
+                  StarterTemplates.defaultFor(_kind, vertical: _vertical)),
               icon: const Icon(Icons.add_rounded, size: 18),
               label: const Text('New from default'),
             ),
@@ -487,7 +501,7 @@ class _ReceiptsSlipsScreenState extends ConsumerState<ReceiptsSlipsScreen>
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(t.name,
+                          Text(StarterTemplates.displayName(t, _vertical),
                               style: TextStyle(
                                   fontSize: DS.fontBody,
                                   fontWeight: FontWeight.w700,

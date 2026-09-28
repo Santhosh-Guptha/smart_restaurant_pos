@@ -18,6 +18,7 @@ import '../../core/entitlements.dart';
 import '../../core/package_model.dart';
 import '../../core/vertical_labels.dart';
 import '../../providers/entitlements_provider.dart';
+import '../../services/stock_service.dart';
 
 class RestaurantMenuManagementScreen extends ConsumerStatefulWidget {
   const RestaurantMenuManagementScreen({super.key});
@@ -31,6 +32,11 @@ class _RestaurantMenuManagementScreenState
     extends ConsumerState<RestaurantMenuManagementScreen> {
   late final String _vertical;
   VerticalLabels get _vl => VerticalLabels.of(_vertical);
+
+  /// Owner-only fields that must never reach the guest-facing public_stores doc.
+  static const Set<String> _privateItemKeys = {
+    'costPrice', 'batches', 'reorderLevel', 'stock', 'stockQuantity', 'stock_quantity', 'hsnCode',
+  };
 
   String _selectedCategory = 'All';
   String _selectedSubcategory = 'All';
@@ -232,14 +238,23 @@ class _RestaurantMenuManagementScreenState
             'category': data['category'] ?? _vl.defaultCategory,
             'subcategory': data['subcategory'] ?? 'General',
             'price': (data['price'] as num?)?.toDouble() ?? 0.0,
-            'isVeg': data['isVeg'] == true,
-            'prepTime': data['prepTime'] ?? 15,
-            'station': data['station'] ?? 'Main Kitchen',
+            if (_vl.isRestaurant) ...{
+              'isVeg': data['isVeg'] == true,
+              'prepTime': data['prepTime'] ?? 15,
+              'station': data['station'] ?? 'Main Kitchen',
+              'isTimeRestricted': data['is_time_restricted'] == true,
+              'availableFrom': data['available_from'] ?? '',
+              'availableTo': data['available_to'] ?? '',
+            },
             'isAvailable': data['is_available'] != false,
-            'isTimeRestricted': data['is_time_restricted'] == true,
-            'availableFrom': data['available_from'] ?? '',
-            'availableTo': data['available_to'] ?? '',
             'description': data['description'] ?? '',
+            // Shop fields (barcode, MRP, unit, stock, batches...) survive a restore too.
+            for (final k in const [
+              'barcode', 'mrp', 'unit', 'sku', 'hsnCode', 'costPrice', 'reorderLevel',
+              'stock', 'stockQuantity', 'stock_quantity', 'batches',
+              'isTaxExempt', 'is_tax_exempt', 'imageUrl',
+            ])
+              if (data[k] != null) k: data[k],
           });
         }
         if (cloudDishes.isNotEmpty) {
@@ -267,8 +282,10 @@ class _RestaurantMenuManagementScreenState
       if (orgId.isEmpty || orgId == 'default') {
         if (!silent && mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Please log in with an organization to sync menu.'),
+            SnackBar(
+              content: Text(_vl.isRestaurant
+                  ? 'Please log in with an organization to sync menu.'
+                  : 'Please log in with an organization to sync products.'),
               backgroundColor: ClassicTheme.warningAmber,
               behavior: SnackBarBehavior.floating,
             ),
@@ -281,8 +298,11 @@ class _RestaurantMenuManagementScreenState
       //    Owned by onlineMenu — a tenant without it has no web menu to publish.
       if (_onlineMenuOn) {
         try {
+          final publicItems = _dishes
+              .map((d) => Map<String, dynamic>.from(d)..removeWhere((k, _) => _privateItemKeys.contains(k)))
+              .toList();
           await FirebaseFirestore.instance.collection('public_stores').doc(orgId).set({
-            'menu_items': _dishes,
+            'menu_items': publicItems,
             'menu_updated_at': FieldValue.serverTimestamp(),
             'operatingHours': {'isOpen': true},
           }, SetOptions(merge: true));
@@ -333,7 +353,9 @@ class _RestaurantMenuManagementScreenState
       if (!silent && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('✅ ${_dishes.length} menu items synced live to website & cloud!'),
+            content: Text(_vl.isRestaurant
+                ? '✅ ${_dishes.length} menu items synced live to website & cloud!'
+                : '✅ ${_dishes.length} ${_vl.itemPlural.toLowerCase()} synced live to website & cloud!'),
             backgroundColor: ClassicTheme.successEmerald,
             behavior: SnackBarBehavior.floating,
           ),
@@ -1003,11 +1025,45 @@ class _RestaurantMenuManagementScreenState
     final skuCtrl = TextEditingController(text: existing?['sku']?.toString() ?? '');
     final unitCtrl = TextEditingController(text: existing?['unit']?.toString() ?? 'pcs');
     final mrpCtrl = TextEditingController(text: existing?['mrp'] != null ? existing!['mrp'].toString() : '');
+
+    // Shop-only context: stock is owned by StockService once an item is tracked.
+    final isShop = _vertical != Verticals.restaurant;
+    final isPharmacy = _vertical == Verticals.pharmacy;
+    final stockOn = isShop && ref.read(featureEnabledProvider(FeatureKeys.stockManagement));
+    final rawBatches = existing?['batches'];
+    final existingTracked = existing != null &&
+        ((rawBatches is List && rawBatches.isNotEmpty) || StockService.qtyOf(existing) != null);
+    final existingQty = existing != null ? StockService.qtyOf(existing) : null;
     final stockCtrl = TextEditingController(
-      text: (existing?['stockQuantity'] ?? existing?['stock_quantity']) != null
-          ? (existing?['stockQuantity'] ?? existing?['stock_quantity']).toString()
+      text: existingQty != null
+          ? (existingQty == existingQty.roundToDouble() ? existingQty.toInt().toString() : existingQty.toString())
           : '',
     );
+    final reorderCtrl = TextEditingController(text: existing?['reorderLevel']?.toString() ?? '');
+    final costCtrl = TextEditingController(text: existing?['costPrice']?.toString() ?? '');
+    final hsnCtrl = TextEditingController(text: existing?['hsnCode']?.toString() ?? '');
+    final batchCtrl = TextEditingController();
+    DateTime? expiry;
+    String fmtDate(DateTime d) =>
+        '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
+
+    // Unit choices. A stored unit that is not in the list is added so the
+    // dropdown never asserts on an unknown value.
+    final unitOptions = <String, String>{
+      'pcs': 'Pieces (pcs)',
+      'kg': 'Kilogram (kg)',
+      'g': 'Gram (g)',
+      'pack': 'Packet / Bag',
+      'bottle': 'Bottle',
+      'box': 'Box / Carton',
+      if (isPharmacy) 'strip': 'Strip',
+      'liter': 'Liter (L)',
+      'ml': 'Millilitre (ml)',
+    };
+    final storedUnit = unitCtrl.text.trim();
+    if (storedUnit.isNotEmpty && !unitOptions.containsKey(storedUnit)) {
+      unitOptions[storedUnit] = storedUnit;
+    }
 
     // Image controller & upload state
     final imageUrlCtrl = TextEditingController(text: existing?['imageUrl']?.toString() ?? '');
@@ -1470,22 +1526,13 @@ class _RestaurantMenuManagementScreenState
                               ),
                               child: DropdownButtonHideUnderline(
                                 child: DropdownButton<String>(
-                                  value: ['pcs', 'kg', 'g', 'pack', 'bottle', 'box', 'strip', 'liter', 'ml'].contains(unitCtrl.text)
-                                      ? unitCtrl.text
-                                      : 'pcs',
+                                  value: unitOptions.containsKey(unitCtrl.text) ? unitCtrl.text : 'pcs',
                                   isExpanded: true,
                                   dropdownColor: context.surfaceColor,
                                   style: TextStyle(color: context.textPrimary, fontSize: 13),
-                                  items: const [
-                                    DropdownMenuItem(value: 'pcs', child: Text('Pieces (pcs)')),
-                                    DropdownMenuItem(value: 'kg', child: Text('Kilogram (kg)')),
-                                    DropdownMenuItem(value: 'g', child: Text('Gram (g)')),
-                                    DropdownMenuItem(value: 'pack', child: Text('Packet / Bag')),
-                                    DropdownMenuItem(value: 'bottle', child: Text('Bottle')),
-                                    DropdownMenuItem(value: 'box', child: Text('Box / Carton')),
-                                    DropdownMenuItem(value: 'strip', child: Text('Strip (Med)')),
-                                    DropdownMenuItem(value: 'liter', child: Text('Liter (L)')),
-                                  ],
+                                  items: unitOptions.entries
+                                      .map((e) => DropdownMenuItem<String>(value: e.key, child: Text(e.value)))
+                                      .toList(),
                                   onChanged: (val) {
                                     if (val != null) {
                                       setDialogState(() => unitCtrl.text = val);
@@ -1495,16 +1542,91 @@ class _RestaurantMenuManagementScreenState
                               ),
                             ),
                           ),
-                          const SizedBox(width: 12),
+                          if (stockOn) ...[
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: TextField(
+                                controller: stockCtrl,
+                                enabled: !existingTracked,
+                                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                style: TextStyle(color: context.textPrimary, fontSize: 13),
+                                decoration: InputDecoration(
+                                  labelText: existingTracked ? 'Stock on hand' : 'Opening Stock Qty',
+                                  labelStyle: TextStyle(color: context.textSecondary, fontSize: 12),
+                                  hintText: 'e.g. 50',
+                                  helperText: existingTracked ? 'Change stock in Stock Manager' : null,
+                                  helperStyle: TextStyle(color: context.textSecondary, fontSize: 11),
+                                  hintStyle: TextStyle(color: context.textSecondary, fontSize: 12),
+                                  filled: true,
+                                  fillColor: context.inputFill,
+                                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: context.borderColor)),
+                                  enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: context.borderColor)),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+
+                      // Pharmacy: batch & expiry for the opening stock
+                      if (stockOn && isPharmacy && !existingTracked) ...[
+                        Row(
+                          children: [
+                            Expanded(
+                              child: TextField(
+                                controller: batchCtrl,
+                                textCapitalization: TextCapitalization.characters,
+                                style: TextStyle(color: context.textPrimary, fontSize: 13),
+                                decoration: InputDecoration(
+                                  labelText: 'Batch No.',
+                                  labelStyle: TextStyle(color: context.textSecondary, fontSize: 12),
+                                  hintText: 'Required with opening stock',
+                                  hintStyle: TextStyle(color: context.textSecondary, fontSize: 12),
+                                  filled: true,
+                                  fillColor: context.inputFill,
+                                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: context.borderColor)),
+                                  enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: context.borderColor)),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                icon: const Icon(Icons.event_rounded, size: 18),
+                                label: Text(
+                                  expiry == null ? 'Expiry date' : 'Expires ${fmtDate(expiry!)}',
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                onPressed: () async {
+                                  final now = DateTime.now();
+                                  final picked = await showDatePicker(
+                                    context: ctx,
+                                    initialDate: expiry ?? DateTime(now.year + 1, now.month, 1),
+                                    firstDate: DateTime(now.year - 1),
+                                    lastDate: DateTime(now.year + 10),
+                                  );
+                                  if (picked != null) setDialogState(() => expiry = picked);
+                                },
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                      ],
+
+                      // Cost price & HSN (all shops) + reorder level (stock management)
+                      Row(
+                        children: [
                           Expanded(
                             child: TextField(
-                              controller: stockCtrl,
+                              controller: costCtrl,
                               keyboardType: const TextInputType.numberWithOptions(decimal: true),
                               style: TextStyle(color: context.textPrimary, fontSize: 13),
                               decoration: InputDecoration(
-                                labelText: 'Opening Stock Qty',
+                                labelText: 'Cost Price (₹)',
                                 labelStyle: TextStyle(color: context.textSecondary, fontSize: 12),
-                                hintText: 'e.g. 50',
+                                hintText: 'Purchase rate',
                                 hintStyle: TextStyle(color: context.textSecondary, fontSize: 12),
                                 filled: true,
                                 fillColor: context.inputFill,
@@ -1513,6 +1635,44 @@ class _RestaurantMenuManagementScreenState
                               ),
                             ),
                           ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: TextField(
+                              controller: hsnCtrl,
+                              keyboardType: TextInputType.number,
+                              style: TextStyle(color: context.textPrimary, fontSize: 13),
+                              decoration: InputDecoration(
+                                labelText: 'HSN Code',
+                                labelStyle: TextStyle(color: context.textSecondary, fontSize: 12),
+                                hintText: 'e.g. 3004',
+                                hintStyle: TextStyle(color: context.textSecondary, fontSize: 12),
+                                filled: true,
+                                fillColor: context.inputFill,
+                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: context.borderColor)),
+                                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: context.borderColor)),
+                              ),
+                            ),
+                          ),
+                          if (stockOn) ...[
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: TextField(
+                                controller: reorderCtrl,
+                                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                style: TextStyle(color: context.textPrimary, fontSize: 13),
+                                decoration: InputDecoration(
+                                  labelText: 'Reorder Level',
+                                  labelStyle: TextStyle(color: context.textSecondary, fontSize: 12),
+                                  hintText: 'e.g. 10',
+                                  hintStyle: TextStyle(color: context.textSecondary, fontSize: 12),
+                                  filled: true,
+                                  fillColor: context.inputFill,
+                                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: context.borderColor)),
+                                  enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: context.borderColor)),
+                                ),
+                              ),
+                            ),
+                          ],
                         ],
                       ),
                       const SizedBox(height: 12),
@@ -2060,7 +2220,7 @@ class _RestaurantMenuManagementScreenState
                 child: Text('Cancel', style: TextStyle(color: context.textSecondary)),
               ),
               ElevatedButton(
-                onPressed: () {
+                onPressed: () async {
                   final name = nameCtrl.text.trim();
                   final price = double.tryParse(priceCtrl.text.trim()) ?? 0.0;
                   final prep = int.tryParse(prepCtrl.text.trim()) ?? 15;
@@ -2073,6 +2233,26 @@ class _RestaurantMenuManagementScreenState
                     return;
                   }
 
+                  // Opening stock is only taken for a shop item that is not tracked yet.
+                  final openingQty = double.tryParse(stockCtrl.text.trim()) ?? 0;
+                  final wantsOpening = stockOn && !existingTracked && openingQty > 0;
+                  final batchNo = batchCtrl.text.trim();
+                  if (wantsOpening && isPharmacy) {
+                    String? stockErr;
+                    if (batchNo.isEmpty || expiry == null) {
+                      stockErr = 'Medicines need a batch number and an expiry date for opening stock.';
+                    } else if (!expiry!.isAfter(DateTime.now())) {
+                      stockErr = 'That expiry date has already passed.';
+                    }
+                    if (stockErr != null) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text(stockErr), backgroundColor: ClassicTheme.warningAmber),
+                      );
+                      return;
+                    }
+                  }
+                  final costPrice = double.tryParse(costCtrl.text.trim());
+
                   // Auto register category & subcategory to persistent dictionary
                   _categoriesWithSubs.putIfAbsent(category, () => []);
                   if (!_categoriesWithSubs[category]!.contains(subcat)) {
@@ -2080,30 +2260,55 @@ class _RestaurantMenuManagementScreenState
                   }
                   _saveCategoriesToHive();
 
-                  final newDish = {
-                    'id': existing?['id'] ?? 'dish_${DateTime.now().millisecondsSinceEpoch}',
+                  final dishId = existing?['id'] ?? 'dish_${DateTime.now().millisecondsSinceEpoch}';
+                  // Only the fields this form edits. Stock keys and batches are
+                  // never written here: StockService owns them.
+                  final formFields = <String, dynamic>{
+                    'id': dishId,
                     'name': name,
                     'category': category,
                     'subcategory': subcat,
                     'price': price,
-                    'isVeg': isVeg,
-                    'prepTime': prep,
-                    'station': station,
-                    'sendsToKitchen': sendsToKitchen,
                     'isAvailable': isAvailable,
-                    'isTimeRestricted': _vl.hasTimeRestrictedServing && isTimeRestricted,
+                    'is_available': isAvailable,
                     'isTaxExempt': isTaxExempt,
                     'is_tax_exempt': isTaxExempt,
-                    'availableFrom': _vl.hasTimeRestrictedServing ? fromTimeCtrl.text.trim() : '',
-                    'availableTo': _vl.hasTimeRestrictedServing ? toTimeCtrl.text.trim() : '',
-                    'barcode': barcodeCtrl.text.trim().isNotEmpty ? barcodeCtrl.text.trim() : existing?['barcode'],
-                    'sku': skuCtrl.text.trim().isNotEmpty ? skuCtrl.text.trim() : existing?['sku'],
-                    'unit': unitCtrl.text.trim().isNotEmpty ? unitCtrl.text.trim() : (existing?['unit'] ?? 'pcs'),
-                    'mrp': double.tryParse(mrpCtrl.text.trim()) ?? (existing?['mrp'] as num?)?.toDouble(),
-                    'stockQuantity': double.tryParse(stockCtrl.text.trim()) ?? (existing?['stockQuantity'] ?? existing?['stock_quantity'] as num?)?.toDouble(),
-                    'stock_quantity': double.tryParse(stockCtrl.text.trim()) ?? (existing?['stockQuantity'] ?? existing?['stock_quantity'] as num?)?.toDouble(),
                     'imageUrl': imageUrlCtrl.text.trim().isNotEmpty ? imageUrlCtrl.text.trim() : existing?['imageUrl'],
+                    // Restaurant-only defaults are not stamped onto shop items.
+                    if (!isShop) ...{
+                      'isVeg': isVeg,
+                      'prepTime': prep,
+                      'station': station,
+                      'sendsToKitchen': sendsToKitchen,
+                      'isTimeRestricted': _vl.hasTimeRestrictedServing && isTimeRestricted,
+                      'availableFrom': _vl.hasTimeRestrictedServing ? fromTimeCtrl.text.trim() : '',
+                      'availableTo': _vl.hasTimeRestrictedServing ? toTimeCtrl.text.trim() : '',
+                    },
+                    if (isShop) ...{
+                      'barcode': barcodeCtrl.text.trim().isNotEmpty ? barcodeCtrl.text.trim() : existing?['barcode'],
+                      'sku': skuCtrl.text.trim().isNotEmpty ? skuCtrl.text.trim() : existing?['sku'],
+                      'unit': unitCtrl.text.trim().isNotEmpty ? unitCtrl.text.trim() : (existing?['unit'] ?? 'pcs'),
+                      'mrp': double.tryParse(mrpCtrl.text.trim()) ?? (existing?['mrp'] as num?)?.toDouble(),
+                      'costPrice': costPrice ?? (existing?['costPrice'] as num?)?.toDouble(),
+                      'hsnCode': hsnCtrl.text.trim().isNotEmpty ? hsnCtrl.text.trim() : existing?['hsnCode'],
+                    },
                   };
+                  formFields.removeWhere((k, v) => v == null);
+
+                  // Merge so fields this form does not know about (batches, stock,
+                  // modifierGroups, description, ...) survive an edit.
+                  final newDish = <String, dynamic>{
+                    if (existing != null) ...existing,
+                    ...formFields,
+                  };
+                  if (stockOn) {
+                    final reorder = double.tryParse(reorderCtrl.text.trim());
+                    if (reorder == null) {
+                      newDish.remove('reorderLevel');
+                    } else {
+                      newDish['reorderLevel'] = reorder;
+                    }
+                  }
 
                   setState(() {
                     if (existing != null) {
@@ -2113,9 +2318,33 @@ class _RestaurantMenuManagementScreenState
                       _dishes.add(newDish);
                     }
                   });
+                  Navigator.pop(ctx);
+
+                  if (wantsOpening) {
+                    // Write the item first (no cloud push yet), let StockService
+                    // record the opening stock, then reload what it saved.
+                    try {
+                      final box = Hive.isBoxOpen('restaurant_config_box') ? Hive.box('restaurant_config_box') : null;
+                      await box?.put('restaurant_menu_dishes', _dishes);
+                      if (isPharmacy) {
+                        await StockService.receive(
+                          dishId.toString(),
+                          openingQty,
+                          batchNo: batchNo,
+                          expiry: expiry,
+                          cost: costPrice,
+                          note: 'Opening stock',
+                        );
+                      } else {
+                        await StockService.startTracking(dishId.toString(), openingQty);
+                      }
+                    } catch (e) {
+                      debugPrint('Opening stock error: $e');
+                    }
+                    _loadDishesFromHive();
+                  }
 
                   _saveDishesToHive();
-                  Navigator.pop(ctx);
                 },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: ClassicTheme.infoBlue,
@@ -2262,8 +2491,11 @@ class _RestaurantMenuManagementScreenState
     );
   }
 
+  String _fmtQty(double q) => q == q.roundToDouble() ? q.toInt().toString() : q.toStringAsFixed(2);
+
   @override
   Widget build(BuildContext context) {
+    final stockFeatureOn = ref.watch(featureEnabledProvider(FeatureKeys.stockManagement));
     final categories = ['All', ..._categoriesWithSubs.keys];
 
     // Extract available subcategories for selected category
@@ -2316,7 +2548,7 @@ class _RestaurantMenuManagementScreenState
         ),
         actions: [
           PopupMenuButton<String>(
-            tooltip: 'Menu Options & Management',
+            tooltip: _vl.isRestaurant ? 'Menu Options & Management' : 'Catalog Options',
             icon: Icon(Icons.more_vert_rounded, color: context.textPrimary),
             color: context.surfaceColor,
             elevation: 4,
@@ -2797,7 +3029,7 @@ class _RestaurantMenuManagementScreenState
                                                   ),
                                                 ),
                                               ],
-                                              if (_vertical != Verticals.restaurant && (dish['stockQuantity'] != null || dish['stock_quantity'] != null)) ...[
+                                              if (stockFeatureOn && _vertical != Verticals.restaurant && StockService.qtyOf(dish) != null) ...[
                                                 const SizedBox(width: 6),
                                                 Container(
                                                   padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
@@ -2806,7 +3038,7 @@ class _RestaurantMenuManagementScreenState
                                                     borderRadius: BorderRadius.circular(4),
                                                   ),
                                                   child: Text(
-                                                    'Stock: ${(dish['stockQuantity'] ?? dish['stock_quantity'])} ${dish['unit'] ?? 'pcs'}',
+                                                    'Stock: ${_fmtQty(StockService.qtyOf(dish)!)} ${dish['unit'] ?? 'pcs'}',
                                                     style: const TextStyle(color: ClassicTheme.successEmerald, fontSize: 10, fontWeight: FontWeight.bold),
                                                   ),
                                                 ),

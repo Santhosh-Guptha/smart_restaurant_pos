@@ -360,16 +360,24 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
     if (src == 'QR_MENU' || type.contains('self') || type.contains('site') || type.contains('qr')) {
       return 'QR Self-Order';
     }
+    final vertical = ref.read(currentVerticalProvider);
+    if (type.contains('walk') || type.contains('counter')) {
+      return 'Walk-in';
+    }
     if (type.contains('takeaway') || type.contains('parcel')) {
+      // Older shop barcode sales were saved as 'Takeaway' with no table.
+      // They were counter sales, so show them as walk-in, not delivery.
+      final table = (data['tableName'] ?? data['tableNumber'] ?? '').toString().trim().toLowerCase();
+      if (vertical != Verticals.restaurant &&
+          type.contains('takeaway') &&
+          (table.isEmpty || table == 'takeaway')) {
+        return 'Walk-in';
+      }
       return 'Takeaway';
     }
     if (type.contains('delivery')) {
       return 'Delivery';
     }
-    if (type.contains('walk') || type.contains('counter')) {
-      return 'Walk-in';
-    }
-    final vertical = ref.read(currentVerticalProvider);
     if (vertical != Verticals.restaurant) {
       return 'Walk-in';
     }
@@ -408,7 +416,9 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(ok ? '✅ Order updated to $newStatus!' : '⚠️ Order updated locally (cloud sync pending)'),
+            content: Text(ok
+                ? '✅ ${VerticalLabels.of(ref.read(currentVerticalProvider)).isRestaurant ? 'Order' : 'Bill'} updated to $newStatus!'
+                : '⚠️ ${VerticalLabels.of(ref.read(currentVerticalProvider)).isRestaurant ? 'Order' : 'Bill'} updated locally (cloud sync pending)'),
             backgroundColor: ok ? ClassicTheme.successEmerald : ClassicTheme.warningAmber,
           ),
         );
@@ -416,7 +426,7 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error updating order: $e'), backgroundColor: ClassicTheme.dangerRed),
+          SnackBar(content: Text('Error updating ${VerticalLabels.of(ref.read(currentVerticalProvider)).isRestaurant ? 'order' : 'bill'}: $e'), backgroundColor: ClassicTheme.dangerRed),
         );
       }
     }
@@ -475,10 +485,12 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
 
                 TextField(
                   controller: reasonCtrl,
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     labelText: 'Audit Reason *',
-                    hintText: 'Why is this order being cancelled?',
-                    border: OutlineInputBorder(),
+                    hintText: VerticalLabels.of(ref.read(currentVerticalProvider)).isRestaurant
+                        ? 'Why is this order being cancelled?'
+                        : 'Why is this bill being cancelled?',
+                    border: const OutlineInputBorder(),
                   ),
                 ),
                 const SizedBox(height: 8),
@@ -734,6 +746,19 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
     ));
   }
 
+  /// Who the Collect Payment dialog is for. A shop has no tables, and its
+  /// counter sales may carry 'Takeaway' as a placeholder table name, so a
+  /// shop shows the customer instead.
+  String _collectPaymentHeadline(Map<String, dynamic> orderData) {
+    final isRestaurant = VerticalLabels.of(ref.read(currentVerticalProvider)).isRestaurant;
+    final table = (orderData['tableName'] ?? '').toString().trim();
+    final showTable = table.isNotEmpty && (isRestaurant || table.toLowerCase() != 'takeaway');
+    if (showTable) return table;
+    final customer = (orderData['customerName'] ?? '').toString().trim();
+    if (customer.isNotEmpty) return customer;
+    return isRestaurant ? 'Guest' : 'Walk-in Customer';
+  }
+
   void _showCollectPaymentDialog(Map<String, dynamic> orderData) {
     String selectedMode = 'CASH';
     final orderId = (orderData['id'] ?? orderData['orderId'] ?? '').toString();
@@ -770,9 +795,7 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
                 child: Column(
                   children: [
                     Text(
-                      orderData['tableName']?.toString().isNotEmpty == true
-                          ? orderData['tableName'].toString()
-                          : (orderData['customerName'] ?? 'Guest').toString(),
+                      _collectPaymentHeadline(orderData),
                       style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: context.textPrimary),
                     ),
                     const SizedBox(height: 4),
@@ -852,7 +875,7 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
           if (_hasCloud)
           IconButton(
             icon: const Icon(Icons.refresh_rounded),
-            tooltip: 'Refresh Orders',
+            tooltip: vl.isRestaurant ? 'Refresh Orders' : 'Refresh Bills',
             onPressed: () {
               _loadHiveCachedOrders();
               _fetchLatestWebhookOrders();
@@ -893,6 +916,10 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
           var filtered = allOrders.where((o) {
             final type = _normalizeOrderType(o);
             if (_selectedOrderType == 'ALL') return true;
+            // A shop's "Delivery / Pickup" tab covers both delivery and pickup.
+            if (!vl.isRestaurant && _selectedOrderType == 'Takeaway') {
+              return type == 'Takeaway' || type == 'Delivery';
+            }
             return type == _selectedOrderType;
           }).toList();
 
@@ -1271,7 +1298,7 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
     final types = isRest
         ? [
             {'id': 'ALL', 'label': 'All Orders', 'icon': Icons.all_inbox_rounded},
-            {'id': 'Dine-In', 'label': '🍽️ Dine-In', 'icon': Icons.restaurant_rounded},
+            {'id': 'Dine-In', 'label': '🍽️ Dine-in', 'icon': Icons.restaurant_rounded},
             {'id': 'Takeaway', 'label': '🛍️ Takeaway', 'icon': Icons.takeout_dining_rounded},
             {'id': 'QR Self-Order', 'label': '📱 Site Self-Order', 'icon': Icons.qr_code_scanner_rounded},
           ]
@@ -1441,7 +1468,9 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
                           Icon(typeIcon, size: 12, color: typeBadgeText),
                           const SizedBox(width: 4),
                           Text(
-                            type == 'Dine-In' && tableName.isNotEmpty ? 'Dine-In • $tableName' : type,
+                            type == 'Dine-In'
+                                ? (tableName.isNotEmpty ? 'Dine-in • $tableName' : 'Dine-in')
+                                : type,
                             style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: typeBadgeText),
                           ),
                         ],
@@ -1623,6 +1652,7 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
   }
 
   Widget _buildEmptyState() {
+    final isRestaurant = VerticalLabels.of(ref.read(currentVerticalProvider)).isRestaurant;
     return LayoutBuilder(
       builder: (context, constraints) => SingleChildScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
@@ -1637,12 +1667,14 @@ class _RestaurantOrderHistoryScreenState extends ConsumerState<RestaurantOrderHi
                   Icon(Icons.receipt_long_outlined, size: 60, color: context.textSecondary.withValues(alpha: 0.3)),
                   const SizedBox(height: 12),
                   Text(
-                    'No Orders Found',
+                    isRestaurant ? 'No Orders Found' : 'No Bills Found',
                     style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: context.textPrimary),
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    'No orders match the selected filter ($_selectedOrderType, $_selectedDateFilter). When orders are taken at tables, takeaway, or website, they appear here instantly.',
+                    isRestaurant
+                        ? 'No orders match the selected filter ($_selectedOrderType, $_selectedDateFilter). When orders are taken at tables, takeaway, or website, they appear here instantly.'
+                        : 'No bills match the selected filter (${_selectedOrderType == 'Takeaway' ? 'Delivery / Pickup' : _selectedOrderType}, $_selectedDateFilter). When bills are raised at the counter, they appear here instantly.',
                     textAlign: TextAlign.center,
                     style: TextStyle(fontSize: 12, color: context.textSecondary),
                   ),

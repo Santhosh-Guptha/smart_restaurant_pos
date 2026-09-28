@@ -216,6 +216,9 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
         final sc = box.get('restaurant_service_charge');
         if (sc != null) _serviceChargeRate = (sc as num).toDouble();
       }
+      // Shops have no service charge; the setting is hidden for them, so a
+      // value saved earlier must not keep adding to their bills.
+      if (!_vl.isRestaurant) _serviceChargeRate = 0.0;
     } catch (_) {}
   }
 
@@ -473,8 +476,52 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
     return null;
   }
 
+  /// Stock checks at the till follow the store's Stock management feature.
+  bool get _stockOn => ref.read(featureEnabledProvider(FeatureKeys.stockManagement));
+
+  /// Quantity the till may sell, null = not tracked. With Stock management
+  /// on it is read through [StockService] (stockQuantity / stock_quantity /
+  /// stock, expired batches excluded); otherwise only the legacy counter
+  /// `stock` field is honoured, as before.
+  double? _tillStockOf(Map<String, dynamic> item) {
+    if (_stockOn) return StockService.sellableQtyOf(item);
+    final s = item['stock'];
+    final legacy = s is num ? s.toDouble() : double.tryParse('${s ?? ''}');
+    return (legacy == null || legacy < 0) ? null : legacy;
+  }
+
+  bool _isSoldOut(Map<String, dynamic> item) {
+    if (item['isAvailable'] == false || item['is_available'] == false) return true;
+    final q = _tillStockOf(item);
+    return q != null && q <= 0;
+  }
+
+  /// Every cart line of one product, across modifier variants.
+  double _cartQtyOf(String itemId) =>
+      _cart.where((c) => c.productId == itemId).fold<double>(0, (s, c) => s + c.qty);
+
+  static String _fmtStockQty(double q) =>
+      q == q.roundToDouble() ? q.toStringAsFixed(0) : q.toStringAsFixed(2);
+
+  /// A message when one more of [itemId] would exceed the sellable stock.
+  String? _stockLimitMessage(String itemId, double wantedQty) {
+    Map<String, dynamic>? item;
+    for (final d in _menuItems) {
+      if ((d['id'] ?? d['productId'] ?? '').toString() == itemId) {
+        item = d;
+        break;
+      }
+    }
+    if (item == null) return null;
+    final stock = _tillStockOf(item);
+    if (stock == null || wantedQty <= stock) return null;
+    return stock <= 0
+        ? '${item['name']} is ${_vl.isRestaurant ? 'sold out' : 'out of stock'}'
+        : 'Cannot add more: only ${_fmtStockQty(stock)} in stock';
+  }
+
   bool _isItemAvailableNow(Map<String, dynamic> item) {
-    if (item['isAvailable'] == false || item['is_available'] == false || ((item['stock'] as num?)?.toInt() ?? -1) == 0) return false;
+    if (_isSoldOut(item)) return false;
     if (item['isTimeRestricted'] != true) return true;
 
     final from = item['availableFrom']?.toString();
@@ -504,11 +551,23 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
   }
 
   void _addToCart(Map<String, dynamic> item, {List<ItemModifierOption>? customModifiers}) {
-    final isAvail = item['isAvailable'] != false && item['is_available'] != false && ((item['stock'] as num?)?.toInt() ?? -1) != 0;
+    // Expired medicine cannot be billed.
+    final blocked = _stockOn ? StockService.blockReason(item) : null;
+    if (blocked != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(blocked),
+          backgroundColor: ClassicTheme.dangerRed,
+          duration: const Duration(milliseconds: 2400),
+        ),
+      );
+      return;
+    }
+    final isAvail = !_isSoldOut(item);
     if (!isAvail) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text("${item['name']} is SOLD OUT (86)!"),
+          content: Text("${item['name']} is ${_vl.isRestaurant ? 'sold out' : 'out of stock'}"),
           backgroundColor: ClassicTheme.dangerRed,
           duration: const Duration(milliseconds: 1400),
         ),
@@ -516,12 +575,12 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
       return;
     }
 
-    final stock = (item['stock'] as num?)?.toInt() ?? -1;
+    final stock = _tillStockOf(item);
     final itemId = (item['id'] ?? item['productId'] ?? '').toString();
-    if (stock > 0 && _getCartQty(itemId) >= stock) {
+    if (stock != null && stock > 0 && _cartQtyOf(itemId) + 1 > stock) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text("Cannot add more: Only $stock in stock!"),
+          content: Text("Cannot add more: only ${_fmtStockQty(stock)} in stock"),
           backgroundColor: ClassicTheme.warningAmber,
           duration: const Duration(milliseconds: 1400),
         ),
@@ -657,6 +716,20 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
   // =========================================================================
 
   void _bumpCartLine(int index, int delta) {
+    if (delta > 0 && index >= 0 && index < _cart.length) {
+      final pid = _cart[index].productId;
+      final limit = _stockLimitMessage(pid, _cartQtyOf(pid) + delta);
+      if (limit != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(limit),
+            backgroundColor: ClassicTheme.warningAmber,
+            duration: const Duration(milliseconds: 1400),
+          ),
+        );
+        return;
+      }
+    }
     HapticFeedback.selectionClick();
     setState(() {
       if (index < 0 || index >= _cart.length) return;
@@ -849,7 +922,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
   }
 
   void _onNextPressed() {
-    if (!LicenseGuard.checkAndShowLockout(context, ref, actionName: 'take counter orders or settle bills')) {
+    if (!LicenseGuard.checkAndShowLockout(context, ref, actionName: _vl.isRestaurant ? 'take counter orders or settle bills' : 'bill sales')) {
       return;
     }
 
@@ -885,7 +958,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
-                      'Select Order Type',
+                      isRest ? 'Select Order Type' : 'Select Sale Type',
                       style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
@@ -961,7 +1034,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                               ),
                               const SizedBox(height: 12),
                               Text(
-                                isRest ? 'Dine In' : 'Walk-In',
+                                isRest ? 'Dine-In' : 'Walk-in',
                                 style: TextStyle(
                                   fontSize: 16,
                                   fontWeight: FontWeight.bold,
@@ -1020,7 +1093,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                               ),
                               const SizedBox(height: 12),
                               Text(
-                                isRest ? 'Take Away' : 'Delivery',
+                                isRest ? 'Takeaway' : 'Delivery',
                                 style: TextStyle(
                                   fontSize: 16,
                                   fontWeight: FontWeight.bold,
@@ -2031,7 +2104,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                     style: TextStyle(color: context.textSecondary, fontSize: 12),
                   ),
                   const Divider(height: 20),
-                  _buildZReportRow('Settled Orders', '${settledOrders.length}'),
+                  _buildZReportRow('Settled ${_vl.orderPlural}', '${settledOrders.length}'),
                   _buildZReportRow('Gross Sales', '₹${(grossP / 100.0).toStringAsFixed(2)}'),
                   if (discountP > 0) _buildZReportRow('Discounts', '-₹${(discountP / 100.0).toStringAsFixed(2)}'),
                   if (scP > 0) _buildZReportRow('Service Charge', '₹${(scP / 100.0).toStringAsFixed(2)}'),
@@ -2245,10 +2318,12 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
     );
   }
 
-  void _decrementLocalStock(List<dynamic> items) {
+  void _decrementLocalStock(List<dynamic> items, {String? billId}) {
+    // Only a store with Stock management keeps stock on hand.
+    if (!_stockOn) return;
     // Stock on hand, batches first-to-expire first (StockService).
     final lines = items.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
-    StockService.consumeForSale(lines).then((_) {
+    StockService.consumeForSale(lines, billId: billId).then((_) {
       if (mounted) _loadMenuDishes();
     });
   }
@@ -2438,7 +2513,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
     Map<String, dynamic>? existingOrderToAppend,
     List<Map<String, dynamic>>? splitPayments,
   }) async {
-    if (!LicenseGuard.checkAndShowLockout(context, ref, actionName: 'place or complete orders')) {
+    if (!LicenseGuard.checkAndShowLockout(context, ref, actionName: _vl.isRestaurant ? 'place or complete orders' : 'bill sales')) {
       return;
     }
 
@@ -2488,7 +2563,19 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
     final billNumber = 'SB-${DateTime.now().millisecondsSinceEpoch}-${Random().nextInt(9999).toString().padLeft(4, '0')}';
     final targetBillId = existingOrderToAppend != null ? (existingOrderToAppend['id'] ?? existingOrderToAppend['bill_id']) : billNumber;
 
-    final tableName = _orderType == 'Dine-In' ? (_selectedTable ?? 'Table 1') : 'Takeaway';
+    // Only a dine-in bill has a table. A restaurant's takeaway keeps the
+    // 'Takeaway' label it always had; a delivery says so; a shop's walk-in
+    // sale has no table at all.
+    final String tableName;
+    if (_orderType == 'Dine-In') {
+      tableName = _selectedTable ?? 'Table 1';
+    } else if (_orderType == 'Delivery') {
+      tableName = 'Delivery';
+    } else if (_orderType == 'Takeaway' && _vl.isRestaurant) {
+      tableName = 'Takeaway';
+    } else {
+      tableName = '';
+    }
     final tNum = tableName.replaceAll(RegExp(r'[^0-9]'), '');
 
     BillTotals orderTotals = _billTotals;
@@ -2655,7 +2742,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
 
         await box.put('kot_orders_$orgId', updatedList);
         if (isPaid) {
-          _decrementLocalStock(orderItemsList);
+          _decrementLocalStock(orderItemsList, billId: targetBillId?.toString());
         }
 
         // LocalStore single-writer keyed upsert for zero-loss offline KDS and billing sync
@@ -2884,7 +2971,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                 ),
                 const SizedBox(height: 10),
                 Text(
-                  '$tableName • Bill running (Postpaid)',
+                  tableName.isEmpty ? 'Bill running (Postpaid)' : '$tableName • Bill running (Postpaid)',
                   style: TextStyle(color: context.textSecondary, fontSize: 13),
                 ),
                 const SizedBox(height: 20),
@@ -3577,7 +3664,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
 
       // Decrement local stock for settled items
       final settledItems = (order['items'] as List?) ?? [];
-      _decrementLocalStock(settledItems);
+      _decrementLocalStock(settledItems, billId: orderId);
 
       // Remove from in-memory pending orders
       setState(() {
@@ -3836,7 +3923,12 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                               ),
                               const SizedBox(height: 2),
                               Text(
-                                '$tableName • Bill #$orderId • Token #$token • $orderType',
+                                [
+                                  if (tableName.trim().isNotEmpty) tableName,
+                                  'Bill #$orderId',
+                                  if (token.isNotEmpty) 'Token #$token',
+                                  orderType,
+                                ].join(' • '),
                                 style: TextStyle(fontSize: 12, color: context.textSecondary),
                               ),
                             ],
@@ -4341,10 +4433,10 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
 
                 TextField(
                   controller: reasonCtrl,
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     labelText: 'Cancellation Reason *',
-                    hintText: 'Why is this order being cancelled?',
-                    border: OutlineInputBorder(),
+                    hintText: _vl.isRestaurant ? 'Why is this order being cancelled?' : 'Why is this bill being cancelled?',
+                    border: const OutlineInputBorder(),
                   ),
                 ),
                 const SizedBox(height: 8),
@@ -4353,8 +4445,8 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                   runSpacing: 4,
                   children: [
                     'Customer Walkout',
-                    'Order Entered in Error',
-                    'Duplicate Ticket',
+                    _vl.isRestaurant ? 'Order Entered in Error' : 'Bill Entered in Error',
+                    _vl.isRestaurant ? 'Duplicate Ticket' : 'Duplicate Bill',
                     _vl.isRestaurant ? 'Kitchen Shortage' : 'Out of Stock',
                     'Payment Failed'
                   ].map((r) => ActionChip(
@@ -4401,7 +4493,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                 Navigator.pop(ctx);
                 await _performVoidOrder(orderId, tableName, enteredReason, authorizer);
               },
-              child: const Text('Void Order'),
+              child: Text(_vl.isRestaurant ? 'Void Order' : 'Void Bill'),
             ),
           ],
         ),
@@ -4489,7 +4581,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Order #$orderId voided. Reason: $reason (Audit logged)'),
+          content: Text('${_vl.isRestaurant ? 'Order' : 'Bill'} #$orderId voided. Reason: $reason (Audit logged)'),
           backgroundColor: ClassicTheme.dangerRed,
         ),
       );
@@ -4739,7 +4831,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                                       ),
                                       const SizedBox(width: 5),
                                       Text(
-                                        tableName,
+                                        tableName.trim().isNotEmpty ? tableName : _vl.dineInLabel,
                                         style: TextStyle(
                                           fontWeight: FontWeight.bold,
                                           fontSize: 12.5,
@@ -4893,7 +4985,9 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                                         _tabController.animateTo(0);
                                         ScaffoldMessenger.of(context).showSnackBar(
                                           SnackBar(
-                                            content: Text('Adding items to running bill for $tableName'),
+                                            content: Text(tableName.trim().isNotEmpty
+                                                ? 'Adding items to running bill for $tableName'
+                                                : 'Adding items to running bill #$token'),
                                             duration: const Duration(milliseconds: 1400),
                                           ),
                                         );
@@ -5323,7 +5417,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                                           itemBuilder: (context, itIdx) {
                                             final item = items[itIdx];
                                             final itemId = item['id']?.toString() ?? '$itIdx';
-                                            final isAvailable = item['isAvailable'] != false && item['is_available'] != false && ((item['stock'] as num?)?.toInt() ?? -1) != 0;
+                                            final isAvailable = !_isSoldOut(item);
                                             final isOrderable = _isItemAvailableNow(item);
                                             final qtyInCart = _getCartQty(itemId);
                                             final price = (item['price'] as num?)?.toDouble() ?? 0.0;
@@ -5418,7 +5512,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                                                                   color: ClassicTheme.dangerRed.withValues(alpha: 0.12),
                                                                   borderRadius: BorderRadius.circular(4),
                                                                 ),
-                                                                child: const Text('SOLD OUT', style: TextStyle(color: ClassicTheme.dangerRed, fontSize: 12, fontWeight: FontWeight.bold)),
+                                                                child: Text(_vl.isRestaurant ? 'SOLD OUT' : 'OUT OF STOCK', style: const TextStyle(color: ClassicTheme.dangerRed, fontSize: 12, fontWeight: FontWeight.bold)),
                                                               ),
                                                             ],
                                                           ],

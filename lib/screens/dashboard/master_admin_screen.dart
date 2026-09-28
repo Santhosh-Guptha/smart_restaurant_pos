@@ -1971,8 +1971,11 @@ class OrganizationsTab extends ConsumerStatefulWidget {
       startPackage = fitted ?? TenantPackage.fromProfile(PlanProfile.byId(alignedId));
     }
     if (!context.mounted) return;
-    TenantPackageSelection selection =
-        TenantPackageSelection(package: startPackage, plan: selectedPlan);
+    TenantPackageSelection selection = TenantPackageSelection(
+      package: startPackage,
+      plan: selectedPlan,
+      vertical: Verticals.forCategory(businessCategory),
+    );
 
     // Feature Toggles: populated dynamically from the selected plan
     bool isCreating = false;
@@ -2110,9 +2113,10 @@ class OrganizationsTab extends ConsumerStatefulWidget {
                                 tableCount = 15;
                                 operatingMode = 'dineFirstPostpaid';
                               }
-                              if (pkg != null) {
-                                selection = selection.copyWith(package: pkg);
-                              }
+                              // The trade travels with the selection: it
+                              // decides the licence's roles (no waiter or
+                              // kitchen for a shop).
+                              selection = selection.copyWith(package: pkg, vertical: newVertical);
                             });
                           },
                         ),
@@ -2600,6 +2604,9 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
     final ownerNameController = TextEditingController();
     final nameController = TextEditingController(text: orgName);
     String businessCategory = 'Restaurant & Cafe';
+    // The trade the store is on before this edit, to tell a change of
+    // business type apart when saving.
+    String initialVertical = Verticals.restaurant;
     final mobileController = TextEditingController();
     final aadhaarController = TextEditingController();
     final panController = TextEditingController();
@@ -2653,6 +2660,10 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                     nameController.text = data['name'] ?? orgName;
                     ownerNameController.text = data['ownerName'] ?? '';
                     businessCategory = OrganizationsTab.canonicalizeCategory(data['businessCategory'] ?? data['category']);
+                    initialVertical = Verticals.resolve(
+                      vertical: data['vertical']?.toString(),
+                      businessCategory: (data['businessCategory'] ?? data['category'])?.toString(),
+                    );
                     mobileController.text = data['mobile'] ?? data['phone'] ?? '';
                     aadhaarController.text = data['aadhaar'] ?? '';
                     panController.text = data['pan'] ?? '';
@@ -3286,7 +3297,7 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                                   style: TextStyle(color: context.textPrimary, fontSize: 13),
                                   decoration: InputDecoration(
                                     labelText: "Sender Email / Username *",
-                                    hintText: "restaurant@gmail.com",
+                                    hintText: "billing@yourbusiness.com",
                                     labelStyle: TextStyle(color: context.textSecondary, fontSize: 13),
                                     prefixIcon: const Icon(Icons.account_circle_outlined, size: 18),
                                     enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: context.borderColor)),
@@ -3520,11 +3531,33 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                             // The licence carries a copy of the vertical; keep it true.
                             // update(), not set(): a tenant without a licence
                             // must not get a half-empty one from here.
+                            //
+                            // A change of business type also re-stamps the
+                            // feature map with the trade it was resolved for
+                            // (the old one). The new trade's app then reads a
+                            // false against one of its own keys that the old
+                            // trade did not have (tables for a shop turned
+                            // restaurant; barcode, khata and stock for a
+                            // restaurant turned pharmacy) as the old trade's,
+                            // not a choice, and the package's default applies
+                            // (Entitlements.fromLicense). Every other toggle
+                            // stands. A legacy map with no stamp already
+                            // reads as resolved for a restaurant, which is
+                            // what a shop needs, so it is left alone then.
+                            final tradeChanged = newVertical != initialVertical;
                             try {
+                              var restamp = tradeChanged;
+                              if (tradeChanged && Verticals.isShop(newVertical)) {
+                                final licSnap = await _firestore.collection('licenses').doc(orgId).get();
+                                final stamp = (licSnap.data()?['featuresResolvedFor'] ?? '').toString().trim();
+                                if (stamp.isEmpty) restamp = false;
+                              }
                               await _firestore.collection('licenses').doc(orgId).update({
                                 'vertical': newVertical,
+                                if (restamp) 'featuresResolvedFor': initialVertical,
                                 'updatedAt': FieldValue.serverTimestamp(),
                               });
+                              initialVertical = newVertical;
                             } catch (e) {
                               debugPrint('licence vertical sync skipped for $orgId: $e');
                             }
@@ -5103,7 +5136,7 @@ class _RegistrationRequestsTabState extends ConsumerState<RegistrationRequestsTa
             controller: _searchController,
             style: TextStyle(color: context.textPrimary, fontSize: 13),
             decoration: InputDecoration(
-              hintText: "Search by client name, restaurant, mobile, email, city...",
+              hintText: "Search by client name, business name, mobile, email, city...",
               hintStyle: TextStyle(color: context.textSecondary, fontSize: 12.5),
               prefixIcon: const Icon(Icons.search_rounded, size: 18),
               suffixIcon: _searchQuery.isNotEmpty

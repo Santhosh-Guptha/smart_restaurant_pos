@@ -24,6 +24,7 @@ import '../../core/receipt/receipt_store.dart';
 import '../../core/receipt/receipt_template.dart';
 import '../../core/responsive.dart';
 import '../../providers/entitlements_provider.dart';
+import '../../providers/saas_session_provider.dart';
 import '../../services/thermal_printer_service.dart';
 import '../../utils/ui_feedback.dart';
 
@@ -65,7 +66,12 @@ class _ReceiptTemplateEditorScreenState
       for (final def in FeatureCatalog.all)
         if (ref.read(entitlementsProvider).isEnabled(def.key)) def.key,
     },
+    // A kirana previews groceries, a pharmacy medicines with batch and expiry.
+    vertical: _vertical,
   );
+
+  /// The tenant's trade (`Verticals.*`), for the sample and the defaults.
+  String get _vertical => ref.read(currentVerticalProvider);
 
   /// Recomputed only when something changes, not on every frame.
   ReceiptLayout? _cachedLayout;
@@ -197,8 +203,8 @@ class _ReceiptTemplateEditorScreenState
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) =>
-          _BlockSheet(block: _blocks[index], kind: widget.template.kind),
+      builder: (_) => _BlockSheet(
+          block: _blocks[index], kind: widget.template.kind, vertical: _vertical),
     );
     if (updated == null || !mounted) return;
     _changed(() => _blocks[index] = updated);
@@ -216,8 +222,10 @@ class _ReceiptTemplateEditorScreenState
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) =>
-          _BlockSheet(block: _starterFor(type), kind: widget.template.kind),
+      builder: (_) => _BlockSheet(
+          block: _starterFor(type, _vertical),
+          kind: widget.template.kind,
+          vertical: _vertical),
     );
     // Cancelling the settings sheet adds nothing, rather than leaving an
     // unwanted default block behind.
@@ -228,16 +236,23 @@ class _ReceiptTemplateEditorScreenState
     });
   }
 
-  static ReceiptBlock _starterFor(BlockType type) {
+  static ReceiptBlock _starterFor(BlockType type, String vertical) {
+    final isShop = ReceiptTrade.isShop(vertical);
     switch (type) {
       case BlockType.text:
         return const ReceiptBlock(
             type: BlockType.text, props: {'value': 'Your text here'});
       case BlockType.field:
-        return const ReceiptBlock(type: BlockType.field, props: {
-          'label': 'Table',
-          'value': '{{order.table}}',
-        });
+        // A shop has no tables; the name on the bill is the customer's.
+        return isShop
+            ? const ReceiptBlock(type: BlockType.field, props: {
+                'label': 'Customer',
+                'value': '{{order.customerName}}',
+              })
+            : const ReceiptBlock(type: BlockType.field, props: {
+                'label': 'Table',
+                'value': '{{order.table}}',
+              });
       case BlockType.columns:
         return const ReceiptBlock(type: BlockType.columns, props: {
           'cells': [
@@ -574,7 +589,14 @@ class _BlockSheet extends StatefulWidget {
   final ReceiptBlock block;
   final ReceiptKind kind;
 
-  const _BlockSheet({required this.block, required this.kind});
+  /// `Verticals.*`: which item columns make sense for this trade.
+  final String vertical;
+
+  const _BlockSheet({
+    required this.block,
+    required this.kind,
+    this.vertical = ReceiptTrade.restaurant,
+  });
 
   @override
   State<_BlockSheet> createState() => _BlockSheetState();
@@ -826,8 +848,18 @@ class _BlockSheetState extends State<_BlockSheet> {
         numberProp('lines', 'Blank lines', 1);
         break;
       case BlockType.items:
-        chips('columns', const ['name', 'qty', 'rate', 'amount', 'notes', 'station', 'veg'],
-            const ['name', 'qty', 'amount']);
+        // A shop has no kitchen station or veg mark; it has units and MRP,
+        // and a pharmacy also batch and expiry. A column the block already
+        // uses stays offered, so it can still be switched off.
+        final itemCols = !ReceiptTrade.isShop(widget.vertical)
+            ? const ['name', 'qty', 'rate', 'amount', 'notes', 'station', 'veg']
+            : ReceiptTrade.normalise(widget.vertical) == ReceiptTrade.pharmacy
+                ? const ['name', 'qty', 'unit', 'rate', 'mrp', 'batch', 'expiry', 'amount', 'notes']
+                : const ['name', 'qty', 'unit', 'rate', 'mrp', 'amount', 'notes'];
+        final inUse = ((_props['columns'] as List?) ?? const [])
+            .map((e) => e.toString())
+            .where((c) => !itemCols.contains(c));
+        chips('columns', [...itemCols, ...inUse], const ['name', 'qty', 'amount']);
         toggle('header', 'Column headings', fallback: true);
         toggle('showNotes', 'Show item notes');
         if (widget.kind == ReceiptKind.kot) {

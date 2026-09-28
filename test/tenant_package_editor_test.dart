@@ -286,4 +286,47 @@ void main() {
       expect(offline.effectiveRoles, isNot(contains('WAITER')));
     });
   });
+
+  group('TenantPackageSelection per trade', () {
+    test('a shop selection composes without waiter or kitchen', () {
+      final s = TenantPackageSelection(
+        package: TenantPackage.fromProfile(PlanProfile.connected),
+        plan: _plan(devices: 3),
+        vertical: 'kirana',
+      );
+      expect(s.effectiveRoles, isNot(contains('WAITER')));
+      expect(s.effectiveRoles, isNot(contains('KITCHEN')));
+      expect(s.copyWith(vertical: 'restaurant').effectiveRoles, containsAll(['WAITER', 'KITCHEN']));
+    });
+
+    test('the count covers only what the trade uses', () {
+      final any = TenantPackageSelection(
+        package: TenantPackage.fromProfile(PlanProfile.omnichannel),
+        plan: _plan(devices: 15, outlets: 25),
+      );
+      final shop = any.copyWith(vertical: 'pharmacy');
+      expect(shop.onCount, lessThan(any.onCount));
+      final expected = FeatureCatalog.all
+          .where((d) =>
+              d.appliesTo('pharmacy') && !FeatureCatalog.isComingSoon(d.key) && shop.resolvedFeatures[d.key] == true)
+          .length;
+      expect(shop.onCount, expected);
+    });
+
+    test('forProfile starts a shop on its own starter', () {
+      final s = TenantPackageSelection.forProfile(PlanProfile.offlineDineIn, vertical: 'pharmacy');
+      expect(s.packageId, PlanProfile.offlineRetail.id);
+    });
+
+    test("the guest flags resolve in the tenant's trade", () {
+      final s = TenantPackageSelection(
+        package: TenantPackage.fromProfile(PlanProfile.omnichannel),
+        plan: _plan(devices: 15, outlets: 25),
+        vertical: 'kirana',
+      );
+      expect(s.resolved.isEnabled(FeatureKeys.onlineMenu), isTrue, reason: 'the trade-neutral map carries it');
+      expect(s.resolvedFor('kirana').isEnabled(FeatureKeys.onlineMenu), isFalse);
+      expect(s.resolvedFor('restaurant').isEnabled(FeatureKeys.onlineMenu), isTrue);
+    });
+  });
 }

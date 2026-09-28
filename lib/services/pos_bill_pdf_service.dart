@@ -5,6 +5,7 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:open_file/open_file.dart';
+import '../core/package_model.dart';
 import '../core/restaurant_models.dart';
 
 class PosBillPdfService {
@@ -40,7 +41,16 @@ class PosBillPdfService {
     /// for everyone before, regardless of what the paper said.
     String? footerText,
     DateTime? billTime,
+    /// The tenant's trade (`Verticals.*`): which licence the header names,
+    /// and whether a table belongs on the bill at all.
+    String vertical = Verticals.restaurant,
   }) async {
+    final isShop = Verticals.isShop(vertical);
+    final licenceLabel = !isShop
+        ? 'FSSAI Lic. No'
+        : (vertical == Verticals.pharmacy ? 'Drug Lic. No' : 'Trade Lic. No');
+    final tableLine =
+        (!isShop && tableName.trim().isNotEmpty) ? 'Table: $tableName' : '';
     final pdf = pw.Document();
     final time = billTime ?? DateTime.now();
     final timeStr =
@@ -93,7 +103,7 @@ class PosBillPdfService {
                   child: pw.Padding(
                     padding: const pw.EdgeInsets.only(top: 1),
                     child: pw.Text(
-                      'FSSAI Lic. No: ${fssai.trim()}',
+                      '$licenceLabel: ${fssai.trim()}',
                       style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey600),
                     ),
                   ),
@@ -154,7 +164,7 @@ class PosBillPdfService {
                       mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                       children: [
                         // A shop bill has no table; print nothing rather than "Table: ".
-                        pw.Text(tableName.trim().isEmpty ? '' : 'Table: $tableName', style: pw.TextStyle(fontSize: 8.5, fontWeight: pw.FontWeight.bold)),
+                        pw.Text(tableLine, style: pw.TextStyle(fontSize: 8.5, fontWeight: pw.FontWeight.bold)),
                         // The token already carries whatever marker it needs, so
                         // prefixing another `#` here printed `Token No: #T-0709-001`.
                         pw.Text('Token No: $tokenNumber', style: pw.TextStyle(fontSize: 8.5, fontWeight: pw.FontWeight.bold, color: PdfColors.blue800)),

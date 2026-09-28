@@ -1,6 +1,15 @@
 import 'package:esc_pos_utils_plus/esc_pos_utils_plus.dart';
 import '../core/restaurant_models.dart';
 
+/// Legacy restaurant-only tax invoice. Nothing in the app prints through this
+/// any more: every slip goes through the receipt template engine
+/// (`lib/core/receipt/`), where the wording follows the tenant's trade.
+///
+/// It is kept, unchanged, as the byte-for-byte reference that
+/// `test/receipt_golden_test.dart` holds `StarterTemplates.classicInvoice`
+/// to — which is why its restaurant wording ("LOCATION", "FSSAI", "Thank you
+/// for dining with us!") must not be edited. Deprecated: do not call it
+/// from new code (not annotated, so the golden test stays warning-free).
 class CustomerBillFormatter {
   /// Formats the legal customer tax invoice / receipt for 58mm or 80mm thermal printers.
   static Future<List<int>> formatTaxInvoice({

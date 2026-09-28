@@ -54,6 +54,7 @@ class StockMovement {
   final double balance;
   final String? note;
   final String? batchNo;
+  final String? billId;
   final DateTime at;
 
   const StockMovement({
@@ -65,6 +66,7 @@ class StockMovement {
     required this.at,
     this.note,
     this.batchNo,
+    this.billId,
   });
 
   Map<String, dynamic> toMap() => {
@@ -75,6 +77,7 @@ class StockMovement {
         'balance': balance,
         if (note != null) 'note': note,
         if (batchNo != null) 'batchNo': batchNo,
+        if (billId != null) 'billId': billId,
         'at': at.toIso8601String(),
       };
 
@@ -88,6 +91,7 @@ class StockMovement {
       balance: _num(m['balance']) ?? 0,
       note: m['note']?.toString(),
       batchNo: m['batchNo']?.toString(),
+      billId: m['billId']?.toString(),
       at: DateTime.tryParse((m['at'] ?? '').toString()) ?? DateTime.now(),
     );
   }
@@ -138,7 +142,9 @@ class StockService {
   static double? qtyOf(Map item) {
     final b = batchesOf(item);
     if (b.isNotEmpty) return b.fold<double>(0, (s, x) => s + x.qty);
-    return _num(item['stockQuantity']) ?? _num(item['stock_quantity']) ?? _num(item['stock']);
+    final q = _num(item['stockQuantity']) ?? _num(item['stock_quantity']) ?? _num(item['stock']);
+    // Cloud inventory sync writes `stock: -1` for "not tracked".
+    return (q != null && q < 0) ? null : q;
   }
 
   static double? reorderLevelOf(Map item) => _num(item['reorderLevel']);
@@ -163,6 +169,21 @@ class StockService {
     if (b.isEmpty) return qtyOf(item);
     return b.where((x) => !x.isExpired()).fold<double>(0, (s, x) => s + x.qty);
   }
+
+  /// Same as [sellableQtyOf]; the name the tills use.
+  static double? sellableQuantity(Map item) => sellableQtyOf(item);
+
+  /// The batch the next sale will take from (first unexpired, FEFO), or null
+  /// when the product has no batches / none left that can be sold.
+  static StockBatch? nextSellableBatch(Map item) {
+    for (final b in batchesOf(item)) {
+      if (!b.isExpired()) return b;
+    }
+    return null;
+  }
+
+  /// Days until the next batch to be sold expires (null = no dated batch).
+  static int? nextExpiryDaysLeft(Map item) => nextSellableBatch(item)?.daysLeft();
 
   static bool isLow(Map item) {
     final q = qtyOf(item);
@@ -323,10 +344,18 @@ class StockService {
 
   /// Sold at the till. [lines]: {id or productId, name, qty or quantity}.
   /// Untracked products are ignored; tracked ones never go below zero.
-  static Future<void> consumeForSale(List<Map<String, dynamic>> lines, {String? billId}) async {
+  ///
+  /// Only the quantity actually taken is logged (one SALE movement per batch
+  /// used, carrying [billId]). Returns, per product id, the batches the sale
+  /// took from, soonest expiry first: `{itemId: [{batchNo, expiry, qty}]}`
+  /// (`expiry` is an ISO string or null). Products without batches are not in
+  /// the map. Callers that do not need it may ignore the result.
+  static Future<Map<String, List<Map<String, dynamic>>>> consumeForSale(
+      List<Map<String, dynamic>> lines, {String? billId}) async {
+    final consumed = <String, List<Map<String, dynamic>>>{};
     try {
       final list = items();
-      if (list.isEmpty) return;
+      if (list.isEmpty) return consumed;
       final logs = <StockMovement>[];
       var changed = false;
       for (final line in lines) {
@@ -341,27 +370,47 @@ class StockService {
         final tracked = qtyOf(item);
         if (tracked == null) continue;
         final batches = List<StockBatch>.from(batchesOf(item));
-        String? usedBatch;
+        final itemId = idOf(item);
         if (batches.isEmpty) {
+          final onHand = tracked < 0 ? 0.0 : tracked;
+          final take = qty > onHand ? onHand : qty;
           _writeQty(item, (tracked - qty) < 0 ? 0 : tracked - qty);
+          changed = true;
+          if (take > 0) {
+            logs.add(StockMovement(
+                itemId: itemId, itemName: nameOf(item), type: 'SALE', qty: -take,
+                balance: qtyOf(item) ?? 0, note: billId, billId: billId, at: DateTime.now()));
+          }
         } else {
           var left = qty;
+          var balance = batches.fold<double>(0, (s, x) => s + x.qty);
+          final used = <Map<String, dynamic>>[];
+          final moves = <StockMovement>[];
           for (var b = 0; b < batches.length && left > 0; b++) {
             if (batches[b].isExpired()) continue;
             final take = left.clamp(0, batches[b].qty).toDouble();
             if (take <= 0) continue;
             batches[b] = batches[b].copyWith(qty: batches[b].qty - take);
-            usedBatch ??= batches[b].batchNo;
             left -= take;
+            balance -= take;
+            used.add({
+              'batchNo': batches[b].batchNo,
+              'expiry': batches[b].expiry?.toIso8601String(),
+              'qty': take,
+            });
+            moves.add(StockMovement(
+                itemId: itemId, itemName: nameOf(item), type: 'SALE', qty: -take,
+                balance: balance, note: billId, batchNo: batches[b].batchNo, billId: billId,
+                at: DateTime.now()));
           }
+          if (used.isEmpty) continue;
           _writeQty(item, batches.fold<double>(0, (s, x) => s + x.qty), batches: batches);
+          changed = true;
+          logs.addAll(moves);
+          consumed.putIfAbsent(itemId, () => <Map<String, dynamic>>[]).addAll(used);
         }
-        changed = true;
-        logs.add(StockMovement(
-            itemId: idOf(item), itemName: nameOf(item), type: 'SALE', qty: -qty,
-            balance: qtyOf(item) ?? 0, note: billId, batchNo: usedBatch, at: DateTime.now()));
       }
-      if (!changed) return;
+      if (!changed) return consumed;
       await _saveItems(list);
       for (final m in logs) {
         await _log(m);
@@ -369,6 +418,7 @@ class StockService {
     } catch (e) {
       debugPrint('StockService.consumeForSale: $e');
     }
+    return consumed;
   }
 
   /// Batches that are expired or expire within [days], soonest first.

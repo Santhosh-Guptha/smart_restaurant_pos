@@ -10,6 +10,7 @@ import '../../../core/responsive.dart';
 import '../../../widgets/package_features_breakdown_widget.dart';
 import '../../../services/package_service.dart';
 import '../../../utils/ui_feedback.dart';
+import '../widgets/tier_matrix_card.dart';
 
 /// Packages: *what a tenant can do*, as a named bundle the admin can shape.
 ///
@@ -29,6 +30,9 @@ class AdminPackagesView extends ConsumerStatefulWidget {
 }
 
 class _AdminPackagesViewState extends ConsumerState<AdminPackagesView> {
+  /// The business type the tier matrix is showing.
+  String _trade = Verticals.restaurant;
+
   @override
   void initState() {
     super.initState();
@@ -57,6 +61,8 @@ class _AdminPackagesViewState extends ConsumerState<AdminPackagesView> {
             padding: EdgeInsets.fromLTRB(gutter, DS.space4, gutter, DS.space12 + DS.space10),
             children: [
               _intro(context),
+              const SizedBox(height: DS.space4),
+              TierMatrixCard(vertical: _trade, onChanged: (v) => setState(() => _trade = v)),
               const SizedBox(height: DS.space4),
               if (wide)
                 Wrap(
@@ -506,7 +512,7 @@ class _PackageEditorDialogState extends State<_PackageEditorDialog> {
                       message: blocked
                           ? 'Not available on ${StorageModes.label(_mode)}'
                           : unbuilt
-                              ? 'In the catalogue, not yet built'
+                              ? 'Coming soon: in the catalogue, not yet built, so it cannot be sold'
                               : missing.isNotEmpty
                                   ? 'Also switches on ${missing.map((k) => FeatureCatalog.find(k)?.label ?? k).join(', ')}'
                                   : d.description,
@@ -520,9 +526,11 @@ class _PackageEditorDialogState extends State<_PackageEditorDialog> {
                                   ? (unbuilt ? ClassicTheme.warningAmber : ClassicTheme.primaryAccent)
                                   : context.textSecondary,
                         ),
-                        label: Text(d.label),
+                        label: Text(unbuilt ? '${d.label} (coming soon)' : d.label),
                         selected: on,
-                        onSelected: (_isStarter || blocked) ? null : (v) => _toggle(d, v),
+                        // Coming soon: never switched on here; one already on
+                        // can still be switched off.
+                        onSelected: (_isStarter || blocked || (unbuilt && !on)) ? null : (v) => _toggle(d, v),
                         selectedColor: (unbuilt ? ClassicTheme.warningAmber : ClassicTheme.primaryAccent).withValues(alpha: 0.18),
                         backgroundColor: context.canvasColor,
                         labelStyle: TextStyle(

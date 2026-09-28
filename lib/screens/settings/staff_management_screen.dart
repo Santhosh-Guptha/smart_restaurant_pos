@@ -131,9 +131,12 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
     if (!availableRoles.contains(role)) {
       role = availableRoles.first;
     }
+    // An existing member keeps only roles that fit this trade: a shop member
+    // who once held Kitchen/Waiter does not carry it forward on save.
     Set<StaffRole> selectedRoles = existing != null
-        ? existing.roles.toSet()
+        ? existing.roles.where(availableRoles.contains).toSet()
         : {role};
+    if (selectedRoles.isEmpty) selectedRoles = {role};
 
     String station = existing?.assignedStation ?? 'All';
     final ent = ref.read(entitlementsProvider);

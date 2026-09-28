@@ -735,7 +735,7 @@ class AdminDashboardView extends ConsumerWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Managed Restaurant Stores & POS Hub',
+                        'Managed Stores & POS Hub',
                         style: TextStyle(
                           fontSize: isMobile ? 14 : 15.5,
                           fontWeight: FontWeight.bold,

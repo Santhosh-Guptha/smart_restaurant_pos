@@ -5,7 +5,9 @@ import '../../../core/classic_theme.dart';
 import '../../../core/design_tokens.dart';
 import '../../../core/entitlements.dart';
 import '../../../core/feature_usage.dart';
+import '../../../core/package_model.dart';
 import '../../../core/responsive.dart';
+import '../widgets/tier_matrix_card.dart';
 
 /// Every feature the product has, what it switches on, and what a tenant
 /// loses without it.
@@ -25,6 +27,9 @@ class _AdminEncyclopediaViewState extends ConsumerState<AdminEncyclopediaView> {
   final TextEditingController _searchCtrl = TextEditingController();
   String _query = '';
   final Set<String> _expanded = {};
+
+  /// The business type the tier guide is showing.
+  String _trade = Verticals.restaurant;
 
   @override
   void dispose() {
@@ -57,6 +62,8 @@ class _AdminEncyclopediaViewState extends ConsumerState<AdminEncyclopediaView> {
         padding: EdgeInsets.fromLTRB(gutter, DS.space4, gutter, DS.space10),
         children: [
           _intro(context, unbuilt),
+          const SizedBox(height: DS.space4),
+          TierMatrixCard(vertical: _trade, onChanged: (v) => setState(() => _trade = v)),
           const SizedBox(height: DS.space4),
           TextField(
             controller: _searchCtrl,
@@ -124,7 +131,7 @@ class _AdminEncyclopediaViewState extends ConsumerState<AdminEncyclopediaView> {
           ),
           const SizedBox(height: DS.space2),
           Text(
-            'What each switch actually does in the app, and what the restaurant '
+            'What each switch actually does in the app, and what the store '
             'loses without it. Written from the code, so it stays true.',
             style: TextStyle(fontSize: DS.fontCaption, color: context.textSecondary, height: 1.45),
           ),
@@ -326,7 +333,7 @@ class _AdminEncyclopediaViewState extends ConsumerState<AdminEncyclopediaView> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _para(context, 'What the restaurant gets', usage.note, color),
+                  _para(context, 'What the store gets', usage.note, color),
                   const SizedBox(height: DS.space3),
                   _para(context, 'Switched off', usage.whenOff, context.textSecondary),
                   if (usage.screens.isNotEmpty) ...[

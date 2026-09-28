@@ -59,10 +59,13 @@ class _SettingsSidebarDialogState extends ConsumerState<SettingsSidebarDialog> {
     final ent = ref.read(entitlementsProvider);
     final session = ref.read(saasSessionProvider);
 
-    final slip = ReceiptContext.sample(enabledFeatures: {
-      for (final def in FeatureCatalog.all)
-        if (ent.isEnabled(def.key)) def.key,
-    });
+    final slip = ReceiptContext.sample(
+      enabledFeatures: {
+        for (final def in FeatureCatalog.all)
+          if (ent.isEnabled(def.key)) def.key,
+      },
+      vertical: ref.read(currentVerticalProvider),
+    );
     slip.values.addAll(ReceiptContextBuilder.printerOverrides(
       customName: pState.customName,
       customPhone: pState.customPhone,

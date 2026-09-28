@@ -26,6 +26,13 @@ class ReceiptContextBuilder {
   /// (main.dart), so a kirana's receipt does not thank people for dining.
   static String tradeDefaultFooter = '';
 
+  /// The signed-in tenant's trade (`Verticals.*`), for the wording a slip
+  /// changes by trade: the licence label, the counterfoil heading, whether a
+  /// table and token belong on the bill. Set by the app alongside
+  /// [tradeDefaultFooter]; left at `restaurant` it prints exactly what every
+  /// slip printed before. A caller that knows better passes `vertical:`.
+  static String tradeVertical = ReceiptTrade.restaurant;
+
   ReceiptContextBuilder._();
 
   static const String _storeBox = 'restaurant_config_box';
@@ -66,8 +73,9 @@ class ReceiptContextBuilder {
     int reprintCount = 0,
     Set<String> enabledFeatures = const {},
     double serviceChargeRate = 0,
+    String? vertical,
   }) {
-    final store = _store();
+    final store = _store(vertical: vertical);
     final now = DateTime.now();
     final settled = settledAt ?? now;
 
@@ -170,9 +178,10 @@ class ReceiptContextBuilder {
     String counterCode = '',
     String deviceName = '',
     Set<String> enabledFeatures = const {},
+    String? vertical,
   }) {
     final lines = items ?? order.items;
-    final store = _store();
+    final store = _store(vertical: vertical);
     final now = DateTime.now();
 
     int paiseOf(double? rupees) => ((rupees ?? 0) * 100).round();
@@ -286,7 +295,9 @@ class ReceiptContextBuilder {
     String counterCode = '',
     String deviceName = '',
     Set<String> enabledFeatures = const {},
+    String? vertical,
   }) {
+    final trade = ReceiptTrade.normalise(vertical ?? tradeVertical);
     num paise(List<String> keys, {num fallback = 0}) {
       for (final k in keys) {
         final v = order[k];
@@ -301,7 +312,7 @@ class ReceiptContextBuilder {
     int rupeesToPaise(List<String> keys) =>
         (paise(keys).toDouble() * 100).round();
 
-    final items = _itemsFrom(order);
+    final items = _itemsFrom(order, trade);
     final subtotalPaise = order['subtotalPaise'] is num
         ? (order['subtotalPaise'] as num).toInt()
         : rupeesToPaise(['subtotal', 'subtotal_amount', 'subTotal']);
@@ -341,7 +352,7 @@ class ReceiptContextBuilder {
     // every record written before payments were tracked means.
     final paidPaise = storedPaid > 0 ? storedPaid : grandPaise;
 
-    final store = _store();
+    final store = _store(vertical: trade);
     final now = DateTime.now();
     final created = _date(order, ['createdAt', 'created_at', 'timestamp']);
     final settled =
@@ -455,9 +466,11 @@ class ReceiptContextBuilder {
   /// organisation document. The two used to differ, so a restaurant could be
   /// named one thing on the paper slip and another in the emailed invoice for
   /// the same sale.
-  static Map<String, Object?> storeDetails() => _store();
+  static Map<String, Object?> storeDetails({String? vertical}) =>
+      _store(vertical: vertical);
 
-  static Map<String, Object?> _store() {
+  static Map<String, Object?> _store({String? vertical}) {
+    final trade = ReceiptTrade.normalise(vertical ?? tradeVertical);
     final r = Hive.isBoxOpen(_storeBox) ? Hive.box(_storeBox) : null;
     final c = Hive.isBoxOpen(_configBox) ? Hive.box(_configBox) : null;
 
@@ -491,6 +504,10 @@ class ReceiptContextBuilder {
       // (`{{store.footer | default:...}}`), so an unset footer still prints
       // exactly what the old slip printed.
       'store.footer': tradeDefaultFooter,
+      'store.vertical': trade,
+      'store.isShop': ReceiptTrade.isShop(trade),
+      'store.licenseLabel': ReceiptTrade.licenceLabel(trade),
+      'store.copyLabel': ReceiptTrade.copyHeading(trade),
     };
   }
 
@@ -601,7 +618,9 @@ class ReceiptContextBuilder {
     ];
   }
 
-  static List<Map<String, Object?>> _itemsFrom(Map<String, dynamic> order) {
+  static List<Map<String, Object?>> _itemsFrom(Map<String, dynamic> order,
+      [String trade = ReceiptTrade.restaurant]) {
+    final isRestaurant = !ReceiptTrade.isShop(trade);
     final raw = order['items'] ?? order['lines'] ?? order['orderItems'];
     if (raw is! List) return const [];
     final out = <Map<String, Object?>>[];
@@ -610,6 +629,7 @@ class ReceiptContextBuilder {
       final m = Map<String, dynamic>.from(entry);
       final qty = _num(m, ['qty', 'quantity'], fallback: 1);
       final price = _num(m, ['price', 'rate', 'unitPrice']);
+      final mrp = _numOrNull(m, ['mrp', 'MRP']);
       final amount = m.containsKey('amount')
           ? _num(m, ['amount'])
           : price * qty;
@@ -634,10 +654,47 @@ class ReceiptContextBuilder {
         'notes': (m['notes'] ?? m['note'] ?? '').toString(),
         'modifiers': modSummary,
         'station': (m['station'] ?? '').toString(),
-        'isVeg': m['isVeg'] != false,
+        // A missing flag means vegetarian only on a menu, where `KotItem`
+        // defaults it so; a shop's line has no such thing.
+        'isVeg': isRestaurant ? m['isVeg'] != false : (m['isVeg'] is bool ? m['isVeg'] as bool : null),
+        // Null rather than zero when the line does not carry one, so
+        // `{{item.mrp | money}}` prints nothing instead of "Rs. 0.00".
+        'mrp': mrp == null ? null : (mrp * 100).round(),
+        'batchNo': _str(m, ['batchNo', 'batch_no', 'batch']),
+        'expiry': _expiryLabel(m['expiry'] ?? m['expiryDate'] ?? m['expiry_date']),
+        'hsn': _str(m, ['hsnCode', 'hsn', 'hsn_code']),
       });
     }
     return out;
+  }
+
+  /// A stored expiry — ISO string, epoch millis or `DateTime` — as the
+  /// `MM/yy` a strip of medicine prints. Already-short values pass through.
+  static String _expiryLabel(Object? raw) {
+    if (raw == null) return '';
+    DateTime? d;
+    if (raw is DateTime) {
+      d = raw;
+    } else if (raw is int) {
+      d = DateTime.fromMillisecondsSinceEpoch(raw);
+    } else {
+      final s = raw.toString().trim();
+      if (s.isEmpty) return '';
+      d = DateTime.tryParse(s);
+      if (d == null) return s;
+    }
+    return '${d.month.toString().padLeft(2, '0')}/'
+        '${(d.year % 100).toString().padLeft(2, '0')}';
+  }
+
+  static double? _numOrNull(Map<String, dynamic> m, List<String> keys) {
+    for (final k in keys) {
+      final v = m[k];
+      if (v is num) return v.toDouble();
+      final parsed = double.tryParse((v ?? '').toString());
+      if (parsed != null) return parsed;
+    }
+    return null;
   }
 
   static double _num(Map<String, dynamic> m, List<String> keys,

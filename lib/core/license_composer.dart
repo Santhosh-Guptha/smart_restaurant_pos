@@ -93,16 +93,27 @@ class LicenseComposer {
   /// Roles that only make sense with a second device.
   static const Set<String> secondDeviceRoles = {'WAITER', 'KITCHEN'};
 
+  /// Roles that only exist in a restaurant: a shop has no floor to wait on
+  /// and no kitchen to cook in.
+  static const Set<String> restaurantOnlyRoles = {'WAITER', 'KITCHEN'};
+
+  static const Set<String> _shopTrades = {'kirana', 'supermarket', 'pharmacy', 'retail'};
+
   /// [currentStorageMode] is the organisation's mode today, when there is
   /// one. A package names a storage *family* (offline, or cloud); inside the
   /// cloud family both `CLOUD_SYNC` and `CLIENTS_OWN_SHEETS` are legal, so a
   /// tenant on their own Sheets keeps that when the package agrees, and only a
   /// change of family is a change of mode.
+  ///
+  /// [vertical] is the tenant's trade when the caller knows it. The feature
+  /// map is written trade-neutral whatever it is; it only decides the roles
+  /// (a shop gets no waiter or kitchen role). 'any' keeps every role.
   static ComposedLicense compose(
     TenantPackage package,
     SubscriptionPlan plan, {
     DateTime? startDate,
     String? currentStorageMode,
+    String vertical = 'any',
   }) {
     final start = startDate ?? DateTime.now();
     final end = start.add(Duration(days: plan.validityDays < 1 ? 1 : plan.validityDays));
@@ -144,11 +155,13 @@ class LicenseComposer {
     // A role that needs a second device is meaningless on a one-device
     // licence; drop it rather than let a manager create a waiter who can never
     // sign in anywhere.
+    final shop = _shopTrades.contains(vertical.trim().toLowerCase());
     final roles = <String>{'OWNER'};
     for (final r in plan.allowedRoles) {
       final up = r.trim().toUpperCase();
       if (!allRoles.contains(up)) continue;
       if (resolved.maxDevices <= 1 && secondDeviceRoles.contains(up)) continue;
+      if (shop && restaurantOnlyRoles.contains(up)) continue;
       roles.add(up);
     }
 

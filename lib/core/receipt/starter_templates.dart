@@ -10,6 +10,7 @@
 /// copied into the tenant's box on first open and never overwritten again.
 library;
 
+import 'receipt_context.dart' show ReceiptTrade;
 import 'receipt_template.dart';
 
 class StarterTemplates {
@@ -21,15 +22,41 @@ class StarterTemplates {
   static const String tokenLargeId = 'tok_large';
   static const String tokenWithItemsId = 'tok_items';
   static const String kotByStationId = 'kot_station';
+  static const String invoicePharmacyId = 'inv_pharmacy';
 
   static const List<ReceiptTemplate> all = [
         classicInvoice,
         compactInvoice,
+        pharmacyInvoice,
         restaurantCopy,
         largeToken,
         tokenWithItems,
         kotByStation,
       ];
+
+  /// Starters that only make sense for one trade. Seeding still copies them
+  /// for everyone (a tenant can change trade), but the slip list shows each
+  /// only to its own trade.
+  static const Map<String, String> _tradeOnly = {
+    invoicePharmacyId: ReceiptTrade.pharmacy,
+  };
+
+  /// Whether the slip list should offer [templateId] to a [vertical] tenant.
+  /// Anything that is not a trade-specific starter is always offered.
+  static bool isOfferedTo(String templateId, String vertical) {
+    final only = _tradeOnly[templateId];
+    return only == null || only == ReceiptTrade.normalise(vertical);
+  }
+
+  /// A template's name as a [vertical] tenant should read it. Only the
+  /// shipped counterfoil, still under its shipped name, is renamed: a shop
+  /// has no "Restaurant copy", and an owner's own name is never touched.
+  static String displayName(ReceiptTemplate t, String vertical) {
+    if (t.id == restaurantCopyId && t.name == restaurantCopy.name) {
+      return ReceiptTrade.copyName(vertical);
+    }
+    return t.name;
+  }
 
   static ReceiptTemplate? byId(String id) {
     for (final t in all) {
@@ -39,10 +66,15 @@ class StarterTemplates {
   }
 
   /// The default for each kind, used when nothing is mapped to an order type.
-  static ReceiptTemplate defaultFor(ReceiptKind kind) {
+  ///
+  /// [vertical] only changes the invoice, and only for a pharmacy, whose
+  /// bill must show batch, expiry and MRP on every line.
+  static ReceiptTemplate defaultFor(ReceiptKind kind, {String vertical = ''}) {
     switch (kind) {
       case ReceiptKind.invoice:
-        return classicInvoice;
+        return ReceiptTrade.normalise(vertical) == ReceiptTrade.pharmacy
+            ? pharmacyInvoice
+            : classicInvoice;
       case ReceiptKind.restaurantCopy:
         return restaurantCopy;
       case ReceiptKind.token:
@@ -108,7 +140,9 @@ class StarterTemplates {
             type: BlockType.text,
             when: 'store.fssai != ""',
             style: BlockStyle(align: TextAlign_.center),
-            props: {'value': 'FSSAI: {{store.fssai}}', 'wrap': false},
+            // The licence label follows the trade (FSSAI, DL No., Trade
+            // Lic.); a context without one prints FSSAI, as it always did.
+            props: {'value': '{{store.licenseLabel | default:FSSAI}}: {{store.fssai}}', 'wrap': false},
           ),
           ReceiptBlock(
             type: BlockType.text,
@@ -118,9 +152,12 @@ class StarterTemplates {
           ),
           ReceiptBlock(type: BlockType.divider, props: {'char': '='}),
 
-          // Identifiers
+          // Identifiers. The token is only worth its half of the line when it
+          // is a number of its own and the trade calls one out; a shop, or a
+          // bill whose token is its bill number, prints the bill number alone.
           ReceiptBlock(
             type: BlockType.columns,
+            when: 'order.token != order.id && !store.isShop',
             style: BlockStyle(bold: true),
             props: {
               'cells': [
@@ -129,14 +166,41 @@ class StarterTemplates {
               ],
             },
           ),
+          // A one-cell row rather than a text block, so the printer-settings
+          // migration's invoice prefix (which edits rows) reaches it too.
           ReceiptBlock(
             type: BlockType.columns,
+            when: 'order.token == order.id || store.isShop',
+            style: BlockStyle(bold: true),
+            props: {
+              'cells': [
+                {'value': 'BILL NO: {{order.id}}', 'width': 12},
+              ],
+            },
+          ),
+          // A table is a restaurant's; with none, the date has the line.
+          ReceiptBlock(
+            type: BlockType.columns,
+            when: 'order.table != "" && !store.isShop',
             props: {
               'cells': [
                 {'value': 'LOCATION: {{order.table}}', 'width': 6},
                 {
                   'value': '{{order.settledAt | date:dd-MM-yyyy HH:mm}}',
                   'width': 6,
+                  'align': 'right',
+                },
+              ],
+            },
+          ),
+          ReceiptBlock(
+            type: BlockType.columns,
+            when: 'order.table == "" || store.isShop',
+            props: {
+              'cells': [
+                {
+                  'value': '{{order.settledAt | date:dd-MM-yyyy HH:mm}}',
+                  'width': 12,
                   'align': 'right',
                 },
               ],
@@ -286,6 +350,142 @@ class StarterTemplates {
         ],
       );
 
+  /// A chemist's bill: the licence, the patient, and batch, expiry and MRP
+  /// under every line, which a pharmacy invoice is expected to carry.
+  static const ReceiptTemplate pharmacyInvoice = ReceiptTemplate(
+        id: invoicePharmacyId,
+        name: 'Pharmacy invoice',
+        kind: ReceiptKind.invoice,
+        blocks: [
+          ReceiptBlock(
+            type: BlockType.text,
+            when: 'order.isReprint',
+            style: BlockStyle(align: TextAlign_.center, bold: true),
+            props: {'value': '*** DUPLICATE COPY / REPRINT ***', 'wrap': false},
+          ),
+          ReceiptBlock(
+            type: BlockType.text,
+            style: BlockStyle(align: TextAlign_.center, bold: true),
+            props: {'value': '{{store.name | upper}}'},
+          ),
+          ReceiptBlock(
+            type: BlockType.text,
+            when: 'store.address != ""',
+            style: BlockStyle(align: TextAlign_.center),
+            props: {'value': '{{store.address}}'},
+          ),
+          ReceiptBlock(
+            type: BlockType.text,
+            when: 'store.phone != ""',
+            style: BlockStyle(align: TextAlign_.center),
+            props: {'value': 'Phone: {{store.phone}}'},
+          ),
+          ReceiptBlock(
+            type: BlockType.text,
+            when: 'store.fssai != ""',
+            style: BlockStyle(align: TextAlign_.center),
+            props: {'value': '{{store.licenseLabel | default:DL No.}}: {{store.fssai}}'},
+          ),
+          ReceiptBlock(
+            type: BlockType.text,
+            when: 'store.gstin != ""',
+            style: BlockStyle(align: TextAlign_.center, bold: true),
+            props: {'value': 'GSTIN: {{store.gstin}}'},
+          ),
+          ReceiptBlock(type: BlockType.divider, props: {'char': '='}),
+          ReceiptBlock(
+            type: BlockType.text,
+            style: BlockStyle(align: TextAlign_.center, bold: true),
+            props: {'value': 'TAX INVOICE'},
+          ),
+          ReceiptBlock(
+            type: BlockType.columns,
+            props: {
+              'cells': [
+                {'value': 'BILL: {{order.id}}', 'width': 6},
+                {
+                  'value': '{{order.settledAt | date:dd-MM-yyyy HH:mm}}',
+                  'width': 6,
+                  'align': 'right',
+                },
+              ],
+            },
+          ),
+          ReceiptBlock(
+            type: BlockType.field,
+            when: 'order.customerName != ""',
+            props: {'label': 'PATIENT', 'value': '{{order.customerName}}'},
+          ),
+          ReceiptBlock(
+            type: BlockType.field,
+            when: 'order.customerPhone != ""',
+            props: {'label': 'PHONE', 'value': '{{order.customerPhone}}'},
+          ),
+          ReceiptBlock(
+            type: BlockType.text,
+            when: 'order.staff != ""',
+            props: {'value': 'CASHIER: {{order.staff}}'},
+          ),
+          ReceiptBlock(type: BlockType.divider),
+          ReceiptBlock(
+            type: BlockType.items,
+            style: BlockStyle(bold: true),
+            props: {
+              'columns': ['name', 'qty', 'rate', 'amount'],
+              'header': true,
+              'headerRule': true,
+              'detailLine':
+                  '  Batch {{item.batchNo}}  Exp {{item.expiry}}  MRP {{item.mrp | money}}',
+              'detailWhen':
+                  'item.batchNo != "" || item.expiry != "" || item.mrp > 0',
+            },
+          ),
+          ReceiptBlock(type: BlockType.divider),
+          ReceiptBlock(
+            type: BlockType.totals,
+            props: {
+              'rows': ['subtotal', 'discount', 'cgst', 'sgst', 'roundOff'],
+              'labelWidth': 7,
+              'valueWidth': 5,
+            },
+          ),
+          ReceiptBlock(type: BlockType.divider, props: {'char': '='}),
+          ReceiptBlock(
+            type: BlockType.totals,
+            props: {
+              'rows': ['grandTotal'],
+              'labelWidth': 6,
+              'valueWidth': 6,
+            },
+          ),
+          ReceiptBlock(type: BlockType.divider, props: {'char': '='}),
+          ReceiptBlock(
+            type: BlockType.text,
+            style: BlockStyle(align: TextAlign_.center, bold: true),
+            props: {'value': 'PAYMENT: {{payment.modeLabel | upper}}', 'keepEmpty': true},
+          ),
+          ReceiptBlock(
+            type: BlockType.text,
+            when: 'payment.reference != ""',
+            style: BlockStyle(align: TextAlign_.center),
+            props: {'value': 'TXN REF: {{payment.reference}}'},
+          ),
+          ReceiptBlock(type: BlockType.spacer, props: {'lines': 1}),
+          ReceiptBlock(
+            type: BlockType.text,
+            style: BlockStyle(align: TextAlign_.center),
+            props: {'value': 'Please check batch and expiry before you leave.'},
+          ),
+          ReceiptBlock(
+            type: BlockType.text,
+            style: BlockStyle(align: TextAlign_.center, bold: true),
+            props: {'value': '{{store.footer | default:Thank you. Get well soon!}}'},
+          ),
+          ReceiptBlock(type: BlockType.spacer, props: {'lines': 2}),
+          ReceiptBlock(type: BlockType.cut),
+        ],
+      );
+
   /// The counterfoil the till keeps: no branding, no thank-you, a signature
   /// rule instead.
   static const ReceiptTemplate restaurantCopy = ReceiptTemplate(
@@ -296,7 +496,7 @@ class StarterTemplates {
           ReceiptBlock(
             type: BlockType.text,
             style: BlockStyle(align: TextAlign_.center, bold: true),
-            props: {'value': 'RESTAURANT COPY'},
+            props: {'value': '{{store.copyLabel | default:RESTAURANT COPY}}'},
           ),
           ReceiptBlock(type: BlockType.divider, props: {'char': '='}),
           ReceiptBlock(

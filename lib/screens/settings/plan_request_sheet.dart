@@ -7,6 +7,7 @@ import '../../core/constants.dart';
 import '../../core/design_tokens.dart';
 import '../../core/entitlements.dart';
 import '../../core/responsive.dart';
+import '../../providers/entitlements_provider.dart';
 import '../../providers/saas_session_provider.dart';
 import '../../utils/ui_feedback.dart';
 import '../admin/widgets/tenant_package_editor.dart';
@@ -41,6 +42,10 @@ class PlanRequestSheet extends ConsumerStatefulWidget {
 
 class _PlanRequestSheetState extends ConsumerState<PlanRequestSheet> {
   late TenantPackageSelection _selection;
+
+  /// The store's trade, so only its own packages are offered and the roles
+  /// and counts read as its app will.
+  late final String _vertical;
   final TextEditingController _noteCtrl = TextEditingController();
   bool _sending = false;
   bool _sent = false;
@@ -48,16 +53,16 @@ class _PlanRequestSheetState extends ConsumerState<PlanRequestSheet> {
   @override
   void initState() {
     super.initState();
-    final session = ref.read(saasSessionProvider);
-    final licence = session.currentLicense;
+    _vertical = ref.read(currentVerticalProvider);
 
     // Start from what they have, so the sheet reads as "change this" rather
-    // than "choose from scratch".
-    final current = PlanProfile.byId(licence?.planProfile ?? licence?.planTier);
+    // than "choose from scratch" — the package the app actually runs them
+    // on (already aligned to their trade), not the raw stored id.
+    final PlanProfile current = ref.read(entitlementsProvider).profile;
     // A package and a plan now, not a profile plus ticked extras. The editor
     // loads both lists and snaps this to the matching documents once it has
     // them; until then the starter of their current profile stands in.
-    _selection = TenantPackageSelection.forProfile(current, validityDays: 365);
+    _selection = TenantPackageSelection.forProfile(current, validityDays: 365, vertical: _vertical);
   }
 
   @override
@@ -221,6 +226,7 @@ class _PlanRequestSheetState extends ConsumerState<PlanRequestSheet> {
                 children: [
                   TenantPackageEditor(
                     value: _selection,
+                    businessCategory: _vertical,
                     onChanged: (v) => setState(() => _selection = v),
                     limitsReadOnly: true,
                     showValidity: false,

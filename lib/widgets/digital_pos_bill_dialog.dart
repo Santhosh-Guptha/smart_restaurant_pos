@@ -6,6 +6,7 @@ import '../core/restaurant_models.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import '../core/constants.dart';
 import '../core/entitlements.dart';
+import '../core/package_model.dart';
 import '../core/vertical_labels.dart';
 import '../core/receipt/receipt_context_builder.dart';
 import '../core/receipt/receipt_print_service.dart';
@@ -188,6 +189,26 @@ class _DigitalPosBillDialogState extends ConsumerState<DigitalPosBillDialog> {
   /// for a restaurant and a shop.
   VerticalLabels get _labels => VerticalLabels.of(ref.read(currentVerticalProvider));
 
+  String get _vertical => ref.read(currentVerticalProvider);
+
+  bool get _isShop => Verticals.isShop(_vertical);
+
+  /// The order type this bill prints under. There is no order-type field on
+  /// this dialog: a shop's sale is always a counter (walk-in) sale, and a
+  /// restaurant's is read off the table name — blank means the counter.
+  String get _channel => _isShop
+      ? 'Walk-in'
+      : (widget.tableName.trim().isEmpty ? 'Takeaway' : 'Dine-In');
+
+  /// "T4 · Token 12" for a table, "Token 12" at the counter, and the bill
+  /// number for a shop, which has neither a table nor a kitchen token.
+  String get _headerSubtitle {
+    if (_isShop) return 'Bill ${widget.billNumber}';
+    final table = widget.tableName.trim();
+    final token = 'Token ${widget.tokenNumber}';
+    return table.isEmpty ? token : '$table \u2022 $token';
+  }
+
   String? _resolved(String? custom, String? stored, String? fallback) {
     for (final v in [custom, stored, fallback]) {
       if ((v ?? '').trim().isNotEmpty) return v!.trim();
@@ -217,6 +238,7 @@ class _DigitalPosBillDialogState extends ConsumerState<DigitalPosBillDialog> {
       footerText: (printer.customFooter ?? '').trim().isNotEmpty
           ? printer.customFooter
           : _labels.billThankYou,
+      vertical: _vertical,
       billNumber: widget.billNumber,
       tokenNumber: widget.tokenNumber,
       tableName: widget.tableName,
@@ -268,6 +290,7 @@ class _DigitalPosBillDialogState extends ConsumerState<DigitalPosBillDialog> {
         paymentMode: widget.paymentMode,
         pdfBytes: pdfBytes,
         organizationId: widget.organizationId,
+        vertical: _vertical,
       );
 
       if (mounted) {
@@ -324,9 +347,8 @@ class _DigitalPosBillDialogState extends ConsumerState<DigitalPosBillDialog> {
           'id': widget.billNumber,
           'token': widget.tokenNumber,
           'tableName': widget.tableName,
-          // No order-type field on this dialog; the table name is the only
-          // signal, and a blank one means the counter.
-          'orderType': widget.tableName.trim().isEmpty ? 'Takeaway' : 'Dine-In',
+          // No order-type field on this dialog; see [_channel].
+          'orderType': _channel,
           'staff': widget.cashierName ?? widget.waiterName ?? '',
           'customerName': widget.customerName ?? '',
           'customerPhone': widget.customerPhone ?? '',
@@ -360,6 +382,7 @@ class _DigitalPosBillDialogState extends ConsumerState<DigitalPosBillDialog> {
           for (final def in FeatureCatalog.all)
             if (ent.isEnabled(def.key)) def.key,
         },
+        vertical: _vertical,
       );
 
       // The printer's own header fields override the store record on purpose.
@@ -399,7 +422,7 @@ class _DigitalPosBillDialogState extends ConsumerState<DigitalPosBillDialog> {
         orgId: orgId,
         kind: ReceiptKind.invoice,
         context: slip,
-        channel: widget.tableName.trim().isEmpty ? 'Takeaway' : 'Dine-In',
+        channel: _channel,
         paperSize: printer.paperSize,
         send: ref.read(thermalPrinterProvider.notifier).printBytes,
       );
@@ -478,7 +501,7 @@ class _DigitalPosBillDialogState extends ConsumerState<DigitalPosBillDialog> {
                           ),
                         ),
                         Text(
-                          '${widget.tableName} \u2022 Token ${widget.tokenNumber}',
+                          _headerSubtitle,
                           style: const TextStyle(color: Colors.white70, fontSize: 12),
                         ),
                       ],

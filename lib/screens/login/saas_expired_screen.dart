@@ -87,12 +87,20 @@ class _SaaSExpiredScreenState extends ConsumerState<SaaSExpiredScreen> {
     final license = session.currentLicense;
     final isTrial = license?.planTier.toUpperCase() == 'TRIAL';
 
+    final isRestaurant = VerticalLabels.of(session.vertical).isRestaurant;
+
     final title = isTrial ? "Free Trial Completed" : "Subscription Inactive";
     final expiryMsg = isTrial
-        ? "Your complimentary trial period for $orgName has concluded. All dining records, menu configurations, and branch settings are safely preserved. Request a license renewal to continue seamless operations."
+        ? (isRestaurant
+            ? "Your complimentary trial period for $orgName has concluded. All dining records, menu configurations, and branch settings are safely preserved. Request a license renewal to continue seamless operations."
+            : "Your complimentary trial period for $orgName has concluded. All bills, product catalog, and branch settings are safely preserved. Request a license renewal to continue seamless operations.")
         : (license?.status == 'SUSPENDED'
-            ? "Your restaurant's subscription has been suspended by the administrator. Please contact support to reactivate your services."
-            : "Your organization's subscription license has expired. Please renew your plan to continue point-of-sale and kitchen operations.");
+            ? (isRestaurant
+                ? "Your restaurant's subscription has been suspended by the administrator. Please contact support to reactivate your services."
+                : "Your store's subscription has been suspended by the administrator. Please contact support to reactivate your services.")
+            : (isRestaurant
+                ? "Your organization's subscription license has expired. Please renew your plan to continue point-of-sale and kitchen operations."
+                : "Your organization's subscription license has expired. Please renew your plan to continue billing operations."));
 
     return Scaffold(
       backgroundColor: context.canvasColor,

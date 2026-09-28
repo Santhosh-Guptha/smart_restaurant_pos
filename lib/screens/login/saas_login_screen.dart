@@ -507,7 +507,7 @@ class _SaaSLoginScreenState extends ConsumerState<SaaSLoginScreen> {
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         Text(
-                          "New business or restaurant? ",
+                          "New business? ",
                           style: TextStyle(color: context.textSecondary, fontSize: 13),
                         ),
                         GestureDetector(

@@ -138,7 +138,8 @@ class ReceiptPrintService {
 
       for (final kind in kinds) {
         final template =
-            await ReceiptTemplateStore.resolve(orgId, kind, channel: channel);
+            await ReceiptTemplateStore.resolve(orgId, kind,
+            channel: channel, vertical: _verticalOf(context));
         final layout =
             ReceiptRenderer.layout(template, context, paperChars: chars);
 
@@ -199,7 +200,8 @@ class ReceiptPrintService {
   }) async {
     try {
       final template =
-          await ReceiptTemplateStore.resolve(orgId, kind, channel: channel);
+          await ReceiptTemplateStore.resolve(orgId, kind,
+            channel: channel, vertical: _verticalOf(context));
       return ReceiptTextEncoder.encodeTrimmed(
         ReceiptRenderer.layout(template, context,
             paperChars: charsFor(paperSize)),
@@ -218,10 +220,16 @@ class ReceiptPrintService {
     String paperSize = '58mm',
   }) async {
     final template =
-        await ReceiptTemplateStore.resolve(orgId, kind, channel: channel);
+        await ReceiptTemplateStore.resolve(orgId, kind,
+            channel: channel, vertical: _verticalOf(context));
     return ReceiptRenderer.layout(template, context,
         paperChars: charsFor(paperSize));
   }
+
+  /// The trade the context was built for (`store.vertical`), so a shop's
+  /// own shipped default is chosen when nothing is mapped.
+  static String _verticalOf(ReceiptContext context) =>
+      (context.values['store.vertical'] ?? '').toString();
 
   /// `'58mm'` / `'80mm'` as the printer state spells it, in character cells.
   static int charsFor(String paperSize) =>

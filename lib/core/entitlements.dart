@@ -136,7 +136,11 @@ class FeatureDef {
 
   /// Whether this feature means anything for [vertical] (null = any).
   bool appliesTo(String? vertical) =>
-      vertical == null || vertical.isEmpty || verticals.isEmpty || verticals.contains(vertical);
+      vertical == null ||
+      vertical.isEmpty ||
+      vertical == 'any' ||
+      verticals.isEmpty ||
+      verticals.contains(vertical);
 
   /// The name a customer of [vertical] should see (e-mails, sign-up,
   /// package cards). Restaurant wording stays as [label].
@@ -146,7 +150,7 @@ class FeatureDef {
   String descriptionFor(String? vertical) => _tradeText(vertical)?.$2 ?? description;
 
   (String, String)? _tradeText(String? vertical) {
-    if (vertical == null || vertical.isEmpty || vertical == 'restaurant') return null;
+    if (vertical == null || vertical.isEmpty || vertical == 'restaurant' || vertical == 'any') return null;
     final pharmacy = vertical == 'pharmacy';
     final things = pharmacy ? 'medicines' : 'products';
     switch (key) {
@@ -278,7 +282,8 @@ class FeatureCatalog {
       tier: CommercialTier.offlineBasic,
       iconCode: 'point_of_sale',
       dependsOn: [FeatureKeys.billing],
-      verticals: {'restaurant'},
+      // Universal: a shop's barcode counter is the same counter screen, and
+      // the token numbering is the shop's queue number.
     ),
     FeatureDef(
       key: FeatureKeys.menuManagement,
@@ -503,7 +508,7 @@ class FeatureCatalog {
           'balances.',
       tier: CommercialTier.offlineAddOn,
       iconCode: 'menu_book',
-      verticals: {'kirana', 'pharmacy', 'retail'},
+      verticals: {'kirana', 'supermarket', 'pharmacy', 'retail'},
     ),
     FeatureDef(
       key: FeatureKeys.stockManagement,
@@ -516,6 +521,13 @@ class FeatureCatalog {
       verticals: {'kirana', 'supermarket', 'pharmacy', 'retail'},
     ),
   ];
+
+  /// Keys that exist in the catalogue but have no code behind them yet
+  /// (`kFeatureUsage` marks them `implemented: false`; a test keeps the two
+  /// in step). Consoles show them as "Coming soon" and never offer a switch.
+  static const Set<String> comingSoon = {FeatureKeys.inventoryEnabled};
+
+  static bool isComingSoon(String key) => comingSoon.contains(key);
 
   static FeatureDef? find(String key) {
     for (final f in all) {
@@ -709,6 +721,157 @@ class PlanProfile {
   /// with no switch, because turning it off here would not survive the
   /// resolver.
   bool includes(String key) => features[key] == true;
+
+  // ── Commercial tiers: Basic / Standard / Premium ─────────────────────────
+  //
+  // The same three steps for every business type. Ids stay the database
+  // values (no migration); these are names and descriptions only, generated
+  // from the features that apply to the trade, so a pharmacy is never sold
+  // tables and a restaurant never a khata. Anything beyond a tier is added
+  // per client with its add-on switch in the Feature Matrix.
+
+  static const Set<String> _shopTrades = {'kirana', 'supermarket', 'pharmacy', 'retail'};
+
+  static bool _isShopTrade(String? v) => v != null && _shopTrades.contains(v.trim().toLowerCase());
+
+  static bool _isAnyTrade(String? v) =>
+      v == null || v.trim().isEmpty || v.trim().toLowerCase() == 'any';
+
+  /// Basic (offline, one device), Standard (cloud) or Premium (everything).
+  String get tierLabel {
+    switch (id) {
+      case 'OFFLINE_SINGLE':
+      case 'OFFLINE_DINE_IN':
+      case 'OFFLINE_RETAIL':
+        return 'Basic';
+      case 'CONNECTED':
+        return 'Standard';
+      case 'OMNICHANNEL':
+        return 'Premium';
+      default:
+        if (isOffline) return 'Basic';
+        return tiers.contains(CommercialTier.onlineAddOn) ? 'Premium' : 'Standard';
+    }
+  }
+
+  /// [tierLabel], with a restaurant's two Basic starters told apart
+  /// ("Basic · Counter", "Basic · Dine-in"). A shop has one Basic.
+  String tierLabelFor(String? vertical) {
+    if (_isShopTrade(vertical)) return tierLabel;
+    switch (id) {
+      case 'OFFLINE_SINGLE':
+        return 'Basic · Counter';
+      case 'OFFLINE_DINE_IN':
+        return 'Basic · Dine-in';
+      case 'OFFLINE_RETAIL':
+        return _isAnyTrade(vertical) ? 'Basic · Shop' : tierLabel;
+      default:
+        return tierLabel;
+    }
+  }
+
+  static String _tradeName(String v) {
+    switch (v) {
+      case 'restaurant':
+        return 'Restaurant';
+      case 'kirana':
+        return 'Kirana';
+      case 'supermarket':
+        return 'Supermarket';
+      case 'pharmacy':
+        return 'Pharmacy';
+      case 'retail':
+        return 'Retail';
+      default:
+        return '';
+    }
+  }
+
+  /// The name a client of [vertical] sees: "Pharmacy Standard",
+  /// "Restaurant Basic · Dine-in". A trade-neutral view gets the tier alone.
+  String labelFor(String? vertical) {
+    final t = tierLabelFor(vertical);
+    if (_isAnyTrade(vertical)) return t;
+    final name = _tradeName(vertical!.trim().toLowerCase());
+    return name.isEmpty ? t : '$name $t';
+  }
+
+  /// What this tier gives a client of [vertical], generated from the
+  /// features that apply to that trade (and never from one that is coming
+  /// soon). A trade-neutral view gets [description].
+  String descriptionFor(String? vertical) {
+    if (_isAnyTrade(vertical)) return description;
+    final v = vertical!.trim().toLowerCase();
+    final shop = _isShopTrade(v);
+
+    List<String> names(Iterable<String> keys) {
+      final set = keys.toSet();
+      return [
+        for (final def in FeatureCatalog.all)
+          if (set.contains(def.key) && def.appliesTo(v) && !FeatureCatalog.isComingSoon(def.key))
+            _tierFeatureName(def, v),
+      ];
+    }
+
+    Set<String> onKeys(PlanProfile p) => {
+          for (final e in p.features.entries)
+            if (e.value) e.key,
+        };
+
+    final mine = onKeys(this);
+    final addOns = names(availableAddOns.map((d) => d.key));
+    final addOnHint = addOns.isEmpty ? '' : ' Add per client: ${_and(addOns)}.';
+
+    if (isOffline) {
+      final things = v == 'pharmacy' ? 'medicines' : 'products';
+      final core = shop
+          ? 'Billing, $things and pricing, receipt printing and day-end'
+          : 'Billing, menu, receipt printing and day-end';
+      final extras = names(mine.where((k) => FeatureCatalog.find(k)?.tier == CommercialTier.offlineAddOn));
+      final trade = _tradeName(v).toLowerCase();
+      final till = shop
+          ? 'a complete ${trade.isEmpty ? 'shop' : trade} till'
+          : (extras.isEmpty ? 'a complete counter till' : 'a complete dine-in till');
+      return 'One device, no internet. $core'
+          '${extras.isEmpty ? '' : ', plus ${_and(extras)}'} — $till.$addOnHint';
+    }
+
+    final premium = tiers.contains(CommercialTier.onlineAddOn);
+    final base = premium ? connected : alignedFor(offlineDineIn, v);
+    final added = names(mine.difference(onKeys(base)));
+    final plus = added.isEmpty ? '' : ' plus ${_and(added)}';
+    final String reach;
+    if (premium) {
+      reach = ', on up to $maxDevices devices and $maxOutlets ${shop ? 'stores' : 'outlets'}';
+    } else if (shop) {
+      reach = '${added.isEmpty ? ' with' : ' and'} multiple billing counters (up to $maxDevices devices)';
+    } else {
+      reach = ', on up to $maxDevices devices';
+    }
+    return 'Everything in ${base.tierLabelFor(v)}$plus$reach.$addOnHint';
+  }
+
+  static String _tierFeatureName(FeatureDef def, String v) {
+    if (def.key == FeatureKeys.stockManagement && v == 'pharmacy') {
+      return 'stock with batches and expiry';
+    }
+    return _lower(def.labelFor(v));
+  }
+
+  /// "Sales analytics" -> "sales analytics"; an acronym ("QR table
+  /// ordering") keeps its capitals.
+  static String _lower(String s) {
+    if (s.length < 2) return s.toLowerCase();
+    final second = s[1];
+    if (second != second.toLowerCase()) return s;
+    return s[0].toLowerCase() + s.substring(1);
+  }
+
+  static String _and(List<String> xs) {
+    if (xs.isEmpty) return '';
+    if (xs.length == 1) return xs.first;
+    return '${xs.sublist(0, xs.length - 1).join(', ')} and ${xs.last}';
+  }
 
   static const PlanProfile offlineSingle = PlanProfile(
     id: 'OFFLINE_SINGLE',
@@ -947,7 +1110,9 @@ class Entitlements {
     /// so they show exactly what is stored.
     bool alignStarterToVertical = false,
   }) {
-    if (isMasterAdmin) return Entitlements.platformAdmin;
+    // The console itself, but in the trade it is looking at, so labels and
+    // trade-aware readers (dashboard cards, role names) stay right.
+    if (isMasterAdmin) return Entitlements.platformAdmin.copyWith(vertical: vertical);
     if (license == null) return Entitlements.grace;
 
     final stored = PlanProfile.byId(
@@ -968,17 +1133,25 @@ class Entitlements {
       if (shop && profile.id != PlanProfile.offlineRetail.id) profile = PlanProfile.offlineRetail;
       if (!shop && profile.id == PlanProfile.offlineRetail.id) profile = PlanProfile.offlineDineIn;
     }
+    // The map was resolved for a different trade from the one running it:
+    // a licence written before 28 Sep 2026 (no stamp; the console resolved
+    // every licence as a restaurant, which put a false against each
+    // shop-only key), or a store whose business type changed after the map
+    // was written (the console then stamps the old trade). A false against a
+    // key this trade has and that trade did not was never anyone's choice,
+    // so those keys fall back to the package. An 'any' map carries every
+    // trade's keys as the package has them and is read as it stands.
+    final stamp = (license.featuresResolvedFor ?? '').trim().toLowerCase();
+    final resolvedFor = stamp.isEmpty ? 'restaurant' : stamp;
     if (alignStarterToVertical &&
-        license.featuresResolvedFor == null &&
         vertical != 'any' &&
-        vertical != 'restaurant') {
-      // Written before 28 Sep 2026: the console resolved every licence as a
-      // restaurant, which put a false against each shop-only key (barcode,
-      // khata, stock). That false was never anyone's choice, so this trade's
-      // own keys fall back to the package.
+        vertical.isNotEmpty &&
+        resolvedFor != 'any' &&
+        resolvedFor != vertical) {
       for (final def in FeatureCatalog.all) {
-        if (def.verticals.isEmpty || def.verticals.contains('restaurant')) continue;
+        if (def.verticals.isEmpty) continue;
         if (!def.verticals.contains(vertical)) continue;
+        if (def.verticals.contains(resolvedFor)) continue;
         if (explicit[def.key] == false) explicit.remove(def.key);
       }
     }
@@ -1082,10 +1255,10 @@ class Entitlements {
     return null;
   }
 
-  /// One sentence, written for a restaurant owner.
+  /// One sentence, written for the store's owner, in their trade's words.
   String explain(String key) {
     final def = FeatureCatalog.find(key);
-    final label = def?.label ?? key;
+    final label = def?.labelFor(vertical) ?? key;
     switch (reasonFor(key)) {
       case BlockReason.none:
         return '$label is available.';
@@ -1102,7 +1275,7 @@ class Entitlements {
         final dep = blockingDependency(key);
         final depLabel = dep == null
             ? 'another feature'
-            : (FeatureCatalog.find(dep)?.label ?? dep);
+            : (FeatureCatalog.find(dep)?.labelFor(vertical) ?? dep);
         return '$label needs $depLabel to be switched on first.';
       case BlockReason.notInPlan:
         return '$label is not part of this store\'s plan. Your platform '

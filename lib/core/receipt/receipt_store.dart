@@ -39,7 +39,24 @@ class OrderChannel {
   static const OrderChannel delivery =
       OrderChannel('Delivery', 'Delivery', 'Sent out to the customer');
 
+  /// A shop's sale: no table, no QR menu, just the counter.
+  static const OrderChannel walkIn =
+      OrderChannel('Walk-in', 'Walk-in', 'Billed at the counter');
+
+  /// A restaurant's order types. Unchanged, so every mapping made before the
+  /// shop trades existed still lines up.
   static const List<OrderChannel> all = [dineIn, takeaway, qr, delivery];
+
+  /// A shop's order types (`Verticals.shops`).
+  static const List<OrderChannel> shopChannels = [walkIn, delivery];
+
+  static const Set<String> _shops = {'kirana', 'supermarket', 'pharmacy', 'retail'};
+
+  /// The order types the slip mapping screen offers a [vertical] tenant.
+  static List<OrderChannel> forVertical(String vertical) =>
+      _shops.contains(vertical.trim().toLowerCase()) ? shopChannels : all;
+
+  static const List<OrderChannel> _known = [dineIn, takeaway, qr, delivery, walkIn];
 
   /// Accepts the spellings the app has used over time — 'Dine-In',
   /// 'dine_in', 'DINE_IN' — so a mapping made today still matches an order
@@ -68,6 +85,11 @@ class OrderChannel {
       case 'delivery':
       case 'deliver':
         return delivery.id;
+      case 'walkin':
+      case 'counter':
+      case 'retailpos':
+      case 'posbillingdesk':
+        return walkIn.id;
       default:
         return raw.trim().isEmpty ? dineIn.id : raw.trim();
     }
@@ -75,7 +97,7 @@ class OrderChannel {
 
   static OrderChannel? find(String raw) {
     final id = normalise(raw);
-    for (final c in all) {
+    for (final c in _known) {
       if (c.id == id) return c;
     }
     return null;
@@ -288,10 +310,14 @@ class ReceiptTemplateStore {
   /// then whatever they mapped as the fallback, then the first template they
   /// have of this kind, then the shipped starter. The last step is what makes
   /// this safe to call from the settlement path.
+  ///
+  /// [vertical] (`Verticals.*`) picks the trade's own shipped default where
+  /// it has one — a pharmacy's invoice carries batch and expiry.
   static Future<ReceiptTemplate> resolve(
     String orgId,
     ReceiptKind kind, {
     String channel = '',
+    String vertical = '',
   }) async {
     try {
       await ensureSeeded(orgId);
@@ -306,15 +332,18 @@ class ReceiptTemplateStore {
       final mine = await all(orgId, kind: kind);
       if (mine.isNotEmpty) {
         final starterFirst = mine.firstWhere(
-          (t) => t.id == StarterTemplates.defaultFor(kind).id,
-          orElse: () => mine.first,
+          (t) => t.id == StarterTemplates.defaultFor(kind, vertical: vertical).id,
+          orElse: () => mine.firstWhere(
+            (t) => StarterTemplates.isOfferedTo(t.id, vertical),
+            orElse: () => mine.first,
+          ),
         );
         return starterFirst;
       }
     } catch (_) {
       // Fall through to the shipped default.
     }
-    return StarterTemplates.defaultFor(kind);
+    return StarterTemplates.defaultFor(kind, vertical: vertical);
   }
 
   /// True when this kind has at least one template mapped or available, so a
