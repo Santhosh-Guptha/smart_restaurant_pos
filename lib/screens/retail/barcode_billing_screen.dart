@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../services/stock_service.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
@@ -260,6 +261,14 @@ class _BarcodeBillingScreenState extends ConsumerState<BarcodeBillingScreen> {
   }
 
   void _addItemToCart(Map<String, dynamic> dish) {
+    // Expired medicine cannot be billed.
+    final blocked = StockService.blockReason(dish);
+    if (blocked != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(blocked), backgroundColor: ClassicTheme.dangerRed),
+      );
+      return;
+    }
     HapticFeedback.lightImpact();
     final dishId = dish['id']?.toString() ?? '';
     final existingIdx = _cart.indexWhere((item) => item.id == dishId);
@@ -890,37 +899,10 @@ class _BarcodeBillingScreenState extends ConsumerState<BarcodeBillingScreen> {
   }
 
   void _decrementLocalStock(List<Map<String, dynamic>> soldItems) {
-    try {
-      final configBox = Hive.isBoxOpen('restaurant_config_box') ? Hive.box('restaurant_config_box') : null;
-      if (configBox == null) return;
-      final saved = configBox.get('restaurant_menu_dishes') as List?;
-      if (saved == null) return;
-
-      final dishes = saved.map((e) => Map<String, dynamic>.from(e as Map)).toList();
-      bool modified = false;
-
-      for (final sold in soldItems) {
-        final id = sold['id']?.toString() ?? '';
-        final qty = (sold['quantity'] as num?)?.toDouble() ?? 1.0;
-        final idx = dishes.indexWhere((d) => d['id'] == id);
-        if (idx != -1) {
-          final curStock = (dishes[idx]['stockQuantity'] ?? dishes[idx]['stock_quantity'] as num?)?.toDouble();
-          if (curStock != null) {
-            final newStock = (curStock - qty).clamp(0.0, double.infinity);
-            dishes[idx]['stockQuantity'] = newStock;
-            dishes[idx]['stock_quantity'] = newStock;
-            modified = true;
-          }
-        }
-      }
-
-      if (modified) {
-        configBox.put('restaurant_menu_dishes', dishes);
-        _catalogDishes = dishes.where((d) => d['isAvailable'] != false).toList();
-      }
-    } catch (e) {
-      debugPrint('Error updating local stock: $e');
-    }
+    // Stock on hand, batches first-to-expire first (StockService).
+    StockService.consumeForSale(soldItems).then((_) {
+      if (mounted) _loadCatalogAndConfig();
+    });
   }
 
   Future<void> _printThermalReceipt(Map<String, dynamic> order) async {

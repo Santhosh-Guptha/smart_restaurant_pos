@@ -690,9 +690,9 @@ class PlanProfile {
   /// Kirana, supermarket, pharmacy and general retail used to be started on
   /// [offlineSingle], which is the bare till: their dashboard showed Barcode
   /// Billing and Customer Khata and the licence denied both, so the free
-  /// trial could not scan a barcode. Stock management is deliberately absent
-  /// \u2014 the card opens the product catalogue and there is no stock screen
-  /// behind it yet.
+  /// trial could not scan a barcode. Stock management (levels, goods in,
+  /// stock counts; batches and expiry for pharmacies) is included now that
+  /// the Stock Manager screen exists.
   static const PlanProfile offlineRetail = PlanProfile(
     id: 'OFFLINE_RETAIL',
     label: 'Shop counter',
@@ -708,6 +708,7 @@ class PlanProfile {
       FeatureKeys.customerKhata,
       FeatureKeys.expenseManagement,
       FeatureKeys.analytics,
+      FeatureKeys.stockManagement,
     },
   );
 

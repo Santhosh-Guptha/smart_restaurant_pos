@@ -1,5 +1,6 @@
 import '../../services/sheet_access_reconciler.dart';
 import '../../services/tenant_metrics_service.dart';
+import '../retail/stock_manager_screen.dart';
 import '../../services/app_icon_service.dart';
 import 'dart:async';
 import '../../providers/dashboard_layout_provider.dart';
@@ -1427,7 +1428,7 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
             accentColor: ClassicTheme.successEmerald,
             onTap: () => Navigator.push(
               context,
-              MaterialPageRoute(builder: (_) => const RestaurantMenuManagementScreen()),
+              MaterialPageRoute(builder: (_) => const StockManagerScreen()),
             ),
           ),
         );

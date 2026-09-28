@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
+import '../../services/stock_service.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
@@ -2234,48 +2235,11 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
   }
 
   void _decrementLocalStock(List<dynamic> items) {
-    try {
-      final configBox = Hive.isBoxOpen('restaurant_config_box') ? Hive.box('restaurant_config_box') : null;
-      final saved = configBox?.get('restaurant_menu_dishes') as List?;
-      if (saved == null || saved.isEmpty) return;
-
-      final dishes = saved.map((e) => Map<String, dynamic>.from(e as Map)).toList();
-      bool changed = false;
-
-      for (final item in items) {
-        if (item is! Map) continue;
-        final pId = (item['productId'] ?? item['id'] ?? '').toString().trim();
-        final pName = (item['name'] ?? '').toString().trim().toLowerCase();
-        final qty = ((item['qty'] ?? item['quantity'] ?? 1) as num).toInt();
-        if (qty <= 0) continue;
-
-        final idx = dishes.indexWhere((d) {
-          final dId = (d['id'] ?? '').toString().trim();
-          final dName = (d['name'] ?? '').toString().trim().toLowerCase();
-          return (pId.isNotEmpty && dId == pId) || (dName == pName);
-        });
-
-        if (idx != -1) {
-          final currentStock = dishes[idx]['stock'];
-          if (currentStock != null && currentStock is num && currentStock >= 0) {
-            final newStock = (currentStock.toInt() - qty).clamp(0, 999999);
-            dishes[idx]['stock'] = newStock;
-            if (newStock == 0) {
-              dishes[idx]['isAvailable'] = false;
-              dishes[idx]['is_available'] = false;
-            }
-            changed = true;
-          }
-        }
-      }
-
-      if (changed) {
-        configBox?.put('restaurant_menu_dishes', dishes);
-        _loadMenuDishes();
-      }
-    } catch (e) {
-      debugPrint('Error decrementing local stock: $e');
-    }
+    // Stock on hand, batches first-to-expire first (StockService).
+    final lines = items.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+    StockService.consumeForSale(lines).then((_) {
+      if (mounted) _loadMenuDishes();
+    });
   }
 
   // ── Printing ────────────────────────────────────────────────────────────

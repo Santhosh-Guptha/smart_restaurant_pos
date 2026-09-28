@@ -65,14 +65,14 @@ void main() {
       expect(f[FeatureKeys.analytics], isTrue);
     });
 
-    test('it carries no floor features, and no stock screen that does not exist', () {
+    test('it carries no floor features, and it has the stock manager', () {
       final f = PlanProfile.offlineRetail.features;
       expect(f[FeatureKeys.tableManagement], isFalse);
       expect(f[FeatureKeys.reservations], isFalse);
       expect(f[FeatureKeys.dineInBilling], isFalse);
       expect(f[FeatureKeys.dualPrinting], isFalse);
-      expect(f[FeatureKeys.stockManagement], isFalse,
-          reason: 'the Stock Manager card opens the product catalogue; do not sell it yet');
+      expect(f[FeatureKeys.stockManagement], isTrue,
+          reason: 'shops track stock (and pharmacies batches/expiry) in Stock Manager');
     });
 
     test('it stays a one-device offline package', () {

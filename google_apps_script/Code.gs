@@ -3591,7 +3591,7 @@ function trialPlan_(businessCategory) {
   var offlineKeys = isRetailSingle ? [
     "billing", "qsrBilling", "menuManagement", "thermalPrinting", "storeConfiguration",
     "dayEndReports", "staffManagement", "backupRestore",
-    "barcodeBilling", "customerKhata", "expenseManagement", "analytics"
+    "barcodeBilling", "customerKhata", "expenseManagement", "analytics", "stockManagement"
   ] : [
     "billing", "qsrBilling", "menuManagement", "thermalPrinting", "storeConfiguration",
     "dayEndReports", "staffManagement", "backupRestore",

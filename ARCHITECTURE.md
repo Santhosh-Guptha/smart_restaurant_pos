@@ -320,3 +320,11 @@ Android enables one of six `<activity-alias>` launcher entries (`MainActivity.kt
 short notice); web swaps the favicon; Windows keeps the brand icon. Signing out keeps the last icon.
 Sources: `assets_src/app_icons/*.svg` + `generate_icons.py` (cairosvg); brand icons can also be rebuilt
 with `dart run flutter_launcher_icons`.
+
+### 9.9 Stock (shops) and batches / expiry (pharmacies)
+`StockService` keeps stock on the catalogue items in Hive (`restaurant_menu_dishes`): `stockQuantity` (the old
+`stock`/`stock_quantity` spellings are read and kept in sync), `reorderLevel`, and for medicines `batches`
+(batch no., expiry, qty, cost). Both tills call `StockService.consumeForSale`, which takes from the batch that
+expires first and never sells an expired batch; a product whose every batch has expired is refused at the
+barcode till. Every change is logged in `stock_movements`. Screen: `StockManagerScreen` (Stock · Expiry ·
+History), on the home card "Stock Manager"; Shop counter (OFFLINE_RETAIL) now includes `stockManagement`.
