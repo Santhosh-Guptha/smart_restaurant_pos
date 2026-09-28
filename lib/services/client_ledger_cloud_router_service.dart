@@ -418,7 +418,7 @@ class ClientLedgerCloudRouterService {
 
       final layout = SheetLayout.active;
       if (directClient != null && layout.isShop) {
-        return _upsertShopProduct(directClient, sheetId, productData, layout);
+        return await _upsertShopProduct(directClient, sheetId, productData, layout);
       }
 
       if (directClient != null) {
@@ -555,7 +555,7 @@ class ClientLedgerCloudRouterService {
       directClient ??= await getAuthenticatedClientIfAvailable();
 
       if (directClient != null && SheetLayout.active.isShop) {
-        return RestaurantSheetsService.syncMenuDishes(
+        return await RestaurantSheetsService.syncMenuDishes(
           authenticatedClient: directClient,
           sheetId: sheetId,
           dishes: activeProducts,
