@@ -1,11 +1,12 @@
 import 'package:bcrypt/bcrypt.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 
 import '../core/classic_theme.dart';
 import '../core/responsive.dart';
-import '../utils/ui_feedback.dart';
+import '../providers/auth_provider.dart';
 
 /// Change the signed-in user's own password.
 ///
@@ -14,7 +15,12 @@ import '../utils/ui_feedback.dart';
 /// field, updates this device's offline copy and leaves an audit entry.
 /// Works for the platform admin (users/usr_master_admin) and any account in
 /// `users` or `staff_users`.
-class ChangePasswordDialog extends StatefulWidget {
+///
+/// After a change the user is signed out here and must sign in with the new
+/// password; other devices signed in to the same account are signed out by
+/// the session's user listener (passwordChangedAt), and their offline copy of
+/// the old password is deleted.
+class ChangePasswordDialog extends ConsumerStatefulWidget {
   final String userId;
   final String email;
   final String? orgId;
@@ -29,16 +35,17 @@ class ChangePasswordDialog extends StatefulWidget {
   }
 
   @override
-  State<ChangePasswordDialog> createState() => _ChangePasswordDialogState();
+  ConsumerState<ChangePasswordDialog> createState() => _ChangePasswordDialogState();
 }
 
-class _ChangePasswordDialogState extends State<ChangePasswordDialog> {
+class _ChangePasswordDialogState extends ConsumerState<ChangePasswordDialog> {
   final _formKey = GlobalKey<FormState>();
   final _current = TextEditingController();
   final _next = TextEditingController();
   final _confirm = TextEditingController();
   bool _busy = false;
-  bool _show = false;
+  // Each field has its own eye.
+  final _visible = <int>{};
   String? _error;
 
   @override
@@ -109,9 +116,26 @@ class _ChangePasswordDialogState extends State<ChangePasswordDialog> {
       } catch (_) {}
 
       if (!mounted) return;
-      Navigator.of(context).pop();
-      AppToast.showSuccess(context, 'Password changed',
-          subtitle: 'Use the new password next time you sign in, on every device.');
+      final nav = Navigator.of(context);
+      await showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => AlertDialog(
+          icon: const Icon(Icons.verified_user_rounded, color: ClassicTheme.successEmerald, size: 36),
+          title: const Text('Password changed'),
+          content: const Text(
+              'You will be signed out now. Sign in again with your new password. '
+              'Any other device signed in to this account is signed out too.'),
+          actions: [
+            FilledButton(onPressed: () => Navigator.pop(ctx), child: const Text('Sign in again')),
+          ],
+        ),
+      );
+      try {
+        await Hive.box('configBox').put('saas_signed_out_reason', 'PASSWORD_CHANGED');
+      } catch (_) {}
+      if (nav.canPop()) nav.pop();
+      await ref.read(authProvider.notifier).signOut();
     } catch (e) {
       if (mounted) {
         setState(() {
@@ -124,13 +148,14 @@ class _ChangePasswordDialogState extends State<ChangePasswordDialog> {
 
   @override
   Widget build(BuildContext context) {
-    InputDecoration deco(String label) => InputDecoration(
+    InputDecoration deco(String label, int field) => InputDecoration(
           labelText: label,
           prefixIcon: const Icon(Icons.lock_outline_rounded, size: 18),
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
           suffixIcon: IconButton(
-            icon: Icon(_show ? Icons.visibility_off_rounded : Icons.visibility_rounded, size: 18),
-            onPressed: () => setState(() => _show = !_show),
+            tooltip: _visible.contains(field) ? 'Hide' : 'Show',
+            icon: Icon(_visible.contains(field) ? Icons.visibility_off_rounded : Icons.visibility_rounded, size: 18),
+            onPressed: () => setState(() => _visible.contains(field) ? _visible.remove(field) : _visible.add(field)),
           ),
         );
     return AlertDialog(
@@ -148,22 +173,22 @@ class _ChangePasswordDialogState extends State<ChangePasswordDialog> {
                 const SizedBox(height: 14),
                 TextFormField(
                   controller: _current,
-                  obscureText: !_show,
-                  decoration: deco('Current password'),
+                  obscureText: !_visible.contains(0),
+                  decoration: deco('Current password', 0),
                   validator: (v) => (v ?? '').isEmpty ? 'Required' : null,
                 ),
                 const SizedBox(height: 12),
                 TextFormField(
                   controller: _next,
-                  obscureText: !_show,
-                  decoration: deco('New password'),
+                  obscureText: !_visible.contains(1),
+                  decoration: deco('New password', 1),
                   validator: _strength,
                 ),
                 const SizedBox(height: 12),
                 TextFormField(
                   controller: _confirm,
-                  obscureText: !_show,
-                  decoration: deco('Confirm new password'),
+                  obscureText: !_visible.contains(2),
+                  decoration: deco('Confirm new password', 2),
                   validator: (v) => v != _next.text ? 'Passwords do not match' : null,
                 ),
                 if (_error != null) ...[

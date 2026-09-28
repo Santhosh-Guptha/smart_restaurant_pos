@@ -51,6 +51,15 @@ class _SaaSLoginScreenState extends ConsumerState<SaaSLoginScreen> {
     if (savedEmail != null && savedEmail.isNotEmpty) {
       _emailController.text = savedEmail;
     }
+    // Signed out because the password was changed (here or on another device).
+    if (box.get('saas_signed_out_reason') == 'PASSWORD_CHANGED') {
+      box.delete('saas_signed_out_reason');
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        AppToast.showInfo(context, 'Your password was changed',
+            subtitle: 'Sign in with the new password.');
+      });
+    }
   }
 
   @override

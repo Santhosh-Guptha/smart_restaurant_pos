@@ -840,6 +840,9 @@ class SaasSessionNotifier extends StateNotifier<SaasSessionState> {
       await box.put('saas_logged_in', true);
       await box.put('saas_remember_me', rememberMe);
       await box.put('saas_login_timestamp', DateTime.now().toIso8601String());
+      // The password version this sign-in used; a later change on any device
+      // signs this one out (see the user listener).
+      await box.put('saas_pwd_changed_seen', _pwdChangedMillis(userData['passwordChangedAt']));
       await box.put('saas_last_email', input);
       await box.put('saas_last_username', username);
       await box.put('saas_user', jsonEncode(user.toJson()));
@@ -1991,6 +1994,25 @@ class SaasSessionNotifier extends StateNotifier<SaasSessionState> {
               await clearSession();
               return;
             }
+            // Password changed (here or on another device) after this device
+            // signed in: sign out so the new password is needed.
+            // Compared against the value seen at sign-in, not the device
+            // clock, so a slow clock can't cause a sign-out loop.
+            if (userSnapshot.metadata.isFromCache) return;
+            final changed = _pwdChangedMillis(uData['passwordChangedAt']);
+            final box = Hive.box('configBox');
+            final seen = box.get('saas_pwd_changed_seen');
+            if (seen is! int) {
+              await box.put('saas_pwd_changed_seen', changed);
+            } else if (changed > seen) {
+              debugPrint("🔐 [Realtime] Password changed for $currentUserId. Signing out...");
+              await box.put('saas_signed_out_reason', 'PASSWORD_CHANGED');
+              // The offline copy of the old password must not keep working.
+              final em = state.currentUser?.email.trim().toLowerCase();
+              if (em != null && em.isNotEmpty) await box.delete('saas_password_hash_$em');
+              await clearSession();
+              return;
+            }
           }
         }, onError: (e) {
           debugPrint("Realtime user listener error: $e");
@@ -1999,6 +2021,13 @@ class SaasSessionNotifier extends StateNotifier<SaasSessionState> {
     } catch (e) {
       debugPrint("Failed to setup realtime listeners (probably Firebase not initialized): $e");
     }
+  }
+
+  static int _pwdChangedMillis(dynamic v) {
+    if (v is Timestamp) return v.millisecondsSinceEpoch;
+    if (v is DateTime) return v.millisecondsSinceEpoch;
+    if (v is int) return v;
+    return DateTime.tryParse((v ?? '').toString())?.millisecondsSinceEpoch ?? 0;
   }
 
   void _cancelListeners() {
