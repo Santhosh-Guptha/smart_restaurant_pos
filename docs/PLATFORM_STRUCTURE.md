@@ -25,16 +25,21 @@ Each trade has five packages (tiers), ids `<trade>_<tier>`:
 
 Features per tier (only keys that apply to the trade are ever shown or stored as on):
 
-| Tier | Restaurant | Shops (kirana, supermarket, pharmacy, retail) |
-|---|---|---|
-| offline | core + dine-in, tables, reservations, KOT/dual printing, expenses, analytics | core + barcode billing, khata, stock (pharmacy: batches & expiry), expenses, analytics |
-| basic | offline + cloud ledger on own Drive | offline + cloud ledger on own Drive |
-| standard | basic + e-mail bills, kitchen display, waiter ordering | basic + e-mail bills |
-| premium | standard + online menu, QR ordering, online orders, multiple outlets | standard + multiple outlets |
-| enterprise | premium, custom limits | premium, custom limits |
+| Tier | Restaurant | Supermarket, Pharmacy, Retail | Kirana |
+|---|---|---|---|
+| offline | core + dine-in, tables, reservations, KOT/dual printing, expenses, analytics | core + barcode billing, khata, stock (pharmacy: batches & expiry), expenses, analytics | core + barcode billing, khata, stock, expenses, analytics |
+| basic | offline + cloud ledger on own Drive | offline + cloud ledger on own Drive | offline + cloud ledger on own Drive |
+| standard | basic + e-mail bills, kitchen display, waiter ordering | basic + e-mail bills | basic + e-mail bills |
+| premium | standard + online menu, QR ordering, online orders, multiple outlets | standard + multiple outlets | standard (same features, 1 store / 1 device / 1 user) |
+| enterprise | premium, custom limits | premium, custom limits | standard (1 store / 1 device / 1 user) |
 
 "core" = the always-included keys (billing, counter till, products/menu, printing,
 store settings, day-end, staff, backup & restore).
+
+### Trade limit rules
+- **Kirana / Grocery Store**: Strictly single store (`1 store`), single counter (`1 device`), single user (`1 user`, owner-only) across all tiers. No multiple outlets (`multiOutlet` does not apply), no multi-counter checkout, no staff accounts. Neighborhood grocers who expand to multiple counters, cashiers or branches upgrade to Supermarket.
+- **Supermarket / Departmental Store, Pharmacy, Retail**: Multi-counter, multi-user and multi-store operations following the tier limits table above (2-20+ devices, 1-10+ stores, 3-50+ users, OWNER / MANAGER / BILLING roles).
+- **Restaurant**: 2-20+ devices, 1-10+ outlets, 3-50+ users, OWNER / MANAGER / BILLING / WAITER / KITCHEN roles.
 
 A package heading always reads "Features available for <Trade> — <Tier>".
 
@@ -52,8 +57,7 @@ document** for **this client only**. Editing one updates the other live
 (Firestore snapshot). Neither writes to a package or to another client.
 Applying a changed package to its tenants is a separate, confirmed admin action.
 
-Roles: offline → OWNER only. Shops → OWNER, MANAGER, BILLING. Restaurant standard+
-→ also WAITER, KITCHEN (second device required).
+Roles: offline → OWNER only. Kirana → OWNER only (single user). Shops (Supermarket, Pharmacy, Retail) → OWNER, MANAGER, BILLING. Restaurant standard+ → also WAITER, KITCHEN (second device required).
 
 ## 6. Offline tier
 Runs on the device without depending on the cloud. One device, one store, one

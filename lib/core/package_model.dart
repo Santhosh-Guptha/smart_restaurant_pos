@@ -92,10 +92,12 @@ class TenantPackage {
   }
 
   /// Default devices / outlets / users for a tenant put on this package.
-  /// Offline is always 1 / 1 / 1. Otherwise what the package stores, else
+  /// Offline and Kirana are always 1 / 1 / 1. Otherwise what the package stores, else
   /// the tier's [PackageTier.defaultLimits].
   TierLimits get limits =>
-      tier.isOffline ? TierLimits.offline : (storedLimits ?? tier.defaultLimits).clamped;
+      (tier.isOffline || vertical == Verticals.kirana)
+          ? TierLimits.kirana
+          : (storedLimits ?? tier.defaultLimits).clamped;
 
   int get maxDevices => limits.maxDevices;
   int get maxOutlets => limits.maxOutlets;
@@ -411,7 +413,7 @@ class PackageCatalog {
       if (tier.includesTier(PackageTier.basic)) FeatureKeys.cloudSync,
       if (standard) FeatureKeys.emailReceipts,
       if (standard && !shop) ...[FeatureKeys.kdsEnabled, FeatureKeys.waiterOrdering],
-      if (premium) FeatureKeys.multiOutlet,
+      if (premium && v != Verticals.kirana) FeatureKeys.multiOutlet,
       if (premium && !shop) ...[
         FeatureKeys.onlineMenu,
         FeatureKeys.qrOrdering,
@@ -514,7 +516,9 @@ class PackageCatalog {
     final l = tier.defaultLimits;
     final stores = shop ? 'stores' : 'outlets';
     final String reach;
-    if (tier.allowsCustomLimits) {
+    if (v == Verticals.kirana) {
+      reach = 'Single device, single store and single user (owner-operated).';
+    } else if (tier.allowsCustomLimits) {
       reach = 'Devices, $stores and users are set for your business.';
     } else {
       reach = 'Up to ${l.maxDevices} devices, ${l.maxOutlets} ${l.maxOutlets == 1 ? (shop ? 'store' : 'outlet') : stores} '
@@ -548,7 +552,7 @@ class PackageCatalog {
       isStarter: true,
       sortOrder: Verticals.all.indexOf(v) * 10 + tier.index,
       tier: tier,
-      limits: tier.defaultLimits,
+      limits: v == Verticals.kirana ? TierLimits.kirana : tier.defaultLimits,
     );
   }
 

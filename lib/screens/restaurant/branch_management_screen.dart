@@ -72,8 +72,10 @@ class _BranchManagementScreenState
             ],
           ),
           content: Text(
-            'Your package allows up to $maxBranches ${vl.subscriptionBranchQuota}.\n\n'
-            'To expand your franchise scale and onboard additional outlets, please contact your account manager or platform administrator.',
+            vertical == Verticals.kirana
+                ? 'Kirana stores are single-store by design.\n\nTo manage multiple branches or chain stores under one account, please upgrade your business category to Supermarket.'
+                : 'Your package allows up to $maxBranches ${vl.subscriptionBranchQuota}.\n\n'
+                    'To expand your franchise scale and onboard additional outlets, please contact your account manager or platform administrator.',
             style: TextStyle(color: context.textSecondary, fontSize: 14),
           ),
           actions: [

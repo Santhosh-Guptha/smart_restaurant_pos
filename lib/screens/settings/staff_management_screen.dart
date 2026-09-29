@@ -57,7 +57,8 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
     return active + 1;
   }
 
-  void _showUserLimitDialog({required bool ownerOnly, required int maxUsers, required bool restaurant}) {
+  void _showUserLimitDialog({required bool ownerOnly, required int maxUsers, required bool restaurant, String vertical = ''}) {
+    final isKirana = vertical.trim().toLowerCase() == 'kirana';
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -70,18 +71,22 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
             const SizedBox(width: 10),
             Expanded(
               child: Text(
-                ownerOnly ? 'One user on Offline' : 'User limit reached',
+                isKirana
+                    ? 'Kirana is single-user'
+                    : (ownerOnly ? 'One user on Offline' : 'User limit reached'),
                 style: TextStyle(color: context.textPrimary, fontWeight: FontWeight.bold),
               ),
             ),
           ],
         ),
         content: Text(
-          ownerOnly
-              ? 'Offline stores have one user — the owner. Move to Basic or above to add staff.'
-              : 'Your package allows up to $maxUsers users, including the owner.\n\n'
-                  'To add more team members${restaurant ? " across your stations" : ""}, ask for a '
-                  'bigger package, or deactivate someone who no longer needs access.',
+          isKirana
+              ? 'Kirana stores are owner-operated (one user). To add cashiers, managers, and staff accounts, please upgrade your business category to Supermarket.'
+              : (ownerOnly
+                  ? 'Offline stores have one user — the owner. Move to Basic or above to add staff.'
+                  : 'Your package allows up to $maxUsers users, including the owner.\n\n'
+                      'To add more team members${restaurant ? " across your stations" : ""}, ask for a '
+                      'bigger package, or deactivate someone who no longer needs access.'),
           style: TextStyle(color: context.textSecondary, fontSize: 13, height: 1.4),
         ),
         actions: [
@@ -123,7 +128,7 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
     final usersInUse = _usersInUse(staffList);
     final ownerOnly = seatEnt.isPureOffline || seatEnt.maxUsers <= 1;
     if (existing == null && (ownerOnly || usersInUse >= seatEnt.maxUsers)) {
-      _showUserLimitDialog(ownerOnly: ownerOnly, maxUsers: seatEnt.maxUsers, restaurant: vl.isRestaurant);
+      _showUserLimitDialog(ownerOnly: ownerOnly, maxUsers: seatEnt.maxUsers, restaurant: vl.isRestaurant, vertical: vertical);
       return;
     }
 

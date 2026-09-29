@@ -41,7 +41,7 @@ class AdminDashboardView extends ConsumerWidget {
                   builder: (context, inqSnap) {
                     final clientOrgs = orgSnap.hasData
                         ? orgSnap.data!.docs.where((d) {
-                            if (d.id == 'SYSTEM_ADMIN') return false;
+                            if (d.id == 'SYSTEM_ADMIN' || d.id == 'ORG_DEFAULT' || d.id == 'default') return false;
                             final data = d.data() as Map<String, dynamic>;
                             return (data['status'] ?? '').toString().toUpperCase() != 'DELETED';
                           }).toList()
@@ -49,7 +49,7 @@ class AdminDashboardView extends ConsumerWidget {
                     final totalOrgs = clientOrgs.length;
 
                     final clientLicDocs = licSnap.hasData
-                        ? licSnap.data!.docs.where((d) => d.id != 'SYSTEM_ADMIN').toList()
+                        ? licSnap.data!.docs.where((d) => d.id != 'SYSTEM_ADMIN' && d.id != 'ORG_DEFAULT' && d.id != 'default').toList()
                         : <QueryDocumentSnapshot>[];
                     final totalLicenses = clientLicDocs.length;
                     final pendingTrials = regSnap.hasData ? regSnap.data!.docs.length : 0;
@@ -765,7 +765,11 @@ class AdminDashboardView extends ConsumerWidget {
     required bool isMobile,
     VoidCallback? onNavigateToTenants,
   }) {
-    final clientDocs = docs.where((d) => d.id != 'SYSTEM_ADMIN').toList();
+    final clientDocs = docs.where((d) {
+      if (d.id == 'SYSTEM_ADMIN' || d.id == 'ORG_DEFAULT' || d.id == 'default') return false;
+      final data = d.data() as Map<String, dynamic>;
+      return (data['status'] ?? '').toString().toUpperCase() != 'DELETED';
+    }).toList();
 
     return Container(
       padding: EdgeInsets.all(isMobile ? 14 : 20),

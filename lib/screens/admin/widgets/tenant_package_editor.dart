@@ -144,11 +144,11 @@ class TenantPackageSelection {
   /// The package's tier.
   PackageTier get tier => package.tier;
 
-  /// Offline: 1 device, 1 outlet, 1 user, never editable.
-  bool get limitsLocked => tier.isOffline;
+  /// Offline and Kirana: 1 device, 1 outlet, 1 user, never editable.
+  bool get limitsLocked => tier.isOffline || trade == Verticals.kirana;
 
-  /// Enterprise always; another cloud tier only under [adminOverride].
-  bool get limitsEditable => !tier.isOffline && (tier.allowsCustomLimits || adminOverride);
+  /// Enterprise always; another cloud tier only under [adminOverride] (except Kirana, which is fixed).
+  bool get limitsEditable => !limitsLocked && (tier.allowsCustomLimits || adminOverride);
 
   /// What the limit fields show before the composer clamps: the custom
   /// limits while editable, otherwise the package's defaults.

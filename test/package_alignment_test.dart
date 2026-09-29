@@ -217,7 +217,8 @@ void main() {
 
     test('a shop gets no waiter or kitchen role', () {
       for (final v in Verticals.shops) {
-        expect(LicenseComposer.compose(pkg, plan, vertical: v).allowedRoles, ['OWNER', 'MANAGER', 'BILLING'],
+        final expectedRoles = v == Verticals.kirana ? ['OWNER'] : ['OWNER', 'MANAGER', 'BILLING'];
+        expect(LicenseComposer.compose(pkg, plan, vertical: v).allowedRoles, expectedRoles,
             reason: v);
       }
     });

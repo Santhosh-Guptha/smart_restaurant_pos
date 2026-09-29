@@ -3805,7 +3805,11 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                   return Center(child: Text("No client organizations registered yet.", style: TextStyle(color: context.textSecondary)));
                 }
 
-                final docs = snapshot.data!.docs.where((d) => d.id != 'SYSTEM_ADMIN').toList();
+                final docs = snapshot.data!.docs.where((d) {
+                  if (d.id == 'SYSTEM_ADMIN' || d.id == 'ORG_DEFAULT' || d.id == 'default') return false;
+                  final data = d.data() as Map<String, dynamic>;
+                  return (data['status'] ?? '').toString().toUpperCase() != 'DELETED';
+                }).toList();
                 if (docs.isEmpty) {
                   return Center(child: Text("No client organizations registered yet.", style: TextStyle(color: context.textSecondary)));
                 }

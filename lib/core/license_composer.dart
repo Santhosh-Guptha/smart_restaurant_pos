@@ -137,10 +137,14 @@ class LicenseComposer {
 
   /// Roles for a licence (contract §5): offline -> OWNER only; a shop ->
   /// OWNER, MANAGER, BILLING; a restaurant (or an unknown trade) on
-  /// Standard or above with more than one device also WAITER and KITCHEN.
+  /// Roles for a licence (contract §5): offline -> OWNER only; Kirana -> OWNER
+  /// only (single user); a shop -> OWNER, MANAGER, BILLING; a restaurant
+  /// (or an unknown trade) on Standard or above with more than one device
+  /// also WAITER and KITCHEN.
   static List<String> rolesFor(String vertical, PackageTier tier, int maxDevices) {
-    if (tier.isOffline) return ['OWNER'];
-    final shop = Verticals.isShop(vertical.trim().toLowerCase());
+    final v = vertical.trim().toLowerCase();
+    if (tier.isOffline || v == Verticals.kirana) return ['OWNER'];
+    final shop = Verticals.isShop(v);
     return [
       'OWNER',
       'MANAGER',
@@ -189,23 +193,24 @@ class LicenseComposer {
 
     final tier = StorageModes.isOffline(mode) ? PackageTier.offline : package.tier;
 
+    // The trade the map is resolved for, and the trade the roles follow.
+    final packageTrade = Verticals.isAny(package.vertical) ? null : package.vertical;
+    final resolveFor = packageTrade ?? Verticals.any;
+    final roleTrade = Verticals.isAny(vertical) ? (packageTrade ?? Verticals.any) : vertical.trim().toLowerCase();
+    final isKirana = resolveFor == Verticals.kirana || roleTrade == Verticals.kirana;
+
     // Limits: the package's (its tier's defaults), unless custom limits are
-    // allowed here. Offline is fixed.
+    // allowed here. Offline and Kirana are fixed to 1 / 1 / 1.
     var lim = package.limits;
     var limitsCustom = false;
     final requested = limits;
-    if (tier.isOffline) {
-      lim = TierLimits.offline;
+    if (tier.isOffline || isKirana) {
+      lim = TierLimits.kirana;
     } else if (requested != null && (tier.allowsCustomLimits || adminOverride)) {
       final c = requested.clamped;
       limitsCustom = c != lim;
       lim = c;
     }
-
-    // The trade the map is resolved for, and the trade the roles follow.
-    final packageTrade = Verticals.isAny(package.vertical) ? null : package.vertical;
-    final resolveFor = packageTrade ?? Verticals.any;
-    final roleTrade = Verticals.isAny(vertical) ? (packageTrade ?? Verticals.any) : vertical.trim().toLowerCase();
 
     final input = Map<String, bool>.from(package.features);
     final honoured = <String>[];

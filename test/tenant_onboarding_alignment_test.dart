@@ -77,11 +77,17 @@ void main() {
     });
 
     test('own-Drive trial: Basic defaults and the trade\'s roles', () {
-      final shop = LicenseComposer.compose(PackageCatalog.starter('kirana', PackageTier.basic), trial, vertical: 'kirana');
+      final shop = LicenseComposer.compose(PackageCatalog.starter('supermarket', PackageTier.basic), trial, vertical: 'supermarket');
       expect(shop.tier, PackageTier.basic);
       expect(shop.limits, TierLimits.basic);
       expect(shop.allowedRoles, ['OWNER', 'MANAGER', 'BILLING']);
       expect(StorageModes.isOffline(shop.storageMode), isFalse);
+
+      final kirana = LicenseComposer.compose(PackageCatalog.starter('kirana', PackageTier.basic), trial, vertical: 'kirana');
+      expect(kirana.tier, PackageTier.basic);
+      expect(kirana.limits, TierLimits.kirana);
+      expect(kirana.allowedRoles, ['OWNER']);
+      expect(StorageModes.isOffline(kirana.storageMode), isFalse);
 
       final dine = LicenseComposer.compose(
           PackageCatalog.starter('restaurant', PackageTier.basic), trial, vertical: 'restaurant');

@@ -151,8 +151,15 @@ void main() {
 
     test('a cloud tier takes its package\'s limits, not the plan\'s', () {
       for (final t in PackageTier.values.where((t) => !t.isOffline)) {
-        final c = LicenseComposer.compose(TenantPackage.starterFor('kirana', t), _yearly, vertical: 'kirana');
+        final c = LicenseComposer.compose(TenantPackage.starterFor('supermarket', t), _yearly, vertical: 'supermarket');
         expect(c.limits, t.defaultLimits, reason: t.id);
+      }
+    });
+
+    test('kirana cloud tiers are strictly single device, single store, single user', () {
+      for (final t in PackageTier.values.where((t) => !t.isOffline)) {
+        final c = LicenseComposer.compose(TenantPackage.starterFor('kirana', t), _yearly, vertical: 'kirana');
+        expect(c.limits, TierLimits.kirana, reason: t.id);
       }
     });
   });

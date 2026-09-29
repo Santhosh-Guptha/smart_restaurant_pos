@@ -150,9 +150,9 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
       case Verticals.restaurant:
         return "Get instant access to POS billing, tables, KDS, and QR ordering.";
       case Verticals.kirana:
-        return "Get instant access to barcode billing, inventory, khata, and receipts.";
+        return "Get instant access to single-counter barcode billing, inventory, khata, and receipts.";
       case Verticals.supermarket:
-        return "Get instant access to fast barcode POS, stock manager, and analytics.";
+        return "Get instant access to multi-counter barcode POS, multi-branch, stock manager, and analytics.";
       case Verticals.pharmacy:
         return "Get instant access to medicine billing, inventory, khata, and receipts.";
       case Verticals.retail:
@@ -218,9 +218,9 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
       case Verticals.restaurant:
         return "For multi-outlet restaurant chains needing customized franchise limits and dedicated consultation.";
       case Verticals.kirana:
-        return "For multi-branch grocery chains needing customized store limits and dedicated consultation.";
+        return "Kirana is single-store and single-counter by design. For supermarket or chain operations, select Supermarket.";
       case Verticals.supermarket:
-        return "For supermarket chains needing multi-store setup, central warehouse, and dedicated consultation.";
+        return "For supermarket chains needing multi-store setup, multiple counters, central warehouse, and dedicated consultation.";
       case Verticals.pharmacy:
         return "For pharmacy chains needing multi-outlet inventory, batch tracking, and dedicated consultation.";
       case Verticals.retail:
@@ -290,6 +290,9 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
 
   /// "Up to 2 devices · 1 store · 3 users" for [tier] in this trade.
   String _limitsLine(PackageTier tier) {
+    if (_vertical == Verticals.kirana) {
+      return '1 device · 1 store · 1 user (owner-operated)';
+    }
     final shop = Verticals.isShop(_vertical);
     final l = tier.defaultLimits;
     String n(int v, String one, String many) => '$v ${v == 1 ? one : many}';

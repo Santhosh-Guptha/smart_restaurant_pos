@@ -477,6 +477,7 @@ class FeatureCatalog {
       iconCode: 'store',
       need: FeatureNeed.cloud,
       dependsOn: [FeatureKeys.cloudSync],
+      verticals: {'restaurant', 'supermarket', 'pharmacy', 'retail'},
     ),
     FeatureDef(
       key: FeatureKeys.inventoryEnabled,
@@ -720,6 +721,15 @@ enum PackageTier {
     }
   }
 
+  /// Default limits for a specific trade. Kirana is strictly single-device,
+  /// single-store, single-user (owner-operated) across all tiers.
+  TierLimits defaultLimitsFor([String? vertical]) {
+    if ((vertical ?? '').trim().toLowerCase() == 'kirana') {
+      return TierLimits.kirana;
+    }
+    return defaultLimits;
+  }
+
   /// The storage mode a package on this tier is created with. Offline runs
   /// on the device; every other tier on the client's own Google Sheets
   /// (a cloud package still accepts `CLOUD_SYNC` for tenants already on it).
@@ -839,6 +849,9 @@ class TierLimits {
 
   /// Enterprise defaults; the client chooses their own.
   static const TierLimits enterprise = TierLimits(maxDevices: 20, maxOutlets: 10, maxUsers: 50);
+
+  /// Kirana: strictly single device, single store, single user (owner-operated).
+  static const TierLimits kirana = TierLimits(maxDevices: 1, maxOutlets: 1, maxUsers: 1);
 
   /// Every value at least 1.
   TierLimits get clamped => TierLimits(
@@ -1445,17 +1458,18 @@ class Entitlements {
       );
     }
     final licenceUsers = license.maxUsers > 0 ? license.maxUsers : tier.defaultLimits.maxUsers;
+    final isKirana = vertical.trim().toLowerCase() == 'kirana';
 
     return Entitlements(
       profile: profile,
       explicit: explicit,
       licenceActive: license.isActive,
       storageMode: mode,
-      maxDevices: offline ? 1 : licenceDevices,
-      maxOutlets: offline ? 1 : licenceOutlets,
+      maxDevices: (offline || isKirana) ? 1 : licenceDevices,
+      maxOutlets: (offline || isKirana) ? 1 : licenceOutlets,
       vertical: vertical,
       tier: tier,
-      maxUsers: offline ? 1 : licenceUsers,
+      maxUsers: (offline || isKirana) ? 1 : licenceUsers,
     );
   }
 

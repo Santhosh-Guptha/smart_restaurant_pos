@@ -181,7 +181,7 @@ class _AdminPackagesViewState extends ConsumerState<AdminPackagesView> {
     final accent = TierVisuals.color(t);
     final included = TierSummary.includedIn(p);
     final addOns = TierSummary.addOns(_trade, t, package: p);
-    final canEditLimits = TierSummary.limitsEditable(t);
+    final canEditLimits = TierSummary.limitsEditable(t, vertical: _trade);
 
     return Container(
       padding: const EdgeInsets.all(DS.space4),

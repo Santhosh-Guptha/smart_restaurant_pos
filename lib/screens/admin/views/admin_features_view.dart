@@ -411,7 +411,11 @@ class _AdminFeaturesViewState extends ConsumerState<AdminFeaturesView> {
       builder: (context, orgSnap) {
         final List<QueryDocumentSnapshot<Object?>> orgDocs =
             (orgSnap.data?.docs ?? const <QueryDocumentSnapshot<Object?>>[])
-                .where((d) => d.id != 'SYSTEM_ADMIN')
+                .where((d) {
+                  if (d.id == 'SYSTEM_ADMIN' || d.id == 'ORG_DEFAULT' || d.id == 'default') return false;
+                  final data = d.data() as Map<String, dynamic>;
+                  return (data['status'] ?? '').toString().toUpperCase() != 'DELETED';
+                })
                 .toList();
 
         if (_selectedOrgId == null && orgDocs.isNotEmpty) {

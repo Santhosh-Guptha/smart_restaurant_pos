@@ -108,7 +108,8 @@ void main() {
       expect(so.contains(FeatureKeys.tableManagement), isFalse);
       expect(on('kirana', PackageTier.basic).difference(on('kirana', PackageTier.offline)), {FeatureKeys.cloudSync});
       expect(on('kirana', PackageTier.standard).difference(on('kirana', PackageTier.basic)), {FeatureKeys.emailReceipts});
-      expect(on('kirana', PackageTier.premium).difference(on('kirana', PackageTier.standard)), {FeatureKeys.multiOutlet});
+      expect(on('kirana', PackageTier.premium).difference(on('kirana', PackageTier.standard)), isEmpty);
+      expect(on('supermarket', PackageTier.premium).difference(on('supermarket', PackageTier.standard)), {FeatureKeys.multiOutlet});
       expect(on('restaurant', PackageTier.standard).difference(on('restaurant', PackageTier.basic)),
           {FeatureKeys.emailReceipts, FeatureKeys.kdsEnabled, FeatureKeys.waiterOrdering});
       expect(on('restaurant', PackageTier.premium).difference(on('restaurant', PackageTier.standard)),
@@ -238,7 +239,7 @@ void main() {
     test('below Enterprise, custom limits are ignored unless an admin overrides', () {
       const custom = TierLimits(maxDevices: 7, maxOutlets: 4, maxUsers: 12);
       for (final t in [PackageTier.basic, PackageTier.standard, PackageTier.premium]) {
-        final pkg = TenantPackage.starterFor('kirana', t);
+        final pkg = TenantPackage.starterFor('supermarket', t);
         final c = LicenseComposer.compose(pkg, _yearly, limits: custom);
         expect(c.limits, t.defaultLimits, reason: t.id);
         expect(c.limitsCustom, isFalse, reason: t.id);
@@ -246,6 +247,16 @@ void main() {
         expect(o.limits, custom, reason: t.id);
         expect(o.limitsCustom, isTrue, reason: t.id);
         expect(o.toLicenseFields()['limitsCustom'], isTrue, reason: t.id);
+      }
+    });
+
+    test('kirana is strictly 1 device, 1 store, 1 user and OWNER only across all tiers', () {
+      for (final t in PackageTier.values) {
+        final pkg = TenantPackage.starterFor('kirana', t);
+        expect(pkg.limits, TierLimits.kirana, reason: t.id);
+        final c = LicenseComposer.compose(pkg, _yearly, vertical: 'kirana');
+        expect(c.limits, TierLimits.kirana, reason: t.id);
+        expect(c.allowedRoles, ['OWNER'], reason: t.id);
       }
     });
 
@@ -265,7 +276,7 @@ void main() {
               vertical: v, limits: TierLimits.enterprise, adminOverride: true);
           expect(c.allowedRoles, isNot(contains('WAITER')), reason: '$v ${t.id}');
           expect(c.allowedRoles, isNot(contains('KITCHEN')), reason: '$v ${t.id}');
-          expect(c.allowedRoles, t.isOffline ? ['OWNER'] : ['OWNER', 'MANAGER', 'BILLING'], reason: '$v ${t.id}');
+          expect(c.allowedRoles, (t.isOffline || v == Verticals.kirana) ? ['OWNER'] : ['OWNER', 'MANAGER', 'BILLING'], reason: '$v ${t.id}');
         }
       }
       expect(LicenseComposer.compose(TenantPackage.starterFor('restaurant', PackageTier.basic), _yearly).allowedRoles,
@@ -330,12 +341,17 @@ void main() {
     });
 
     test('add-ons are honoured only when the package offers them', () {
-      final pkg = TenantPackage.starterFor('kirana', PackageTier.basic);
+      final pkg = TenantPackage.starterFor('supermarket', PackageTier.basic);
       final c = LicenseComposer.compose(pkg, _yearly,
           addOns: {FeatureKeys.multiOutlet, FeatureKeys.kdsEnabled, FeatureKeys.inventoryEnabled});
       expect(c.features[FeatureKeys.multiOutlet], isTrue);
       expect(c.features[FeatureKeys.kdsEnabled], isFalse, reason: 'a restaurant key');
       expect(c.features[FeatureKeys.inventoryEnabled], isFalse, reason: 'coming soon');
+
+      // Kirana is strictly single-store and never gets multiOutlet even if requested
+      final kiranaPkg = TenantPackage.starterFor('kirana', PackageTier.basic);
+      final kiranaLic = LicenseComposer.compose(kiranaPkg, _yearly, addOns: {FeatureKeys.multiOutlet});
+      expect(kiranaLic.features[FeatureKeys.multiOutlet], isFalse, reason: 'kirana is strictly single-store');
     });
   });
 
@@ -363,6 +379,9 @@ void main() {
     test('a shop on Basic may add e-mail bills and multiple stores, nothing of a restaurant', () {
       final keys = PackageCatalog.addOnsFor('pharmacy', tier: PackageTier.basic).map((d) => d.key).toSet();
       expect(keys, {FeatureKeys.emailReceipts, FeatureKeys.multiOutlet});
+
+      final kiranaKeys = PackageCatalog.addOnsFor('kirana', tier: PackageTier.basic).map((d) => d.key).toSet();
+      expect(kiranaKeys, {FeatureKeys.emailReceipts}, reason: 'kirana cannot add multiple outlets');
     });
 
     test('a one-device restaurant is not offered second-device add-ons', () {

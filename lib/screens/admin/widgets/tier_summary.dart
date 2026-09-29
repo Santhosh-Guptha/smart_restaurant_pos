@@ -27,7 +27,7 @@ class TierSummary {
   /// Otherwise [limits] (the package's own, else the tier's defaults), e.g.
   /// "5 devices · 1 outlet · 10 users"; a shop's outlets read "store".
   static String limitsLine(PackageTier tier, {TierLimits? limits, String vertical = Verticals.restaurant}) {
-    if (tier.isOffline) return '1 device · 1 store · 1 user (fixed)';
+    if (tier.isOffline || vertical == Verticals.kirana) return '1 device · 1 store · 1 user (fixed)';
     final l = limits ?? tier.defaultLimits;
     if (tier.allowsCustomLimits) {
       return 'Set per client (default ${l.maxDevices} · ${l.maxOutlets} · ${l.maxUsers})';
@@ -37,8 +37,9 @@ class TierSummary {
   }
 
   /// Whether an admin may change a package's limits on this tier: never on
-  /// Offline (always 1 / 1 / 1).
-  static bool limitsEditable(PackageTier tier) => !tier.isOffline;
+  /// Offline (always 1 / 1 / 1) or on Kirana (strictly 1 / 1 / 1).
+  static bool limitsEditable(PackageTier tier, {String vertical = Verticals.restaurant}) =>
+      !tier.isOffline && vertical != Verticals.kirana;
 
   /// The features [vertical]'s package at [tier] includes, in catalogue order.
   static List<FeatureDef> included(String vertical, PackageTier tier) {

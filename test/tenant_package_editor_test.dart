@@ -420,19 +420,19 @@ void main() {
     });
 
     test('withPackage keeps valid add-ons and switched-off features', () {
-      final s = TenantPackageSelection.forTier(PackageTier.basic, vertical: 'kirana', plan: _plan())
+      final s = TenantPackageSelection.forTier(PackageTier.basic, vertical: 'supermarket', plan: _plan())
           .withAddOn(FeatureKeys.multiOutlet, true)
           .withIncluded(FeatureKeys.customerKhata, false);
       expect(s.composed.features[FeatureKeys.multiOutlet], isTrue);
       expect(s.composed.features[FeatureKeys.customerKhata], isFalse);
 
-      final standard = s.withPackage(PackageCatalog.starter('kirana', PackageTier.standard));
-      expect(standard.packageId, 'kirana_standard');
+      final standard = s.withPackage(PackageCatalog.starter('supermarket', PackageTier.standard));
+      expect(standard.packageId, 'supermarket_standard');
       expect(standard.activeAddOns, {FeatureKeys.multiOutlet});
       expect(standard.activeRemoved, {FeatureKeys.customerKhata});
       expect(standard.composed.features[FeatureKeys.emailReceipts], isTrue);
 
-      final premium = s.withPackage(PackageCatalog.starter('kirana', PackageTier.premium));
+      final premium = s.withPackage(PackageCatalog.starter('supermarket', PackageTier.premium));
       expect(premium.activeAddOns, isEmpty, reason: 'multiple outlets is part of Premium');
       expect(premium.composed.features[FeatureKeys.multiOutlet], isTrue);
     });

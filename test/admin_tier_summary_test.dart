@@ -17,8 +17,12 @@ void main() {
       expect(TierSummary.limitsLine(PackageTier.standard), '5 devices · 1 outlet · 10 users');
       expect(
           TierSummary.limitsLine(PackageTier.premium,
-              limits: const TierLimits(maxDevices: 12, maxOutlets: 4, maxUsers: 30), vertical: Verticals.kirana),
+              limits: const TierLimits(maxDevices: 12, maxOutlets: 4, maxUsers: 30), vertical: Verticals.supermarket),
           '12 devices · 4 stores · 30 users');
+      expect(
+          TierSummary.limitsLine(PackageTier.premium,
+              limits: const TierLimits(maxDevices: 12, maxOutlets: 4, maxUsers: 30), vertical: Verticals.kirana),
+          '1 device · 1 store · 1 user (fixed)');
       // Offline is fixed whatever a package document says.
       expect(
           TierSummary.limitsLine(PackageTier.offline,
@@ -26,7 +30,10 @@ void main() {
           '1 device · 1 store · 1 user (fixed)');
       expect(TierSummary.limitsEditable(PackageTier.offline), isFalse);
       for (final t in PackageTier.values.where((t) => !t.isOffline)) {
-        expect(TierSummary.limitsEditable(t), isTrue);
+        expect(TierSummary.limitsEditable(t, vertical: Verticals.supermarket), isTrue);
+      }
+      for (final t in PackageTier.values) {
+        expect(TierSummary.limitsEditable(t, vertical: Verticals.kirana), isFalse);
       }
     });
 

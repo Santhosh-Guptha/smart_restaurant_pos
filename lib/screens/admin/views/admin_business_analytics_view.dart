@@ -86,8 +86,10 @@ class _AdminBusinessAnalyticsViewState extends State<AdminBusinessAnalyticsView>
     final byTrade = <String, double>{}, byStorage = <String, double>{}, byPlan = <String, double>{};
     final orgNames = <String, String>{}, orgTrade = <String, String>{};
     for (final d in orgDocs) {
-      if (d.id == 'SYSTEM_ADMIN') continue;
+      if (d.id == 'SYSTEM_ADMIN' || d.id == 'ORG_DEFAULT' || d.id == 'default') continue;
       final m = d.data() as Map<String, dynamic>;
+      final status = (m['status'] ?? '').toString().toUpperCase();
+      if (status == 'DELETED') continue;
       final trade = Verticals.resolve(
           vertical: m['vertical']?.toString(),
           businessCategory: (m['businessCategory'] ?? m['category'])?.toString());
@@ -106,7 +108,7 @@ class _AdminBusinessAnalyticsViewState extends State<AdminBusinessAnalyticsView>
     for (final d in metDocs) {
       final m = d.data() as Map<String, dynamic>;
       final org = (m['orgId'] ?? '').toString();
-      if (org.isEmpty || org == 'SYSTEM_ADMIN') continue;
+      if (org.isEmpty || org == 'SYSTEM_ADMIN' || org == 'ORG_DEFAULT' || org == 'default') continue;
       final paise = (m['grossPaise'] as num?)?.toInt() ?? 0;
       final bills = (m['bills'] as num?)?.toInt() ?? 0;
       totalBills += bills;
