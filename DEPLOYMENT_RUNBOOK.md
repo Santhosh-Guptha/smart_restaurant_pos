@@ -766,16 +766,16 @@ npx firebase appdistribution:distribute "build/app/outputs/flutter-apk/app-relea
   --testers "santhoshbukka5@gmail.com,smartdine.platform@gmail.com"
 ```
 
-### 3. Active Release Profile (v1.2.0+55)
-- **Release Version**: `1.2.0 (55)`
+### 3. Active Release Profile (v1.2.1+56)
+- **Release Version**: `1.2.1 (56)`
 - **Distribution Channel**: Firebase App Distribution
-- **Direct Tester Download Link**: [Download v1.2.0 (55)](https://appdistribution.firebase.google.com/testerapps/1:486476143616:android:ce2cd4881dc37bdf928ce5/releases/7earfkrlebg2o)
+- **Direct Tester Download Link**: [Download v1.2.1 (56)](https://appdistribution.firebase.google.com/testerapps/1:486476143616:android:ce2cd4881dc37bdf928ce5/releases/0jfqs4pp7mlt0)
 - **Authorized Testers**: `santhoshbukka5@gmail.com`, `smartdine.platform@gmail.com`
-- **Release Notes**: SmartBizz v1.2.0+55: Per-trade Google Sheets layouts, loose-weight and scale barcodes, retail variants, and restaurant modifier options editor
+- **Release Notes**: SmartBizz v1.2.1+56: Kirana vs Supermarket store & counter restrictions, reset data analytics fixes, and category package limits
 
 ### 4. Release Verification Checklist
 - [x] Zero analyzer lints or errors (`flutter analyze` -> `No issues found!`)
-- [x] All 143 unit and regression tests passing (`flutter test` -> `143/143 green`)
+- [x] All 578 unit and regression tests passing (`flutter test` -> `578/578 green`)
 - [x] Receipt template engine R1 byte-identical to legacy ESC/POS goldens
 - [x] (v1.2.0+44, since superseded) Trial configured as `PlanProfile.offlineDineIn` under `PURE_OFFLINE` — today the trial is `<trade>_offline` or `<trade>_basic`
 - [x] Master Admin protected by Salted SHA-256 + Bcrypt and 2MFA Email verification

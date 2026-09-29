@@ -1,6 +1,6 @@
 name: smart_restaurant_pos
 description: SmartBizz - One billing app for restaurants, kirana, supermarkets, pharmacies and retail.
-version: 1.2.0+55
+version: 1.2.1+56
 
 environment:
   sdk: ">=3.0.0 <5.0.0"
