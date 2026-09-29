@@ -189,6 +189,7 @@ class PackageService {
     var batch = _db.batch();
     var inBatch = 0;
     for (final doc in snap.docs) {
+      if (doc.id == 'SYSTEM_ADMIN') continue;
       final d = doc.data();
       final planId = (d['planId'] ?? '').toString();
       // A licence whose plan document is gone keeps its own limits: the

@@ -93,6 +93,7 @@ class CategoryAlignmentService {
     final rows = <CategoryFix>[];
     var aligned = 0;
     for (final doc in orgs.docs) {
+      if (doc.id == 'SYSTEM_ADMIN') continue;
       final d = doc.data();
       final category = (d['businessCategory'] ?? d['category'] ?? '').toString().trim();
       final orgVertical = (d['vertical'] ?? '').toString().trim();

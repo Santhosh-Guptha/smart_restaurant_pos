@@ -39,8 +39,19 @@ class AdminDashboardView extends ConsumerWidget {
                 return StreamBuilder<QuerySnapshot>(
                   stream: FirebaseFirestore.instance.collection('business_inquiries').where('status', isEqualTo: 'NEW_INQUIRY').snapshots(),
                   builder: (context, inqSnap) {
-                    final totalOrgs = orgSnap.hasData ? orgSnap.data!.docs.length : 0;
-                    final totalLicenses = licSnap.hasData ? licSnap.data!.docs.length : 0;
+                    final clientOrgs = orgSnap.hasData
+                        ? orgSnap.data!.docs.where((d) {
+                            if (d.id == 'SYSTEM_ADMIN') return false;
+                            final data = d.data() as Map<String, dynamic>;
+                            return (data['status'] ?? '').toString().toUpperCase() != 'DELETED';
+                          }).toList()
+                        : <QueryDocumentSnapshot>[];
+                    final totalOrgs = clientOrgs.length;
+
+                    final clientLicDocs = licSnap.hasData
+                        ? licSnap.data!.docs.where((d) => d.id != 'SYSTEM_ADMIN').toList()
+                        : <QueryDocumentSnapshot>[];
+                    final totalLicenses = clientLicDocs.length;
                     final pendingTrials = regSnap.hasData ? regSnap.data!.docs.length : 0;
                     final pendingInquiries = inqSnap.hasData ? inqSnap.data!.docs.length : 0;
                     final totalPendingLeads = pendingTrials + pendingInquiries;
@@ -57,25 +68,22 @@ class AdminDashboardView extends ConsumerWidget {
                     final tradeCounts = {for (final v in Verticals.all) v: 0};
                     final tierCounts = {for (final t in PackageTier.values) t: 0};
                     final orgMode = <String, String>{};
-                    if (orgSnap.hasData) {
-                      for (final doc in orgSnap.data!.docs) {
-                        final o = doc.data() as Map<String, dynamic>;
-                        if ((o['status'] ?? '').toString().toUpperCase() == 'DELETED') continue;
-                        final v = Verticals.resolve(
-                          vertical: o['vertical']?.toString(),
-                          businessCategory: (o['businessCategory'] ?? o['category'])?.toString(),
-                        );
-                        tradeCounts[v] = (tradeCounts[v] ?? 0) + 1;
-                        final m = (o['storageMode'] ?? '').toString().toUpperCase();
-                        if (m.isNotEmpty) orgMode[doc.id] = m;
-                      }
+                    for (final doc in clientOrgs) {
+                      final o = doc.data() as Map<String, dynamic>;
+                      final v = Verticals.resolve(
+                        vertical: o['vertical']?.toString(),
+                        businessCategory: (o['businessCategory'] ?? o['category'])?.toString(),
+                      );
+                      tradeCounts[v] = (tradeCounts[v] ?? 0) + 1;
+                      final m = (o['storageMode'] ?? '').toString().toUpperCase();
+                      if (m.isNotEmpty) orgMode[doc.id] = m;
                     }
 
                     final now = DateTime.now();
                     final in7Days = now.add(const Duration(days: 7));
 
                     if (licSnap.hasData) {
-                      for (final doc in licSnap.data!.docs) {
+                      for (final doc in clientLicDocs) {
                         final d = doc.data() as Map<String, dynamic>;
                         final status = d['status']?.toString().toUpperCase() ?? 'INACTIVE';
                         final planTier = d['planTier']?.toString().toUpperCase() ?? 'TRIAL';
@@ -474,7 +482,7 @@ class AdminDashboardView extends ConsumerWidget {
                               _buildStoresHubSection(
                                 context,
                                 ref,
-                                orgSnap.hasData ? orgSnap.data!.docs : [],
+                                clientOrgs,
                                 isMobile: isMobile,
                                 onNavigateToTenants: onNavigateToTenants,
                               ),

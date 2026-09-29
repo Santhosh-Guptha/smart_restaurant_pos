@@ -410,7 +410,9 @@ class _AdminFeaturesViewState extends ConsumerState<AdminFeaturesView> {
       stream: FirebaseFirestore.instance.collection('organizations').snapshots(),
       builder: (context, orgSnap) {
         final List<QueryDocumentSnapshot<Object?>> orgDocs =
-            orgSnap.data?.docs ?? const <QueryDocumentSnapshot<Object?>>[];
+            (orgSnap.data?.docs ?? const <QueryDocumentSnapshot<Object?>>[])
+                .where((d) => d.id != 'SYSTEM_ADMIN')
+                .toList();
 
         if (_selectedOrgId == null && orgDocs.isNotEmpty) {
           final first = orgDocs.first;

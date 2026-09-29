@@ -106,6 +106,7 @@ class _AdminBusinessAnalyticsViewState extends State<AdminBusinessAnalyticsView>
     for (final d in metDocs) {
       final m = d.data() as Map<String, dynamic>;
       final org = (m['orgId'] ?? '').toString();
+      if (org.isEmpty || org == 'SYSTEM_ADMIN') continue;
       final paise = (m['grossPaise'] as num?)?.toInt() ?? 0;
       final bills = (m['bills'] as num?)?.toInt() ?? 0;
       totalBills += bills;

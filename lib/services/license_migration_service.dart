@@ -62,8 +62,8 @@ class LicenseMigrationService {
     final packages = await PackageService.getAll();
     final plans = await SubscriptionPlanService.getAllPlans();
     final licences = await _db.collection('licenses').get();
-    final orgs = await _db.collection('organizations').get();
-    final orgName = {for (final d in orgs.docs) d.id: (d.data()['name'] ?? d.id).toString()};
+    final orgDocs = (await _db.collection('organizations').get()).docs.where((d) => d.id != 'SYSTEM_ADMIN').toList();
+    final orgName = {for (final d in orgDocs) d.id: (d.data()['name'] ?? d.id).toString()};
     // The organisation document is where the app reads the storage mode
     // from; the copy on the licence is informational and has been seen stale.
     // An organisation without the field runs as CLOUD_SYNC at runtime
@@ -71,7 +71,7 @@ class LicenseMigrationService {
     // snapped as; only a licence with no organisation at all falls back to
     // its own copy and the legacy flag.
     final orgMode = {
-      for (final d in orgs.docs)
+      for (final d in orgDocs)
         d.id: (d.data()['storageMode'] ?? '').toString().isNotEmpty
             ? (d.data()['storageMode'] as Object).toString()
             : StorageModes.cloudSync,
@@ -355,6 +355,7 @@ class CategoryPackageMigrationService {
     final skipped = <String>[];
     var done = 0;
     for (final doc in licences.docs) {
+      if (doc.id == 'SYSTEM_ADMIN') continue;
       final d = doc.data();
       SaasLicense lic;
       try {

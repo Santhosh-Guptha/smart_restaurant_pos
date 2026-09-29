@@ -77,6 +77,7 @@ class DatabaseCleanupService {
         'branding',
         'device_registry',
         'public_stores',
+        'tenant_metrics',
         'audit_logs',
         'firebase_configs',
         'excel_configs',
@@ -94,10 +95,6 @@ class DatabaseCleanupService {
             final batch = _firestore.batch();
             int batchCount = 0;
             for (final doc in snapshot.docs.skip(i).take(400)) {
-              if (collectionName == 'organizations' && doc.id == 'SYSTEM_ADMIN') {
-                continue; // Preserve system admin org marker
-              }
-
               // Also delete subcollections under organizations (e.g. receipt_templates)
               if (collectionName == 'organizations') {
                 try {
