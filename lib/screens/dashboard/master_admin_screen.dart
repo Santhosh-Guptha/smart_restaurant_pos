@@ -28,6 +28,7 @@ import '../../services/subscription_plan_service.dart';
 import '../../services/tenant_provisioning_service.dart';
 import '../../services/tenant_purge_service.dart';
 import '../../services/platform_security_service.dart';
+import '../admin/admin_navigation_state.dart';
 import '../admin/views/admin_dashboard_view.dart';
 import '../admin/views/admin_inquiries_view.dart';
 import '../admin/views/admin_features_view.dart';
@@ -1119,6 +1120,10 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
                           AdminDashboardView(
                             onNavigateToInquiries: () => _goToNav(1),
                             onNavigateToTenants: () => _goToNav(2),
+                            onNavigateToFeatures: () => _goToNav(3),
+                            onNavigateToAudit: () => _goToNav(5),
+                            onNavigateToPackages: () => _goToNav(8),
+                            onOnboardTenant: () => OrganizationsTab.showOnboardOrganizationDialog(context),
                           ),
                           AdminInquiriesView(
                             onOnboardLead: (lead) {
@@ -1235,141 +1240,6 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
               ],
             ),
           ),
-          const SizedBox(width: 6),
-          ElevatedButton.icon(
-            onPressed: () => OrganizationsTab.showOnboardOrganizationDialog(context),
-            icon: const Icon(Icons.add_business_rounded, size: 14),
-            label: Text(
-              isVeryCompact ? "Onboard" : "Onboard Tenant",
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
-            ),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: ClassicTheme.primaryAccentIndigo,
-              foregroundColor: Colors.white,
-              padding: EdgeInsets.symmetric(horizontal: isVeryCompact ? 8 : 14, vertical: isVeryCompact ? 6 : 8),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-            ),
-          ),
-          SizedBox(width: isVeryCompact ? 2 : 6),
-          if (!isCompact) ...[
-            IconButton(
-              icon: const Icon(Icons.cloud_sync_rounded, color: ClassicTheme.successEmerald, size: 20),
-              tooltip: "Cloud Database Webhook",
-              onPressed: _showWebhookSettingsDialog,
-            ),
-            IconButton(
-              icon: const Icon(Icons.email_outlined, color: ClassicTheme.infoBlue, size: 20),
-              tooltip: "Platform SMTP Email",
-              onPressed: _showSmtpSettingsDialog,
-            ),
-            IconButton(
-              icon: Icon(Icons.shield_outlined, color: ClassicTheme.primaryAccentIndigo, size: 20),
-              tooltip: "Platform 2FA Security",
-              onPressed: _showSecurity2faDialog,
-            ),
-            IconButton(
-              icon: const Icon(Icons.key_rounded, color: ClassicTheme.warningAmber, size: 20),
-              tooltip: "Change Admin Password",
-              onPressed: () {
-                final me = ref.read(saasSessionProvider).currentUser;
-                if (me != null) {
-                  ChangePasswordDialog.show(context, userId: me.id, email: me.email, orgId: me.organizationId);
-                }
-              },
-            ),
-            IconButton(
-              icon: const Icon(Icons.cleaning_services_rounded, color: ClassicTheme.warningAmber, size: 20),
-              tooltip: "Clean Database (Keep Admin)",
-              onPressed: _showClearDatabaseDialog,
-            ),
-          ] else ...[
-            PopupMenuButton<String>(
-              icon: Icon(Icons.more_vert_rounded, color: context.textPrimary, size: 20),
-              padding: isVeryCompact ? EdgeInsets.zero : const EdgeInsets.all(8),
-              constraints: isVeryCompact ? const BoxConstraints() : null,
-              tooltip: "System Settings",
-              color: context.surfaceColor,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-                side: BorderSide(color: context.borderColor),
-              ),
-              onSelected: (val) {
-                switch (val) {
-                  case 'webhook':
-                    _showWebhookSettingsDialog();
-                    break;
-                  case 'smtp':
-                    _showSmtpSettingsDialog();
-                    break;
-                  case 'security_2fa':
-                    _showSecurity2faDialog();
-                    break;
-                  case 'change_password':
-                    final me = ref.read(saasSessionProvider).currentUser;
-                    if (me != null) {
-                      ChangePasswordDialog.show(context, userId: me.id, email: me.email, orgId: me.organizationId);
-                    }
-                    break;
-                  case 'cleanup':
-                    _showClearDatabaseDialog();
-                    break;
-                }
-              },
-              itemBuilder: (context) => [
-                const PopupMenuItem(
-                  value: 'webhook',
-                  child: Row(
-                    children: [
-                      Icon(Icons.cloud_sync_rounded, color: ClassicTheme.successEmerald, size: 18),
-                      SizedBox(width: 10),
-                      Text('Cloud Webhook URL', style: TextStyle(fontSize: 13)),
-                    ],
-                  ),
-                ),
-                const PopupMenuItem(
-                  value: 'smtp',
-                  child: Row(
-                    children: [
-                      Icon(Icons.email_outlined, color: ClassicTheme.infoBlue, size: 18),
-                      SizedBox(width: 10),
-                      Text('Platform SMTP Email', style: TextStyle(fontSize: 13)),
-                    ],
-                  ),
-                ),
-                PopupMenuItem(
-                  value: 'security_2fa',
-                  child: Row(
-                    children: [
-                      Icon(Icons.shield_outlined, color: ClassicTheme.primaryAccentIndigo, size: 18),
-                      const SizedBox(width: 10),
-                      const Text('Platform 2FA Security', style: TextStyle(fontSize: 13)),
-                    ],
-                  ),
-                ),
-                const PopupMenuItem(
-                  value: 'change_password',
-                  child: Row(
-                    children: [
-                      Icon(Icons.key_rounded, color: ClassicTheme.warningAmber, size: 18),
-                      SizedBox(width: 10),
-                      Text('Change Admin Password', style: TextStyle(fontSize: 13)),
-                    ],
-                  ),
-                ),
-                const PopupMenuDivider(),
-                const PopupMenuItem(
-                  value: 'cleanup',
-                  child: Row(
-                    children: [
-                      Icon(Icons.cleaning_services_rounded, color: ClassicTheme.dangerRed, size: 18),
-                      SizedBox(width: 10),
-                      Text('Clean Database (Keep Admin)', style: TextStyle(fontSize: 13, color: ClassicTheme.dangerRed)),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ],
         ],
       ),
     );
@@ -1629,6 +1499,76 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
                     },
                   ),
                 ),
+                const SizedBox(height: 12),
+                if (showExpanded)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    child: Text(
+                      "SYSTEM TOOLS",
+                      style: TextStyle(
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 0.8,
+                        color: context.textSecondary.withValues(alpha: 0.7),
+                      ),
+                    ),
+                  )
+                else
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    child: Divider(height: 1),
+                  ),
+                _buildActionItem(
+                  context,
+                  title: "Cloud Webhook",
+                  icon: Icons.cloud_sync_rounded,
+                  iconColor: ClassicTheme.successEmerald,
+                  onTap: _showWebhookSettingsDialog,
+                  showExpanded: showExpanded,
+                  isMobile: isMobile,
+                ),
+                _buildActionItem(
+                  context,
+                  title: "Platform SMTP",
+                  icon: Icons.email_outlined,
+                  iconColor: ClassicTheme.infoBlue,
+                  onTap: _showSmtpSettingsDialog,
+                  showExpanded: showExpanded,
+                  isMobile: isMobile,
+                ),
+                _buildActionItem(
+                  context,
+                  title: "Platform 2FA",
+                  icon: Icons.shield_outlined,
+                  iconColor: ClassicTheme.primaryAccentIndigo,
+                  onTap: _showSecurity2faDialog,
+                  showExpanded: showExpanded,
+                  isMobile: isMobile,
+                ),
+                _buildActionItem(
+                  context,
+                  title: "Change Password",
+                  icon: Icons.key_rounded,
+                  iconColor: ClassicTheme.warningAmber,
+                  onTap: () {
+                    final me = ref.read(saasSessionProvider).currentUser;
+                    if (me != null) {
+                      ChangePasswordDialog.show(context, userId: me.id, email: me.email, orgId: me.organizationId);
+                    }
+                  },
+                  showExpanded: showExpanded,
+                  isMobile: isMobile,
+                ),
+                _buildActionItem(
+                  context,
+                  title: "Clean Database",
+                  icon: Icons.cleaning_services_rounded,
+                  iconColor: ClassicTheme.dangerRed,
+                  textColor: ClassicTheme.dangerRed,
+                  onTap: _showClearDatabaseDialog,
+                  showExpanded: showExpanded,
+                  isMobile: isMobile,
+                ),
               ],
             ),
           ),
@@ -1834,6 +1774,58 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
                     ),
                   ),
                   if (badgeWidget != null) badgeWidget,
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildActionItem(
+    BuildContext context, {
+    required String title,
+    required IconData icon,
+    required Color iconColor,
+    required VoidCallback onTap,
+    required bool showExpanded,
+    required bool isMobile,
+    Color? textColor,
+  }) {
+    return Tooltip(
+      message: showExpanded ? '' : title,
+      waitDuration: const Duration(milliseconds: 300),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 2),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: () {
+            if (isMobile) Navigator.of(context).pop();
+            onTap();
+          },
+          child: Container(
+            padding: EdgeInsets.symmetric(horizontal: showExpanded ? 12 : 8, vertical: 8),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              mainAxisAlignment: showExpanded ? MainAxisAlignment.start : MainAxisAlignment.center,
+              children: [
+                Icon(icon, size: 20, color: iconColor),
+                if (showExpanded) ...[
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      title,
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w500,
+                        color: textColor ?? context.textSecondary,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
                 ],
               ],
             ),
@@ -2557,6 +2549,13 @@ class OrganizationsTab extends ConsumerStatefulWidget {
 
 class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
   final _firestore = FirebaseFirestore.instance;
+  final _searchCtrl = TextEditingController();
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
 
   void _showAddOrganizationDialog() {
     OrganizationsTab.showOnboardOrganizationDialog(context);
@@ -3736,6 +3735,11 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
   @override
   Widget build(BuildContext context) {
     final primaryAccent = context.isDark ? ClassicTheme.infoBlue : ClassicTheme.infoBlue;
+    final filter = ref.watch(tenantFilterProvider);
+
+    if (_searchCtrl.text != filter.searchQuery && filter.searchQuery.isEmpty) {
+      _searchCtrl.text = '';
+    }
 
     return Padding(
       padding: const EdgeInsets.all(16.0),
@@ -3767,7 +3771,48 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
               ),
             ],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
+          // Search Box
+          TextField(
+            controller: _searchCtrl,
+            onChanged: (val) {
+              ref.read(tenantFilterProvider.notifier).state =
+                  filter.copyWith(searchQuery: val.trim());
+            },
+            style: TextStyle(fontSize: 13, color: context.textPrimary),
+            decoration: InputDecoration(
+              hintText: "Search tenants by store name, ID, owner, phone, category...",
+              hintStyle: TextStyle(fontSize: 13, color: context.textSecondary),
+              prefixIcon: const Icon(Icons.search_rounded, size: 18),
+              suffixIcon: _searchCtrl.text.isNotEmpty
+                  ? IconButton(
+                      icon: const Icon(Icons.clear_rounded, size: 16),
+                      onPressed: () {
+                        _searchCtrl.clear();
+                        ref.read(tenantFilterProvider.notifier).state =
+                            filter.copyWith(searchQuery: '');
+                      },
+                    )
+                  : null,
+              isDense: true,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              filled: true,
+              fillColor: context.surfaceColor,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: BorderSide(color: context.borderColor),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: BorderSide(color: context.borderColor),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: BorderSide(color: primaryAccent),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
           // RENEWAL REQUESTS NOTIFICATION BANNER
           StreamBuilder<QuerySnapshot>(
             stream: _firestore.collection('renewal_requests').where('status', isEqualTo: 'PENDING').snapshots(),
@@ -3880,28 +3925,318 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
           Expanded(
             child: StreamBuilder<QuerySnapshot>(
               stream: _firestore.collection('organizations').snapshots(),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
+              builder: (context, orgSnapshot) {
+                if (orgSnapshot.connectionState == ConnectionState.waiting && !orgSnapshot.hasData) {
                   return Center(child: CircularProgressIndicator(color: primaryAccent));
                 }
-                if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                if (!orgSnapshot.hasData || orgSnapshot.data!.docs.isEmpty) {
                   return Center(child: Text("No client organizations registered yet.", style: TextStyle(color: context.textSecondary)));
                 }
 
-                final docs = snapshot.data!.docs.where((d) {
-                  if (d.id == 'SYSTEM_ADMIN' || d.id == 'ORG_DEFAULT' || d.id == 'default') return false;
-                  final data = d.data() as Map<String, dynamic>;
-                  return (data['status'] ?? '').toString().toUpperCase() != 'DELETED';
-                }).toList();
-                if (docs.isEmpty) {
-                  return Center(child: Text("No client organizations registered yet.", style: TextStyle(color: context.textSecondary)));
-                }
+                return StreamBuilder<QuerySnapshot>(
+                  stream: _firestore.collection('licenses').snapshots(),
+                  builder: (context, licSnapshot) {
+                    if (licSnapshot.connectionState == ConnectionState.waiting && !licSnapshot.hasData) {
+                      return Center(child: CircularProgressIndicator(color: primaryAccent));
+                    }
 
-                return ListView.builder(
-                  itemCount: docs.length,
-                  itemBuilder: (context, index) {
-                    final data = docs[index].data() as Map<String, dynamic>;
-                    final docId = docs[index].id;
+                    final Map<String, Map<String, dynamic>> licMap = {};
+                    if (licSnapshot.hasData) {
+                      for (final lDoc in licSnapshot.data!.docs) {
+                        licMap[lDoc.id] = lDoc.data() as Map<String, dynamic>;
+                      }
+                    }
+
+                    final now = DateTime.now();
+                    final in7Days = now.add(const Duration(days: 7));
+
+                    final rawDocs = orgSnapshot.data!.docs.where((d) {
+                      if (d.id == 'SYSTEM_ADMIN' || d.id == 'ORG_DEFAULT' || d.id == 'default') return false;
+                      final data = d.data() as Map<String, dynamic>;
+                      return (data['status'] ?? '').toString().toUpperCase() != 'DELETED';
+                    }).toList();
+
+                    if (rawDocs.isEmpty) {
+                      return Center(child: Text("No client organizations registered yet.", style: TextStyle(color: context.textSecondary)));
+                    }
+
+                    int activeCount = 0;
+                    int expiringCount = 0;
+                    int paidCount = 0;
+                    int trialCount = 0;
+
+                    for (final doc in rawDocs) {
+                      final lData = licMap[doc.id] ?? {};
+                      final lStatus = (lData['status'] ?? 'ACTIVE').toString().toUpperCase();
+                      final planTier = (lData['planTier'] ?? '').toString().toUpperCase();
+
+                      DateTime? expDate;
+                      if (lData['endDate'] is Timestamp) {
+                        expDate = (lData['endDate'] as Timestamp).toDate();
+                      } else if (lData['endDate'] is String) {
+                        expDate = DateTime.tryParse(lData['endDate']);
+                      }
+
+                      final isExp = expDate != null && expDate.isBefore(now);
+                      final isAct = lStatus == 'ACTIVE' && !isExp;
+                      if (isAct) {
+                        activeCount++;
+                        if (expDate != null && expDate.isBefore(in7Days)) {
+                          expiringCount++;
+                        }
+                        if (planTier == 'YEARLY' || planTier == 'LIFETIME' || planTier == 'MONTHLY') {
+                          paidCount++;
+                        } else {
+                          trialCount++;
+                        }
+                      }
+                    }
+
+                    final filteredDocs = rawDocs.where((doc) {
+                      final data = doc.data() as Map<String, dynamic>;
+                      final docId = doc.id;
+                      final lData = licMap[docId] ?? {};
+
+                      final licStatus = (lData['status'] ?? data['status'] ?? 'ACTIVE').toString().toUpperCase();
+                      final planTier = (lData['planTier'] ?? '').toString().toUpperCase();
+
+                      DateTime? expDate;
+                      if (lData['endDate'] is Timestamp) {
+                        expDate = (lData['endDate'] as Timestamp).toDate();
+                      } else if (lData['endDate'] is String) {
+                        expDate = DateTime.tryParse(lData['endDate']);
+                      }
+
+                      final isExpired = expDate != null && expDate.isBefore(now);
+                      final isActive = licStatus == 'ACTIVE' && !isExpired;
+                      final isExpiring = isActive && expDate != null && expDate.isBefore(in7Days);
+                      final isPaid = isActive && (planTier == 'YEARLY' || planTier == 'LIFETIME' || planTier == 'MONTHLY');
+                      final isTrial = isActive && (planTier == 'TRIAL' || lData['isTrial'] == true);
+
+                      // Status filter
+                      if (filter.status == 'ACTIVE' && !isActive) return false;
+                      if (filter.status == 'EXPIRING' && !isExpiring) return false;
+                      if (filter.status == 'PAID' && !isPaid) return false;
+                      if (filter.status == 'TRIAL' && !isTrial) return false;
+
+                      // Tier filter
+                      if (filter.tier != null && filter.tier!.isNotEmpty) {
+                        final storageMode = (data['storageMode'] ?? 'CLOUD_SYNC').toString();
+                        final pkgTier = LicenceEdits.tierOf(lData, storageMode: storageMode);
+                        if (pkgTier.name.toUpperCase() != filter.tier!.toUpperCase()) {
+                          return false;
+                        }
+                      }
+
+                      // Trade filter
+                      if (filter.trade != null && filter.trade!.isNotEmpty) {
+                        final trade = Verticals.resolve(
+                          vertical: data['vertical']?.toString() ?? lData['vertical']?.toString(),
+                          businessCategory: (data['businessCategory'] ?? data['category'])?.toString(),
+                        );
+                        if (trade.toLowerCase() != filter.trade!.toLowerCase()) {
+                          return false;
+                        }
+                      }
+
+                      // Search query filter
+                      if (filter.searchQuery.isNotEmpty) {
+                        final q = filter.searchQuery.toLowerCase();
+                        final name = (data['name'] ?? '').toString().toLowerCase();
+                        final owner = (data['ownerName'] ?? '').toString().toLowerCase();
+                        final phone = (data['mobile'] ?? data['phone'] ?? '').toString().toLowerCase();
+                        final cat = (data['businessCategory'] ?? data['category'] ?? '').toString().toLowerCase();
+                        final match = name.contains(q) ||
+                            docId.toLowerCase().contains(q) ||
+                            owner.contains(q) ||
+                            phone.contains(q) ||
+                            cat.contains(q);
+                        if (!match) return false;
+                      }
+
+                      return true;
+                    }).toList();
+
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: Row(
+                            children: [
+                              _buildFilterChip(
+                                label: 'All (${rawDocs.length})',
+                                isSelected: filter.status == 'ALL' && filter.tier == null && filter.trade == null,
+                                onTap: () {
+                                  _searchCtrl.clear();
+                                  ref.read(tenantFilterProvider.notifier).state = const TenantFilterState();
+                                },
+                              ),
+                              const SizedBox(width: 6),
+                              _buildFilterChip(
+                                label: 'Active ($activeCount)',
+                                icon: Icons.check_circle_outline,
+                                color: ClassicTheme.secondaryAccent,
+                                isSelected: filter.status == 'ACTIVE',
+                                onTap: () {
+                                  ref.read(tenantFilterProvider.notifier).state =
+                                      filter.copyWith(status: filter.status == 'ACTIVE' ? 'ALL' : 'ACTIVE');
+                                },
+                              ),
+                              const SizedBox(width: 6),
+                              _buildFilterChip(
+                                label: 'Expiring in 7 Days ($expiringCount)',
+                                icon: Icons.timer_outlined,
+                                color: ClassicTheme.warningAmber,
+                                isSelected: filter.status == 'EXPIRING',
+                                onTap: () {
+                                  ref.read(tenantFilterProvider.notifier).state =
+                                      filter.copyWith(status: filter.status == 'EXPIRING' ? 'ALL' : 'EXPIRING');
+                                },
+                              ),
+                              const SizedBox(width: 6),
+                              _buildFilterChip(
+                                label: 'Paid Subscriptions ($paidCount)',
+                                icon: Icons.verified_rounded,
+                                color: ClassicTheme.successEmerald,
+                                isSelected: filter.status == 'PAID',
+                                onTap: () {
+                                  ref.read(tenantFilterProvider.notifier).state =
+                                      filter.copyWith(status: filter.status == 'PAID' ? 'ALL' : 'PAID');
+                                },
+                              ),
+                              const SizedBox(width: 6),
+                              _buildFilterChip(
+                                label: 'Free Trials ($trialCount)',
+                                icon: Icons.hourglass_top_rounded,
+                                color: ClassicTheme.infoBlue,
+                                isSelected: filter.status == 'TRIAL',
+                                onTap: () {
+                                  ref.read(tenantFilterProvider.notifier).state =
+                                      filter.copyWith(status: filter.status == 'TRIAL' ? 'ALL' : 'TRIAL');
+                                },
+                              ),
+                              if (filter.tier != null && filter.tier!.isNotEmpty) ...[
+                                const SizedBox(width: 6),
+                                _buildActiveTagChip(
+                                  label: 'Tier: ${filter.tier}',
+                                  color: ClassicTheme.primaryAccentIndigo,
+                                  onClear: () {
+                                    ref.read(tenantFilterProvider.notifier).state =
+                                        filter.copyWith(clearTier: true);
+                                  },
+                                ),
+                              ],
+                              if (filter.trade != null && filter.trade!.isNotEmpty) ...[
+                                const SizedBox(width: 6),
+                                _buildActiveTagChip(
+                                  label: 'Trade: ${filter.trade!.toUpperCase()}',
+                                  color: ClassicTheme.secondaryAccent,
+                                  onClear: () {
+                                    ref.read(tenantFilterProvider.notifier).state =
+                                        filter.copyWith(clearTrade: true);
+                                  },
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                        if (filter.isFiltered)
+                          Container(
+                            margin: const EdgeInsets.only(bottom: 10),
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: primaryAccent.withValues(alpha: 0.08),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: primaryAccent.withValues(alpha: 0.3)),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(Icons.filter_list_rounded, size: 16, color: primaryAccent),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    'Showing: ${filter.label} (${filteredDocs.length} of ${rawDocs.length} stores)',
+                                    style: TextStyle(
+                                      fontSize: 12.5,
+                                      fontWeight: FontWeight.w600,
+                                      color: primaryAccent,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                InkWell(
+                                  onTap: () {
+                                    _searchCtrl.clear();
+                                    ref.read(tenantFilterProvider.notifier).state = const TenantFilterState();
+                                  },
+                                  borderRadius: BorderRadius.circular(4),
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(Icons.close_rounded, size: 14, color: primaryAccent),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          'Clear Filter',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.bold,
+                                            color: primaryAccent,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        Expanded(
+                          child: filteredDocs.isEmpty
+                              ? Center(
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(24.0),
+                                    child: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(Icons.search_off_rounded, size: 48, color: context.textSecondary.withValues(alpha: 0.5)),
+                                        const SizedBox(height: 12),
+                                        Text(
+                                          'No stores match current filter',
+                                          style: TextStyle(color: context.textPrimary, fontSize: 15, fontWeight: FontWeight.bold),
+                                        ),
+                                        const SizedBox(height: 6),
+                                        Text(
+                                          'Filter: ${filter.label}',
+                                          style: TextStyle(color: context.textSecondary, fontSize: 13),
+                                        ),
+                                        const SizedBox(height: 16),
+                                        ElevatedButton.icon(
+                                          onPressed: () {
+                                            _searchCtrl.clear();
+                                            ref.read(tenantFilterProvider.notifier).state = const TenantFilterState();
+                                          },
+                                          icon: const Icon(Icons.refresh_rounded, size: 16),
+                                          label: const Text('Show All Tenants'),
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor: primaryAccent,
+                                            foregroundColor: Colors.white,
+                                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                )
+                              : ListView.builder(
+                                  itemCount: filteredDocs.length,
+                                  itemBuilder: (context, index) {
+                                    final data = filteredDocs[index].data() as Map<String, dynamic>;
+                                    final docId = filteredDocs[index].id;
                     final name = data['name'] ?? 'Unnamed';
                     final ownerName = data['ownerName'] ?? '';
                     final phone = data['mobile'] ?? data['phone'] ?? '';
@@ -4275,6 +4610,11 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                         ),
                       ),
                     );
+                                  },
+                                ),
+                        ),
+                      ],
+                    );
                   },
                 );
               },
@@ -4324,6 +4664,85 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
             const SizedBox(width: 4),
             const Icon(Icons.verified_rounded, size: 12, color: ClassicTheme.successEmerald),
           ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFilterChip({
+    required String label,
+    required bool isSelected,
+    required VoidCallback onTap,
+    IconData? icon,
+    Color? color,
+  }) {
+    final activeColor = color ?? ClassicTheme.infoBlue;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+          color: isSelected ? activeColor.withValues(alpha: 0.15) : context.surfaceColor,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isSelected ? activeColor : context.borderColor,
+            width: isSelected ? 1.4 : 1.0,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (icon != null) ...[
+              Icon(icon, size: 13, color: isSelected ? activeColor : context.textSecondary),
+              const SizedBox(width: 5),
+            ],
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                color: isSelected ? activeColor : context.textSecondary,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildActiveTagChip({
+    required String label,
+    required Color color,
+    required VoidCallback onClear,
+  }) {
+    return Container(
+      padding: const EdgeInsets.only(left: 10, right: 4, top: 4, bottom: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: color, width: 1.2),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
+          ),
+          const SizedBox(width: 4),
+          InkWell(
+            onTap: onClear,
+            borderRadius: BorderRadius.circular(12),
+            child: Padding(
+              padding: const EdgeInsets.all(2),
+              child: Icon(Icons.cancel_rounded, size: 14, color: color),
+            ),
+          ),
         ],
       ),
     );

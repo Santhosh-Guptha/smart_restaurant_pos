@@ -8,6 +8,7 @@ import '../../dashboard/restaurant_home_screen.dart';
 import '../../restaurant/branch_management_screen.dart';
 import '../../settings/staff_management_screen.dart';
 import '../../../providers/saas_session_provider.dart';
+import '../admin_navigation_state.dart';
 import '../widgets/tenant_package_editor.dart';
 import '../widgets/tier_visuals.dart';
 import '../widgets/trade_selector.dart';
@@ -17,12 +18,18 @@ class AdminDashboardView extends ConsumerWidget {
   final VoidCallback? onNavigateToInquiries;
   final VoidCallback? onNavigateToTenants;
   final VoidCallback? onNavigateToFeatures;
+  final VoidCallback? onNavigateToAudit;
+  final VoidCallback? onNavigateToPackages;
+  final VoidCallback? onOnboardTenant;
 
   const AdminDashboardView({
     super.key,
     this.onNavigateToInquiries,
     this.onNavigateToTenants,
     this.onNavigateToFeatures,
+    this.onNavigateToAudit,
+    this.onNavigateToPackages,
+    this.onOnboardTenant,
   });
 
   @override
@@ -126,7 +133,10 @@ class AdminDashboardView extends ConsumerWidget {
                           icon: Icons.store_mall_directory_rounded,
                           color: ClassicTheme.secondaryAccent,
                           isMobile: isMobile,
-                          onTap: onNavigateToTenants,
+                          onTap: () {
+                            ref.read(tenantFilterProvider.notifier).state = const TenantFilterState(status: 'ACTIVE');
+                            onNavigateToTenants?.call();
+                          },
                         );
                         final kpi2 = _buildKpiCard(
                           context,
@@ -136,7 +146,10 @@ class AdminDashboardView extends ConsumerWidget {
                           icon: Icons.timer_outlined,
                           color: ClassicTheme.warningAmber,
                           isMobile: isMobile,
-                          onTap: onNavigateToTenants,
+                          onTap: () {
+                            ref.read(tenantFilterProvider.notifier).state = const TenantFilterState(status: 'EXPIRING');
+                            onNavigateToTenants?.call();
+                          },
                         );
                         final kpi3 = _buildKpiCard(
                           context,
@@ -156,7 +169,10 @@ class AdminDashboardView extends ConsumerWidget {
                           icon: TierVisuals.icon(PackageTier.offline),
                           color: ClassicTheme.successEmerald,
                           isMobile: isMobile,
-                          onTap: onNavigateToFeatures,
+                          onTap: () {
+                            ref.read(tenantFilterProvider.notifier).state = const TenantFilterState(tier: 'OFFLINE');
+                            onNavigateToTenants?.call();
+                          },
                         );
 
                         Widget kpiSection;
@@ -227,6 +243,10 @@ class AdminDashboardView extends ConsumerWidget {
                                 count: paidAnnualCount,
                                 total: totalLicenses > 0 ? totalLicenses : 1,
                                 color: ClassicTheme.secondaryAccent,
+                                onTap: () {
+                                  ref.read(tenantFilterProvider.notifier).state = const TenantFilterState(status: 'PAID');
+                                  onNavigateToTenants?.call();
+                                },
                               ),
                               const SizedBox(height: 14),
                               _buildDistributionBar(
@@ -235,6 +255,10 @@ class AdminDashboardView extends ConsumerWidget {
                                 count: trialCount,
                                 total: totalLicenses > 0 ? totalLicenses : 1,
                                 color: ClassicTheme.successEmerald,
+                                onTap: () {
+                                  ref.read(tenantFilterProvider.notifier).state = const TenantFilterState(status: 'TRIAL');
+                                  onNavigateToTenants?.call();
+                                },
                               ),
                               const SizedBox(height: 20),
                               Text(
@@ -254,6 +278,10 @@ class AdminDashboardView extends ConsumerWidget {
                                   count: tierCounts[t] ?? 0,
                                   total: totalLicenses > 0 ? totalLicenses : 1,
                                   color: TierVisuals.color(t),
+                                  onTap: () {
+                                    ref.read(tenantFilterProvider.notifier).state = TenantFilterState(tier: t.name.toUpperCase());
+                                    onNavigateToTenants?.call();
+                                  },
                                 ),
                               ],
                               const SizedBox(height: 20),
@@ -274,6 +302,10 @@ class AdminDashboardView extends ConsumerWidget {
                                   count: tradeCounts[v] ?? 0,
                                   total: totalOrgs > 0 ? totalOrgs : 1,
                                   color: ClassicTheme.secondaryAccent,
+                                  onTap: () {
+                                    ref.read(tenantFilterProvider.notifier).state = TenantFilterState(trade: v);
+                                    onNavigateToTenants?.call();
+                                  },
                                 ),
                               ],
                             ],
@@ -306,7 +338,7 @@ class AdminDashboardView extends ConsumerWidget {
                                 title: 'Onboard New Organization',
                                 subtitle: 'Direct tenant creation',
                                 color: ClassicTheme.successEmerald,
-                                onTap: onNavigateToTenants,
+                                onTap: onOnboardTenant ?? onNavigateToTenants,
                               ),
                               const SizedBox(height: 10),
                               _quickActionButton(
@@ -500,25 +532,37 @@ class AdminDashboardView extends ConsumerWidget {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Row(
-                                      children: [
-                                        const Icon(Icons.shield_outlined, size: 18, color: ClassicTheme.successEmerald),
-                                        const SizedBox(width: 8),
-                                        Text(
-                                          'Recent Governance & Audit Activity',
-                                          style: TextStyle(
-                                            fontSize: 15,
-                                            fontWeight: FontWeight.bold,
-                                            color: context.textPrimary,
+                                InkWell(
+                                  onTap: onNavigateToAudit,
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          const Icon(Icons.shield_outlined, size: 18, color: ClassicTheme.successEmerald),
+                                          const SizedBox(width: 8),
+                                          Text(
+                                            'Recent Governance & Audit Activity',
+                                            style: TextStyle(
+                                              fontSize: 15,
+                                              fontWeight: FontWeight.bold,
+                                              color: context.textPrimary,
+                                            ),
                                           ),
-                                        ),
-                                      ],
-                                    ),
-                                    Text('Live', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: ClassicTheme.successEmerald)),
-                                  ],
+                                        ],
+                                      ),
+                                      Row(
+                                        children: [
+                                          Text('Live', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: ClassicTheme.successEmerald)),
+                                          if (onNavigateToAudit != null) ...[
+                                            const SizedBox(width: 6),
+                                            Icon(Icons.arrow_forward_ios_rounded, size: 11, color: context.textSecondary),
+                                          ],
+                                        ],
+                                      ),
+                                    ],
+                                  ),
                                 ),
                                 const SizedBox(height: 12),
                                 StreamBuilder<QuerySnapshot>(
@@ -676,9 +720,10 @@ class AdminDashboardView extends ConsumerWidget {
     required int count,
     required int total,
     required Color color,
+    VoidCallback? onTap,
   }) {
     final double pct = (count / (total > 0 ? total : 1)).clamp(0.0, 1.0);
-    return Column(
+    final barContent = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
@@ -693,9 +738,18 @@ class AdminDashboardView extends ConsumerWidget {
               ),
             ),
             const SizedBox(width: 8),
-            Text(
-              '$count (${(pct * 100).toInt()}%)',
-              style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: color),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  '$count (${(pct * 100).toInt()}%)',
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: color),
+                ),
+                if (onTap != null) ...[
+                  const SizedBox(width: 4),
+                  Icon(Icons.chevron_right_rounded, size: 14, color: color.withValues(alpha: 0.8)),
+                ],
+              ],
             ),
           ],
         ),
@@ -711,6 +765,19 @@ class AdminDashboardView extends ConsumerWidget {
         ),
       ],
     );
+
+    if (onTap != null) {
+      return InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        hoverColor: color.withValues(alpha: 0.08),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 3, horizontal: 2),
+          child: barContent,
+        ),
+      );
+    }
+    return barContent;
   }
 
   Widget _quickActionButton(
@@ -817,7 +884,10 @@ class AdminDashboardView extends ConsumerWidget {
               ),
               if (onNavigateToTenants != null)
                 TextButton.icon(
-                  onPressed: onNavigateToTenants,
+                  onPressed: () {
+                    ref.read(tenantFilterProvider.notifier).state = const TenantFilterState();
+                    onNavigateToTenants!();
+                  },
                   icon: const Icon(Icons.arrow_forward_rounded, size: 15),
                   label: const Text('View All Stores', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                 ),

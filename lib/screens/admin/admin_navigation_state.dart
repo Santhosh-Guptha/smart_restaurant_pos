@@ -48,3 +48,54 @@ extension AdminSectionMeta on AdminSection {
 final adminSectionProvider =
     StateProvider<AdminSection>((ref) => AdminSection.dashboard);
 final adminSidebarExpandedProvider = StateProvider<bool>((ref) => true);
+
+class TenantFilterState {
+  final String status; // 'ALL', 'ACTIVE', 'EXPIRING', 'PAID', 'TRIAL'
+  final String? tier; // 'OFFLINE', 'BASIC', 'STANDARD', 'PREMIUM', 'ENTERPRISE'
+  final String? trade; // 'restaurant', 'kirana', 'supermarket', 'pharmacy', 'retail'
+  final String searchQuery;
+
+  const TenantFilterState({
+    this.status = 'ALL',
+    this.tier,
+    this.trade,
+    this.searchQuery = '',
+  });
+
+  bool get isFiltered =>
+      status != 'ALL' ||
+      (tier != null && tier!.isNotEmpty) ||
+      (trade != null && trade!.isNotEmpty) ||
+      searchQuery.isNotEmpty;
+
+  String get label {
+    final parts = <String>[];
+    if (status == 'ACTIVE') parts.add('Active');
+    if (status == 'EXPIRING') parts.add('Expiring soon (7 days)');
+    if (status == 'PAID') parts.add('Paid Subscriptions');
+    if (status == 'TRIAL') parts.add('Free Trials');
+    if (tier != null && tier!.isNotEmpty) parts.add('$tier Tier');
+    if (trade != null && trade!.isNotEmpty) parts.add(trade!.toUpperCase());
+    if (searchQuery.isNotEmpty) parts.add('"$searchQuery"');
+    return parts.isEmpty ? 'All Tenants' : parts.join(' · ');
+  }
+
+  TenantFilterState copyWith({
+    String? status,
+    String? tier,
+    bool clearTier = false,
+    String? trade,
+    bool clearTrade = false,
+    String? searchQuery,
+  }) {
+    return TenantFilterState(
+      status: status ?? this.status,
+      tier: clearTier ? null : (tier ?? this.tier),
+      trade: clearTrade ? null : (trade ?? this.trade),
+      searchQuery: searchQuery ?? this.searchQuery,
+    );
+  }
+}
+
+final tenantFilterProvider = StateProvider<TenantFilterState>((ref) => const TenantFilterState());
+
