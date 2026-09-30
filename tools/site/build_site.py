@@ -80,12 +80,12 @@ def nav(active=None, hub=False):
     return ('\n<a class="skip" href="#main">Skip to content</a>'
             '\n<div class="fx-progress" aria-hidden="true"><i></i></div>'
             '\n<nav>\n  <div class="wrap">\n'
-            '    <a class="logo" href="/"><img src="/assets/logo.png" alt="" width="34" height="34">' + D.BRAND + '</a>\n'
+            '    <a class="logo" href="/"><img src="/assets/logo.png" alt="SmartBizz" width="34" height="34">' + D.BRAND + '</a>\n'
             '    <ul id="navList">' + items + extra + '</ul>\n'
             '    <div class="nav-act">'
             '<button class="icon-btn" id="themeBtn" type="button" aria-label="Switch light or dark">'
             '<span class="i-sun">☀</span><span class="i-moon">☾</span></button>'
-            '<a class="btn lamp sm" href="javascript:void(0)" onclick="openTrialModal()">Start free trial</a>'
+            '<a class="btn lamp sm" href="/register/" onclick="openTrialModal(); return false;">Start free trial</a>'
             '<button class="icon-btn burger" id="navBtn" type="button" aria-label="Menu" aria-expanded="false" '
             'aria-controls="navList"><i></i><i></i><i></i></button></div>\n'
             '  </div>\n</nav>\n<main id="main">')
@@ -215,7 +215,7 @@ def plans(context):
     cards = ''
     for i, p in enumerate(D.PLANS, 1):
         name = D.TIER_NAME[p['tier']]
-        cta = ('<a class="btn lamp" href="javascript:void(0)" onclick="openTrialModal()">Start free trial →</a>' if p['tier'] == 'offline' else
+        cta = ('<a class="btn lamp" href="/register/" onclick="openTrialModal(); return false;">Start free trial →</a>' if p['tier'] == 'offline' else
                '<a class="btn ' + ('lamp' if p['hot'] else 'ghost') + '" href="javascript:void(0)" '
                'onclick="openContactModal(\'' + E(name) + ' package — ' + E(context) + '\')">Ask for a quote</a>')
         cards += ('<div class="plan rv d' + str(min(i, 5)) + (' hot' if p['hot'] else '') + '">'
@@ -263,11 +263,14 @@ def tier_rows(c):
         if prev:
             items += '<li class="inc"><b>Everything in ' + E(D.TIER_NAME[prev]) + '</b></li>'
         items += ''.join('<li><b>' + E(n) + '</b> — ' + E(l) + '</li>' for n, l in feats[t])
-        cta = ('<a class="btn lamp sm" href="javascript:void(0)" onclick="openTrialModal()">Start free trial</a>'
+        cta = ('<a class="btn lamp sm" href="/register/" onclick="openTrialModal(); return false;">Start free trial</a>'
                if t == 'offline' else
                '<a class="btn ghost sm" href="javascript:void(0)" onclick="openContactModal(\'' + E(name) + ' package — ' +
                E(c['name']) + '\')">Ask for a quote</a>')
-        lim = (lambda k: 'Tailored to you') if t == 'enterprise' else (lambda k: D.LIMITS[t][k])
+        if c['vertical'] == 'kirana':
+            lim = lambda k: '1 device' if k == 'devices' else ('1 store' if k == 'outlets' else '1 user (the owner)')
+        else:
+            lim = (lambda k: 'Tailored to you') if t == 'enterprise' else (lambda k: D.LIMITS[t][k])
         rows += ('<article class="trow rv" id="tier-' + t + '">'
                  '<div class="trow-h"><span class="tier ' + tcls(t) + '">' + E(name) + '</span>'
                  '<h3>Features available for ' + E(c['trade']) + ' — ' + E(name) + '</h3>'
@@ -335,11 +338,11 @@ def footer(category_value):
                      for c in D.CATEGORIES)
     return (
         '\n</main>\n<footer>\n  <div class="wrap foot">\n'
-        '    <div class="foot-brand"><span class="logo" style="font-size:20px"><img src="/assets/logo.png" alt="" '
+        '    <div class="foot-brand"><span class="logo" style="font-size:20px"><img src="/assets/logo.png" alt="SmartBizz" '
         'width="28" height="28">' + D.BRAND + '</span>\n'
         '    <p>' + E(D.TAGLINE) + ' Billing software for Indian counters, from a single Offline till to '
         'many outlets.</p>'
-        '<a class="btn lamp sm" href="javascript:void(0)" onclick="openTrialModal()">Start 14-day free trial</a></div>\n'
+        '<a class="btn lamp sm" href="/register/" onclick="openTrialModal(); return false;">Start 14-day free trial</a></div>\n'
         '    <div><h2 class="foot-h">Trades</h2><ul>' + trades + '</ul></div>\n'
         '    <div><h2 class="foot-h">Product</h2><ul><li><a href="/#suite">The suite</a></li><li><a href="/#compare">Compare trades</a></li>'
         '<li><a href="/#plans">Packages</a></li><li><a href="/#data">Your data</a></li><li><a href="/register/">Register your business</a></li>'
@@ -373,7 +376,7 @@ def category_page(c):
         '      <h1>' + h1 + '</h1>\n'
         '      <p class="lede">' + c['lede'] + '</p>\n'
         '      <div class="hero-cta">\n'
-        '        <a class="btn lamp" href="javascript:void(0)" onclick="openTrialModal()">Start 14-day free trial →</a>\n'
+        '        <a class="btn lamp" href="/register/" onclick="openTrialModal(); return false;">Start 14-day free trial →</a>\n'
         '        <a class="btn ghost" href="#tiers">See features by package</a>\n'
         '      </div>\n'
         '      <p class="hero-note"><b>Free to start.</b> Runs on the phone, tablet or PC you already own. '
@@ -414,7 +417,7 @@ def category_page(c):
         '    <p class="lede rv d1" style="margin-left:auto;margin-right:auto">Fourteen days on the Offline package, no card. '
         'Running more than one counter or outlet? Register and we will set you up on the right package.</p>\n'
         '    <div class="hero-cta rv d2" style="justify-content:center">\n'
-        '      <a class="btn lamp" href="javascript:void(0)" onclick="openTrialModal()">Start 14-day free trial →</a>\n'
+        '      <a class="btn lamp" href="/register/" onclick="openTrialModal(); return false;">Start 14-day free trial →</a>\n'
         '      <a class="btn ghost" href="' + reg + '">Register your ' + E(c['short'].lower()) + ' business</a>\n'
         '    </div>\n'
         '    <p class="kicker" style="margin-top:56px">The same app also runs</p>\n'
@@ -445,7 +448,7 @@ def hub():
         'khata. A chemist needs batches, expiry dates and a proper invoice. <strong>' + D.BRAND + ' is one app that knows the '
         'difference</strong>, from a single Offline till to many outlets.</p>\n'
         '      <div class="hero-cta">\n'
-        '        <a class="btn lamp" href="javascript:void(0)" onclick="openTrialModal()">Start 14-day free trial →</a>\n'
+        '        <a class="btn lamp" href="/register/" onclick="openTrialModal(); return false;">Start 14-day free trial →</a>\n'
         '        <a class="btn ghost" href="#pick">Choose your business</a>\n'
         '      </div>\n'
         '      <p class="hero-note"><b>Free to start.</b> Fourteen days on the device you already own. '
@@ -509,7 +512,7 @@ def hub():
         '    <h2 class="rv">Start on tomorrow’s counter.</h2>\n'
         '    <p class="lede rv d1" style="margin-left:auto;margin-right:auto">Fourteen days on the Offline package, no card.</p>\n'
         '    <div class="hero-cta rv d2" style="justify-content:center">\n'
-        '      <a class="btn lamp" href="javascript:void(0)" onclick="openTrialModal()">Start 14-day free trial →</a>\n'
+        '      <a class="btn lamp" href="/register/" onclick="openTrialModal(); return false;">Start 14-day free trial →</a>\n'
         '      <a class="btn ghost" href="/register/">Register your business</a>\n'
         '    </div>\n  </div>\n</section>\n')
 

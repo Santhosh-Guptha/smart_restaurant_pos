@@ -6,6 +6,7 @@ import '../core/classic_theme.dart';
 import '../core/constants.dart';
 import '../core/design_tokens.dart';
 import '../core/entitlements.dart';
+import '../core/package_model.dart';
 import '../providers/entitlements_provider.dart';
 
 /// Wraps a control that only exists for tenants whose plan includes
@@ -142,6 +143,22 @@ class FeatureGatedButton extends ConsumerWidget {
     );
   }
 
+  /// Computes the required tier upgrade label for a feature key and vertical.
+  static String upgradeLabelFor(String vertical, String featureKey) {
+    for (final tier in [
+      PackageTier.basic,
+      PackageTier.standard,
+      PackageTier.premium,
+      PackageTier.enterprise,
+    ]) {
+      final feats = PackageCatalog.featuresFor(vertical, tier);
+      if (feats[featureKey] == true) {
+        return 'Upgrade to ${tier.label}';
+      }
+    }
+    return 'Upgrade';
+  }
+
   /// Shared rendering for both gated wrappers.
   static Widget _gate({
     required BuildContext context,
@@ -157,11 +174,12 @@ class FeatureGatedButton extends ConsumerWidget {
     if (hideWhenDisabled) return const SizedBox.shrink();
 
     final reason = entitlements.explain(featureKey);
+    final upgradeLabel = upgradeLabelFor(entitlements.vertical, featureKey);
 
     return Tooltip(
-      message: reason,
+      message: '$reason\nTap to request upgrade.',
       child: Opacity(
-        opacity: 0.5,
+        opacity: 0.65,
         child: Stack(
           clipBehavior: Clip.hardEdge,
           alignment: Alignment.center,
@@ -171,7 +189,8 @@ class FeatureGatedButton extends ConsumerWidget {
               onTap: () => showUpgradeNotice(
                 context,
                 featureLabel: featureLabel,
-                customMessage: customMessage ?? reason,
+                customMessage: customMessage ??
+                    '$featureLabel is available with $upgradeLabel. Contact your administrator or tap below to request it.',
               ),
               child: AbsorbPointer(child: child),
             ),
@@ -179,30 +198,31 @@ class FeatureGatedButton extends ConsumerWidget {
               end: 8,
               top: 8,
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3.5),
                 decoration: BoxDecoration(
-                  color: context.warningColor.withValues(alpha: 0.9),
+                  color: const Color(0xFF1E293B).withValues(alpha: 0.92),
                   borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: ClassicTheme.warningAmber.withValues(alpha: 0.8)),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.15),
+                      color: Colors.black.withValues(alpha: 0.2),
                       blurRadius: 4,
                       offset: const Offset(0, 1),
                     ),
                   ],
                 ),
-                child: const Row(
+                child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.lock_rounded, size: 11, color: Colors.white),
-                    SizedBox(width: 3),
+                    const Icon(Icons.lock_rounded, size: 11, color: ClassicTheme.warningAmber),
+                    const SizedBox(width: 4),
                     Text(
-                      'PRO',
-                      style: TextStyle(
+                      upgradeLabel,
+                      style: const TextStyle(
                         fontSize: 9.5,
                         fontWeight: FontWeight.bold,
                         color: Colors.white,
-                        letterSpacing: 0.5,
+                        letterSpacing: 0.3,
                       ),
                     ),
                   ],
@@ -241,7 +261,7 @@ class FeatureGatedCard extends ConsumerWidget {
     required this.featureLabel,
     required this.child,
     required this.onTap,
-    this.hideWhenDisabled = true,
+    this.hideWhenDisabled = false,
   });
 
   @override

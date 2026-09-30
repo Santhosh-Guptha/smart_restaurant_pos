@@ -977,6 +977,7 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
                     return c.isAllowedFor(
                       entitlements: entitlements,
                       role: roleStr,
+                      checkFeature: false,
                       vertical: ent.vertical,
                     );
                   }).toList();
@@ -1105,53 +1106,97 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
                                     ],
                                   ),
                                   items: allowedDropdownCards.map((card) {
+                                    final isLocked = card.requiredFeature != null &&
+                                        !entitlements.isEnabled(card.requiredFeature!);
+                                    final upgradeLabel = isLocked
+                                        ? FeatureGatedButton.upgradeLabelFor(ent.vertical, card.requiredFeature!)
+                                        : null;
                                     return DropdownMenuItem<String>(
                                       value: card.id,
-                                      child: Row(
-                                        children: [
-                                          Container(
-                                            padding: const EdgeInsets.all(6),
-                                            decoration: BoxDecoration(
-                                              color: card.defaultColor.withValues(alpha: 0.15),
-                                              borderRadius: BorderRadius.circular(8),
+                                      child: Opacity(
+                                        opacity: isLocked ? 0.65 : 1.0,
+                                        child: Row(
+                                          children: [
+                                            Container(
+                                              padding: const EdgeInsets.all(6),
+                                              decoration: BoxDecoration(
+                                                color: (isLocked ? Colors.grey : card.defaultColor).withValues(alpha: 0.15),
+                                                borderRadius: BorderRadius.circular(8),
+                                              ),
+                                              child: Icon(card.icon, size: 16, color: isLocked ? Colors.grey : card.defaultColor),
                                             ),
-                                            child: Icon(card.icon, size: 16, color: card.defaultColor),
-                                          ),
-                                          const SizedBox(width: 12),
-                                          Expanded(
-                                            child: Column(
-                                              crossAxisAlignment: CrossAxisAlignment.start,
-                                              mainAxisAlignment: MainAxisAlignment.center,
-                                              children: [
-                                                Text(
-                                                  // The trade's own words ("Products & Stock",
-                                                  // "Sales History"), as on the pinned cards.
-                                                  card.titleFor(ent.vertical, entitlements: entitlements),
-                                                  style: TextStyle(
-                                                    color: context.textPrimary,
-                                                    fontSize: 13,
-                                                    fontWeight: FontWeight.w600,
+                                            const SizedBox(width: 12),
+                                            Expanded(
+                                              child: Column(
+                                                crossAxisAlignment: CrossAxisAlignment.start,
+                                                mainAxisAlignment: MainAxisAlignment.center,
+                                                children: [
+                                                  Text(
+                                                    // The trade's own words ("Products & Stock",
+                                                    // "Sales History"), as on the pinned cards.
+                                                    card.titleFor(ent.vertical, entitlements: entitlements),
+                                                    style: TextStyle(
+                                                      color: context.textPrimary,
+                                                      fontSize: 13,
+                                                      fontWeight: FontWeight.w600,
+                                                    ),
+                                                    maxLines: 1,
+                                                    overflow: TextOverflow.ellipsis,
                                                   ),
-                                                  maxLines: 1,
-                                                  overflow: TextOverflow.ellipsis,
-                                                ),
-                                                Text(
-                                                  card.subtitleFor(ent.vertical, entitlements: entitlements),
-                                                  style: TextStyle(
-                                                    color: context.textSecondary,
-                                                    fontSize: 12,
+                                                  Text(
+                                                    card.subtitleFor(ent.vertical, entitlements: entitlements),
+                                                    style: TextStyle(
+                                                      color: context.textSecondary,
+                                                      fontSize: 12,
+                                                    ),
+                                                    overflow: TextOverflow.ellipsis,
                                                   ),
-                                                  overflow: TextOverflow.ellipsis,
-                                                ),
-                                              ],
+                                                ],
+                                              ),
                                             ),
-                                          ),
-                                        ],
+                                            if (isLocked) ...[
+                                              const SizedBox(width: 6),
+                                              Container(
+                                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2.5),
+                                                decoration: BoxDecoration(
+                                                  color: const Color(0xFF1E293B).withValues(alpha: 0.9),
+                                                  borderRadius: BorderRadius.circular(6),
+                                                  border: Border.all(color: ClassicTheme.warningAmber.withValues(alpha: 0.7)),
+                                                ),
+                                                child: Row(
+                                                  mainAxisSize: MainAxisSize.min,
+                                                  children: [
+                                                    const Icon(Icons.lock_rounded, size: 10, color: ClassicTheme.warningAmber),
+                                                    const SizedBox(width: 3),
+                                                    Text(
+                                                      upgradeLabel ?? 'Locked',
+                                                      style: const TextStyle(
+                                                        fontSize: 9.5,
+                                                        fontWeight: FontWeight.bold,
+                                                        color: Colors.white,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                            ],
+                                          ],
+                                        ),
                                       ),
                                     );
                                   }).toList(),
                                    onChanged: (cardId) {
                                      if (cardId == null) return;
+                                     final cardMeta = allowedDropdownCards.firstWhere((c) => c.id == cardId);
+                                     if (cardMeta.requiredFeature != null && !entitlements.isEnabled(cardMeta.requiredFeature!)) {
+                                       final upLabel = FeatureGatedButton.upgradeLabelFor(ent.vertical, cardMeta.requiredFeature!);
+                                       FeatureGatedButton.showUpgradeNotice(
+                                         context,
+                                         featureLabel: cardMeta.titleFor(ent.vertical, entitlements: entitlements),
+                                         customMessage: '${cardMeta.titleFor(ent.vertical, entitlements: entitlements)} is available with ' + upLabel + '. Contact your administrator or tap below to request it.',
+                                       );
+                                       return;
+                                     }
                                      switch (cardId) {
                                        case 'counter_billing':
                                          if (roleBilling) {
@@ -1542,6 +1587,7 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
               return c.isAllowedFor(
                 entitlements: entitlements,
                 role: userRole,
+                checkFeature: false,
                 vertical: entitlements.vertical,
               );
             }).toList();

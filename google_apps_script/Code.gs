@@ -46,6 +46,22 @@ function handleRegisterTenant(data) {
   return responseJson({ success: true, message: "Tenant registered successfully.", tenant: info });
 }
 
+/**
+ * Computes HMAC-SHA256 signature for table QR verification (F-07).
+ * Matches SaasCryptoService.generateTableSignature in Flutter.
+ */
+function computeTableSignature_(orgId, tableNumber, storeId) {
+  var salt = "SmartDinePosZeroCostPlatform2026S";
+  var rawKey = (orgId || "").trim() + "_hmac_" + salt;
+  var keyDigest = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, rawKey);
+  var message = "table_" + (orgId || "").trim() + "_" + (storeId ? storeId.trim() : "") + "_" + (tableNumber || "").trim();
+  var sigBytes = Utilities.computeHmacSha256Signature(message, keyDigest);
+  var hexSig = sigBytes.map(function(b) {
+    return ('0' + (b & 0xFF).toString(16)).slice(-2);
+  }).join('');
+  return hexSig.length > 16 ? hexSig.substring(0, 16) : hexSig;
+}
+
 function doPost(e) {
   try {
     const json = JSON.parse(e.postData.contents);
@@ -79,6 +95,52 @@ function doPost(e) {
     );
     if (!isPublicAction && !json.__authenticated) {
       return responseJson({ success: false, error_code: "UNAUTHORIZED", error: "Unauthorized access: Invalid secret token." });
+    }
+
+    // Security Verification & Protections for Public Endpoints (F-06 & F-07)
+    if (!json.__authenticated) {
+      var publicOrgId = resolveTenantId(json, b);
+      var isPublicTrialOrInquiry = (json.action === "START_TRIAL" || json.action === "REGISTER_TRIAL" || json.action === "SUBMIT_INQUIRY");
+      if (!publicOrgId && !isPublicTrialOrInquiry) {
+        return responseJson({ success: false, error_code: "BAD_REQUEST", error: "Missing organization identifier." });
+      }
+
+      // Rate limit per organization: max 60 requests per minute
+      if (publicOrgId) {
+        try {
+          var cache = CacheService.getScriptCache();
+          var rlKey = "rl_" + publicOrgId.trim();
+          var count = parseInt(cache.get(rlKey) || "0", 10);
+          if (count >= 60) {
+            return responseJson({ success: false, error_code: "RATE_LIMITED", error: "Rate limit exceeded. Please wait a moment." });
+          }
+          cache.put(rlKey, String(count + 1), 60);
+        } catch (_) {}
+
+        // Enforce registered sheetId so callers cannot divert bills to arbitrary sheets
+        var registeredSheetId = getSheetIdForOrg(publicOrgId);
+        if (registeredSheetId) {
+          json.spreadsheet_id = registeredSheetId;
+          json.spreadsheetId = registeredSheetId;
+        }
+      }
+
+      // F-07: Table Signature Verification on public SAVE_BILL and SERVICE_REQUEST
+      if (json.action === "SAVE_BILL" || json.action === "SERVICE_REQUEST" || json.action === "CALL_WAITER") {
+        var reqTable = String(b.table_number || b.table || json.table_number || json.table || "").replace(/^Table\s+/i, "").trim();
+        var reqSig = String(json.sig || json.table_signature || b.sig || b.table_signature || b.tableSignature || "").trim();
+        var reqStore = String(json.store_id || json.store || b.store_id || b.store || "").trim();
+        if (reqTable && reqSig) {
+          var expectedSig = computeTableSignature_(publicOrgId, reqTable, reqStore);
+          if (reqSig.toLowerCase() !== expectedSig.toLowerCase()) {
+            return responseJson({
+              success: false,
+              error_code: "INVALID_TABLE_SIGNATURE",
+              error: "Invalid table security signature. Please re-scan the table QR code."
+            });
+          }
+        }
+      }
     }
 
 

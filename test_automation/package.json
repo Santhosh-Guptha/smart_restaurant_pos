@@ -1,0 +1,23 @@
+{
+  "name": "smartbizz-pos-e2e",
+  "version": "1.0.0",
+  "description": "Enterprise E2E automation for SmartBizz POS — multi-tenancy, RBAC, billing, all features",
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "test:debug": "playwright test --debug",
+    "test:report": "playwright show-report",
+    "test:smoke": "playwright test --grep @smoke",
+    "test:rbac": "playwright test --grep @rbac",
+    "test:billing": "playwright test --grep @billing",
+    "test:multitenancy": "playwright test --grep @multitenancy",
+    "test:features": "playwright test --grep @features",
+    "test:marketing": "playwright test --grep @marketing",
+    "test:guest": "playwright test --grep @guest",
+    "test:e2e": "playwright test tests/e2e_client_lifecycle.spec.ts --project=pos-chrome"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0",
+    "dotenv": "^16.4.5"
+  }
+}

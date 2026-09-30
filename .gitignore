@@ -68,3 +68,8 @@ _icons_incoming.zip
 
 # Private signing keys (licence lease) — never commit
 secrets/
+
+Claude outputs/
+test_automation/node_modules/
+test_automation/test-results/
+test_automation/playwright-report/

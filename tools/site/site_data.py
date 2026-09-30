@@ -105,11 +105,14 @@ def tier_features(vertical):
     if vertical == "restaurant":
         return dict(offline=CORE[:1] + REST_OFFLINE + CORE[1:], basic=CLOUD, standard=REST_STANDARD,
                     premium=REST_PREMIUM, enterprise=ENTERPRISE)
+    if vertical == "kirana":
+        return dict(offline=CORE[:1] + shop_offline(False) + CORE[1:], basic=CLOUD, standard=EMAIL,
+                    premium=[], enterprise=[])
     return dict(offline=CORE[:1] + shop_offline(vertical == "pharmacy") + CORE[1:], basic=CLOUD, standard=EMAIL,
                 premium=SHOP_PREMIUM, enterprise=ENTERPRISE)
 
 def roles(vertical, tier):
-    if tier == "offline":
+    if tier == "offline" or vertical == "kirana":
         return "Owner"
     if vertical == "restaurant" and tier in ("standard", "premium", "enterprise"):
         return "Owner, manager, billing, waiter, kitchen"
@@ -356,6 +359,9 @@ BY_SLUG = {c["slug"]: c for c in CATEGORIES}
 # ─────────────────────────────────────────────────────────────────────────
 ALL = ("restaurant", "kirana", "supermarket", "pharmacy", "retail")
 SHOPS = ("kirana", "supermarket", "pharmacy", "retail")
+MULTI_DEVICE_TRADES = ("restaurant", "supermarket", "pharmacy", "retail")
+MULTI_OUTLET_TRADES = ("restaurant", "supermarket", "pharmacy", "retail")
+STAFF_ROLES_TRADES = ("restaurant", "supermarket", "pharmacy", "retail")
 
 MODULES = [
     dict(icon="🧾", name="Counter billing", tier="offline", trades=ALL, group="Till",
@@ -388,7 +394,7 @@ MODULES = [
          line="Quantities, reorder levels, goods in and stock counts."),
     dict(icon="⏳", name="Batches & expiry", tier="offline", trades=("pharmacy",), group="Office",
          line="Batch numbers and expiry dates, sold first-to-expire."),
-    dict(icon="👥", name="Staff & roles", tier="offline", trades=ALL, group="Office",
+    dict(icon="👥", name="Staff & roles", tier="offline", trades=STAFF_ROLES_TRADES, group="Office",
          line="Logins and PINs. Voids need a manager PIN."),
     dict(icon="🌙", name="Shifts & day-end", tier="offline", trades=ALL, group="Office",
          line="Open, count the drawer, close, print the Z-report."),
@@ -400,9 +406,9 @@ MODULES = [
          line="An encrypted backup file you can restore on another device."),
     dict(icon="☁️", name="Cloud ledger", tier="basic", trades=ALL, group="Growth",
          line="Bills and payments in a Google Sheet in your own Google Drive."),
-    dict(icon="🔗", name="More than one till", tier="basic", trades=ALL, group="Growth",
+    dict(icon="🔗", name="More than one till", tier="basic", trades=MULTI_DEVICE_TRADES, group="Growth",
          line="2 devices on Basic, 5 on Standard, 10 on Premium."),
-    dict(icon="🏢", name="Multiple outlets", tier="premium", trades=ALL, group="Growth",
+    dict(icon="🏢", name="Multiple outlets", tier="premium", trades=MULTI_OUTLET_TRADES, group="Growth",
          line="Branches under one owner login, each with its own sheet and staff."),
 ]
 
