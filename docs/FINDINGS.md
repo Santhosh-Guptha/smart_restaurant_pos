@@ -304,8 +304,9 @@ F-22 ─── complements ──▶ F-23 (F-22 hydrates catalog cache on cold b
 - **What was wrong:** When Google Sheets was unlinked or offline, guest portal fallback orders created in Firestore `public_stores/{orgId}/orders` were not ingested into KDS or Order History, leaving orders orphaned.
 - **Fix:**
   1. In `lib/services/apps_script_backend_service.dart`, implemented `_fetchFirestoreFallbackOrders` and integrated it into `fetchOrdersAndAlerts`. Whenever Google Sheets is unlinked, unreachable, or in fallback mode, pending orders from `public_stores/{orgId}/orders` are fetched and merged into active order results.
-  2. In `updateOrderStatus`, added automatic status propagation back to `public_stores/{orgId}/orders/{orderId}` to keep guest order tracking synchronized.
+  2. In `updateOrderStatus`, added automatic status propagation back to `public_stores/{orgId}/orders/{orderId}` to keep guest order tracking synchronized regardless of webhook connectivity.
   3. In `hosting_public/r/index.html`, updated fallback order writing to include complete item details JSON string and trade-aware table/counter designations.
+  4. In `lib/screens/kitchen/kitchen_display_screen.dart`, added direct `_pollFirestoreFallbackOrders()` polling during initial setup and unlinked states, with automatic ticket announcements via `KdsVoiceAnnouncer` and local cache updates.
 - **Status:** ✅ Fixed
 - **Owner:** Antigravity Agent
 

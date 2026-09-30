@@ -844,9 +844,28 @@ class AppsScriptBackendService {
     String? spreadsheetId,
     String? clientRequestId,
   }) async {
+    // Sync status to Firestore fallback orders if present (F-23)
+    try {
+      if (orgId.isNotEmpty && orgId != 'default') {
+        final docRef = FirebaseFirestore.instance
+            .collection('public_stores')
+            .doc(orgId)
+            .collection('orders')
+            .doc(orderId);
+        final doc = await docRef.get();
+        if (doc.exists) {
+          await docRef.update({
+            'status': newStatus.toUpperCase(),
+            'kitchenStatus': newStatus.toUpperCase(),
+            'updatedAt': DateTime.now().toIso8601String(),
+          });
+        }
+      }
+    } catch (_) {}
+
     try {
       final url = getWebhookUrl();
-      if (!_isValidUrl(url)) return false;
+      if (!_isValidUrl(url)) return true;
       final effectiveRequestId = clientRequestId ?? const Uuid().v4();
       final resolvedSheetId = resolveSpreadsheetId(orgId: orgId, explicitId: spreadsheetId);
 
@@ -874,25 +893,6 @@ class AppsScriptBackendService {
         }),
         timeout: const Duration(seconds: 15),
       );
-
-      // Sync status to Firestore fallback orders if present (F-23)
-      try {
-        if (orgId.isNotEmpty && orgId != 'default') {
-          final docRef = FirebaseFirestore.instance
-              .collection('public_stores')
-              .doc(orgId)
-              .collection('orders')
-              .doc(orderId);
-          final doc = await docRef.get();
-          if (doc.exists) {
-            await docRef.update({
-              'status': newStatus.toUpperCase(),
-              'kitchenStatus': newStatus.toUpperCase(),
-              'updatedAt': DateTime.now().toIso8601String(),
-            });
-          }
-        }
-      } catch (_) {}
 
       if (res.statusCode >= 200 && res.statusCode < 300) {
         try {

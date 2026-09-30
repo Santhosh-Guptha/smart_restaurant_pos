@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:convert';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -90,9 +92,19 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen>
     _pollTimer = Timer.periodic(const Duration(seconds: 3), (_) {
       if (mounted) {
         _loadLiveOrders();
-        if (cloudOn) _pollWebhookOrders();
+        if (cloudOn) {
+          _pollWebhookOrders();
+        } else {
+          _pollFirestoreFallbackOrders();
+        }
       }
     });
+
+    if (cloudOn) {
+      _pollWebhookOrders();
+    } else {
+      _pollFirestoreFallbackOrders();
+    }
   }
 
   Future<void> _loadTerminalKeys() async {
@@ -117,7 +129,12 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen>
   Future<void> _handleManualRefresh() async {
     HapticFeedback.lightImpact();
     _loadLiveOrders();
-    await _pollWebhookOrders();
+    final cloudOn = featureOn(FeatureKeys.cloudSync);
+    if (cloudOn) {
+      await _pollWebhookOrders();
+    } else {
+      await _pollFirestoreFallbackOrders();
+    }
     if (mounted) setState(() {});
   }
 
@@ -131,90 +148,170 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen>
       final orders = await AppsScriptBackendService.pollOrders(orgId: orgId);
       if (orders == null) return;
       if (orders.isNotEmpty) {
-        final parsedActive = <KotOrder>[];
-        final parsedServed = <KotOrder>[];
-        for (final m in orders) {
-          final idStr = (m['id'] ?? m['kotNumber'] ?? '').toString();
-          if (idStr.startsWith('TEST-')) continue;
-          final o = KotOrder.fromMap(m, idStr);
-          if (o.status == KotStatus.cancelled) continue;
-          if (o.effectiveKitchenStatus == 'SERVED') {
-            parsedServed.add(o);
-          } else {
-            parsedActive.add(o);
-          }
-        }
-        final newlyArrived = <KotOrder>[];
-        for (final n in parsedActive) {
-          if (n.effectiveKitchenStatus != 'PENDING') continue;
-          final existingMatch = _allOrders.cast<KotOrder?>().firstWhere(
-            (o) => o != null && canonicalId(o) == canonicalId(n),
-            orElse: () => null,
-          );
-          if (existingMatch == null) {
-            if (!_terminalKeys.contains(n.canonicalKey)) {
-              newlyArrived.add(n);
-            }
-          } else {
-            final prevQty = existingMatch.items.fold<num>(0, (s, i) => s + i.qty);
-            final inQty = n.items.fold<num>(0, (s, i) => s + i.qty);
-            if (inQty > prevQty || n.items.length > existingMatch.items.length || n.totalAmount > existingMatch.totalAmount) {
-              newlyArrived.add(n);
-            }
-          }
-        }
-
-        if (newlyArrived.isNotEmpty) {
-          KdsVoiceAnnouncer.instance.announceNewOrders(newlyArrived);
-          if (mounted) {
-            final kotTokens = newlyArrived.map((o) => o.kotNumber).join(', ');
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Row(
-                  children: [
-                    const Icon(Icons.notifications_active_rounded, color: Colors.white, size: 20),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text('🔔 Kitchen Order Alert: $kotTokens (${newlyArrived.first.tableName})'),
-                    ),
-                  ],
-                ),
-                backgroundColor: ClassicTheme.warningAmber,
-                duration: const Duration(seconds: 4),
-                behavior: SnackBarBehavior.floating,
-              ),
-            );
-          }
-        }
-
-        final now = DateTime.now();
-        final serviceCutoff = now.subtract(const Duration(hours: 24));
-        for (final s in parsedServed) {
-          if (s.createdAt.isBefore(serviceCutoff)) continue;
-          if (!_servedOrdersHistory.any((x) => canonicalId(x) == canonicalId(s))) {
-            _servedOrdersHistory.add(s);
-          }
-        }
-        _mergeAndSetOrders(parsedActive);
-
-        // PERF-2: the Hive write below serialises every order and rewrites the
-        // whole list. At a 3-second poll that was a full JSON encode of the
-        // entire order history, on the UI isolate, twenty times a minute -
-        // which is what made the KDS feel sticky under load. Only write when
-        // the data actually differs from what is already cached, and never more
-        // than once every 15s.
-        final signature = _ordersSignature([...parsedActive, ...parsedServed]);
-        // `now` is already in scope from the served-history cutoff above.
-        final due = _lastHiveWrite == null ||
-            now.difference(_lastHiveWrite!) >= const Duration(seconds: 15);
-        if (signature != _lastHiveSignature && due) {
-          _lastHiveSignature = signature;
-          _lastHiveWrite = now;
-          _updateHiveCache([...parsedActive, ...parsedServed], orgId);
-        }
+        _ingestOrdersList(orders, orgId);
       }
     } catch (e) {
       debugPrint('KDS webhook poll error: $e');
+      await _pollFirestoreFallbackOrders();
+    }
+  }
+
+  bool _isPollingFirestore = false;
+
+  /// Direct Firestore fallback ingestion for guest orders (F-23)
+  /// Active when Google Sheets is unlinked, offline, or during initial setup.
+  Future<void> _pollFirestoreFallbackOrders() async {
+    if (_isPollingFirestore) return;
+    _isPollingFirestore = true;
+    try {
+      final orgId = _getEffectiveOrgId();
+      if (orgId.isEmpty || orgId == 'default') return;
+      final snap = await FirebaseFirestore.instance
+          .collection('public_stores')
+          .doc(orgId)
+          .collection('orders')
+          .where('status', isEqualTo: 'PENDING')
+          .limit(50)
+          .get();
+
+      if (snap.docs.isEmpty) return;
+
+      final rawOrders = <Map<String, dynamic>>[];
+      for (final doc in snap.docs) {
+        final data = doc.data();
+        List<Map<String, dynamic>> itemsList = [];
+        final rawItems = data['items'];
+        if (rawItems is List) {
+          itemsList = rawItems.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+        } else if (rawItems is String && rawItems.isNotEmpty) {
+          try {
+            final decoded = jsonDecode(rawItems);
+            if (decoded is List) {
+              itemsList = decoded.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+            }
+          } catch (_) {}
+        }
+
+        if (itemsList.isEmpty) {
+          itemsList = [
+            {
+              'name': 'Guest QR Order',
+              'qty': 1,
+              'price': (data['totalAmount'] as num?)?.toDouble() ?? 0.0,
+            }
+          ];
+        }
+
+        final tNum = data['tableNumber'] ?? '1';
+        final tName = data['tableName'] ?? 'Table $tNum';
+        final ordId = (data['orderId'] ?? doc.id).toString();
+        final token = (data['tokenNo'] ?? data['kotNumber'] ?? doc.id).toString();
+
+        rawOrders.add({
+          'id': ordId,
+          'orderId': ordId,
+          'bill_id': ordId,
+          'kotNumber': token,
+          'tokenNo': token,
+          'tableName': tName,
+          'tableNumber': tNum,
+          'customerName': data['customerName'] ?? 'Guest',
+          'customerPhone': data['customerPhone'] ?? '',
+          'totalAmount': (data['totalAmount'] as num?)?.toDouble() ?? 0.0,
+          'status': (data['status'] ?? 'PENDING').toString().toUpperCase(),
+          'kitchenStatus': (data['kitchenStatus'] ?? 'PENDING').toString().toUpperCase(),
+          'orderSource': 'QR Web',
+          'createdAt': data['createdAt'] ?? DateTime.now().toIso8601String(),
+          'items': itemsList,
+        });
+      }
+
+      if (rawOrders.isNotEmpty) {
+        _ingestOrdersList(rawOrders, orgId);
+      }
+    } catch (e) {
+      debugPrint("KDS Firestore fallback orders poll error: $e");
+    } finally {
+      _isPollingFirestore = false;
+    }
+  }
+
+  void _ingestOrdersList(List<Map<String, dynamic>> orders, String orgId) {
+    if (orders.isEmpty) return;
+    final parsedActive = <KotOrder>[];
+    final parsedServed = <KotOrder>[];
+    for (final m in orders) {
+      final idStr = (m['id'] ?? m['kotNumber'] ?? '').toString();
+      if (idStr.startsWith('TEST-')) continue;
+      final o = KotOrder.fromMap(m, idStr);
+      if (o.status == KotStatus.cancelled) continue;
+      if (o.effectiveKitchenStatus == 'SERVED') {
+        parsedServed.add(o);
+      } else {
+        parsedActive.add(o);
+      }
+    }
+    final newlyArrived = <KotOrder>[];
+    for (final n in parsedActive) {
+      if (n.effectiveKitchenStatus != 'PENDING') continue;
+      final existingMatch = _allOrders.cast<KotOrder?>().firstWhere(
+        (o) => o != null && canonicalId(o) == canonicalId(n),
+        orElse: () => null,
+      );
+      if (existingMatch == null) {
+        if (!_terminalKeys.contains(n.canonicalKey)) {
+          newlyArrived.add(n);
+        }
+      } else {
+        final prevQty = existingMatch.items.fold<num>(0, (s, i) => s + i.qty);
+        final inQty = n.items.fold<num>(0, (s, i) => s + i.qty);
+        if (inQty > prevQty || n.items.length > existingMatch.items.length || n.totalAmount > existingMatch.totalAmount) {
+          newlyArrived.add(n);
+        }
+      }
+    }
+
+    if (newlyArrived.isNotEmpty) {
+      KdsVoiceAnnouncer.instance.announceNewOrders(newlyArrived);
+      if (mounted) {
+        final kotTokens = newlyArrived.map((o) => o.kotNumber).join(', ');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.notifications_active_rounded, color: Colors.white, size: 20),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text('🔔 Kitchen Order Alert: $kotTokens (${newlyArrived.first.tableName})'),
+                ),
+              ],
+            ),
+            backgroundColor: ClassicTheme.warningAmber,
+            duration: const Duration(seconds: 4),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
+
+    final now = DateTime.now();
+    final serviceCutoff = now.subtract(const Duration(hours: 24));
+    for (final s in parsedServed) {
+      if (s.createdAt.isBefore(serviceCutoff)) continue;
+      if (!_servedOrdersHistory.any((x) => canonicalId(x) == canonicalId(s))) {
+        _servedOrdersHistory.add(s);
+      }
+    }
+    _mergeAndSetOrders(parsedActive);
+
+    // PERF-2: write to Hive only when the data actually differs, and <= once per 15s.
+    final signature = _ordersSignature([...parsedActive, ...parsedServed]);
+    final due = _lastHiveWrite == null ||
+        now.difference(_lastHiveWrite!) >= const Duration(seconds: 15);
+    if (signature != _lastHiveSignature && due) {
+      _lastHiveSignature = signature;
+      _lastHiveWrite = now;
+      _updateHiveCache([...parsedActive, ...parsedServed], orgId);
     }
   }
 
@@ -229,7 +326,7 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen>
             // Void state included for the same reason as _boardSignature: a
             // void changes no order-level field, so without it a cancelled
             // dish would persist in the Hive cache and come back on restart.
-            '${o.items.fold<double>(0, (sum, it) => sum + it.voidedQty)}:'
+            '${o.items.fold<double>(0, (total, it) => total + it.voidedQty)}:'
             '${o.items.length}')
         .toList()
       ..sort();
@@ -373,8 +470,8 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen>
         orElse: () => null,
       );
       final prevOrder = existing ?? servedMatch;
-      final num prevQty = prevOrder?.items.fold<num>(0, (sum, i) => sum + i.qty) ?? 0;
-      final num incomingQty = o.items.fold<num>(0, (sum, i) => sum + i.qty);
+      final num prevQty = prevOrder?.items.fold<num>(0, (total, i) => total + i.qty) ?? 0;
+      final num incomingQty = o.items.fold<num>(0, (total, i) => total + i.qty);
       final bool hasNewItems = prevOrder != null && (
         incomingQty > prevQty ||
         o.items.length > prevOrder.items.length ||
