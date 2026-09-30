@@ -329,6 +329,18 @@ class SmartBizzApp extends ConsumerWidget {
         );
       },
       home: homeScreen,
+      onGenerateRoute: (settings) {
+        return MaterialPageRoute(
+          builder: (context) => homeScreen,
+          settings: settings,
+        );
+      },
+      onUnknownRoute: (settings) {
+        return MaterialPageRoute(
+          builder: (context) => homeScreen,
+          settings: settings,
+        );
+      },
       debugShowCheckedModeBanner: false,
     );
   }

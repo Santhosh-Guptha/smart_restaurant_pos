@@ -42,9 +42,13 @@ import '../admin/widgets/tier_visuals.dart';
 import 'restaurant_home_screen.dart';
 import '../restaurant/branch_management_screen.dart';
 import '../settings/staff_management_screen.dart';
+import '../../core/admin_routes.dart';
+import '../../services/web_history_service.dart';
 
 class MasterAdminScreen extends ConsumerStatefulWidget {
-  const MasterAdminScreen({super.key});
+  final String? initialRoute;
+
+  const MasterAdminScreen({super.key, this.initialRoute});
 
   @override
   ConsumerState<MasterAdminScreen> createState() => _MasterAdminScreenState();
@@ -69,17 +73,78 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
   final Set<String> _knownRequestIds = {};
   final Set<String> _knownInquiryIds = {};
   bool _initialLoadDone = false;
+  void Function()? _popStateCleanup;
 
   @override
   void initState() {
     super.initState();
+    _initInitialRoute();
     _tabController = TabController(length: 5, vsync: this);
     _listenForIncomingRequests();
+    _listenToBrowserPopState();
     // The four starter packages, kept in step with the resolver's profiles.
     // Seeded from the console only: every till re-aligning platform
     // documents on cold start was waste, and the tills fall back to the
     // in-code starters when the collection is empty anyway.
     unawaited(PackageService.ensureStarters());
+  }
+
+  void _initInitialRoute() {
+    // 1. Resolve from widget.initialRoute or WebHistoryService (browser URL / hash / search)
+    final browserRoute = WebHistoryService.getCurrentRoute();
+    final requestedRoute = (widget.initialRoute != null &&
+            widget.initialRoute!.isNotEmpty &&
+            widget.initialRoute != '/')
+        ? widget.initialRoute!
+        : browserRoute;
+
+    final targetIndex = AdminRoutes.routeToIndex(requestedRoute);
+    if (targetIndex != 0) {
+      _selectedNavIndex = targetIndex;
+      _navHistory
+        ..clear()
+        ..add(0)
+        ..add(targetIndex);
+    } else {
+      // 2. Fallback check: if browser URL was root or empty, check Hive configBox
+      try {
+        final box = Hive.isBoxOpen('configBox') ? Hive.box('configBox') : null;
+        final savedRoute = box?.get('last_admin_nav_route') as String?;
+        if (savedRoute != null && savedRoute.isNotEmpty && requestedRoute.isEmpty) {
+          final savedIndex = AdminRoutes.routeToIndex(savedRoute);
+          if (savedIndex != 0) {
+            _selectedNavIndex = savedIndex;
+            _navHistory
+              ..clear()
+              ..add(0)
+              ..add(savedIndex);
+          }
+        }
+      } catch (_) {}
+    }
+
+    // Synchronize browser URL bar and tab title with initial tab
+    final canonical = AdminRoutes.indexToRoute(_selectedNavIndex);
+    final title = AdminRoutes.indexToTitle(_selectedNavIndex);
+    WebHistoryService.updateUrl(canonical, title: title, replace: true);
+  }
+
+  void _listenToBrowserPopState() {
+    _popStateCleanup = WebHistoryService.onPopState((path) {
+      if (!mounted) return;
+      final targetIndex = AdminRoutes.routeToIndex(path);
+      if (targetIndex != _selectedNavIndex) {
+        setState(() {
+          _selectedNavIndex = targetIndex;
+          final seen = _navHistory.indexOf(targetIndex);
+          if (seen >= 0) {
+            _navHistory.removeRange(seen + 1, _navHistory.length);
+          } else {
+            _navHistory.add(targetIndex);
+          }
+        });
+      }
+    });
   }
 
   void _listenForIncomingRequests() {
@@ -157,6 +222,7 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
 
   @override
   void dispose() {
+    _popStateCleanup?.call();
     _regRequestsSub?.cancel();
     _inquiriesSub?.cancel();
     _tabController.dispose();
@@ -948,6 +1014,15 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
         _navHistory.add(index);
       }
     });
+
+    final canonicalRoute = AdminRoutes.indexToRoute(index);
+    final title = AdminRoutes.indexToTitle(index);
+    WebHistoryService.updateUrl(canonicalRoute, title: title, replace: false);
+    try {
+      if (Hive.isBoxOpen('configBox')) {
+        Hive.box('configBox').put('last_admin_nav_route', canonicalRoute);
+      }
+    } catch (_) {}
   }
 
   /// Back: one step along the path, and only then out of the console.
@@ -957,6 +1032,14 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
         _navHistory.removeLast();
         _selectedNavIndex = _navHistory.last;
       });
+      final canonicalRoute = AdminRoutes.indexToRoute(_selectedNavIndex);
+      final title = AdminRoutes.indexToTitle(_selectedNavIndex);
+      WebHistoryService.updateUrl(canonicalRoute, title: title, replace: false);
+      try {
+        if (Hive.isBoxOpen('configBox')) {
+          Hive.box('configBox').put('last_admin_nav_route', canonicalRoute);
+        }
+      } catch (_) {}
       return;
     }
 
