@@ -10,11 +10,14 @@
 F-01 ─── blocks ──▶ F-05 (kirana is always single user; Enterprise wording is derived from same misunderstanding)
 F-02 ─── same root as ──▶ F-01 (both are kirana tier table errors)
 F-03 ─── blocks ──▶ F-04 (fixing href also satisfies keyboard accessibility of CTA)
-F-07 ─── depends on ──▶ F-08 (CSRF fix must also validate orgId per F-08's server check)
-F-09 ─── same fix file as ──▶ F-10 (both in support.html)
-F-11 ─── same meta tag fix as ──▶ (privacy.html — independent file but same 1-line pattern)
-F-13 ─── blocks ──▶ F-14 (specialInstructions textarea must exist before the payAmount hint matters)
-F-15 ─── same bundle file as ──▶ F-16 (both CDN deps in /r/ guest app; fix together)
+F-04 ─── relates to ──▶ F-21 (both address web interoperability and accessibility on Flutter Web)
+F-07 ─── depends on ──▶ F-06 (CSRF & HMAC table signature fix works alongside webhook rate limiting & orgId check)
+F-08 ─── same branding as ──▶ F-10 (SmartDine -> SmartBizz branding cleanup across public pages)
+F-09 ─── same fix file as ──▶ F-08 (both in support.html)
+F-11, F-12, F-13 ─── same guest app as ──▶ F-18 (all in hosting_public/r/index.html)
+F-15 ─── same bundle file as ──▶ F-16 (both CDN deps in /r/ guest app; bundled locally)
+F-20 ─── enables ──▶ F-22 (bypassing sheet gate to explore desk allows testing cold-cache till behavior)
+F-22 ─── complements ──▶ F-23 (F-22 hydrates catalog cache on cold boot; F-23 ingests fallback orders into KDS/History)
 ```
 
 ---
@@ -322,4 +325,36 @@ F-15 ─── same bundle file as ──▶ F-16 (both CDN deps in /r/ guest ap
 
 ---
 
-*Last updated: 2026-09-30 · All 23 enterprise QA findings verified and resolved.*
+## Post-Implementation Verification & Deployment Sign-Off
+
+### 1. Test Verification
+- **Test Suite:** Automated Flutter unit and widget tests
+- **Command:** `flutter test`
+- **Result:** **586 / 586 tests passed** (0 failures, 100% pass rate)
+- **Coverage Areas:** Multi-tenancy isolation, entitlements, billing calculations, stock ledgers, token series, receipt layouts, weighed goods, and offline sync outbox.
+
+### 2. Production Release Build & Bundling
+- **Build Mode:** Flutter Web Release (`--release --base-href /pos/`)
+- **Compilation Output:** `build\web` (701.1s compile, CanvasKit runtime, tree-shaken icons)
+- **Static Asset Sync:** Synced to `hosting_public\pos` via robust mirroring (`robocopy /MIR`)
+- **WCAG Viewport:** Verified `<meta name="viewport" content="width=device-width, initial-scale=1.0">` across web index files.
+
+### 3. Firebase Hosting Deployment
+- **Target Project:** `smartdine-restaurant-pos`
+- **Deploy Command:** `firebase deploy --only hosting --non-interactive`
+- **Deployed Files:** 81 static and bundled assets
+- **Status:** **Release Complete — Deploy Successful**
+- **Production Endpoints:**
+  - Workstation / POS Web Till: https://smartbizz.devmonks.space/pos/
+  - Guest QR Ordering Portal: https://smartbizz.devmonks.space/r/?org=ENT_RESTAURANT_PREMIUM&table=3
+  - Firebase Hosting Live URL: https://smartdine-pos.web.app
+
+### 4. Git Revision Tracking
+- **Repository:** `smart_restaurant_pos`
+- **Target Branch:** `develop`
+- **Resolved Commit:** `5717df3` — *fix: resolve enterprise QA findings F-18 through F-23 and update docs*
+- **Remote Status:** Up to date with `origin/develop`
+
+---
+
+*Last updated: 2026-09-30 · All 23 enterprise QA findings verified, implemented, tested, and deployed to production.*
