@@ -226,18 +226,100 @@ F-15 ─── same bundle file as ──▶ F-16 (both CDN deps in /r/ guest ap
 
 ---
 
+### F-18 · Guest QR portal renders restaurant terms for non-restaurant trades
+- **Severity:** High
+- **Category:** Domain Wording / Trade Adaptation
+- **URL:** https://smartbizz.devmonks.space/r/
+- **What was wrong:** Guest ordering portal hardcoded restaurant terminology ("LIVE KITCHEN SYNC", "Call Waiter", "Table #", dietary veg toggle, "Search dishes...") regardless of whether the business was a Pharmacy, Kirana, Retail, or Supermarket.
+- **Fix:**
+  1. In `hosting_public/r/index.html`, added `state.vertical` parsing from URL parameters (`?vertical=`, `?category=`, `?trade=`) and from the Firestore `public_stores/{orgId}` store profile document.
+  2. Implemented `isFoodTrade()` helper function.
+  3. Dynamically switched header badge between `"LIVE KITCHEN SYNC"` and `"DIGITAL STOREFRONT"`.
+  4. Switched table/counter pills (`Table ${n}` vs `Counter ${n}`).
+  5. Adapted assistance buttons (`Call Waiter` vs `Call Staff`).
+  6. Contextualized search placeholder (`Search dishes...` vs `Search medicines...` vs `Search products...`).
+  7. Hidden dietary/veg toggles for non-food verticals.
+  8. Adapted live status tracker steps and running bill invoice terminology.
+  9. Stamped `vertical` and `category` in `TenantProvisioningService` when creating `public_stores/{orgId}`.
+- **Status:** ✅ Fixed
+- **Owner:** Antigravity Agent
+
+---
+
+### F-19 · Pharmacy dashboard settings card titled "Pharmacy Settings" instead of "Store Settings"
+- **Severity:** Low
+- **Category:** UI Consistency / Naming
+- **URL:** https://smartbizz.devmonks.space/pos (Settings card)
+- **What was wrong:** Pharmacy vertical returned `'Pharmacy Settings'` while all other non-restaurant verticals used standard `'Store Settings'`, causing inconsistency in documentation and settings navigation.
+- **Fix:** In `lib/core/vertical_labels.dart`, updated `storeSettingsTitle` getter to return `'Store Settings'` uniformly across all verticals.
+- **Status:** ✅ Fixed
+- **Owner:** Antigravity Agent
+
+---
+
+### F-20 · Google Sheets setup gate modal blocks cloud tenants without inline dismiss
+- **Severity:** High
+- **Category:** Usability / Onboarding Gate
+- **URL:** https://smartbizz.devmonks.space/pos
+- **What was wrong:** `GoogleSheetsSetupGateDialog` had `canPop: false` and offered only "Authorize Google Account" and "Paste Existing Sheet Link", trapping users who did not immediately have Google OAuth credentials ready.
+- **Fix:** In `lib/widgets/google_sheets_setup_gate_dialog.dart`, updated `PopScope` to `canPop: !_isLoading` and added a secondary text action button: "Set up later (Explore POS Desk in offline mode)", allowing first-time users to bypass the gate and explore the workstation.
+- **Status:** ✅ Fixed
+- **Owner:** Antigravity Agent
+
+---
+
+### F-21 · Flutter Web CanvasKit text controllers require explicit tap focus
+- **Severity:** Medium
+- **Category:** Web Interoperability / Test Automation
+- **URL:** https://smartbizz.devmonks.space/pos
+- **What was wrong:** Automated E2E testing using Playwright `fillField()` without simulated physical click/focus bypassed Flutter Web CanvasKit text controller change listeners.
+- **Fix:** In `test_automation/helpers/flutter.ts`, updated `fillField()` to call `await field.click()` and `await field.focus()` prior to `clear()` and `fill()`, ensuring change listeners and internal Flutter controller state update reliably.
+- **Status:** ✅ Fixed
+- **Owner:** Antigravity Agent
+
+---
+
+### F-22 · Counter Billing ("Fast QSR") cold-cache shows empty menu on fresh devices
+- **Severity:** High
+- **Category:** Data Sync / Cold Cache
+- **URL:** https://smartbizz.devmonks.space/pos (Counter Billing Desk)
+- **What was wrong:** Fast QSR counter billing screen loaded dishes strictly from local Hive `restaurant_menu_dishes`. On fresh browser sessions or new devices where the local cache is empty, the till displayed an empty menu and never attempted to restore catalog data from the cloud.
+- **Fix:** In `lib/screens/counter_billing/fast_qsr_billing_screen.dart`, added `_restoreDishesFromCloudIfNeeded()` invoked during `_loadDishes()` when `_menuItems` is empty. The fallback queries:
+  1. Firestore `public_stores/{orgId}` (`menu_items` array)
+  2. Firestore `products` collection for the tenant's active items
+  3. Apps Script webhook `GET_MENU`
+  When dishes are received, it persists them into Hive `restaurant_menu_dishes` and updates widget state.
+- **Status:** ✅ Fixed
+- **Owner:** Antigravity Agent
+
+---
+
+### F-23 · KDS and POS Order History do not ingest fallback orders from `public_stores/{orgId}/orders`
+- **Severity:** High
+- **Category:** Order Pipeline Ingestion
+- **URL:** https://smartbizz.devmonks.space/pos (Kitchen KDS & POS Order History)
+- **What was wrong:** When Google Sheets was unlinked or offline, guest portal fallback orders created in Firestore `public_stores/{orgId}/orders` were not ingested into KDS or Order History, leaving orders orphaned.
+- **Fix:**
+  1. In `lib/services/apps_script_backend_service.dart`, implemented `_fetchFirestoreFallbackOrders` and integrated it into `fetchOrdersAndAlerts`. Whenever Google Sheets is unlinked, unreachable, or in fallback mode, pending orders from `public_stores/{orgId}/orders` are fetched and merged into active order results.
+  2. In `updateOrderStatus`, added automatic status propagation back to `public_stores/{orgId}/orders/{orderId}` to keep guest order tracking synchronized.
+  3. In `hosting_public/r/index.html`, updated fallback order writing to include complete item details JSON string and trade-aware table/counter designations.
+- **Status:** ✅ Fixed
+- **Owner:** Antigravity Agent
+
+---
+
 ## Sprint Summary
 
 | Sprint | Issues | Status | Verification |
 |---|---|---|---|
 | **S1 — Contract Fix (Site rebuild)** | F-01, F-02 | ✅ Fixed | Rebuilt with `build_site.py`, kirana tier limits strictly single-device/store/user |
-| **S2 — Accessibility** | F-03, F-04, F-05 | ✅ Fixed | WCAG 2.1 viewport unlocked, accessible CTAs, logo alt tags verified |
+| **S2 — Accessibility & CanvasKit** | F-03, F-04, F-05, F-21 | ✅ Fixed | WCAG 2.1 viewport unlocked, accessible CTAs, logo alt tags, CanvasKit click+focus |
 | **S3 — Security (Apps Script)** | F-06, F-07 | ✅ Fixed | `Code.gs` orgId check, sheet isolation, rate-limit, HMAC table signature check |
 | **S4 — Branding Cleanup** | F-08, F-09, F-10 | ✅ Fixed | Clean SmartBizz branding across support & privacy pages |
-| **S5 — Guest QR UX** | F-11, F-12, F-13 | ✅ Fixed | 1-char name support, special requests textarea, split-pay helper text |
-| **S6 — POS UX** | F-14 | ✅ Fixed | Locked cards with 🔒 icon & dynamic "Upgrade to [Tier]" badges |
+| **S5 — Guest QR UX & Trade Adaptation** | F-11, F-12, F-13, F-18 | ✅ Fixed | 1-char names, special requests, split-pay helper, trade-adaptive labels/badges |
+| **S6 — POS UX, Pipeline & Billing Cache** | F-14, F-19, F-20, F-22, F-23 | ✅ Fixed | Locked cards upgrade badges, Store Settings standardization, setup gate skip, cold cache hydration, KDS Firestore fallback ingestion |
 | **S7 — CDN/Performance** | F-15, F-16, F-17 | ✅ Fixed | Bundled `tw.css`, bundled `lucide.min.js`, verified `display=swap` |
 
 ---
 
-*Last updated: 2026-09-30 · All 17 issues verified and resolved.*
+*Last updated: 2026-09-30 · All 23 enterprise QA findings verified and resolved.*

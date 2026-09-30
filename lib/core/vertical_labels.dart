@@ -99,13 +99,7 @@ class VerticalLabels {
 
   // ── Settings Titles ────────────────────────────────────────────────────
 
-  String get storeSettingsTitle {
-    switch (vertical) {
-      case Verticals.restaurant: return 'Store Settings';
-      case Verticals.pharmacy:   return 'Pharmacy Settings';
-      default:                   return 'Store Settings';
-    }
-  }
+  String get storeSettingsTitle => 'Store Settings';
 
   String get storeProfileHeader {
     switch (vertical) {

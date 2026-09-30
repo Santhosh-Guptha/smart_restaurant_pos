@@ -409,7 +409,7 @@ class _GoogleSheetsSetupGateDialogState extends ConsumerState<GoogleSheetsSetupG
     final expectedEmail = userEmail.isNotEmpty ? userEmail : (org?.ownerGoogleEmail ?? '');
 
     return PopScope(
-      canPop: false,
+      canPop: !_isLoading,
       child: Dialog(
         backgroundColor: context.surfaceColor,
         shape: RoundedRectangleBorder(
@@ -588,6 +588,18 @@ class _GoogleSheetsSetupGateDialogState extends ConsumerState<GoogleSheetsSetupG
                         fontWeight: FontWeight.w600,
                         color: context.textPrimary,
                       ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextButton(
+                  onPressed: _isLoading ? null : () => Navigator.of(context).pop(),
+                  child: Text(
+                    'Set up later (Explore POS Desk in offline mode)',
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w600,
+                      color: context.textSecondary,
                     ),
                   ),
                 ),

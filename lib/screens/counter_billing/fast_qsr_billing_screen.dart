@@ -1,6 +1,9 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../services/stock_service.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -371,9 +374,96 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
         _menuItems = [];
       }
 
+      if (_menuItems.isEmpty) {
+        _restoreDishesFromCloudIfNeeded();
+      }
+
       if (mounted) setState(() {});
     } catch (e) {
       debugPrint('Error loading dishes in QSR billing: $e');
+    }
+  }
+
+  Future<void> _restoreDishesFromCloudIfNeeded() async {
+    try {
+      final session = ref.read(saasSessionProvider);
+      final orgId = session.currentOrganization?.id ?? _getEffectiveOrgId();
+      if (orgId.isEmpty || orgId == 'default') return;
+
+      // 1. Try public_stores document menu_items array
+      final firestore = FirebaseFirestore.instance;
+      final storeDoc = await firestore.collection('public_stores').doc(orgId).get();
+      if (storeDoc.exists && storeDoc.data()?['menu_items'] is List) {
+        final rawList = storeDoc.data()!['menu_items'] as List;
+        if (rawList.isNotEmpty && mounted) {
+          final cloudDishes = rawList.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+          setState(() {
+            _menuItems = cloudDishes;
+          });
+          final box = Hive.isBoxOpen('restaurant_config_box') ? Hive.box('restaurant_config_box') : null;
+          await box?.put('restaurant_menu_dishes', cloudDishes);
+          return;
+        }
+      }
+
+      // 2. Try products collection query
+      final snap = await firestore.collection('products').where('organizationId', isEqualTo: orgId).get();
+      if (snap.docs.isNotEmpty && mounted) {
+        final cloudDishes = <Map<String, dynamic>>[];
+        for (final doc in snap.docs) {
+          final data = doc.data();
+          if (data['is_active'] == false) continue;
+          cloudDishes.add({
+            'id': data['id'] ?? doc.id,
+            'name': data['name'] ?? '',
+            'category': data['category'] ?? _vl.defaultCategory,
+            'subcategory': data['subcategory'] ?? 'General',
+            'price': (data['price'] as num?)?.toDouble() ?? 0.0,
+            if (_vl.isRestaurant) ...{
+              'isVeg': data['isVeg'] == true,
+              'prepTime': data['prepTime'] ?? 15,
+            },
+          });
+        }
+        if (cloudDishes.isNotEmpty && mounted) {
+          setState(() {
+            _menuItems = cloudDishes;
+          });
+          final box = Hive.isBoxOpen('restaurant_config_box') ? Hive.box('restaurant_config_box') : null;
+          await box?.put('restaurant_menu_dishes', cloudDishes);
+          return;
+        }
+      }
+
+      // 3. Fallback to webhook GET_MENU
+      final webhookUrl = AppsScriptBackendService.getWebhookUrl();
+      if (webhookUrl.isNotEmpty) {
+        final uri = Uri.parse(webhookUrl).replace(
+          queryParameters: {
+            'action': 'GET_MENU',
+            'org': orgId,
+          },
+        );
+        final res = await http.get(uri).timeout(const Duration(seconds: 6));
+        if (res.statusCode >= 200 && res.statusCode < 300) {
+          final decoded = jsonDecode(res.body);
+          if (decoded is Map && decoded['items'] is List) {
+            final cloudItems = (decoded['items'] as List)
+                .whereType<Map>()
+                .map((m) => Map<String, dynamic>.from(m))
+                .toList();
+            if (cloudItems.isNotEmpty && mounted) {
+              setState(() {
+                _menuItems = cloudItems;
+              });
+              final box = Hive.isBoxOpen('restaurant_config_box') ? Hive.box('restaurant_config_box') : null;
+              await box?.put('restaurant_menu_dishes', cloudItems);
+            }
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('Error restoring dishes in Fast QSR billing: $e');
     }
   }
 

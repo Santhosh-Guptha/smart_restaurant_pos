@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
@@ -597,6 +598,82 @@ class AppsScriptBackendService {
   static String _ordersRevKey(String orgId, String? table) =>
       '${orgId.trim()}|${(table ?? '').trim().toLowerCase()}';
 
+  /// Ingests fallback orders from Firestore public_stores/{orgId}/orders
+  /// when Google Sheets is unlinked, unreachable, or in fallback mode (F-23).
+  static Future<List<Map<String, dynamic>>> _fetchFirestoreFallbackOrders({
+    required String orgId,
+    String? table,
+  }) async {
+    final results = <Map<String, dynamic>>[];
+    try {
+      if (orgId.isEmpty || orgId == 'default') return results;
+      final snap = await FirebaseFirestore.instance
+          .collection('public_stores')
+          .doc(orgId)
+          .collection('orders')
+          .where('status', isEqualTo: 'PENDING')
+          .limit(50)
+          .get();
+
+      for (final doc in snap.docs) {
+        final data = doc.data();
+        final rawTable = (data['tableNumber'] ?? data['table'] ?? '').toString();
+        if (table != null && table.isNotEmpty && rawTable.isNotEmpty && rawTable != table) {
+          continue;
+        }
+
+        List<Map<String, dynamic>> itemsList = [];
+        final rawItems = data['items'];
+        if (rawItems is List) {
+          itemsList = rawItems.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+        } else if (rawItems is String && rawItems.isNotEmpty) {
+          try {
+            final decoded = jsonDecode(rawItems);
+            if (decoded is List) {
+              itemsList = decoded.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+            }
+          } catch (_) {}
+        }
+
+        if (itemsList.isEmpty) {
+          itemsList = [
+            {
+              'name': 'Guest QR Order',
+              'qty': 1,
+              'price': (data['totalAmount'] as num?)?.toDouble() ?? 0.0,
+            }
+          ];
+        }
+
+        final tNum = data['tableNumber'] ?? '1';
+        final tName = data['tableName'] ?? 'Table $tNum';
+        final ordId = (data['orderId'] ?? doc.id).toString();
+        final token = (data['tokenNo'] ?? data['kotNumber'] ?? doc.id).toString();
+
+        results.add({
+          'id': ordId,
+          'orderId': ordId,
+          'bill_id': ordId,
+          'kotNumber': token,
+          'tokenNo': token,
+          'tableName': tName,
+          'tableNumber': tNum,
+          'customerName': data['customerName'] ?? 'Guest',
+          'customerPhone': data['customerPhone'] ?? '',
+          'totalAmount': (data['totalAmount'] as num?)?.toDouble() ?? 0.0,
+          'status': (data['status'] ?? 'PENDING').toString().toUpperCase(),
+          'kitchenStatus': (data['kitchenStatus'] ?? 'PENDING').toString().toUpperCase(),
+          'orderSource': 'QR Web',
+          'createdAt': data['createdAt'] ?? DateTime.now().toIso8601String(),
+          'items': itemsList,
+        });
+      }
+    } catch (e) {
+      debugPrint("Firestore fallback orders fetch notice: $e");
+    }
+    return results;
+  }
+
   /// Returns `{'orders': [...], 'waiterCalls': [...], 'unchanged': bool}`.
   ///
   /// [useRevCache] is opt-in for exactly one reason: when it is on and the
@@ -613,7 +690,8 @@ class AppsScriptBackendService {
     try {
       final url = getWebhookUrl();
       if (!_isValidUrl(url)) {
-        return {'orders': <Map<String, dynamic>>[], 'waiterCalls': <Map<String, dynamic>>[], 'unchanged': false};
+        final fallbackOrders = await _fetchFirestoreFallbackOrders(orgId: orgId, table: table);
+        return {'orders': fallbackOrders, 'waiterCalls': <Map<String, dynamic>>[], 'unchanged': false};
       }
 
       final resolvedSheetId = resolveSpreadsheetId(orgId: orgId, explicitId: spreadsheetId);
@@ -640,9 +718,12 @@ class AppsScriptBackendService {
             _lastOrdersRev[revKey] = serverRev;
           }
 
+          // Ingest fallback orders from Firestore public_stores/{orgId}/orders (F-23)
+          final fallbackOrders = await _fetchFirestoreFallbackOrders(orgId: orgId, table: table);
+
           // Nothing has been written on the server since our last poll. The
           // caller keeps its current list untouched.
-          if (decoded['unchanged'] == true) {
+          if (decoded['unchanged'] == true && fallbackOrders.isEmpty) {
             return {
               'orders': <Map<String, dynamic>>[],
               'waiterCalls': <Map<String, dynamic>>[],
@@ -660,13 +741,26 @@ class AppsScriptBackendService {
                   (decoded['waiterCalls'] as List).whereType<Map>().map((m) => Map<String, dynamic>.from(m)),
                 )
               : <Map<String, dynamic>>[];
+
+          if (fallbackOrders.isNotEmpty) {
+            final existingIds = orders.map((o) => (o['id'] ?? o['orderId'] ?? o['kotNumber'] ?? '').toString()).toSet();
+            for (final fo in fallbackOrders) {
+              final foId = (fo['id'] ?? fo['orderId'] ?? fo['kotNumber'] ?? '').toString();
+              if (!existingIds.contains(foId)) {
+                orders.add(fo);
+              }
+            }
+          }
+
           return {'orders': orders, 'waiterCalls': waiterCalls, 'unchanged': false};
         }
       }
-      return {'orders': <Map<String, dynamic>>[], 'waiterCalls': <Map<String, dynamic>>[], 'unchanged': false};
+      final fallbackOrders = await _fetchFirestoreFallbackOrders(orgId: orgId, table: table);
+      return {'orders': fallbackOrders, 'waiterCalls': <Map<String, dynamic>>[], 'unchanged': false};
     } catch (e) {
       debugPrint("AppsScriptBackendService fetchOrdersAndAlerts error: $e");
-      return {'orders': <Map<String, dynamic>>[], 'waiterCalls': <Map<String, dynamic>>[], 'unchanged': false};
+      final fallbackOrders = await _fetchFirestoreFallbackOrders(orgId: orgId, table: table);
+      return {'orders': fallbackOrders, 'waiterCalls': <Map<String, dynamic>>[], 'unchanged': false};
     }
   }
 
@@ -780,6 +874,25 @@ class AppsScriptBackendService {
         }),
         timeout: const Duration(seconds: 15),
       );
+
+      // Sync status to Firestore fallback orders if present (F-23)
+      try {
+        if (orgId.isNotEmpty && orgId != 'default') {
+          final docRef = FirebaseFirestore.instance
+              .collection('public_stores')
+              .doc(orgId)
+              .collection('orders')
+              .doc(orderId);
+          final doc = await docRef.get();
+          if (doc.exists) {
+            await docRef.update({
+              'status': newStatus.toUpperCase(),
+              'kitchenStatus': newStatus.toUpperCase(),
+              'updatedAt': DateTime.now().toIso8601String(),
+            });
+          }
+        }
+      } catch (_) {}
 
       if (res.statusCode >= 200 && res.statusCode < 300) {
         try {

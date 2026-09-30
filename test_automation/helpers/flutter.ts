@@ -49,6 +49,8 @@ export async function fillField(
 ) {
   // Flutter TextFormField → <input> inside shadow DOM via accessibility
   const field = page.getByRole('textbox', { name: labelOrHint });
+  await field.click();
+  await field.focus();
   await field.clear();
   await field.fill(value);
 }

@@ -307,6 +307,8 @@ class TenantProvisioningService {
         'tableCount': storeTables,
         'upiId': settlementUpiId?.trim() ?? '',
         'operatingMode': storeMode,
+        'vertical': vertical,
+        'category': cleanCategory,
         'googleSheetId': '',
         'googleSheetUrl': '',
         'status': 'ACTIVE',
