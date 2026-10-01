@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Support · SmartBizz</title>
+<meta name="description" content="Technical support, printer and table QR guides, and direct WhatsApp and e-mail contact for SmartBizz POS (SmartDine for restaurants).">
+<meta name="theme-color" content="#070F24">
+<link rel="icon" href="/pos/favicon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/assets/v2.css">
+<style>
+.contact{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:8px}
+.contact .card{display:grid;gap:10px;align-content:start;transition:transform .35s var(--ease),border-color .35s}
+.contact a.card:hover{transform:translateY(-4px);border-color:var(--line-2)}
+.contact .ico{width:46px;height:46px;border-radius:14px;display:grid;place-items:center;background:rgba(255,255,255,.07);font-size:1.3rem}
+.contact .ico.sun{background:var(--sun);color:#1B0E05}
+.contact .ico.ok{background:rgba(95,211,163,.18);color:var(--ok)}
+.contact h3{font-size:1.25rem;font-weight:700}
+.contact p{color:var(--paper-2);font-size:.95rem}
+.contact .who{font-size:.78rem;letter-spacing:.08em;text-transform:uppercase;color:var(--paper-3);font-weight:600}
+.contact b{color:var(--paper);overflow-wrap:anywhere}
+.contact .go{margin-top:auto;display:inline-flex;gap:6px;font-weight:600;font-size:.9rem;color:var(--sun-a)}
+@media (max-width:860px){.contact{grid-template-columns:1fr}}
+.faq .a ul,.faq .a ol{margin:0 0 12px;padding-left:22px}
+.faq .a li{margin-bottom:6px}
+.faq .a p{margin-bottom:12px}
+.faq .a code{font-size:.9em;padding:.1em .4em;border-radius:6px;background:rgba(255,255,255,.08);color:var(--paper)}
+.faq .a strong{color:var(--paper)}
+.faq .side{display:grid;gap:14px;align-content:start}
+.faq .side p{color:var(--paper-2);max-width:36ch}
+.dev{margin-top:clamp(40px,7vh,72px)}
+.dev .card{display:grid;grid-template-columns:1fr auto;gap:18px 32px;align-items:center}
+.dev .card p{color:var(--paper-2)}
+.dev .card b{color:var(--paper)}
+.dev .card a{color:var(--sun-a);text-decoration:underline;text-underline-offset:3px}
+@media (max-width:760px){.dev .card{grid-template-columns:1fr}}
+</style>
+<script defer src="/assets/v2.js"></script>
+</head>
+<body>
+<a class="skip" href="#top">Skip to content</a>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <linearGradient id="g-sun" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FFC857"/><stop offset="1" stop-color="#FF6B3D"/></linearGradient>
+    <linearGradient id="g-brand" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1D3F8F"/><stop offset="1" stop-color="#0A1A40"/></linearGradient>
+    <symbol id="i-brand" viewBox="0 0 1024 1024"><rect width="1024" height="1024" fill="url(#g-brand)"/><path d="M650,372 C612,302 420,300 402,392 C388,462 470,490 520,506 C582,525 652,548 640,632 C626,722 430,726 374,650" fill="none" stroke="url(#g-sun)" stroke-width="84" stroke-linecap="round"/><path d="M0,-46 C6,-10 10,-6 46,0 C10,6 6,10 0,46 C-6,10 -10,6 -46,0 C-10,-6 -6,-10 0,-46Z" fill="#FFC857" transform="translate(724,300)"/></symbol>
+    <symbol id="i-rest" viewBox="0 0 1024 1024"><g fill="none" stroke="#fff" stroke-width="56" stroke-linecap="round" stroke-linejoin="round"><path d="M300,616 C300,480 396,404 512,404 C628,404 724,480 724,616 Z"/><path d="M262,664 H762"/><path d="M512,404 V372"/><circle cx="512" cy="352" r="22" fill="#fff" stroke="none"/></g></symbol>
+    <symbol id="i-kir" viewBox="0 0 1024 1024"><g fill="none" stroke="#fff" stroke-width="56" stroke-linecap="round" stroke-linejoin="round" transform="translate(0,22)"><path d="M300,352 H724 L766,462 C756,520 649,520 639,462 C629,520 522,520 512,462 C502,520 395,520 385,462 C375,520 268,520 258,462 Z"/><path d="M322,540 V716 H702 V540"/><path d="M466,716 V616 H558 V716"/></g></symbol>
+    <symbol id="i-sup" viewBox="0 0 1024 1024"><g fill="none" stroke="#fff" stroke-width="56" stroke-linecap="round" stroke-linejoin="round"><path d="M248,330 H324 L384,606 H690 L744,414 H352"/><circle cx="420" cy="690" r="36"/><circle cx="662" cy="690" r="36"/></g></symbol>
+    <symbol id="i-pha" viewBox="0 0 1024 1024"><g fill="none" stroke="#fff" stroke-width="56" stroke-linejoin="round"><path d="M450,296 H574 V450 H728 V574 H574 V728 H450 V574 H296 V450 H450 Z"/></g></symbol>
+    <symbol id="i-ret" viewBox="0 0 1024 1024"><g fill="none" stroke="#fff" stroke-width="56" stroke-linecap="round" stroke-linejoin="round"><path d="M318,424 H706 L682,722 H342 Z"/><path d="M420,424 V386 C420,332 460,300 512,300 C564,300 604,332 604,386 V424"/></g></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="rgba(95,211,163,.18)"/><path d="M7 12.5l3.2 3L17 9" fill="none" stroke="#5FD3A3" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-no" viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="rgba(255,255,255,.06)"/><path d="M8 8l8 8M16 8l-8 8" fill="none" stroke="#6F7CA3" stroke-width="2" stroke-linecap="round"/></symbol>
+  </defs>
+</svg>
+<header class="nav" id="nav">
+  <div class="wrap">
+    <a class="brand" href="/" aria-label="SmartBizz home"><svg><use href="#i-brand"/></svg>SmartBizz</a>
+    <button class="menu-btn" id="menuBtn" aria-expanded="false" aria-controls="navLinks">Menu</button>
+    <nav class="nav-links" id="navLinks">
+      <a href="/#trades">Business types</a>
+      <a href="/#how">How it works</a>
+      <a href="/#packages">Packages</a>
+      <a href="/#data">Your data</a>
+      <a href="/#faq">FAQ</a>
+      <a href="/pos/">Sign in</a>
+    </nav>
+    <a class="btn btn-sun btn-sm" href="/register/">Start free trial</a>
+  </div>
+  <div class="progress" id="progress"></div>
+</header>
+<main id="top">
+<section class="page-hero">
+  <div class="glow"></div>
+  <div class="wrap">
+    <nav class="crumbs reveal" aria-label="Breadcrumb"><a href="/">Home</a><span>/</span><span>Support</span></nav>
+    <h1 class="reveal">Help, from a person.</h1>
+    <p class="lede reveal">Mid-shift and stuck on a printer, a table standee or a login? Reach the team directly. Replies come from the people who build SmartBizz.</p>
+  </div>
+</section>
+<section class="page" style="padding-top:0" id="contact">
+  <div class="wrap">
+    <p class="eyebrow reveal">Reach us</p>
+    <div class="contact">
+      <a class="card reveal" href="https://wa.me/917997970420?text=Hi%20SmartBizz%20support%2C%20I%20need%20help%20with%20" target="_blank" rel="noopener">
+        <span class="ico ok" aria-hidden="true">&#9993;</span>
+        <span class="who">Fastest</span>
+        <h3>WhatsApp</h3>
+        <p>Message us on <b>+91 79979 70420</b>. Best for anything happening at the counter right now: printer pairing, a device that will not sign in, a standee that will not scan.</p>
+        <span class="go">Open WhatsApp <span class="arrow">&rarr;</span></span>
+      </a>
+      <a class="card reveal" href="mailto:smartdine.platform@gmail.com?subject=SmartBizz%20support">
+        <span class="ico sun" aria-hidden="true">@</span>
+        <span class="who">Support desk</span>
+        <h3>E-mail</h3>
+        <p>Write to <b>smartdine.platform@gmail.com</b> for setup questions, invoices, package changes and anything that can wait a few hours.</p>
+        <span class="go">Write to us <span class="arrow">&rarr;</span></span>
+      </a>
+      <a class="card reveal" href="/pos/">
+        <span class="ico" aria-hidden="true">&#9654;</span>
+        <span class="who">Self-service</span>
+        <h3>The web till</h3>
+        <p>Sign in to the same SmartBizz app in your browser with the organisation ID we e-mailed you. Check your settings, staff and devices from any computer.</p>
+        <span class="go">Open the web till <span class="arrow">&rarr;</span></span>
+      </a>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="faq" style="padding-top:0">
+  <div class="wrap faq">
+    <div class="side">
+      <p class="eyebrow reveal">Quick guides</p>
+      <h2 class="reveal" style="font-size:clamp(2rem,4.6vw,3.6rem)">The questions we get most.</h2>
+      <p class="reveal">Each answer is the same walkthrough our team gives on WhatsApp. If yours is not here, ask us.</p>
+    </div>
+    <div class="reveal">
+      <details open>
+        <summary>How do I pair my Bluetooth thermal receipt printer?</summary>
+        <div class="a">
+          <p>SmartBizz works with all standard 58mm (2-inch) and 80mm (3-inch) ESC/POS Bluetooth printers:</p>
+          <ul>
+            <li>Turn on the thermal printer and ensure paper is inserted (feeding from the bottom of the roll).</li>
+            <li>Open Android <strong>Settings &rarr; Bluetooth</strong> and pair with the printer (default PIN is usually <code>0000</code> or <code>1234</code>).</li>
+            <li>Open SmartBizz &rarr; <strong>Settings &rarr; Thermal Printer Configuration</strong>.</li>
+            <li>Tap <strong>Scan Devices</strong> &rarr; select your paired printer &rarr; tap <strong>Print Test Receipt</strong>.</li>
+          </ul>
+        </div>
+      </details>
+      <details>
+        <summary>How do customers order from table QR codes?</summary>
+        <div class="a">
+          <p>SmartBizz does not require diners to install any apps or enter phone numbers:</p>
+          <ul>
+            <li>In the POS app, open <strong>Table Management &rarr; Print Standees (PDF)</strong>.</li>
+            <li>Print the A5 acrylic standee cards and place them on tables.</li>
+            <li>Customers open their standard phone camera, scan the QR, and the digital photo menu loads in under a second.</li>
+            <li>Orders go straight to the kitchen display screen wirelessly.</li>
+          </ul>
+          <p><a class="link" href="/r/?org=DEMO&amp;table=1">Try the guest menu on the demo restaurant <span class="arrow">&rarr;</span></a></p>
+        </div>
+      </details>
+      <details>
+        <summary>Does SmartBizz work when the internet goes down?</summary>
+        <div class="a">
+          <p><strong>Yes.</strong> SmartBizz records bills in a database on the device itself, so during a broadband outage your staff can keep punching KOTs, printing thermal bills and opening the cash drawer. On the Offline package it works securely on your device without depending on the cloud. On Basic and above, bills sync to the Google Sheet in your own Google Drive when the connection returns.</p>
+        </div>
+      </details>
+      <details>
+        <summary>Where is my data kept?</summary>
+        <div class="a">
+          <p><strong>Offline package:</strong> Works securely on your device without depending on the cloud. Export an encrypted backup whenever you like and restore it on another device.</p>
+          <p><strong>Basic and above:</strong> Your business data stays in your own Google Drive. We do not take your business data; only limited usage analytics such as bill counts are collected. See the <a class="link" href="/privacy.html">privacy policy</a> for the full list.</p>
+        </div>
+      </details>
+      <details>
+        <summary>How do I delete my account or data?</summary>
+        <div class="a">
+          <p>E-mail us from your registered owner address, or use the Master Admin reset on the till. The <a class="link" href="/deletion.html">data deletion page</a> has the pre-filled request and the 48-hour processing window.</p>
+        </div>
+      </details>
+    </div>
+  </div>
+</section>
+
+<section class="page dev" style="padding-top:0" id="developer">
+  <div class="wrap">
+    <p class="eyebrow reveal">Direct developer contact</p>
+    <div class="card reveal" style="margin-top:18px">
+      <p><b>DevMonks Software Studio</b><br>
+      SmartBizz Platform Team<br>
+      Support Desk: <a href="mailto:smartdine.platform@gmail.com">smartdine.platform@gmail.com</a><br>
+      Live Portal: <a href="https://smartbizz.devmonks.space/pos/">https://smartbizz.devmonks.space/pos/</a><br>
+      Branded Domain: <a href="https://smartbizz.devmonks.space">https://smartbizz.devmonks.space</a></p>
+      <a class="btn btn-ghost" href="https://wa.me/917997970420?text=Hi%20SmartBizz%20support%2C%20I%20need%20help%20with%20" target="_blank" rel="noopener">Message on WhatsApp</a>
+    </div>
+  </div>
+</section>
+</main>
+<footer>
+  <div class="wrap">
+    <span>© <span id="yr">2026</span> DevMonks · SmartBizz</span>
+    <nav><a href="/privacy.html">Privacy</a><a href="/terms.html">Terms</a><a href="/support.html">Support</a><a href="/deletion.html">Data deletion</a><a href="/pos/">Sign in</a></nav>
+  </div>
+</footer>
+<div class="mcta" id="mcta"><a class="btn btn-sun" href="/register/">Start your 14-day free trial</a></div>
+</body>
+</html>

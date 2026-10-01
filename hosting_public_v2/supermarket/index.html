@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Supermarkets · SmartBizz</title>
+<meta name="description" content="SmartBizz for supermarkets and departmental stores: barcode billing at every counter, held bills, weighing-scale labels, shifts per till, staff PINs and one ledger in your own Google Drive.">
+<link rel="canonical" href="https://smartbizz.devmonks.space/supermarket/">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Supermarkets · SmartBizz">
+<meta property="og:description" content="SmartBizz for supermarkets and departmental stores: barcode billing at every counter, held bills, weighing-scale labels, shifts per till, staff PINs and one ledger in your own Google Drive.">
+<meta property="og:url" content="https://smartbizz.devmonks.space/supermarket/">
+<link rel="icon" href="/pos/favicon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/assets/v2.css">
+<style>
+:root{--trade:var(--t-sup)}
+/* Trade pages: extras on top of /assets/v2.css. Inlined by build_site.py. */
+.page-hero .wrap{display:grid;grid-template-columns:1.05fr .95fr;gap:clamp(28px,5vw,72px);align-items:center}
+.page-hero .eyebrow svg{width:26px;height:26px;border-radius:8px;background:var(--trade);flex:none}
+.page-hero h1 .sun-text{display:inline}
+.page-hero .cta{display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin-top:30px}
+.page-hero .proof{display:flex;flex-wrap:wrap;gap:8px 22px;margin-top:26px;font-size:.9rem;color:var(--paper-2)}
+.page-hero .proof span{display:inline-flex;align-items:center;gap:8px}
+.page-hero .proof svg{width:16px;height:16px;flex:none}
+.page-hero .phone{--ry:-7;--rx:2}
+@media (max-width:980px){.page-hero .wrap{grid-template-columns:1fr}.page-hero h1{font-size:clamp(2.8rem,12vw,5.4rem)}.page-hero .stage{margin-top:12px}}
+/* problems -> how SmartBizz solves it */
+.probs{margin-top:44px;border-top:1px solid var(--line)}
+.prob{display:grid;grid-template-columns:.9fr 1.3fr;gap:12px clamp(20px,4vw,64px);padding:30px 0;border-bottom:1px solid var(--line);align-items:start}
+.prob .q{display:flex;gap:14px;align-items:baseline;font:600 clamp(1.1rem,1.8vw,1.35rem)/1.25 var(--body);color:var(--paper-3);letter-spacing:-.005em}
+.prob .q i{font:800 .8rem/1 var(--display);color:var(--sun-a);letter-spacing:.1em;flex:none;translate:0 -.1em}
+.prob .s b{display:block;font:800 clamp(1.45rem,2.8vw,2.3rem)/1.04 var(--display);letter-spacing:-.02em;text-wrap:balance}
+.prob .s p{margin-top:10px;color:var(--paper-2);max-width:58ch}
+.prob .from{display:inline-flex;align-items:center;gap:8px;margin-top:12px;font:600 .72rem/1 var(--body);letter-spacing:.14em;text-transform:uppercase;color:var(--sun-a)}
+.prob .from::before{content:"";width:14px;height:2px;background:var(--sun)}
+@media (max-width:760px){.prob{grid-template-columns:1fr;gap:10px;padding:24px 0}}
+/* feature grid */
+.feats{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:44px}
+.feat{position:relative;display:flex;flex-direction:column;gap:10px;padding:22px 20px;border-radius:20px;border:1px solid var(--line);background:rgba(255,255,255,.035);transition:transform .35s var(--ease),border-color .35s}
+.feat:hover{transform:translateY(-4px);border-color:color-mix(in srgb,var(--trade) 60%,transparent)}
+.feat h3{font-size:1.2rem;font-weight:700;line-height:1.15}
+.feat p{color:var(--paper-2);font-size:.95rem}
+.feat .tags{margin-top:auto;padding-top:6px}
+.feat .tags .tr{background:color-mix(in srgb,var(--trade) 38%,transparent);color:var(--paper)}
+.feat .tags .up{background:rgba(255,200,87,.16);color:var(--sun-a)}
+.feat .link{font-size:.9rem;color:var(--sun-a)}
+@media (max-width:980px){.feats{grid-template-columns:1fr 1fr}}
+@media (max-width:600px){.feats{grid-template-columns:1fr}}
+/* tiers on a trade page */
+.tiers .tier .lim b{font-size:1.4rem}
+.limits-note{margin-top:14px;font-size:.92rem;color:var(--paper-2);max-width:70ch}
+.data-lines{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:22px}
+.data-lines div{padding:16px 18px;border-radius:16px;border:1px solid var(--line);background:rgba(255,255,255,.03);font-size:.95rem;color:var(--paper-2)}
+.data-lines b{display:block;color:var(--paper);margin-bottom:4px}
+@media (max-width:700px){.data-lines{grid-template-columns:1fr}}
+/* honest "not yet" strip */
+.notyet{display:grid;grid-template-columns:minmax(200px,.8fr) 1.6fr;gap:18px clamp(24px,4vw,64px);align-items:start;padding:clamp(22px,3vw,36px);border-radius:22px;border:1px dashed var(--line-2);background:rgba(255,154,107,.06)}
+.notyet h2{font-size:clamp(1.7rem,3.2vw,2.6rem);margin-top:14px;max-width:12ch}
+.notyet .sub{margin-top:12px;font-size:.98rem}
+.notyet ul{margin:0;padding:0;list-style:none;display:grid;gap:12px;color:var(--paper-2)}
+.notyet li{display:flex;gap:12px;align-items:flex-start}
+.notyet li svg{width:20px;height:20px;flex:none;margin-top:3px}
+@media (max-width:760px){.notyet{grid-template-columns:1fr}}
+/* back to all trades */
+.others{display:flex;flex-wrap:wrap;gap:8px;margin-top:28px}
+.others a{display:inline-flex;align-items:center;gap:8px;padding:6px 14px 6px 6px;border-radius:999px;border:1px solid var(--line-2);background:rgba(255,255,255,.04);font-weight:600;font-size:.88rem;transition:background .25s,transform .25s var(--ease)}
+.others a svg{width:24px;height:24px;border-radius:50%;background:var(--c)}
+.others a:hover{background:rgba(255,255,255,.09);transform:translateY(-1px)}
+/* headline rise-in (same motion as the homepage hero) */
+.page-hero h1 .w{display:inline-block;overflow:hidden;vertical-align:bottom;padding-bottom:.06em;margin-bottom:-.06em}
+.page-hero h1 .w span{display:inline-block;transform:translateY(110%);animation:rise .9s var(--ease) forwards;animation-delay:calc(var(--i)*.08s)}
+@media (prefers-reduced-motion:reduce){.page-hero h1 .w span{transform:none}}
+</style>
+<script src="/assets/v2.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#top">Skip to content</a>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <linearGradient id="g-sun" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FFC857"/><stop offset="1" stop-color="#FF6B3D"/></linearGradient>
+    <linearGradient id="g-brand" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1D3F8F"/><stop offset="1" stop-color="#0A1A40"/></linearGradient>
+    <symbol id="i-brand" viewBox="0 0 1024 1024"><rect width="1024" height="1024" fill="url(#g-brand)"/><path d="M650,372 C612,302 420,300 402,392 C388,462 470,490 520,506 C582,525 652,548 640,632 C626,722 430,726 374,650" fill="none" stroke="url(#g-sun)" stroke-width="84" stroke-linecap="round"/><path d="M0,-46 C6,-10 10,-6 46,0 C10,6 6,10 0,46 C-6,10 -10,6 -46,0 C-10,-6 -6,-10 0,-46Z" fill="#FFC857" transform="translate(724,300)"/></symbol>
+    <symbol id="i-rest" viewBox="0 0 1024 1024"><g fill="none" stroke="#fff" stroke-width="56" stroke-linecap="round" stroke-linejoin="round"><path d="M300,616 C300,480 396,404 512,404 C628,404 724,480 724,616 Z"/><path d="M262,664 H762"/><path d="M512,404 V372"/><circle cx="512" cy="352" r="22" fill="#fff" stroke="none"/></g></symbol>
+    <symbol id="i-kir" viewBox="0 0 1024 1024"><g fill="none" stroke="#fff" stroke-width="56" stroke-linecap="round" stroke-linejoin="round" transform="translate(0,22)"><path d="M300,352 H724 L766,462 C756,520 649,520 639,462 C629,520 522,520 512,462 C502,520 395,520 385,462 C375,520 268,520 258,462 Z"/><path d="M322,540 V716 H702 V540"/><path d="M466,716 V616 H558 V716"/></g></symbol>
+    <symbol id="i-sup" viewBox="0 0 1024 1024"><g fill="none" stroke="#fff" stroke-width="56" stroke-linecap="round" stroke-linejoin="round"><path d="M248,330 H324 L384,606 H690 L744,414 H352"/><circle cx="420" cy="690" r="36"/><circle cx="662" cy="690" r="36"/></g></symbol>
+    <symbol id="i-pha" viewBox="0 0 1024 1024"><g fill="none" stroke="#fff" stroke-width="56" stroke-linejoin="round"><path d="M450,296 H574 V450 H728 V574 H574 V728 H450 V574 H296 V450 H450 Z"/></g></symbol>
+    <symbol id="i-ret" viewBox="0 0 1024 1024"><g fill="none" stroke="#fff" stroke-width="56" stroke-linecap="round" stroke-linejoin="round"><path d="M318,424 H706 L682,722 H342 Z"/><path d="M420,424 V386 C420,332 460,300 512,300 C564,300 604,332 604,386 V424"/></g></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="rgba(95,211,163,.18)"/><path d="M7 12.5l3.2 3L17 9" fill="none" stroke="#5FD3A3" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-no" viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="rgba(255,255,255,.06)"/><path d="M8 8l8 8M16 8l-8 8" fill="none" stroke="#6F7CA3" stroke-width="2" stroke-linecap="round"/></symbol>
+  </defs>
+</svg>
+<header class="nav" id="nav">
+  <div class="wrap">
+    <a class="brand" href="/" aria-label="SmartBizz home"><svg><use href="#i-brand"/></svg>SmartBizz</a>
+    <button class="menu-btn" id="menuBtn" aria-expanded="false" aria-controls="navLinks">Menu</button>
+    <nav class="nav-links" id="navLinks">
+      <a href="/#trades">Business types</a>
+      <a href="/#how">How it works</a>
+      <a href="/#packages">Packages</a>
+      <a href="/#data">Your data</a>
+      <a href="/#faq">FAQ</a>
+      <a href="/pos/">Sign in</a>
+    </nav>
+    <a class="btn btn-sun btn-sm" href="/register/">Start free trial</a>
+  </div>
+  <div class="progress" id="progress"></div>
+</header>
+<main id="top">
+<section class="page-hero" id="hero">
+  <div class="glow"></div>
+  <div class="grid-lines"></div>
+  <div class="wrap">
+    <div>
+      <p class="eyebrow"><svg><use href="#i-sup"/></svg>Supermarkets · departmental stores</p>
+      <h1><span class="w"><span style="--i:0">Many</span></span> <span class="w"><span style="--i:1">tills.</span></span> <span class="w"><span style="--i:2" class="sun-text">One</span></span> <span class="w"><span style="--i:3" class="sun-text">set</span></span> <span class="w"><span style="--i:4" class="sun-text">of</span></span> <span class="w"><span style="--i:5" class="sun-text">numbers.</span></span></h1>
+      <p class="lede">Scan at every counter, read the label the weighing scale printed, hold a basket while the customer fetches one more thing, and close each till&#x27;s shift on its own. Built for the trolley, not the table.</p>
+      <div class="cta">
+        <a class="btn btn-sun" href="/register/?category=supermarket">Start your 14-day free trial <span class="arrow">→</span></a>
+        <a class="btn btn-ghost" href="#packages">See packages</a>
+      </div>
+      <div class="proof"><span><svg><use href="#i-check"/></svg>No card needed</span><span><svg><use href="#i-check"/></svg>Scale labels and held bills from day one</span><span><svg><use href="#i-check"/></svg>Not a payment gateway</span></div>
+    </div>
+    <div class="stage">
+      <div class="orbit"></div>
+      <div class="phone" aria-label="SmartBizz Supermarket till">
+        <div class="app">
+          <div class="bar"><div><b>FreshMart</b><small>Counter 3 of 5 · Shift B</small></div><div class="ic"><svg><use href="#i-sup"/></svg></div></div>
+          <div class="bodyx">
+            <div class="ctx"><span>Bill #FM-7731</span><span class="pill ok">Scale label read</span></div>
+            <div class="scan"></div>
+            <div class="rows"><div class="row" style="--i:0"><span>Tomato<small>1.250 kg × ₹32/kg · scale</small></span><em>₹40.00</em></div><div class="row" style="--i:1"><span>Surf Excel 1 kg<small>1 × ₹189</small></span><em>₹189.00</em></div><div class="row" style="--i:2"><span>Nescafé Classic 50 g<small>1 × ₹245</small></span><em>₹245.00</em></div><div class="row" style="--i:3"><span>Bananas<small>0.900 kg × ₹60/kg · scale</small></span><em>₹54.00</em></div></div>
+            <div class="total"><span>Total incl. GST</span><b>₹528</b></div>
+          </div>
+          <div class="pay"><span class="sun">Cash</span><span>UPI</span><span>Card</span><span>Hold</span></div>
+        </div>
+      </div>
+      <div class="toast t1"><span class="dot"></span><span>5 counters synced to one ledger</span></div>
+      <div class="toast t2 warn"><span class="dot"></span><span>Counter 2 · bill on hold · 3 min</span></div>
+    </div>
+  </div>
+</section>
+
+<div class="marquee" aria-hidden="true"><div class="track"><span><i>●</i>Barcode billing<i>●</i>Scale labels<i>●</i>Held bills<i>●</i>Multiple tills<i>●</i>Shift per till<i>●</i>Staff PINs<i>●</i>Categories &amp; MRP<i>●</i>GST bills<i>●</i>Stock &amp; reorder levels<i>●</i>Cloud ledger in your Drive</span><span><i>●</i>Barcode billing<i>●</i>Scale labels<i>●</i>Held bills<i>●</i>Multiple tills<i>●</i>Shift per till<i>●</i>Staff PINs<i>●</i>Categories &amp; MRP<i>●</i>GST bills<i>●</i>Stock &amp; reorder levels<i>●</i>Cloud ledger in your Drive</span></div></div>
+
+<section class="section" id="problems">
+  <div class="wrap">
+    <p class="eyebrow reveal">At the counter</p>
+    <h2 class="reveal">Problems you know. Fixes you can see.</h2>
+    <p class="sub reveal">What goes wrong for supermarkets, departmental stores and self-service stores, and what the till does about it. The tag on each says which package it starts at.</p>
+    <div class="probs"><div class="prob reveal"><p class="q"><i>01</i>Long queues at the counters.</p><div class="s"><b>Every counter scans, and a bill can wait on hold.</b><p>Barcode billing at every till. Park a bill when a customer steps away and serve the next one.</p><span class="from">From Offline</span></div></div><div class="prob reveal"><p class="q"><i>02</i>Produce is weighed, then priced by hand.</p><div class="s"><b>Scale labels scan straight into the bill.</b><p>Price per kg; the till reads the EAN-13 label your weighing scale prints and prices the line, or you type the weight.</p><span class="from">From Offline</span></div></div><div class="prob reveal"><p class="q"><i>03</i>Thousands of products to price and find.</p><div class="s"><b>Scan, or search by name; MRP, unit and barcode on every product.</b><p>Products with categories, prices, MRP, units and barcodes, kept in one list.</p><span class="from">From Offline</span></div></div><div class="prob reveal"><p class="q"><i>04</i>Several counters to run and reconcile.</p><div class="s"><b>Add tills as you grow; every bill lands in one ledger.</b><p>2 devices on Basic, 5 on Standard, 10 on Premium. Each till closes its own shift, and every bill syncs to the sheet in your own Google Drive.</p><span class="from">From Basic</span></div></div><div class="prob reveal"><p class="q"><i>05</i>Shelves go empty.</p><div class="s"><b>Reorder levels warn before the shelf does.</b><p>Quantities on hand, goods-in entries, stock counts and history.</p><span class="from">From Offline</span></div></div><div class="prob reveal"><p class="q"><i>06</i>A second store to watch.</p><div class="s"><b>Branches under one owner login.</b><p>Multiple stores, each with its own sheet and staff, on Premium.</p><span class="from">From Premium</span></div></div></div>
+  </div>
+</section>
+
+<section class="section" id="features" style="padding-top:0">
+  <div class="wrap">
+    <div class="head">
+      <div><p class="eyebrow reveal">What you get</p><h2 class="reveal">Everything the supermarket counter needs.</h2></div>
+      <p class="sub reveal" style="margin:0">Each card says the package it starts at. Extras for your trade can be added to any package.</p>
+    </div>
+    <div class="feats"><div class="feat reveal"><h3>Barcode billing</h3><p>A scanner at every till, or search by name.</p><div class="tags"><span class="tr">Till</span><span>From Offline</span></div></div><div class="feat reveal"><h3>Scale labels &amp; loose weight</h3><p>The till reads your weighing-scale&#x27;s EAN-13 label; or price per kg and type the weight.</p><div class="tags"><span class="tr">Till</span><span>From Offline</span></div></div><div class="feat reveal"><h3>Held bills</h3><p>Park a bill when a customer steps away; pick it up when they return.</p><div class="tags"><span class="tr">Till</span><span>From Offline</span></div></div><div class="feat reveal"><h3>Products, MRP &amp; categories</h3><p>Prices, MRP, units, barcodes and categories in one list.</p><div class="tags"><span class="tr">Shelf</span><span>From Offline</span></div></div><div class="feat reveal"><h3>Stock &amp; reorder levels</h3><p>Quantities on hand, reorder warnings, goods in, stock counts and history.</p><div class="tags"><span class="tr">Shelf</span><span>From Offline</span></div></div><div class="feat reveal"><h3>Customer khata</h3><p>Credit per customer with the running balance.</p><div class="tags"><span class="tr">Customers</span><span>From Offline</span></div></div><div class="feat reveal"><h3>UPI QR at the till</h3><p>A QR for the exact amount, paid to your own UPI ID. Not a payment gateway.</p><div class="tags"><span class="tr">Till</span><span>From Offline</span></div></div><div class="feat reveal"><h3>GST bills</h3><p>Your GSTIN, tax rates and a numbered invoice series.</p><div class="tags"><span class="tr">Till</span><span>From Offline</span></div></div><div class="feat reveal"><h3>Thermal printing</h3><p>58 or 80 mm ESC/POS printers over Bluetooth, USB or the network.</p><div class="tags"><span class="tr">Till</span><span>From Offline</span></div></div><div class="feat reveal"><h3>Staff &amp; roles</h3><p>Owner, manager and billing logins with PINs. Voids need a manager PIN.</p><div class="tags"><span class="tr">Office</span><span>From Offline</span></div></div><div class="feat reveal"><h3>Shift per till</h3><p>Each counter opens, counts and closes its own shift with a Z-report.</p><div class="tags"><span class="tr">Office</span><span>From Offline</span></div></div><div class="feat reveal"><h3>Sales analytics</h3><p>Sales by product, hour and staff member.</p><div class="tags"><span class="tr">Office</span><span>From Offline</span></div></div><div class="feat reveal"><h3>Cloud ledger</h3><p>Every till&#x27;s bills in one Google Sheet in your own Google Drive.</p><div class="tags"><span class="tr">Growth</span><span class="up">From Basic</span></div></div><div class="feat reveal"><h3>More than one till</h3><p>2 devices on Basic, 5 on Standard, 10 on Premium.</p><div class="tags"><span class="tr">Growth</span><span class="up">From Basic</span></div></div><div class="feat reveal"><h3>E-mail bills</h3><p>The bill reaches the customer&#x27;s inbox at checkout.</p><div class="tags"><span class="tr">Customers</span><span class="up">From Standard</span></div></div><div class="feat reveal"><h3>Multiple stores</h3><p>Branches under one owner login, each with its own sheet and staff.</p><div class="tags"><span class="tr">Growth</span><span class="up">From Premium</span></div></div></div>
+  </div>
+</section>
+
+<section class="section" id="packages">
+  <div class="wrap">
+    <div class="head">
+      <div><p class="eyebrow reveal">Packages for Supermarket</p><h2 class="reveal">Start small. Grow without switching apps.</h2></div>
+      <p class="sub reveal" style="margin:0">A package is your trade's features at a tier. A plan is only how long it runs. 14 days free on every tier, no card.</p>
+    </div>
+    <div class="tiers"><div class="tier reveal"><div class="name">Offline</div><p class="who">One device, one store, the owner. The full till for your trade.</p><div class="lim"><div><b>1</b><small>device</small></div><div><b>1</b><small>store</small></div><div><b>1</b><small>user</small></div></div><ul><li>Barcode billing, scale labels, held bills</li><li>Customer khata</li><li>Stock &amp; reorder levels</li><li>Thermal printing, UPI QR, shift Z-report</li><li>Staff PINs, expenses, analytics, encrypted backup</li></ul><p class="data">Data kept on your device</p><a class="btn btn-ghost btn-sm" href="/register/?category=supermarket">Start free</a></div><div class="tier reveal"><div class="name">Basic</div><p class="who">A second device and a cloud ledger in your own Drive.</p><div class="lim"><div><b>2</b><small>devices</small></div><div><b>1</b><small>store</small></div><div><b>3</b><small>users</small></div></div><ul><li>All of Offline</li><li>Google Sheet per store, in your own Drive</li><li>Second device, 3 users</li></ul><p class="data">Data kept in your own Google Drive</p><a class="btn btn-ghost btn-sm" href="/register/?category=supermarket">Start free</a></div><div class="tier hot reveal"><span class="badge">Most chosen</span><div class="name">Standard</div><p class="who">Several counters and staff, with e-mail bills.</p><div class="lim"><div><b>5</b><small>devices</small></div><div><b>1</b><small>store</small></div><div><b>10</b><small>users</small></div></div><ul><li>All of Basic</li><li>E-mail bills to customers</li><li>Up to 5 tills, 10 staff</li></ul><p class="data">Data kept in your own Google Drive</p><a class="btn btn-sun btn-sm" href="/register/?category=supermarket">Request Standard</a></div><div class="tier reveal"><div class="name">Premium</div><p class="who">Multiple stores under one owner login.</p><div class="lim"><div><b>10</b><small>devices</small></div><div><b>3</b><small>stores</small></div><div><b>25</b><small>users</small></div></div><ul><li>All of Standard</li><li>Multiple stores, each with its own sheet</li><li>Up to 10 tills, 3 stores, 25 staff</li></ul><p class="data">Data kept in your own Google Drive</p><a class="btn btn-ghost btn-sm" href="/register/?category=supermarket">Request Premium</a></div><div class="tier reveal"><div class="name">Enterprise</div><p class="who">Premium, with devices, stores and users set for you.</p><div class="lim"><div><b>20+</b><small>devices</small></div><div><b>10+</b><small>stores</small></div><div><b>50+</b><small>users</small></div></div><ul><li>All of Premium</li><li>Devices, stores and users set per client</li><li>Set up with our team</li></ul><p class="data">Data kept in your own Google Drive</p><a class="btn btn-ghost btn-sm" href="/support.html">Talk to us</a></div></div>
+    <p class="limits-note reveal">Devices, stores and users on Basic to Premium are the standard limits; they can be adjusted for your business. Enterprise is set per client.</p>
+    <div class="data-lines">
+      <div class="reveal"><b>Offline</b>Works securely on your device without depending on the cloud. Export an encrypted backup whenever you like and restore it on another device.</div>
+      <div class="reveal"><b>Basic, Standard, Premium, Enterprise</b>Your business data stays in your own Google Drive. We do not take your business data; only limited usage analytics such as bill counts are collected.</div>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="not-yet" style="padding-top:0">
+  <div class="wrap">
+    <div class="notyet reveal">
+      <div><p class="eyebrow">Not yet</p><h2>What we do not claim.</h2><p class="sub">We list these openly so you know before you sign up.</p></div>
+      <ul><li><svg><use href="#i-no"/></svg><span>Sales returns and exchanges are not built. Tell us how you handle them and we will tell you what fits.</span></li><li><svg><use href="#i-no"/></svg><span>The counter (touch-grid) desk does not scan; barcodes are scanned on the barcode billing desk.</span></li><li><svg><use href="#i-no"/></svg><span>A payment gateway. We do not process or hold money: settle by cash, your own card machine, khata, or a UPI QR paid to your own UPI ID.</span></li></ul>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="faq">
+  <div class="wrap faq">
+    <div>
+      <p class="eyebrow reveal">Questions</p><h2 class="reveal">Straight answers.</h2>
+      <p class="sub reveal">Anything else? <a class="link" href="/support.html">Ask us <span class="arrow">→</span></a></p>
+      <p class="sub reveal" style="margin-top:36px;font-size:.9rem;color:var(--paper-3)">Not your trade?</p>
+      <div class="others reveal"><a href="/restaurants/" style="--c:var(--t-rest)"><svg><use href="#i-rest"/></svg>Restaurant</a><a href="/kirana/" style="--c:var(--t-kir)"><svg><use href="#i-kir"/></svg>Kirana</a><a href="/pharmacy/" style="--c:var(--t-pha)"><svg><use href="#i-pha"/></svg>Pharmacy</a><a href="/retail/" style="--c:var(--t-ret)"><svg><use href="#i-ret"/></svg>Retail</a></div>
+    </div>
+    <div class="reveal"><details open><summary>How many counters can run at once?</summary><p class="a">One on Offline. Basic allows 2 devices, Standard 5 and Premium 10. Enterprise is set per client.</p></details><details><summary>Can each till be counted separately?</summary><p class="a">Yes. Shifts open and close per device, with counted cash and a Z-report.</p></details><details><summary>Does it read weighing-scale labels?</summary><p class="a">Yes. Set a price per kg, and the till reads the EAN-13 label your label scale prints (the product code and the weight or price are in the barcode). You can also type the weight.</p></details><details><summary>What happens to a bill the customer walks away from?</summary><p class="a">Hold it. The till keeps it aside, you serve the next customer, and pick it up when they come back.</p></details><details><summary>Do you take a cut of UPI payments?</summary><p class="a">No. SmartBizz is not a payment gateway. The QR on the till pays your own UPI ID.</p></details><details><summary>Can I keep my printers?</summary><p class="a">Yes, if they are ESC/POS thermal printers (58 or 80 mm) over Bluetooth, USB or the network, one per till.</p></details><details><summary>Where is my data?</summary><p class="a">Offline: Works securely on your device without depending on the cloud. Export an encrypted backup whenever you like and restore it on another device. Basic and above: Your business data stays in your own Google Drive. We do not take your business data; only limited usage analytics such as bill counts are collected.</p></details></div>
+  </div>
+</section>
+
+<section class="final" id="start">
+  <div class="glow"></div>
+  <div class="wrap">
+    <h2 class="reveal">Open your supermarket counter today.</h2>
+    <p class="reveal">Choose Supermarket at sign-up, verify your e-mail, and bill your first customer in the same sitting. 14 days free, no card.</p>
+    <div class="cta reveal"><a class="btn btn-sun" href="/register/?category=supermarket">Start your 14-day free trial <span class="arrow">→</span></a><a class="btn btn-ghost" href="/support.html">Talk to us</a></div>
+  </div>
+</section>
+</main>
+<footer>
+  <div class="wrap">
+    <span>© <span id="yr">2026</span> DevMonks · SmartBizz</span>
+    <nav><a href="/privacy.html">Privacy</a><a href="/terms.html">Terms</a><a href="/support.html">Support</a><a href="/deletion.html">Data deletion</a><a href="/pos/">Sign in</a></nav>
+  </div>
+</footer>
+<div class="mcta" id="mcta"><a class="btn btn-sun" href="/register/">Start your 14-day free trial</a></div>
+</body>
+</html>

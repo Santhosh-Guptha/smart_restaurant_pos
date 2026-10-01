@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Restaurants · SmartBizz</title>
+<meta name="description" content="SmartBizz for restaurants, cafés, bars and cloud kitchens: tables, kitchen tickets, running tabs, reservations, kitchen display, waiter ordering and QR ordering. Your business data stays with you.">
+<link rel="canonical" href="https://smartbizz.devmonks.space/restaurants/">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Restaurants · SmartBizz">
+<meta property="og:description" content="SmartBizz for restaurants, cafés, bars and cloud kitchens: tables, kitchen tickets, running tabs, reservations, kitchen display, waiter ordering and QR ordering. Your business data stays with you.">
+<meta property="og:url" content="https://smartbizz.devmonks.space/restaurants/">
+<link rel="icon" href="/pos/favicon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/assets/v2.css">
+<style>
+:root{--trade:var(--t-rest)}
+/* Trade pages: extras on top of /assets/v2.css. Inlined by build_site.py. */
+.page-hero .wrap{display:grid;grid-template-columns:1.05fr .95fr;gap:clamp(28px,5vw,72px);align-items:center}
+.page-hero .eyebrow svg{width:26px;height:26px;border-radius:8px;background:var(--trade);flex:none}
+.page-hero h1 .sun-text{display:inline}
+.page-hero .cta{display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin-top:30px}
+.page-hero .proof{display:flex;flex-wrap:wrap;gap:8px 22px;margin-top:26px;font-size:.9rem;color:var(--paper-2)}
+.page-hero .proof span{display:inline-flex;align-items:center;gap:8px}
+.page-hero .proof svg{width:16px;height:16px;flex:none}
+.page-hero .phone{--ry:-7;--rx:2}
+@media (max-width:980px){.page-hero .wrap{grid-template-columns:1fr}.page-hero h1{font-size:clamp(2.8rem,12vw,5.4rem)}.page-hero .stage{margin-top:12px}}
+/* problems -> how SmartBizz solves it */
+.probs{margin-top:44px;border-top:1px solid var(--line)}
+.prob{display:grid;grid-template-columns:.9fr 1.3fr;gap:12px clamp(20px,4vw,64px);padding:30px 0;border-bottom:1px solid var(--line);align-items:start}
+.prob .q{display:flex;gap:14px;align-items:baseline;font:600 clamp(1.1rem,1.8vw,1.35rem)/1.25 var(--body);color:var(--paper-3);letter-spacing:-.005em}
+.prob .q i{font:800 .8rem/1 var(--display);color:var(--sun-a);letter-spacing:.1em;flex:none;translate:0 -.1em}
+.prob .s b{display:block;font:800 clamp(1.45rem,2.8vw,2.3rem)/1.04 var(--display);letter-spacing:-.02em;text-wrap:balance}
+.prob .s p{margin-top:10px;color:var(--paper-2);max-width:58ch}
+.prob .from{display:inline-flex;align-items:center;gap:8px;margin-top:12px;font:600 .72rem/1 var(--body);letter-spacing:.14em;text-transform:uppercase;color:var(--sun-a)}
+.prob .from::before{content:"";width:14px;height:2px;background:var(--sun)}
+@media (max-width:760px){.prob{grid-template-columns:1fr;gap:10px;padding:24px 0}}
+/* feature grid */
+.feats{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:44px}
+.feat{position:relative;display:flex;flex-direction:column;gap:10px;padding:22px 20px;border-radius:20px;border:1px solid var(--line);background:rgba(255,255,255,.035);transition:transform .35s var(--ease),border-color .35s}
+.feat:hover{transform:translateY(-4px);border-color:color-mix(in srgb,var(--trade) 60%,transparent)}
+.feat h3{font-size:1.2rem;font-weight:700;line-height:1.15}
+.feat p{color:var(--paper-2);font-size:.95rem}
+.feat .tags{margin-top:auto;padding-top:6px}
+.feat .tags .tr{background:color-mix(in srgb,var(--trade) 38%,transparent);color:var(--paper)}
+.feat .tags .up{background:rgba(255,200,87,.16);color:var(--sun-a)}
+.feat .link{font-size:.9rem;color:var(--sun-a)}
+@media (max-width:980px){.feats{grid-template-columns:1fr 1fr}}
+@media (max-width:600px){.feats{grid-template-columns:1fr}}
+/* tiers on a trade page */
+.tiers .tier .lim b{font-size:1.4rem}
+.limits-note{margin-top:14px;font-size:.92rem;color:var(--paper-2);max-width:70ch}
+.data-lines{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:22px}
+.data-lines div{padding:16px 18px;border-radius:16px;border:1px solid var(--line);background:rgba(255,255,255,.03);font-size:.95rem;color:var(--paper-2)}
+.data-lines b{display:block;color:var(--paper);margin-bottom:4px}
+@media (max-width:700px){.data-lines{grid-template-columns:1fr}}
+/* honest "not yet" strip */
+.notyet{display:grid;grid-template-columns:minmax(200px,.8fr) 1.6fr;gap:18px clamp(24px,4vw,64px);align-items:start;padding:clamp(22px,3vw,36px);border-radius:22px;border:1px dashed var(--line-2);background:rgba(255,154,107,.06)}
+.notyet h2{font-size:clamp(1.7rem,3.2vw,2.6rem);margin-top:14px;max-width:12ch}
+.notyet .sub{margin-top:12px;font-size:.98rem}
+.notyet ul{margin:0;padding:0;list-style:none;display:grid;gap:12px;color:var(--paper-2)}
+.notyet li{display:flex;gap:12px;align-items:flex-start}
+.notyet li svg{width:20px;height:20px;flex:none;margin-top:3px}
+@media (max-width:760px){.notyet{grid-template-columns:1fr}}
+/* back to all trades */
+.others{display:flex;flex-wrap:wrap;gap:8px;margin-top:28px}
+.others a{display:inline-flex;align-items:center;gap:8px;padding:6px 14px 6px 6px;border-radius:999px;border:1px solid var(--line-2);background:rgba(255,255,255,.04);font-weight:600;font-size:.88rem;transition:background .25s,transform .25s var(--ease)}
+.others a svg{width:24px;height:24px;border-radius:50%;background:var(--c)}
+.others a:hover{background:rgba(255,255,255,.09);transform:translateY(-1px)}
+/* headline rise-in (same motion as the homepage hero) */
+.page-hero h1 .w{display:inline-block;overflow:hidden;vertical-align:bottom;padding-bottom:.06em;margin-bottom:-.06em}
+.page-hero h1 .w span{display:inline-block;transform:translateY(110%);animation:rise .9s var(--ease) forwards;animation-delay:calc(var(--i)*.08s)}
+@media (prefers-reduced-motion:reduce){.page-hero h1 .w span{transform:none}}
+</style>
+<script src="/assets/v2.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#top">Skip to content</a>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <linearGradient id="g-sun" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FFC857"/><stop offset="1" stop-color="#FF6B3D"/></linearGradient>
+    <linearGradient id="g-brand" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1D3F8F"/><stop offset="1" stop-color="#0A1A40"/></linearGradient>
+    <symbol id="i-brand" viewBox="0 0 1024 1024"><rect width="1024" height="1024" fill="url(#g-brand)"/><path d="M650,372 C612,302 420,300 402,392 C388,462 470,490 520,506 C582,525 652,548 640,632 C626,722 430,726 374,650" fill="none" stroke="url(#g-sun)" stroke-width="84" stroke-linecap="round"/><path d="M0,-46 C6,-10 10,-6 46,0 C10,6 6,10 0,46 C-6,10 -10,6 -46,0 C-10,-6 -6,-10 0,-46Z" fill="#FFC857" transform="translate(724,300)"/></symbol>
+    <symbol id="i-rest" viewBox="0 0 1024 1024"><g fill="none" stroke="#fff" stroke-width="56" stroke-linecap="round" stroke-linejoin="round"><path d="M300,616 C300,480 396,404 512,404 C628,404 724,480 724,616 Z"/><path d="M262,664 H762"/><path d="M512,404 V372"/><circle cx="512" cy="352" r="22" fill="#fff" stroke="none"/></g></symbol>
+    <symbol id="i-kir" viewBox="0 0 1024 1024"><g fill="none" stroke="#fff" stroke-width="56" stroke-linecap="round" stroke-linejoin="round" transform="translate(0,22)"><path d="M300,352 H724 L766,462 C756,520 649,520 639,462 C629,520 522,520 512,462 C502,520 395,520 385,462 C375,520 268,520 258,462 Z"/><path d="M322,540 V716 H702 V540"/><path d="M466,716 V616 H558 V716"/></g></symbol>
+    <symbol id="i-sup" viewBox="0 0 1024 1024"><g fill="none" stroke="#fff" stroke-width="56" stroke-linecap="round" stroke-linejoin="round"><path d="M248,330 H324 L384,606 H690 L744,414 H352"/><circle cx="420" cy="690" r="36"/><circle cx="662" cy="690" r="36"/></g></symbol>
+    <symbol id="i-pha" viewBox="0 0 1024 1024"><g fill="none" stroke="#fff" stroke-width="56" stroke-linejoin="round"><path d="M450,296 H574 V450 H728 V574 H574 V728 H450 V574 H296 V450 H450 Z"/></g></symbol>
+    <symbol id="i-ret" viewBox="0 0 1024 1024"><g fill="none" stroke="#fff" stroke-width="56" stroke-linecap="round" stroke-linejoin="round"><path d="M318,424 H706 L682,722 H342 Z"/><path d="M420,424 V386 C420,332 460,300 512,300 C564,300 604,332 604,386 V424"/></g></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="rgba(95,211,163,.18)"/><path d="M7 12.5l3.2 3L17 9" fill="none" stroke="#5FD3A3" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-no" viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="rgba(255,255,255,.06)"/><path d="M8 8l8 8M16 8l-8 8" fill="none" stroke="#6F7CA3" stroke-width="2" stroke-linecap="round"/></symbol>
+  </defs>
+</svg>
+<header class="nav" id="nav">
+  <div class="wrap">
+    <a class="brand" href="/" aria-label="SmartBizz home"><svg><use href="#i-brand"/></svg>SmartBizz</a>
+    <button class="menu-btn" id="menuBtn" aria-expanded="false" aria-controls="navLinks">Menu</button>
+    <nav class="nav-links" id="navLinks">
+      <a href="/#trades">Business types</a>
+      <a href="/#how">How it works</a>
+      <a href="/#packages">Packages</a>
+      <a href="/#data">Your data</a>
+      <a href="/#faq">FAQ</a>
+      <a href="/pos/">Sign in</a>
+    </nav>
+    <a class="btn btn-sun btn-sm" href="/register/">Start free trial</a>
+  </div>
+  <div class="progress" id="progress"></div>
+</header>
+<main id="top">
+<section class="page-hero" id="hero">
+  <div class="glow"></div>
+  <div class="grid-lines"></div>
+  <div class="wrap">
+    <div>
+      <p class="eyebrow"><svg><use href="#i-rest"/></svg>Restaurants · cafés · bars · cloud kitchens</p>
+      <h1><span class="w"><span style="--i:0">Every</span></span> <span class="w"><span style="--i:1">order,</span></span> <span class="w"><span style="--i:2">every</span></span> <span class="w"><span style="--i:3">screen,</span></span> <span class="w"><span style="--i:4" class="sun-text">in</span></span> <span class="w"><span style="--i:5" class="sun-text">step.</span></span></h1>
+      <p class="lede">The table orders. The kitchen gets the ticket. The counter settles it in two taps. One system for the whole floor, from a single till to kitchen screens, waiter phones and QR ordering.</p>
+      <div class="cta">
+        <a class="btn btn-sun" href="/register/?category=restaurant">Start your 14-day free trial <span class="arrow">→</span></a>
+        <a class="btn btn-ghost" href="#packages">See packages</a>
+      </div>
+      <div class="proof"><span><svg><use href="#i-check"/></svg>No card needed</span><span><svg><use href="#i-check"/></svg>Tables, KOT and reservations from day one</span><span><svg><use href="#i-check"/></svg>Not a payment gateway</span></div>
+    </div>
+    <div class="stage">
+      <div class="orbit"></div>
+      <div class="phone" aria-label="SmartBizz Restaurant till">
+        <div class="app">
+          <div class="bar"><div><b>Spice Garden</b><small>Table 4 · Dine-in</small></div><div class="ic"><svg><use href="#i-rest"/></svg></div></div>
+          <div class="bodyx">
+            <div class="ctx"><span>KOT #18 · Bill #SG-0291</span><span class="pill ok">Sent to kitchen</span></div>
+            
+            <div class="rows"><div class="row" style="--i:0"><span>Paneer Butter Masala<small>1 × ₹260</small></span><em>₹260.00</em></div><div class="row" style="--i:1"><span>Butter Naan<small>3 × ₹45</small></span><em>₹135.00</em></div><div class="row" style="--i:2"><span>Dal Tadka<small>1 × ₹180</small></span><em>₹180.00</em></div><div class="row" style="--i:3"><span>Masala Chai<small>2 × ₹30</small></span><em>₹60.00</em></div></div>
+            <div class="total"><span>Running tab incl. GST</span><b>₹667</b></div>
+          </div>
+          <div class="pay"><span class="sun">Cash</span><span>UPI</span><span>Card</span><span>Add round</span></div>
+        </div>
+      </div>
+      <div class="toast t1"><span class="dot"></span><span>KOT #18 printed in the kitchen</span></div>
+      <div class="toast t2"><span class="dot"></span><span>Table 4 · 42 min · bill not yet asked</span></div>
+    </div>
+  </div>
+</section>
+
+<div class="marquee" aria-hidden="true"><div class="track"><span><i>●</i>Kitchen tickets (KOT)<i>●</i>Tables &amp; floor plan<i>●</i>Running tabs<i>●</i>Reservations<i>●</i>Kitchen display<i>●</i>Waiter ordering<i>●</i>QR table ordering<i>●</i>Online menu<i>●</i>Your own UPI QR<i>●</i>Day-end Z-report</span><span><i>●</i>Kitchen tickets (KOT)<i>●</i>Tables &amp; floor plan<i>●</i>Running tabs<i>●</i>Reservations<i>●</i>Kitchen display<i>●</i>Waiter ordering<i>●</i>QR table ordering<i>●</i>Online menu<i>●</i>Your own UPI QR<i>●</i>Day-end Z-report</span></div></div>
+
+<section class="section" id="problems">
+  <div class="wrap">
+    <p class="eyebrow reveal">At the counter</p>
+    <h2 class="reveal">Problems you know. Fixes you can see.</h2>
+    <p class="sub reveal">What goes wrong for restaurants, cafés, bars, bakeries, cloud kitchens and food courts, and what the till does about it. The tag on each says which package it starts at.</p>
+    <div class="probs"><div class="prob reveal"><p class="q"><i>01</i>Orders go missing between the floor and the kitchen.</p><div class="s"><b>The ticket prints the moment the order is punched.</b><p>A kitchen order ticket (KOT) prints alongside the bill. On Standard, a kitchen display shows every order with stations and timers.</p><span class="from">From Offline</span></div></div><div class="prob reveal"><p class="q"><i>02</i>Tables wait too long for the bill.</p><div class="s"><b>Every table&#x27;s tab is one tap from settled.</b><p>The floor map shows each table&#x27;s state and running tab. Move or merge tables, add rounds, and settle by cash, your card machine or a UPI QR for the exact amount.</p><span class="from">From Offline</span></div></div><div class="prob reveal"><p class="q"><i>03</i>Waiters walk back and forth to the counter.</p><div class="s"><b>The order leaves the table on the waiter&#x27;s phone.</b><p>Waiter order taking on a phone or tablet sends the order to the kitchen while the waiter is still at the table.</p><span class="from">From Standard</span></div></div><div class="prob reveal"><p class="q"><i>04</i>Printed menus go out of date.</p><div class="s"><b>Your live menu sits behind a link and a QR.</b><p>An online menu, QR table ordering from the guest&#x27;s own phone, and pickup or takeaway orders placed from a link.</p><span class="from">From Premium</span></div></div><div class="prob reveal"><p class="q"><i>05</i>Bookings live in a notebook.</p><div class="s"><b>Tonight&#x27;s reservations sit on the table map.</b><p>Book ahead, seat guests on arrival, and see the free tables on the same screen.</p><span class="from">From Offline</span></div></div><div class="prob reveal"><p class="q"><i>06</i>No clear view of what sells, and when.</p><div class="s"><b>Day-end tells you by dish, hour and staff.</b><p>Sales analytics, expenses against the drawer, and a Z-report with counted cash when you close.</p><span class="from">From Offline</span></div></div></div>
+  </div>
+</section>
+
+<section class="section" id="features" style="padding-top:0">
+  <div class="wrap">
+    <div class="head">
+      <div><p class="eyebrow reveal">What you get</p><h2 class="reveal">Everything the restaurant counter needs.</h2></div>
+      <p class="sub reveal" style="margin:0">Each card says the package it starts at. Extras for your trade can be added to any package.</p>
+    </div>
+    <div class="feats"><div class="feat reveal"><h3>Tables &amp; floor plan</h3><p>A live map of the room: seat, clean, block, move and merge tables.</p><div class="tags"><span class="tr">Floor</span><span>From Offline</span></div></div><div class="feat reveal"><h3>Kitchen tickets (KOT)</h3><p>The KOT prints for the kitchen alongside the bill, on the same or a second printer.</p><div class="tags"><span class="tr">Kitchen</span><span>From Offline</span></div></div><div class="feat reveal"><h3>Running tabs</h3><p>Keep a bill open, add rounds, split nothing by hand: settle at the end.</p><div class="tags"><span class="tr">Floor</span><span>From Offline</span></div></div><div class="feat reveal"><h3>Reservations</h3><p>Book tables ahead and seat guests on arrival.</p><div class="tags"><span class="tr">Floor</span><span>From Offline</span></div></div><div class="feat reveal"><h3>Menu &amp; option groups</h3><p>Dishes, categories, prices, prep times, availability, sold-out, and option groups per item.</p><div class="tags"><span class="tr">Menu</span><span>From Offline</span></div></div><div class="feat reveal"><h3>Counter till &amp; tokens</h3><p>Takeaway tokens and table bills on the same till, with discounts and manager-PIN voids.</p><div class="tags"><span class="tr">Till</span><span>From Offline</span></div></div><div class="feat reveal"><h3>Thermal printing</h3><p>58 or 80 mm ESC/POS printers over Bluetooth, USB or the network.</p><div class="tags"><span class="tr">Till</span><span>From Offline</span></div></div><div class="feat reveal"><h3>UPI QR at the till</h3><p>A QR for the exact amount, paid to your own UPI ID. Not a payment gateway.</p><div class="tags"><span class="tr">Till</span><span>From Offline</span></div></div><div class="feat reveal"><h3>Shifts &amp; day-end</h3><p>Open, count the drawer, close, print the Z-report. Expenses against the drawer.</p><div class="tags"><span class="tr">Office</span><span>From Offline</span></div></div><div class="feat reveal"><h3>Sales analytics</h3><p>Sales by dish, hour and staff member, from the device.</p><div class="tags"><span class="tr">Office</span><span>From Offline</span></div></div><div class="feat reveal"><h3>Staff &amp; roles</h3><p>Owner, manager, billing; waiter and kitchen roles from Standard. PINs per person.</p><div class="tags"><span class="tr">Office</span><span>From Offline</span></div></div><div class="feat reveal"><h3>Cloud ledger</h3><p>Bills and payments in a Google Sheet in your own Google Drive.</p><div class="tags"><span class="tr">Growth</span><span class="up">From Basic</span></div></div><div class="feat reveal"><h3>Kitchen display</h3><p>A paperless kitchen screen with stations and timers. Needs a second device.</p><div class="tags"><span class="tr">Kitchen</span><span class="up">From Standard</span></div></div><div class="feat reveal"><h3>Waiter ordering</h3><p>Floor staff take the order at the table on a phone or tablet.</p><div class="tags"><span class="tr">Floor</span><span class="up">From Standard</span></div></div><div class="feat reveal"><h3>E-mail bills</h3><p>The bill reaches the guest&#x27;s inbox at checkout.</p><div class="tags"><span class="tr">Guests</span><span class="up">From Standard</span></div></div><div class="feat reveal"><h3>QR table ordering</h3><p>Guests order from their own phone, in the browser. Nothing to install.</p><a class="link" href="/r/?org=DEMO&amp;table=1">Try the demo <span class="arrow">→</span></a><div class="tags"><span class="tr">Guests</span><span class="up">From Premium</span></div></div><div class="feat reveal"><h3>Online menu &amp; ordering</h3><p>A public menu link and QR, plus pickup or takeaway orders from a link.</p><div class="tags"><span class="tr">Guests</span><span class="up">From Premium</span></div></div><div class="feat reveal"><h3>Multiple outlets</h3><p>Branches and franchises under one owner login, each with its own sheet and staff.</p><div class="tags"><span class="tr">Growth</span><span class="up">From Premium</span></div></div></div>
+  </div>
+</section>
+
+<section class="section" id="packages">
+  <div class="wrap">
+    <div class="head">
+      <div><p class="eyebrow reveal">Packages for Restaurant</p><h2 class="reveal">Start small. Grow without switching apps.</h2></div>
+      <p class="sub reveal" style="margin:0">A package is your trade's features at a tier. A plan is only how long it runs. 14 days free on every tier, no card.</p>
+    </div>
+    <div class="tiers"><div class="tier reveal"><div class="name">Offline</div><p class="who">One device, one outlet, the owner. Tables, KOT, tabs and reservations included.</p><div class="lim"><div><b>1</b><small>device</small></div><div><b>1</b><small>outlet</small></div><div><b>1</b><small>user</small></div></div><ul><li>Tables, floor plan, running tabs</li><li>Reservations, kitchen tickets (KOT)</li><li>Menu with option groups</li><li>Thermal printing, UPI QR, day-end Z-report</li><li>Expenses, analytics, encrypted backup</li></ul><p class="data">Data kept on your device</p><a class="btn btn-ghost btn-sm" href="/register/?category=restaurant">Start free</a></div><div class="tier reveal"><div class="name">Basic</div><p class="who">A second device and a cloud ledger in your own Drive.</p><div class="lim"><div><b>2</b><small>devices</small></div><div><b>1</b><small>outlet</small></div><div><b>3</b><small>users</small></div></div><ul><li>All of Offline</li><li>Google Sheet per outlet, in your own Drive</li><li>Second device, 3 users</li></ul><p class="data">Data kept in your own Google Drive</p><a class="btn btn-ghost btn-sm" href="/register/?category=restaurant">Start free</a></div><div class="tier hot reveal"><span class="badge">Most chosen</span><div class="name">Standard</div><p class="who">Kitchen display, waiter phones and e-mail bills for a busy floor.</p><div class="lim"><div><b>5</b><small>devices</small></div><div><b>1</b><small>outlet</small></div><div><b>10</b><small>users</small></div></div><ul><li>All of Basic</li><li>Kitchen display, waiter ordering on phones</li><li>E-mail bills</li><li>Up to 5 devices, 10 staff</li></ul><p class="data">Data kept in your own Google Drive</p><a class="btn btn-sun btn-sm" href="/register/?category=restaurant">Request Standard</a></div><div class="tier reveal"><div class="name">Premium</div><p class="who">Online menu, QR ordering and more than one outlet.</p><div class="lim"><div><b>10</b><small>devices</small></div><div><b>3</b><small>outlets</small></div><div><b>25</b><small>users</small></div></div><ul><li>All of Standard</li><li>Online menu, QR table ordering, online orders</li><li>Up to 3 outlets, 10 devices, 25 staff</li></ul><p class="data">Data kept in your own Google Drive</p><a class="btn btn-ghost btn-sm" href="/register/?category=restaurant">Request Premium</a></div><div class="tier reveal"><div class="name">Enterprise</div><p class="who">Premium, with devices, outlets and users set for you.</p><div class="lim"><div><b>20+</b><small>devices</small></div><div><b>10+</b><small>outlets</small></div><div><b>50+</b><small>users</small></div></div><ul><li>All of Premium</li><li>Devices, outlets and users set per client</li><li>Set up with our team</li></ul><p class="data">Data kept in your own Google Drive</p><a class="btn btn-ghost btn-sm" href="/support.html">Talk to us</a></div></div>
+    <p class="limits-note reveal">Devices, outlets and users on Basic to Premium are the standard limits; they can be adjusted for your business. Enterprise is set per client.</p>
+    <div class="data-lines">
+      <div class="reveal"><b>Offline</b>Works securely on your device without depending on the cloud. Export an encrypted backup whenever you like and restore it on another device.</div>
+      <div class="reveal"><b>Basic, Standard, Premium, Enterprise</b>Your business data stays in your own Google Drive. We do not take your business data; only limited usage analytics such as bill counts are collected.</div>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="not-yet" style="padding-top:0">
+  <div class="wrap">
+    <div class="notyet reveal">
+      <div><p class="eyebrow">Not yet</p><h2>What we do not claim.</h2><p class="sub">We list these openly so you know before you sign up.</p></div>
+      <ul><li><svg><use href="#i-no"/></svg><span>Recipe and ingredient inventory is coming soon. Until then, no package includes stock costing for a kitchen.</span></li><li><svg><use href="#i-no"/></svg><span>Sales returns and exchanges are not built.</span></li><li><svg><use href="#i-no"/></svg><span>A payment gateway. We do not process or hold money: settle by cash, your own card machine, khata, or a UPI QR paid to your own UPI ID.</span></li></ul>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="faq">
+  <div class="wrap faq">
+    <div>
+      <p class="eyebrow reveal">Questions</p><h2 class="reveal">Straight answers.</h2>
+      <p class="sub reveal">Anything else? <a class="link" href="/support.html">Ask us <span class="arrow">→</span></a></p>
+      <p class="sub reveal" style="margin-top:36px;font-size:.9rem;color:var(--paper-3)">Not your trade?</p>
+      <div class="others reveal"><a href="/kirana/" style="--c:var(--t-kir)"><svg><use href="#i-kir"/></svg>Kirana</a><a href="/supermarket/" style="--c:var(--t-sup)"><svg><use href="#i-sup"/></svg>Supermarket</a><a href="/pharmacy/" style="--c:var(--t-pha)"><svg><use href="#i-pha"/></svg>Pharmacy</a><a href="/retail/" style="--c:var(--t-ret)"><svg><use href="#i-ret"/></svg>Retail</a></div>
+    </div>
+    <div class="reveal"><details open><summary>Does it keep working if the internet drops?</summary><p class="a">On the Offline package, the till runs on the device without depending on the cloud; the licence is re-checked online at least every 30 days. On Basic and above, the till keeps billing and syncs to the ledger in your own Google Drive when the connection returns.</p></details><details><summary>Do my guests need an app to order by QR?</summary><p class="a">No. QR table ordering (Premium) opens in the guest&#x27;s browser. Nothing to install.</p></details><details><summary>Is stock or recipe costing included?</summary><p class="a">Not today. Recipe and ingredient inventory is coming soon, so we do not include it in any package yet.</p></details><details><summary>Can the kitchen see orders without paper?</summary><p class="a">Yes, from Standard. The kitchen display shows every order with stations and timers on a second device. On Offline and Basic the KOT prints instead.</p></details><details><summary>Can I keep my printer?</summary><p class="a">If it speaks ESC/POS over Bluetooth, USB or the network, as most 58 mm and 80 mm thermal printers do, yes. A second printer in the kitchen works the same way.</p></details><details><summary>Do you take a cut of UPI payments?</summary><p class="a">No. SmartBizz is not a payment gateway. The till shows a QR for your own UPI ID, or you settle by cash or your card machine, and the money goes straight to your bank.</p></details><details><summary>Where is my data?</summary><p class="a">Offline: Works securely on your device without depending on the cloud. Export an encrypted backup whenever you like and restore it on another device. Basic and above: Your business data stays in your own Google Drive. We do not take your business data; only limited usage analytics such as bill counts are collected.</p></details></div>
+  </div>
+</section>
+
+<section class="final" id="start">
+  <div class="glow"></div>
+  <div class="wrap">
+    <h2 class="reveal">Open your restaurant counter today.</h2>
+    <p class="reveal">Choose Restaurant at sign-up, verify your e-mail, and bill your first customer in the same sitting. 14 days free, no card.</p>
+    <div class="cta reveal"><a class="btn btn-sun" href="/register/?category=restaurant">Start your 14-day free trial <span class="arrow">→</span></a><a class="btn btn-ghost" href="/support.html">Talk to us</a></div>
+  </div>
+</section>
+</main>
+<footer>
+  <div class="wrap">
+    <span>© <span id="yr">2026</span> DevMonks · SmartBizz</span>
+    <nav><a href="/privacy.html">Privacy</a><a href="/terms.html">Terms</a><a href="/support.html">Support</a><a href="/deletion.html">Data deletion</a><a href="/pos/">Sign in</a></nav>
+  </div>
+</footer>
+<div class="mcta" id="mcta"><a class="btn btn-sun" href="/register/">Start your 14-day free trial</a></div>
+</body>
+</html>

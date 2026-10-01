@@ -2,155 +2,224 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Register your business · SmartBizz</title>
-<meta name="description" content="Tell us about your business. We review every request personally and set you up within a business day.">
-<meta name="theme-color" content="#0f1219">
+<meta name="description" content="Tell us about your business. We review every request personally and set you up within a business day. 14 days free, no card.">
 <meta name="robots" content="index,follow">
-<link rel="icon" href="/assets/logo.png">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=Sora:wght@300;400;500;600;700&display=swap">
+<meta name="theme-color" content="#070F24">
+<link rel="icon" href="/pos/favicon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/assets/v2.css">
 <style>
-  :root{
-    --night:#0f1219;--night-2:#171b26;--night-3:#1f2432;--paper:#f6f1e8;--ink:#16161c;--ink-2:#5a5a66;
-    --cream:#f3ede4;--cream-2:#b9b3a8;--lamp:#f2a93b;--lamp-2:#ffc46b;--mint:#5fd3a3;--flame:#ff6a3d;--line:#2a3040;--danger:#ff7b7b;
-    --bg:var(--night);--bg-2:var(--night-2);--bg-3:var(--night-3);--fg:var(--cream);--fg-2:var(--cream-2);--rule:var(--line);
-    --display:'Fraunces',Georgia,serif;--body:'Sora',-apple-system,'Segoe UI',sans-serif;
-  }
-  @media (prefers-color-scheme: light){:root:not([data-theme="dark"]){--bg:#f1ebe0;--bg-2:#faf6ee;--bg-3:#e6dfd2;--fg:#16161c;--fg-2:#5a5a66;--rule:#d9d1c2;--danger:#b3261e}}
-  :root[data-theme="light"]{--bg:#f1ebe0;--bg-2:#faf6ee;--bg-3:#e6dfd2;--fg:#16161c;--fg-2:#5a5a66;--rule:#d9d1c2;--danger:#b3261e}
-  *{box-sizing:border-box}
-  body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--body);font-size:16px;line-height:1.55;-webkit-font-smoothing:antialiased;min-height:100vh;display:flex;flex-direction:column}
-  a{color:inherit;text-decoration:none}
-  nav{border-bottom:1px solid var(--rule);background:color-mix(in srgb,var(--bg) 80%,transparent);backdrop-filter:blur(12px)}
-  nav .wrap{max-width:1100px;margin:0 auto;padding:0 24px;height:64px;display:flex;align-items:center;justify-content:space-between}
-  .logo{font-family:var(--display);font-weight:700;font-size:22px;display:flex;align-items:center;gap:10px}
-  .logo img{width:32px;height:32px;border-radius:8px;box-shadow:0 0 22px 2px color-mix(in srgb,var(--lamp) 45%,transparent)}
-  nav a.back{font-size:14px;color:var(--fg-2)}nav a.back:hover{color:var(--fg)}
-
-  main{flex:1;display:grid;grid-template-columns:1fr 1fr;max-width:1100px;margin:0 auto;padding:56px 24px 96px;gap:56px;align-items:start;width:100%}
-  @media(max-width:900px){main{grid-template-columns:1fr;gap:36px;padding-top:36px}}
-  .kicker{font-size:12px;font-weight:600;letter-spacing:.18em;text-transform:uppercase;color:var(--lamp);margin:0 0 16px}
-  h1{font-family:var(--display);font-weight:600;font-size:clamp(36px,4.6vw,58px);line-height:1.02;letter-spacing:-.02em;margin:0;text-wrap:balance}
-  h1 em{font-style:italic;font-weight:500;background:linear-gradient(100deg,var(--lamp-2),var(--lamp) 45%,var(--flame));-webkit-background-clip:text;background-clip:text;color:transparent}
-  .lede{color:var(--fg-2);font-size:17.5px;font-weight:300;margin:20px 0 0;max-width:46ch}
-  .lede strong{color:var(--fg);font-weight:500}
-  .steps{margin:34px 0 0;padding:0;list-style:none;display:grid;gap:14px}
-  .steps li{display:grid;grid-template-columns:34px 1fr;gap:14px;align-items:start;color:var(--fg-2);font-size:15px}
-  .steps i{width:34px;height:34px;border-radius:50%;border:1px solid var(--rule);display:grid;place-items:center;font-family:var(--display);font-style:italic;color:var(--lamp);font-size:15px}
-  .steps b{display:block;color:var(--fg);font-weight:600;margin-bottom:2px}
-  aside{position:sticky;top:88px}
-
-  /* the form is a ticket */
-  form{background:var(--paper);color:var(--ink);border-radius:22px;padding:30px 28px 26px;box-shadow:0 50px 100px -50px rgba(0,0,0,.8),0 1px 0 rgba(255,255,255,.6) inset;position:relative;
-       transform:perspective(1400px) rotateY(-4deg) rotateX(2deg);transform-origin:left center;transition:transform .7s cubic-bezier(.2,.8,.2,1)}
-  form:focus-within,form:hover{transform:none}
-  @media(max-width:900px){form{transform:none}}
-  form::before{content:"";position:absolute;left:24px;right:24px;top:0;height:6px;background:repeating-linear-gradient(90deg,transparent 0 8px,var(--ink) 8px 9px);opacity:.08}
-  .fhead{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:22px;padding-bottom:16px;border-bottom:1px dashed #d8cfbe}
-  .fhead h2{font-family:var(--display);font-size:22px;margin:0;font-weight:600}
-  .fhead small{white-space:nowrap;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-2);font-weight:600}
-  .grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
-  @media(max-width:560px){.grid{grid-template-columns:1fr}}
-  .f{display:flex;flex-direction:column;gap:6px}
-  .f.full{grid-column:1/-1}
-  label{font-size:12.5px;font-weight:600;color:#3c3c46;letter-spacing:.02em}
-  label span{color:var(--ink-2);font-weight:400}
-  input,select,textarea{font:inherit;font-size:15px;color:var(--ink);background:#fff;border:1px solid #ddd5c6;border-radius:10px;padding:12px 13px;outline:none;transition:border-color .2s,box-shadow .2s;width:100%;min-height:46px}
-  textarea{resize:vertical;min-height:84px}
-  input:focus,select:focus,textarea:focus{border-color:var(--lamp);box-shadow:0 0 0 3px color-mix(in srgb,var(--lamp) 25%,transparent)}
-  input[aria-invalid="true"],select[aria-invalid="true"]{border-color:#c0392b}
-  .err{font-size:12.5px;color:#c0392b;min-height:0;margin-top:-2px}
-  .err:empty{display:none}
-  .submit{margin-top:20px;display:flex;flex-direction:column;gap:12px}
-  button{font:inherit;font-weight:700;font-size:16px;border:0;border-radius:999px;padding:15px 22px;cursor:pointer;color:#1a1207;
-         background:linear-gradient(100deg,var(--lamp-2),var(--lamp) 55%,var(--flame));box-shadow:0 14px 34px -12px color-mix(in srgb,var(--lamp) 80%,transparent);transition:transform .25s,box-shadow .25s}
-  button:hover:not(:disabled){transform:translateY(-2px)}
-  button:disabled{opacity:.6;cursor:progress;transform:none}
-  .fine{font-size:12.5px;color:var(--ink-2);text-align:center}
-  .alert{border-radius:12px;padding:12px 14px;font-size:14px;line-height:1.45}
-  .alert.bad{background:#fdecea;color:#7a1f16;border:1px solid #f3c1bb}
-  .alert[hidden]{display:none}
-
-  /* success */
-  .done{background:var(--paper);color:var(--ink);border-radius:22px;padding:36px 30px;text-align:center;box-shadow:0 50px 100px -50px rgba(0,0,0,.8)}
-  .done .tick{width:74px;height:74px;border-radius:50%;background:var(--mint);color:#08301b;display:grid;place-items:center;font-size:34px;margin:0 auto 18px;animation:pop .6s cubic-bezier(.2,1.4,.3,1)}
-  @keyframes pop{from{transform:scale(.4);opacity:0}to{transform:scale(1);opacity:1}}
-  .done h2{font-family:var(--display);font-size:28px;margin:0 0 10px}
-  .done p{color:#3c3c46;margin:0 0 8px}
-  .done .ref{display:inline-block;margin-top:14px;font-family:var(--display);font-size:14px;background:#ede6d8;padding:6px 12px;border-radius:999px;color:var(--ink-2)}
-  .done[hidden]{display:none}
-  footer{border-top:1px solid var(--rule);padding:24px;text-align:center;font-size:13px;color:var(--fg-2)}
-  :focus-visible{outline:2px solid var(--lamp);outline-offset:2px}
-  @media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}form{transform:none}}
+.page-hero h1{max-width:14ch}
+.reg>*{min-width:0}
+.reg{display:grid;grid-template-columns:1.15fr .85fr;gap:clamp(24px,5vw,72px);align-items:start}
+.reg aside{position:sticky;top:calc(var(--nav) + env(safe-area-inset-top,0px) + 24px);display:grid;gap:18px}
+@media (max-width:900px){.reg{grid-template-columns:1fr}.reg aside{position:static}}
+[hidden]{display:none!important}
+.fhead{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:22px;padding-bottom:16px;border-bottom:1px solid var(--line)}
+.fhead h2{font-size:1.5rem;letter-spacing:-.01em;line-height:1.1}
+.fhead small{white-space:nowrap;font-size:.74rem;letter-spacing:.14em;text-transform:uppercase;color:var(--paper-3);font-weight:600}
+fieldset{border:0;padding:0;margin:0 0 22px;min-width:0}
+legend{padding:0;font-weight:600;font-size:.95rem;margin-bottom:10px;display:flex;flex-wrap:wrap;gap:4px 10px;align-items:baseline}
+#tradeTiles{grid-template-columns:repeat(auto-fill,minmax(140px,1fr))}
+legend .hint{font-weight:400;font-size:.85rem;color:var(--paper-3)}
+.choice{--c:var(--ink-3)}
+.choice.c-rest{--c:var(--t-rest)}.choice.c-kir{--c:var(--t-kir)}.choice.c-sup{--c:var(--t-sup)}.choice.c-pha{--c:var(--t-pha)}.choice.c-ret{--c:var(--t-ret)}
+.choice input{margin:0;flex:none}
+.stores{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.store{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;align-items:start;padding:14px 16px;border-radius:14px;border:1px solid var(--line-2);background:rgba(255,255,255,.04);cursor:pointer;transition:border-color .2s,background .2s}
+.store:has(input:checked){border-color:var(--sun-a);background:rgba(255,200,87,.1)}
+.store input{accent-color:var(--sun-b);margin:4px 0 0;flex:none;grid-row:span 2}
+.store b{font-weight:700}
+.store span{font-size:.86rem;color:var(--paper-2)}
+@media (max-width:560px){.stores{grid-template-columns:1fr}}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:0 14px}
+.grid .full{grid-column:1/-1}
+@media (max-width:560px){.grid{grid-template-columns:1fr}}
+.field label span{color:var(--paper-3);font-weight:400}
+.input[aria-invalid="true"]{border-color:var(--warn)}
+.err{margin-top:-4px}
+.err:empty{display:none}
+textarea.input{resize:vertical;min-height:88px}
+select.input{appearance:none;-webkit-appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='10'%3E%3Cpath d='M1 1l6 6 6-6' fill='none' stroke='%23AEB9D6' stroke-width='2'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 16px center;padding-right:40px}
+select.input option,select.input optgroup{background:var(--ink-2);color:var(--paper)}
+.submit{margin-top:8px;display:grid;gap:12px}
+.submit .btn{width:100%;font-size:1.05rem}
+.submit .btn:disabled{opacity:.6;cursor:progress;transform:none}
+.fine{font-size:.85rem;color:var(--paper-3);text-align:center}
+.alert{margin-bottom:16px}
+.done{text-align:center}
+.done .tick{width:74px;height:74px;border-radius:50%;background:rgba(95,211,163,.18);color:var(--ok);display:grid;place-items:center;font-size:2rem;margin:0 auto 18px;animation:pop .6s cubic-bezier(.2,1.4,.3,1)}
+@keyframes pop{from{transform:scale(.4);opacity:0}to{transform:scale(1);opacity:1}}
+.done h2{font-size:2rem;margin-bottom:12px}
+.done p{color:var(--paper-2);margin-bottom:8px}
+.done b{color:var(--paper)}
+.done .ref{display:inline-block;margin-top:14px;font:600 .85rem var(--body);background:rgba(255,255,255,.08);padding:6px 12px;border-radius:999px;color:var(--paper-2)}
+.next{display:grid;gap:0;counter-reset:n}
+.next li{display:grid;grid-template-columns:40px 1fr;gap:14px;padding:16px 0;border-top:1px solid var(--line);color:var(--paper-2);font-size:.98rem}
+.next li:last-child{border-bottom:1px solid var(--line)}
+.next li::before{counter-increment:n;content:"0" counter(n);font:800 1.4rem/1.2 var(--display);background:var(--sun);-webkit-background-clip:text;background-clip:text;color:transparent}
+.next b{display:block;color:var(--paper);font-weight:700;margin-bottom:2px}
+.aside-h{font-size:1.6rem;line-height:1.1;letter-spacing:-.015em}
+.proof{display:flex;flex-wrap:wrap;gap:8px 18px;font-size:.9rem;color:var(--paper-2)}
+.proof span{display:inline-flex;align-items:center;gap:8px}
+.proof svg{width:16px;height:16px;flex:none}
+.data-note{display:grid;gap:10px}
+.data-note p{color:var(--paper-2);font-size:.95rem}
+.data-note b{color:var(--paper)}
+.data-note a{color:var(--sun-a);text-decoration:underline;text-underline-offset:3px}
 </style>
+<script defer src="/assets/v2.js"></script>
 </head>
 <body>
-
-<nav><div class="wrap">
-  <a class="logo" href="/"><img src="/assets/logo.png" alt="" width="32" height="32">SmartBizz</a>
-  <a class="back" href="/">← Back to site</a>
-</div></nav>
-
-<main>
-  <aside>
-    <p class="kicker" id="regKicker">Register your business</p>
-    <h1>Tell us about<br>your <em>business.</em></h1>
-    <p class="lede">Every request is read by a person, not a robot. <strong>We set you up within one business day</strong> and send your login details to the email you give us here.</p>
-    <ol class="steps">
-      <li><i>1</i><div><b>You tell us about the business</b>Name, type and how many outlets (and tables, for restaurants). Two minutes.</div></li>
-      <li><i>2</i><div><b>We review it</b>Someone on our team looks it over, usually the same day.</div></li>
-      <li><i>3</i><div><b>You get your keys</b>An email with your login and a first-time password. Add your products or menu, connect your printer and start billing.</div></li>
-    </ol>
-  </aside>
-
-  <div>
-    <form id="reg" novalidate>
-      <div class="fhead"><h2>Registration request</h2><small>Ticket · New</small></div>
-      <div class="alert bad" id="formError" hidden role="alert"></div>
-      <div class="grid">
-        <div class="f"><label for="clientName">Your name <span>*</span></label><input id="clientName" name="clientName" autocomplete="name" required maxlength="80"><div class="err"></div></div>
-        <div class="f"><label for="mobile">Mobile <span>* WhatsApp preferred</span></label><input id="mobile" name="mobile" type="tel" inputmode="tel" autocomplete="tel" placeholder="+91 98765 43210" required><div class="err"></div></div>
-        <div class="f full"><label for="email">Email <span>* your login will be sent here</span></label><input id="email" name="email" type="email" autocomplete="email" required maxlength="120"><div class="err"></div></div>
-        <div class="f full"><label for="shopName">Business / brand name <span>*</span></label><input id="shopName" name="shopName" autocomplete="organization" required maxlength="100"><div class="err"></div></div>
-        <div class="f"><label for="businessCategory">Type of business</label>
-          <select id="businessCategory" name="businessCategory">
-            <optgroup label="Food &amp; hospitality">
-              <option>Restaurant &amp; Cafe</option><option>Fast Food / QSR</option><option>Fine Dining &amp; Bar</option>
-              <option>Bakery &amp; Sweets</option><option>Food Court / Kiosk</option><option>Cloud Kitchen / Delivery</option>
-              <option>Pizzeria / Italian</option><option>Coffee House / Tea Lounge</option><option>Other Hospitality</option>
-            </optgroup>
-            <optgroup label="Shops &amp; retail">
-              <option>Kirana / Grocery Store</option><option>Supermarket / Departmental Store</option>
-              <option>Pharmacy / Medical Store</option><option>General Retail / Fashion / Electronics</option>
-            </optgroup>
-          </select></div>
-        <div class="f"><label for="city">City</label><input id="city" name="city" autocomplete="address-level2" maxlength="60"></div>
-        <div class="f"><label for="requestedStoreCount">Number of outlets</label>
-          <select id="requestedStoreCount" name="requestedStoreCount"><option value="1">1 — just this one</option><option value="2">2</option><option value="3">3</option><option value="5">4–5</option><option value="10">6–10</option><option value="25">More than 10</option></select></div>
-        <div class="f"><label for="tableCount">Tables <span>restaurants only, approx.</span></label><input id="tableCount" name="tableCount" type="number" inputmode="numeric" min="0" max="500" placeholder="12"></div>
-        <div class="f full"><label for="referralSource">How did you hear about us?</label>
-          <select id="referralSource" name="referralSource"><option value="">Choose one</option><option>A friend or another business</option><option>Search</option><option>Social media</option><option>Someone from SmartBizz reached out</option><option>Other</option></select></div>
-        <div class="f full"><label for="notes">Anything we should know? <span>optional</span></label><textarea id="notes" name="notes" maxlength="600" placeholder="Opening date, current billing setup, what's frustrating you today…"></textarea></div>
-      </div>
-      <div class="submit">
-        <button type="submit" id="submitBtn">Send my request →</button>
-        <p class="fine">No card. No commitment. You'll hear from a person, not an auto-reply.</p>
-      </div>
-    </form>
-
-    <div class="done" id="done" hidden>
-      <div class="tick">✓</div>
-      <h2>Request received.</h2>
-      <p>Thanks, <b id="doneName"></b>. Someone on our team will review <b id="doneShop"></b> and email your login to <b id="doneEmail"></b> — usually within one business day.</p>
-      <p>Keep an eye on your inbox (and the spam folder, just in case).</p>
-      <span class="ref" id="doneRef"></span>
-      <p style="margin-top:22px"><a href="/" style="color:#7a4a00;font-weight:600">← Back to the site</a></p>
-    </div>
+<a class="skip" href="#top">Skip to content</a>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <linearGradient id="g-sun" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FFC857"/><stop offset="1" stop-color="#FF6B3D"/></linearGradient>
+    <linearGradient id="g-brand" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1D3F8F"/><stop offset="1" stop-color="#0A1A40"/></linearGradient>
+    <symbol id="i-brand" viewBox="0 0 1024 1024"><rect width="1024" height="1024" fill="url(#g-brand)"/><path d="M650,372 C612,302 420,300 402,392 C388,462 470,490 520,506 C582,525 652,548 640,632 C626,722 430,726 374,650" fill="none" stroke="url(#g-sun)" stroke-width="84" stroke-linecap="round"/><path d="M0,-46 C6,-10 10,-6 46,0 C10,6 6,10 0,46 C-6,10 -10,6 -46,0 C-10,-6 -6,-10 0,-46Z" fill="#FFC857" transform="translate(724,300)"/></symbol>
+    <symbol id="i-rest" viewBox="0 0 1024 1024"><g fill="none" stroke="#fff" stroke-width="56" stroke-linecap="round" stroke-linejoin="round"><path d="M300,616 C300,480 396,404 512,404 C628,404 724,480 724,616 Z"/><path d="M262,664 H762"/><path d="M512,404 V372"/><circle cx="512" cy="352" r="22" fill="#fff" stroke="none"/></g></symbol>
+    <symbol id="i-kir" viewBox="0 0 1024 1024"><g fill="none" stroke="#fff" stroke-width="56" stroke-linecap="round" stroke-linejoin="round" transform="translate(0,22)"><path d="M300,352 H724 L766,462 C756,520 649,520 639,462 C629,520 522,520 512,462 C502,520 395,520 385,462 C375,520 268,520 258,462 Z"/><path d="M322,540 V716 H702 V540"/><path d="M466,716 V616 H558 V716"/></g></symbol>
+    <symbol id="i-sup" viewBox="0 0 1024 1024"><g fill="none" stroke="#fff" stroke-width="56" stroke-linecap="round" stroke-linejoin="round"><path d="M248,330 H324 L384,606 H690 L744,414 H352"/><circle cx="420" cy="690" r="36"/><circle cx="662" cy="690" r="36"/></g></symbol>
+    <symbol id="i-pha" viewBox="0 0 1024 1024"><g fill="none" stroke="#fff" stroke-width="56" stroke-linejoin="round"><path d="M450,296 H574 V450 H728 V574 H574 V728 H450 V574 H296 V450 H450 Z"/></g></symbol>
+    <symbol id="i-ret" viewBox="0 0 1024 1024"><g fill="none" stroke="#fff" stroke-width="56" stroke-linecap="round" stroke-linejoin="round"><path d="M318,424 H706 L682,722 H342 Z"/><path d="M420,424 V386 C420,332 460,300 512,300 C564,300 604,332 604,386 V424"/></g></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="rgba(95,211,163,.18)"/><path d="M7 12.5l3.2 3L17 9" fill="none" stroke="#5FD3A3" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-no" viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="rgba(255,255,255,.06)"/><path d="M8 8l8 8M16 8l-8 8" fill="none" stroke="#6F7CA3" stroke-width="2" stroke-linecap="round"/></symbol>
+  </defs>
+</svg>
+<header class="nav" id="nav">
+  <div class="wrap">
+    <a class="brand" href="/" aria-label="SmartBizz home"><svg><use href="#i-brand"/></svg>SmartBizz</a>
+    <button class="menu-btn" id="menuBtn" aria-expanded="false" aria-controls="navLinks">Menu</button>
+    <nav class="nav-links" id="navLinks">
+      <a href="/#trades">Business types</a>
+      <a href="/#how">How it works</a>
+      <a href="/#packages">Packages</a>
+      <a href="/#data">Your data</a>
+      <a href="/#faq">FAQ</a>
+      <a href="/pos/">Sign in</a>
+    </nav>
+    <a class="btn btn-sun btn-sm" href="/register/">Start free trial</a>
   </div>
+  <div class="progress" id="progress"></div>
+</header>
+<main id="top">
+<section class="page-hero">
+  <div class="glow"></div>
+  <div class="wrap">
+    <nav class="crumbs reveal" aria-label="Breadcrumb"><a href="/">Home</a><span>/</span><span>Register</span></nav>
+    <p class="eyebrow reveal" id="regKicker" style="margin-top:22px">Register your business</p>
+    <h1 class="reveal">Tell us about your business.</h1>
+    <p class="lede reveal">Every request is read by a person, not a robot. <strong>We set you up within one business day</strong> and send your login details to the e-mail you give us here.</p>
+  </div>
+</section>
+
+<section class="page" style="padding-top:0">
+  <div class="wrap reg">
+    <div>
+      <form id="reg" class="card reveal" novalidate>
+        <div class="fhead"><h2>Registration request</h2><small>Ticket · New</small></div>
+        <div class="notice warn alert" id="formError" hidden role="alert"></div>
+
+        <fieldset>
+          <legend>What kind of counter? <span class="hint">pick the closest</span></legend>
+          <div class="choices" id="tradeTiles" role="radiogroup" aria-label="Kind of counter">
+            <label class="choice c-rest"><input type="radio" value="restaurant"><svg aria-hidden="true"><use href="#i-rest"/></svg>Restaurant</label>
+            <label class="choice c-kir"><input type="radio" value="kirana"><svg aria-hidden="true"><use href="#i-kir"/></svg>Kirana</label>
+            <label class="choice c-sup"><input type="radio" value="supermarket"><svg aria-hidden="true"><use href="#i-sup"/></svg>Supermarket</label>
+            <label class="choice c-pha"><input type="radio" value="pharmacy"><svg aria-hidden="true"><use href="#i-pha"/></svg>Pharmacy</label>
+            <label class="choice c-ret"><input type="radio" value="retail"><svg aria-hidden="true"><use href="#i-ret"/></svg>Retail</label>
+          </div>
+        </fieldset>
+
+        <div class="grid">
+          <div class="field f full"><label for="businessCategory">Type of business</label>
+            <select id="businessCategory" name="businessCategory" class="input">
+              <optgroup label="Food &amp; hospitality">
+                <option>Restaurant &amp; Cafe</option><option>Fast Food / QSR</option><option>Fine Dining &amp; Bar</option>
+                <option>Bakery &amp; Sweets</option><option>Food Court / Kiosk</option><option>Cloud Kitchen / Delivery</option>
+                <option>Pizzeria / Italian</option><option>Coffee House / Tea Lounge</option><option>Other Hospitality</option>
+              </optgroup>
+              <optgroup label="Shops &amp; retail">
+                <option>Kirana / Grocery Store</option><option>Supermarket / Departmental Store</option>
+                <option>Pharmacy / Medical Store</option><option>General Retail / Fashion / Electronics</option>
+              </optgroup>
+            </select></div>
+        </div>
+
+        <fieldset>
+          <legend>Where should your data live? <span class="hint">you can change this later</span></legend>
+          <div class="stores" id="storeTiles" role="radiogroup" aria-label="Where your data lives">
+            <label class="store"><input type="radio" value="offline" checked><b>Offline, on this device</b><span>Works securely on your device without depending on the cloud. Export an encrypted backup whenever you like.</span></label>
+            <label class="store"><input type="radio" value="drive"><b>My own Google Drive</b><span>Basic and above. Your business data stays in your own Google Drive. We do not take your business data; only limited usage analytics such as bill counts are collected.</span></label>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>How do we reach you?</legend>
+          <div class="grid">
+            <div class="field f"><label for="clientName">Your name <span>*</span></label><input id="clientName" name="clientName" class="input" autocomplete="name" required maxlength="80"><div class="err"></div></div>
+            <div class="field f"><label for="mobile">Mobile <span>* WhatsApp preferred</span></label><input id="mobile" name="mobile" class="input" type="tel" inputmode="tel" autocomplete="tel" placeholder="+91 98765 43210" required><div class="err"></div></div>
+            <div class="field f full"><label for="email">E-mail <span>* your login will be sent here</span></label><input id="email" name="email" class="input" type="email" autocomplete="email" required maxlength="120"><div class="err"></div></div>
+            <div class="field f full"><label for="shopName">Business / brand name <span>*</span></label><input id="shopName" name="shopName" class="input" autocomplete="organization" required maxlength="100"><div class="err"></div></div>
+            <div class="field f"><label for="city">City</label><input id="city" name="city" class="input" autocomplete="address-level2" maxlength="60"></div>
+            <div class="field f"><label for="requestedStoreCount">Number of outlets</label>
+              <select id="requestedStoreCount" name="requestedStoreCount" class="input"><option value="1">1 — just this one</option><option value="2">2</option><option value="3">3</option><option value="5">4–5</option><option value="10">6–10</option><option value="25">More than 10</option></select></div>
+            <div class="field f full" id="tablesField"><label for="tableCount">Tables <span>restaurants only, approx.</span></label><input id="tableCount" name="tableCount" class="input" type="number" inputmode="numeric" min="0" max="500" placeholder="12"></div>
+            <div class="field f full"><label for="referralSource">How did you hear about us?</label>
+              <select id="referralSource" name="referralSource" class="input"><option value="">Choose one</option><option>A friend or another business</option><option>Search</option><option>Social media</option><option>Someone from SmartBizz reached out</option><option>Other</option></select></div>
+            <div class="field f full"><label for="notes">Anything we should know? <span>optional</span></label><textarea id="notes" name="notes" class="input" maxlength="600" placeholder="Opening date, current billing setup, what's frustrating you today…"></textarea></div>
+          </div>
+        </fieldset>
+
+        <div class="submit">
+          <button type="submit" class="btn btn-sun" id="submitBtn">Send my request →</button>
+          <p class="fine">No card. No commitment. You'll hear from a person, not an auto-reply.</p>
+        </div>
+      </form>
+
+      <div class="card done" id="done" hidden>
+        <div class="tick">✓</div>
+        <h2>Request received.</h2>
+        <p>Thanks, <b id="doneName"></b>. Someone on our team will review <b id="doneShop"></b> and email your login to <b id="doneEmail"></b> — usually within one business day.</p>
+        <p>Keep an eye on your inbox (and the spam folder, just in case).</p>
+        <span class="ref" id="doneRef"></span>
+        <p style="margin-top:22px"><a class="link" href="/">← Back to the site</a></p>
+      </div>
+    </div>
+
+    <aside>
+      <p class="eyebrow reveal">What happens next</p>
+      <h2 class="aside-h reveal">Three steps. One business day.</h2>
+      <ol class="next reveal">
+        <li><div><b>Verify your e-mail</b>We read your request and send your login and a first-time password to the address above.</div></li>
+        <li><div><b>Choose where your data lives</b>On this device, or a Google Sheet in your own Google Drive. Switch packages later without starting over.</div></li>
+        <li><div><b>Bill your first customer</b>Add your products or menu, connect your printer, print a test receipt. The whole app is yours for 14 days.</div></li>
+      </ol>
+      <div class="proof reveal">
+        <span><svg aria-hidden="true"><use href="#i-check"/></svg>14 days free</span>
+        <span><svg aria-hidden="true"><use href="#i-check"/></svg>No card</span>
+        <span><svg aria-hidden="true"><use href="#i-check"/></svg>A person replies</span>
+      </div>
+      <div class="card data-note reveal">
+        <p class="eyebrow">Your data</p>
+        <p><b>Offline:</b> Works securely on your device without depending on the cloud.</p>
+        <p><b>Basic and above:</b> Your business data stays in your own Google Drive. We do not take your business data; only limited usage analytics such as bill counts are collected.</p>
+        <p>What you type here goes to our registration queue so a person can set you up. Read the <a href="/privacy.html">privacy policy</a>.</p>
+      </div>
+    </aside>
+  </div>
+</section>
 </main>
-
-<footer>SmartBizz · Made for the people behind the counter.</footer>
-
+<footer>
+  <div class="wrap">
+    <span>© <span id="yr">2026</span> DevMonks · SmartBizz</span>
+    <nav><a href="/privacy.html">Privacy</a><a href="/terms.html">Terms</a><a href="/support.html">Support</a><a href="/deletion.html">Data deletion</a><a href="/pos/">Sign in</a></nav>
+  </div>
+</footer>
 <script>
 // ────────────────────────────────────────────────────────────────────────
 //  CONFIG. The project id is fixed. The API key below is the project's
@@ -185,6 +254,31 @@ const form = $('reg');
   if (!want || !sel) return;
   const hit = Array.from(sel.options).find(o => o.value === want || o.text === want);
   if (hit) sel.value = hit.value;
+})();
+
+// Trade and storage tiles are UI only: the radios carry no `name`, so they
+// are not part of the submitted FormData and the request payload is unchanged.
+// Without a name the browser does not group them, so exclusivity is done here.
+(function exclusive(groupId) {
+  const rs = Array.from(document.querySelectorAll('#' + groupId + ' input[type=radio]'));
+  rs.forEach(r => r.addEventListener('change', () => { if (r.checked) rs.forEach(o => { if (o !== r) o.checked = false; }); }));
+})('storeTiles');
+// Trade tiles drive the real `businessCategory` select and show the tables
+// field for restaurants; the select syncs the tile back.
+(function tradeTiles() {
+  const sel = $('businessCategory'), tiles = Array.from(document.querySelectorAll('#tradeTiles input')), tables = $('tablesField');
+  const defaults = { restaurant: 'Restaurant & Cafe', kirana: 'Kirana / Grocery Store', supermarket: 'Supermarket / Departmental Store', pharmacy: 'Pharmacy / Medical Store', retail: 'General Retail / Fashion / Electronics' };
+  const tradeOf = (v) => v === 'Kirana / Grocery Store' ? 'kirana' : v === 'Supermarket / Departmental Store' ? 'supermarket' : v === 'Pharmacy / Medical Store' ? 'pharmacy' : v === 'General Retail / Fashion / Electronics' ? 'retail' : 'restaurant';
+  function showTables(trade) { if (tables) tables.hidden = trade !== 'restaurant'; }
+  function syncFromSelect() { const t = tradeOf(sel.value); tiles.forEach(r => { r.checked = r.value === t; }); showTables(t); }
+  tiles.forEach(r => r.addEventListener('change', () => {
+    if (!r.checked) return;
+    tiles.forEach(o => { if (o !== r) o.checked = false; });
+    if (tradeOf(sel.value) !== r.value) sel.value = defaults[r.value];
+    showTables(r.value);
+  }));
+  sel.addEventListener('change', syncFromSelect);
+  syncFromSelect();
 })();
 const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
