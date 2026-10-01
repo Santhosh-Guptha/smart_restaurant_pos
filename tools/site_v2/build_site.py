@@ -178,26 +178,28 @@ def tiers(t):
                '<div><b>%s</b><small>user%s</small></div></div>' % (
                    dev, "" if dev == "1" else "s", st, unit, "" if st == "1" else "s", us, "" if us == "1" else "s"))
         ul = "".join("<li>%s</li>" % E(x) for x in t["tier_features"][tier])
+        # The free trial is the Offline package only; every other tier is a
+        # request (contract §6a). The register page preselects ?plan=.
         if tier == "enterprise":
             btn = '<a class="btn btn-ghost btn-sm" href="/support.html">Talk to us</a>'
-        elif tier == "standard":
-            btn = '<a class="btn btn-sun btn-sm" href="%s">Request Standard</a>' % cat
-        elif tier == "premium":
-            btn = '<a class="btn btn-ghost btn-sm" href="%s">Request Premium</a>' % cat
+        elif tier == "offline":
+            btn = '<a class="btn btn-ghost btn-sm" href="%s&amp;plan=trial">Start free trial</a>' % cat
         else:
-            btn = '<a class="btn btn-ghost btn-sm" href="%s">Start free</a>' % cat
+            btn = '<a class="btn %s btn-sm" href="%s&amp;plan=%s">Request %s</a>' % (
+                "btn-sun" if tier == "standard" else "btn-ghost", cat, tier, D.TIER_NAME[tier])
         hot = tier == "standard"
         cards.append('<div class="tier%s reveal">%s<div class="name">%s</div><p class="who">%s</p>%s<ul>%s</ul>'
                      '<p class="data">%s</p>%s</div>' % (
                          " hot" if hot else "", '<span class="badge">Most chosen</span>' if hot else "",
-                         D.TIER_NAME[tier], E(t["tier_who"][tier]), lim, ul, E(D.DATA_LINE[tier]), btn))
+                         D.TIER_NAME[tier], E(t["tier_who"][tier]), lim, ul,
+                         E(D.DATA_LINE[tier] + (" · 14-day free trial" if tier == "offline" else " · request only")), btn))
     note = '<p class="limits-note reveal">%s</p>' % E(t["limits_note"]) if t.get("limits_note") else \
         '<p class="limits-note reveal">Devices, %ss and users on Basic to Premium are the standard limits; they can be adjusted for your business. Enterprise is set per client.</p>' % unit
     return """<section class="section" id="packages">
   <div class="wrap">
     <div class="head">
       <div><p class="eyebrow reveal">Packages for %(short)s</p><h2 class="reveal">Start small. Grow without switching apps.</h2></div>
-      <p class="sub reveal" style="margin:0">A package is your trade's features at a tier. A plan is only how long it runs. 14 days free on every tier, no card.</p>
+      <p class="sub reveal" style="margin:0">A package is your trade's features at a tier. A plan is only how long it runs. The 14-day free trial is the Offline package, no card; Basic, Standard, Premium and Enterprise are requests, with no trial.</p>
     </div>
     <div class="tiers">%(cards)s</div>
     %(note)s
@@ -223,7 +225,7 @@ def not_yet(t):
 
 def faq(t):
     items = "".join("<details%s><summary>%s</summary><p class=\"a\">%s</p></details>" % (
-        " open" if i == 0 else "", E(q), E(a)) for i, (q, a) in enumerate(t["faq"]))
+        " open" if i == 0 else "", E(q), E(a)) for i, (q, a) in enumerate(list(t["faq"]) + [D.TRIAL_FAQ]))
     others = "".join('<a href="/%s/" style="--c:var(%s)"><svg><use href="#%s"/></svg>%s</a>' % (slug, c, ic, name)
                      for slug, name, c, ic in ALL_TRADES if slug != t["slug"])
     return """<section class="section" id="faq">
@@ -245,7 +247,7 @@ def final(t):
   <div class="glow"></div>
   <div class="wrap">
     <h2 class="reveal">Open your %s counter today.</h2>
-    <p class="reveal">Choose %s at sign-up, verify your e-mail, and bill your first customer in the same sitting. 14 days free, no card.</p>
+    <p class="reveal">Choose %s at sign-up, verify your e-mail, and bill your first customer in the same sitting. 14 days free on the Offline package, no card.</p>
     <div class="cta reveal"><a class="btn btn-sun" href="%s">Start your 14-day free trial <span class="arrow">→</span></a><a class="btn btn-ghost" href="/support.html">Talk to us</a></div>
   </div>
 </section>""" % (E(t["short"].lower()), E(t["short"]), cat)

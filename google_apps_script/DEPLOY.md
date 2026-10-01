@@ -146,3 +146,28 @@ else `business_category`, else the tenant registry, else restaurant.
 **To deploy:** paste the new `Code.gs` into the existing Apps Script project,
 save, then **Deploy → Manage deployments → edit the existing deployment → New
 version → Deploy** (same deployment id, same `/exec` URL).
+
+## 2026-10-01 — The free trial is the Offline package only (contract §6a)
+
+- **START_TRIAL always provisions the trade's Offline package**
+  (`<trade>_offline`: 1 device, 1 outlet, 1 user, `PURE_OFFLINE`), whatever
+  the request says. `tier` / `package_tier` / `packageTier`, `packageId` /
+  `package_id`, `storage_mode` / `storageMode` and the legacy profile fields
+  are still accepted (older apps keep working) but are read for the log only
+  (`requestedTier_`); `trialTier_` clamps the trial to `offline`. There is no
+  Basic / own-Drive trial any more: Basic, Standard, Premium and Enterprise
+  have no free trial and reach the admin as `registration_requests`
+  (`requestedPlan` = the tier id or `ENTERPRISE_CUSTOM`).
+- The welcome e-mail (`trialPackageText_`) uses the Offline wording only
+  ("Works securely on your device without depending on the cloud", one
+  device, one store, the owner) and says Basic and above are requested from
+  Settings in the app. No "Google Drive" wording in the trial e-mail.
+- Every action name and response shape is unchanged.
+
+This supersedes "START_TRIAL picks the tier from the request" above.
+
+**To deploy:** paste the new `Code.gs` into the existing Apps Script project
+(`firestore.gs` and `bcrypt.gs` are unchanged), save, run
+`smokeTestTrialProvisioning` once, then **Deploy → Manage deployments → edit
+the existing deployment → New version → Deploy** (same deployment id, same
+`/exec` URL).

@@ -18,14 +18,20 @@ class AdminInquiriesView extends ConsumerStatefulWidget {
 
   const AdminInquiriesView({super.key, this.onOnboardLead});
 
-  /// The tier a lead is approved on: this trade's package at the tier they
-  /// asked for — Offline when they asked to run offline, Basic otherwise
-  /// ([LicenceEdits.requestedTier]). The plan (validity) is chosen when
+  /// The tier a lead is approved on. A free-trial lead (no requested tier)
+  /// is always Offline: the trial is the trade's Offline package and nothing
+  /// else (docs/PLATFORM_STRUCTURE.md §6a). Any other lead is this trade's
+  /// package at the tier they asked for — Offline when they asked to run
+  /// offline, Basic otherwise ([LicenceEdits.requestedTier]) — onboarded on
+  /// a paid plan, with no trial. The plan (validity) is chosen when
   /// onboarding, and the licence is composed from the two.
-  static PackageTier leadTier(UnifiedClientLead lead) => LicenceEdits.requestedTier({
-        ...lead.rawData,
-        if ((lead.requestedPackageId ?? '').isNotEmpty) 'requestedPackageId': lead.requestedPackageId,
-      });
+  static PackageTier leadTier(UnifiedClientLead lead) {
+    if (lead.isTrial) return PackageTier.offline;
+    return LicenceEdits.requestedTier({
+      ...lead.rawData,
+      if ((lead.requestedPackageId ?? '').isNotEmpty) 'requestedPackageId': lead.requestedPackageId,
+    });
+  }
 
   @override
   ConsumerState<AdminInquiriesView> createState() => _AdminInquiriesViewState();

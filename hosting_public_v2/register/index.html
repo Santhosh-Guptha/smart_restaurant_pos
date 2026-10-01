@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Register your business · SmartBizz</title>
-<meta name="description" content="Tell us about your business. We review every request personally and set you up within a business day. 14 days free, no card.">
+<meta name="description" content="Tell us about your business. The 14-day free trial is the Offline package (one device, one store, the owner); Basic, Standard, Premium and Enterprise are requests we set up within a business day. No card.">
 <meta name="robots" content="index,follow">
 <meta name="theme-color" content="#070F24">
 <link rel="icon" href="/pos/favicon.png">
@@ -36,6 +36,7 @@ legend .hint{font-weight:400;font-size:.85rem;color:var(--paper-3)}
 .store b{font-weight:700}
 .store span{font-size:.86rem;color:var(--paper-2)}
 @media (max-width:560px){.stores{grid-template-columns:1fr}}
+#planNotes .store{grid-template-columns:1fr;margin-top:12px}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:0 14px}
 .grid .full{grid-column:1/-1}
 @media (max-width:560px){.grid{grid-template-columns:1fr}}
@@ -151,10 +152,20 @@ select.input option,select.input optgroup{background:var(--ink-2);color:var(--pa
         </div>
 
         <fieldset>
-          <legend>Where should your data live? <span class="hint">you can change this later</span></legend>
-          <div class="stores" id="storeTiles" role="radiogroup" aria-label="Where your data lives">
-            <label class="store"><input type="radio" value="offline" checked><b>Offline, on this device</b><span>Works securely on your device without depending on the cloud. Export an encrypted backup whenever you like.</span></label>
-            <label class="store"><input type="radio" value="drive"><b>My own Google Drive</b><span>Basic and above. Your business data stays in your own Google Drive. We do not take your business data; only limited usage analytics such as bill counts are collected.</span></label>
+          <legend>What would you like? <span class="hint">the free trial is the Offline package; every other package is a request</span></legend>
+          <div class="grid">
+            <div class="field f full"><label for="requestedPlan">I want</label>
+              <select id="requestedPlan" name="requestedPlan" class="input">
+                <option value="free_trial">Free trial — Offline package, 14 days (one device, one store, the owner)</option>
+                <option value="basic">Request Basic</option>
+                <option value="standard">Request Standard</option>
+                <option value="premium">Request Premium</option>
+                <option value="ENTERPRISE_CUSTOM">Request Enterprise (limits set for your business)</option>
+              </select></div>
+          </div>
+          <div class="stores" id="planNotes">
+            <div class="store" style="cursor:default"><b>Free trial = the Offline package</b><span>Works securely on your device without depending on the cloud. One device, one store, the owner. No card. Move up to Basic or higher any time by request from inside the app.</span></div>
+            <div class="store" style="cursor:default"><b>Basic, Standard, Premium, Enterprise</b><span>No free trial — request only. We set you up on the package you ask for. Your business data stays in your own Google Drive. We do not take your business data; only limited usage analytics such as bill counts are collected.</span></div>
           </div>
         </fieldset>
 
@@ -177,7 +188,7 @@ select.input option,select.input optgroup{background:var(--ink-2);color:var(--pa
 
         <div class="submit">
           <button type="submit" class="btn btn-sun" id="submitBtn">Send my request →</button>
-          <p class="fine">No card. No commitment. You'll hear from a person, not an auto-reply.</p>
+          <p class="fine">No card. No commitment. The free trial is the Offline package; other packages are requests. You'll hear from a person, not an auto-reply.</p>
         </div>
       </form>
 
@@ -196,8 +207,8 @@ select.input option,select.input optgroup{background:var(--ink-2);color:var(--pa
       <h2 class="aside-h reveal">Three steps. One business day.</h2>
       <ol class="next reveal">
         <li><div><b>Verify your e-mail</b>We read your request and send your login and a first-time password to the address above.</div></li>
-        <li><div><b>Choose where your data lives</b>On this device, or a Google Sheet in your own Google Drive. Switch packages later without starting over.</div></li>
-        <li><div><b>Bill your first customer</b>Add your products or menu, connect your printer, print a test receipt. The whole app is yours for 14 days.</div></li>
+        <li><div><b>Start on the Offline package</b>The free trial is one package: your trade's Offline package, one device with your data on it. Basic, Standard, Premium and Enterprise are requests; move up any time from inside the app.</div></li>
+        <li><div><b>Bill your first customer</b>Add your products or menu, connect your printer, print a test receipt. The Offline package is yours free for 14 days.</div></li>
       </ol>
       <div class="proof reveal">
         <span><svg aria-hidden="true"><use href="#i-check"/></svg>14 days free</span>
@@ -206,8 +217,8 @@ select.input option,select.input optgroup{background:var(--ink-2);color:var(--pa
       </div>
       <div class="card data-note reveal">
         <p class="eyebrow">Your data</p>
-        <p><b>Offline:</b> Works securely on your device without depending on the cloud.</p>
-        <p><b>Basic and above:</b> Your business data stays in your own Google Drive. We do not take your business data; only limited usage analytics such as bill counts are collected.</p>
+        <p><b>Offline (the free trial):</b> Works securely on your device without depending on the cloud.</p>
+        <p><b>Basic and above (request only):</b> Your business data stays in your own Google Drive. We do not take your business data; only limited usage analytics such as bill counts are collected.</p>
         <p>What you type here goes to our registration queue so a person can set you up. Read the <a href="/privacy.html">privacy policy</a>.</p>
       </div>
     </aside>
@@ -256,13 +267,19 @@ const form = $('reg');
   if (hit) sel.value = hit.value;
 })();
 
-// Trade and storage tiles are UI only: the radios carry no `name`, so they
-// are not part of the submitted FormData and the request payload is unchanged.
-// Without a name the browser does not group them, so exclusivity is done here.
-(function exclusive(groupId) {
-  const rs = Array.from(document.querySelectorAll('#' + groupId + ' input[type=radio]'));
-  rs.forEach(r => r.addEventListener('change', () => { if (r.checked) rs.forEach(o => { if (o !== r) o.checked = false; }); }));
-})('storeTiles');
+// A trade page links here as /register/?plan=<basic|standard|premium|enterprise|trial>;
+// preselect that request. The default is the free trial (the Offline package).
+(function presetPlan() {
+  let want = '';
+  try { want = (new URLSearchParams(location.search).get('plan') || '').toLowerCase(); } catch (_) {}
+  const sel = $('requestedPlan');
+  if (!want || !sel) return;
+  const map = { trial: 'free_trial', free_trial: 'free_trial', offline: 'free_trial', basic: 'basic', standard: 'standard', premium: 'premium', enterprise: 'ENTERPRISE_CUSTOM', enterprise_custom: 'ENTERPRISE_CUSTOM' };
+  if (map[want]) sel.value = map[want];
+})();
+// Trade tiles are UI only: the radios carry no `name`, so they are not part
+// of the submitted FormData. Without a name the browser does not group them,
+// so exclusivity is done below.
 // Trade tiles drive the real `businessCategory` select and show the tables
 // field for restaurants; the select syncs the tile back.
 (function tradeTiles() {
@@ -318,8 +335,20 @@ async function alreadyPending(email) {
   return rows.some(x => x.document);
 }
 
+// The request the plan selector maps to. The free trial is always the Offline
+// package (tier 'offline'); Basic, Standard and Premium are requests for that
+// tier; Enterprise is ENTERPRISE_CUSTOM with the enterprise tier.
+function planRequest(value) {
+  const v = String(value || 'free_trial');
+  const labels = { basic: 'Basic', standard: 'Standard', premium: 'Premium' };
+  if (v === 'ENTERPRISE_CUSTOM') return { requestedPlan: 'ENTERPRISE_CUSTOM', tier: 'enterprise', label: 'Enterprise / Custom Setup' };
+  if (labels[v]) return { requestedPlan: v, tier: v, label: labels[v] + ' package (request)' };
+  return { requestedPlan: 'free_trial', tier: 'offline', label: '14-Day Free Trial (Offline package)' };
+}
+
 async function submitRequest(data) {
   const id = 'WEB-' + Date.now().toString(36).toUpperCase() + '-' + Math.random().toString(36).slice(2, 6).toUpperCase();
+  const plan = planRequest(data.requestedPlan);
   const fields = {
     id:                  S(id),
     clientName:          S(data.clientName),
@@ -330,7 +359,15 @@ async function submitRequest(data) {
     city:                S(data.city || ''),
     status:              S('PENDING'),
     emailVerified:       B(false),              // no OTP on the web; the approval email confirms the address
-    requestedPlan:       S('ENTERPRISE_CUSTOM'),// the admin-review path, same as the app's custom request
+    // What the visitor asked for, in the values the admin console reads
+    // (UnifiedClientLead.fromTrial): 'free_trial' is the 14-day trial on the
+    // trade's Offline package (contract §6a); 'basic' / 'standard' /
+    // 'premium' are package requests with no trial; 'ENTERPRISE_CUSTOM' is
+    // the enterprise consultation path.
+    requestedPlan:       S(plan.requestedPlan),
+    requestedPlanLabel:  S(plan.label),
+    requestedTier:       S(plan.tier),
+    isEnterprise:        B(plan.requestedPlan === 'ENTERPRISE_CUSTOM'),
     requestedStoreCount: I(data.requestedStoreCount || 1),
     tableCount:          I(data.tableCount || 0),
     referralSource:      S(data.referralSource || ''),

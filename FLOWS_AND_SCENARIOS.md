@@ -44,7 +44,7 @@ sequenceDiagram
 
     Client->>Form: Opens Self-Service Onboarding Form
     Client->>Form: Enters Brand Name, Owner Email, Mobile, Operating Mode
-    Client->>Form: Selects Plan (14-Day Free Trial), Seats (5 Users), Outlets (3 Branches)
+    Client->>Form: Selects an option: 14-Day Free Trial (always the trade's Offline package) or a package request (Basic+, no trial)
     Client->>Form: Submits Request
     Form->>FS: Writes document with status: 'PENDING'
     Note over FS: Trigger Real-time Badge in Master Admin Console
@@ -389,9 +389,10 @@ sequenceDiagram
 ---
 
 ## Scenario 15: Onboarding with a storage choice (SmartBizz)
-1. Web trial or platform admin → onboarding form. Storage: **Offline** or **Client's own Google Sheets**
-   (default). `CLOUD_SYNC` appears only when editing a tenant already on it.
-2. Code.gs creates organisation, licence (the trade's `<trade>_offline` or `<trade>_basic` package, see Scenario 21), owner user
+1. Web trial or platform admin → onboarding form. A trial is always **Offline** (`<trade>_offline`, contract
+   §6a). Admin onboarding of a paid licence: **Offline** or **Client's own Google Sheets** (default).
+   `CLOUD_SYNC` appears only when editing a tenant already on it.
+2. Code.gs creates organisation, licence (the trade's `<trade>_offline` package for a trial; `<trade>_<tier>` for an onboarded request, see Scenario 21), owner user
    (`businessCategory` + `vertical`), and outlet `outlet_<orgId>`.
 3. Offline: the till works with no network after the first licence check. Own Sheets: the owner signs in
    with Google on first launch and the main store's sheet is created in their Drive.
@@ -427,16 +428,18 @@ and bars across all tenants; top tenants by gross.
 
 Rules: `docs/PLATFORM_STRUCTURE.md`. Code map: `ARCHITECTURE.md` §10.
 
-## Scenario 21: Self sign-up — Offline or own Drive
+## Scenario 21: Self sign-up — the Offline trial, or a package request
 1. Website or app → Sign up → business category (trade) → e-mail code (`SIGNUP_SEND_CODE` / `SIGNUP_VERIFY_CODE`).
-2. Free trial: the owner picks **Offline on this device** or **My own Google Drive**. The screen shows the
-   package heading, features, limits and the contract wording for that tier.
-3. The app calls `START_TRIAL` with `tier` = `offline` or `basic`. Code.gs `trialPlan_()` reads
-   `packages/<trade>_<tier>` (falls back to its code table) and `composeLicence_()` writes the licence:
-   features resolved for the trade (`featuresResolvedFor = <trade>`), tier limits, trade roles, 14-day trial plan.
-4. Offline: 1 device, 1 store, owner only; data on the device. Own Drive: the owner signs in with Google on
-   first launch and the store's sheet is created in their Drive.
-5. Paid request instead of trial: the owner picks a tier (Enterprise: devices, outlets and users asked for);
+2. Free trial: there is no storage or tier choice. The trial is the trade's **Offline** package only
+   (contract §6a). The screen shows the Offline package heading, features, limits and the contract wording.
+3. The app calls `START_TRIAL` with `tier` = `offline` and `packageId` = `<trade>_offline`. Code.gs
+   `trialPlan_()` clamps the trial to offline whatever the request carried, reads `packages/<trade>_offline`
+   (falls back to its code table) and `composeLicence_()` writes the licence: features resolved for the trade
+   (`featuresResolvedFor = <trade>`), offline limits, OWNER role, 14-day trial plan. The app's own fallback
+   (`TenantProvisioningService`) clamps a trial plan to `<trade>_offline` the same way.
+4. The trial: 1 device, 1 store, owner only; data on the device. After it the owner moves up by request from
+   Settings (plan request sheet); the admin onboards the requested tier on a paid plan.
+5. Package request instead of trial (Basic, Standard, Premium; Enterprise: devices, outlets and users asked for);
    a lead is written with `requestedPackageId`, `requestedTier`, `requestedPlan`, requested limits. Nothing is
    provisioned until the admin onboards it.
 

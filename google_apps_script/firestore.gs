@@ -20,7 +20,13 @@
  * not half-provision a tenant does not.
  */
 
-var FS_PROJECT = "smartdine-restaurant-pos";
+var FS_PROJECT = (function() {
+  try {
+    var p = PropertiesService.getScriptProperties().getProperty("FIREBASE_PROJECT_ID");
+    if (p && p.trim()) return p.trim();
+  } catch (e) {}
+  return "smartdine-restaurant-pos";
+})();
 var FS_USE_OAUTH = false;
 var FS_BASE = "https://firestore.googleapis.com/v1/projects/" + FS_PROJECT + "/databases/(default)/documents";
 

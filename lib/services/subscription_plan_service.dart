@@ -9,12 +9,13 @@ class SubscriptionPlanService {
   /// Default fallback trial plan used if Firestore is offline or unseeded.
   ///
   /// Validity only (docs/PLATFORM_STRUCTURE.md §2): fourteen days. What the
-  /// trial can do comes from the package it is composed with (the trade's
-  /// Offline starter, `Verticals.defaultPackageFor`), never from here.
+  /// trial can do comes from the package it is composed with: always the
+  /// trade's Offline starter (`Verticals.defaultPackageFor`, contract §6a),
+  /// never from here.
   static final SubscriptionPlan fallbackTrialPlan = SubscriptionPlan.validityOnly(
     id: 'trial',
     name: 'Free Trial (14 Days)',
-    description: 'Fourteen days free, on the package for your type of business.',
+    description: 'Fourteen days free on the Offline package for your type of business: one device, one store, the owner.',
     validityDays: 14,
     billingCycle: 'TRIAL',
     isDefaultTrial: true,

@@ -52,8 +52,12 @@ stock (pharmacy: batches & expiry), expenses, analytics.
 Single features outside the package can be added per client (add-ons) when the
 storage and device count allow.
 
-The free trial is the trade's **Offline** (on this device) or **Basic** (own
-Drive) package, chosen at sign-up, fourteen days. How to say it (contract §7):
+The free trial is the trade's **Offline** package and nothing else: one
+device, one store, the owner, data on the device, fourteen days, no card. At
+sign-up the owner picks only the business category. Basic, Standard, Premium
+and Enterprise have **no free trial**; they are requests (from the sign-up
+screen, the website or Settings in the app) that the admin onboards. How to
+say it (contract §7):
 Offline — "Works securely on your device without depending on the cloud."
 Basic and above — "Your business data stays in your own Google Drive. We do not
 take your business data; only limited usage analytics such as bill counts are
@@ -212,10 +216,12 @@ a whole Offline store to a new device, use Settings → Backup & restore
 1. **Ask how many devices and how many outlets** before anything else. It
    decides the tier and it is the question that prevents every unhappy
    conversation later.
-2. **Trial sign-up** is on the website. The owner verifies their e-mail with a code,
-   picks Offline or own Drive and sets their own password; the server creates
-   the organisation. If it fails, check the admin console for the lead and set
-   them up by hand.
+2. **Trial sign-up** is on the website and in the app. The owner picks their
+   business category, verifies their e-mail with a code and sets their own
+   password; the server creates the organisation on the trade's Offline
+   package (the only trial). An owner who wants Basic or higher sends a
+   request instead; nothing is provisioned until you onboard it. If a trial
+   fails, check the admin console for the lead and set them up by hand.
 3. **First session, in this order:** store settings (name, address, GSTIN,
    FSSAI, GST rate, UPI ID) → menu → printer → one test bill. Do not skip the
    test bill; almost every setup problem shows up there.
@@ -246,6 +252,6 @@ roughly when it happened. Then hand it over.
 - Do not promise recipe/ingredient stock for restaurants.
 - Do not promise a date for an unbuilt feature.
 - Do not say the trial "is the full product with a time limit". It is the
-  trade's Offline or Basic package.
+  trade's Offline package, and only that; Basic and above are not trialled.
 - Do not suggest a second device on the Offline tier.
 - Do not say "100% local", "fully offline" or give absolute guarantees.

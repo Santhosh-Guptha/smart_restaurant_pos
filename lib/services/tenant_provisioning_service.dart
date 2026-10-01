@@ -82,15 +82,19 @@ class TenantProvisioningService {
     // ── Package, then licence ────────────────────────────────────────────
     // A licence is one package plus one plan (docs/PLATFORM_STRUCTURE.md):
     // the package decides the tier, features, limits and roles; the plan only
-    // the dates. Offline storage is always the trade's Offline package
-    // (`<trade>_offline`); otherwise the requested tier's package for this
-    // trade (Basic when nothing says otherwise), or the admin's own package
-    // when it fits the trade and the storage family. Everything goes through
-    // the same composer the console and the app's resolver use, so a tenant
-    // can never be created in a shape the app would read differently.
-    final resolvedMode = StorageModes.all.contains(storageMode.toUpperCase())
-        ? storageMode.toUpperCase()
-        : StorageModes.clientsOwnSheets;
+    // the dates. A trial (§6a) is always the trade's Offline package
+    // (`<trade>_offline`), whatever package, tier or storage the caller
+    // passed; so is offline storage. Otherwise the requested tier's package
+    // for this trade (Basic when nothing says otherwise), or the admin's own
+    // package when it fits the trade and the storage family. Everything goes
+    // through the same composer the console and the app's resolver use, so a
+    // tenant can never be created in a shape the app would read differently.
+    final trial = isTrialPlan(plan);
+    final resolvedMode = trial
+        ? StorageModes.pureOffline
+        : StorageModes.all.contains(storageMode.toUpperCase())
+            ? storageMode.toUpperCase()
+            : StorageModes.clientsOwnSheets;
     final offline = StorageModes.isOffline(resolvedMode);
     final requestedTier = PackageTier.tryParse(tier);
     final targetPackageId = alignedPackageId(
@@ -99,6 +103,7 @@ class TenantProvisioningService {
       packageId: packageId,
       tier: requestedTier,
       planProfile: planProfile,
+      trial: trial,
     );
     final fallbackTier = offline
         ? PackageTier.offline
@@ -449,8 +454,16 @@ class TenantProvisioningService {
     }
   }
 
-  /// The package a new tenant is put on (docs/PLATFORM_STRUCTURE.md §3):
+  /// Whether [plan] is the free trial (docs/PLATFORM_STRUCTURE.md §6a): the
+  /// default trial plan, or any plan on the `TRIAL` billing cycle. A tenant
+  /// provisioned on it is always put on the trade's Offline package.
+  static bool isTrialPlan(SubscriptionPlan plan) =>
+      plan.isDefaultTrial || plan.billingCycle.trim().toUpperCase() == 'TRIAL';
+
+  /// The package a new tenant is put on (docs/PLATFORM_STRUCTURE.md §3, §6a):
   ///
+  /// * a [trial] -> the trade's Offline package (`<trade>_offline`), whatever
+  ///   package or tier was asked for (Basic and above are requests only);
   /// * offline storage -> the trade's Offline package (`<trade>_offline`);
   /// * an explicit [tier] with no package, a starter id or a legacy profile
   ///   id -> the trade's package at [tier];
@@ -467,9 +480,10 @@ class TenantProvisioningService {
     String? packageId,
     PackageTier? tier,
     String? planProfile,
+    bool trial = false,
   }) {
     final v = Verticals.isValid(vertical) ? vertical.trim().toLowerCase() : Verticals.restaurant;
-    if (StorageModes.isOffline(storageMode)) return PackageCatalog.starterId(v, PackageTier.offline);
+    if (trial || StorageModes.isOffline(storageMode)) return PackageCatalog.starterId(v, PackageTier.offline);
     final asked = (tier != null && !tier.isOffline) ? tier : null;
     final id = (packageId ?? '').trim();
     if (id.isEmpty) return PackageCatalog.starterId(v, asked ?? PackageTier.basic);

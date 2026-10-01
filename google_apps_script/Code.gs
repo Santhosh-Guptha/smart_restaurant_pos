@@ -84,6 +84,10 @@ function doPost(e) {
       json.action === "START_TRIAL" ||
       json.action === "REGISTER_TRIAL" ||
       json.action === "SUBMIT_INQUIRY" ||
+      json.action === "ISSUE_AUTH_TOKEN" ||
+      json.action === "LICENSE_LEASE" ||
+      json.action === "SIGNUP_SEND_CODE" ||
+      json.action === "SIGNUP_VERIFY_CODE" ||
       json.action === "SEND_WHATSAPP_NOTIFICATION" ||
       json.action === "WHATSAPP_NOTIFICATION" ||
       (json.action === "SAVE_BILL" && !isStatusSettled(b.payment_status || b.status)) ||
@@ -100,8 +104,18 @@ function doPost(e) {
     // Security Verification & Protections for Public Endpoints (F-06 & F-07)
     if (!json.__authenticated) {
       var publicOrgId = resolveTenantId(json, b);
-      var isPublicTrialOrInquiry = (json.action === "START_TRIAL" || json.action === "REGISTER_TRIAL" || json.action === "SUBMIT_INQUIRY");
-      if (!publicOrgId && !isPublicTrialOrInquiry) {
+      var isPublicWithoutOrg = (
+        json.action === "START_TRIAL" ||
+        json.action === "REGISTER_TRIAL" ||
+        json.action === "SUBMIT_INQUIRY" ||
+        json.action === "ISSUE_AUTH_TOKEN" ||
+        json.action === "LICENSE_LEASE" ||
+        json.action === "SIGNUP_SEND_CODE" ||
+        json.action === "SIGNUP_VERIFY_CODE" ||
+        json.action === "SEND_WHATSAPP_NOTIFICATION" ||
+        json.action === "WHATSAPP_NOTIFICATION"
+      );
+      if (!publicOrgId && !isPublicWithoutOrg) {
         return responseJson({ success: false, error_code: "BAD_REQUEST", error: "Missing organization identifier." });
       }
 
@@ -3911,6 +3925,7 @@ var TIER_LIMITS = {
  */
 var R_ONLY_ = ["restaurant"];
 var SHOPS_ONLY_ = ["kirana", "supermarket", "pharmacy", "retail"];
+var NON_KIRANA_ = ["restaurant", "supermarket", "pharmacy", "retail"];
 var FEATURE_CATALOG_ = [
   { key: "billing",               label: "Billing",                        tier: "ob", need: "none", deps: [], v: [] },
   { key: "qsrBilling",            label: "Counter till",                   tier: "ob", need: "none", deps: ["billing"], v: [] },
@@ -3933,7 +3948,7 @@ var FEATURE_CATALOG_ = [
   { key: "onlineMenu",            label: "Online menu",                    tier: "na", need: "cloud", deps: ["cloudSync"], v: R_ONLY_ },
   { key: "qrOrdering",            label: "QR table ordering",              tier: "na", need: "cloud", deps: ["onlineMenu", "tableManagement"], v: R_ONLY_ },
   { key: "onlineOrderingEnabled", label: "Online ordering",                tier: "na", need: "cloud", deps: ["onlineMenu"], v: R_ONLY_ },
-  { key: "multiOutlet",           label: "Multiple outlets",               tier: "na", need: "cloud", deps: ["cloudSync"], v: [] },
+  { key: "multiOutlet",           label: "Multiple outlets",               tier: "na", need: "cloud", deps: ["cloudSync"], v: NON_KIRANA_ },
   { key: "inventoryEnabled",      label: "Stock & recipes",                tier: "na", need: "cloud", deps: ["menuManagement"], v: R_ONLY_ },
   { key: "barcodeBilling",        label: "Barcode billing",                tier: "oa", need: "none", deps: [], v: SHOPS_ONLY_ },
   { key: "customerKhata",         label: "Customer khata",                 tier: "oa", need: "none", deps: [], v: SHOPS_ONLY_ },
@@ -3992,7 +4007,7 @@ function featuresFor_(vertical, tier) {
   if (tierAtLeast_(t, "basic")) on.cloudSync = true;
   if (standard) on.emailReceipts = true;
   if (standard && !shop) { on.kdsEnabled = true; on.waiterOrdering = true; }
-  if (premium) on.multiOutlet = true;
+  if (premium && v !== "kirana") on.multiOutlet = true;
   if (premium && !shop) { on.onlineMenu = true; on.qrOrdering = true; on.onlineOrderingEnabled = true; }
   var out = {};
   FEATURE_CATALOG_.forEach(function (d) {
@@ -4032,14 +4047,15 @@ function normaliseFeatures_(raw, vertical, offline, maxDevices) {
 }
 
 /**
- * LicenseComposer.rolesFor: offline -> OWNER only; a shop -> OWNER, MANAGER,
- * BILLING; a restaurant on Standard or above with more than one device also
- * WAITER and KITCHEN.
+ * LicenseComposer.rolesFor: offline or kirana -> OWNER only; a shop -> OWNER,
+ * MANAGER, BILLING; a restaurant on Standard or above with more than one device
+ * also WAITER and KITCHEN.
  */
 function rolesFor_(vertical, tier, maxDevices) {
   var t = tierParse_(tier) || "basic";
-  if (t === "offline") return ["OWNER"];
-  var shop = !!SHOP_TRADES_[String(vertical || "").trim().toLowerCase()];
+  var v = trade_(vertical);
+  if (t === "offline" || v === "kirana") return ["OWNER"];
+  var shop = !!SHOP_TRADES_[v];
   var roles = ["OWNER", "MANAGER", "BILLING"];
   if (!shop && tierAtLeast_(t, "standard") && Number(maxDevices) > 1) roles.push("WAITER", "KITCHEN");
   return roles;
@@ -4106,11 +4122,11 @@ function composeLicence_(vertical, tier, planDoc, opts) {
   var pkg = opts.packageDoc || null;
 
   // Limits: the package's stored limits, else the tier's defaults. Custom
-  // only on Enterprise or an explicit admin override. Offline is fixed.
+  // only on Enterprise or an explicit admin override. Offline and Kirana are fixed.
   var def = TIER_LIMITS[t];
   var lim = { maxDevices: def.maxDevices, maxOutlets: def.maxOutlets, maxUsers: def.maxUsers };
   var limitsCustom = false;
-  if (offline) {
+  if (offline || v === "kirana") {
     lim = { maxDevices: 1, maxOutlets: 1, maxUsers: 1 };
   } else {
     if (pkg) {
@@ -4153,7 +4169,7 @@ function composeLicence_(vertical, tier, planDoc, opts) {
     startDate: start,
     endDate: end,
     maxFranchises: lim.maxOutlets,
-    maxUsers: offline ? 1 : lim.maxUsers,
+    maxUsers: (offline || v === "kirana") ? 1 : lim.maxUsers,
     maxDevices: lim.maxDevices,
     allowedRoles: rolesFor_(v, t, lim.maxDevices),
     features: features,
@@ -4169,13 +4185,13 @@ function composeLicence_(vertical, tier, planDoc, opts) {
 }
 
 /**
- * The tier a START_TRIAL request asks for. Accepts, newest first:
- * `tier` / `package_tier` / `packageTier`; `packageId` / `package_id`
- * (`<trade>_<tier>`, only when it names this trade); `storage_mode` /
- * `storageMode` (PURE_OFFLINE -> offline, anything else -> basic); the legacy
- * `plan_profile` / `planProfile` / `selected_option` (OFFLINE_* -> offline,
- * CONNECTED -> basic, OMNICHANNEL -> premium). Nothing -> offline, as the
- * app's Verticals.defaultPackageFor does for a trial.
+ * The tier a START_TRIAL request asked for, read for the log only. Accepts,
+ * newest first: `tier` / `package_tier` / `packageTier`; `packageId` /
+ * `package_id` (`<trade>_<tier>`, only when it names this trade);
+ * `storage_mode` / `storageMode` (PURE_OFFLINE -> offline, anything else ->
+ * basic); the legacy `plan_profile` / `planProfile` / `selected_option`
+ * (OFFLINE_* -> offline, CONNECTED -> basic, OMNICHANNEL -> premium).
+ * Nothing -> offline.
  */
 function requestedTier_(data, vertical) {
   data = data || {};
@@ -4194,8 +4210,25 @@ function requestedTier_(data, vertical) {
 }
 
 /**
- * The trial licence: the trade's tier package (packages/<trade>_<tier> when
- * the console has seeded it, else the code table) on the default trial plan
+ * The trial's tier (docs/PLATFORM_STRUCTURE.md §6a): ALWAYS "offline". The
+ * free trial is exactly one package, the trade's Offline package
+ * (`<trade>_offline`, 1 device, 1 store, 1 user, data on the device). The
+ * request's tier / packageId / storage_mode fields are still accepted but
+ * never change the trial: Basic, Standard, Premium and Enterprise have no
+ * free trial and are requests only (registration_requests, onboarded by the
+ * admin). A request that asked for another tier is logged and clamped.
+ */
+function trialTier_(data, vertical) {
+  var asked = requestedTier_(data, vertical);
+  if (asked !== "offline") {
+    Logger.log("START_TRIAL asked for tier '" + asked + "'; the trial is always the Offline package (contract §6a).");
+  }
+  return "offline";
+}
+
+/**
+ * The trial licence: the trade's Offline package (packages/<trade>_offline
+ * when the console has seeded it, else the code table) on the default trial plan
  * (subscription_plans isDefaultTrial, else subscription_plans/trial, else 14
  * days), composed by composeLicence_. The plan gives the term only.
  *
@@ -4206,7 +4239,9 @@ function requestedTier_(data, vertical) {
 function trialPlan_(businessCategory, request) {
   var vertical = verticalFor_(businessCategory);
   var isShop = !!SHOP_TRADES_[vertical];
-  var tier = requestedTier_(request, vertical);
+  // Always "offline" (contract §6a); the request's tier fields are read for
+  // the log only.
+  var tier = trialTier_(request, vertical);
   var packageId = vertical + "_" + tier;
   var pkg = null;
   var planDoc = null;
@@ -4237,24 +4272,22 @@ function trialPlan_(businessCategory, request) {
   return lic;
 }
 
-/** The welcome e-mail's package paragraph, per trade and tier (contract §3, §7). */
+/**
+ * The welcome e-mail's package paragraph, per trade (contract §3, §6a, §7).
+ * The trial is always the Offline package, so the wording is the offline
+ * wording: one device, one store, one user, data on the device; Basic and
+ * higher are requests from inside the app.
+ */
 function trialPackageText_(lic) {
   var v = trade_(lic.vertical);
-  var shop = !!SHOP_TRADES_[v];
   var names = featureNamesFor_(lic.features, v);
-  var reach;
-  if (lic.tier === "offline") {
-    reach = "For one device, one store and one user. " + OFFLINE_NOTICE_;
-  } else {
-    var outlets = Number(lic.maxFranchises) || 1;
-    reach = "Up to " + lic.maxDevices + " devices, " + outlets + " " +
-      (outlets === 1 ? (shop ? "store" : "outlet") : (shop ? "stores" : "outlets")) +
-      " and " + lic.maxUsers + " users. " + DRIVE_NOTICE_;
-  }
-  return "Your trial is the " + lic.packageName + " package.\n\n" +
+  var reach = "For one device, one store and one user (the owner), with your data kept on the device. " + OFFLINE_NOTICE_;
+  return "Your 14-day free trial is the " + lic.packageName + " package.\n\n" +
     packageHeading_(v, lic.tier) + ":\n" +
     names.map(function (n) { return "  - " + n; }).join("\n") + "\n\n" +
-    reach + "\n\n";
+    reach + "\n\n" +
+    "Basic, Standard, Premium and Enterprise have no free trial: when you need more devices, " +
+    "staff or stores, request a package from Settings in the app and we will set it up.\n\n";
 }
 
 

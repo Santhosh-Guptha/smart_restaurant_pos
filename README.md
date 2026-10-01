@@ -124,7 +124,7 @@ The platform contract is [`docs/PLATFORM_STRUCTURE.md`](./docs/PLATFORM_STRUCTUR
 
 - A **plan** is validity only (trial 14 days, monthly, quarterly, half-yearly, yearly).
 - **Add-ons** are per client and per trade; the client's licence (`licenses/{orgId}`) holds the resolved state.
-- The free trial is the trade's Offline or Basic (own Drive) package, chosen at sign-up.
+- The free trial is the trade's **Offline** package only (1 device · 1 store · 1 user, 14 days, no card); at sign-up the visitor picks only the business category. Basic, Standard, Premium and Enterprise have no trial: they are requests the admin onboards.
 - The older profiles (Offline counter, Shop counter, Offline dine-in, Connected, Everything on) are legacy.
 
 ---

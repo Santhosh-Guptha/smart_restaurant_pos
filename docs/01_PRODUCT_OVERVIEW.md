@@ -131,7 +131,7 @@ Settings (sidebar `lib/screens/settings/settings_sidebar_dialog.dart`): printers
 `receipt_template_editor_screen.dart`), token pattern (`token_pattern_editor.dart`), Backup & restore
 (`backup_restore_screen.dart`), plan request (`plan_request_sheet.dart`).
 
-Gate screens chosen in `lib/main.dart` before home: `SaaSLoginScreen`, `ClientSignUpScreen` (trial sign-up),
+Gate screens chosen in `lib/main.dart` before home: `SaaSLoginScreen`, `ClientSignUpScreen` (trial sign-up — the trial is always the trade's Offline package; other tiers are requests),
 `SaaSExpiredScreen` (licence inactive), `LicenseRevalidateScreen` (lease blocked), `FirstLoginPasswordScreen`,
 `TenantLockedScreen` (paused/closed), `StorageMigrationGateScreen` (pending storage change),
 `AppUpdateRequiredScreen` (forced update).

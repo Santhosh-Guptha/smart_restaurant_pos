@@ -16,6 +16,12 @@ void main() {
     billingCycle: 'TRIAL',
     isDefaultTrial: true,
   );
+  final yearly = SubscriptionPlan.validityOnly(
+    id: 'yearly',
+    name: 'Yearly',
+    validityDays: 365,
+    billingCycle: 'YEARLY',
+  );
 
   group('provisioning picks the tier package', () {
     String aligned(String vertical, String mode, {String? packageId, PackageTier? tier, String? profile}) =>
@@ -61,6 +67,43 @@ void main() {
     test('an unknown trade reads as a restaurant', () {
       expect(aligned('', StorageModes.pureOffline), 'restaurant_offline');
     });
+
+    test('a trial is always the trade\'s Offline package, whatever was asked for (§6a)', () {
+      String trialAligned(String v, {String? packageId, PackageTier? tier, String mode = StorageModes.clientsOwnSheets}) =>
+          TenantProvisioningService.alignedPackageId(
+            vertical: v,
+            storageMode: mode,
+            packageId: packageId,
+            tier: tier,
+            trial: true,
+          );
+      for (final v in Verticals.all) {
+        expect(trialAligned(v), '${v}_offline', reason: v);
+        expect(trialAligned(v, tier: PackageTier.basic), '${v}_offline', reason: v);
+        expect(trialAligned(v, tier: PackageTier.premium, packageId: '${v}_premium'), '${v}_offline', reason: v);
+        expect(trialAligned(v, packageId: 'pkg_custom_$v', mode: StorageModes.cloudSync), '${v}_offline', reason: v);
+        expect(trialAligned(v, tier: PackageTier.enterprise), '${v}_offline', reason: v);
+      }
+      // Not a trial: the request is honoured as before.
+      expect(aligned('pharmacy', StorageModes.clientsOwnSheets, tier: PackageTier.premium), 'pharmacy_premium');
+    });
+
+    test('the trial plan is recognised by its default flag or its TRIAL billing cycle', () {
+      expect(TenantProvisioningService.isTrialPlan(trial), isTrue);
+      expect(TenantProvisioningService.isTrialPlan(trial.copyWith(isDefaultTrial: false)), isTrue);
+      expect(
+          TenantProvisioningService.isTrialPlan(SubscriptionPlan.validityOnly(
+              id: 'promo', name: 'Promo', validityDays: 14, billingCycle: 'trial')),
+          isTrue);
+      expect(
+          TenantProvisioningService.isTrialPlan(SubscriptionPlan.validityOnly(
+              id: 'yearly', name: 'Yearly', validityDays: 365, billingCycle: 'YEARLY')),
+          isFalse);
+      expect(
+          TenantProvisioningService.isTrialPlan(SubscriptionPlan.validityOnly(
+              id: 'monthly', name: 'Monthly', validityDays: 30, billingCycle: 'MONTHLY', isDefaultTrial: false)),
+          isFalse);
+    });
   });
 
   group('the trial licence', () {
@@ -76,21 +119,40 @@ void main() {
       }
     });
 
-    test('own-Drive trial: Basic defaults and the trade\'s roles', () {
-      final shop = LicenseComposer.compose(PackageCatalog.starter('supermarket', PackageTier.basic), trial, vertical: 'supermarket');
+    test('the trial is only ever the Offline package: a trial plan on a Basic package provisions Offline', () {
+      // The admin console or an old app may pair the trial plan with another
+      // package; provisioning realigns it to `<trade>_offline` (§6a).
+      final aligned = TenantProvisioningService.alignedPackageId(
+        vertical: 'supermarket',
+        storageMode: StorageModes.clientsOwnSheets,
+        packageId: 'supermarket_basic',
+        tier: PackageTier.basic,
+        trial: TenantProvisioningService.isTrialPlan(trial),
+      );
+      expect(aligned, 'supermarket_offline');
+      final c = LicenseComposer.compose(PackageCatalog.starter('supermarket', PackageTier.offline), trial, vertical: 'supermarket');
+      expect(c.tier, PackageTier.offline);
+      expect(c.limits, TierLimits.offline);
+      expect(c.allowedRoles, ['OWNER']);
+      expect(StorageModes.isOffline(c.storageMode), isTrue);
+    });
+
+    test('Basic by request (no trial): Basic defaults and the trade\'s roles', () {
+      final shop = LicenseComposer.compose(PackageCatalog.starter('supermarket', PackageTier.basic), yearly, vertical: 'supermarket');
       expect(shop.tier, PackageTier.basic);
       expect(shop.limits, TierLimits.basic);
       expect(shop.allowedRoles, ['OWNER', 'MANAGER', 'BILLING']);
       expect(StorageModes.isOffline(shop.storageMode), isFalse);
+      expect(shop.endDate.difference(shop.startDate).inDays, 365);
 
-      final kirana = LicenseComposer.compose(PackageCatalog.starter('kirana', PackageTier.basic), trial, vertical: 'kirana');
+      final kirana = LicenseComposer.compose(PackageCatalog.starter('kirana', PackageTier.basic), yearly, vertical: 'kirana');
       expect(kirana.tier, PackageTier.basic);
       expect(kirana.limits, TierLimits.kirana);
       expect(kirana.allowedRoles, ['OWNER']);
       expect(StorageModes.isOffline(kirana.storageMode), isFalse);
 
       final dine = LicenseComposer.compose(
-          PackageCatalog.starter('restaurant', PackageTier.basic), trial, vertical: 'restaurant');
+          PackageCatalog.starter('restaurant', PackageTier.basic), yearly, vertical: 'restaurant');
       expect(dine.allowedRoles, isNot(contains('WAITER')));
     });
 

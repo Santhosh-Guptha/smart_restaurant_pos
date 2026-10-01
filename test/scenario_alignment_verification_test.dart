@@ -60,12 +60,24 @@ void main() {
       expect(composed.features[FeatureKeys.waiterOrdering], isFalse);
     });
 
-    test('Self-Registration: Cloud Drive Trial picks kirana_basic with kirana limits', () {
-      final pkgId = Verticals.defaultPackageFor(category, offline: false);
+    test('Self-Registration: the trial is the Offline package only; Basic is a request (no trial)', () {
+      // A trial never lands on Basic, whatever the request carried (§6a).
+      expect(
+          TenantProvisioningService.alignedPackageId(
+            vertical: trade,
+            storageMode: StorageModes.clientsOwnSheets,
+            packageId: 'kirana_basic',
+            tier: PackageTier.basic,
+            trial: TenantProvisioningService.isTrialPlan(trialPlan),
+          ),
+          'kirana_offline');
+
+      // Basic is onboarded by the admin on a paid plan, with kirana limits.
+      final pkgId = PackageCatalog.starterId(trade, PackageTier.basic);
       expect(pkgId, 'kirana_basic');
 
       final pkg = PackageCatalog.starter(trade, PackageTier.basic);
-      final composed = LicenseComposer.compose(pkg, trialPlan, vertical: trade);
+      final composed = LicenseComposer.compose(pkg, yearlyPlan, vertical: trade);
 
       expect(composed.tier, PackageTier.basic);
       expect(composed.storageMode, StorageModes.clientsOwnSheets);
@@ -234,6 +246,68 @@ void main() {
       expect(composed.features[FeatureKeys.dualPrinting], isTrue);
       expect(composed.features[FeatureKeys.kdsEnabled], isTrue);
       expect(composed.features[FeatureKeys.waiterOrdering], isTrue);
+    });
+  });
+
+  group('Scenario 4: Free-trial rule in the admin console (contract §6a)', () {
+    test('a registration with no requested tier is a trial on the Offline package, whatever storage it sent', () {
+      for (final raw in [
+        <String, dynamic>{'clientName': 'A', 'email': 'a@x.in', 'businessCategory': 'Pharmacy / Medical Store'},
+        <String, dynamic>{
+          'clientName': 'A',
+          'email': 'a@x.in',
+          'businessCategory': 'Pharmacy / Medical Store',
+          'requestedPlan': 'free_trial',
+          'requestedStorageMode': 'CLIENTS_OWN_SHEETS',
+        },
+        <String, dynamic>{
+          'clientName': 'A',
+          'email': 'a@x.in',
+          'businessCategory': 'Pharmacy / Medical Store',
+          'requestedPlan': 'trial',
+          'storageMode': 'CLOUD_SYNC',
+        },
+      ]) {
+        final lead = UnifiedClientLead.fromTrial('req_1', raw);
+        expect(lead.isTrial, isTrue, reason: '$raw');
+        expect(lead.requestedPackageId, 'pharmacy_offline', reason: '$raw');
+        expect(lead.requestedPlanId, 'trial', reason: '$raw');
+        expect(AdminInquiriesView.leadTier(lead), PackageTier.offline, reason: '$raw');
+      }
+    });
+
+    test('a registration that asked for Basic or higher is onboarded on that tier, not on a trial', () {
+      final basic = UnifiedClientLead.fromTrial('req_2', <String, dynamic>{
+        'clientName': 'B',
+        'email': 'b@x.in',
+        'businessCategory': 'Supermarket / Departmental Store',
+        'requestedPlan': 'basic',
+        'requestedTier': 'basic',
+      });
+      expect(basic.isTrial, isFalse);
+      expect(basic.requestedPackageId, 'supermarket_basic');
+      expect(basic.requestedPlanId, 'yearly');
+      expect(AdminInquiriesView.leadTier(basic), PackageTier.basic);
+
+      final premium = UnifiedClientLead.fromTrial('req_3', <String, dynamic>{
+        'clientName': 'C',
+        'email': 'c@x.in',
+        'businessCategory': 'Restaurant & Cafe',
+        'requestedPlan': 'premium',
+      });
+      expect(premium.isTrial, isFalse);
+      expect(premium.requestedPackageId, 'restaurant_premium');
+      expect(AdminInquiriesView.leadTier(premium), PackageTier.premium);
+
+      final enterprise = UnifiedClientLead.fromTrial('req_4', <String, dynamic>{
+        'clientName': 'D',
+        'email': 'd@x.in',
+        'businessCategory': 'Restaurant & Cafe',
+        'requestedPlan': 'ENTERPRISE_CUSTOM',
+      });
+      expect(enterprise.isTrial, isFalse);
+      expect(enterprise.requestedPackageId, 'restaurant_enterprise');
+      expect(AdminInquiriesView.leadTier(enterprise), PackageTier.enterprise);
     });
   });
 }

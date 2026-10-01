@@ -64,6 +64,24 @@ Runs on the device without depending on the cloud. One device, one store, one
 user. Data is kept on the device; the owner can export an encrypted backup file
 and restore it on another device after signing in (Settings → Backup & restore).
 
+## 6a. Free trial = the Offline package, nothing else
+- The 14-day free trial is exactly **one** package: the trade's Offline package
+  (`<trade>_offline`): 1 device · 1 store · 1 user (the owner), data on the
+  device. No card.
+- At sign-up the visitor chooses only the **business category**. There is no
+  storage or tier choice for the trial.
+- Basic, Standard, Premium and Enterprise have **no free trial**. They are
+  requests only: a lead (`registration_requests` with `requestedPlan` = the tier
+  id, or `ENTERPRISE_CUSTOM`) that the admin onboards on a paid plan.
+- Every path that creates a trial clamps to Offline, whatever the caller sent:
+  the app (`ClientSignUpScreen`, `TenantProvisioningService` when the plan is
+  the default trial / billing cycle `TRIAL`), the server (Code.gs
+  `START_TRIAL`), the admin console (a lead with no requested tier is a trial
+  on Offline; a lead that asked for Basic or higher is onboarded on that tier,
+  not on a trial).
+- After the trial the owner moves up by request from inside the app (Settings →
+  plan request sheet); the admin onboards the requested tier.
+
 ## 7. Wording rules (app + website)
 - Never say "100% local", "fully offline" or give absolute guarantees.
 - Basic/Standard/Premium/Enterprise: "Your business data stays in your own Google

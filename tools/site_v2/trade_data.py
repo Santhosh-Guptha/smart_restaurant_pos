@@ -17,6 +17,14 @@ DATA_CLOUD = ("Your business data stays in your own Google Drive. We do not take
 DATA_OFFLINE = "Works securely on your device without depending on the cloud."
 DATA_OFFLINE_MORE = DATA_OFFLINE + " Export an encrypted backup whenever you like and restore it on another device."
 
+# The free-trial rule (docs/PLATFORM_STRUCTURE.md §6a): the 14-day trial is the
+# trade's Offline package and nothing else; Basic, Standard, Premium and
+# Enterprise are requests, with no trial. Appended to every trade's FAQ.
+TRIAL_FAQ = ("Can I add a second device on the trial?",
+             "No. The free trial is the Offline package: one device, one store, the owner, with your data on the device. "
+             "Basic and above add devices, staff and your own Google Drive, and they are requests, not trials: "
+             "ask from inside the app or on the register page and we set you up.")
+
 TIERS = ["offline", "basic", "standard", "premium", "enterprise"]
 TIER_NAME = dict(offline="Offline", basic="Basic", standard="Standard", premium="Premium", enterprise="Enterprise")
 TIER_FROM = dict(offline="From Offline", basic="From Basic", standard="From Standard", premium="From Premium", enterprise="Enterprise")

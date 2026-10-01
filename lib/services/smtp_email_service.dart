@@ -1144,4 +1144,113 @@ SmartBizz Team
       return {'success': false, 'error': e.toString()};
     }
   }
+
+  // =========================================================================
+  // TEMPLATE: PASSWORD RESET REQUEST EMAIL
+  // =========================================================================
+  static Future<Map<String, dynamic>> sendPasswordResetEmail({
+    required String recipientEmail,
+    required String clientName,
+    required String resetUrl,
+    required String token,
+    int expiresInMinutes = 60,
+  }) async {
+    final cleanEmail = recipientEmail.trim().toLowerCase();
+    if (cleanEmail.isEmpty || !cleanEmail.contains('@')) {
+      return {'success': false, 'error': 'Invalid recipient email address.'};
+    }
+
+    try {
+      final headerHtml = _buildHeaderHtml(
+        badgeText: "Security Notice",
+        badgeBg: "#fef3c7",
+        badgeColor: "#d97706",
+        title: "SmartBizz POS",
+        subtitle: "Password Reset Request",
+      );
+      final footerHtml = _buildFooterHtml();
+
+      final subject = 'Reset Your SmartBizz POS Password';
+      final plainText = '''
+Hello $clientName,
+
+We received a request to reset your SmartBizz POS account password.
+
+To reset your password, visit the link below:
+$resetUrl
+
+Or enter your Reset Security Code:
+$token
+
+Note: For security reasons, you will be prompted to verify your identity with your registered Google Account ($cleanEmail) before setting a new password.
+
+This link will expire in $expiresInMinutes minutes. If you did not request this, you can safely ignore this email.
+
+Best regards,
+SmartBizz POS Security Team
+''';
+
+      final htmlContent = '''
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { font-family: 'Segoe UI', Arial, sans-serif; background-color: #f1f5f9; margin: 0; padding: 24px; }
+    .card { max-width: 520px; margin: 0 auto; background: #ffffff; border-radius: 16px; border: 1px solid #e2e8f0; padding: 32px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }
+    .greeting { color: #334155; font-size: 15px; margin-bottom: 16px; }
+    .btn-container { text-align: center; margin: 28px 0 20px 0; }
+    .reset-btn { display: inline-block; background-color: #2563eb; color: #ffffff !important; text-decoration: none; padding: 14px 28px; border-radius: 10px; font-weight: 700; font-size: 15px; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3); }
+    .code-box { text-align: center; margin: 20px 0; background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 10px; padding: 14px; }
+    .code-val { font-family: monospace; font-size: 18px; font-weight: 700; color: #1e293b; letter-spacing: 2px; }
+    .expiry { color: #dc2626; font-size: 12px; font-weight: 600; text-align: center; margin-top: 6px; }
+    .security-callout { background: #eff6ff; border-left: 4px solid #2563eb; padding: 14px; border-radius: 8px; margin: 20px 0; }
+    .security-callout p { margin: 0; font-size: 12.5px; color: #1e40af; line-height: 1.5; }
+    .note { color: #64748b; font-size: 13px; line-height: 1.5; }
+    .url-text { word-break: break-all; color: #2563eb; font-size: 11.5px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    $headerHtml
+    <p class="greeting">Hello <strong>$clientName</strong>,</p>
+    <p class="note">We received a request to reset the password for your SmartBizz POS account associated with <strong>$cleanEmail</strong>.</p>
+
+    <div class="btn-container">
+      <a href="$resetUrl" class="reset-btn" target="_blank">Reset Password Now &rarr;</a>
+    </div>
+
+    <div class="code-box">
+      <div style="font-size: 11px; text-transform: uppercase; color: #64748b; margin-bottom: 4px; font-weight: 700;">Security Token Code</div>
+      <div class="code-val">$token</div>
+      <div class="expiry">&#9201; Valid for $expiresInMinutes minutes</div>
+    </div>
+
+    <div class="security-callout">
+      <p>&#128274; <strong>Google Identity Verification:</strong> When you open the reset link, you will be required to authenticate with your registered Google account (<strong>$cleanEmail</strong>) before setting your new password. This ensures your account remains secure.</p>
+    </div>
+
+    <p class="note" style="margin-top: 20px;">If the button above does not work, copy and paste this link into your browser:</p>
+    <p><a href="$resetUrl" class="url-text">$resetUrl</a></p>
+
+    <p class="note" style="color: #94a3b8; font-size: 12px; margin-top: 24px;">If you did not make this request, please disregard this email. Your existing password will remain safe and unchanged.</p>
+
+    $footerHtml
+  </div>
+</body>
+</html>
+''';
+
+      return await _dispatchEmail(
+        recipientEmail: cleanEmail,
+        subject: subject,
+        plainText: plainText,
+        htmlContent: htmlContent,
+        fromName: 'SmartBizz Security',
+      );
+    } catch (e) {
+      debugPrint("SmtpEmailService error sending password reset email: $e");
+      return {'success': false, 'error': e.toString()};
+    }
+  }
 }

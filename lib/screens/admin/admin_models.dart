@@ -185,18 +185,26 @@ class UnifiedClientLead {
     final isTrial = !isEnterprise && !isPaidPkg;
 
     // Packages are the trade's tiers (`<trade>_<tier>`); a plan is only the
-    // validity, so a lead's plan is its requested plan or the trial.
+    // validity, so a lead's plan is its requested plan or the trial. A trial
+    // (no requested tier) is always the trade's Offline package (contract
+    // §6a), whatever storage the form sent; a lead that asked for Basic or
+    // higher is onboarded on that tier, with no trial.
     final trade = Verticals.forCategory(category);
     final requestedTier = PackageTier.tryParse(d['requestedTier']?.toString()) ??
         PackageTier.tryParse(rawPlan) ??
         (isEnterprise ? PackageTier.enterprise : null);
     final storedPkg = d['requestedPackageId']?.toString().trim() ?? '';
-    final pkgId = storedPkg.isNotEmpty
-        ? storedPkg
-        : (requestedTier != null
-            ? PackageCatalog.starterId(trade, requestedTier)
-            : Verticals.defaultPackageFor(category,
-                offline: (d['requestedStorageMode'] ?? d['storageMode'] ?? '').toString().toUpperCase() != 'CLIENTS_OWN_SHEETS'));
+    final String pkgId;
+    if (isTrial) {
+      pkgId = Verticals.defaultPackageFor(category);
+    } else if (storedPkg.isNotEmpty) {
+      pkgId = storedPkg;
+    } else if (requestedTier != null) {
+      pkgId = PackageCatalog.starterId(trade, requestedTier);
+    } else {
+      pkgId = Verticals.defaultPackageFor(category,
+          offline: (d['requestedStorageMode'] ?? d['storageMode'] ?? '').toString().toUpperCase() != 'CLIENTS_OWN_SHEETS');
+    }
     final storedPlan = d['requestedPlanId']?.toString().trim() ?? '';
     final planId = storedPlan.isNotEmpty ? storedPlan : (isTrial ? 'trial' : 'yearly');
 

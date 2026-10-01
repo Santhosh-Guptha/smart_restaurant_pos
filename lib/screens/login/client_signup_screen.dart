@@ -43,9 +43,6 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
   /// 'standard', 'premium') asked for with admin approval | 'enterprise'.
   String _selectedOption = 'free_trial';
 
-  /// The free trial's storage choice: offline on this device, or the
-  /// owner's own Google Drive. It selects the trial package.
-  bool _trialOffline = true;
   bool get _isFreeTrial => _selectedOption == 'free_trial';
   bool get _isEnterprise => _selectedOption == 'enterprise';
   bool get _isPaidPackage => !_isFreeTrial && !_isEnterprise;
@@ -196,22 +193,12 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
     }
   }
 
-  String get _freeTrialSubtitle {
-    switch (_vertical) {
-      case Verticals.restaurant:
-        return "No approval required. Start using POS, tables, kitchen tickets and printing immediately.";
-      case Verticals.kirana:
-        return "No approval required. Start using barcode billing, inventory, khata, and receipts immediately.";
-      case Verticals.supermarket:
-        return "No approval required. Start using barcode POS, inventory, and analytics immediately.";
-      case Verticals.pharmacy:
-        return "No approval required. Start using medicine billing, stock tracking, and receipts immediately.";
-      case Verticals.retail:
-        return "No approval required. Start using POS billing, product inventory, and receipts immediately.";
-      default:
-        return "No approval required. Start using POS billing, inventory, and printing immediately.";
-    }
-  }
+  /// The trial card's copy (docs/PLATFORM_STRUCTURE.md §6a): the trial is
+  /// the trade's Offline package and nothing else.
+  String get _freeTrialSubtitle =>
+      "14-day free trial on the ${PackageCatalog.nameFor(_vertical, PackageTier.offline)} package: "
+      "one device, one store, the owner. ${PackageCatalog.offlineNotice} "
+      "Move up to Basic or higher any time by request.";
 
   String get _enterpriseSubtitle {
     switch (_vertical) {
@@ -266,10 +253,11 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
     }
   }
 
-  /// The trial's tier: the storage choice decides it (contract §3).
-  /// Offline on this device -> `<trade>_offline`; my own Google Drive ->
-  /// `<trade>_basic` ([Verticals.defaultPackageFor]).
-  PackageTier get _trialTier => _trialOffline ? PackageTier.offline : PackageTier.basic;
+  /// The trial's tier (docs/PLATFORM_STRUCTURE.md §6a): always Offline, the
+  /// trade's `<trade>_offline` package ([Verticals.defaultPackageFor]). There
+  /// is no storage or tier choice for the trial; Basic and above are
+  /// requests only.
+  PackageTier get _trialTier => PackageTier.offline;
 
   /// The tier the chosen option asks for.
   PackageTier get _selectedTier {
@@ -313,63 +301,6 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
           'from Settings → Backup & restore.'
       : PackageCatalog.driveNotice;
 
-  /// The storage choice for the free trial: it selects the trial package.
-  Widget _trialStorageChoice(Color accent) {
-    Widget option(bool offline, IconData icon, String label) {
-      final selected = _trialOffline == offline;
-      return Expanded(
-        child: InkWell(
-          onTap: () => setState(() {
-            _trialOffline = offline;
-            _selectedOption = 'free_trial';
-          }),
-          borderRadius: BorderRadius.circular(10),
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 150),
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-            decoration: BoxDecoration(
-              color: selected ? accent.withValues(alpha: 0.14) : context.canvasColor,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: selected ? accent : context.borderColor, width: selected ? 1.4 : 1),
-            ),
-            child: Row(
-              children: [
-                Icon(icon, size: 18, color: selected ? accent : context.textSecondary),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    label,
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: selected ? FontWeight.bold : FontWeight.w600,
-                      color: context.textPrimary,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      );
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text('Where should your data live?',
-            style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: context.textSecondary)),
-        const SizedBox(height: 6),
-        Row(
-          children: [
-            option(true, TierVisuals.icon(PackageTier.offline), 'Offline on this device'),
-            const SizedBox(width: 8),
-            option(false, TierVisuals.icon(PackageTier.basic), 'My own Google Drive'),
-          ],
-        ),
-      ],
-    );
-  }
-
   /// Builds a tappable option card for the plan picker.
   Widget _buildOptionCard({
     required String optionValue,
@@ -379,7 +310,6 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
     required Widget badge,
     required String subtitle,
     List<FeatureDef>? featureChips,
-    Widget? top,
     String? heading,
     String? limits,
     String? notice,
@@ -444,10 +374,6 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
                     subtitle,
                     style: TextStyle(color: context.textSecondary, fontSize: 11.5, height: 1.3),
                   ),
-                  if (top != null) ...[
-                    const SizedBox(height: 10),
-                    top,
-                  ],
                   if (heading != null) ...[
                     const SizedBox(height: 10),
                     Text(
@@ -638,11 +564,10 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
         //  INSTANT FREE TRIAL ACTIVATION (NO MANUAL ADMIN APPROVAL REQUIRED!)
         // =====================================================================
         // The trial is a package and a plan like every other licence: the
-        // storage choice picks the package (offline -> `<trade>_offline`, own
-        // Drive -> `<trade>_basic`), the default trial plan gives the dates
-        // only, and both are composed for this trade the same way the
-        // console composes them (server: START_TRIAL; here:
-        // TenantProvisioningService).
+        // package is always the trade's Offline package (`<trade>_offline`,
+        // contract §6a), the default trial plan gives the dates only, and
+        // both are composed for this trade the same way the console composes
+        // them (server: START_TRIAL; here: TenantProvisioningService).
         // Server first: with an e-mail the server verified, Code.gs creates
         // the tenant itself (START_TRIAL) with the password chosen here. The
         // app only writes the tenant documents when the server can't be
@@ -656,7 +581,7 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
             mobile: mobile,
             password: password,
             proof: proof,
-            packageId: Verticals.defaultPackageFor(_businessCategory, offline: _trialOffline),
+            packageId: Verticals.defaultPackageFor(_businessCategory),
             tier: _trialTier,
           );
           if (server != null) {
@@ -678,7 +603,7 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
         }
 
         final trialTier = _trialTier;
-        final trialPackageId = Verticals.defaultPackageFor(_businessCategory, offline: _trialOffline);
+        final trialPackageId = Verticals.defaultPackageFor(_businessCategory);
         // Validity only: a plan's legacy feature or limit fields never reach
         // the licence.
         final trialPlan = (await SubscriptionPlanService.getDefaultTrialPlan()).copyWith(features: const {});
@@ -913,9 +838,9 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
           'business_category': _businessCategory,
           'password': password,
           'email_proof': proof,
-          // The package the storage choice picked; Code.gs composes the
-          // licence from it (tier defaults, trade roles) with the default
-          // trial plan for the dates.
+          // The trade's Offline package; Code.gs composes the licence from
+          // it (tier defaults, trade roles) with the default trial plan for
+          // the dates, and clamps any other tier to offline (§6a).
           'packageId': packageId,
           'tier': tier.id,
           'vertical': _vertical,
@@ -995,8 +920,9 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
             Builder(builder: (c) {
               final tier = _trialTier;
               return Text(
-                "Your ${PackageCatalog.nameFor(_vertical, tier)} package is active: ${_limitsLine(tier)}. "
-                "${_tierNotice(tier)}",
+                "Your ${PackageCatalog.nameFor(_vertical, tier)} package is active for 14 days: ${_limitsLine(tier)}. "
+                "${_tierNotice(tier)} "
+                "Move up to Basic or higher any time by request from Settings.",
                 style: TextStyle(color: context.textSecondary, fontSize: 12, height: 1.4),
               );
             }),
@@ -1330,7 +1256,7 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
                         primaryAccent: primaryAccent,
                         isFirst: true,
                         icon: Icons.rocket_launch_rounded,
-                        title: "Start 14-Day Free Trial",
+                        title: "Start 14-Day Free Trial (Offline)",
                         badge: Container(
                           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                           decoration: BoxDecoration(
@@ -1343,7 +1269,6 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
                           ),
                         ),
                         subtitle: _freeTrialSubtitle,
-                        top: _trialStorageChoice(primaryAccent),
                         heading: PackageCatalog.headingFor(_vertical, trialTier),
                         limits: _limitsLine(trialTier),
                         featureChips: _tierFeatures(trialTier),
@@ -1351,7 +1276,8 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
                       );
                     }),
                     const SizedBox(height: 8),
-                    // --- This trade's packages, tier by tier (admin approval) ---
+                    // --- This trade's packages, tier by tier: requests only, no
+                    // free trial on any of them (contract §6a) ---
                     ...const [
                       PackageTier.offline,
                       PackageTier.basic,
@@ -1364,7 +1290,7 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
                           optionValue: tier.id,
                           primaryAccent: primaryAccent,
                           icon: TierVisuals.icon(tier),
-                          title: PackageCatalog.nameFor(_vertical, tier),
+                          title: 'Request ${PackageCatalog.nameFor(_vertical, tier)}',
                           badge: Container(
                             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                             decoration: BoxDecoration(
@@ -1372,13 +1298,15 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
                               borderRadius: BorderRadius.circular(4),
                             ),
                             child: const Text(
-                              "ADMIN APPROVAL",
+                              "REQUEST ONLY",
                               style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: ClassicTheme.warningAmber),
                             ),
                           ),
                           subtitle: tier.isOffline
-                              ? 'Runs on this device for one store, with the owner as the only user.'
-                              : 'Runs on your own Google Drive, shared across your devices and staff.',
+                              ? 'The same package as the free trial, licensed for a full term. Runs on this device '
+                                  'for one store, with the owner as the only user. Request only — the admin activates it.'
+                              : 'Runs on your own Google Drive, shared across your devices and staff. '
+                                  'No free trial — request only; the admin activates it.',
                           heading: PackageCatalog.headingFor(_vertical, tier),
                           limits: _limitsLine(tier),
                           featureChips: _tierFeatures(tier),
