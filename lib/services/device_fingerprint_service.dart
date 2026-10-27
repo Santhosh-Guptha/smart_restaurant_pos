@@ -166,24 +166,24 @@ class DeviceFingerprintService {
     return MachineBindValidationResult.success(currentMachineId);
   }
 
-  /// Locks and binds the activated license to the current machine.
   /// Checks whether this machine is authorized to run the previously activated license for [orgId].
   /// Returns false if a hardware mismatch is detected (e.g. copied database / cloned storage).
   static Future<bool> isCurrentMachineAuthorized(String orgId) async {
     try {
       final box = Hive.isBoxOpen(_boxName) ? Hive.box(_boxName) : await Hive.openBox(_boxName);
-      final boundMachine = box.get('');
+      final boundMachine = box.get('$_boundLicensesPrefix$orgId');
       if (boundMachine is String && boundMachine.isNotEmpty) {
         final currentMachine = await getMachineId();
         return boundMachine.toUpperCase() == currentMachine.toUpperCase();
       }
       return true; // Not yet bound or non-offline org
     } catch (e) {
-      debugPrint('DeviceFingerprintService.isCurrentMachineAuthorized error: ');
+      debugPrint('DeviceFingerprintService.isCurrentMachineAuthorized error: $e');
       return false;
     }
   }
 
+  /// Locks and binds the activated license to the current machine.
   static Future<void> recordActivationBinding(ClientLicensePayload payload) async {
     final currentMachineId = await getMachineId();
     try {
