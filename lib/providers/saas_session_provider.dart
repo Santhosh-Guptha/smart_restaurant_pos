@@ -23,7 +23,8 @@ import '../core/license_lease.dart';
 import '../core/cloud_gate.dart';
 import '../core/license_composer.dart';
 import '../core/subscription_plan_model.dart';
-import '../services/client_license_service.dart';
+import '../services/client_license_service.dart';
+import '../services/device_fingerprint_service.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'restaurant_auth_provider.dart';
 
@@ -170,7 +171,17 @@ class SaasSessionNotifier extends StateNotifier<SaasSessionState> {
           final conn = _ref.read(firebaseConnectionServiceProvider);
 
           final org = SaasOrganization.fromJson(Map<String, dynamic>.from(jsonDecode(orgJson)));
-          final license = SaasLicense.fromJson(Map<String, dynamic>.from(jsonDecode(licenseJson)));
+          final license = SaasLicense.fromJson(Map<String, dynamic>.from(jsonDecode(licenseJson)));
+
+          // Anti-piracy & machine-binding check: verify that local database was not cloned across machines
+          if (org.storageMode == StorageModes.pureOffline || org.storageMode == StorageModes.localNetwork) {
+            final isAuthorized = await DeviceFingerprintService.isCurrentMachineAuthorized(org.id);
+            if (!isAuthorized) {
+              debugPrint('🚨 SaasSessionProvider: Hardware mismatch on startup! Cloned DB detected for ${org.id}. Evicting session.');
+              await clearSession();
+              return;
+            }
+          }
 
           if (encryptedConfig != null && iv != null) {
             final config = conn.decryptConfig(user.organizationId, encryptedConfig, iv);
@@ -1265,11 +1276,14 @@ class SaasSessionNotifier extends StateNotifier<SaasSessionState> {
     );
 
     // 2. Build local organization
+    final effectiveStorageMode = (payload.storageMode.isNotEmpty && payload.storageMode.toUpperCase() != StorageModes.pureOffline)
+        ? payload.storageMode
+        : (payload.tier.toLowerCase() != 'offline' ? StorageModes.localNetwork : StorageModes.pureOffline);
     final organization = SaasOrganization(
       id: orgId,
       name: storeLabel,
       appName: storeLabel,
-      storageMode: StorageModes.pureOffline,
+      storageMode: effectiveStorageMode,
       vertical: resolvedVertical,
       businessCategory: cleanCategory,
       status: 'ACTIVE',

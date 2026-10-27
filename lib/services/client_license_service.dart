@@ -9,6 +9,7 @@ import '../core/entitlements.dart';
 import '../core/lease_public_key.dart';
 import '../core/package_model.dart';
 import '../providers/saas_session_provider.dart';
+import 'device_fingerprint_service.dart';
 import 'local_restaurant_lan_server.dart';
 
 /// Cryptographic salt matching backend twins
@@ -29,6 +30,7 @@ class ClientLicensePayload {
   final int maxOutlets;
   final int maxUsers;
   final List<String> allowedRoles;
+  final String machineId;
   final DateTime issuedAt;
   final DateTime validUntil;
 
@@ -46,6 +48,7 @@ class ClientLicensePayload {
     required this.maxOutlets,
     required this.maxUsers,
     required this.allowedRoles,
+    this.machineId = 'ANY',
     required this.issuedAt,
     required this.validUntil,
   });
@@ -66,6 +69,7 @@ class ClientLicensePayload {
         'maxOutlets': maxOutlets,
         'maxUsers': maxUsers,
         'allowedRoles': allowedRoles,
+        'machineId': machineId,
         'issuedAt': issuedAt.toUtc().toIso8601String(),
         'validUntil': validUntil.toUtc().toIso8601String(),
       };
@@ -101,6 +105,7 @@ class ClientLicensePayload {
       maxOutlets: (j['maxOutlets'] is num) ? (j['maxOutlets'] as num).toInt() : 1,
       maxUsers: (j['maxUsers'] is num) ? (j['maxUsers'] as num).toInt() : 1,
       allowedRoles: rolesList.isNotEmpty ? rolesList : ['OWNER'],
+      machineId: (j['machineId'] ?? j['hardwareId'] ?? 'ANY').toString(),
       issuedAt: DateTime.tryParse((j['issuedAt'] ?? '').toString())?.toUtc() ?? DateTime.now().toUtc(),
       validUntil: DateTime.tryParse((j['validUntil'] ?? '').toString())?.toUtc() ??
           DateTime.now().toUtc().add(const Duration(days: 365)),
@@ -144,8 +149,12 @@ class ClientLicenseService {
       final payloadB64 = parts[0];
       final sigB64 = parts[1];
 
-      // 1. Decode JSON payload
-      final payloadStr = utf8.decode(base64Url.decode(payloadB64));
+      // 1. Decode JSON payload (normalize base64url padding if missing)
+      var normalizedPayload = payloadB64;
+      while (normalizedPayload.length % 4 != 0) {
+        normalizedPayload += '=';
+      }
+      final payloadStr = utf8.decode(base64Url.decode(normalizedPayload));
       final Map<String, dynamic> jsonMap = jsonDecode(payloadStr) as Map<String, dynamic>;
       final payload = ClientLicensePayload.fromJson(jsonMap);
 
@@ -154,13 +163,18 @@ class ClientLicenseService {
         return null;
       }
 
-      // 2. Verify signature (Method A: HMAC verification)
+      // 2. Verify signature (Method A: HMAC verification with padded and unpadded tolerance)
       final secret = '${payload.orgId}_hmac_$kPlatformCryptoSalt';
       final hmac = crypto.Hmac(crypto.sha256, utf8.encode(secret));
-      final expectedDigest = hmac.convert(utf8.encode(payloadB64));
-      final expectedSigB64 = base64Url.encode(expectedDigest.bytes);
 
-      if (sigB64 == expectedSigB64) {
+      final digestRaw = hmac.convert(utf8.encode(payloadB64));
+      final sigRaw = base64Url.encode(digestRaw.bytes).replaceAll('=', '');
+
+      final digestNorm = hmac.convert(utf8.encode(normalizedPayload));
+      final sigNorm = base64Url.encode(digestNorm.bytes).replaceAll('=', '');
+
+      final cleanSig = sigB64.replaceAll('=', '');
+      if (cleanSig == sigRaw || cleanSig == sigNorm) {
         return payload;
       }
 
@@ -209,8 +223,18 @@ class ClientLicenseService {
     String? ownerName,
   }) async {
     try {
+      // Validate hardware machine binding (prevent reuse across multiple physical machines)
+      final bindResult = await DeviceFingerprintService.validateBinding(payload);
+      if (!bindResult.isValid) {
+        debugPrint('ClientLicenseService: hardware binding violation: ${bindResult.errorMessage}');
+        throw Exception(bindResult.errorMessage ?? 'Hardware binding mismatch');
+      }
+
       final notifier = ref.read(saasSessionProvider.notifier);
       await notifier.activateWithClientLicense(payload, ownerName: ownerName);
+
+      // Lock binding on current machine
+      await DeviceFingerprintService.recordActivationBinding(payload);
 
       // If Local LAN Server is entitled, ensure service is ready
       if (payload.features[FeatureKeys.localLanServer] == true) {
@@ -226,7 +250,7 @@ class ClientLicenseService {
       return true;
     } catch (e) {
       debugPrint('ClientLicenseService: activation failed: $e');
-      return false;
+      rethrow;
     }
   }
 }

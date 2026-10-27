@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../core/classic_theme.dart';
 import '../core/constants.dart';
+import '../core/entitlements.dart';
 import '../providers/saas_session_provider.dart';
 import '../providers/entitlements_provider.dart';
 import '../core/vertical_labels.dart';
@@ -25,7 +26,7 @@ class GoogleSheetsSetupGateDialog extends ConsumerStatefulWidget {
     if (org == null) return;
     // An offline store is never asked about Google. The resolver decides —
     // storage mode first, then the legacy licence flag, then the profile.
-    if (ref.read(entitlementsProvider).isPureOffline) return;
+    if (ref.read(entitlementsProvider).isPureOffline || org.storageMode != StorageModes.clientsOwnSheets) return;
     // A pending storage change is completed on the migration gate, which runs
     // its own consent + provisioning; do not compete with it here.
     if (org.hasPendingStorageChange) return;

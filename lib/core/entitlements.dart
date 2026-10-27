@@ -653,6 +653,9 @@ class StorageModes {
   /// One device, local storage, no network. Was a feature flag; now a mode.
   static const String pureOffline = 'PURE_OFFLINE';
 
+  /// Self-hosted Local Network Server (LAN Hub), multi-device offline on client network.
+  static const String localNetwork = 'LOCAL_NETWORK';
+
   /// The platform's cloud ledger.
   static const String cloudSync = 'CLOUD_SYNC';
 
@@ -662,13 +665,18 @@ class StorageModes {
   static bool isOffline(String? mode) =>
       (mode ?? '').toUpperCase() == pureOffline;
 
-  static const List<String> all = [pureOffline, cloudSync, clientsOwnSheets];
+  static bool isLocalNetwork(String? mode) =>
+      (mode ?? '').toUpperCase() == localNetwork;
+
+  static const List<String> all = [pureOffline, localNetwork, cloudSync, clientsOwnSheets];
 
   /// What people see. Ids stay database values.
   static String label(String? mode) {
     switch ((mode ?? '').toUpperCase()) {
       case pureOffline:
         return 'Offline (this device only)';
+      case localNetwork:
+        return 'Local Network (LAN Hub)';
       case cloudSync:
         return 'Cloud Sync';
       case clientsOwnSheets:
@@ -1466,7 +1474,8 @@ class Entitlements {
     final mode = storageMode != null && storageMode.isNotEmpty
         ? storageMode.toUpperCase()
         : (legacyFlag ? StorageModes.pureOffline : profile.storageMode);
-    final offline = StorageModes.isOffline(mode);
+    final isPureOffline = StorageModes.isOffline(mode);
+    final isLocalNet = StorageModes.isLocalNetwork(mode);
 
     final licenceDevices =
         license.maxDevices > 0 ? license.maxDevices : profile.maxDevices;
@@ -1481,9 +1490,9 @@ class Entitlements {
       storageMode: mode,
       maxDevices: licenceDevices,
     );
-    if (offline) {
+    if (isPureOffline) {
       tier = PackageTier.offline;
-    } else if (tier.isOffline) {
+    } else if (tier.isOffline && !isLocalNet) {
       tier = PackageTier.fromPackageOrProfile(
         profileId: profile.id,
         storageMode: mode,
@@ -1498,15 +1507,16 @@ class Entitlements {
       explicit: explicit,
       licenceActive: license.isActive,
       storageMode: mode,
-      maxDevices: (offline || isKirana) ? 1 : licenceDevices,
-      maxOutlets: (offline || isKirana) ? 1 : licenceOutlets,
+      maxDevices: (isPureOffline || isKirana) ? 1 : licenceDevices,
+      maxOutlets: (isPureOffline || isKirana) ? 1 : licenceOutlets,
       vertical: vertical,
       tier: tier,
-      maxUsers: (offline || isKirana) ? 1 : licenceUsers,
+      maxUsers: (isPureOffline || isKirana) ? 1 : licenceUsers,
     );
   }
 
   bool get isPureOffline => StorageModes.isOffline(storageMode);
+  bool get isLocalNetwork => StorageModes.isLocalNetwork(storageMode);
   bool get isSingleDevice => maxDevices <= 1;
 
   bool isEnabled(String key) => reasonFor(key) == BlockReason.none;
@@ -1547,6 +1557,9 @@ class Entitlements {
         (def.need == FeatureNeed.cloud ||
             def.need == FeatureNeed.secondDevice ||
             def.tier.isOnline)) {
+      return BlockReason.offlineMode;
+    }
+    if (isLocalNetwork && def.need == FeatureNeed.cloud) {
       return BlockReason.offlineMode;
     }
     if (isSingleDevice && def.need == FeatureNeed.secondDevice) {

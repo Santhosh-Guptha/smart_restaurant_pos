@@ -1057,141 +1057,189 @@ class _TenantAccessDialogState extends ConsumerState<TenantAccessDialog> {
       }
     }
 
-    final payload = ClientLicensePayload(
-      version: 1,
-      orgId: widget.orgId,
-      storeName: widget.orgName,
-      vertical: _vertical,
-      tier: _tier.name,
-      packageId: _packageId.isNotEmpty ? _packageId : '${_vertical}_${_tier.name}',
-      planName: (_licenceRaw['planName'] ?? '${_tier.label} Annual Licence').toString(),
-      storageMode: StorageModes.pureOffline,
-      features: featMap,
-      maxDevices: _maxDevices,
-      maxOutlets: 1,
-      maxUsers: (_licenceRaw['maxUsers'] is num) ? (_licenceRaw['maxUsers'] as num).toInt() : 5,
-      allowedRoles: rolesList.isNotEmpty ? rolesList : ['OWNER', 'MANAGER', 'BILLING'],
-      issuedAt: DateTime.now().toUtc(),
-      validUntil: _endDate?.toUtc() ?? DateTime.now().toUtc().add(const Duration(days: 365)),
-    );
+    final machineIdCtrl = TextEditingController(text: 'ANY');
 
-    final token = ClientLicenseService.generateToken(payload);
+    String buildToken(String targetMachineId) {
+      final payload = ClientLicensePayload(
+        version: 1,
+        orgId: widget.orgId,
+        storeName: widget.orgName,
+        vertical: _vertical,
+        tier: _tier.name,
+        packageId: _packageId.isNotEmpty ? _packageId : '${_vertical}_${_tier.name}',
+        planName: (_licenceRaw['planName'] ?? '${_tier.label} Annual Licence').toString(),
+        storageMode: _storageMode == StorageModes.pureOffline ? StorageModes.pureOffline : StorageModes.localNetwork,
+        machineId: targetMachineId.trim().isEmpty ? 'ANY' : targetMachineId.trim(),
+        features: featMap,
+        maxDevices: _maxDevices,
+        maxOutlets: 1,
+        maxUsers: (_licenceRaw['maxUsers'] is num) ? (_licenceRaw['maxUsers'] as num).toInt() : 5,
+        allowedRoles: rolesList.isNotEmpty ? rolesList : ['OWNER', 'MANAGER', 'BILLING'],
+        issuedAt: DateTime.now().toUtc(),
+        validUntil: _endDate?.toUtc() ?? DateTime.now().toUtc().add(const Duration(days: 365)),
+      );
+      return ClientLicenseService.generateToken(payload);
+    }
 
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: context.surfaceColor,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(DS.radiusXl)),
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: ClassicTheme.primaryAccent.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(DS.radiusMd),
-              ),
-              child: Icon(Icons.key_rounded, color: ClassicTheme.primaryAccent, size: 22),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text("Client Local Host Licence", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: context.textPrimary)),
-                  Text(widget.orgName, style: TextStyle(fontSize: 12, color: context.textSecondary)),
-                ],
-              ),
-            ),
-          ],
-        ),
-        content: SizedBox(
-          width: 480,
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDlgState) {
+          final currentMId = machineIdCtrl.text.trim();
+          final isLockedSpecific = currentMId.isNotEmpty && currentMId.toUpperCase() != 'ANY';
+          final token = buildToken(currentMId);
+
+          return AlertDialog(
+            backgroundColor: context.surfaceColor,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(DS.radiusXl)),
+            title: Row(
               children: [
                 Container(
-                  padding: const EdgeInsets.all(12),
+                  padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: ClassicTheme.successEmerald.withValues(alpha: 0.08),
+                    color: ClassicTheme.primaryAccent.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(DS.radiusMd),
-                    border: Border.all(color: ClassicTheme.successEmerald.withValues(alpha: 0.3)),
                   ),
-                  child: Row(
+                  child: Icon(Icons.key_rounded, color: ClassicTheme.primaryAccent, size: 22),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Icon(Icons.verified_rounded, color: ClassicTheme.successEmerald, size: 20),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          "Trade: ${Verticals.shortLabel(_vertical)}  •  Tier: ${_tier.label}  •  Max Devices: $_maxDevices",
-                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: ClassicTheme.successEmerald),
-                        ),
-                      ),
+                      Text('Client Local Host Licence', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: context.textPrimary)),
+                      Text(widget.orgName, style: TextStyle(fontSize: 12, color: context.textSecondary)),
                     ],
                   ),
                 ),
-                const SizedBox(height: 12),
-                Text(
-                  "Cryptographically Signed Licence Key:",
-                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: context.textPrimary),
-                ),
-                const SizedBox(height: 6),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: context.sunkenSurface,
-                    borderRadius: BorderRadius.circular(DS.radiusMd),
-                    border: Border.all(color: context.borderColor),
-                  ),
-                  child: SelectableText(
-                    token,
-                    style: const TextStyle(fontFamily: 'monospace', fontSize: 10),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  "Instructions for Client:",
-                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: context.textPrimary),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  "1. Copy this licence key and send to the client.\n"
-                  "2. On client till, click 'Activate with Licence' and paste this key.\n"
-                  "3. The local POS and Local LAN Hub Server unlock automatically with 100% offline survivability.",
-                  style: TextStyle(fontSize: 11, color: context.textSecondary, height: 1.4),
-                ),
               ],
             ),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text("Close"),
-          ),
-          ElevatedButton.icon(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: ClassicTheme.primaryAccent,
-              foregroundColor: Colors.white,
+            content: SizedBox(
+              width: 500,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: ClassicTheme.successEmerald.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(DS.radiusMd),
+                        border: Border.all(color: ClassicTheme.successEmerald.withValues(alpha: 0.3)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.verified_rounded, color: ClassicTheme.successEmerald, size: 20),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              'Trade: ${Verticals.shortLabel(_vertical)}  •  Tier: ${_tier.label}  •  Max Devices: $_maxDevices',
+                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: ClassicTheme.successEmerald),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    Text(
+                      'Target Machine ID (Anti-Piracy Hardware Lock):',
+                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: context.textPrimary),
+                    ),
+                    const SizedBox(height: 6),
+                    TextField(
+                      controller: machineIdCtrl,
+                      onChanged: (_) => setDlgState(() {}),
+                      style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+                      decoration: InputDecoration(
+                        isDense: true,
+                        hintText: 'Enter SBZ-MCH-XXXX-XXXX or ANY',
+                        prefixIcon: Icon(isLockedSpecific ? Icons.lock_outline_rounded : Icons.lock_open_rounded, size: 18),
+                        suffixIcon: currentMId != 'ANY'
+                            ? IconButton(
+                                icon: const Icon(Icons.clear_rounded, size: 16),
+                                onPressed: () {
+                                  machineIdCtrl.text = 'ANY';
+                                  setDlgState(() {});
+                                },
+                              )
+                            : null,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      isLockedSpecific
+                          ? '🔒 Strict Hardware Lock: This token will ONLY activate on machine $currentMId. It cannot be shared or activated anywhere else.'
+                          : '🔑 Universal Auto-Lock: Client can activate on any initial computer. Upon activation, it locks permanently to that physical machine.',
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: isLockedSpecific ? ClassicTheme.primaryAccent : context.textSecondary,
+                        fontWeight: isLockedSpecific ? FontWeight.w600 : FontWeight.normal,
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    Text(
+                      'Cryptographically Signed Licence Key:',
+                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: context.textPrimary),
+                    ),
+                    const SizedBox(height: 6),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: context.sunkenSurface,
+                        borderRadius: BorderRadius.circular(DS.radiusMd),
+                        border: Border.all(color: context.borderColor),
+                      ),
+                      child: SelectableText(
+                        token,
+                        style: const TextStyle(fontFamily: 'monospace', fontSize: 10),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      'Instructions for Client:',
+                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: context.textPrimary),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '1. Send this licence key to the store owner.\n'
+                      '2. On client till, click \'Activate with Licence\' and paste this key.\n'
+                      '3. The key cryptographically binds to the client physical machine, unlocking POS and Local LAN Hub with zero cloud dependency.',
+                      style: TextStyle(fontSize: 11, color: context.textSecondary, height: 1.4),
+                    ),
+                  ],
+                ),
+              ),
             ),
-            onPressed: () async {
-              await Clipboard.setData(ClipboardData(text: token));
-              if (!mounted) return;
-              if (ctx.mounted) {
-                Navigator.pop(ctx);
-              }
-              AppToast.showSuccess(
-                context,
-                "Licence Key Copied!",
-                subtitle: "Ready to send to ${widget.orgName}.",
-              );
-            },
-            icon: const Icon(Icons.copy_rounded, size: 16),
-            label: const Text("Copy Licence Key"),
-          ),
-        ],
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Close'),
+              ),
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: ClassicTheme.primaryAccent,
+                  foregroundColor: Colors.white,
+                ),
+                onPressed: () async {
+                  await Clipboard.setData(ClipboardData(text: token));
+                  if (!mounted) return;
+                  if (ctx.mounted) {
+                    Navigator.pop(ctx);
+                  }
+                  AppToast.showSuccess(
+                    context,
+                    'Licence Key Copied!',
+                    subtitle: 'Ready to send to ${widget.orgName}.',
+                  );
+                },
+                icon: const Icon(Icons.copy_rounded, size: 16),
+                label: const Text('Copy Licence Key'),
+              ),
+            ],
+          );
+        },
       ),
     );
   }

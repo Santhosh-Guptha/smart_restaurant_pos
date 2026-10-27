@@ -10,6 +10,7 @@ import '../../core/entitlements.dart';
 import '../../core/package_model.dart';
 import '../../providers/saas_session_provider.dart';
 import '../../services/client_license_service.dart';
+import '../../services/device_fingerprint_service.dart';
 import '../../utils/ui_feedback.dart';
 
 class LocalOfflineStoreDialog extends ConsumerStatefulWidget {
@@ -41,12 +42,16 @@ class _LocalOfflineStoreDialogState extends ConsumerState<LocalOfflineStoreDialo
 
   ClientLicensePayload? _parsedLicense;
   String? _licenseError;
+  String? _currentMachineId;
 
   @override
   void initState() {
     super.initState();
     _selectedTab = widget.initialTab;
     _checkExistingLocalStore();
+    DeviceFingerprintService.getMachineId().then((id) {
+      if (mounted) setState(() => _currentMachineId = id);
+    });
   }
 
   void _checkExistingLocalStore() {
@@ -116,7 +121,7 @@ class _LocalOfflineStoreDialogState extends ConsumerState<LocalOfflineStoreDialo
     }
   }
 
-  void _onLicenseTokenChanged(String value) {
+  void _onLicenseTokenChanged(String value) async {
     final clean = value.trim();
     if (clean.isEmpty) {
       setState(() {
@@ -128,6 +133,15 @@ class _LocalOfflineStoreDialogState extends ConsumerState<LocalOfflineStoreDialo
 
     final payload = ClientLicenseService.verifyAndDecode(clean);
     if (payload != null) {
+      final bindResult = await DeviceFingerprintService.validateBinding(payload);
+      if (!mounted) return;
+      if (!bindResult.isValid) {
+        setState(() {
+          _parsedLicense = payload;
+          _licenseError = bindResult.errorMessage;
+        });
+        return;
+      }
       setState(() {
         _parsedLicense = payload;
         _licenseError = null;
@@ -452,6 +466,47 @@ class _LocalOfflineStoreDialogState extends ConsumerState<LocalOfflineStoreDialo
 
                 // TAB 1: ACTIVATE WITH LICENCE KEY
                 if (_selectedTab == 1) ...[
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    margin: const EdgeInsets.only(bottom: 12),
+                    decoration: BoxDecoration(
+                      color: context.sunkenSurface,
+                      borderRadius: BorderRadius.circular(DS.radiusMd),
+                      border: Border.all(color: context.borderColor),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.computer_rounded, size: 16, color: context.textSecondary),
+                        const SizedBox(width: 8),
+                        Text(
+                          "Device Machine ID: ",
+                          style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: context.textSecondary),
+                        ),
+                        Expanded(
+                          child: SelectableText(
+                            _currentMachineId ?? "Detecting...",
+                            style: TextStyle(
+                              fontFamily: 'monospace',
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              color: ClassicTheme.primaryAccent,
+                            ),
+                          ),
+                        ),
+                        if (_currentMachineId != null)
+                          InkWell(
+                            onTap: () {
+                              Clipboard.setData(ClipboardData(text: _currentMachineId!));
+                              AppToast.showSuccess(context, "Machine ID Copied to Clipboard");
+                            },
+                            child: const Padding(
+                              padding: EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                              child: Icon(Icons.copy_rounded, size: 14),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
                   Text(
                     "Enter Client Licence Key",
                     style: TextStyle(fontSize: DS.fontCaption, fontWeight: FontWeight.w600, color: context.textPrimary),
