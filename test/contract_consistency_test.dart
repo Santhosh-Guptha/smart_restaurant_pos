@@ -228,6 +228,43 @@ void main() {
     });
   });
 
+  group('storage modes (contract §6b)', () {
+    test('LOCAL_NETWORK is never allowed on offline, always on Basic and above', () {
+      for (final v in Verticals.all) {
+        for (final t in PackageTier.values) {
+          final p = TenantPackage.starterFor(v, t);
+          expect(p.allowedStorageModes.contains(StorageModes.localNetwork), !t.isOffline && v != Verticals.kirana,
+              reason: p.id);
+          if (t.isOffline) expect(p.allowedStorageModes, {StorageModes.pureOffline}, reason: p.id);
+        }
+      }
+      for (final p in PlanProfile.all) {
+        expect(p.allowedStorageModes.contains(StorageModes.localNetwork), !p.isOffline, reason: p.id);
+      }
+    });
+
+    test('the composer never puts an offline package on a local network hub', () {
+      for (final v in Verticals.all) {
+        final c = LicenseComposer.compose(TenantPackage.starterFor(v, PackageTier.offline), _yearly,
+            vertical: v, currentStorageMode: StorageModes.localNetwork);
+        expect(c.storageMode, StorageModes.pureOffline, reason: v);
+        final b = LicenseComposer.compose(TenantPackage.starterFor(v, PackageTier.basic), _yearly,
+            vertical: v, currentStorageMode: StorageModes.localNetwork);
+        // Kirana is a single device: the composer falls back to the package's own mode.
+        expect(b.storageMode, v == Verticals.kirana ? StorageModes.clientsOwnSheets : StorageModes.localNetwork,
+            reason: v);
+      }
+    });
+
+    test('the hub server and the customer display apply to every trade but kirana', () {
+      for (final k in [FeatureKeys.localLanServer, FeatureKeys.customerDisplay]) {
+        final def = FeatureCatalog.find(k)!;
+        expect(def.verticals, {'restaurant', 'supermarket', 'pharmacy', 'retail'}, reason: k);
+        expect(def.appliesTo(Verticals.kirana), isFalse, reason: k);
+      }
+    });
+  });
+
   group('Code.gs mirrors the Dart contract', () {
     final file = File('google_apps_script/Code.gs');
     final src = file.existsSync() ? file.readAsStringSync() : '';
@@ -241,6 +278,22 @@ void main() {
     test('the trial writes every licence field', () {
       final keys = _blockKeys(src, 'fsSet_("licenses/" + orgId, {', open: '{', close: '});');
       expect(keys.containsAll(_licenceKeys), isTrue, reason: 'missing ${_licenceKeys.difference(keys)}');
+    });
+
+    test('composeLicence_ knows LOCAL_NETWORK and the lease gives it the offline grace', () {
+      final at = src.indexOf('function composeLicence_(');
+      expect(at, greaterThanOrEqualTo(0));
+      final end = src.indexOf('\nfunction ', at + 1);
+      final body = src.substring(at, end > at ? end : src.length);
+      expect(body, contains('LOCAL_NETWORK'));
+      expect(body, contains('storageMode: storageMode'));
+      final lease = src.indexOf('function handleLicenseLease_(');
+      expect(lease, greaterThanOrEqualTo(0));
+      expect(src.substring(lease, src.indexOf('\nfunction ', lease + 1)),
+          contains('mode === "PURE_OFFLINE" || mode === "LOCAL_NETWORK"'));
+      final issue = src.indexOf('function handleIssueClientLicence_(');
+      expect(issue, greaterThanOrEqualTo(0));
+      expect(src.substring(issue), contains('storageMode !== "CLIENTS_OWN_SHEETS" && storageMode !== "LOCAL_NETWORK"'));
     });
 
     test('tier limits and the feature catalogue match', () {

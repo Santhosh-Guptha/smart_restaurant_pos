@@ -3,14 +3,14 @@
  * SMARTBIZZ POS CLOUD BACKEND (Google Apps Script)
  * Automatically creates & manages Google Spreadsheets in your Google Drive.
  * 100% Zero-Server & Zero-Firebase Architecture.
- * Release: v2.4.1 [prod-2026-10-26] (Timestamp: 2026-10-26T15:32:34.199Z)
+ * Release: v2.4.2 [prod-2026-10-27] (Timestamp: 2026-10-27T17:43:03.855Z)
  * =========================================================================
  */
 
 // ── VERSION & RELEASE TRACKING (Automated by deploy_code_gs) ───────────────
-const CODE_GS_VERSION = "2.4.1";
-const CODE_GS_RELEASE_TAG = "prod-2026-10-26";
-const CODE_GS_BUILD_TIMESTAMP = "2026-10-26T15:32:34.199Z";
+const CODE_GS_VERSION = "2.4.2";
+const CODE_GS_RELEASE_TAG = "prod-2026-10-27";
+const CODE_GS_BUILD_TIMESTAMP = "2026-10-27T17:43:03.855Z";
 // ─────────────────────────────────────────────────────────────────────────────
 
 
@@ -216,6 +216,9 @@ function doPost(e) {
 
       case "SEND_OTP_EMAIL":
         return handleSendOtpEmail(json);
+
+      case "ISSUE_CLIENT_LICENCE":
+        return handleIssueClientLicence_(json);
 
       case "LICENSE_LEASE":
         return handleLicenseLease_(json);
@@ -2265,8 +2268,8 @@ function doGet(e) {
   return responseJson({
     status: "ONLINE",
     message: "SmartBizz Google Apps Script Webhook is active and running.",
-    version: typeof CODE_GS_VERSION !== 'undefined' ? CODE_GS_VERSION : "2.4.1",
-    releaseTag: typeof CODE_GS_RELEASE_TAG !== 'undefined' ? CODE_GS_RELEASE_TAG : "prod-2026-10-26",
+    version: typeof CODE_GS_VERSION !== 'undefined' ? CODE_GS_VERSION : "2.4.2",
+    releaseTag: typeof CODE_GS_RELEASE_TAG !== 'undefined' ? CODE_GS_RELEASE_TAG : "prod-2026-10-27",
     timestamp: new Date().toISOString()
   });
 }
@@ -4001,8 +4004,8 @@ var FEATURE_CATALOG_ = [
   { key: "customerKhata",         label: "Customer khata",                 tier: "oa", need: "none", deps: [], v: SHOPS_ONLY_ },
   { key: "stockManagement",       label: "Stock management",               tier: "oa", need: "none", deps: [], v: SHOPS_ONLY_ },
   { key: "splitBilling",          label: "Split billing & multi-tender",   tier: "oa", need: "none", deps: ["billing"], v: R_ONLY_ },
-  { key: "customerDisplay",       label: "Customer display",               tier: "oa", need: "none", deps: [], v: R_ONLY_ },
-  { key: "localLanServer",        label: "Local LAN server",               tier: "oa", need: "none", deps: [], v: R_ONLY_ }
+  { key: "customerDisplay",       label: "Customer display",               tier: "oa", need: "none", deps: [], v: NON_KIRANA_ },
+  { key: "localLanServer",        label: "Local LAN server",               tier: "oa", need: "none", deps: [], v: NON_KIRANA_ }
 ];
 
 /** FeatureCatalog.comingSoon: never switched on, never offered. */
@@ -4158,7 +4161,9 @@ var OFFLINE_NOTICE_ = "Works securely on your device without depending on the cl
  *            and billingCycle are read
  *  opts      { planId, startDate, packageDoc (packages/<trade>_<tier>, when
  *            read), limits {maxDevices,maxOutlets,maxUsers} (honoured on
- *            Enterprise or with adminOverride), adminOverride, status }
+ *            Enterprise or with adminOverride), adminOverride, status,
+ *            storageMode (LOCAL_NETWORK on Basic and above; an offline tier
+ *            is always PURE_OFFLINE, anything else CLIENTS_OWN_SHEETS) }
  *
  * Returns the licenses/{orgId} fields (ComposedLicense.toLicenseFields) plus
  * validityDays for the caller.
@@ -4170,6 +4175,10 @@ function composeLicence_(vertical, tier, planDoc, opts) {
   var t = tierParse_(tier) || "basic";
   var offline = t === "offline";
   var pkg = opts.packageDoc || null;
+  // Storage (contract §6b): offline runs on the device; every other tier on
+  // the client's own Sheets or, when asked for, a local network hub.
+  var reqMode = String(opts.storageMode || "").trim().toUpperCase();
+  var storageMode = offline ? "PURE_OFFLINE" : (reqMode === "LOCAL_NETWORK" ? "LOCAL_NETWORK" : "CLIENTS_OWN_SHEETS");
 
   // Limits: the package's stored limits, else the tier's defaults. Custom
   // only on Enterprise or an explicit admin override. Offline and Kirana are fixed.
@@ -4215,7 +4224,7 @@ function composeLicence_(vertical, tier, planDoc, opts) {
     packageName: packageName,
     planProfile: profileFor_(v, t),
     status: String(opts.status || "ACTIVE"),
-    storageMode: offline ? "PURE_OFFLINE" : "CLIENTS_OWN_SHEETS",
+    storageMode: storageMode,
     startDate: start,
     endDate: end,
     maxFranchises: lim.maxOutlets,
@@ -4238,8 +4247,8 @@ function composeLicence_(vertical, tier, planDoc, opts) {
  * The tier a START_TRIAL request asked for, read for the log only. Accepts,
  * newest first: `tier` / `package_tier` / `packageTier`; `packageId` /
  * `package_id` (`<trade>_<tier>`, only when it names this trade);
- * `storage_mode` / `storageMode` (PURE_OFFLINE -> offline, anything else ->
- * basic); the legacy `plan_profile` / `planProfile` / `selected_option`
+ * `storage_mode` / `storageMode` (PURE_OFFLINE -> offline, anything else,
+ * LOCAL_NETWORK included -> basic); the legacy `plan_profile` / `planProfile` / `selected_option`
  * (OFFLINE_* -> offline, CONNECTED -> basic, OMNICHANNEL -> premium).
  * Nothing -> offline.
  */
@@ -6128,7 +6137,10 @@ function mailCallerUid_(p) {
   var ck = "idtok_" + sha256Hex_(tok);
   var hit = cache.get(ck);
   if (hit) return hit === "-" ? null : hit;
-  var key = PropertiesService.getScriptProperties().getProperty("FIREBASE_WEB_API_KEY") || "AIzaSyBv9G7J15k47VKFwc0pUcC3oJHs4xNybyc";
+  // Script property only: a missing property must show up as NOT_CONFIGURED,
+  // not be papered over by a key baked into the source.
+  var key = PropertiesService.getScriptProperties().getProperty("FIREBASE_WEB_API_KEY");
+  if (!key) { Logger.log("FIREBASE_WEB_API_KEY is not set"); cache.put(ck, "-", 60); return null; }
   var uid = null;
   try {
     var r = UrlFetchApp.fetch("https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=" + key, {
@@ -6183,7 +6195,9 @@ function handleLicenseLease_(p) {
   var lic = fsGet_("licenses/" + orgId) || {};
   var org = fsGet_("organizations/" + orgId) || {};
   var mode = String(org.storageMode || lic.storageMode || "");
-  var graceDays = (mode === "PURE_OFFLINE") ? 30 : 7;
+  // Offline and local-network tenants run without the cloud: 30 days, like
+  // the client-key lease. Cloud modes renew on every read: 7.
+  var graceDays = (mode === "PURE_OFFLINE" || mode === "LOCAL_NETWORK") ? 30 : 7;
   // Limits as the licence materialised them (composeLicence_ /
   // LicenseComposer.compose); never re-derived from a plan. Offline is
   // always one device, one outlet, one user.
@@ -6213,6 +6227,87 @@ function handleLicenseLease_(p) {
   });
   var sig = Utilities.base64Encode(Utilities.computeRsaSha256Signature(payload, pem));
   return responseJson({ success: true, payload: payload, sig: sig });
+}
+
+/**
+ * ISSUE_CLIENT_LICENCE (platform admin only; needs the staff secret AND an
+ * admin idToken). Signs a client licence key with the platform's RSA key, so
+ * the app can verify it with lease_public_key.dart and nothing in the app can
+ * mint one. Also materialises `licenses/{orgId}` from the same payload, so the
+ * Feature Matrix and the licence dialog see the tenant (contract §5).
+ *
+ * Body: { idToken, payload: {v, orgId, storeName, vertical, tier, packageId,
+ *         planName, storageMode, features, maxDevices, maxOutlets, maxUsers,
+ *         allowedRoles, machineId, issuedAt?, validUntil} }
+ * Reply: { success, token: "SBZ-LIC-<base64url payload>.<base64url sig>", payload }
+ */
+function handleIssueClientLicence_(json) {
+  var pem = String(PropertiesService.getScriptProperties().getProperty("LEASE_SIGNING_KEY") || "").replace(/\\n/g, "\n");
+  if (!pem) return responseJson({ success: false, error_code: "NOT_CONFIGURED", error: "LEASE_SIGNING_KEY is not set." });
+  var uid = mailCallerUid_(json);
+  if (!uid) return responseJson({ success: false, error_code: "SIGN_IN_REQUIRED" });
+  var u = fsGet_("users/" + uid);
+  var isAdmin = !!u && (uid === "usr_master_admin" || String(u.role || "").toUpperCase() === "MASTER_ADMIN" || u.organizationId === "SYSTEM_ADMIN");
+  if (!isAdmin) return responseJson({ success: false, error_code: "FORBIDDEN", error: "Platform admin only." });
+
+  var p = json.payload || {};
+  var orgId = String(p.orgId || "").trim();
+  if (!orgId || orgId === "SYSTEM_ADMIN") return responseJson({ success: false, error_code: "BAD_REQUEST", error: "orgId required." });
+  var vertical = verticalFor_(p.businessCategory || p.vertical || "");
+  var tier = String(p.tier || "offline").toLowerCase();
+  var offline = tier === "offline";
+  var storageMode = String(p.storageMode || "").toUpperCase();
+  // Contract §6b: offline is PURE_OFFLINE only; Basic and above may run on
+  // the client's own Sheets or a local network hub.
+  if (offline) storageMode = "PURE_OFFLINE";
+  else if (storageMode !== "CLIENTS_OWN_SHEETS" && storageMode !== "LOCAL_NETWORK") storageMode = "CLIENTS_OWN_SHEETS";
+  function n(v, d) { var x = Number(v); return x >= 1 ? Math.floor(x) : d; }
+  var now = new Date();
+  var validUntil = p.validUntil ? new Date(p.validUntil) : new Date(now.getTime() + 365 * 86400000);
+  if (isNaN(validUntil.getTime()) || validUntil <= now) return responseJson({ success: false, error_code: "BAD_REQUEST", error: "validUntil must be in the future." });
+  var features = (p.features && typeof p.features === "object") ? p.features : {};
+  var roles = Array.isArray(p.allowedRoles) && p.allowedRoles.length ? p.allowedRoles.map(String) : ["OWNER"];
+  // Offline is always one device, one outlet, one user (contract §3).
+  var payload = {
+    v: 1,
+    orgId: orgId,
+    storeName: String(p.storeName || ""),
+    vertical: vertical,
+    tier: tier,
+    packageId: String(p.packageId || (vertical + "_" + tier)),
+    planName: String(p.planName || ""),
+    storageMode: storageMode,
+    features: features,
+    maxDevices: offline ? 1 : n(p.maxDevices, 1),
+    maxOutlets: offline ? 1 : n(p.maxOutlets, 1),
+    maxUsers: offline ? 1 : n(p.maxUsers, 1),
+    allowedRoles: offline ? ["OWNER"] : roles,
+    machineId: String(p.machineId || "ANY").trim() || "ANY",
+    issuedAt: now.toISOString(),
+    validUntil: validUntil.toISOString(),
+    issuedBy: uid
+  };
+  var payloadB64 = Utilities.base64EncodeWebSafe(JSON.stringify(payload)).replace(/=+$/, "");
+  var sig = Utilities.base64EncodeWebSafe(Utilities.computeRsaSha256Signature(payloadB64, pem)).replace(/=+$/, "");
+
+  try {
+    fsMerge_("licenses/" + orgId, {
+      packageId: payload.packageId, tier: tier, vertical: vertical, storageMode: storageMode,
+      features: features, featuresResolvedFor: vertical,
+      maxDevices: payload.maxDevices, maxFranchises: payload.maxOutlets, maxUsers: payload.maxUsers,
+      allowedRoles: payload.allowedRoles, status: "ACTIVE", planName: payload.planName,
+      startDate: now, endDate: validUntil, licenceKeyIssuedAt: now, licenceKeyMachineId: payload.machineId,
+      updatedAt: now, updatedBy: uid
+    });
+    fsCreate_("audit_logs", {
+      action: "CLIENT_LICENCE_ISSUED", actionType: "CLIENT_LICENCE_ISSUED", targetOrgId: orgId, organizationId: orgId,
+      details: "Licence key issued: " + payload.packageId + " until " + validUntil.toISOString().slice(0, 10) + " · machine " + payload.machineId,
+      by: String(u.email || uid), priority: "HIGH", timestamp: now
+    });
+  } catch (e) {
+    Logger.log("ISSUE_CLIENT_LICENCE firestore: " + e);
+  }
+  return responseJson({ success: true, token: "SBZ-LIC-" + payloadB64 + "." + sig, payload: payload });
 }
 
 /** Secret for signing e-mail proofs; created on first use, kept in Script properties. */

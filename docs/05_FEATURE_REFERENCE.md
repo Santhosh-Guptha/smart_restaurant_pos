@@ -63,6 +63,8 @@ from `PackageCatalog.featuresFor`: `Off` offline, `Ba` basic, `St` standard, `Pr
 | `barcodeBilling` | Barcode billing | oa | none | shops | — | n/a | Off+ | yes |
 | `customerKhata` | Customer khata | oa | none | shops | — | n/a | Off+ | yes |
 | `stockManagement` | Stock management | oa | none | shops | — | n/a | Off+ | yes |
+| `customerDisplay` | Customer display | oa | none | all but kirana | — | St+ | St+ (not kirana) | yes |
+| `localLanServer` | Local LAN server | oa | none | all but kirana | — | St+ | — (add-on; not kirana) | yes |
 
 Also in `FeatureKeys` but not in the catalogue: `account` (always on) and `pureOfflineMode` (legacy alias of
 `storageMode == PURE_OFFLINE`; still written by `LicenseComposer`, `license_composer.dart:260`, and by

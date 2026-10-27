@@ -203,7 +203,8 @@ class UnifiedClientLead {
       pkgId = PackageCatalog.starterId(trade, requestedTier);
     } else {
       pkgId = Verticals.defaultPackageFor(category,
-          offline: (d['requestedStorageMode'] ?? d['storageMode'] ?? '').toString().toUpperCase() != 'CLIENTS_OWN_SHEETS');
+          offline: !const {StorageModes.clientsOwnSheets, StorageModes.localNetwork}
+              .contains((d['requestedStorageMode'] ?? d['storageMode'] ?? '').toString().toUpperCase()));
     }
     final storedPlan = d['requestedPlanId']?.toString().trim() ?? '';
     final planId = storedPlan.isNotEmpty ? storedPlan : (isTrial ? 'trial' : 'yearly');

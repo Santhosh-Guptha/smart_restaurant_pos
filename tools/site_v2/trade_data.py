@@ -1,489 +1,241 @@
 # -*- coding: utf-8 -*-
-"""Content for the five business-type pages of the SmartBizz site (v2).
+"""Content for the SmartBizz marketing site (v2). build_site.py renders it.
 
-One dict per trade. build_site.py turns each into hosting_public_v2/<slug>/index.html.
-
-Facts come from docs/PLATFORM_STRUCTURE.md (tiers, limits, wording rules) and the
-app itself. Loose weight, weighing-scale labels, size/colour variants and pharmacy
-batches & expiry are built. Not built, so never claimed: a payment gateway, restaurant
-recipe inventory (coming soon), sales returns & exchanges, scanning on the counter desk.
-
-Kirana is one device, one store, one user (the owner) at every tier; a grocer who
-needs more counters, staff or branches picks Supermarket.
+Facts mirror docs/PLATFORM_STRUCTURE.md and lib/core/entitlements.dart:
+  * FEATURES  = FeatureCatalog.all (26 keys), one entry per key, grouped for the site.
+    `start` says where a trade gets the key: a tier id (PackageCatalog.featuresFor),
+    "addon" (never in a package, switched per client), "lan" (included in local
+    network mode, Basic and above, contract §6b), "soon" (FeatureCatalog.comingSoon).
+  * LIMITS    = TierLimits (devices / outlets / users). Kirana is 1/1/1 at every tier.
+  * DATA_*    = the §7 sentences, verbatim. Never "100% local", "fully offline",
+    "no internet", "never", "guarantee".
+Every feature line is at most 12 words; build_site.py checks that.
 """
 
 DATA_CLOUD = ("Your business data stays in your own Google Drive. We do not take your business data; "
               "only limited usage analytics such as bill counts are collected.")
 DATA_OFFLINE = "Works securely on your device without depending on the cloud."
-DATA_OFFLINE_MORE = DATA_OFFLINE + " Export an encrypted backup whenever you like and restore it on another device."
 
-# The free-trial rule (docs/PLATFORM_STRUCTURE.md §6a): the 14-day trial is the
-# trade's Offline package and nothing else; Basic, Standard, Premium and
-# Enterprise are requests, with no trial. Appended to every trade's FAQ.
-TRIAL_FAQ = ("Can I add a second device on the trial?",
-             "No. The free trial is the Offline package: one device, one store, the owner, with your data on the device. "
-             "Basic and above add devices, staff and your own Google Drive, and they are requests, not trials: "
-             "ask from inside the app or on the register page and we set you up.")
+SITE = "https://smartbizz.devmonks.space"
 
 TIERS = ["offline", "basic", "standard", "premium", "enterprise"]
 TIER_NAME = dict(offline="Offline", basic="Basic", standard="Standard", premium="Premium", enterprise="Enterprise")
-TIER_FROM = dict(offline="From Offline", basic="From Basic", standard="From Standard", premium="From Premium", enterprise="Enterprise")
+TIER_TAG = dict(offline="Offline", basic="Basic", standard="Standard", premium="Premium",
+                addon="Add-on", lan="Local network", soon="Coming soon")
 
-# devices / stores / users per tier. Shops and restaurants share the contract's table.
-LIMITS = dict(
-    offline=("1", "1", "1"), basic=("2", "1", "3"), standard=("5", "1", "10"),
-    premium=("10", "3", "25"), enterprise=("20+", "10+", "50+"),
-)
+# TierLimits: devices / outlets / users. Enterprise defaults are 20 / 10 / 50, the client chooses.
+LIMITS = dict(offline=("1", "1", "1"), basic=("2", "1", "3"), standard=("5", "1", "10"),
+              premium=("10", "3", "25"), enterprise=("20+", "10+", "50+"))
 LIMITS_KIRANA = {t: ("1", "1", "1") for t in TIERS}
 
-DATA_LINE = dict(offline="Data kept on your device", basic="Data kept in your own Google Drive",
-                 standard="Data kept in your own Google Drive", premium="Data kept in your own Google Drive",
-                 enterprise="Data kept in your own Google Drive")
-
-# Bullets shared by every shop tier card (kirana overrides premium/enterprise).
-SHOP_TIER_BASE = dict(
-    basic=["All of Offline", "Google Sheet per store, in your own Drive", "Second device, 3 users"],
-    standard=["All of Basic", "E-mail bills to customers", "Up to 5 tills, 10 staff"],
-    premium=["All of Standard", "Multiple stores, each with its own sheet", "Up to 10 tills, 3 stores, 25 staff"],
-    enterprise=["All of Premium", "Devices, stores and users set per client", "Set up with our team"],
+TIER_LINE = dict(
+    offline="The free trial. One device, one store, the owner.",
+    basic="A second device and a ledger you own.",
+    standard="Several counters and staff.",
+    premium="More than one store.",
+    enterprise="Limits set for your business.",
 )
-SHOP_TIER_WHO = dict(
-    offline="One device, one store, the owner. The full till for your trade.",
-    basic="A second device and a cloud ledger in your own Drive.",
-    standard="Several counters and staff, with e-mail bills.",
-    premium="Multiple stores under one owner login.",
-    enterprise="Premium, with devices, stores and users set for you.",
-)
+TIER_LINE_KIRANA = dict(TIER_LINE, basic="The same till, with a ledger you own.", standard="Basic, plus e-mail bills.",
+                        premium="Kirana stays one counter.", enterprise="Kirana stays one counter.")
+STORAGE_LINE = dict(offline="Data kept on this device",
+                    cloud="Your own Google Drive, or a local network hub",
+                    cloud_kirana="Your own Google Drive")
 
-COMMON_NOT_YET = [
-    "A payment gateway. We do not process or hold money: settle by cash, your own card machine, khata, or a UPI QR paid to your own UPI ID.",
+SHOPS = ("kirana", "supermarket", "pharmacy", "retail")
+ALL = ("restaurant",) + SHOPS
+MULTI = ("restaurant", "supermarket", "pharmacy", "retail")   # every trade but kirana
+
+GROUPS = [("billing", "Billing"), ("stock", "Menu & stock"), ("kitchen", "Kitchen & tables"),
+          ("customers", "Customers"), ("cloud", "Cloud & data"), ("devices", "Devices & network"),
+          ("admin", "Admin")]
+
+
+def _f(key, group, trades, label, line, start):
+    return dict(key=key, group=group, trades=trades, label=label, line=line, start=start)
+
+
+SHOP_START_STOCK = dict(kirana="offline", supermarket="offline", pharmacy="offline", retail="offline")
+
+FEATURES = [
+    # ── Billing
+    _f("billing", "billing", ALL, "Billing",
+       dict(restaurant="Dine-in or takeaway, discounts, cash, UPI QR or card.",
+            default="Ring up, discount, settle by cash, UPI QR, card or khata."), "offline"),
+    _f("qsrBilling", "billing", ALL, "Counter till", "Fast counter screen with token numbers.", "offline"),
+    _f("barcodeBilling", "billing", SHOPS, "Barcode billing",
+       "Scan with a USB or Bluetooth scanner, or search by name.", "offline"),
+    _f("thermalPrinting", "billing", ALL, "Receipt printing",
+       "58 and 80 mm thermal printers over Bluetooth, USB or network.", "offline"),
+    _f("splitBilling", "billing", ("restaurant",), "Split billing",
+       "Split a check equally or by items, with several tenders.", "addon"),
+    # ── Menu & stock
+    _f("menuManagement", "stock", ALL,
+       dict(restaurant="Menu", pharmacy="Medicines & pricing", default="Products & pricing"),
+       dict(restaurant="Dishes, categories, prices, prep times, availability and sold-out.",
+            pharmacy="Categories, prices, MRP, units, barcodes and HSN codes.",
+            default="Categories, prices, MRP, units and barcodes in one list."), "offline"),
+    _f("stockManagement", "stock", SHOPS, "Stock & reorder levels",
+       dict(pharmacy="Batches, expiry dates, reorder levels and purchase entries.",
+            supermarket="Quantities, reorder levels, weighing-scale labels and purchase entries.",
+            retail="Size and colour variants, reorder levels and purchase entries.",
+            default="Quantities on hand, loose weight, reorder levels and purchase entries."), "offline"),
+    _f("inventoryEnabled", "stock", ("restaurant",), "Stock & recipes",
+       "Ingredient depletion, recipes and waste tracking.", "soon"),
+    # ── Kitchen & tables (restaurant)
+    _f("dineInBilling", "kitchen", ("restaurant",), "Running tabs",
+       "Keep a bill open, add rounds, settle at the end.", "offline"),
+    _f("tableManagement", "kitchen", ("restaurant",), "Tables & floor plan",
+       "Live room map: seat, clean, block, move and merge tables.", "offline"),
+    _f("reservations", "kitchen", ("restaurant",), "Reservations",
+       "Book tables ahead and seat guests on arrival.", "offline"),
+    _f("dualPrinting", "kitchen", ("restaurant",), "Kitchen tickets (KOT)",
+       "The kitchen order ticket prints alongside the bill.", "offline"),
+    _f("kdsEnabled", "kitchen", ("restaurant",), "Kitchen display",
+       "Paperless kitchen screen with stations and timers.", "standard"),
+    _f("waiterOrdering", "kitchen", ("restaurant",), "Waiter ordering",
+       "Staff take orders at the table on a phone or tablet.", "standard"),
+    # ── Customers
+    _f("customerKhata", "customers", SHOPS, "Customer khata",
+       "Credit per customer: dues, payments and the running balance.", "offline"),
+    _f("emailReceipts", "customers", ALL, "E-mail bills",
+       "The bill reaches the customer's inbox at checkout.", "standard"),
+    _f("onlineMenu", "customers", ("restaurant",), "Online menu",
+       "A public link and QR that opens your live menu.", "premium"),
+    _f("qrOrdering", "customers", ("restaurant",), "QR table ordering",
+       "Guests order from their own phone. Nothing to install.", "premium"),
+    _f("onlineOrderingEnabled", "customers", ("restaurant",), "Online ordering",
+       "Pickup and takeaway orders placed from a link.", "premium"),
+    # ── Cloud & data
+    _f("backupRestore", "cloud", ALL, "Backup & restore",
+       "Encrypted backup file you can restore on another device.", "offline"),
+    _f("cloudSync", "cloud", ALL, "Cloud ledger",
+       "Bills and payments in a Google Sheet in your own Drive.", "basic"),
+    _f("multiOutlet", "cloud", MULTI, dict(restaurant="Multiple outlets", default="Multiple stores"),
+       "Branches under one owner login, each with its own sheet.", "premium"),
+    # ── Devices & network
+    _f("localLanServer", "devices", MULTI, "Local network hub",
+       "A host PC hub; tablets on store Wi-Fi share one ledger.", "lan"),
+    _f("customerDisplay", "devices", MULTI, "Customer display",
+       "A second screen with the live cart, total and UPI QR.", "lan"),
+    # ── Admin
+    _f("storeConfiguration", "admin", ALL, "Store settings",
+       dict(restaurant="Store details, tax rates, service charge, UPI IDs, hours, shifts.",
+            default="Store details, GST, UPI IDs, receipt footer and opening hours."), "offline"),
+    _f("staffManagement", "admin", ALL, "Staff & roles",
+       dict(restaurant="Owner, manager, billing, waiter and kitchen logins with PINs.",
+            kirana="The owner's login and PIN. Kirana is single-user.",
+            default="Owner, manager and cashier logins, roles and PINs."), "offline"),
+    _f("dayEndReports", "admin", ALL, "Shift & day-end", "Shift close, counted cash and the Z-report.", "offline"),
+    _f("expenseManagement", "admin", ALL, "Expenses", "Daily outgoings recorded against the cash drawer.", "offline"),
+    _f("analytics", "admin", ALL, "Sales analytics",
+       dict(restaurant="Sales by dish, hour and staff member, on the device.",
+            pharmacy="Sales by medicine, hour and staff member, on the device.",
+            default="Sales by product, hour and staff member, on the device."), "offline"),
 ]
-SHOP_NOT_YET = [
-    "Sales returns and exchanges are not built. Tell us how you handle them and we will tell you what fits.",
-    "The counter (touch-grid) desk does not scan; barcodes are scanned on the barcode billing desk.",
-] + COMMON_NOT_YET
+
+
+def per_trade(value, trade):
+    """A plain string, or a dict with per-trade keys and a 'default'."""
+    if isinstance(value, dict):
+        return value.get(trade, value.get("default"))
+    return value
+
+
+def start_for(f, trade):
+    return per_trade(f["start"], trade)
+
 
 TRADES = [
-    # ──────────────────────────────────────────────────────── restaurants
-    dict(
-        slug="restaurants", name="Restaurants", short="Restaurant", category="restaurant",
-        colour="--t-rest", icon="i-rest", kind="restaurant",
-        who="restaurants, cafés, bars, bakeries, cloud kitchens and food courts",
-        eyebrow="Restaurants · cafés · bars · cloud kitchens",
-        statement=("Every order, every screen,", "in step."),
-        description="SmartBizz for restaurants, cafés, bars and cloud kitchens: tables, kitchen tickets, running tabs, reservations, kitchen display, waiter ordering and QR ordering. Your business data stays with you.",
-        lede="The table orders. The kitchen gets the ticket. The counter settles it in two taps. One system for the whole floor, from a single till to kitchen screens, waiter phones and QR ordering.",
-        proof=["No card needed", "Tables, KOT and reservations from day one", "Not a payment gateway"],
-        marquee=["Kitchen tickets (KOT)", "Tables & floor plan", "Running tabs", "Reservations", "Kitchen display",
-                 "Waiter ordering", "QR table ordering", "Online menu", "Your own UPI QR", "Day-end Z-report"],
-        phone=dict(store="Spice Garden", ctx="Table 4 · Dine-in", bill="KOT #18 · Bill #SG-0291", state="Sent to kitchen",
-                   state_kind="ok", scan=False,
-                   rows=[("Paneer Butter Masala", "1 × ₹260", "₹260.00"), ("Butter Naan", "3 × ₹45", "₹135.00"),
-                         ("Dal Tadka", "1 × ₹180", "₹180.00"), ("Masala Chai", "2 × ₹30", "₹60.00")],
-                   total_label="Running tab incl. GST", total="₹667", pay=["Cash", "UPI", "Card", "Add round"],
-                   toast1=("KOT #18 printed in the kitchen", False), toast2=("Table 4 · 42 min · bill not yet asked", False)),
-        problems=[
-            ("Orders go missing between the floor and the kitchen.",
-             "The ticket prints the moment the order is punched.",
-             "A kitchen order ticket (KOT) prints alongside the bill. On Standard, a kitchen display shows every order with stations and timers.", "offline"),
-            ("Tables wait too long for the bill.",
-             "Every table's tab is one tap from settled.",
-             "The floor map shows each table's state and running tab. Move or merge tables, add rounds, and settle by cash, your card machine or a UPI QR for the exact amount.", "offline"),
-            ("Waiters walk back and forth to the counter.",
-             "The order leaves the table on the waiter's phone.",
-             "Waiter order taking on a phone or tablet sends the order to the kitchen while the waiter is still at the table.", "standard"),
-            ("Printed menus go out of date.",
-             "Your live menu sits behind a link and a QR.",
-             "An online menu, QR table ordering from the guest's own phone, and pickup or takeaway orders placed from a link.", "premium"),
-            ("Bookings live in a notebook.",
-             "Tonight's reservations sit on the table map.",
-             "Book ahead, seat guests on arrival, and see the free tables on the same screen.", "offline"),
-            ("No clear view of what sells, and when.",
-             "Day-end tells you by dish, hour and staff.",
-             "Sales analytics, expenses against the drawer, and a Z-report with counted cash when you close.", "offline"),
-        ],
-        features=[
-            ("Tables & floor plan", "A live map of the room: seat, clean, block, move and merge tables.", "offline", ["Floor"]),
-            ("Kitchen tickets (KOT)", "The KOT prints for the kitchen alongside the bill, on the same or a second printer.", "offline", ["Kitchen"]),
-            ("Running tabs", "Keep a bill open, add rounds, split nothing by hand: settle at the end.", "offline", ["Floor"]),
-            ("Reservations", "Book tables ahead and seat guests on arrival.", "offline", ["Floor"]),
-            ("Menu & option groups", "Dishes, categories, prices, prep times, availability, sold-out, and option groups per item.", "offline", ["Menu"]),
-            ("Counter till & tokens", "Takeaway tokens and table bills on the same till, with discounts and manager-PIN voids.", "offline", ["Till"]),
-            ("Thermal printing", "58 or 80 mm ESC/POS printers over Bluetooth, USB or the network.", "offline", ["Till"]),
-            ("UPI QR at the till", "A QR for the exact amount, paid to your own UPI ID. Not a payment gateway.", "offline", ["Till"]),
-            ("Shifts & day-end", "Open, count the drawer, close, print the Z-report. Expenses against the drawer.", "offline", ["Office"]),
-            ("Sales analytics", "Sales by dish, hour and staff member, from the device.", "offline", ["Office"]),
-            ("Staff & roles", "Owner, manager, billing; waiter and kitchen roles from Standard. PINs per person.", "offline", ["Office"]),
-            ("Cloud ledger", "Bills and payments in a Google Sheet in your own Google Drive.", "basic", ["Growth"]),
-            ("Kitchen display", "A paperless kitchen screen with stations and timers. Needs a second device.", "standard", ["Kitchen"]),
-            ("Waiter ordering", "Floor staff take the order at the table on a phone or tablet.", "standard", ["Floor"]),
-            ("E-mail bills", "The bill reaches the guest's inbox at checkout.", "standard", ["Guests"]),
-            ("QR table ordering", "Guests order from their own phone, in the browser. Nothing to install.", "premium", ["Guests"], "/r/?org=DEMO&table=1", "Try the demo"),
-            ("Online menu & ordering", "A public menu link and QR, plus pickup or takeaway orders from a link.", "premium", ["Guests"]),
-            ("Multiple outlets", "Branches and franchises under one owner login, each with its own sheet and staff.", "premium", ["Growth"]),
-        ],
-        tier_who=dict(
-            offline="One device, one outlet, the owner. Tables, KOT, tabs and reservations included.",
-            basic="A second device and a cloud ledger in your own Drive.",
-            standard="Kitchen display, waiter phones and e-mail bills for a busy floor.",
-            premium="Online menu, QR ordering and more than one outlet.",
-            enterprise="Premium, with devices, outlets and users set for you.",
-        ),
-        tier_features=dict(
-            offline=["Tables, floor plan, running tabs", "Reservations, kitchen tickets (KOT)", "Menu with option groups",
-                     "Thermal printing, UPI QR, day-end Z-report", "Expenses, analytics, encrypted backup"],
-            basic=["All of Offline", "Google Sheet per outlet, in your own Drive", "Second device, 3 users"],
-            standard=["All of Basic", "Kitchen display, waiter ordering on phones", "E-mail bills", "Up to 5 devices, 10 staff"],
-            premium=["All of Standard", "Online menu, QR table ordering, online orders", "Up to 3 outlets, 10 devices, 25 staff"],
-            enterprise=["All of Premium", "Devices, outlets and users set per client", "Set up with our team"],
-        ),
-        not_yet=[
-            "Recipe and ingredient inventory is coming soon. Until then, no package includes stock costing for a kitchen.",
-            "Sales returns and exchanges are not built.",
-        ] + COMMON_NOT_YET,
-        faq=[
-            ("Does it keep working if the internet drops?",
-             "On the Offline package, the till runs on the device without depending on the cloud; the licence is re-checked online at least every 30 days. On Basic and above, the till keeps billing and syncs to the ledger in your own Google Drive when the connection returns."),
-            ("Do my guests need an app to order by QR?",
-             "No. QR table ordering (Premium) opens in the guest's browser. Nothing to install."),
-            ("Is stock or recipe costing included?",
-             "Not today. Recipe and ingredient inventory is coming soon, so we do not include it in any package yet."),
-            ("Can the kitchen see orders without paper?",
-             "Yes, from Standard. The kitchen display shows every order with stations and timers on a second device. On Offline and Basic the KOT prints instead."),
-            ("Can I keep my printer?",
-             "If it speaks ESC/POS over Bluetooth, USB or the network, as most 58 mm and 80 mm thermal printers do, yes. A second printer in the kitchen works the same way."),
-            ("Do you take a cut of UPI payments?",
-             "No. SmartBizz is not a payment gateway. The till shows a QR for your own UPI ID, or you settle by cash or your card machine, and the money goes straight to your bank."),
-            ("Where is my data?",
-             "Offline: " + DATA_OFFLINE_MORE + " Basic and above: " + DATA_CLOUD),
-        ],
-    ),
-    # ──────────────────────────────────────────────────────── kirana
-    dict(
-        slug="kirana", name="Kirana", short="Kirana", category="kirana",
-        colour="--t-kir", icon="i-kir", kind="kirana",
-        who="kirana shops, grocery stores, provision stores and general stores",
-        eyebrow="Kirana · grocery · provisions",
-        statement=("Scan it. Bill it.", "Into the khata."),
-        description="SmartBizz for kirana and grocery stores: barcode billing, loose weight by the kilo, customer khata, stock with reorder levels, GST bills and a UPI QR for your own UPI ID. Your business data stays with you.",
-        lede="The queue moves at the speed of the scanner. Dal and rice bill by the kilo. The regulars' credit is a ledger you can search. A shop counter that knows what is on the shelf and who owes what.",
-        proof=["No card needed", "Khata and loose weight from day one", "Not a payment gateway"],
-        marquee=["Barcode billing", "Loose weight", "Customer khata", "Stock & reorder levels", "GST bills",
-                 "Day-end in one tap", "Any thermal printer", "Your own UPI QR", "Cloud ledger in your Drive"],
-        phone=dict(store="Sri Ram Kirana", ctx="Counter 1 · Walk-in", bill="Bill #KR-1042", state="Scanner ready",
-                   state_kind="ok", scan=True,
-                   rows=[("Toor dal", "0.500 kg × ₹140/kg", "₹70.00"), ("Aashirvaad atta 5 kg", "1 × ₹265", "₹265.00"),
-                         ("Amul butter 100 g", "2 × ₹58", "₹116.00"), ("Tomato", "1.250 kg × ₹32/kg", "₹40.00")],
-                   total_label="Total incl. GST", total="₹491", pay=["Cash", "UPI", "Card", "Khata"],
-                   toast1=("Khata: ₹491 added for Lakshmi Devi", False), toast2=("Toor dal below reorder level (4 kg left)", True)),
-        problems=[
-            ("Credit (udhar) kept in a notebook.",
-             "The khata is a ledger you can search.",
-             "A running balance per customer, every credit bill and every payment against it, and a statement one tap away.", "offline"),
-            ("A queue builds at the counter.",
-             "The queue moves at the speed of the scanner.",
-             "A USB or Bluetooth scanner, or search by name when a label is torn. Bill and print in a few taps.", "offline"),
-            ("Dal, rice and sugar are sold by weight.",
-             "Loose goods bill by the kilo.",
-             "Price per kg or litre, type the weight or scan a weighing-scale label, and the line prices itself.", "offline"),
-            ("Stock runs out before anyone notices.",
-             "The shelf warns you at the reorder level.",
-             "Quantities on hand, goods-in entries, stock counts and history for every product.", "offline"),
-            ("The cash drawer does not match the day's sales.",
-             "Day-end counts the drawer with you.",
-             "Shift close with counted cash and a Z-report. Every void and discount is on record.", "offline"),
-            ("You want the day's takings from home.",
-             "Every bill lands in your own Google Drive.",
-             "On Basic and above, a Google Sheet for your store that you can open on your phone.", "basic"),
-        ],
-        features=[
-            ("Barcode billing", "Scan with a USB or Bluetooth scanner, or search by name.", "offline", ["Till"]),
-            ("Loose weight", "Price per kg or litre, with weight entry or a weighing-scale label scanned at the till.", "offline", ["Till"]),
-            ("Customer khata", "Credit per customer: dues, payments and the running balance, searchable by name or number.", "offline", ["Customers"]),
-            ("Products & pricing", "Categories, prices, MRP, units and barcodes in one list you control.", "offline", ["Shelf"]),
-            ("Stock & reorder levels", "Quantities on hand, reorder warnings, goods in, stock counts and history.", "offline", ["Shelf"]),
-            ("UPI QR at the till", "A QR for the exact amount, paid to your own UPI ID. Not a payment gateway.", "offline", ["Till"]),
-            ("GST bills", "Your GSTIN, tax rates and a numbered invoice series.", "offline", ["Till"]),
-            ("Thermal printing", "58 or 80 mm ESC/POS printers over Bluetooth, USB or the network.", "offline", ["Till"]),
-            ("Shifts & day-end", "Open, count the drawer, close, print the Z-report.", "offline", ["Office"]),
-            ("Expenses", "Daily outgoings against the cash drawer.", "offline", ["Office"]),
-            ("Sales analytics", "Sales by item and hour, from the device.", "offline", ["Office"]),
-            ("Backup & restore", "An encrypted backup file you can restore on another device.", "offline", ["Office"]),
-            ("Cloud ledger", "Bills and payments in a Google Sheet in your own Google Drive.", "basic", ["Growth"]),
-            ("E-mail bills", "The bill reaches the customer's inbox at checkout.", "standard", ["Customers"]),
-        ],
-        limits="kirana",
-        limits_note="Kirana runs one counter, one store and one owner login at every tier. Need more counters, staff or branches? Start on the Supermarket trade instead.",
-        tier_who=dict(
-            offline="One device, one store, the owner. Scanner, khata, loose weight and stock included.",
-            basic="The same till, with a cloud ledger in your own Drive.",
-            standard="Basic, plus bills e-mailed to customers.",
-            premium="The Standard feature set. Kirana stays one counter, one store.",
-            enterprise="The Standard feature set. Kirana stays one counter, one store.",
-        ),
-        tier_features=dict(
-            offline=["Barcode billing, loose weight", "Customer khata", "Stock & reorder levels",
-                     "Thermal printing, UPI QR, day-end Z-report", "Expenses, analytics, encrypted backup"],
-            basic=["All of Offline", "Google Sheet for your store, in your own Drive", "One device, one store, the owner"],
-            standard=["All of Basic", "E-mail bills to customers", "One device, one store, the owner"],
-            premium=["Same features as Standard", "One device, one store, the owner", "For more counters or staff, see Supermarket"],
-            enterprise=["Same features as Standard", "One device, one store, the owner", "For more counters or staff, see Supermarket"],
-        ),
-        not_yet=SHOP_NOT_YET + [
-            "More than one counter, staff logins or branches are not part of Kirana at any tier; that is the Supermarket trade.",
-        ],
-        faq=[
-            ("Do I need a barcode scanner?",
-             "It helps, but no. A USB or Bluetooth scanner works, and you can always search by name or type the code."),
-            ("What about customers who buy on credit?",
-             "That is the khata: a running balance per customer, every bill and every payment against it. It is in every package, including Offline."),
-            ("Can I bill loose items by weight?",
-             "Yes. Set a price per kg or litre, then type the weight at the till or scan the label your weighing scale prints, and the line prices itself."),
-            ("Can I add a second counter or a helper's login?",
-             "Not on Kirana: it is one device, one store and one owner login at every tier. A grocer who needs more counters, staff or branches signs up as a Supermarket and gets the same scanner, khata and stock features with those limits."),
-            ("Do you take a cut of UPI payments?",
-             "No. The customer pays your own UPI ID directly from the QR on the till. Nothing passes through us."),
-            ("Can I keep my printer?",
-             "Yes, if it is an ESC/POS thermal printer (58 or 80 mm) over Bluetooth, USB or the network."),
-            ("Where is my data?",
-             "Offline: " + DATA_OFFLINE_MORE + " Basic and above: " + DATA_CLOUD),
-        ],
-    ),
-    # ──────────────────────────────────────────────────────── supermarket
-    dict(
-        slug="supermarket", name="Supermarkets", short="Supermarket", category="supermarket",
-        colour="--t-sup", icon="i-sup", kind="shop",
-        who="supermarkets, departmental stores and self-service stores",
-        eyebrow="Supermarkets · departmental stores",
-        statement=("Many tills.", "One set of numbers."),
-        description="SmartBizz for supermarkets and departmental stores: barcode billing at every counter, held bills, weighing-scale labels, shifts per till, staff PINs and one ledger in your own Google Drive.",
-        lede="Scan at every counter, read the label the weighing scale printed, hold a basket while the customer fetches one more thing, and close each till's shift on its own. Built for the trolley, not the table.",
-        proof=["No card needed", "Scale labels and held bills from day one", "Not a payment gateway"],
-        marquee=["Barcode billing", "Scale labels", "Held bills", "Multiple tills", "Shift per till", "Staff PINs",
-                 "Categories & MRP", "GST bills", "Stock & reorder levels", "Cloud ledger in your Drive"],
-        phone=dict(store="FreshMart", ctx="Counter 3 of 5 · Shift B", bill="Bill #FM-7731", state="Scale label read",
-                   state_kind="ok", scan=True,
-                   rows=[("Tomato", "1.250 kg × ₹32/kg · scale", "₹40.00"), ("Surf Excel 1 kg", "1 × ₹189", "₹189.00"),
-                         ("Nescafé Classic 50 g", "1 × ₹245", "₹245.00"), ("Bananas", "0.900 kg × ₹60/kg · scale", "₹54.00")],
-                   total_label="Total incl. GST", total="₹528", pay=["Cash", "UPI", "Card", "Hold"],
-                   toast1=("5 counters synced to one ledger", False), toast2=("Counter 2 · bill on hold · 3 min", True)),
-        problems=[
-            ("Long queues at the counters.",
-             "Every counter scans, and a bill can wait on hold.",
-             "Barcode billing at every till. Park a bill when a customer steps away and serve the next one.", "offline"),
-            ("Produce is weighed, then priced by hand.",
-             "Scale labels scan straight into the bill.",
-             "Price per kg; the till reads the EAN-13 label your weighing scale prints and prices the line, or you type the weight.", "offline"),
-            ("Thousands of products to price and find.",
-             "Scan, or search by name; MRP, unit and barcode on every product.",
-             "Products with categories, prices, MRP, units and barcodes, kept in one list.", "offline"),
-            ("Several counters to run and reconcile.",
-             "Add tills as you grow; every bill lands in one ledger.",
-             "2 devices on Basic, 5 on Standard, 10 on Premium. Each till closes its own shift, and every bill syncs to the sheet in your own Google Drive.", "basic"),
-            ("Shelves go empty.",
-             "Reorder levels warn before the shelf does.",
-             "Quantities on hand, goods-in entries, stock counts and history.", "offline"),
-            ("A second store to watch.",
-             "Branches under one owner login.",
-             "Multiple stores, each with its own sheet and staff, on Premium.", "premium"),
-        ],
-        features=[
-            ("Barcode billing", "A scanner at every till, or search by name.", "offline", ["Till"]),
-            ("Scale labels & loose weight", "The till reads your weighing-scale's EAN-13 label; or price per kg and type the weight.", "offline", ["Till"]),
-            ("Held bills", "Park a bill when a customer steps away; pick it up when they return.", "offline", ["Till"]),
-            ("Products, MRP & categories", "Prices, MRP, units, barcodes and categories in one list.", "offline", ["Shelf"]),
-            ("Stock & reorder levels", "Quantities on hand, reorder warnings, goods in, stock counts and history.", "offline", ["Shelf"]),
-            ("Customer khata", "Credit per customer with the running balance.", "offline", ["Customers"]),
-            ("UPI QR at the till", "A QR for the exact amount, paid to your own UPI ID. Not a payment gateway.", "offline", ["Till"]),
-            ("GST bills", "Your GSTIN, tax rates and a numbered invoice series.", "offline", ["Till"]),
-            ("Thermal printing", "58 or 80 mm ESC/POS printers over Bluetooth, USB or the network.", "offline", ["Till"]),
-            ("Staff & roles", "Owner, manager and billing logins with PINs. Voids need a manager PIN.", "offline", ["Office"]),
-            ("Shift per till", "Each counter opens, counts and closes its own shift with a Z-report.", "offline", ["Office"]),
-            ("Sales analytics", "Sales by product, hour and staff member.", "offline", ["Office"]),
-            ("Cloud ledger", "Every till's bills in one Google Sheet in your own Google Drive.", "basic", ["Growth"]),
-            ("More than one till", "2 devices on Basic, 5 on Standard, 10 on Premium.", "basic", ["Growth"]),
-            ("E-mail bills", "The bill reaches the customer's inbox at checkout.", "standard", ["Customers"]),
-            ("Multiple stores", "Branches under one owner login, each with its own sheet and staff.", "premium", ["Growth"]),
-        ],
-        tier_who=SHOP_TIER_WHO,
-        tier_features=dict(
-            offline=["Barcode billing, scale labels, held bills", "Customer khata", "Stock & reorder levels",
-                     "Thermal printing, UPI QR, shift Z-report", "Staff PINs, expenses, analytics, encrypted backup"],
-            **SHOP_TIER_BASE),
-        not_yet=SHOP_NOT_YET,
-        faq=[
-            ("How many counters can run at once?",
-             "One on Offline. Basic allows 2 devices, Standard 5 and Premium 10. Enterprise is set per client."),
-            ("Can each till be counted separately?",
-             "Yes. Shifts open and close per device, with counted cash and a Z-report."),
-            ("Does it read weighing-scale labels?",
-             "Yes. Set a price per kg, and the till reads the EAN-13 label your label scale prints (the product code and the weight or price are in the barcode). You can also type the weight."),
-            ("What happens to a bill the customer walks away from?",
-             "Hold it. The till keeps it aside, you serve the next customer, and pick it up when they come back."),
-            ("Do you take a cut of UPI payments?",
-             "No. SmartBizz is not a payment gateway. The QR on the till pays your own UPI ID."),
-            ("Can I keep my printers?",
-             "Yes, if they are ESC/POS thermal printers (58 or 80 mm) over Bluetooth, USB or the network, one per till."),
-            ("Where is my data?",
-             "Offline: " + DATA_OFFLINE_MORE + " Basic and above: " + DATA_CLOUD),
-        ],
-    ),
-    # ──────────────────────────────────────────────────────── pharmacy
-    dict(
-        slug="pharmacy", name="Pharmacies", short="Pharmacy", category="pharmacy",
-        colour="--t-pha", icon="i-pha", kind="shop",
-        who="pharmacies, chemists and medical stores",
-        eyebrow="Pharmacies · chemists · medical stores",
-        statement=("The counter moves.", "The record stays."),
-        description="SmartBizz for pharmacies and medical stores: batches and expiry, first-to-expire selling, drug licence and HSN on the bill, customer khata, barcode billing and stock with reorder levels.",
-        lede="Bill fast at the window, sell the batch that expires first, and print a bill with your GSTIN and drug licence number. A chemist's till that keeps track of batches and expiry.",
-        proof=["No card needed", "Batches and expiry from day one", "Not a payment gateway"],
-        marquee=["Batches & expiry", "First-to-expire selling", "Expired stock blocked", "Drug licence on bills", "HSN codes",
-                 "Customer khata", "GST invoices", "Barcode billing", "Your own UPI QR"],
-        phone=dict(store="Sri Sri Medicals", ctx="Counter 1 · DL No. on bill", bill="Invoice #SS-2210", state="FEFO on",
-                   state_kind="ok", scan=True,
-                   rows=[("Dolo 650", "1 strip · DL2241 · Exp 03/27", "₹30.00"), ("Azithral 500", "1 strip · AZ120 · Exp 06/27", "₹119.50"),
-                         ("Pan 40", "1 strip · PN903 · Exp 06/27", "₹142.00"), ("ORS sachet", "4 × ₹22", "₹88.00")],
-                   total_label="Total incl. GST · MRP shown", total="₹380", pay=["Cash", "UPI", "Card", "Khata"],
-                   toast1=("Batch DL2241 taken first (expires soonest)", False), toast2=("Batch AZ118 expires in 12 days", True)),
-        problems=[
-            ("Medicines expire on the shelf.",
-             "The till sells the batch that expires first.",
-             "Batch and expiry on every goods-in entry, an Expiry tab, a warning 30 days ahead, and expired stock blocked at the till.", "offline"),
-            ("Nobody knows which batch was sold.",
-             "Every sale records its batch.",
-             "Each medicine lists its batches; batch, expiry and MRP print on the bill.", "offline"),
-            ("Bills need your drug licence number.",
-             "Drug licence, GSTIN and HSN print on every bill.",
-             "Enter them once in pharmacy settings. The invoice carries them from then on.", "offline"),
-            ("Families settle at month end.",
-             "Monthly accounts live in the khata.",
-             "A running balance per customer, every bill and payment against it, a statement one tap away.", "offline"),
-            ("A rush at the window.",
-             "Scan the strip, bill it, print it.",
-             "Barcode billing with a scanner, or search by medicine name, and print in a few taps.", "offline"),
-            ("Stock runs low without warning.",
-             "Reorder levels warn you first.",
-             "Goods in and stock counts keep the numbers right; the reorder warning fires before a medicine runs out.", "offline"),
-        ],
-        features=[
-            ("Batches & expiry", "Batch number and expiry date on goods-in; an Expiry tab shows what is running out.", "offline", ["Stock room"]),
-            ("First-to-expire selling", "The till picks the batch that expires first and blocks expired stock.", "offline", ["Window"]),
-            ("Drug licence & HSN on bills", "Drug License No., GSTIN and HSN codes print on every invoice with batch, expiry and MRP.", "offline", ["Window"]),
-            ("Barcode billing", "Scan the strip, or search by medicine name.", "offline", ["Window"]),
-            ("Customer khata", "Monthly accounts: dues, payments and the running balance per customer.", "offline", ["Customers"]),
-            ("Medicines & pricing", "Categories, prices, MRP, units, barcodes and HSN codes.", "offline", ["Stock room"]),
-            ("Stock & reorder levels", "Quantities on hand, reorder warnings, goods in, stock counts and history.", "offline", ["Stock room"]),
-            ("UPI QR at the till", "A QR for the exact amount, paid to your own UPI ID. Not a payment gateway.", "offline", ["Window"]),
-            ("Thermal printing", "58 or 80 mm ESC/POS printers over Bluetooth, USB or the network.", "offline", ["Window"]),
-            ("Staff & roles", "Owner, manager and billing logins with PINs. Voids need a manager PIN.", "offline", ["Office"]),
-            ("Shifts & day-end", "Open, count the drawer, close, print the Z-report. Expenses against the drawer.", "offline", ["Office"]),
-            ("Sales analytics", "Sales by medicine, hour and staff member.", "offline", ["Office"]),
-            ("Cloud ledger", "Bills and payments in a Google Sheet in your own Google Drive.", "basic", ["Growth"]),
-            ("E-mail bills", "The invoice reaches the customer's inbox at checkout.", "standard", ["Customers"]),
-            ("Multiple stores", "Branches under one owner login, each with its own sheet and staff.", "premium", ["Growth"]),
-        ],
-        tier_who=SHOP_TIER_WHO,
-        tier_features=dict(
-            offline=["Batches & expiry, first-to-expire selling", "Drug licence, GSTIN and HSN on bills", "Barcode billing, customer khata",
-                     "Stock & reorder levels", "Thermal printing, UPI QR, day-end Z-report"],
-            **SHOP_TIER_BASE),
-        not_yet=SHOP_NOT_YET,
-        faq=[
-            ("Does it track batch numbers and expiry?",
-             "Yes. Medicines take a batch number and expiry date when stock comes in, the Expiry tab lists what is running out, the till sells first-to-expire and blocks expired stock."),
-            ("Does the drug licence number print on the bill?",
-             "Yes. Enter it once in pharmacy settings with your GSTIN, and it prints on the bill along with batch, expiry and MRP for each line."),
-            ("Can I keep a monthly account for a family?",
-             "Yes, that is the khata, included from the Offline package: a running balance per customer with a statement."),
-            ("Can two people bill at once?",
-             "From Basic, yes: 2 devices on Basic, 5 on Standard, 10 on Premium, each with its own staff login and shift."),
-            ("Do you take a cut of UPI payments?",
-             "No. SmartBizz is not a payment gateway. The QR on the till pays your own UPI ID."),
-            ("Can I keep my printer?",
-             "Yes, if it is an ESC/POS thermal printer (58 or 80 mm) over Bluetooth, USB or the network."),
-            ("Where is my data?",
-             "Offline: " + DATA_OFFLINE_MORE + " Basic and above: " + DATA_CLOUD),
-        ],
-    ),
-    # ──────────────────────────────────────────────────────── retail
-    dict(
-        slug="retail", name="Retail", short="Retail", category="retail",
-        colour="--t-ret", icon="i-ret", kind="shop",
-        who="clothing, footwear, electronics, mobile, hardware and general retail shops",
-        eyebrow="Clothing · footwear · electronics · hardware",
-        statement=("Sell it. Bill it.", "Remember it."),
-        description="SmartBizz for fashion, footwear, electronics and general retail: sizes and colours as variants, barcode billing, held bills, part payments in the khata, staff PINs and stores under one login.",
-        lede="Scan the tag, bill in seconds, keep sizes and colours straight, and keep the regulars' part payments straighter. A shop counter that fits how you sell, from one store to several.",
-        proof=["No card needed", "Sizes and colours from day one", "Not a payment gateway"],
-        marquee=["Sizes & colours", "Barcode billing", "Held bills", "Part payments", "Customer khata", "Staff PINs",
-                 "Stock & reorder levels", "GST bills", "Cloud ledger in your Drive", "Multiple stores"],
-        phone=dict(store="Trendz Fashion", ctx="Counter 1 · Walk-in", bill="Bill #TZ-0456", state="Variant picked",
-                   state_kind="ok", scan=True,
-                   rows=[("Cotton kurta (M / Blue)", "1 × ₹899", "₹899.00"), ("Slim jeans (32 / Black)", "1 × ₹1,499", "₹1,499.00"),
-                         ("Socks 3-pack", "1 × ₹249", "₹249.00"), ("Belt (Brown)", "1 × ₹399", "₹399.00")],
-                   total_label="Total incl. GST", total="₹3,046", pay=["Cash", "UPI", "Card", "Part pay"],
-                   toast1=("Kurta M / Blue · 5 left in stock", False), toast2=("Part payment ₹1,000 · balance in khata", False)),
-        problems=[
-            ("One kurta, five sizes, three colours.",
-             "Sizes and colours are variants, not clutter.",
-             "Each variant has its own barcode, price and stock under one product, so the shelf and the bill agree.", "offline"),
-            ("The weekend rush.",
-             "Scan the tag; hold a bill while they try one more.",
-             "Barcode billing, held bills, and a second till from Basic.", "offline"),
-            ("Customers paying in parts.",
-             "Part payments stay straight in the khata.",
-             "Each part payment is recorded against the customer, and the balance due is always in front of you.", "offline"),
-            ("Discounts nobody can account for.",
-             "Every discount has a name on it.",
-             "Staff logins with roles and PINs. Voids need a manager PIN.", "offline"),
-            ("Not knowing what sells and what sits.",
-             "Analytics by product, hour and staff.",
-             "Sales analytics on the device, and stock levels with reorder warnings.", "offline"),
-            ("Stock spread across more than one outlet.",
-             "Up to 3 outlets under one owner login.",
-             "Each store with its own sheet and staff, on Premium.", "premium"),
-        ],
-        features=[
-            ("Sizes & colours", "Variants under one product, each with its own barcode, price and stock.", "offline", ["Catalogue"]),
-            ("Barcode billing", "Scan the tag with a USB or Bluetooth scanner, or search by name.", "offline", ["Counter"]),
-            ("Held bills", "Park a bill while the customer tries one more thing.", "offline", ["Counter"]),
-            ("Khata & part payments", "Credit and part payments per customer, with what is still due.", "offline", ["Customers"]),
-            ("Products & pricing", "Categories, prices, MRP, units and barcodes in one list.", "offline", ["Catalogue"]),
-            ("Stock & reorder levels", "Quantities per variant, reorder warnings, goods in, stock counts and history.", "offline", ["Catalogue"]),
-            ("UPI QR at the till", "A QR for the exact amount, paid to your own UPI ID. Not a payment gateway.", "offline", ["Counter"]),
-            ("GST bills", "Your GSTIN, tax rates and a numbered invoice series.", "offline", ["Counter"]),
-            ("Thermal printing", "58 or 80 mm ESC/POS printers over Bluetooth, USB or the network.", "offline", ["Counter"]),
-            ("Staff & roles", "Owner, manager and billing logins with PINs. Voids need a manager PIN.", "offline", ["Office"]),
-            ("Shifts & day-end", "Open, count the drawer, close, print the Z-report. Expenses against the drawer.", "offline", ["Office"]),
-            ("Sales analytics", "Sales by product, hour and staff member.", "offline", ["Office"]),
-            ("Cloud ledger", "Bills and payments in a Google Sheet in your own Google Drive.", "basic", ["Growth"]),
-            ("E-mail bills", "The bill reaches the customer's inbox at checkout.", "standard", ["Customers"]),
-            ("Multiple stores", "Branches under one owner login, each with its own sheet and staff.", "premium", ["Growth"]),
-        ],
-        tier_who=SHOP_TIER_WHO,
-        tier_features=dict(
-            offline=["Sizes & colours, barcode billing, held bills", "Khata with part payments", "Stock & reorder levels",
-                     "Thermal printing, UPI QR, day-end Z-report", "Staff PINs, expenses, analytics, encrypted backup"],
-            **SHOP_TIER_BASE),
-        not_yet=SHOP_NOT_YET,
-        faq=[
-            ("Can it handle sizes and colours?",
-             "Yes. Add sizes and colours as variants of one product; each variant carries its own barcode, price and stock."),
-            ("Can I handle returns and exchanges?",
-             "Not today. Sales returns and exchanges are not built, so we do not list them in any package. Tell us how you handle them and we will tell you what fits."),
-            ("Do I get the customer's balance?",
-             "Yes. The khata shows every credit bill, every part payment and what the customer still owes."),
-            ("Can I take UPI at the counter?",
-             "Yes. The till shows a QR for the exact amount paid to your own UPI ID. SmartBizz is not a payment gateway."),
-            ("Can I run two stores?",
-             "On Premium, up to 3 stores under one owner login, each with its own sheet and staff. Enterprise is set per client."),
-            ("Can I keep my printer?",
-             "Yes, if it is an ESC/POS thermal printer (58 or 80 mm) over Bluetooth, USB or the network."),
-            ("Where is my data?",
-             "Offline: " + DATA_OFFLINE_MORE + " Basic and above: " + DATA_CLOUD),
-        ],
-    ),
+    dict(slug="restaurants", trade="restaurant", name="Restaurants", short="Restaurant", category="restaurant",
+         colour="--t-rest", icon="i-rest",
+         who="restaurants, cafés, bars, bakeries and cloud kitchens",
+         tagline="Tables, kitchen tickets, running tabs and reservations from day one.",
+         description="SmartBizz POS for restaurants, cafés, bars and cloud kitchens: tables, kitchen tickets, running tabs, kitchen display, waiter and QR ordering. Your business data stays with you.",
+         screen=dict(store="Spice Garden", ctx="Table 4 · Dine-in", bill="KOT #18 · Bill #SG-0291", state="Sent to kitchen",
+                     rows=[("Paneer Butter Masala", "1 × ₹260", "₹260"), ("Butter Naan", "3 × ₹45", "₹135"),
+                           ("Dal Tadka", "1 × ₹180", "₹180"), ("Masala Chai", "2 × ₹30", "₹60")],
+                     total_label="Running tab incl. GST", total="₹667", pay=["Cash", "UPI", "Card", "Add round"],
+                     toast="KOT #18 printed in the kitchen")),
+    dict(slug="kirana", trade="kirana", name="Kirana", short="Kirana", category="kirana",
+         colour="--t-kir", icon="i-kir",
+         who="kirana, grocery and provision stores",
+         tagline="Barcode billing, loose weight, khata and stock. One counter, one owner.",
+         description="SmartBizz POS for kirana and grocery stores: barcode billing, loose weight, customer khata, stock with reorder levels, GST bills and a UPI QR for your own UPI ID.",
+         screen=dict(store="Sri Ram Kirana", ctx="Counter 1 · Walk-in", bill="Bill #KR-1042", state="Scanner ready",
+                     rows=[("Toor dal", "0.500 kg × ₹140/kg", "₹70"), ("Atta 5 kg", "1 × ₹265", "₹265"),
+                           ("Amul butter 100 g", "2 × ₹58", "₹116"), ("Tomato", "1.250 kg × ₹32/kg", "₹40")],
+                     total_label="Total incl. GST", total="₹491", pay=["Cash", "UPI", "Card", "Khata"],
+                     toast="Khata: ₹491 added for Lakshmi Devi")),
+    dict(slug="supermarket", trade="supermarket", name="Supermarkets", short="Supermarket", category="supermarket",
+         colour="--t-sup", icon="i-sup",
+         who="supermarkets and departmental stores",
+         tagline="Scan at every counter, read scale labels, hold bills, close each till.",
+         description="SmartBizz POS for supermarkets and departmental stores: barcode billing at every counter, weighing-scale labels, held bills, shifts per till, staff PINs and one ledger in your own Google Drive.",
+         screen=dict(store="FreshMart", ctx="Counter 3 of 5 · Shift B", bill="Bill #FM-7731", state="Scale label read",
+                     rows=[("Tomato", "1.250 kg × ₹32/kg · scale", "₹40"), ("Surf Excel 1 kg", "1 × ₹189", "₹189"),
+                           ("Milk 1 L", "2 × ₹66", "₹132"), ("Biscuits", "3 × ₹30", "₹90")],
+                     total_label="Total incl. GST", total="₹451", pay=["Cash", "UPI", "Card", "Hold"],
+                     toast="5 counters, one ledger")),
+    dict(slug="pharmacy", trade="pharmacy", name="Pharmacies", short="Pharmacy", category="pharmacy",
+         colour="--t-pha", icon="i-pha",
+         who="pharmacies, chemists and medical stores",
+         tagline="Batches, expiry dates, HSN codes and GST invoices at the counter.",
+         description="SmartBizz POS for pharmacies and medical stores: barcode billing, batches and expiry, HSN codes, GST invoices, customer khata and stock with reorder levels.",
+         screen=dict(store="Sri Sri Medicals", ctx="Counter 1 · DL No. on bill", bill="Invoice #SS-2210", state="Earliest expiry first",
+                     rows=[("Dolo 650", "1 strip · DL2241 · Exp 03/27", "₹30"), ("Azithral 500", "1 strip · AZ120 · Exp 06/27", "₹119.50"),
+                           ("Cough syrup 100 ml", "1 × ₹98", "₹98"), ("ORS sachet", "4 × ₹22", "₹88")],
+                     total_label="Total incl. GST · MRP shown", total="₹335.50", pay=["Cash", "UPI", "Card", "Khata"],
+                     toast="Batch AZ118 expires in 12 days")),
+    dict(slug="retail", trade="retail", name="Retail", short="Retail", category="retail",
+         colour="--t-ret", icon="i-ret",
+         who="clothing, footwear, electronics, mobile and hardware shops",
+         tagline="Size and colour variants, part payments, khata and stock by barcode.",
+         description="SmartBizz POS for clothing, footwear, electronics, mobile and hardware shops: barcode billing, size and colour variants, customer khata, stock with reorder levels and GST bills.",
+         screen=dict(store="Trendz Fashion", ctx="Counter 1 · Walk-in", bill="Bill #TZ-0456", state="Variant picked",
+                     rows=[("Cotton kurta (M / Blue)", "1 × ₹899", "₹899"), ("Slim jeans (32 / Black)", "1 × ₹1,499", "₹1,499"),
+                           ("Belt (Brown)", "1 × ₹349", "₹349"), ("Socks", "3 × ₹99", "₹297")],
+                     total_label="Total incl. GST", total="₹3,044", pay=["Cash", "UPI", "Card", "Part pay"],
+                     toast="Kurta M / Blue · 5 left in stock")),
 ]
 
-BY_SLUG = {t["slug"]: t for t in TRADES}
+HERO = dict(
+    eyebrow="SmartBizz POS",
+    h1="Billing software for restaurants and shops.",
+    lede="Tables, kitchen, barcodes, khata, stock, staff and GST bills. Your business data stays with you.",
+    cta="Start free 14-day trial",
+    cta2="See packages",
+)
+
+HOW = [
+    ("Sign up", "Pick your trade, verify your e-mail. No card."),
+    ("Bill on day one", "The 14-day trial is the Offline package: one device, data on it."),
+    ("Grow by request", "Ask for Basic or above in the app. We issue a signed licence key; Windows sets up in one click."),
+]
+
+LAN = dict(
+    title="One store, several devices, your own network.",
+    lede="Local network mode, Basic and above.",
+    steps=[
+        ("Host PC", "The Windows PC runs the hub and keeps the ledger."),
+        ("Pair tablets", "Each tablet joins the store Wi-Fi and enters the hub's 6-digit PIN."),
+        ("Device limit", "Host plus tablets count against your tier: 2, 5, 10 or 20+."),
+    ],
+    note="Works on the store network without depending on the internet. Not for Kirana, which is one device.",
+)
+
+FAQ = [
+    ("What does the free trial include?",
+     "The trade's Offline package for 14 days: one device, one store, the owner. No card. Basic and above are requests, with no trial."),
+    ("Does it keep working if the internet drops?",
+     "Offline runs on the device; the licence is re-checked online within 30 days. Basic and above keep billing and sync when the connection returns."),
+    ("Where is my data?",
+     "Offline: " + DATA_OFFLINE + " Basic and above: " + DATA_CLOUD),
+    ("Can several tablets share one store without the cloud?",
+     "Yes, on Basic and above in local network mode. A Windows PC runs the hub; tablets pair with a PIN on the store Wi-Fi."),
+    ("Do you take a cut of UPI payments?",
+     "No. SmartBizz is not a payment gateway. The till shows a QR for your own UPI ID; cash and your card machine work as before."),
+    ("Can I keep my printer?",
+     "Yes, if it is an ESC/POS thermal printer, 58 or 80 mm, over Bluetooth, USB or the network."),
+]
+
+NOT_BUILT = ["No payment gateway", "No sales returns or exchanges", "Restaurant recipe stock is coming soon"]

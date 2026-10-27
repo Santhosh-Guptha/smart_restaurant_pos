@@ -12,6 +12,7 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../core/classic_theme.dart';
+import '../../core/design_tokens.dart';
 import '../../core/constants.dart';
 import '../../core/item_model_contract.dart';
 import '../../core/license_guard.dart';
@@ -1034,7 +1035,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                                         _isWeighedLine(line)
                                             ? '₹${unit.toStringAsFixed(2)} / ${line.unit}'
                                             : '₹${unit.toStringAsFixed(2)} each',
-                                        style: TextStyle(fontSize: 11.5, color: context.textSecondary)),
+                                        style: TextStyle(fontSize: DS.fontMicro, color: context.textSecondary)),
                                   ],
                                 ),
                               ),
@@ -1042,6 +1043,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                                 visualDensity: VisualDensity.compact,
                                 icon: const Icon(Icons.remove_circle_outline_rounded, size: 20),
                                 tooltip: 'One less',
+                                constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
                                 onPressed: () => _bumpCartLine(i, -1),
                               ),
                               SizedBox(
@@ -1058,6 +1060,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                                 visualDensity: VisualDensity.compact,
                                 icon: Icon(Icons.add_circle_rounded, size: 20, color: ClassicTheme.primaryAccent),
                                 tooltip: 'One more',
+                                constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
                                 onPressed: () => _bumpCartLine(i, 1),
                               ),
                               SizedBox(
@@ -1720,7 +1723,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                     Expanded(
                       child: ElevatedButton.icon(
                         icon: const Icon(Icons.money_rounded, size: 18),
-                        label: const Text('Cash'),
+                        label: const FittedBox(fit: BoxFit.scaleDown, child: Text('Cash')),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: ClassicTheme.successEmerald,
                           foregroundColor: Colors.white,
@@ -1737,7 +1740,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                     Expanded(
                       child: ElevatedButton.icon(
                         icon: const Icon(Icons.qr_code_2_rounded, size: 18),
-                        label: const Text('UPI / QR'),
+                        label: const FittedBox(fit: BoxFit.scaleDown, child: Text('UPI / QR')),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: ClassicTheme.infoBlue,
                           foregroundColor: Colors.white,
@@ -1766,7 +1769,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                     Expanded(
                       child: ElevatedButton.icon(
                         icon: const Icon(Icons.credit_card_rounded, size: 18),
-                        label: const Text('Card'),
+                        label: const FittedBox(fit: BoxFit.scaleDown, child: Text('Card')),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: ClassicTheme.secondaryAccent,
                           foregroundColor: Colors.white,
@@ -4872,7 +4875,9 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
               const SizedBox(height: 10),
 
               // Filter Chips
-              Row(
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
                 children: ['All', 'Dine-In', 'Takeaway', 'QR Web'].map((fType) {
                   final isSel = _pendingFilterType == fType;
                   return Padding(
@@ -4895,6 +4900,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                     ),
                   );
                 }).toList(),
+              ),
               ),
             ],
           ),
@@ -5156,10 +5162,11 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                                 ),
                                 const SizedBox(height: 12),
 
-                                // Bottom Amount & Actions Row
-                                Row(
-                                  children: [
-                                    Column(
+                                // Bottom Amount & Actions Row (Responsive Layout)
+                                LayoutBuilder(
+                                  builder: (context, cardConstraints) {
+                                    final isCompactCard = cardConstraints.maxWidth < 450;
+                                    final amountWidget = Column(
                                       crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
                                         Text('Bill Amount', style: TextStyle(fontSize: 12, color: context.textSecondary)),
@@ -5172,55 +5179,56 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                                           ),
                                         ),
                                       ],
-                                    ),
-                                    const Spacer(),
+                                    );
 
-                                    // Print Pre-Bill Icon Button
-                                    IconButton(
-                                      icon: const Icon(Icons.print_rounded, size: 20),
-                                      tooltip: 'Print Pre-Bill Check',
-                                      color: context.textSecondary,
-                                      onPressed: () => _printPendingOrderBill(order),
-                                    ),
+                                    final iconActions = Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        IconButton(
+                                          icon: const Icon(Icons.print_rounded, size: 20),
+                                          tooltip: 'Print Pre-Bill Check',
+                                          color: context.textSecondary,
+                                          constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+                                          onPressed: () => _printPendingOrderBill(order),
+                                        ),
+                                        IconButton(
+                                          icon: const Icon(Icons.add_shopping_cart_rounded, size: 20),
+                                          tooltip: 'Add ${_vl.itemPlural.toLowerCase()} to this bill',
+                                          color: ClassicTheme.primaryAccent,
+                                          constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+                                          onPressed: () {
+                                            setState(() {
+                                              _selectedTable = tableName;
+                                              _orderType = orderType == 'Takeaway' ? 'Takeaway' : 'Dine-In';
+                                            });
+                                            _tabController.animateTo(0);
+                                            ScaffoldMessenger.of(context).showSnackBar(
+                                              SnackBar(
+                                                content: Text(tableName.trim().isNotEmpty
+                                                    ? 'Adding items to running bill for $tableName'
+                                                    : 'Adding items to running bill #$token'),
+                                                duration: const Duration(milliseconds: 1400),
+                                              ),
+                                            );
+                                          },
+                                        ),
+                                        const SizedBox(width: 2),
+                                        IconButton(
+                                          icon: const Icon(Icons.cancel_outlined, size: 20),
+                                          tooltip: 'Void / Cancel Bill (Manager)',
+                                          color: ClassicTheme.dangerRed,
+                                          constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+                                          onPressed: () => _showVoidPendingBillDialog(order),
+                                        ),
+                                      ],
+                                    );
 
-                                    // Add More Dishes to this Table
-                                    IconButton(
-                                      icon: const Icon(Icons.add_shopping_cart_rounded, size: 20),
-                                      tooltip: 'Add ${_vl.itemPlural.toLowerCase()} to this bill',
-                                      color: ClassicTheme.primaryAccent,
-                                      onPressed: () {
-                                        setState(() {
-                                          _selectedTable = tableName;
-                                          _orderType = orderType == 'Takeaway' ? 'Takeaway' : 'Dine-In';
-                                        });
-                                        _tabController.animateTo(0);
-                                        ScaffoldMessenger.of(context).showSnackBar(
-                                          SnackBar(
-                                            content: Text(tableName.trim().isNotEmpty
-                                                ? 'Adding items to running bill for $tableName'
-                                                : 'Adding items to running bill #$token'),
-                                            duration: const Duration(milliseconds: 1400),
-                                          ),
-                                        );
-                                      },
-                                    ),
-                                    const SizedBox(width: 2),
-
-                                    // Void / Cancel Pending Bill Button
-                                    IconButton(
-                                      icon: const Icon(Icons.cancel_outlined, size: 20),
-                                      tooltip: 'Void / Cancel Bill (Manager)',
-                                      color: ClassicTheme.dangerRed,
-                                      onPressed: () => _showVoidPendingBillDialog(order),
-                                    ),
-                                    const SizedBox(width: 4),
-
-                                    // Accept Payment & Settle Button
-                                    ElevatedButton.icon(
+                                    final acceptButton = ElevatedButton.icon(
                                       style: ElevatedButton.styleFrom(
                                         backgroundColor: ClassicTheme.successEmerald,
                                         foregroundColor: Colors.white,
                                         elevation: 0,
+                                        minimumSize: const Size(120, 42),
                                         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                                       ),
@@ -5230,8 +5238,35 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                                         style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5),
                                       ),
                                       onPressed: () => _showAcceptPaymentModal(order),
-                                    ),
-                                  ],
+                                    );
+
+                                    if (isCompactCard) {
+                                      return Column(
+                                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                                        children: [
+                                          Row(
+                                            children: [
+                                              amountWidget,
+                                              const Spacer(),
+                                              iconActions,
+                                            ],
+                                          ),
+                                          const SizedBox(height: 10),
+                                          acceptButton,
+                                        ],
+                                      );
+                                    }
+
+                                    return Row(
+                                      children: [
+                                        amountWidget,
+                                        const Spacer(),
+                                        iconActions,
+                                        const SizedBox(width: 6),
+                                        acceptButton,
+                                      ],
+                                    );
+                                  },
                                 ),
                               ],
                             ),
@@ -5806,8 +5841,8 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                                                                 onTap: () => _decrementCartItem(itemId),
                                                                 borderRadius: BorderRadius.circular(6),
                                                                 child: Padding(
-                                                                  padding: EdgeInsets.all(6.0),
-                                                                  child: Icon(Icons.remove_rounded, size: 16, color: ClassicTheme.primaryAccent),
+                                                                  padding: const EdgeInsets.symmetric(horizontal: 10.0, vertical: 8.0),
+                                                                  child: Icon(Icons.remove_rounded, size: 18, color: ClassicTheme.primaryAccent),
                                                                 ),
                                                               ),
                                                               Padding(
@@ -5833,8 +5868,8 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                                                                 },
                                                                 borderRadius: BorderRadius.circular(6),
                                                                 child: Padding(
-                                                                  padding: EdgeInsets.all(6.0),
-                                                                  child: Icon(Icons.add_rounded, size: 16, color: ClassicTheme.primaryAccent),
+                                                                  padding: const EdgeInsets.symmetric(horizontal: 10.0, vertical: 8.0),
+                                                                  child: Icon(Icons.add_rounded, size: 18, color: ClassicTheme.primaryAccent),
                                                                 ),
                                                               ),
                                                             ],

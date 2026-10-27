@@ -11,6 +11,8 @@ import '../../core/license_guard.dart';
 import '../../core/restaurant_models.dart';
 import '../../providers/restaurant_auth_provider.dart';
 import '../../providers/saas_session_provider.dart';
+import '../../providers/restaurant_ledger_provider.dart';
+import '../../widgets/lan_hub_status_banner.dart';
 import '../../services/apps_script_backend_service.dart';
 import '../../sync/local_store.dart';
 import '../../sync/outbox.dart';
@@ -652,7 +654,7 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen>
             }
             return item;
           }).toList();
-          await box.put('kot_orders_$orgId', updatedList);
+          await ref.read(restaurantLedgerProvider).writeOrders('kot_orders_$orgId', updatedList);
         }
       }
 
@@ -746,7 +748,7 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen>
             }
             return item;
           }).toList();
-          await box.put('kot_orders_$orgId', updatedList);
+          await ref.read(restaurantLedgerProvider).writeOrders('kot_orders_$orgId', updatedList);
         }
       }
 
@@ -903,7 +905,7 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen>
             }
             return item;
           }).toList();
-          await box.put('kot_orders_$orgId', updated);
+          await ref.read(restaurantLedgerProvider).writeOrders('kot_orders_$orgId', updated);
         }
         if (mounted) {
           setState(() {
@@ -1138,6 +1140,7 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen>
       ),
       body: Column(
         children: [
+          const LanHubStatusBanner(),
           if (!LicenseGuard.isOperational(ref))
             Container(
               width: double.infinity,

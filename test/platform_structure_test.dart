@@ -52,16 +52,21 @@ void main() {
       }
     });
 
-    test('storage: offline on the device, every other tier on the client\'s own Sheets', () {
+    test('storage (contract §6b): offline on the device only, every other tier own Sheets or a local network hub', () {
       for (final p in PackageCatalog.starters) {
         if (p.tier.isOffline) {
           expect(p.storageMode, StorageModes.pureOffline, reason: p.id);
           expect(p.allowedStorageModes, {StorageModes.pureOffline}, reason: p.id);
         } else {
           expect(p.storageMode, StorageModes.clientsOwnSheets, reason: p.id);
-          expect(p.allowedStorageModes, containsAll([StorageModes.cloudSync, StorageModes.clientsOwnSheets]),
-              reason: p.id);
+          expect(p.allowedStorageModes, contains(StorageModes.clientsOwnSheets), reason: p.id);
+          // CLOUD_SYNC stays only where the code already lists it as legacy.
+          expect(p.allowedStorageModes, contains(StorageModes.cloudSync), reason: p.id);
         }
+        // A local network hub: Basic and above, never kirana (single device).
+        expect(p.allowedStorageModes.contains(StorageModes.localNetwork),
+            !p.tier.isOffline && p.vertical != Verticals.kirana,
+            reason: p.id);
       }
     });
 
@@ -378,7 +383,7 @@ void main() {
 
     test('a shop on Basic may add e-mail bills and multiple stores, nothing of a restaurant', () {
       final keys = PackageCatalog.addOnsFor('pharmacy', tier: PackageTier.basic).map((d) => d.key).toSet();
-      expect(keys, {FeatureKeys.emailReceipts, FeatureKeys.multiOutlet});
+      expect(keys, {FeatureKeys.emailReceipts, FeatureKeys.multiOutlet, FeatureKeys.customerDisplay, FeatureKeys.localLanServer});
 
       final kiranaKeys = PackageCatalog.addOnsFor('kirana', tier: PackageTier.basic).map((d) => d.key).toSet();
       expect(kiranaKeys, {FeatureKeys.emailReceipts}, reason: 'kirana cannot add multiple outlets');

@@ -18,10 +18,10 @@ Each trade has five packages (tiers), ids `<trade>_<tier>`:
 | Tier | Storage | Devices | Outlets | Users | Notes |
 |---|---|---|---|---|---|
 | offline | on this device only | 1 | 1 | 1 (owner) | fixed, never editable |
-| basic | client's own Google Drive (Sheets) | 2 | 1 | 3 | defaults, admin may change |
-| standard | client's own Drive | 5 | 1 | 10 | defaults, admin may change |
-| premium | client's own Drive | 10 | 3 | 25 | defaults, admin may change |
-| enterprise | client's own Drive | client chooses (default 20) | client chooses (10) | client chooses (50) | limits set per client |
+| basic | client's own Drive (Sheets) or local network hub | 2 | 1 | 3 | defaults, admin may change |
+| standard | client's own Drive (Sheets) or local network hub | 5 | 1 | 10 | defaults, admin may change |
+| premium | client's own Drive (Sheets) or local network hub | 10 | 3 | 25 | defaults, admin may change |
+| enterprise | client's own Drive (Sheets) or local network hub | client chooses (default 20) | client chooses (10) | client chooses (50) | limits set per client |
 
 Features per tier (only keys that apply to the trade are ever shown or stored as on):
 
@@ -81,6 +81,23 @@ and restore it on another device after signing in (Settings → Backup & restore
   not on a trial).
 - After the trial the owner moves up by request from inside the app (Settings →
   plan request sheet); the admin onboards the requested tier.
+
+## 6b. Local network mode
+- `LOCAL_NETWORK` is the third storage mode (`StorageModes.localNetwork`): the ledger
+  lives on the host PC's hub; paired devices on the store Wi-Fi read and write
+  through it; no cloud dependency. Licence by signed client key + 30-day lease, like
+  offline.
+- Allowed per tier: Offline → `PURE_OFFLINE` only (1 device, never editable).
+  Basic/Standard/Premium/Enterprise → `CLIENTS_OWN_SHEETS` or `LOCAL_NETWORK`
+  (`CLOUD_SYNC` only for tenants already on it). The free trial stays Offline.
+- Satellites count against the tier's `maxDevices`; the host is device 1. Kirana
+  never (single device). Shops (supermarket, pharmacy, retail) use BILLING/MANAGER
+  terminals; restaurants add WAITER/KITCHEN. `localLanServer` and `customerDisplay`
+  apply to every trade except kirana.
+- A satellite has no tier of its own: its licence is built from what the hub returned
+  at pairing (tier, trade, features, maxDevices, allowedRoles, storeName) with
+  `storageMode: LOCAL_NETWORK`; its role must be one of the hub's `allowedRoles`.
+  The `org_satellite_<hash>` org id stays; the host enforces counts.
 
 ## 7. Wording rules (app + website)
 - Never say "100% local", "fully offline" or give absolute guarantees.

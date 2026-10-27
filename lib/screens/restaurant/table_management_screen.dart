@@ -21,6 +21,7 @@ import '../../services/apps_script_backend_service.dart';
 import '../../services/ordering_platform_config_service.dart';
 import '../../services/saas_crypto_service.dart';
 import '../../widgets/feature_gated_widget.dart';
+import '../../widgets/lan_hub_status_banner.dart';
 import '../waiter/waiter_order_taking_screen.dart';
 
 import '../../core/receipt/receipt_context_builder.dart';
@@ -1418,6 +1419,7 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen>
       ),
       body: Column(
         children: [
+          const LanHubStatusBanner(),
           if (!LicenseGuard.isOperational(ref))
             Container(
               width: double.infinity,

@@ -366,13 +366,15 @@ const Map<String, FeatureUsage> kFeatureUsage = {
   ),
   FeatureKeys.localLanServer: FeatureUsage(
     note:
-        'Embedded HTTP & WebSocket local hub server. Runs directly on the till '
-        'to coordinate table status, KOTs, and kitchen orders across local '
-        'tablets and screens over Wi-Fi without cloud dependencies.',
+        'Embedded HTTP hub on the host till (port 8080): tables, KOTs, kitchen '
+        'status and the customer display, read and written by paired devices on '
+        'the store Wi-Fi. Devices pair with a PIN shown on the host and send a '
+        'token on every call. Today the hub serves the API; the satellite '
+        'screens that read from it are the next piece.',
     whenOff:
-        'The Local LAN Server cannot be started. Requires licensed entitlement.',
+        'The Local LAN Hub cannot be started and no device can pair.',
     screens: ['Store settings: Local LAN Hub'],
-    controls: ['Start/Stop Local LAN Server', 'Port configuration', 'LAN IP endpoint'],
+    controls: ['Start/Stop Local LAN Hub', 'Pairing PIN', 'Paired devices', 'LAN IP endpoint'],
     implemented: true,
   ),
 };

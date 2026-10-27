@@ -21,10 +21,13 @@ class _CustomerDisplayScreenState extends State<CustomerDisplayScreen> {
   void initState() {
     super.initState();
     _service.addListener(_onServiceUpdate);
+    // A satellite display follows the host's checkout through the LAN hub.
+    _service.startHubMirror();
   }
 
   @override
   void dispose() {
+    _service.stopHubMirror();
     _service.removeListener(_onServiceUpdate);
     super.dispose();
   }

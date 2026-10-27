@@ -44,7 +44,8 @@ Deeper docs: `ARCHITECTURE.md` (§9 current model, §10 platform structure), `FL
 - Wording (contract §7): never "100% local"/"fully offline"/absolute guarantees.
 - Trade-specific words go through `VerticalLabels`. Shops never send to a kitchen (`sendsToKitchen` false).
   Restaurant receipt bytes are golden-tested — shop footers go via `ReceiptContextBuilder.tradeDefaultFooter`.
-- **Storage modes offered at onboarding: `PURE_OFFLINE` and `CLIENTS_OWN_SHEETS` only.** `CLOUD_SYNC` is
+- **Storage modes (contract §6b): Offline → `PURE_OFFLINE` only; Basic+ → `CLIENTS_OWN_SHEETS` or `LOCAL_NETWORK`**
+  (ledger on the host PC's hub, satellites count against `maxDevices`, no satellite tier). `CLOUD_SYNC` is
   legacy and shown only for tenants already on it. New tenants default to own Sheets.
 - **One Google Sheet per store**, in the tenant owner's Drive (`provisionRestaurantSheet(outletId:, saveAsActive:)`).
   Sharing is derived, never hand-edited: `SheetAccessReconciler` grants/revokes to match the users table.
@@ -64,6 +65,42 @@ Deeper docs: `ARCHITECTURE.md` (§9 current model, §10 platform structure), `FL
 - No mock/demo sessions: the app runs only on real accounts. The admin opens a tenant's POS from Tenants → ▶ (support view).
 - No secrets in code. No plain PINs/passwords in Firestore — hashes only. Never share a sheet as
   "anyone with the link" (the old `makeSpreadsheetEditableByLink` was removed).
+
+## Status (27 Oct 2026)
+- Folder renamed `smart_kirana_shop` → `smart_restaurant_pos`; older logs and `findings.md` still show the old path.
+- October commits: 5790ca4 OrderRestro parity + client LAN hub + licence-key onboarding · 63c393e e2e scripts ·
+  5d153a5 hardware binding + LAN multi-device · 80e84f7 cross-scenario validation suite · 93a7e96 web deploy.
+- Last run (27 Oct): analyze 1 warning, 655/655 tests. Code.gs v2.4.1 deployed = repo. `firestore.rules` still open.
+- Alignment audit + fix plan (batches 1–4, owner decisions on LAN) lives in the Claude doc
+  "SmartBizz POS — Alignment Audit & Fix Plan". Batch 1 applied in the working tree (not yet run/committed):
+  licence keys are RSA-signed by Code.gs only (`ISSUE_CLIENT_LICENCE`; `generateToken` removed from the app);
+  key tenants keep a lease (`LicenseLease._checkClientKey`); fingerprint check fails closed; LAN hub has a
+  random 6-digit PIN, `POST /api/v1/pair` → bearer token on every call, restricted CORS; satellites pair via
+  `LanHubClient`; `saas_session_provider.dart` de-doubled (it had ~2,500 inserted blank lines); §7 wording fixed.
+- **Batch 2 decided (contract §6b, in the working tree):** `LOCAL_NETWORK` is a storage mode for Basic+ (never
+  Offline, never kirana); satellites count against `maxDevices`; LAN for shops with BILLING/MANAGER terminals;
+  no `LAN_SATELLITE` tier — a satellite's licence is built from the hub's pairing reply
+  (`SatelliteEntitlement.buildSatelliteLicense`, `lib/core/satellite_entitlement.dart`). The `org_satellite_`
+  exemptions stay. Code.gs `composeLicence_` / lease / `ISSUE_CLIENT_LICENCE` accept `LOCAL_NETWORK`.
+  Still open: browser clients.
+- **Batch 3 (LAN client, in the working tree, not yet run):** satellites read and write through the hub.
+  `lib/services/restaurant_ledger.dart` (`RestaurantLedger` → `LocalHiveLedger` / `LanHubLedger`, `LanHubFeed`
+  long-poll mirror, `LanWriteQueue`), `restaurant_ledger_provider.dart`, `lan_hub_client.dart`; hub change feed
+  `GET /api/v1/orders|tables?since=&wait=`, `POST /api/v1/tables/status`, `POST /api/v1/unpair`, `ping` names the trade.
+- **Batch 4 (LAN/licence hardening, in the working tree, not yet run; `ISSUES_AND_RESOLUTIONS.md` §3 Issue 25):**
+  offline writes queue and replay once (idempotent by client id); feed backs off, re-syncs when the host's rev goes
+  backwards, never runs on the host (`LanHostFlag`), `dispose()`; revoked token → `needsPairing` → "Pair again";
+  `LanHubStatusBanner` on KDS / floor plan / waiter pad; `CloudGate.offline` for `LOCAL_NETWORK`; satellites never
+  auto-start the hub; `connectSatelliteTerminal` maps the role for the trade before pairing (shops/CFD → BILLING) and
+  re-checks after; kirana can never resolve `localLanServer`; login dialog shows host address + PIN (no browser URLs,
+  no port 8085, `tools/lan_setup` removed); admin onboarding takes a lead's `requestedStorageMode`.
+  **Scenarios covered by tests** (`test/scenario_matrix_test.dart`, `test/lan_resilience_test.dart`, plus the
+  existing `local_restaurant_lan_server_test.dart`, `lan_hub_ledger_test.dart`, `satellite_entitlement_test.dart`):
+  online (own Sheets) · offline single device · desktop host + LAN satellites (pair, device limit, role 400/409) ·
+  waiter ordering and KDS on a satellite (write, mirror, stage change) · host outage → queue → restart → replay once ·
+  host wins a stale kitchen stage · token revoked → pairing screen · unpair frees the seat · every trade × tier ×
+  storage mode: modes, limits, roles, features, 30-day lease, `sendsToKitchen` false on shops, §7 wording.
+  Not verified on a device yet: run `claude_run.ps1 -NoDeploy` (analyze + tests) first; see the report's analyze list.
 
 ## Commits on this branch
 38ba6f9 web 3D · a711b69 vertical resolver + tests + "Align business types" · bea0918 shop wording, no KOT ·

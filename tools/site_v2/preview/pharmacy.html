@@ -3,416 +3,203 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Pharmacies · SmartBizz</title>
-<meta name="description" content="SmartBizz for pharmacies and medical stores: batches and expiry, first-to-expire selling, drug licence and HSN on the bill, customer khata, barcode billing and stock with reorder levels.">
+<title>Pharmacies · SmartBizz POS</title>
+<meta name="description" content="SmartBizz POS for pharmacies and medical stores: barcode billing, batches and expiry, HSN codes, GST invoices, customer khata and stock with reorder levels.">
 <link rel="canonical" href="https://smartbizz.devmonks.space/pharmacy/">
 <meta property="og:type" content="website">
-<meta property="og:title" content="Pharmacies · SmartBizz">
-<meta property="og:description" content="SmartBizz for pharmacies and medical stores: batches and expiry, first-to-expire selling, drug licence and HSN on the bill, customer khata, barcode billing and stock with reorder levels.">
+<meta property="og:title" content="Pharmacies · SmartBizz POS">
+<meta property="og:description" content="SmartBizz POS for pharmacies and medical stores: barcode billing, batches and expiry, HSN codes, GST invoices, customer khata and stock with reorder levels.">
 <meta property="og:url" content="https://smartbizz.devmonks.space/pharmacy/">
+<meta name="theme-color" content="#070F24" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#F6F3EC" media="(prefers-color-scheme: light)">
 <link rel="icon" href="/pos/favicon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700;12..96,800&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
-/* Layout: a dark navy stage. Hero = headline + a live till that switches trade. Then a pinned-till scroll story, a light data statement, packages with a trade toggle, FAQ, close. */
 :root{
-  --ink:#070F24; --ink-2:#0F2557; --ink-3:#1D3F8F;
-  --paper:#F6F3EC; --paper-2:#AEB9D6; --paper-3:#6F7CA3;
-  --line:rgba(246,243,236,.12); --line-2:rgba(246,243,236,.22);
-  --sun-a:#FFC857; --sun-b:#FF6B3D; --sun:linear-gradient(100deg,var(--sun-a),var(--sun-b));
-  --ok:#5FD3A3; --warn:#FF9A6B;
-  --t-rest:#E2563D; --t-kir:#C77A0A; --t-sup:#1F6FB2; --t-pha:#1F7F78; --t-ret:#8E3B8F;
-  --trade:var(--t-kir);
+  --ink:#070F24;--ink-2:#0F2557;--ink-3:#1D3F8F;--paper:#F6F3EC;
+  --sun-a:#FFC857;--sun-b:#FF6B3D;--sun:linear-gradient(100deg,var(--sun-a),var(--sun-b));--ok:#5FD3A3;--warn:#FF9A6B;
+  --t-rest:#E2563D;--t-kir:#C77A0A;--t-sup:#1F6FB2;--t-pha:#1F7F78;--t-ret:#8E3B8F;--trade:var(--t-rest);
   --display:'Bricolage Grotesque',"Avenir Next Condensed","Arial Narrow",sans-serif;
   --body:'Figtree',"Segoe UI",Helvetica,Arial,sans-serif;
-  --gutter:clamp(16px,5vw,72px); --max:1240px; --nav:68px;
-  --ease:cubic-bezier(.2,.8,.2,1);
+  --gutter:clamp(16px,5vw,64px);--max:1180px;--nav:64px;--r:16px;
+  --bg:#070F24;--bg-2:#0C1A3D;--bg-3:#122A5E;--fg:#F6F3EC;--fg-2:#AEB9D6;--fg-3:#8391B8;
+  --line:rgba(246,243,236,.12);--line-2:rgba(246,243,236,.24);--shadow:0 24px 60px -30px rgba(0,0,0,.9);
   color-scheme:dark;
 }
+@media (prefers-color-scheme: light){:root{
+  --bg:#F6F3EC;--bg-2:#FFFFFF;--bg-3:#EDE6D8;--fg:#070F24;--fg-2:#3D4A6E;--fg-3:#6F7CA3;
+  --line:rgba(7,15,36,.12);--line-2:rgba(7,15,36,.24);--shadow:0 24px 60px -30px rgba(7,15,36,.35);color-scheme:light}}
+[data-trade=restaurant]{--trade:var(--t-rest)}[data-trade=kirana]{--trade:var(--t-kir)}[data-trade=supermarket]{--trade:var(--t-sup)}
+[data-trade=pharmacy]{--trade:var(--t-pha)}[data-trade=retail]{--trade:var(--t-ret)}
 *{box-sizing:border-box}
-html{scroll-behavior:smooth;scroll-padding-top:calc(var(--nav) + 16px)}
-body{margin:0;background:var(--ink);color:var(--paper);font-family:var(--body);font-size:clamp(16px,1.05vw,18px);line-height:1.5;-webkit-font-smoothing:antialiased;overflow-x:hidden}
-body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:1;opacity:.045;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")}
+html{scroll-behavior:smooth;scroll-padding-top:calc(var(--nav) + 12px)}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--body);font-size:clamp(16px,1.05vw,17px);line-height:1.5;-webkit-font-smoothing:antialiased;overflow-x:hidden}
 a{color:inherit;text-decoration:none}
 img,svg{max-width:100%;display:block}
-h1,h2,h3{font-family:var(--display);font-weight:800;line-height:.98;letter-spacing:-.025em;margin:0;text-wrap:balance}
+h1,h2,h3{font-family:var(--display);font-weight:800;line-height:1.02;letter-spacing:-.02em;margin:0;text-wrap:balance}
+h2{font-size:clamp(1.7rem,3.4vw,2.6rem)}
+h3{font-size:1.05rem;font-weight:700;letter-spacing:-.01em}
 p{margin:0}
-button{font:inherit;color:inherit}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 .wrap{width:min(100% - 2*var(--gutter),var(--max));margin-inline:auto}
-.eyebrow{display:inline-flex;align-items:center;gap:10px;font:600 .76rem/1 var(--body);letter-spacing:.18em;text-transform:uppercase;color:var(--sun-a)}
-.eyebrow::before{content:"";width:22px;height:2px;background:var(--sun)}
-.sun-text{background:var(--sun);-webkit-background-clip:text;background-clip:text;color:transparent}
-:focus-visible{outline:2px solid var(--sun-a);outline-offset:4px;border-radius:6px}
+.eyebrow{display:inline-flex;align-items:center;gap:10px;font:600 .74rem/1 var(--body);letter-spacing:.16em;text-transform:uppercase;color:var(--trade)}
+.eyebrow::before{content:"";width:18px;height:2px;background:var(--trade)}
+.sub{color:var(--fg-2);max-width:60ch;margin-top:10px}
+:focus-visible{outline:2px solid var(--sun-a);outline-offset:3px;border-radius:6px}
 .skip{position:absolute;left:-999px;top:8px;z-index:99;background:var(--sun);color:#1B0E05;padding:8px 14px;border-radius:8px}
 .skip:focus{left:8px}
+.section{padding:clamp(48px,7vw,88px) 0}
+.section .head{margin-bottom:28px}
 
-/* ---------- buttons ---------- */
-.btn{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:10px;padding:.9em 1.5em;border-radius:999px;font:600 1rem var(--body);border:0;cursor:pointer;transition:transform .3s var(--ease),box-shadow .3s;white-space:nowrap;overflow:hidden}
-.btn:hover{transform:translateY(-2px)}
-.btn-sun{background:var(--sun);color:#1B0E05;box-shadow:0 12px 32px -12px rgba(255,140,60,.6)}
-.btn-sun::after{content:"";position:absolute;inset:0;background:linear-gradient(100deg,transparent 30%,rgba(255,255,255,.45) 50%,transparent 70%);transform:translateX(-120%);transition:transform .7s var(--ease)}
-.btn-sun:hover::after{transform:translateX(120%)}
-.btn-ghost{border:1px solid var(--line-2);background:rgba(255,255,255,.04)}
-.btn-ghost:hover{background:rgba(255,255,255,.09)}
-.btn-sm{padding:.62em 1.15em;font-size:.92rem}
-.arrow{transition:transform .3s var(--ease)}
-.btn:hover .arrow,.link:hover .arrow{transform:translateX(4px)}
+/* buttons */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:.85em 1.4em;border-radius:999px;font:600 .98rem var(--body);border:1px solid transparent;cursor:pointer;white-space:nowrap;transition:transform .2s,background .2s}
+.btn:hover{transform:translateY(-1px)}
+.btn-sun{background:var(--sun);color:#1B0E05;box-shadow:0 12px 28px -14px rgba(255,140,60,.7)}
+.btn-ghost{border-color:var(--line-2);background:transparent}
+.btn-ghost:hover{background:var(--bg-3)}
+.btn-sm{padding:.6em 1.1em;font-size:.9rem}
 
-/* ---------- nav ---------- */
-.nav{position:fixed;inset:0 0 auto 0;z-index:50;padding-top:env(safe-area-inset-top,0px);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);background:color-mix(in srgb,var(--ink) 70%,transparent);border-bottom:1px solid transparent;transition:border-color .3s}
-.nav.scrolled{border-color:var(--line)}
-.nav .wrap{display:flex;align-items:center;gap:28px;height:var(--nav)}
-.progress{position:absolute;left:0;bottom:-1px;height:2px;width:100%;transform-origin:left;transform:scaleX(var(--p,0));background:var(--sun)}
-.brand{display:flex;align-items:center;gap:12px;font:800 1.2rem var(--display);letter-spacing:-.02em}
-.brand svg{width:34px;height:34px;border-radius:9px}
-.nav-links{display:flex;gap:4px;margin-left:auto;font-weight:500;color:var(--paper-2)}
-.nav-links a{padding:8px 12px;border-radius:999px;transition:background .25s,color .25s}
-.nav-links a:hover{color:var(--paper);background:rgba(255,255,255,.06)}
-.menu-btn{display:none;margin-left:auto;background:none;border:1px solid var(--line-2);border-radius:10px;padding:8px 12px;font-weight:600;font-size:.9rem}
-@media (max-width:860px){.nav-links,.nav .btn{display:none}.menu-btn{display:block}.nav.open .nav-links{display:flex;flex-direction:column;position:absolute;left:0;right:0;top:100%;padding:14px var(--gutter) 22px;background:var(--ink);border-bottom:1px solid var(--line);gap:4px}.nav.open .nav-links a{padding:12px 14px;font-size:1.1rem}}
+/* nav */
+.nav{position:sticky;top:0;z-index:50;background:color-mix(in srgb,var(--bg) 82%,transparent);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-bottom:1px solid var(--line)}
+.nav .wrap{display:flex;align-items:center;gap:20px;height:var(--nav)}
+.brand{display:flex;align-items:center;gap:10px;font:800 1.15rem var(--display);letter-spacing:-.02em}
+.brand svg{width:32px;height:32px;border-radius:8px}
+.nav-links{display:flex;gap:2px;margin-left:auto;font-weight:500;color:var(--fg-2);font-size:.95rem}
+.nav-links a{padding:8px 11px;border-radius:999px}
+.nav-links a:hover{color:var(--fg);background:var(--bg-3)}
+.menu-btn{display:none;margin-left:auto;border:1px solid var(--line-2);border-radius:10px;padding:7px 12px;font-weight:600;font-size:.9rem}
+@media (max-width:900px){.nav-links,.nav .btn{display:none}.menu-btn{display:block}
+  .nav.open .nav-links{display:flex;flex-direction:column;position:absolute;left:0;right:0;top:100%;padding:10px var(--gutter) 18px;background:var(--bg);border-bottom:1px solid var(--line)}
+  .nav.open .nav-links a{padding:12px 12px;font-size:1.05rem}}
 
-/* ---------- hero ---------- */
-.hero{position:relative;padding:calc(var(--nav) + env(safe-area-inset-top,0px) + clamp(44px,8vh,96px)) 0 clamp(48px,8vh,96px);overflow:hidden;isolation:isolate}
-.hero .wrap{display:grid;grid-template-columns:1.05fr .95fr;gap:clamp(28px,5vw,72px);align-items:center}
-.hero h1{font-size:clamp(3rem,7.4vw,7.2rem);max-width:12ch;margin-top:22px}
-.hero h1 .w{display:inline-block;overflow:hidden;vertical-align:bottom;padding-bottom:.06em;margin-bottom:-.06em}
-.hero h1 .w span{display:inline-block;transform:translateY(110%);animation:rise .9s var(--ease) forwards;animation-delay:calc(var(--i)*.08s)}
-@keyframes rise{to{transform:none}}
-.hero .lede{margin-top:26px;max-width:36ch;font-size:clamp(1.05rem,1.4vw,1.3rem);color:var(--paper-2);line-height:1.5}
-.hero .cta{display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin-top:30px}
-.hero .proof{display:flex;flex-wrap:wrap;gap:8px 22px;margin-top:26px;font-size:.9rem;color:var(--paper-2)}
-.hero .proof span{display:inline-flex;align-items:center;gap:8px}
-.hero .proof svg{width:16px;height:16px;flex:none}
-@property --ang{syntax:'<angle>';inherits:false;initial-value:0deg}
-.glow{position:absolute;z-index:-1;border-radius:50%;filter:blur(100px);opacity:.5;background:conic-gradient(from var(--ang),var(--ink-3),var(--trade),var(--sun-b),var(--sun-a),var(--ink-3));animation:spin 20s linear infinite;transition:background 1s}
-@keyframes spin{to{--ang:360deg}}
-.hero .glow{inset:-30% -15% auto auto;width:min(75vw,960px);aspect-ratio:1}
-.grid-lines{position:absolute;inset:0;z-index:-1;background-image:linear-gradient(var(--line) 1px,transparent 1px),linear-gradient(90deg,var(--line) 1px,transparent 1px);background-size:88px 88px;mask-image:radial-gradient(ellipse at 25% 20%,#000 15%,transparent 65%);-webkit-mask-image:radial-gradient(ellipse at 25% 20%,#000 15%,transparent 65%)}
+/* hero */
+.hero{position:relative;padding:clamp(40px,7vw,88px) 0 clamp(56px,7vw,88px);overflow:hidden;isolation:isolate}
+.hero::before{content:"";position:absolute;z-index:-1;inset:-40% -20% auto auto;width:min(80vw,900px);aspect-ratio:1;border-radius:50%;filter:blur(90px);opacity:.35;background:radial-gradient(circle at 40% 40%,var(--trade),var(--sun-b) 45%,transparent 70%);transition:background .6s}
+.hero .wrap{display:grid;grid-template-columns:1.05fr .95fr;gap:clamp(28px,5vw,64px);align-items:center}
+.hero h1{font-size:clamp(2.6rem,6vw,5rem);max-width:13ch;margin-top:18px}
+.hero .lede{margin-top:18px;max-width:40ch;font-size:clamp(1.05rem,1.3vw,1.2rem);color:var(--fg-2)}
+.hero .cta{display:flex;gap:12px;flex-wrap:wrap;margin-top:26px}
+.hero .fine{margin-top:14px;font-size:.88rem;color:var(--fg-3)}
+@media (max-width:860px){.hero .wrap{grid-template-columns:1fr}.hero h1{max-width:none}}
 
 /* trade switcher */
-.switch{display:flex;flex-wrap:wrap;gap:8px}
-.pick{display:inline-flex;align-items:center;gap:7px;padding:5px 12px 5px 5px;border-radius:999px;border:1px solid var(--line-2);background:rgba(255,255,255,.04);font-weight:600;font-size:.84rem;cursor:pointer;transition:background .25s,border-color .25s,transform .25s var(--ease)}
+.switch{display:flex;flex-wrap:wrap;gap:8px;margin-top:26px}
+.pick{display:inline-flex;align-items:center;gap:8px;padding:6px 14px 6px 6px;border-radius:999px;border:1px solid var(--line-2);background:var(--bg-2);font-weight:600;font-size:.88rem;color:var(--fg-2);transition:border-color .2s,color .2s}
 .pick svg{width:24px;height:24px;border-radius:50%;background:var(--c)}
-.pick:hover{background:rgba(255,255,255,.09);transform:translateY(-1px)}
-.pick[aria-pressed="true"]{background:var(--c);border-color:transparent;color:#fff}
-.pick[aria-pressed="true"] svg{background:rgba(0,0,0,.25)}
+.pick:hover{color:var(--fg)}
+.pick[aria-pressed=true],.pick.on{border-color:var(--c);color:var(--fg);box-shadow:inset 0 0 0 1px var(--c)}
+.tagline{margin-top:14px;font-size:1rem;color:var(--fg-2);min-height:1.5em}
 
-/* hero device stage */
-.stage{position:relative;display:grid;place-items:center;min-height:560px}
-.stage .orbit{position:absolute;inset:0;z-index:-1;background:radial-gradient(circle at 50% 50%,color-mix(in srgb,var(--trade) 45%,transparent),transparent 60%);filter:blur(30px);transition:background 1s}
-.phone{position:relative;container-type:inline-size;width:min(100%,330px);aspect-ratio:9/18.6;border-radius:44px;background:#0B1836;border:1px solid rgba(255,255,255,.18);box-shadow:0 50px 100px -30px rgba(0,0,0,.85),inset 0 0 0 7px #050A1A;overflow:hidden;transform:perspective(1400px) rotateY(calc(var(--ry,-8)*1deg)) rotateX(calc(var(--rx,2)*1deg));transition:transform .9s var(--ease)}
-.phone::before{content:"";position:absolute;left:50%;top:14px;translate:-50% 0;width:96px;height:26px;border-radius:14px;background:#050A1A;z-index:5}
-.app{position:absolute;inset:7px;border-radius:12cqw;overflow:hidden;background:#0B1836;display:flex;flex-direction:column;font-size:clamp(8.5px,4.1cqw,13.5px)}
-.app .bar{padding:3.4em 1.3em 1em;background:var(--trade);transition:background .6s;display:flex;align-items:center;justify-content:space-between;gap:10px}
-.app .bar b{font:700 1.2em var(--display);letter-spacing:-.01em}
-.app .bar small{display:block;font-size:.85em;opacity:.85}
-.app .bar .ic{width:2.3em;height:2.3em;border-radius:.7em;background:rgba(255,255,255,.2);flex:none}
-.app .bar .ic svg{width:100%;height:100%}
-.app .bodyx{flex:1;padding:1em 1em 0;display:flex;flex-direction:column;gap:.75em;overflow:hidden}
-.ctx{display:flex;justify-content:space-between;align-items:center;gap:.5em;color:var(--paper-2);font-size:.88em}
-.rows{display:grid;gap:.6em}
-.row{display:grid;grid-template-columns:1fr auto;gap:.6em;padding:.8em .9em;border-radius:.9em;background:rgba(255,255,255,.05);opacity:0;transform:translateX(14px);animation:slidein .5s var(--ease) forwards;animation-delay:calc(var(--i)*.09s)}
-@keyframes slidein{to{opacity:1;transform:none}}
-.row small{display:block;color:var(--paper-2);font-size:.85em;margin-top:.15em}
-.row em{font-style:normal;font-weight:700;font-variant-numeric:tabular-nums;align-self:center}
-.row.alert{background:rgba(255,107,61,.12);border:1px solid rgba(255,107,61,.35)}
-.pill{padding:.3em .8em;border-radius:999px;font-size:.85em;white-space:nowrap;font-weight:600;background:rgba(255,255,255,.1)}
-.pill.ok{background:rgba(95,211,163,.18);color:var(--ok)}
-.pill.warn{background:rgba(255,107,61,.18);color:var(--warn)}
-.total{margin-top:auto;display:flex;justify-content:space-between;align-items:baseline;padding:.9em .15em 0;border-top:1px solid var(--line)}
-.total b{font:800 1.75em var(--display)}
-.pay{display:grid;grid-template-columns:repeat(4,1fr);gap:.45em;padding:.75em 1em 1.2em}
-.pay span{text-align:center;padding:.8em .2em;border-radius:.85em;font-size:.88em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;background:rgba(255,255,255,.07)}
-.pay span.sun{background:var(--sun);color:#1B0E05}
-.sheet{display:grid;gap:.3em;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.82em}
-.sheet div{display:grid;grid-template-columns:1.1fr 1.5fr .8fr .8fr;gap:.5em;padding:.55em .6em;border-radius:.5em;background:rgba(255,255,255,.05)}
-.sheet div:first-child{background:#1F6F74;font-weight:700}
-.scan{height:.4em;border-radius:3px;background:var(--sun);width:40%;animation:scan 2.2s ease-in-out infinite}
-@keyframes scan{0%,100%{transform:translateX(0)}50%{transform:translateX(150%)}}
-/* floating toasts */
-.toast{position:absolute;display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:14px;background:rgba(13,24,54,.85);border:1px solid var(--line-2);backdrop-filter:blur(10px);box-shadow:0 20px 40px -20px rgba(0,0,0,.8);font-size:.85rem;font-weight:500;max-width:240px;animation:pop .6s var(--ease) both}
-.toast .dot{width:10px;height:10px;border-radius:50%;background:var(--ok);flex:none;box-shadow:0 0 0 4px rgba(95,211,163,.2)}
-.toast.warn .dot{background:var(--warn);box-shadow:0 0 0 4px rgba(255,154,107,.2)}
-.toast.t1{left:-4%;top:16%}.toast.t2{right:-6%;bottom:22%}
-@keyframes pop{from{opacity:0;transform:translateY(12px) scale(.96)}to{opacity:1;transform:none}}
-@media (max-width:980px){.hero .wrap{grid-template-columns:1fr}.stage{min-height:0;margin-top:14px}.phone{width:min(100%,300px)}.toast{display:none}.hero h1{font-size:clamp(3rem,13vw,5.6rem)}}
+/* mock screen */
+.stage{position:relative}
+.device{position:relative;margin-inline:auto;width:min(100%,420px);border-radius:28px;padding:10px;background:#0A1430;border:1px solid rgba(255,255,255,.14);box-shadow:var(--shadow)}
+.device .app{border-radius:20px;overflow:hidden;background:#0F1D45;color:#F6F3EC;font-size:.86rem}
+.device .bar{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;background:linear-gradient(120deg,var(--trade),color-mix(in srgb,var(--trade) 55%,#0F1D45))}
+.device .bar b{display:block;font-size:1rem}.device .bar small{opacity:.85}
+.device .bar svg{width:30px;height:30px;border-radius:8px;background:rgba(255,255,255,.18)}
+.device .ctx{display:flex;justify-content:space-between;align-items:center;padding:12px 16px 4px;color:#AEB9D6;font-size:.8rem}
+.device .pill{padding:3px 9px;border-radius:999px;background:rgba(95,211,163,.16);color:var(--ok);font-weight:600;font-size:.74rem}
+.device .row{display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:10px 16px;border-bottom:1px solid rgba(255,255,255,.07)}
+.device .row small{display:block;color:#8391B8;font-size:.76rem}
+.device .row em{font-style:normal;font-weight:600}
+.device .total{display:flex;justify-content:space-between;align-items:baseline;padding:14px 16px 6px}
+.device .total b{font:800 1.5rem var(--display)}
+.device .pay{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;padding:12px 16px 16px}
+.device .pay span{text-align:center;padding:9px 2px;border-radius:10px;background:rgba(255,255,255,.08);font-weight:600;font-size:.76rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.device .pay span:first-child{background:var(--sun);color:#1B0E05}
+.toast{position:absolute;left:50%;bottom:-14px;transform:translateX(-50%);white-space:nowrap;display:flex;align-items:center;gap:8px;padding:9px 13px;border-radius:12px;background:var(--bg-2);border:1px solid var(--line-2);box-shadow:var(--shadow);font-size:.8rem;font-weight:600}
+.toast .dot{width:8px;height:8px;border-radius:50%;background:var(--ok)}
+@media (max-width:860px){.stage{margin-top:8px}}
 
-/* marquee */
-.marquee{border-block:1px solid var(--line);overflow:hidden;padding:16px 0;font:700 clamp(.95rem,1.8vw,1.25rem) var(--display);color:var(--paper-2);mask-image:linear-gradient(90deg,transparent,#000 10%,#000 90%,transparent);-webkit-mask-image:linear-gradient(90deg,transparent,#000 10%,#000 90%,transparent)}
-.marquee .track{display:flex;gap:44px;width:max-content;animation:slide 34s linear infinite}
-.marquee span{display:flex;gap:44px;align-items:center;white-space:nowrap}
-.marquee i{font-style:normal;color:var(--sun-a)}
-@keyframes slide{to{transform:translateX(-50%)}}
+/* per-trade blocks */
+[data-for]{display:none}
+body[data-trade=restaurant] [data-for=restaurant],body[data-trade=kirana] [data-for=kirana],body[data-trade=supermarket] [data-for=supermarket],
+body[data-trade=pharmacy] [data-for=pharmacy],body[data-trade=retail] [data-for=retail]{display:block}
 
-/* ---------- sections ---------- */
-.section{padding-block:clamp(72px,12vh,140px)}
-.section h2{font-size:clamp(2.3rem,5.6vw,4.8rem);max-width:16ch;margin-top:18px}
-.section .sub{margin-top:18px;max-width:48ch;color:var(--paper-2);font-size:1.08rem}
-.head{display:grid;grid-template-columns:1fr auto;gap:24px;align-items:end}
-@media (max-width:760px){.head{grid-template-columns:1fr}}
-.link{display:inline-flex;align-items:center;gap:8px;font-weight:600;color:var(--paper)}
-.reveal{opacity:1;transform:none}
-@media (prefers-reduced-motion:no-preference){
-  .reveal{opacity:0;transform:translateY(26px);transition:opacity .8s var(--ease),transform .8s var(--ease)}
-  .reveal.in{opacity:1;transform:none}
-  @supports (animation-timeline:view()){
-    .reveal{opacity:1;transform:none;transition:none;animation:fadeup linear both;animation-timeline:view();animation-range:entry 0% entry 35%}
-    @keyframes fadeup{from{opacity:0;transform:translateY(26px)}to{opacity:1;transform:none}}
-  }
-}
+/* how */
+.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;counter-reset:s}
+.step{position:relative;padding:22px 20px 20px 20px;border:1px solid var(--line);border-radius:var(--r);background:var(--bg-2)}
+.step::before{counter-increment:s;content:"0" counter(s);display:block;font:800 .8rem var(--display);color:var(--trade);margin-bottom:10px;letter-spacing:.1em}
+.step p{color:var(--fg-2);margin-top:6px;font-size:.95rem}
+@media (max-width:760px){.steps{grid-template-columns:1fr}}
 
-/* steps */
-.steps3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:48px;counter-reset:s}
-.s3{position:relative;padding:28px 24px 26px;border-radius:22px;border:1px solid var(--line);background:rgba(255,255,255,.03);display:grid;gap:10px}
-.s3::before{counter-increment:s;content:"0" counter(s);font:800 3rem/1 var(--display);background:var(--sun);-webkit-background-clip:text;background-clip:text;color:transparent}
-.s3 h3{font-size:1.4rem;font-weight:700}
-.s3 p{color:var(--paper-2);font-size:.98rem}
-@media (max-width:760px){.steps3{grid-template-columns:1fr}}
+/* features */
+.group{margin-top:26px}
+.group h3{font:600 .78rem/1 var(--body);letter-spacing:.14em;text-transform:uppercase;color:var(--fg-3);margin-bottom:12px;display:flex;align-items:center;gap:10px}
+.group h3::after{content:"";flex:1;height:1px;background:var(--line)}
+.feats{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px}
+.feat{display:flex;flex-direction:column;gap:5px;padding:14px 15px;border:1px solid var(--line);border-radius:14px;background:var(--bg-2)}
+.feat b{font-weight:700}
+.feat p{color:var(--fg-2);font-size:.9rem;flex:1}
+.tag{align-self:flex-start;margin-top:4px;font-size:.7rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:3px 8px;border-radius:999px;background:var(--bg-3);color:var(--fg-2)}
+.tag.offline{background:rgba(95,211,163,.16);color:var(--ok)}
+.tag.lan{background:color-mix(in srgb,var(--trade) 18%,transparent);color:var(--trade)}
+.tag.soon,.tag.addon{border:1px dashed var(--line-2);background:transparent;color:var(--fg-3)}
+.legend{display:flex;flex-wrap:wrap;gap:8px 16px;margin-top:18px;font-size:.85rem;color:var(--fg-3)}
 
-/* trades */
-.trades{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-top:48px}
-.trade{--c:var(--ink-3);position:relative;display:grid;gap:14px;padding:22px 20px 22px;border-radius:22px;background:rgba(255,255,255,.035);border:1px solid var(--line);overflow:hidden;transition:transform .35s var(--ease),border-color .35s}
-.trade::before{content:"";position:absolute;inset:0;background:radial-gradient(260px circle at var(--mx,50%) var(--my,0%),color-mix(in srgb,var(--c) 35%,transparent),transparent 60%);opacity:0;transition:opacity .35s}
-.trade:hover{transform:translateY(-6px);border-color:color-mix(in srgb,var(--c) 70%,transparent)}
-.trade:hover::before{opacity:1}
-.trade>*{position:relative}
-.trade svg{width:54px;height:54px;border-radius:14px;background:var(--c)}
-.trade h3{font-size:1.4rem;font-weight:700}
-.trade .best{font-size:.78rem;letter-spacing:.06em;text-transform:uppercase;color:var(--paper-3);font-weight:600}
-.tags{display:flex;flex-wrap:wrap;gap:6px}
-.tags span{font-size:.78rem;padding:4px 9px;border-radius:999px;background:rgba(255,255,255,.07);color:var(--paper-2)}
-.trade .go{margin-top:auto;display:inline-flex;gap:6px;font-weight:600;font-size:.9rem}
-@media (max-width:1100px){.trades{grid-template-columns:repeat(3,1fr)}}
-@media (max-width:680px){.trades{grid-template-columns:1fr 1fr;gap:10px}.trade{padding:18px 16px}}
-@media (max-width:360px){.trades{grid-template-columns:1fr}}
-
-/* ---------- scroll story ---------- */
-.story .wrap{display:grid;grid-template-columns:1.05fr .95fr;gap:clamp(32px,6vw,96px);align-items:start}
-.step{min-height:76vh;display:flex;flex-direction:column;justify-content:center;gap:16px;padding-block:8vh}
-.step h2{font-size:clamp(2.4rem,5.4vw,4.8rem);opacity:.22;transition:opacity .5s;max-width:12ch;margin:0}
-.step.active h2{opacity:1}
-.step p{max-width:38ch;color:var(--paper-2);font-size:1.08rem}
-.step .tag{display:inline-flex;align-items:center;gap:8px;font:600 .78rem var(--body);letter-spacing:.14em;text-transform:uppercase;color:var(--sun-a)}
-.sticky{position:sticky;top:calc(var(--nav) + env(safe-area-inset-top,0px) + 4vh);display:grid;justify-items:center}
-.sticky>div{display:grid;justify-items:center;gap:14px;width:100%}
-.sticky .phone{--ry:0;--rx:0;height:auto;aspect-ratio:9/18.6;width:min(100%,330px,calc((100vh - var(--nav) - 8vh - 56px) * 9 / 18.6))}
-.sticky .screen{position:absolute;inset:0;opacity:0;transform:scale(.97) translateY(8px);transition:opacity .5s,transform .5s;display:flex;flex-direction:column}
-.sticky .screen.on{opacity:1;transform:none}
-.dots{display:flex;gap:8px;justify-content:center;margin-top:16px}
-.dots i{width:8px;height:8px;border-radius:50%;background:var(--line-2);transition:background .3s,width .3s}
-.dots i.on{width:26px;border-radius:4px;background:var(--sun)}
-@media (max-width:900px){.story .wrap{grid-template-columns:1fr}.sticky{order:-1;position:sticky;top:calc(var(--nav) + 8px);height:auto;z-index:2;background:linear-gradient(var(--ink) 80%,transparent);padding-bottom:16px}.sticky .phone{width:min(100%,250px,calc((100vh - var(--nav) - 8vh - 56px) * 9 / 15.5));aspect-ratio:9/15.5}.step{min-height:0;padding-block:28px}.step h2{opacity:1}.dots{margin-top:8px}}
-
-/* ---------- compare ---------- */
-.compare{border-radius:26px;border:1px solid var(--line);overflow:hidden;margin-top:48px;background:rgba(255,255,255,.025)}
-.compare table{width:100%;border-collapse:collapse}
-.compare th,.compare td{padding:18px 22px;text-align:left;border-bottom:1px solid var(--line);vertical-align:middle}
-.compare th{font:600 .78rem var(--body);letter-spacing:.14em;text-transform:uppercase;color:var(--paper-3)}
-.compare th:last-child,.compare td:last-child{background:rgba(255,200,87,.06)}
-.compare td:first-child{font-weight:600}
-.compare td{color:var(--paper-2)}
-.compare td:last-child{color:var(--paper)}
-.compare tr:last-child td{border-bottom:0}
-.compare .x{color:var(--paper-3)}
-.compare svg{width:18px;height:18px;display:inline-block;vertical-align:-3px;margin-right:8px}
-@media (max-width:640px){.compare th,.compare td{padding:14px 12px;font-size:.92rem}.compare th:first-child,.compare td:first-child{width:30%}}
-
-/* ---------- statement ---------- */
-.statement{background:var(--paper);color:var(--ink);padding-block:clamp(80px,14vh,170px);position:relative;overflow:hidden}
-.statement .eyebrow{color:#B8431F}.statement .eyebrow::before{background:#B8431F}
-.statement h2{font-size:clamp(2.6rem,7.2vw,6.4rem);max-width:14ch;margin-top:18px}
-.statement .cols{display:grid;grid-template-columns:repeat(3,1fr);gap:28px;margin-top:56px}
-.statement .cols div{padding-top:20px;border-top:2px solid var(--ink)}
-.statement .cols h3{font-size:1.3rem;font-weight:700;margin-bottom:8px}
-.statement .cols p{color:#3E4A6B}
-.statement .bigq{position:absolute;right:-2%;top:-6%;font:800 30rem/1 var(--display);color:rgba(15,37,87,.05);pointer-events:none;user-select:none}
-@media (max-width:760px){.statement .cols{grid-template-columns:1fr}}
-
-/* ---------- tiers ---------- */
-.toggle{display:inline-flex;padding:4px;border-radius:999px;border:1px solid var(--line-2);background:rgba(255,255,255,.04);gap:4px}
-.toggle button{border:0;background:none;padding:8px 18px;border-radius:999px;font-weight:600;cursor:pointer;color:var(--paper-2);transition:background .25s,color .25s}
-.toggle button[aria-pressed="true"]{background:var(--paper);color:var(--ink)}
-.tiers{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(252px,1fr);gap:14px;margin-top:40px;overflow-x:auto;scroll-snap-type:x mandatory;padding:12px 0 18px;scrollbar-width:thin;scrollbar-color:var(--line-2) transparent}
-.tier{position:relative;scroll-snap-align:start;display:grid;gap:16px;padding:26px 22px 24px;border-radius:22px;border:1px solid var(--line);background:rgba(255,255,255,.035);transition:transform .35s var(--ease),border-color .35s}
-.tier:hover{transform:translateY(-4px);border-color:var(--line-2)}
-.tier.hot{background:linear-gradient(var(--ink-2),var(--ink-2)) padding-box,var(--sun) border-box;border:1px solid transparent}
-.tier .badge{position:absolute;top:-12px;left:22px;padding:4px 10px;border-radius:999px;background:var(--sun);color:#1B0E05;font-size:.74rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase}
-.tier .name{font:800 1.6rem var(--display)}
-.tier .who{color:var(--paper-2);font-size:.95rem;min-height:3em}
-.tier .lim{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;text-align:center;font-variant-numeric:tabular-nums;padding:12px 0;border-block:1px solid var(--line)}
-.tier .lim b{display:block;font:800 1.5rem var(--display)}
-.tier .lim small{color:var(--paper-3);font-size:.72rem;letter-spacing:.08em;text-transform:uppercase}
-.tier ul{margin:0;padding:0;list-style:none;display:grid;gap:9px;color:var(--paper-2);font-size:.94rem}
-.tier li{display:flex;gap:10px;align-items:flex-start}
-.tier li::before{content:"";flex:none;margin-top:7px;width:7px;height:7px;border-radius:50%;background:var(--sun)}
-.tier .data{margin-top:auto;font-size:.84rem;color:var(--paper-3)}
+/* packages */
+.tiers{display:grid;grid-template-columns:repeat(5,1fr);gap:10px}
+.tier{display:flex;flex-direction:column;gap:10px;padding:20px 18px;border:1px solid var(--line);border-radius:var(--r);background:var(--bg-2);position:relative}
+.tier.hot{border-color:var(--sun-a);box-shadow:0 0 0 1px var(--sun-a) inset}
+.tier .badge{position:absolute;top:-11px;left:18px;background:var(--sun);color:#1B0E05;font-size:.7rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:3px 9px;border-radius:999px}
+.tier .name{font:800 1.35rem var(--display)}
+.tier .who{color:var(--fg-2);font-size:.9rem;min-height:2.7em}
+.lim{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;padding:10px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.lim b{display:block;font:800 1.15rem var(--display)}.lim small{color:var(--fg-3);font-size:.72rem}
+.tier ul{list-style:none;margin:0;padding:0;display:grid;gap:6px;font-size:.9rem;flex:1;align-content:start}
+.tier li{padding-left:18px;position:relative}
+.tier li::before{content:"";position:absolute;left:0;top:.5em;width:9px;height:9px;border-radius:50%;background:var(--ok)}
+.tier li.all{color:var(--fg-2)}.tier li.all::before{background:var(--fg-3)}
+.tier .data{font-size:.82rem;color:var(--fg-3)}
 .tier .btn{width:100%}
+@media (max-width:1080px){.tiers{grid-template-columns:repeat(auto-fit,minmax(210px,1fr))}}
+.note{margin-top:16px;font-size:.88rem;color:var(--fg-3);max-width:70ch}
 
-/* ---------- faq ---------- */
-.faq{display:grid;grid-template-columns:1fr 1.4fr;gap:clamp(24px,5vw,80px);align-items:start}
-.faq details{border-top:1px solid var(--line);padding:4px 0}
-.faq details:last-child{border-bottom:1px solid var(--line)}
-.faq summary{list-style:none;cursor:pointer;display:flex;justify-content:space-between;gap:16px;align-items:center;padding:18px 0;font-weight:600;font-size:1.08rem}
-.faq summary::-webkit-details-marker{display:none}
-.faq summary::after{content:"+";font:500 1.6rem/1 var(--display);color:var(--sun-a);transition:transform .3s var(--ease);flex:none}
-.faq details[open] summary::after{transform:rotate(45deg)}
-.faq .a{padding:0 0 20px;color:var(--paper-2);max-width:60ch}
-@media (max-width:820px){.faq{grid-template-columns:1fr}}
+/* data */
+.data-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.data-card{padding:22px;border-radius:var(--r);border:1px solid var(--line);background:var(--bg-2)}
+.data-card b{display:block;font:800 1.1rem var(--display);margin-bottom:8px}
+.data-card p{color:var(--fg-2)}
+.data-card blockquote{margin:0;padding-left:14px;border-left:3px solid var(--trade);color:var(--fg)}
+@media (max-width:760px){.data-grid{grid-template-columns:1fr}}
 
-/* ---------- numbers / final / footer ---------- */
-.numbers{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;border-block:1px solid var(--line);padding-block:40px}
-.numbers div{display:grid;gap:4px}
-.numbers b{font:800 clamp(2.6rem,6vw,4.4rem)/1 var(--display);font-variant-numeric:tabular-nums}
-.numbers span{color:var(--paper-2)}
-@media (max-width:760px){.numbers{grid-template-columns:1fr 1fr}}
-.final{position:relative;overflow:hidden;padding-block:clamp(96px,16vh,200px);text-align:center}
-.final .glow{inset:auto auto -45% 50%;translate:-50% 0;width:min(90vw,1100px);aspect-ratio:1;opacity:.45}
-.final h2{font-size:clamp(3rem,9vw,8rem);margin-inline:auto;max-width:12ch}
-.final p{margin:22px auto 34px;max-width:40ch;color:var(--paper-2);font-size:1.15rem}
-.final .cta{display:flex;gap:14px;justify-content:center;flex-wrap:wrap}
-footer{border-top:1px solid var(--line);padding-block:40px;color:var(--paper-2);font-size:.92rem}
-footer .wrap{display:flex;flex-wrap:wrap;gap:18px 32px;align-items:center}
-footer nav{display:flex;flex-wrap:wrap;gap:20px;margin-left:auto}
-footer a:hover{color:var(--paper)}
-/* mobile sticky cta */
-.mcta{position:fixed;left:0;right:0;bottom:0;z-index:40;padding:10px var(--gutter) calc(10px + env(safe-area-inset-bottom,0px));background:color-mix(in srgb,var(--ink) 85%,transparent);backdrop-filter:blur(14px);border-top:1px solid var(--line);transform:translateY(110%);transition:transform .4s var(--ease);display:none}
-.mcta.show{transform:none}
-.mcta .btn{width:100%}
-@media (max-width:860px){.mcta{display:block}}
+/* lan */
+.lanbox{display:grid;grid-template-columns:1fr 1fr;gap:clamp(20px,4vw,48px);align-items:center;padding:clamp(22px,4vw,40px);border-radius:24px;border:1px solid var(--line);background:linear-gradient(135deg,var(--bg-2),var(--bg-3))}
+.lanbox .steps{grid-template-columns:1fr;gap:10px}
+.lanbox .net{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:12px}
+.lanbox .box{padding:14px 12px;border-radius:12px;background:var(--bg);border:1px solid var(--line-2);text-align:center;font-size:.86rem;font-weight:600}
+.lanbox .box small{display:block;font-weight:400;color:var(--fg-3);font-size:.76rem;margin-top:3px}
+.lanbox .wifi{font-size:.74rem;color:var(--trade);font-weight:700;letter-spacing:.08em;text-transform:uppercase;text-align:center}
+.lanbox .tabs{display:grid;gap:8px}
+@media (max-width:860px){.lanbox{grid-template-columns:1fr}}
 
-@media (prefers-reduced-motion:reduce){
-  *,*::before,*::after{animation:none!important;transition:none!important}
-  .hero h1 .w span{transform:none}.row{opacity:1;transform:none}
-}
+/* faq */
+.faq{display:grid;grid-template-columns:1fr 1.4fr;gap:clamp(20px,4vw,56px)}
+details{border-top:1px solid var(--line);padding:14px 0}
+details:last-child{border-bottom:1px solid var(--line)}
+summary{cursor:pointer;font-weight:700;list-style:none;display:flex;justify-content:space-between;gap:12px}
+summary::-webkit-details-marker{display:none}
+summary::after{content:"+";color:var(--fg-3);font-weight:400}
+details[open] summary::after{content:"–"}
+details .a{margin-top:8px;color:var(--fg-2);font-size:.95rem}
+.not{margin-top:30px;font-size:.88rem;color:var(--fg-3)}
+.not span{display:block}
+@media (max-width:760px){.faq{grid-template-columns:1fr}}
 
-/* ---------- inner pages (trade, legal, support, register) ---------- */
-.page{padding:calc(var(--nav) + env(safe-area-inset-top,0px) + clamp(40px,7vh,88px)) 0 clamp(56px,10vh,120px)}
-.page-hero{position:relative;overflow:hidden;isolation:isolate;padding:calc(var(--nav) + env(safe-area-inset-top,0px) + clamp(48px,9vh,110px)) 0 clamp(48px,8vh,96px)}
-.page-hero .glow{inset:-30% -15% auto auto;width:min(70vw,900px);aspect-ratio:1}
-.page-hero h1{font-size:clamp(2.8rem,7vw,6.4rem);max-width:13ch;margin-top:18px}
-.page-hero .lede{margin-top:22px;max-width:40ch;font-size:clamp(1.05rem,1.4vw,1.3rem);color:var(--paper-2)}
-.crumbs{display:flex;gap:8px;font-size:.88rem;color:var(--paper-3)}
-.crumbs a:hover{color:var(--paper)}
-.prose{max-width:72ch;color:var(--paper-2);font-size:1.02rem}
-.prose h1{font-size:clamp(2.4rem,6vw,4.6rem);color:var(--paper);margin-bottom:12px}
-.prose h2{font-size:clamp(1.5rem,3vw,2.1rem);color:var(--paper);margin:48px 0 14px;letter-spacing:-.01em;line-height:1.15}
-.prose h3{font-size:1.15rem;color:var(--paper);margin:28px 0 8px;font-weight:700}
-.prose p{margin:0 0 14px}
-.prose ul,.prose ol{margin:0 0 16px;padding-left:22px}
-.prose li{margin-bottom:6px}
-.prose a{color:var(--sun-a);text-decoration:underline;text-underline-offset:3px}
-.prose strong{color:var(--paper)}
-.prose table{width:100%;border-collapse:collapse;margin:16px 0 24px;font-size:.95rem}
-.prose th,.prose td{text-align:left;padding:12px 14px;border-bottom:1px solid var(--line);vertical-align:top}
-.prose th{color:var(--paper);font-weight:600;font-size:.82rem;letter-spacing:.1em;text-transform:uppercase}
-.prose .meta{font-size:.88rem;color:var(--paper-3);margin-bottom:28px}
-.tableWrap{overflow-x:auto}
-.toc{position:sticky;top:calc(var(--nav) + env(safe-area-inset-top,0px) + 24px);display:grid;gap:4px;font-size:.92rem;color:var(--paper-2)}
-.toc a{padding:6px 10px;border-left:2px solid var(--line);transition:color .2s,border-color .2s}
-.toc a:hover,.toc a.on{color:var(--paper);border-color:var(--sun-a)}
-.two{display:grid;grid-template-columns:220px 1fr;gap:clamp(24px,5vw,72px);align-items:start}
-@media (max-width:860px){.two{grid-template-columns:1fr}.toc{position:static;grid-auto-flow:column;overflow-x:auto;padding-bottom:8px}.toc a{border-left:0;border-bottom:2px solid var(--line);white-space:nowrap}}
-/* forms */
-.card{border:1px solid var(--line);border-radius:22px;background:rgba(255,255,255,.035);padding:clamp(20px,3vw,36px)}
-.field{display:grid;gap:8px;margin-bottom:18px}
-.field label{font-weight:600;font-size:.95rem}
-.field .hint{font-size:.85rem;color:var(--paper-3)}
-.input,select.input,textarea.input{width:100%;padding:14px 16px;border-radius:14px;border:1px solid var(--line-2);background:rgba(255,255,255,.05);color:var(--paper);font:inherit;transition:border-color .2s,background .2s}
-.input:focus{outline:0;border-color:var(--sun-a);background:rgba(255,255,255,.08)}
-textarea.input{min-height:120px;resize:vertical}
-.choices{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
-.choice{display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:14px;border:1px solid var(--line-2);background:rgba(255,255,255,.04);cursor:pointer;font-weight:600;transition:border-color .2s,background .2s}
-.choice input{accent-color:var(--sun-b)}
-.choice:has(input:checked){border-color:var(--sun-a);background:rgba(255,200,87,.1)}
-.choice svg{width:26px;height:26px;border-radius:8px;background:var(--c,var(--ink-3))}
-.notice{display:flex;gap:12px;align-items:flex-start;padding:14px 16px;border-radius:14px;background:rgba(95,211,163,.1);border:1px solid rgba(95,211,163,.3);color:var(--paper);font-size:.95rem}
-.notice.warn{background:rgba(255,154,107,.1);border-color:rgba(255,154,107,.35)}
-.err{color:var(--warn);font-size:.88rem}
-
+/* final + footer */
+.final{padding:clamp(48px,8vw,96px) 0;text-align:center}
+.final h2{font-size:clamp(2rem,5vw,3.6rem)}
+.final .cta{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-top:24px}
+footer{border-top:1px solid var(--line);padding:26px 0 calc(26px + env(safe-area-inset-bottom,0px));font-size:.86rem;color:var(--fg-3)}
+footer .wrap{display:flex;flex-wrap:wrap;gap:10px 22px;justify-content:space-between;align-items:center}
+footer nav{display:flex;flex-wrap:wrap;gap:4px 18px}
+footer a:hover{color:var(--fg)}
+.others{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
 </style>
-<style>
-:root{--trade:var(--t-pha)}
-/* Trade pages: extras on top of /assets/v2.css. Inlined by build_site.py. */
-.page-hero .wrap{display:grid;grid-template-columns:1.05fr .95fr;gap:clamp(28px,5vw,72px);align-items:center}
-.page-hero .eyebrow svg{width:26px;height:26px;border-radius:8px;background:var(--trade);flex:none}
-.page-hero h1 .sun-text{display:inline}
-.page-hero .cta{display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin-top:30px}
-.page-hero .proof{display:flex;flex-wrap:wrap;gap:8px 22px;margin-top:26px;font-size:.9rem;color:var(--paper-2)}
-.page-hero .proof span{display:inline-flex;align-items:center;gap:8px}
-.page-hero .proof svg{width:16px;height:16px;flex:none}
-.page-hero .phone{--ry:-7;--rx:2}
-@media (max-width:980px){.page-hero .wrap{grid-template-columns:1fr}.page-hero h1{font-size:clamp(2.8rem,12vw,5.4rem)}.page-hero .stage{margin-top:12px}}
-/* problems -> how SmartBizz solves it */
-.probs{margin-top:44px;border-top:1px solid var(--line)}
-.prob{display:grid;grid-template-columns:.9fr 1.3fr;gap:12px clamp(20px,4vw,64px);padding:30px 0;border-bottom:1px solid var(--line);align-items:start}
-.prob .q{display:flex;gap:14px;align-items:baseline;font:600 clamp(1.1rem,1.8vw,1.35rem)/1.25 var(--body);color:var(--paper-3);letter-spacing:-.005em}
-.prob .q i{font:800 .8rem/1 var(--display);color:var(--sun-a);letter-spacing:.1em;flex:none;translate:0 -.1em}
-.prob .s b{display:block;font:800 clamp(1.45rem,2.8vw,2.3rem)/1.04 var(--display);letter-spacing:-.02em;text-wrap:balance}
-.prob .s p{margin-top:10px;color:var(--paper-2);max-width:58ch}
-.prob .from{display:inline-flex;align-items:center;gap:8px;margin-top:12px;font:600 .72rem/1 var(--body);letter-spacing:.14em;text-transform:uppercase;color:var(--sun-a)}
-.prob .from::before{content:"";width:14px;height:2px;background:var(--sun)}
-@media (max-width:760px){.prob{grid-template-columns:1fr;gap:10px;padding:24px 0}}
-/* feature grid */
-.feats{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:44px}
-.feat{position:relative;display:flex;flex-direction:column;gap:10px;padding:22px 20px;border-radius:20px;border:1px solid var(--line);background:rgba(255,255,255,.035);transition:transform .35s var(--ease),border-color .35s}
-.feat:hover{transform:translateY(-4px);border-color:color-mix(in srgb,var(--trade) 60%,transparent)}
-.feat h3{font-size:1.2rem;font-weight:700;line-height:1.15}
-.feat p{color:var(--paper-2);font-size:.95rem}
-.feat .tags{margin-top:auto;padding-top:6px}
-.feat .tags .tr{background:color-mix(in srgb,var(--trade) 38%,transparent);color:var(--paper)}
-.feat .tags .up{background:rgba(255,200,87,.16);color:var(--sun-a)}
-.feat .link{font-size:.9rem;color:var(--sun-a)}
-@media (max-width:980px){.feats{grid-template-columns:1fr 1fr}}
-@media (max-width:600px){.feats{grid-template-columns:1fr}}
-/* tiers on a trade page */
-.tiers .tier .lim b{font-size:1.4rem}
-.limits-note{margin-top:14px;font-size:.92rem;color:var(--paper-2);max-width:70ch}
-.data-lines{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:22px}
-.data-lines div{padding:16px 18px;border-radius:16px;border:1px solid var(--line);background:rgba(255,255,255,.03);font-size:.95rem;color:var(--paper-2)}
-.data-lines b{display:block;color:var(--paper);margin-bottom:4px}
-@media (max-width:700px){.data-lines{grid-template-columns:1fr}}
-/* honest "not yet" strip */
-.notyet{display:grid;grid-template-columns:minmax(200px,.8fr) 1.6fr;gap:18px clamp(24px,4vw,64px);align-items:start;padding:clamp(22px,3vw,36px);border-radius:22px;border:1px dashed var(--line-2);background:rgba(255,154,107,.06)}
-.notyet h2{font-size:clamp(1.7rem,3.2vw,2.6rem);margin-top:14px;max-width:12ch}
-.notyet .sub{margin-top:12px;font-size:.98rem}
-.notyet ul{margin:0;padding:0;list-style:none;display:grid;gap:12px;color:var(--paper-2)}
-.notyet li{display:flex;gap:12px;align-items:flex-start}
-.notyet li svg{width:20px;height:20px;flex:none;margin-top:3px}
-@media (max-width:760px){.notyet{grid-template-columns:1fr}}
-/* back to all trades */
-.others{display:flex;flex-wrap:wrap;gap:8px;margin-top:28px}
-.others a{display:inline-flex;align-items:center;gap:8px;padding:6px 14px 6px 6px;border-radius:999px;border:1px solid var(--line-2);background:rgba(255,255,255,.04);font-weight:600;font-size:.88rem;transition:background .25s,transform .25s var(--ease)}
-.others a svg{width:24px;height:24px;border-radius:50%;background:var(--c)}
-.others a:hover{background:rgba(255,255,255,.09);transform:translateY(-1px)}
-/* headline rise-in (same motion as the homepage hero) */
-.page-hero h1 .w{display:inline-block;overflow:hidden;vertical-align:bottom;padding-bottom:.06em;margin-bottom:-.06em}
-.page-hero h1 .w span{display:inline-block;transform:translateY(110%);animation:rise .9s var(--ease) forwards;animation-delay:calc(var(--i)*.08s)}
-@media (prefers-reduced-motion:reduce){.page-hero h1 .w span{transform:none}}
-</style>
-<script>
-document.addEventListener('DOMContentLoaded',function(){
-(function(){
-  var reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
-  var nav=document.getElementById('nav'),btn=document.getElementById('menuBtn'),prog=document.getElementById('progress'),mcta=document.getElementById('mcta');
-  function onScroll(){var y=scrollY,max=document.documentElement.scrollHeight-innerHeight;nav.classList.toggle('scrolled',y>8);if(prog)prog.style.setProperty('--p',max>0?y/max:0);if(mcta)mcta.classList.toggle('show',y>innerHeight*.9&&y<max-600);}
-  addEventListener('scroll',onScroll,{passive:true});onScroll();
-  if(btn){btn.addEventListener('click',function(){var o=nav.classList.toggle('open');btn.setAttribute('aria-expanded',o);});}
-  document.querySelectorAll('#navLinks a').forEach(function(a){a.addEventListener('click',function(){nav.classList.remove('open');});});
-  if(!reduce&&!CSS.supports('animation-timeline: view()')&&'IntersectionObserver' in window){
-    var ro=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){e.target.classList.add('in');ro.unobserve(e.target);}});},{rootMargin:'0px 0px -8% 0px'});
-    document.querySelectorAll('.reveal').forEach(function(el){ro.observe(el);});
-  }else{document.querySelectorAll('.reveal').forEach(function(el){el.classList.add('in');});}
-  document.querySelectorAll('.trade').forEach(function(c){c.addEventListener('pointermove',function(e){var r=c.getBoundingClientRect();c.style.setProperty('--mx',(e.clientX-r.left)+'px');c.style.setProperty('--my',(e.clientY-r.top)+'px');});});
-  var toc=document.querySelectorAll('.toc a');
-  if(toc.length&&'IntersectionObserver' in window){var map={};toc.forEach(function(a){var el=document.getElementById(a.getAttribute('href').slice(1));if(el)map[el.id]=a;});
-    var so=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){toc.forEach(function(a){a.classList.remove('on');});map[e.target.id].classList.add('on');}});},{rootMargin:'-20% 0px -70% 0px'});Object.keys(map).forEach(function(id){so.observe(document.getElementById(id));});}
-  var y=document.getElementById('yr');if(y)y.textContent=new Date().getFullYear();
-})();
-});
-</script>
 </head>
-<body>
+<body data-trade="pharmacy">
 <a class="skip" href="#top">Skip to content</a>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
   <defs>
@@ -424,8 +211,6 @@ document.addEventListener('DOMContentLoaded',function(){
     <symbol id="i-sup" viewBox="0 0 1024 1024"><g fill="none" stroke="#fff" stroke-width="56" stroke-linecap="round" stroke-linejoin="round"><path d="M248,330 H324 L384,606 H690 L744,414 H352"/><circle cx="420" cy="690" r="36"/><circle cx="662" cy="690" r="36"/></g></symbol>
     <symbol id="i-pha" viewBox="0 0 1024 1024"><g fill="none" stroke="#fff" stroke-width="56" stroke-linejoin="round"><path d="M450,296 H574 V450 H728 V574 H574 V728 H450 V574 H296 V450 H450 Z"/></g></symbol>
     <symbol id="i-ret" viewBox="0 0 1024 1024"><g fill="none" stroke="#fff" stroke-width="56" stroke-linecap="round" stroke-linejoin="round"><path d="M318,424 H706 L682,722 H342 Z"/><path d="M420,424 V386 C420,332 460,300 512,300 C564,300 604,332 604,386 V424"/></g></symbol>
-    <symbol id="i-check" viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="rgba(95,211,163,.18)"/><path d="M7 12.5l3.2 3L17 9" fill="none" stroke="#5FD3A3" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
-    <symbol id="i-no" viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="rgba(255,255,255,.06)"/><path d="M8 8l8 8M16 8l-8 8" fill="none" stroke="#6F7CA3" stroke-width="2" stroke-linecap="round"/></symbol>
   </defs>
 </svg>
 <header class="nav" id="nav">
@@ -434,92 +219,90 @@ document.addEventListener('DOMContentLoaded',function(){
     <button class="menu-btn" id="menuBtn" aria-expanded="false" aria-controls="navLinks">Menu</button>
     <nav class="nav-links" id="navLinks">
       <a href="/#trades">Business types</a>
-      <a href="/#how">How it works</a>
+      <a href="/#features">Features</a>
       <a href="/#packages">Packages</a>
       <a href="/#data">Your data</a>
       <a href="/#faq">FAQ</a>
       <a href="/pos/">Sign in</a>
     </nav>
-    <a class="btn btn-sun btn-sm" href="/register/">Start free trial</a>
+    <a class="btn btn-sun btn-sm" href="/register/">Start free 14-day trial</a>
   </div>
-  <div class="progress" id="progress"></div>
 </header>
 <main id="top">
-<section class="page-hero" id="hero">
-  <div class="glow"></div>
-  <div class="grid-lines"></div>
+<section class="hero" id="hero">
   <div class="wrap">
     <div>
-      <p class="eyebrow"><svg><use href="#i-pha"/></svg>Pharmacies · chemists · medical stores</p>
-      <h1><span class="w"><span style="--i:0">The</span></span> <span class="w"><span style="--i:1">counter</span></span> <span class="w"><span style="--i:2">moves.</span></span> <span class="w"><span style="--i:3" class="sun-text">The</span></span> <span class="w"><span style="--i:4" class="sun-text">record</span></span> <span class="w"><span style="--i:5" class="sun-text">stays.</span></span></h1>
-      <p class="lede">Bill fast at the window, sell the batch that expires first, and print a bill with your GSTIN and drug licence number. A chemist&#x27;s till that keeps track of batches and expiry.</p>
+      <p class="eyebrow">For pharmacies, chemists and medical stores</p>
+      <h1>SmartBizz POS for pharmacies.</h1>
+      <p class="lede">Batches, expiry dates, HSN codes and GST invoices at the counter.</p>
       <div class="cta">
-        <a class="btn btn-sun" href="/register/?category=pharmacy">Start your 14-day free trial <span class="arrow">→</span></a>
+        <a class="btn btn-sun" href="/register/?category=pharmacy">Start free 14-day trial</a>
         <a class="btn btn-ghost" href="#packages">See packages</a>
       </div>
-      <div class="proof"><span><svg><use href="#i-check"/></svg>No card needed</span><span><svg><use href="#i-check"/></svg>Batches and expiry from day one</span><span><svg><use href="#i-check"/></svg>Not a payment gateway</span></div>
+      <p class="fine">Offline package free for 14 days. No card.</p>
+      <div class="switch" id="trades" role="group" aria-label="Business type"><a class="pick" href="/restaurants/" style="--c:var(--t-rest)"><svg><use href="#i-rest"/></svg>Restaurant</a><a class="pick" href="/kirana/" style="--c:var(--t-kir)"><svg><use href="#i-kir"/></svg>Kirana</a><a class="pick" href="/supermarket/" style="--c:var(--t-sup)"><svg><use href="#i-sup"/></svg>Supermarket</a><a class="pick on" href="/pharmacy/" style="--c:var(--t-pha)" aria-current="page"><svg><use href="#i-pha"/></svg>Pharmacy</a><a class="pick" href="/retail/" style="--c:var(--t-ret)"><svg><use href="#i-ret"/></svg>Retail</a></div>
+      
     </div>
     <div class="stage">
-      <div class="orbit"></div>
-      <div class="phone" aria-label="SmartBizz Pharmacy till">
-        <div class="app">
-          <div class="bar"><div><b>Sri Sri Medicals</b><small>Counter 1 · DL No. on bill</small></div><div class="ic"><svg><use href="#i-pha"/></svg></div></div>
-          <div class="bodyx">
-            <div class="ctx"><span>Invoice #SS-2210</span><span class="pill ok">FEFO on</span></div>
-            <div class="scan"></div>
-            <div class="rows"><div class="row" style="--i:0"><span>Dolo 650<small>1 strip · DL2241 · Exp 03/27</small></span><em>₹30.00</em></div><div class="row" style="--i:1"><span>Azithral 500<small>1 strip · AZ120 · Exp 06/27</small></span><em>₹119.50</em></div><div class="row" style="--i:2"><span>Pan 40<small>1 strip · PN903 · Exp 06/27</small></span><em>₹142.00</em></div><div class="row" style="--i:3"><span>ORS sachet<small>4 × ₹22</small></span><em>₹88.00</em></div></div>
-            <div class="total"><span>Total incl. GST · MRP shown</span><b>₹380</b></div>
-          </div>
-          <div class="pay"><span class="sun">Cash</span><span>UPI</span><span>Card</span><span>Khata</span></div>
-        </div>
+  <div class="device" aria-label="SmartBizz Pharmacy till, sample bill">
+    <div class="app">
+      <div class="bar"><div><b>Sri Sri Medicals</b><small>Counter 1 · DL No. on bill</small></div><svg><use href="#i-pha"/></svg></div>
+      <div class="ctx"><span>Invoice #SS-2210</span><span class="pill">Earliest expiry first</span></div>
+      <div class="row"><span>Dolo 650<small>1 strip · DL2241 · Exp 03/27</small></span><em>₹30</em></div><div class="row"><span>Azithral 500<small>1 strip · AZ120 · Exp 06/27</small></span><em>₹119.50</em></div><div class="row"><span>Cough syrup 100 ml<small>1 × ₹98</small></span><em>₹98</em></div><div class="row"><span>ORS sachet<small>4 × ₹22</small></span><em>₹88</em></div>
+      <div class="total"><span>Total incl. GST · MRP shown</span><b>₹335.50</b></div>
+      <div class="pay"><span>Cash</span><span>UPI</span><span>Card</span><span>Khata</span></div>
+    </div>
+  </div>
+  <div class="toast"><span class="dot"></span>Batch AZ118 expires in 12 days</div>
+</div>
+  </div>
+</section>
+
+<section class="section" id="how" style="padding-top:0">
+  <div class="wrap"><div class="head"><p class="eyebrow">How it works</p><h2>Three steps to your first bill.</h2></div>
+  <div class="steps"><div class="step"><h3>Sign up</h3><p>Pick your trade, verify your e-mail. No card.</p></div><div class="step"><h3>Bill on day one</h3><p>The 14-day trial is the Offline package: one device, data on it.</p></div><div class="step"><h3>Grow by request</h3><p>Ask for Basic or above in the app. We issue a signed licence key; Windows sets up in one click.</p></div></div></div>
+</section>
+
+<section class="section" id="features">
+  <div class="wrap">
+    <div class="head"><p class="eyebrow">Every feature</p><h2>Everything the pharmacy counter does.</h2>
+      <p class="sub">The tag says the package a feature starts at.</p></div>
+    <div class="group"><h3>Billing</h3><div class="feats"><div class="feat"><b>Billing</b><p>Ring up, discount, settle by cash, UPI QR, card or khata.</p><span class="tag offline">Offline</span></div><div class="feat"><b>Counter till</b><p>Fast counter screen with token numbers.</p><span class="tag offline">Offline</span></div><div class="feat"><b>Barcode billing</b><p>Scan with a USB or Bluetooth scanner, or search by name.</p><span class="tag offline">Offline</span></div><div class="feat"><b>Receipt printing</b><p>58 and 80 mm thermal printers over Bluetooth, USB or network.</p><span class="tag offline">Offline</span></div></div></div><div class="group"><h3>Menu &amp; stock</h3><div class="feats"><div class="feat"><b>Medicines &amp; pricing</b><p>Categories, prices, MRP, units, barcodes and HSN codes.</p><span class="tag offline">Offline</span></div><div class="feat"><b>Stock &amp; reorder levels</b><p>Batches, expiry dates, reorder levels and purchase entries.</p><span class="tag offline">Offline</span></div></div></div><div class="group"><h3>Customers</h3><div class="feats"><div class="feat"><b>Customer khata</b><p>Credit per customer: dues, payments and the running balance.</p><span class="tag offline">Offline</span></div><div class="feat"><b>E-mail bills</b><p>The bill reaches the customer&#x27;s inbox at checkout.</p><span class="tag standard">Standard</span></div></div></div><div class="group"><h3>Cloud &amp; data</h3><div class="feats"><div class="feat"><b>Backup &amp; restore</b><p>Encrypted backup file you can restore on another device.</p><span class="tag offline">Offline</span></div><div class="feat"><b>Cloud ledger</b><p>Bills and payments in a Google Sheet in your own Drive.</p><span class="tag basic">Basic</span></div><div class="feat"><b>Multiple stores</b><p>Branches under one owner login, each with its own sheet.</p><span class="tag premium">Premium</span></div></div></div><div class="group"><h3>Devices &amp; network</h3><div class="feats"><div class="feat"><b>Local network hub</b><p>A host PC hub; tablets on store Wi-Fi share one ledger.</p><span class="tag lan">Local network</span></div><div class="feat"><b>Customer display</b><p>A second screen with the live cart, total and UPI QR.</p><span class="tag lan">Local network</span></div></div></div><div class="group"><h3>Admin</h3><div class="feats"><div class="feat"><b>Store settings</b><p>Store details, GST, UPI IDs, receipt footer and opening hours.</p><span class="tag offline">Offline</span></div><div class="feat"><b>Staff &amp; roles</b><p>Owner, manager and cashier logins, roles and PINs.</p><span class="tag offline">Offline</span></div><div class="feat"><b>Shift &amp; day-end</b><p>Shift close, counted cash and the Z-report.</p><span class="tag offline">Offline</span></div><div class="feat"><b>Expenses</b><p>Daily outgoings recorded against the cash drawer.</p><span class="tag offline">Offline</span></div><div class="feat"><b>Sales analytics</b><p>Sales by medicine, hour and staff member, on the device.</p><span class="tag offline">Offline</span></div></div></div>
+    <p class="legend"><span>Offline = in the free trial</span><span>Add-on = switched on per client</span><span>Local network = included in local network mode, Basic and above</span></p>
+  </div>
+</section>
+
+<section class="section" id="packages" style="padding-top:0">
+  <div class="wrap">
+    <div class="head"><p class="eyebrow">Packages</p><h2>Start on Offline. Move up by request.</h2>
+      <p class="sub">A package is your trade's features at a tier. Offline is the free 14-day trial, no card. Basic and above are requests, with no trial.</p></div>
+    <div class="tiers"><div class="tier hot"><span class="badge">Free trial · no card</span><div class="name">Offline</div><p class="who">The free trial. One device, one store, the owner.</p><div class="lim"><div><b>1</b><small>device</small></div><div><b>1</b><small>store</small></div><div><b>1</b><small>user</small></div></div><ul><li>Billing, Counter till, Barcode billing, Receipt printing</li><li>Medicines &amp; pricing, Stock &amp; reorder levels</li><li>Customer khata</li><li>Backup &amp; restore</li><li>Store settings, Staff &amp; roles, Shift &amp; day-end, Expenses, Sales analytics</li></ul><p class="data">Data kept on this device</p><a class="btn btn-sun btn-sm" href="/register/?category=pharmacy&amp;plan=trial">Start free trial</a></div><div class="tier"><div class="name">Basic</div><p class="who">A second device and a ledger you own.</p><div class="lim"><div><b>2</b><small>devices</small></div><div><b>1</b><small>store</small></div><div><b>3</b><small>users</small></div></div><ul><li class="all">All of Offline</li><li>Cloud ledger</li><li>Local network mode: hub, customer display</li></ul><p class="data">Your own Google Drive, or a local network hub</p><a class="btn btn-ghost btn-sm" href="/register/?category=pharmacy&amp;plan=basic">Request Basic</a></div><div class="tier"><div class="name">Standard</div><p class="who">Several counters and staff.</p><div class="lim"><div><b>5</b><small>devices</small></div><div><b>1</b><small>store</small></div><div><b>10</b><small>users</small></div></div><ul><li class="all">All of Basic</li><li>E-mail bills</li></ul><p class="data">Your own Google Drive, or a local network hub</p><a class="btn btn-ghost btn-sm" href="/register/?category=pharmacy&amp;plan=standard">Request Standard</a></div><div class="tier"><div class="name">Premium</div><p class="who">More than one store.</p><div class="lim"><div><b>10</b><small>devices</small></div><div><b>3</b><small>stores</small></div><div><b>25</b><small>users</small></div></div><ul><li class="all">All of Standard</li><li>Multiple stores</li></ul><p class="data">Your own Google Drive, or a local network hub</p><a class="btn btn-ghost btn-sm" href="/register/?category=pharmacy&amp;plan=premium">Request Premium</a></div><div class="tier"><div class="name">Enterprise</div><p class="who">Limits set for your business.</p><div class="lim"><div><b>20+</b><small>devices</small></div><div><b>10+</b><small>stores</small></div><div><b>50+</b><small>users</small></div></div><ul><li class="all">All of Premium</li><li>Devices, stores and users set per client</li><li>Set up with our team</li></ul><p class="data">Your own Google Drive, or a local network hub</p><a class="btn btn-ghost btn-sm" href="/support.html">Talk to us</a></div></div><p class="note">Basic to Premium limits are the defaults and can be adjusted for your business. Enterprise is set per client.</p>
+  </div>
+</section>
+
+<section class="section" id="data" style="padding-top:0">
+  <div class="wrap">
+    <div class="head"><p class="eyebrow">Your data</p><h2>How your data is kept.</h2></div>
+    <div class="data-grid">
+      <div class="data-card"><b>Offline</b><blockquote>Works securely on your device without depending on the cloud.</blockquote><p style="margin-top:10px">Export an encrypted backup and restore it on another device.</p></div>
+      <div class="data-card"><b>Basic, Standard, Premium, Enterprise</b><blockquote>Your business data stays in your own Google Drive. We do not take your business data; only limited usage analytics such as bill counts are collected.</blockquote><p style="margin-top:10px">Or keep the ledger on your own PC in local network mode.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="network" style="padding-top:0">
+  <div class="wrap">
+    <div class="lanbox">
+      <div>
+        <p class="eyebrow">Local network mode</p><h2>One store, several devices, your own network.</h2><p class="sub">Local network mode, Basic and above.</p>
+        <div class="steps" style="margin-top:20px"><div class="step"><h3>Host PC</h3><p>The Windows PC runs the hub and keeps the ledger.</p></div><div class="step"><h3>Pair tablets</h3><p>Each tablet joins the store Wi-Fi and enters the hub&#x27;s 6-digit PIN.</p></div><div class="step"><h3>Device limit</h3><p>Host plus tablets count against your tier: 2, 5, 10 or 20+.</p></div></div>
+        <p class="note">Works on the store network without depending on the internet. Not for Kirana, which is one device.</p>
       </div>
-      <div class="toast t1"><span class="dot"></span><span>Batch DL2241 taken first (expires soonest)</span></div>
-      <div class="toast t2 warn"><span class="dot"></span><span>Batch AZ118 expires in 12 days</span></div>
-    </div>
-  </div>
-</section>
-
-<div class="marquee" aria-hidden="true"><div class="track"><span><i>●</i>Batches &amp; expiry<i>●</i>First-to-expire selling<i>●</i>Expired stock blocked<i>●</i>Drug licence on bills<i>●</i>HSN codes<i>●</i>Customer khata<i>●</i>GST invoices<i>●</i>Barcode billing<i>●</i>Your own UPI QR</span><span><i>●</i>Batches &amp; expiry<i>●</i>First-to-expire selling<i>●</i>Expired stock blocked<i>●</i>Drug licence on bills<i>●</i>HSN codes<i>●</i>Customer khata<i>●</i>GST invoices<i>●</i>Barcode billing<i>●</i>Your own UPI QR</span></div></div>
-
-<section class="section" id="problems">
-  <div class="wrap">
-    <p class="eyebrow reveal">At the counter</p>
-    <h2 class="reveal">Problems you know. Fixes you can see.</h2>
-    <p class="sub reveal">What goes wrong for pharmacies, chemists and medical stores, and what the till does about it. The tag on each says which package it starts at.</p>
-    <div class="probs"><div class="prob reveal"><p class="q"><i>01</i>Medicines expire on the shelf.</p><div class="s"><b>The till sells the batch that expires first.</b><p>Batch and expiry on every goods-in entry, an Expiry tab, a warning 30 days ahead, and expired stock blocked at the till.</p><span class="from">From Offline</span></div></div><div class="prob reveal"><p class="q"><i>02</i>Nobody knows which batch was sold.</p><div class="s"><b>Every sale records its batch.</b><p>Each medicine lists its batches; batch, expiry and MRP print on the bill.</p><span class="from">From Offline</span></div></div><div class="prob reveal"><p class="q"><i>03</i>Bills need your drug licence number.</p><div class="s"><b>Drug licence, GSTIN and HSN print on every bill.</b><p>Enter them once in pharmacy settings. The invoice carries them from then on.</p><span class="from">From Offline</span></div></div><div class="prob reveal"><p class="q"><i>04</i>Families settle at month end.</p><div class="s"><b>Monthly accounts live in the khata.</b><p>A running balance per customer, every bill and payment against it, a statement one tap away.</p><span class="from">From Offline</span></div></div><div class="prob reveal"><p class="q"><i>05</i>A rush at the window.</p><div class="s"><b>Scan the strip, bill it, print it.</b><p>Barcode billing with a scanner, or search by medicine name, and print in a few taps.</p><span class="from">From Offline</span></div></div><div class="prob reveal"><p class="q"><i>06</i>Stock runs low without warning.</p><div class="s"><b>Reorder levels warn you first.</b><p>Goods in and stock counts keep the numbers right; the reorder warning fires before a medicine runs out.</p><span class="from">From Offline</span></div></div></div>
-  </div>
-</section>
-
-<section class="section" id="features" style="padding-top:0">
-  <div class="wrap">
-    <div class="head">
-      <div><p class="eyebrow reveal">What you get</p><h2 class="reveal">Everything the pharmacy counter needs.</h2></div>
-      <p class="sub reveal" style="margin:0">Each card says the package it starts at. Extras for your trade can be added to any package.</p>
-    </div>
-    <div class="feats"><div class="feat reveal"><h3>Batches &amp; expiry</h3><p>Batch number and expiry date on goods-in; an Expiry tab shows what is running out.</p><div class="tags"><span class="tr">Stock room</span><span>From Offline</span></div></div><div class="feat reveal"><h3>First-to-expire selling</h3><p>The till picks the batch that expires first and blocks expired stock.</p><div class="tags"><span class="tr">Window</span><span>From Offline</span></div></div><div class="feat reveal"><h3>Drug licence &amp; HSN on bills</h3><p>Drug License No., GSTIN and HSN codes print on every invoice with batch, expiry and MRP.</p><div class="tags"><span class="tr">Window</span><span>From Offline</span></div></div><div class="feat reveal"><h3>Barcode billing</h3><p>Scan the strip, or search by medicine name.</p><div class="tags"><span class="tr">Window</span><span>From Offline</span></div></div><div class="feat reveal"><h3>Customer khata</h3><p>Monthly accounts: dues, payments and the running balance per customer.</p><div class="tags"><span class="tr">Customers</span><span>From Offline</span></div></div><div class="feat reveal"><h3>Medicines &amp; pricing</h3><p>Categories, prices, MRP, units, barcodes and HSN codes.</p><div class="tags"><span class="tr">Stock room</span><span>From Offline</span></div></div><div class="feat reveal"><h3>Stock &amp; reorder levels</h3><p>Quantities on hand, reorder warnings, goods in, stock counts and history.</p><div class="tags"><span class="tr">Stock room</span><span>From Offline</span></div></div><div class="feat reveal"><h3>UPI QR at the till</h3><p>A QR for the exact amount, paid to your own UPI ID. Not a payment gateway.</p><div class="tags"><span class="tr">Window</span><span>From Offline</span></div></div><div class="feat reveal"><h3>Thermal printing</h3><p>58 or 80 mm ESC/POS printers over Bluetooth, USB or the network.</p><div class="tags"><span class="tr">Window</span><span>From Offline</span></div></div><div class="feat reveal"><h3>Staff &amp; roles</h3><p>Owner, manager and billing logins with PINs. Voids need a manager PIN.</p><div class="tags"><span class="tr">Office</span><span>From Offline</span></div></div><div class="feat reveal"><h3>Shifts &amp; day-end</h3><p>Open, count the drawer, close, print the Z-report. Expenses against the drawer.</p><div class="tags"><span class="tr">Office</span><span>From Offline</span></div></div><div class="feat reveal"><h3>Sales analytics</h3><p>Sales by medicine, hour and staff member.</p><div class="tags"><span class="tr">Office</span><span>From Offline</span></div></div><div class="feat reveal"><h3>Cloud ledger</h3><p>Bills and payments in a Google Sheet in your own Google Drive.</p><div class="tags"><span class="tr">Growth</span><span class="up">From Basic</span></div></div><div class="feat reveal"><h3>E-mail bills</h3><p>The invoice reaches the customer&#x27;s inbox at checkout.</p><div class="tags"><span class="tr">Customers</span><span class="up">From Standard</span></div></div><div class="feat reveal"><h3>Multiple stores</h3><p>Branches under one owner login, each with its own sheet and staff.</p><div class="tags"><span class="tr">Growth</span><span class="up">From Premium</span></div></div></div>
-  </div>
-</section>
-
-<section class="section" id="packages">
-  <div class="wrap">
-    <div class="head">
-      <div><p class="eyebrow reveal">Packages for Pharmacy</p><h2 class="reveal">Start small. Grow without switching apps.</h2></div>
-      <p class="sub reveal" style="margin:0">A package is your trade's features at a tier. A plan is only how long it runs. The 14-day free trial is the Offline package, no card; Basic, Standard, Premium and Enterprise are requests, with no trial.</p>
-    </div>
-    <div class="tiers"><div class="tier reveal"><div class="name">Offline</div><p class="who">One device, one store, the owner. The full till for your trade.</p><div class="lim"><div><b>1</b><small>device</small></div><div><b>1</b><small>store</small></div><div><b>1</b><small>user</small></div></div><ul><li>Batches &amp; expiry, first-to-expire selling</li><li>Drug licence, GSTIN and HSN on bills</li><li>Barcode billing, customer khata</li><li>Stock &amp; reorder levels</li><li>Thermal printing, UPI QR, day-end Z-report</li></ul><p class="data">Data kept on your device · 14-day free trial</p><a class="btn btn-ghost btn-sm" href="/register/?category=pharmacy&amp;plan=trial">Start free trial</a></div><div class="tier reveal"><div class="name">Basic</div><p class="who">A second device and a cloud ledger in your own Drive.</p><div class="lim"><div><b>2</b><small>devices</small></div><div><b>1</b><small>store</small></div><div><b>3</b><small>users</small></div></div><ul><li>All of Offline</li><li>Google Sheet per store, in your own Drive</li><li>Second device, 3 users</li></ul><p class="data">Data kept in your own Google Drive · request only</p><a class="btn btn-ghost btn-sm" href="/register/?category=pharmacy&amp;plan=basic">Request Basic</a></div><div class="tier hot reveal"><span class="badge">Most chosen</span><div class="name">Standard</div><p class="who">Several counters and staff, with e-mail bills.</p><div class="lim"><div><b>5</b><small>devices</small></div><div><b>1</b><small>store</small></div><div><b>10</b><small>users</small></div></div><ul><li>All of Basic</li><li>E-mail bills to customers</li><li>Up to 5 tills, 10 staff</li></ul><p class="data">Data kept in your own Google Drive · request only</p><a class="btn btn-sun btn-sm" href="/register/?category=pharmacy&amp;plan=standard">Request Standard</a></div><div class="tier reveal"><div class="name">Premium</div><p class="who">Multiple stores under one owner login.</p><div class="lim"><div><b>10</b><small>devices</small></div><div><b>3</b><small>stores</small></div><div><b>25</b><small>users</small></div></div><ul><li>All of Standard</li><li>Multiple stores, each with its own sheet</li><li>Up to 10 tills, 3 stores, 25 staff</li></ul><p class="data">Data kept in your own Google Drive · request only</p><a class="btn btn-ghost btn-sm" href="/register/?category=pharmacy&amp;plan=premium">Request Premium</a></div><div class="tier reveal"><div class="name">Enterprise</div><p class="who">Premium, with devices, stores and users set for you.</p><div class="lim"><div><b>20+</b><small>devices</small></div><div><b>10+</b><small>stores</small></div><div><b>50+</b><small>users</small></div></div><ul><li>All of Premium</li><li>Devices, stores and users set per client</li><li>Set up with our team</li></ul><p class="data">Data kept in your own Google Drive · request only</p><a class="btn btn-ghost btn-sm" href="/support.html">Talk to us</a></div></div>
-    <p class="limits-note reveal">Devices, stores and users on Basic to Premium are the standard limits; they can be adjusted for your business. Enterprise is set per client.</p>
-    <div class="data-lines">
-      <div class="reveal"><b>Offline</b>Works securely on your device without depending on the cloud. Export an encrypted backup whenever you like and restore it on another device.</div>
-      <div class="reveal"><b>Basic, Standard, Premium, Enterprise</b>Your business data stays in your own Google Drive. We do not take your business data; only limited usage analytics such as bill counts are collected.</div>
-    </div>
-  </div>
-</section>
-
-<section class="section" id="not-yet" style="padding-top:0">
-  <div class="wrap">
-    <div class="notyet reveal">
-      <div><p class="eyebrow">Not yet</p><h2>What we do not claim.</h2><p class="sub">We list these openly so you know before you sign up.</p></div>
-      <ul><li><svg><use href="#i-no"/></svg><span>Sales returns and exchanges are not built. Tell us how you handle them and we will tell you what fits.</span></li><li><svg><use href="#i-no"/></svg><span>The counter (touch-grid) desk does not scan; barcodes are scanned on the barcode billing desk.</span></li><li><svg><use href="#i-no"/></svg><span>A payment gateway. We do not process or hold money: settle by cash, your own card machine, khata, or a UPI QR paid to your own UPI ID.</span></li></ul>
+      <div class="net" aria-hidden="true">
+        <div class="box">Host PC<small>hub + ledger</small></div>
+        <div class="wifi">store Wi-Fi<br>PIN pairing</div>
+        <div class="tabs"><div class="box">Tablet 1<small>billing</small></div><div class="box">Tablet 2<small>manager</small></div><div class="box">Tablet 3<small>kitchen or display</small></div></div>
+      </div>
     </div>
   </div>
 </section>
@@ -527,30 +310,46 @@ document.addEventListener('DOMContentLoaded',function(){
 <section class="section" id="faq">
   <div class="wrap faq">
     <div>
-      <p class="eyebrow reveal">Questions</p><h2 class="reveal">Straight answers.</h2>
-      <p class="sub reveal">Anything else? <a class="link" href="/support.html">Ask us <span class="arrow">→</span></a></p>
-      <p class="sub reveal" style="margin-top:36px;font-size:.9rem;color:var(--paper-3)">Not your trade?</p>
-      <div class="others reveal"><a href="/restaurants/" style="--c:var(--t-rest)"><svg><use href="#i-rest"/></svg>Restaurant</a><a href="/kirana/" style="--c:var(--t-kir)"><svg><use href="#i-kir"/></svg>Kirana</a><a href="/supermarket/" style="--c:var(--t-sup)"><svg><use href="#i-sup"/></svg>Supermarket</a><a href="/retail/" style="--c:var(--t-ret)"><svg><use href="#i-ret"/></svg>Retail</a></div>
+      <p class="eyebrow">Questions</p><h2>Straight answers.</h2>
+      <p class="sub">Anything else? <a href="/support.html" style="text-decoration:underline">Ask us</a>.</p>
+      <p class="not"><b>Not built, so not claimed:</b><span>No payment gateway</span><span>No sales returns or exchanges</span><span>Restaurant recipe stock is coming soon</span></p>
+      <p class="sub" style="margin-top:28px;font-size:.88rem">Other trades</p>
+      <div class="others"><a class="pick" href="/restaurants/" style="--c:var(--t-rest)"><svg><use href="#i-rest"/></svg>Restaurant</a><a class="pick" href="/kirana/" style="--c:var(--t-kir)"><svg><use href="#i-kir"/></svg>Kirana</a><a class="pick" href="/supermarket/" style="--c:var(--t-sup)"><svg><use href="#i-sup"/></svg>Supermarket</a><a class="pick" href="/retail/" style="--c:var(--t-ret)"><svg><use href="#i-ret"/></svg>Retail</a></div>
     </div>
-    <div class="reveal"><details open><summary>Does it track batch numbers and expiry?</summary><p class="a">Yes. Medicines take a batch number and expiry date when stock comes in, the Expiry tab lists what is running out, the till sells first-to-expire and blocks expired stock.</p></details><details><summary>Does the drug licence number print on the bill?</summary><p class="a">Yes. Enter it once in pharmacy settings with your GSTIN, and it prints on the bill along with batch, expiry and MRP for each line.</p></details><details><summary>Can I keep a monthly account for a family?</summary><p class="a">Yes, that is the khata, included from the Offline package: a running balance per customer with a statement.</p></details><details><summary>Can two people bill at once?</summary><p class="a">From Basic, yes: 2 devices on Basic, 5 on Standard, 10 on Premium, each with its own staff login and shift.</p></details><details><summary>Do you take a cut of UPI payments?</summary><p class="a">No. SmartBizz is not a payment gateway. The QR on the till pays your own UPI ID.</p></details><details><summary>Can I keep my printer?</summary><p class="a">Yes, if it is an ESC/POS thermal printer (58 or 80 mm) over Bluetooth, USB or the network.</p></details><details><summary>Where is my data?</summary><p class="a">Offline: Works securely on your device without depending on the cloud. Export an encrypted backup whenever you like and restore it on another device. Basic and above: Your business data stays in your own Google Drive. We do not take your business data; only limited usage analytics such as bill counts are collected.</p></details><details><summary>Can I add a second device on the trial?</summary><p class="a">No. The free trial is the Offline package: one device, one store, the owner, with your data on the device. Basic and above add devices, staff and your own Google Drive, and they are requests, not trials: ask from inside the app or on the register page and we set you up.</p></details></div>
+    <div><details open><summary>What does the free trial include?</summary><p class="a">The trade&#x27;s Offline package for 14 days: one device, one store, the owner. No card. Basic and above are requests, with no trial.</p></details><details><summary>Does it keep working if the internet drops?</summary><p class="a">Offline runs on the device; the licence is re-checked online within 30 days. Basic and above keep billing and sync when the connection returns.</p></details><details><summary>Where is my data?</summary><p class="a">Offline: Works securely on your device without depending on the cloud. Basic and above: Your business data stays in your own Google Drive. We do not take your business data; only limited usage analytics such as bill counts are collected.</p></details><details><summary>Can several tablets share one store without the cloud?</summary><p class="a">Yes, on Basic and above in local network mode. A Windows PC runs the hub; tablets pair with a PIN on the store Wi-Fi.</p></details><details><summary>Do you take a cut of UPI payments?</summary><p class="a">No. SmartBizz is not a payment gateway. The till shows a QR for your own UPI ID; cash and your card machine work as before.</p></details><details><summary>Can I keep my printer?</summary><p class="a">Yes, if it is an ESC/POS thermal printer, 58 or 80 mm, over Bluetooth, USB or the network.</p></details></div>
   </div>
 </section>
 
 <section class="final" id="start">
-  <div class="glow"></div>
   <div class="wrap">
-    <h2 class="reveal">Open your pharmacy counter today.</h2>
-    <p class="reveal">Choose Pharmacy at sign-up, verify your e-mail, and bill your first customer in the same sitting. 14 days free on the Offline package, no card.</p>
-    <div class="cta reveal"><a class="btn btn-sun" href="/register/?category=pharmacy">Start your 14-day free trial <span class="arrow">→</span></a><a class="btn btn-ghost" href="/support.html">Talk to us</a></div>
+    <h2>Open your pharmacy counter today.</h2>
+    <p class="sub" style="margin-inline:auto">Sign up, verify your e-mail, bill your first customer.</p>
+    <div class="cta"><a class="btn btn-sun" href="/register/?category=pharmacy">Start free 14-day trial</a><a class="btn btn-ghost" href="/support.html">Talk to us</a></div>
   </div>
 </section>
 </main>
 <footer>
   <div class="wrap">
-    <span>© <span id="yr">2026</span> DevMonks · SmartBizz</span>
+    <span>© <span id="yr">2026</span> DevMonks · SmartBizz POS</span>
     <nav><a href="/privacy.html">Privacy</a><a href="/terms.html">Terms</a><a href="/support.html">Support</a><a href="/deletion.html">Data deletion</a><a href="/pos/">Sign in</a></nav>
   </div>
 </footer>
-<div class="mcta" id="mcta"><a class="btn btn-sun" href="/register/">Start your 14-day free trial</a></div>
+<script>
+(function(){
+  var nav=document.getElementById('nav'),btn=document.getElementById('menuBtn');
+  if(btn){btn.addEventListener('click',function(){var o=nav.classList.toggle('open');btn.setAttribute('aria-expanded',o);});}
+  document.querySelectorAll('#navLinks a').forEach(function(a){a.addEventListener('click',function(){nav.classList.remove('open');});});
+  var y=document.getElementById('yr');if(y)y.textContent=new Date().getFullYear();
+  var picks=document.querySelectorAll('button.pick[data-trade]');
+  function setTrade(t){document.body.setAttribute('data-trade',t);
+    picks.forEach(function(p){p.setAttribute('aria-pressed',p.getAttribute('data-trade')===t);});
+    try{localStorage.setItem('sb-trade',t);}catch(e){}}
+  if(picks.length){
+    picks.forEach(function(p){p.addEventListener('click',function(){setTrade(p.getAttribute('data-trade'));});});
+    var want=null;try{want=(new URLSearchParams(location.search).get('trade')||localStorage.getItem('sb-trade'));}catch(e){}
+    if(want&&document.querySelector('button.pick[data-trade="'+want+'"]'))setTrade(want);
+  }
+})();
+</script>
 </body>
 </html>

@@ -64,6 +64,7 @@ Terms: [`GLOSSARY.md`](GLOSSARY.md).
 | `restaurant_models.dart` | 1641 | Domain models. Sections: `TableStatus` ~59, `PaymentStatus` ~69, `KitchenStation` ~78, `TableReservation` ~118, `KotStatus` ~188, `RestaurantTable` ~200, `DiningSession` ~402, `ItemModifierOption` ~531, `ItemModifierGroup` ~570, `KotItem` ~643, `KotOrder` ~867 (`toMap` ~1098, `statusRank` ~951, `canonicalKey` ~909), `RestaurantMenuItem` ~1288, `RestaurantShift` ~1518, `RestaurantOperatingHours` ~1572. |
 | `retail_models.dart` | 218 | `KhataTransaction`, `CustomerKhata`. |
 | `saas_models.dart` | 872 | `SaasLicense` (`fromFirestore`, `toFirestore`, `isActive`, `defaultFree`), `SaasOrganization` (`isLocked`, `hasPendingStorageChange`), `SaasUser`, `SaasDevice`, `RestaurantOutlet`, `ClientOnboardingRequest`. |
+| `satellite_entitlement.dart` | 143 | `SatelliteEntitlement` (`verticalOf`, `tierOf`, `allowedRolesOf`, `roleForTrade` — shops/CFD → BILLING, `resolveRole`, `buildSatelliteLicense`) — a satellite's licence is the hub's pairing reply (contract §6b); kirana/Offline hosts refused. |
 | `subscription_plan_model.dart` | 256 | `SubscriptionPlan` (`validityOnly`, `fromFirestore`, `toFirestore`), `RestaurantFeatureItem`, `RestaurantFeatureCatalog` (bridge onto `FeatureCatalog`). |
 | `theme.dart` | 15 | `AppTheme` — routes light/dark to `ClassicTheme`. |
 | `token_pattern.dart` | 362 | Owner-designed token numbers: `TokenPattern` (`parse`, `render`, `validate`, `example`), `TokenSeriesConfig`, `TokenSlot`, `TokenResetRule`. |
@@ -101,6 +102,7 @@ Terms: [`GLOSSARY.md`](GLOSSARY.md).
 | `entitlements_provider.dart` | 51 | `entitlementsProvider`, `featureEnabledProvider`, `maxDevicesProvider`, `isPureOfflineProvider`; sets `CloudGate` and `SheetLayout.setActiveVertical`. |
 | `expenses_provider.dart` | 182 | `ExpensesNotifier`/`expensesProvider` — Hive `expenses` + Firestore `expenses`. |
 | `restaurant_auth_provider.dart` | 481 | `RestaurantAuthNotifier`/`restaurantAuthProvider`, `RestaurantAuthState`, `OperatingMode`, `GoogleAuthClient` — station staff roster in `restaurant_auth_box`. |
+| `restaurant_ledger_provider.dart` | 31 | `restaurantLedgerProvider` (the one switch: `LocalHiveLedger` on the host/any device, `LanHubLedger` on a satellite session), `lanHubFeedProvider`. |
 | **HOT** `saas_session_provider.dart` | 2077 | `SaasSessionState`, `SaasSessionNotifier`, `saasSessionProvider`, `currentVerticalProvider`. Sections: state + `vertical` getter ~26–100; `initSession` ~130; `refreshSessionFromFirestore` ~221; `_clearTenantDataBoxes` ~359; `login` ~445 (server login ~462, admin 2FA fallback ~591, org ~636, licence ~674, device registry ~750, Hive cache ~832); `_attemptOfflineLogin` ~980; `switchStoreContext` ~1082; `switchOrganizationForMasterAdmin` ~1226; `logAudit` ~1249; `setActiveFranchise` ~1344; `updateLicense` ~1401; `enterOrganizationConsole` ~1489; `clearSession` ~1619; `forceLogoutOtherDevices` ~1667; `switchAccount` ~1713; `_setupRealtimeListeners` ~1891 (connectivity, org, user password-change sign-out, licence, features); `switchOutlet` ~2065. |
 | `theme_provider.dart` | 114 | `ThemeModeNotifier`/`themeModeProvider`, `AccentNotifier`/`accentProvider`. |
 
@@ -215,6 +217,8 @@ Terms: [`GLOSSARY.md`](GLOSSARY.md).
 | `firebase_auth_bridge.dart` | 150 | `FirebaseAuthBridge` (`signInForLogin`, `signIn`, `signOut`), `ServerLogin`, `ServerLoginStatus`. |
 | `firebase_connection_service.dart` | 311 | `FirebaseConnectionService` — secondary (customer) Firebase apps: `initializeCustomerApp`, `testCustomerConnection` (`_conn_test`), `disconnectCustomerApp`. |
 | `kds_voice_announcer.dart` | 218 | `KdsVoiceAnnouncer` — TTS + chime for new KDS orders (`formatOrderUtterance`, `announceNewOrders`). |
+| `lan_hub_client.dart` | 294 | `LanHubClient` (satellite side: `ping`, `pair` PIN → bearer token, `get`/`post` with `lastStatusCode`, 401 drops the token, `fetchOrders`/`fetchTables` long-poll, `submitKot`, `setKdsStatus`, `setTableStatus`, `fetchCfd`, `unpair`), `LanHubPairing`, `LanHubPage`. |
+| `local_restaurant_lan_server.dart` | 873 | `LocalRestaurantLanServer` — the hub on the host: `/api/v1/ping` (+ trade), `/pair` (PIN, 409 device limit, 400 role), `/unpair`, `/store`, `/orders` (GET change feed `since=&wait=`, POST upsert by id — host wins kitchen progress), `/tables`, `/tables/status`, `/kds/status`, `/cfd`; `pairedDevices`/`revokeDevice`; sets `LanHostFlag.hosting`. |
 | `license_lease_service.dart` | 50 | `LicenseLeaseService.refresh(orgId)` — `LICENSE_LEASE` fetch. |
 | `license_migration_service.dart` | 596 | `LicenseMigrationService` (`plan`/`apply`: give old licences a `packageId`/`planId`), `LicenseSnapPlan`, `LicenseSnapReport`; `CategoryPackageMigrationService` (`plan`/`apply`: move to `<trade>_<tier>`), `CategoryPackageMove`, `CategoryPackageReport`. |
 | `offline_backup_file_io.dart` | 133 | `BackupFilePick` (native file save/pick). |
@@ -225,6 +229,7 @@ Terms: [`GLOSSARY.md`](GLOSSARY.md).
 | `package_service.dart` | 388 | `PackageService` (`collection = 'packages'`, `ensureStarters`, `getById`, `save`, `delete`, `applyToTenants`, `tenantCount`, `newIdFor`). |
 | `platform_security_service.dart` | 134 | `PlatformSecurityService` — admin 2FA switch in `system_config/security` (`is2faEnabled`). |
 | `pos_bill_pdf_service.dart` | 426 | `PosBillPdfService` — A5 tax invoice PDF (`generateInvoicePdfBytes`, `openInvoicePdf`, `shareInvoicePdf`, `savePdfFile`). |
+| `restaurant_ledger.dart` | 623 | `LanRevision` (persisted change counter, `waitForChange`), `LanHostFlag`, `isLanSatellite`/`isSatelliteSession`, `RestaurantLedger` → `LocalHiveLedger` / `LanHubLedger` (writes go to the hub or the `LanWriteQueue` when it is unreachable), `LanWriteQueue` (persisted, ordered, idempotent replay), `LanHubFeed` (long-poll mirror into `kot_orders_<org>` / `restaurant_tables_<org>`, backoff, `connected`/`needsPairing`/`pendingWrites`, re-sync when the host's rev goes backwards). |
 | `restaurant_sheets_service.dart` | 642 | `RestaurantSheetsService` — Sheets/Drive API with the owner's Google sign-in: `provisionRestaurantSheet` ~353, `ensureSheetTabs`, `resolveSheetTabs`, `syncMenuDishes` ~453, `syncTables` ~590, `uploadDishImageToDrive`, `shareSpreadsheetWithStaff`, `revokeStaffAccess`, `syncStaffPermissionsOnEdit`, `verifyUserSheetAccess`, `getSavedSpreadsheetId`. |
 | `saas_crypto_service.dart` | 173 | `SaasCryptoService` — AES-CBC, HMAC (`computeHmacSignature`, `generateTableSignature`). |
 | `sheet_access_reconciler.dart` | 181 | `SheetAccessReconciler` (`reconcileIfDue` ≤ 3 h, `reconcile`), `SheetAccessReport`. |
@@ -266,6 +271,7 @@ Terms: [`GLOSSARY.md`](GLOSSARY.md).
 | `digital_pos_bill_dialog.dart` | 865 | `DigitalPosBillDialog` — on-screen bill after settlement, e-mail/share/print. |
 | `feature_gated_widget.dart` | 284 | `FeatureGatedButton`, `FeatureGatedCard`, `OnlineOnly`, `FeatureRefX`. |
 | `google_sheets_setup_gate_dialog.dart` | 616 | `GoogleSheetsSetupGateDialog` — connect the owner's Google account / sheet (never for offline stores). |
+| `lan_hub_status_banner.dart` | 84 | `LanHubStatusBanner` — satellite strip above KDS / floor plan / waiter pad: "Host unreachable (n changes waiting)" or "Pair again". |
 | `max_width_body.dart` | 21 | `MaxWidthBody` — centred max-width page body. |
 | `outlet_owners_dialog.dart` | 258 | `OutletOwnersDialog` — store owners (`OWNER` + `franchiseId`) for one outlet. |
 | `package_features_breakdown_widget.dart` | 441 | `PackageFeaturesBreakdownWidget` — package features grouped by category. |
@@ -291,10 +297,12 @@ Run: `flutter test` (or `claude_run.ps1 -NoDeploy`).
 | `item_model_contract_test.dart` | `ItemContract` weighed units, PLU, variants, barcode lookup. |
 | `item_modifiers_test.dart` | `ItemModifierGroup`/`KotItem` modifier maths and serialisation. |
 | `kds_voice_announcer_test.dart` | spoken order text. |
+| `lan_resilience_test.dart` | hub + `LanHubClient` on a real socket: pair, write, host down → queue, restart → replay once (no duplicate), host wins a stale stage, revoke → `needsPairing`, `/unpair`, ping names the trade. |
 | `license_lease_signed_test.dart` | a lease signed with the real key verifies; edits/garbage are rejected. |
 | `offline_backup_service_test.dart` | `.sbzbak` round trip, tamper detection, wrong passphrase, secret filtering. |
 | `package_alignment_test.dart` | starter follows the trade (`alignStarterToVertical`), unstamped legacy maps. |
 | `platform_structure_test.dart` | 25 starters, legacy flags, storage per tier, limits, Enterprise custom limits, roles. |
+| `scenario_matrix_test.dart` | every trade × tier × allowed storage mode: modes (§6b), limits, roles, resolver features (`localLanServer`/`customerDisplay` only on LOCAL_NETWORK, never kirana), 30-day lease for offline/LAN, `sendsToKitchen` false on shops, satellite licences against the hub, wording (§7). |
 | `receipt_context_builder_test.dart` | `ReceiptContextBuilder` money, taxes, items, store details. |
 | `receipt_engine_test.dart` | formatters, conditions, renderer. |
 | `receipt_golden_test.dart` | migrated default invoice byte-identical to the old slips (58/80 mm, discounts, service charge, FSSAI). |

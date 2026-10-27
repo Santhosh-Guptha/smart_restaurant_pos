@@ -11,6 +11,9 @@ import '../../../core/subscription_plan_model.dart';
 import '../../../widgets/package_features_breakdown_widget.dart';
 import '../../../services/package_service.dart';
 import '../../../services/subscription_plan_service.dart';
+import '../../../utils/ui_feedback.dart';
+import '../../../services/client_license_service.dart';
+import '../../../services/client_setup_package_generator.dart';
 import 'tier_visuals.dart';
 
 /// One tenant's commercial shape: **one package and one plan**, plus what is
@@ -642,6 +645,7 @@ class LicenceEdits {
     final fromId = PackageTier.fromStarterId(s(const ['requestedPackageId', 'packageId', 'package_id']));
     if (fromId != null) return fromId;
     final mode = s(const ['requestedStorageMode', 'storageMode', 'storage_mode']).toUpperCase();
+    // PURE_OFFLINE -> offline; CLIENTS_OWN_SHEETS or LOCAL_NETWORK -> basic.
     if (mode.isNotEmpty) return StorageModes.isOffline(mode) ? PackageTier.offline : PackageTier.basic;
     final profile = s(const ['planProfile', 'plan_profile', 'requestedProfile', 'selectedOption', 'selected_option'])
         .toUpperCase();
@@ -651,6 +655,18 @@ class LicenceEdits {
     // package — More than one outlet").
     final named = s(const ['selectedPlan', 'selected_plan', 'plan']).split(RegExp(r'\s+')).first;
     return PackageTier.tryParse(named) ?? PackageTier.basic;
+  }
+
+  /// The storage mode a request asked for (`requestedStorageMode`,
+  /// `storageMode`), upper-cased, when it is one of [StorageModes.all];
+  /// null otherwise. A LOCAL_NETWORK lead lands on LOCAL_NETWORK in the
+  /// onboarding editor instead of the tier's default (own Sheets).
+  static String? requestedStorageMode(Map<String, dynamic> data) {
+    for (final k in const ['requestedStorageMode', 'storageMode', 'storage_mode']) {
+      final v = (data[k] ?? '').toString().trim().toUpperCase();
+      if (v.isNotEmpty && StorageModes.all.contains(v)) return v;
+    }
+    return null;
   }
 
   /// "Yearly · 365 days · ₹4,999" (plans are validity only, §2).
@@ -840,15 +856,18 @@ class _TenantPackageEditorState extends State<TenantPackageEditor> {
             _step(context, 1, 'Package', '$trade · what they can do'),
             ...packages.map((p) => _packageCard(context, p)),
             const SizedBox(height: DS.space5),
-            _step(context, 2, 'Plan', 'How long'),
+            _step(context, 2, 'Storage & Network Architecture', 'Where data lives and how devices connect'),
+            _storageSelector(context),
+            const SizedBox(height: DS.space5),
+            _step(context, 3, 'Plan', 'How long'),
             ...plans.map((p) => _planCard(context, p)),
             if (!widget.limitsReadOnly) ...[
               const SizedBox(height: DS.space5),
-              _step(context, 3, 'Limits', 'Devices, outlets and users'),
+              _step(context, 4, 'Limits', 'Devices, outlets and users'),
               _limits(context),
             ],
             const SizedBox(height: DS.space5),
-            _step(context, widget.limitsReadOnly ? 3 : 4, 'What they get', null),
+            _step(context, widget.limitsReadOnly ? 4 : 5, 'What they get', null),
             _summary(context),
           ],
         );
@@ -888,6 +907,66 @@ class _TenantPackageEditorState extends State<TenantPackageEditor> {
               ),
             )
           : null,
+    );
+  }
+
+  Widget _storageSelector(BuildContext context) {
+    final sel = _selection;
+    final currentMode = sel.currentStorageMode ?? sel.composed.storageMode;
+    // Exactly the modes the selected package may run (contract §6b): Offline
+    // shows PURE_OFFLINE only; Basic and above the client's own Sheets or a
+    // local network hub. CLOUD_SYNC is legacy: only for a tenant already on it.
+    final allowed = sel.package.allowedStorageModes;
+
+    final modes = [
+      (
+        mode: StorageModes.clientsOwnSheets,
+        title: 'Your own Google Sheet',
+        subtitle: 'Bills, menu and ledger are kept in a spreadsheet in the client\'s own Google Drive.',
+        icon: Icons.table_chart_outlined,
+        color: ClassicTheme.infoBlue,
+        badge: 'Own Drive',
+      ),
+      (
+        mode: StorageModes.localNetwork,
+        title: 'Local network hub',
+        subtitle: 'Runs on the client\'s PC. Devices on the store Wi-Fi pair with it and count against the device limit.',
+        icon: Icons.hub_outlined,
+        color: ClassicTheme.primaryAccent,
+        badge: 'Local network',
+      ),
+      (
+        mode: StorageModes.cloudSync,
+        title: 'Cloud Sync (legacy)',
+        subtitle: 'The platform\'s cloud ledger. Kept only for tenants already on it.',
+        icon: Icons.cloud_outlined,
+        color: ClassicTheme.infoBlue,
+        badge: 'Legacy',
+      ),
+      (
+        mode: StorageModes.pureOffline,
+        title: 'Offline (this device only)',
+        subtitle: 'Works on the device without depending on the cloud. One device, one store, one user.',
+        icon: Icons.phonelink_lock_rounded,
+        color: ClassicTheme.warningAmber,
+        badge: 'Single device',
+      ),
+    ].where((m) => allowed.contains(m.mode) && (m.mode != StorageModes.cloudSync || currentMode == StorageModes.cloudSync));
+
+    return Column(
+      children: modes.map((m) {
+        final selected = currentMode == m.mode;
+        return _card(
+          context,
+          selected: selected,
+          onTap: () => _emit(_selection.copyWith(currentStorageMode: m.mode)),
+          icon: m.icon,
+          iconColor: m.color,
+          title: m.title,
+          trailing: m.badge,
+          body: m.subtitle,
+        );
+      }).toList(),
     );
   }
 
@@ -1147,6 +1226,94 @@ class _TenantPackageEditorState extends State<TenantPackageEditor> {
             showFeatureIcons: true,
             collapsible: true,
             initiallyExpanded: true,
+          ),
+          const SizedBox(height: DS.space4),
+          Divider(height: 1, color: context.borderColor),
+          const SizedBox(height: DS.space3),
+          Text(
+            'CLIENT 1-CLICK DEPLOYMENT PACKAGE',
+            style: TextStyle(
+              fontSize: DS.fontMicro,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.6,
+              color: context.textSecondary,
+            ),
+          ),
+          const SizedBox(height: DS.space2),
+          Text(
+            'Download the complete Windows setup file with inbuilt licence key and storage configuration for this plan.',
+            style: TextStyle(fontSize: DS.fontMicro, color: context.textMuted),
+          ),
+          const SizedBox(height: DS.space3),
+          Row(
+            children: [
+              Expanded(
+                child: ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: ClassicTheme.successEmerald,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(DS.radiusMd)),
+                  ),
+                  icon: const Icon(Icons.file_download_outlined, size: 18),
+                  label: const Text('Download 1-Click Setup File (.bat)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                  onPressed: () async {
+                    final payload = ClientLicensePayload(
+                      version: 1,
+                      orgId: 'tenant_${DateTime.now().millisecondsSinceEpoch}',
+                      storeName: widget.businessCategory != null ? '${widget.businessCategory} Store' : 'Local Store',
+                      vertical: _vertical,
+                      tier: c.tier.id,
+                      packageId: sel.packageId,
+                      planName: sel.plan.name,
+                      storageMode: c.storageMode,
+                      features: c.features,
+                      maxDevices: c.maxDevices,
+                      maxOutlets: c.maxOutlets,
+                      maxUsers: c.maxUsers,
+                      allowedRoles: c.allowedRoles,
+                      machineId: 'ANY',
+                      issuedAt: DateTime.now().toUtc(),
+                      validUntil: DateTime.now().toUtc().add(Duration(days: sel.validityDays)),
+                    );
+                    final err = await ClientSetupPackageGenerator.issueAndDownloadSetupBatch(payload);
+                    if (err != null && context.mounted) AppToast.showError(context, err, title: 'Key not issued');
+                  },
+                ),
+              ),
+              const SizedBox(width: DS.space2),
+              OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  side: BorderSide(color: context.borderColor),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(DS.radiusMd)),
+                ),
+                icon: const Icon(Icons.data_object_rounded, size: 18),
+                label: const Text('Download .json', style: TextStyle(fontSize: 13)),
+                onPressed: () async {
+                  final payload = ClientLicensePayload(
+                    version: 1,
+                    orgId: 'tenant_${DateTime.now().millisecondsSinceEpoch}',
+                    storeName: widget.businessCategory != null ? '${widget.businessCategory} Store' : 'Local Store',
+                    vertical: _vertical,
+                    tier: c.tier.id,
+                    packageId: sel.packageId,
+                    planName: sel.plan.name,
+                    storageMode: c.storageMode,
+                    features: c.features,
+                    maxDevices: c.maxDevices,
+                    maxOutlets: c.maxOutlets,
+                    maxUsers: c.maxUsers,
+                    allowedRoles: c.allowedRoles,
+                    machineId: 'ANY',
+                    issuedAt: DateTime.now().toUtc(),
+                    validUntil: DateTime.now().toUtc().add(Duration(days: sel.validityDays)),
+                  );
+                  final err = await ClientSetupPackageGenerator.issueAndDownloadLicenseJson(payload);
+                  if (err != null && context.mounted) AppToast.showError(context, err, title: 'Key not issued');
+                },
+              ),
+            ],
           ),
         ],
       ),

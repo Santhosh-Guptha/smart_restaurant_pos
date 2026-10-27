@@ -405,6 +405,19 @@ When transitioning from local development to the brand-new production environmen
 
 ---
 
+### Issue 25: LAN hub / licence hardening (host outage, replay, revocation, trade and mode rules)
+- **Problem**: The first LAN client (satellites reading from the hub) had no story for the host going away: a KOT written while the Wi-Fi was down was lost with a `debugPrint`, the feed showed nothing to the user, a revoked token silently fell back to a local ledger, a satellite session auto-started its own hub on restart, `entitlementsProvider` reset `CloudGate` to online for `LOCAL_NETWORK` tenants (so webhooks could fire from a LAN store), a kirana licence on `LOCAL_NETWORK` would have resolved `localLanServer` on (rule 3.1 ran before the trade check), the satellite form offered WAITER/KITCHEN to shops (the hub answers 400), `CUSTOMER_DISPLAY` could never pair (not a hub role), a failed connect left a stale seat on the host, the login dialog still advertised browser URLs (`/pos/?role=waiter`), port 8085 and `tools\lan_setup`, and an admin onboarding a `LOCAL_NETWORK` lead landed on own Sheets.
+- **Resolution**:
+  - `restaurant_ledger.dart`: `LanWriteQueue` — writes the host cannot be reached for are kept in `configBox` (ordered, de-duplicated per kind+id, idempotent on the host: KOT upsert by client id, stage set exactly, table upsert) and replayed by the feed before its next page; `LanHubFeed` exposes `connected` / `needsPairing` / `pendingWrites`, backs off 1 s → 15 s, re-syncs from `since=0` when the host's revision goes backwards, has `dispose()`, and never runs in the hub process (`LanHostFlag.hosting`, set by `LocalRestaurantLanServer`). `isSatelliteSession()` keeps the hub ledger after a 401 so the screens say "pair again" instead of working on a copy.
+  - `lan_hub_client.dart`: `lastStatusCode` (unreachable vs rejected), `unpair()` → new hub route `POST /api/v1/unpair`; `/api/v1/ping` now names the host's trade.
+  - `saas_session_provider.dart`: `connectSatelliteTerminal` maps the role for the trade **before** pairing (`SatelliteEntitlement.roleForTrade`: shops and CFD → BILLING), re-checks it against the hub's `allowedRoles` after, and un-pairs on a refused licence; satellites never auto-start the hub; `restoreLocalSession` and `clearSession` treat `LOCAL_NETWORK` like offline and clear the satellite flag/queue/token.
+  - `entitlements_provider.dart`: `CloudGate.offline` for `LOCAL_NETWORK`. `entitlements.dart`: the LOCAL_NETWORK rule runs after the trade check (kirana never gets `localLanServer`/`customerDisplay`).
+  - `widgets/lan_hub_status_banner.dart` on the KDS, floor plan and waiter pad: "Host unreachable — n changes saved here and sent when the host is back" / "Pair again".
+  - `local_offline_store_dialog.dart` / `client_setup_package_generator.dart`: host address + PIN instead of browser URLs; port 8080 only; the role list follows the trade. `master_admin_screen.dart`: `initialStorageMode` from the lead's `requestedStorageMode`.
+  - Tests: `test/scenario_matrix_test.dart` (trade × tier × storage mode) and `test/lan_resilience_test.dart` (real socket: outage, replay once, host wins, revoke, unpair).
+
+---
+
 ### Step 2: Google Apps Script Webhook Deployment
 - [x] Logged into [script.google.com](https://script.google.com) with production account `smartdine.platform@gmail.com`.
 - [x] Deployed `google_apps_script/Code.gs` as Web App (the canonical production operational gateway):

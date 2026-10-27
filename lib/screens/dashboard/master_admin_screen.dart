@@ -1142,6 +1142,7 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
                                 initialPackageId: lead.requestedPackageId,
                                 initialPlanId: lead.requestedPlanId,
                                 initialTier: AdminInquiriesView.leadTier(lead),
+                                initialStorageMode: LicenceEdits.requestedStorageMode(lead.rawData),
                               );
                             },
                           ),
@@ -2013,6 +2014,10 @@ class OrganizationsTab extends ConsumerStatefulWidget {
     /// The tier the request asked for (AdminInquiriesView.leadTier). Wins
     /// over what [initialPackageId] implies.
     PackageTier? initialTier,
+    /// The storage mode the request asked for (`requestedStorageMode`);
+    /// used when the starting package allows it (contract §6b), so a
+    /// LOCAL_NETWORK lead is onboarded on LOCAL_NETWORK.
+    String? initialStorageMode,
   }) async {
     final availablePlans = await SubscriptionPlanService.getAllPlans();
     if (!context.mounted) return;
@@ -2065,10 +2070,12 @@ class OrganizationsTab extends ConsumerStatefulWidget {
             : LicenceEdits.requestedTier({'requestedPackageId': askedId, 'planProfile': askedId}));
     final startPackage = asked ?? LicenceEdits.tierPackage(allPackages, initialTrade, startTier);
     if (!context.mounted) return;
+    final wantMode = (initialStorageMode ?? '').trim().toUpperCase();
     TenantPackageSelection selection = TenantPackageSelection(
       package: startPackage,
       plan: selectedPlan,
       vertical: initialTrade,
+      currentStorageMode: startPackage.allowedStorageModes.contains(wantMode) ? wantMode : null,
     );
 
     // Feature Toggles: populated dynamically from the selected plan
@@ -5136,6 +5143,7 @@ class _RegistrationRequestsTabState extends ConsumerState<RegistrationRequestsTa
     String initialPackageId = '',
     String initialPlanId = '',
     PackageTier? initialTier,
+    String? initialStorageMode,
   }) {
     OrganizationsTab.showOnboardOrganizationDialog(
       context,
@@ -5152,6 +5160,7 @@ class _RegistrationRequestsTabState extends ConsumerState<RegistrationRequestsTa
       initialPackageId: initialPackageId,
       initialPlanId: initialPlanId,
       initialTier: initialTier,
+      initialStorageMode: initialStorageMode,
     );
   }
 
@@ -5558,6 +5567,7 @@ class _RegistrationRequestsTabState extends ConsumerState<RegistrationRequestsTa
                   _showOnboardDialogFromRequest(
                     requestId: request.id,
                     initialTier: LicenceEdits.requestedTier(request.rawData),
+                    initialStorageMode: LicenceEdits.requestedStorageMode(request.rawData),
                     clientName: request.clientName,
                     shopName: request.shopName,
                     category: request.businessCategory,
@@ -5638,6 +5648,7 @@ class _RegistrationRequestsTabState extends ConsumerState<RegistrationRequestsTa
                   _showOnboardDialogFromRequest(
                     requestId: request.id,
                     initialTier: LicenceEdits.requestedTier(request.rawData),
+                    initialStorageMode: LicenceEdits.requestedStorageMode(request.rawData),
                     clientName: request.clientName,
                     shopName: request.shopName,
                     category: request.businessCategory,
@@ -5667,6 +5678,7 @@ class _RegistrationRequestsTabState extends ConsumerState<RegistrationRequestsTa
                   _showOnboardDialogFromRequest(
                     requestId: request.id,
                     initialTier: LicenceEdits.requestedTier(request.rawData),
+                    initialStorageMode: LicenceEdits.requestedStorageMode(request.rawData),
                     clientName: request.clientName,
                     shopName: request.shopName,
                     category: request.businessCategory,

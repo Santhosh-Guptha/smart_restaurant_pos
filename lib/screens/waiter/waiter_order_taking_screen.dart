@@ -13,6 +13,8 @@ import '../../core/restaurant_models.dart';
 import '../../providers/daily_token_provider.dart';
 import '../../providers/restaurant_auth_provider.dart';
 import '../../providers/saas_session_provider.dart';
+import '../../providers/restaurant_ledger_provider.dart';
+import '../../widgets/lan_hub_status_banner.dart';
 import '../../services/apps_script_backend_service.dart';
 import '../../sync/outbox.dart';
 import '../../widgets/digital_pos_bill_dialog.dart';
@@ -67,6 +69,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
   final TextEditingController _customTipCtrl = TextEditingController();
 
   Timer? _pollTimer;
+  StreamSubscription<BoxEvent>? _ledgerSub;
   bool _isSending = false;
 
   String _getEffectiveOrgId() {
@@ -148,7 +151,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
           }
           return t;
         }).toList();
-        box.put('restaurant_tables_$orgId', updatedTables);
+        ref.read(restaurantLedgerProvider).writeTables('restaurant_tables_$orgId', updatedTables);
       }
     } catch (_) {}
   }
@@ -199,11 +202,19 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
     _pollTimer = Timer.periodic(const Duration(seconds: 4), (_) {
       if (mounted) _loadTableActiveOrders();
     });
+    // On a satellite the hub feed rewrites the mirrored orders; reload on each change.
+    if (Hive.isBoxOpen('configBox') && ref.read(restaurantLedgerProvider).isRemote) {
+      final orgId = _getEffectiveOrgId();
+      _ledgerSub = Hive.box('configBox').watch(key: 'kot_orders_$orgId').listen((_) {
+        if (mounted) _loadTableActiveOrders();
+      });
+    }
   }
 
   @override
   void dispose() {
     _pollTimer?.cancel();
+    _ledgerSub?.cancel();
     _searchCtrl.dispose();
     _customerNameCtrl.dispose();
     _customerPhoneCtrl.dispose();
@@ -890,7 +901,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
           'grandTotalP': roundGrandTotalP,
         };
         updatedList.insert(0, orderMap);
-        await box.put('kot_orders_$orgId', updatedList);
+        await ref.read(restaurantLedgerProvider).writeOrders('kot_orders_$orgId', updatedList);
 
         // 2. Mark Table Occupied in Hive with customer details & running bill amount
         final rawTables = box.get('restaurant_tables_$orgId') as List? ?? [];
@@ -930,7 +941,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
           }
           return t;
         }).toList();
-        await box.put('restaurant_tables_$orgId', updatedTables);
+        await ref.read(restaurantLedgerProvider).writeTables('restaurant_tables_$orgId', updatedTables);
       }
 
       // 3. Immediately update UI state for zero-latency (< 50ms) response
@@ -1399,7 +1410,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
           }
           return item;
         }).toList();
-        await box.put('kot_orders_$orgId', updatedList);
+        await ref.read(restaurantLedgerProvider).writeOrders('kot_orders_$orgId', updatedList);
       }
 
       await _loadTableActiveOrders();
@@ -1477,7 +1488,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
             }
             return item;
           }).toList();
-          await box.put('kot_orders_$orgId', updated);
+          await ref.read(restaurantLedgerProvider).writeOrders('kot_orders_$orgId', updated);
         }
         setState(() {
           _loadTableActiveOrders();
@@ -2148,7 +2159,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
           }
           return item;
         }).toList();
-        await box.put('kot_orders_$orgId', updatedOrders);
+        await ref.read(restaurantLedgerProvider).writeOrders('kot_orders_$orgId', updatedOrders);
 
         // 3. Mark Table Vacant in Hive
         final rawTables = box.get('restaurant_tables_$orgId') as List? ?? [];
@@ -2174,7 +2185,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
           }
           return t;
         }).toList();
-        await box.put('restaurant_tables_$orgId', updatedTables);
+        await ref.read(restaurantLedgerProvider).writeTables('restaurant_tables_$orgId', updatedTables);
       }
 
       // 4. Dispatch ONE SINGLE CONSOLIDATED BILL to Apps Script Webhook
@@ -2474,6 +2485,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
       ),
       body: Column(
         children: [
+          const LanHubStatusBanner(),
           // ── Guest Name Input & Active Orders Indicator Bar ─────
           Container(
             color: context.surfaceColor,

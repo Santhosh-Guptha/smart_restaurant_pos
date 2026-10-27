@@ -342,6 +342,58 @@ class SaasOrganization {
   bool get isClientsOwnSheets => storageMode == 'CLIENTS_OWN_SHEETS';
   String? get ownerEmail => ownerGoogleEmail;
 
+  SaasOrganization copyWith({
+    String? id,
+    String? name,
+    String? appName,
+    String? logoUrl,
+    String? primaryColor,
+    String? secondaryColor,
+    String? splashImageUrl,
+    String? storageMode,
+    String? googleSheetId,
+    String? googleSheetUrl,
+    String? ownerGoogleEmail,
+    bool? isGoogleConnected,
+    String? address,
+    String? upiId,
+    String? phone,
+    String? gstin,
+    Map<String, dynamic>? pendingStorageChange,
+    String? status,
+    String? statusReason,
+    int? tableCount,
+    String? operatingMode,
+    String? vertical,
+    String? businessCategory,
+  }) {
+    return SaasOrganization(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      appName: appName ?? this.appName,
+      logoUrl: logoUrl ?? this.logoUrl,
+      primaryColor: primaryColor ?? this.primaryColor,
+      secondaryColor: secondaryColor ?? this.secondaryColor,
+      splashImageUrl: splashImageUrl ?? this.splashImageUrl,
+      storageMode: storageMode ?? this.storageMode,
+      googleSheetId: googleSheetId ?? this.googleSheetId,
+      googleSheetUrl: googleSheetUrl ?? this.googleSheetUrl,
+      ownerGoogleEmail: ownerGoogleEmail ?? this.ownerGoogleEmail,
+      isGoogleConnected: isGoogleConnected ?? this.isGoogleConnected,
+      address: address ?? this.address,
+      upiId: upiId ?? this.upiId,
+      phone: phone ?? this.phone,
+      gstin: gstin ?? this.gstin,
+      pendingStorageChange: pendingStorageChange ?? this.pendingStorageChange,
+      status: status ?? this.status,
+      statusReason: statusReason ?? this.statusReason,
+      tableCount: tableCount ?? this.tableCount,
+      operatingMode: operatingMode ?? this.operatingMode,
+      vertical: vertical ?? this.vertical,
+      businessCategory: businessCategory ?? this.businessCategory,
+    );
+  }
+
   factory SaasOrganization.fromJson(Map<String, dynamic> json) {
     final rawCategory = json['businessCategory']?.toString() ?? json['category']?.toString();
     // One rule for every reader: see Verticals.resolve.

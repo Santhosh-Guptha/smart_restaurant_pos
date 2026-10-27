@@ -89,3 +89,9 @@ SECURITY_NOTES.md
 SYSTEM_DOCUMENTATION.md
 findings.md
 implementation_plan*.md
+
+scratch/
+test-results/
+test_automation/state/
+test_hive_ledger/
+.agents/

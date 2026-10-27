@@ -544,7 +544,7 @@ class FeatureCatalog {
       description: 'Secondary display showing live cart items, totals and dynamic UPI QR.',
       tier: CommercialTier.offlineAddOn,
       iconCode: 'tv',
-      verticals: {'restaurant'},
+      verticals: {'restaurant', 'supermarket', 'pharmacy', 'retail'},
     ),
     FeatureDef(
       key: FeatureKeys.localLanServer,
@@ -552,7 +552,7 @@ class FeatureCatalog {
       description: 'Embedded HTTP hub for offline multi-device tables and KDS sync on local Wi-Fi.',
       tier: CommercialTier.offlineAddOn,
       iconCode: 'dns',
-      verticals: {'restaurant'},
+      verticals: {'restaurant', 'supermarket', 'pharmacy', 'retail'},
     ),
   ];
 
@@ -653,7 +653,8 @@ class StorageModes {
   /// One device, local storage, no network. Was a feature flag; now a mode.
   static const String pureOffline = 'PURE_OFFLINE';
 
-  /// Self-hosted Local Network Server (LAN Hub), multi-device offline on client network.
+  /// The ledger lives on the host PC's hub; paired devices on the store
+  /// Wi-Fi read and write through it (contract §6b). Basic and above only.
   static const String localNetwork = 'LOCAL_NETWORK';
 
   /// The platform's cloud ledger.
@@ -986,7 +987,7 @@ class PlanProfile {
   /// package cannot use is absent, not greyed out).
   Set<String> get allowedStorageModes => isOffline
       ? const {StorageModes.pureOffline}
-      : const {StorageModes.cloudSync, StorageModes.clientsOwnSheets};
+      : const {StorageModes.cloudSync, StorageModes.clientsOwnSheets, StorageModes.localNetwork};
 
   /// Catalogue keys this package can be sold as an extra: not already
   /// included, and not something the package's mode or device cap forbids.
@@ -1547,6 +1548,13 @@ class Entitlements {
     // and each tenant's own trade is applied here at run time.
     if (vertical != 'any' && def.verticals.isNotEmpty && !def.verticals.contains(vertical)) {
       return BlockReason.verticalMismatch;
+    }
+
+    // Rule 3.6: on LOCAL_NETWORK the hub server and the customer display are
+    // the storage mode's own infrastructure, on for every trade the keys
+    // apply to (a kirana store never passes rule 3.5, so never gets here).
+    if (isLocalNetwork && (key == FeatureKeys.localLanServer || key == FeatureKeys.customerDisplay)) {
+      return BlockReason.none;
     }
 
     // Rule 4.

@@ -117,10 +117,17 @@ class TenantPackage {
   static TenantPackage starterFor(String vertical, PackageTier tier) =>
       PackageCatalog.starter(vertical, tier);
 
-  /// Derived, exactly as [PlanProfile.allowedStorageModes] derives it.
-  Set<String> get allowedStorageModes => isOffline
-      ? const {StorageModes.pureOffline}
-      : const {StorageModes.cloudSync, StorageModes.clientsOwnSheets};
+  /// Derived, as [PlanProfile.allowedStorageModes] derives it, plus the
+  /// trade (contract §6b): Offline runs on the device only; every other tier
+  /// on the client's own Sheets or a local network hub (`CLOUD_SYNC` only for
+  /// tenants already on it). Kirana is a single device, so never a hub.
+  Set<String> get allowedStorageModes {
+    if (isOffline) return const {StorageModes.pureOffline};
+    if (vertical == Verticals.kirana) {
+      return const {StorageModes.cloudSync, StorageModes.clientsOwnSheets};
+    }
+    return const {StorageModes.cloudSync, StorageModes.clientsOwnSheets, StorageModes.localNetwork};
+  }
 
   bool includes(String key) => features[key] == true;
 

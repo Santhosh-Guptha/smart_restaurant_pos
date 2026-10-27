@@ -1,2346 +1,2683 @@
-import 'dart:convert';
-import 'dart:io';
-import 'dart:async';
-import 'package:flutter/foundation.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_riverpod/legacy.dart';
-import 'package:hive_flutter/hive_flutter.dart';
-import 'package:device_info_plus/device_info_plus.dart';
-import 'package:bcrypt/bcrypt.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-
-import '../core/saas_models.dart';
-import '../core/package_model.dart';
-import '../core/entitlements.dart';
-import '../core/rbac_permissions.dart';
-import '../core/constants.dart';
-import '../services/firebase_connection_service.dart';
-import '../services/client_ledger_cloud_router_service.dart';
-import '../services/otp_verification_service.dart';
-import '../services/platform_security_service.dart';
-import '../services/firebase_auth_bridge.dart';
-import '../core/license_lease.dart';
-import '../core/cloud_gate.dart';
-import '../core/license_composer.dart';
-import '../core/subscription_plan_model.dart';
-import '../services/client_license_service.dart';
-import '../services/device_fingerprint_service.dart';
-import 'package:connectivity_plus/connectivity_plus.dart';
-import 'restaurant_auth_provider.dart';
-
-class SaasSessionState {
-  final SaasUser? currentUser;
-  final SaasLicense? currentLicense;
-  final SaasOrganization? currentOrganization;
-  final String? activeFranchiseId;
-  final bool isMockMode;
-  final bool isInitializing;
-  final List<SaasUser> savedUsers;
-
-  SaasSessionState({
-    this.currentUser,
-    this.currentLicense,
-    this.currentOrganization,
-    this.activeFranchiseId,
-    this.isMockMode = true,
-    this.isInitializing = false,
-    this.savedUsers = const [],
-  });
-
-  SaasSessionState copyWith({
-    SaasUser? currentUser,
-    SaasLicense? currentLicense,
-    SaasOrganization? currentOrganization,
-    String? activeFranchiseId,
-    bool? isMockMode,
-    bool? isInitializing,
-    List<SaasUser>? savedUsers,
-  }) {
-    return SaasSessionState(
-      currentUser: currentUser ?? this.currentUser,
-      currentLicense: currentLicense ?? this.currentLicense,
-      currentOrganization: currentOrganization ?? this.currentOrganization,
-      activeFranchiseId: activeFranchiseId ?? this.activeFranchiseId,
-      isMockMode: isMockMode ?? this.isMockMode,
-      isInitializing: isInitializing ?? this.isInitializing,
-      savedUsers: savedUsers ?? this.savedUsers,
-    );
-  }
-
-  bool get isExpired => currentLicense?.isExpired ?? false;
-  bool get isNearExpiry => currentLicense?.isNearExpiry ?? false;
-  String? get assignedOutletId => activeFranchiseId ?? currentUser?.franchiseId;
-  int get daysRemaining => currentLicense?.daysRemaining ?? 0;
-  int get licensedTableCount {
-    if ((currentOrganization?.tableCount ?? 0) > 0) {
-      return currentOrganization!.tableCount;
-    }
-    if ((currentLicense?.maxTables ?? 0) > 0) {
-      return currentLicense!.maxTables;
-    }
-    return 15;
-  }
-
-  /// Resolved business vertical (restaurant, kirana, supermarket, pharmacy, retail).
-  String get vertical {
-    // The organisation is the tenant, so it decides — already resolved by
-    // Verticals.resolve when the document was read. The user's own copy of
-    // the category and the licence are only consulted for an organisation
-    // document that carries neither field (very old tenants), and never
-    // override one that does: a stale non-restaurant value on the user or
-    // licence used to win here and turn a restaurant into a shop.
-    final org = currentOrganization;
-    if (org != null &&
-        ((org.businessCategory?.trim().isNotEmpty ?? false) ||
-            org.vertical != Verticals.restaurant)) {
-      return org.vertical;
-    }
-    final fromUser = Verticals.tryForCategory(currentUser?.businessCategory);
-    if (fromUser != null) return fromUser;
-    final lic = currentLicense?.vertical;
-    if (Verticals.isValid(lic)) return lic!;
-    return org?.vertical ?? Verticals.restaurant;
-  }
-
-}
-
-final saasSessionProvider = StateNotifierProvider<SaasSessionNotifier, SaasSessionState>(
-  (ref) => SaasSessionNotifier(ref),
-);
-
-/// The resolved business vertical for the active session (restaurant, kirana, supermarket, pharmacy, retail).
-final currentVerticalProvider = Provider<String>((ref) {
-  return ref.watch(saasSessionProvider).vertical;
-});
-
-class SaasSessionNotifier extends StateNotifier<SaasSessionState> {
-  final Ref _ref;
-  Future<void>? initFuture;
-
-  /// Platform-admin credentials between the password step and the code step,
-  /// so "Resend code" can ask the server for a new one. Memory only.
-  (String, String)? _pendingAdminLogin;
-
-  StreamSubscription<DocumentSnapshot>? _licenseListener;
-  StreamSubscription<List<ConnectivityResult>>? _leaseConnSub;
-  StreamSubscription<DocumentSnapshot>? _featuresListener;
-  StreamSubscription<DocumentSnapshot>? _orgListener;
-  StreamSubscription<DocumentSnapshot>? _userListener;
-
-  SaasSessionNotifier(this._ref) : super(SaasSessionState(isInitializing: true)) {
-    initFuture = initSession();
-  }
-
-  /// Restores session from Hive if exists.
-  Future<void> initSession() async {
-    final box = Hive.box('configBox');
-    await _updateSavedUsersList();
-    final loggedIn = box.get('saas_logged_in', defaultValue: false);
-    if (loggedIn) {
-      try {
-        final rememberMe = box.get('saas_remember_me', defaultValue: false);
-        final timestampStr = box.get('saas_login_timestamp') as String?;
-        bool isSessionValid = false;
-
-        if (timestampStr != null) {
-          try {
-            final loginTime = DateTime.parse(timestampStr);
-            final elapsed = DateTime.now().difference(loginTime);
-            final maxHours = rememberMe ? 24 : 8;
-            if (elapsed.inSeconds >= 0 && elapsed.inHours < maxHours) {
-              isSessionValid = true;
-            }
-          } catch (_) {}
-        }
-
-        if (!isSessionValid) {
-          await clearSession();
-          return;
-        }
-
-        final userJson = box.get('saas_user');
-        final orgJson = box.get('saas_org');
-        final licenseJson = box.get('saas_license');
-        final encryptedConfig = box.get('saas_firebase_config');
-        final iv = box.get('saas_firebase_config_iv');
-
-        if (userJson != null && orgJson != null && licenseJson != null) {
-          final user = SaasUser.fromJson(Map<String, dynamic>.from(jsonDecode(userJson)));
-
-          if (!mounted) return;
-          final conn = _ref.read(firebaseConnectionServiceProvider);
-
-          final org = SaasOrganization.fromJson(Map<String, dynamic>.from(jsonDecode(orgJson)));
-          final license = SaasLicense.fromJson(Map<String, dynamic>.from(jsonDecode(licenseJson)));
+import 'dart:convert';
+import 'dart:io';
+import 'dart:async';
+import 'package:flutter/foundation.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/legacy.dart';
+import 'package:hive_flutter/hive_flutter.dart';
+import 'package:device_info_plus/device_info_plus.dart';
+import 'package:bcrypt/bcrypt.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
-          // Anti-piracy & machine-binding check: verify that local database was not cloned across machines
-          if (org.storageMode == StorageModes.pureOffline || org.storageMode == StorageModes.localNetwork) {
-            final isAuthorized = await DeviceFingerprintService.isCurrentMachineAuthorized(org.id);
-            if (!isAuthorized) {
-              debugPrint('🚨 SaasSessionProvider: Hardware mismatch on startup! Cloned DB detected for ${org.id}. Evicting session.');
+import '../core/saas_models.dart';
+import '../core/package_model.dart';
+import '../core/entitlements.dart';
+import '../core/rbac_permissions.dart';
+import '../core/constants.dart';
+import '../services/firebase_connection_service.dart';
+import '../services/client_ledger_cloud_router_service.dart';
+import '../services/otp_verification_service.dart';
+import '../services/platform_security_service.dart';
+import '../services/client_license_bootstrap_service.dart';
+import '../services/firebase_auth_bridge.dart';
+import '../core/license_lease.dart';
+import '../core/cloud_gate.dart';
+import '../core/license_composer.dart';
+import '../core/satellite_entitlement.dart';
+import '../core/subscription_plan_model.dart';
+import '../services/client_license_service.dart';
+import '../services/device_fingerprint_service.dart';
+import '../services/lan_hub_client.dart';
+import '../services/local_restaurant_lan_server.dart';
+import '../services/restaurant_ledger.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
+import 'restaurant_auth_provider.dart';
+
+class SaasSessionState {
+  final SaasUser? currentUser;
+  final SaasLicense? currentLicense;
+  final SaasOrganization? currentOrganization;
+  final String? activeFranchiseId;
+  final bool isMockMode;
+  final bool isInitializing;
+  final List<SaasUser> savedUsers;
+
+  SaasSessionState({
+    this.currentUser,
+    this.currentLicense,
+    this.currentOrganization,
+    this.activeFranchiseId,
+    this.isMockMode = true,
+    this.isInitializing = false,
+    this.savedUsers = const [],
+  });
+
+  SaasSessionState copyWith({
+    SaasUser? currentUser,
+    SaasLicense? currentLicense,
+    SaasOrganization? currentOrganization,
+    String? activeFranchiseId,
+    bool? isMockMode,
+    bool? isInitializing,
+    List<SaasUser>? savedUsers,
+  }) {
+    return SaasSessionState(
+      currentUser: currentUser ?? this.currentUser,
+      currentLicense: currentLicense ?? this.currentLicense,
+      currentOrganization: currentOrganization ?? this.currentOrganization,
+      activeFranchiseId: activeFranchiseId ?? this.activeFranchiseId,
+      isMockMode: isMockMode ?? this.isMockMode,
+      isInitializing: isInitializing ?? this.isInitializing,
+      savedUsers: savedUsers ?? this.savedUsers,
+    );
+  }
+
+  bool get isExpired => currentLicense?.isExpired ?? false;
+  bool get isNearExpiry => currentLicense?.isNearExpiry ?? false;
+  String? get assignedOutletId => activeFranchiseId ?? currentUser?.franchiseId;
+  int get daysRemaining => currentLicense?.daysRemaining ?? 0;
+  int get licensedTableCount {
+    if ((currentOrganization?.tableCount ?? 0) > 0) {
+      return currentOrganization!.tableCount;
+    }
+    if ((currentLicense?.maxTables ?? 0) > 0) {
+      return currentLicense!.maxTables;
+    }
+    return 15;
+  }
+
+  /// Resolved business vertical (restaurant, kirana, supermarket, pharmacy, retail).
+  String get vertical {
+    // The organisation is the tenant, so it decides — already resolved by
+    // Verticals.resolve when the document was read. The user's own copy of
+    // the category and the licence are only consulted for an organisation
+    // document that carries neither field (very old tenants), and never
+    // override one that does: a stale non-restaurant value on the user or
+    // licence used to win here and turn a restaurant into a shop.
+    final org = currentOrganization;
+    if (org != null &&
+        ((org.businessCategory?.trim().isNotEmpty ?? false) ||
+            org.vertical != Verticals.restaurant)) {
+      return org.vertical;
+    }
+    final fromUser = Verticals.tryForCategory(currentUser?.businessCategory);
+    if (fromUser != null) return fromUser;
+    final lic = currentLicense?.vertical;
+    if (Verticals.isValid(lic)) return lic!;
+    return org?.vertical ?? Verticals.restaurant;
+  }
+
+}
+
+final saasSessionProvider = StateNotifierProvider<SaasSessionNotifier, SaasSessionState>(
+  (ref) => SaasSessionNotifier(ref),
+);
+
+/// The resolved business vertical for the active session (restaurant, kirana, supermarket, pharmacy, retail).
+final currentVerticalProvider = Provider<String>((ref) {
+  return ref.watch(saasSessionProvider).vertical;
+});
+
+class SaasSessionNotifier extends StateNotifier<SaasSessionState> {
+  final Ref _ref;
+  Future<void>? initFuture;
+
+  /// Platform-admin credentials between the password step and the code step,
+  /// so "Resend code" can ask the server for a new one. Memory only.
+  (String, String)? _pendingAdminLogin;
+
+  StreamSubscription<DocumentSnapshot>? _licenseListener;
+  StreamSubscription<List<ConnectivityResult>>? _leaseConnSub;
+  StreamSubscription<DocumentSnapshot>? _featuresListener;
+  StreamSubscription<DocumentSnapshot>? _orgListener;
+  StreamSubscription<DocumentSnapshot>? _userListener;
+
+  SaasSessionNotifier(this._ref) : super(SaasSessionState(isInitializing: true)) {
+    initFuture = initSession();
+  }
+
+  /// Restores session from Hive if exists.
+  Future<void> initSession() async {
+    final box = Hive.box('configBox');
+    await _updateSavedUsersList();
+    final loggedIn = box.get('saas_logged_in', defaultValue: false);
+    final isClientLicense = box.get('saas_is_client_license', defaultValue: false) == true;
+    final userJson = box.get('saas_user');
+    final orgJson = box.get('saas_org');
+    final licenseJson = box.get('saas_license');
+    final hasCompleteData = userJson != null && orgJson != null && licenseJson != null;
+
+    bool isOffline = isClientLicense || box.get('pure_offline_mode', defaultValue: false) == true || CloudGate.offline;
+    if (loggedIn || (isClientLicense && hasCompleteData)) {
+      try {
+        if (!hasCompleteData) {
+          await clearSession();
+          return;
+        }
+
+        final user = SaasUser.fromJson(Map<String, dynamic>.from(jsonDecode(userJson as String)));
+        final org = SaasOrganization.fromJson(Map<String, dynamic>.from(jsonDecode(orgJson as String)));
+        final license = SaasLicense.fromJson(Map<String, dynamic>.from(jsonDecode(licenseJson as String)));
+
+        isOffline = isOffline || (StorageModes.isOffline(org.storageMode) ||
+            StorageModes.isLocalNetwork(org.storageMode) ||
+            user.id == 'usr_local_owner' ||
+            isClientLicense ||
+            box.get('pure_offline_mode', defaultValue: false) == true ||
+            CloudGate.offline);
+
+        bool isSessionValid = false;
+
+        if (isOffline) {
+          // Client offline / Local LAN license remains permanently authenticated
+          // on this machine once activated, unless the license itself expires.
+          isSessionValid = true;
+        } else {
+          final rememberMe = box.get('saas_remember_me', defaultValue: false);
+          final timestampStr = box.get('saas_login_timestamp') as String?;
+          if (timestampStr != null) {
+            try {
+              final loginTime = DateTime.parse(timestampStr);
+              final elapsed = DateTime.now().difference(loginTime);
+              final maxHours = rememberMe ? 24 : 8;
+              if (elapsed.inSeconds >= 0 && elapsed.inHours < maxHours) {
+                isSessionValid = true;
+              }
+            } catch (_) {}
+          }
+        }
+
+        if (!isSessionValid) {
+          await clearSession();
+          return;
+        }
+
+        // Anti-piracy & machine-binding check: verify that local database was not cloned across machines
+        if (isOffline) {
+          final isAuthorized = await DeviceFingerprintService.isCurrentMachineAuthorized(org.id);
+          if (!isAuthorized) {
+            debugPrint('🚨 SaasSessionProvider: Hardware mismatch on startup! Cloned DB detected for ${org.id}. Evicting session.');
+            await clearSession();
+            return;
+          }
+          CloudGate.setOffline(true);
+        }
+
+        if (!mounted) return;
+        final conn = _ref.read(firebaseConnectionServiceProvider);
+
+        final encryptedConfig = box.get('saas_firebase_config');
+        final iv = box.get('saas_firebase_config_iv');
+        if (encryptedConfig != null && iv != null) {
+          final config = conn.decryptConfig(user.organizationId, encryptedConfig, iv);
+          await conn.initializeCustomerApp(user.organizationId, config);
+        }
+
+        if (!mounted) return;
+        state = SaasSessionState(
+          currentUser: user,
+          currentOrganization: org,
+          currentLicense: license,
+          activeFranchiseId: user.franchiseId ?? box.get('saas_active_franchise_id'),
+          isMockMode: false,
+          isInitializing: false,
+          savedUsers: state.savedUsers,
+        );
+
+        // Populate active staff member in restaurantAuthProvider for immediate role-based UI resolution
+        final primaryRole = StaffRoleExtension.fromKey(user.role);
+        final staffMember = StaffMember(
+          id: user.id,
+          name: user.fullName,
+          username: user.username,
+          email: user.email,
+          role: primaryRole,
+          roles: [primaryRole],
+          assignedOutletId: user.franchiseId,
+          isActive: true,
+        );
+        _ref.read(restaurantAuthProvider.notifier).setActiveStaff(staffMember);
+
+        if (!isOffline) {
+          _setupRealtimeListeners(org.id);
+        }
+        await _initializeSaaSLocalProfile(user.email, org.name);
+
+        // Auto-start Local LAN Hub Server if entitled. A satellite never
+        // hosts: its ledger is the host it paired with.
+        final isSatellite = box.get('saas_is_satellite_client', defaultValue: false) == true;
+        if (isOffline && org.storageMode == StorageModes.localNetwork && !isSatellite) {
+          try {
+            if (!LocalRestaurantLanServer.instance.isRunning) {
+              await LocalRestaurantLanServer.instance.startServer();
+            }
+          } catch (e) {
+            debugPrint('SaasSessionProvider: Local LAN startup note: $e');
+          }
+        }
+
+        // ONLY refresh from Firestore if online cloud mode!
+        if (!isOffline) {
+          await refreshSessionFromFirestore();
+
+        }
+
+      } catch (e) {
+
+        debugPrint("Auto-login restoration failed: $e");
+
+        if (!isOffline && !isClientLicense) {
+          await clearSession();
+        } else {
+          // In offline / client-license mode, avoid wiping stored tenant database on transient startup failure
+          if (mounted) {
+            state = state.copyWith(isInitializing: false);
+          }
+        }
+
+      }
+
+    } else {
+      final bootstrapped = await ClientLicenseBootstrapService.checkAndAutoActivateBootstrapLicense(_ref);
+      if (bootstrapped) {
+        return;
+      }
+      if (mounted) {
+        state = state.copyWith(isInitializing: false);
+
+      }
+
+    }
+
+  }
+
+  /// Refreshes current user, organization, and license details from master Firestore
+  Future<void> refreshSessionFromFirestore() async {
+    if (state.isMockMode || state.currentUser == null) return;
+    
+        final orgMode = state.currentOrganization?.storageMode;
+    final cfgBox = Hive.box('configBox');
+    final isClientLicense = cfgBox.get('saas_is_client_license', defaultValue: false) == true;
+    final isLocalOrOffline = (orgMode == StorageModes.pureOffline ||
+        orgMode == StorageModes.localNetwork ||
+        state.currentUser!.id == 'usr_local_owner' ||
+        isClientLicense ||
+        CloudGate.offline);
+    if (isLocalOrOffline) {
+      return;
+    }
+
+    final conn = _ref.read(firebaseConnectionServiceProvider);
+    final userId = state.currentUser!.id;
+    final orgId = state.currentUser!.organizationId;
+    final box = Hive.box('configBox');
+
+    try {
+      final firestore = conn.masterFirestore;
+      // 1. Fetch User doc
+      final userDoc = await firestore.collection('users').doc(userId).get();
+      SaasUser? updatedUser;
+      if (userDoc.exists) {
+        final userData = userDoc.data()!;
+        final userStatus = (userData['status'] ?? 'ACTIVE').toString().toUpperCase();
+        if (userStatus == 'DELETED' || userStatus == 'INACTIVE') {
+          debugPrint("🚨 User $userId is marked $userStatus in Firestore. Evicting session...");
+          await clearSession();
+          return;
+        }
+        updatedUser = SaasUser(
+          id: userId,
+          email: userData['email'] ?? state.currentUser!.email,
+          fullName: userData['fullName'] ?? state.currentUser!.fullName,
+          role: userData['role'] ?? state.currentUser!.role,
+          organizationId: userData['organizationId'] ?? state.currentUser!.organizationId,
+          franchiseId: userData['franchiseId'],
+          mustChangePassword: userData['mustChangePassword'] == true,
+        );
+        await box.put('saas_user', jsonEncode(updatedUser.toJson()));
+      } else if (userId != 'usr_master_admin') {
+        debugPrint("🚨 User $userId does not exist in Firestore. Evicting session...");
+        await clearSession();
+        return;
+      }
+
+      // 2. Fetch Organization
+      SaasOrganization? updatedOrg;
+      if (orgId == 'SYSTEM_ADMIN') {
+        updatedOrg = SaasOrganization(
+          id: 'SYSTEM_ADMIN',
+          name: 'SmartBiz Administrator',
+          appName: 'SmartBiz Control Panel',
+        );
+        await box.put('saas_org', jsonEncode(updatedOrg.toJson()));
+      } else {
+        final orgDoc = await firestore.collection('organizations').doc(orgId).get();
+        if (orgDoc.exists) {
+          final orgData = orgDoc.data()!;
+          updatedOrg = SaasOrganization.fromFirestore(orgData, orgId);
+          await box.put('saas_org', jsonEncode(updatedOrg.toJson()));
+        } else {
+          debugPrint("🚨 Organization $orgId does not exist in Firestore. Evicting session...");
+          await clearSession();
+          return;
+        }
+      }
+
+      // 3. Fetch License
+      SaasLicense? updatedLicense;
+      if (orgId == 'SYSTEM_ADMIN') {
+        updatedLicense = SaasLicense(
+          planTier: 'ENTERPRISE',
+          status: 'ACTIVE',
+          maxFranchises: 999,
+          maxUsers: 999,
+          maxDevices: 999,
+          features: {
+            'inventoryEnabled': true,
+            'reportsEnabled': true,
+            'loyaltyEnabled': true,
+            'onlineOrderingEnabled': true,
+            'whiteLabelEnabled': true,
+          },
+          startDate: DateTime.now(),
+          endDate: DateTime.now().add(const Duration(days: 36500)),
+        );
+        await box.put('saas_license', jsonEncode(updatedLicense.toJson()));
+      } else {
+        final licDoc = await firestore.collection('licenses').doc(orgId).get();
+        // A server read renews this device's offline licence lease.
+        if (licDoc.exists && !licDoc.metadata.isFromCache) unawaited(LicenseLease.recordValidated(orgId));
+        if (licDoc.exists) {
+          final Map<String, dynamic> licData = Map<String, dynamic>.from(licDoc.data()!);
+          if (!licData.containsKey('maxFranchises')) {
+            try {
+              final limitsDoc = await firestore.collection('limits').doc(orgId).get();
+              if (limitsDoc.exists) {
+                final limData = limitsDoc.data()!;
+                licData['maxFranchises'] = limData['maxFranchises'];
+                licData['maxUsers'] = limData['maxUsers'];
+                licData['maxDevices'] = limData['maxDevices'];
+              }
+            } catch (_) {}
+          }
+
+          // licenses/{orgId} is the authority. The features/{orgId} mirror is
+          // read only for documents that predate it (no 'features' on the licence).
+          if (licData['features'] == null) {
+            try {
+              final featDoc = await firestore.collection('features').doc(orgId).get();
+              if (featDoc.exists) {
+                final featData = featDoc.data()!;
+                licData['features'] = featData['features'];
+                licData['planProfile'] ??= featData['planProfile'];
+              }
+            } catch (_) {}
+          }
+
+          updatedLicense = SaasLicense.fromFirestore(licData);
+          await box.put('saas_license', jsonEncode(updatedLicense.toJson()));
+          
+          // Save to local cache keyed by email if logged in user matches the org
+          final email = state.currentUser?.email;
+          if (email != null && orgId == state.currentUser?.organizationId) {
+            final emailKey = email.toLowerCase().trim();
+            await box.put('saas_license_$emailKey', jsonEncode(updatedLicense.toJson()));
+          }
+        }
+      }
+
+      // 4. Update memory state
+      await box.put('pure_offline_mode', updatedOrg.storageMode == 'PURE_OFFLINE');
+
+      state = SaasSessionState(
+        currentUser: updatedUser ?? state.currentUser,
+        currentOrganization: updatedOrg,
+        currentLicense: updatedLicense ?? state.currentLicense,
+        activeFranchiseId: state.activeFranchiseId,
+        isMockMode: false,
+      );
+    } catch (e) {
+      debugPrint("Failed to refresh SaaS session from Firestore: $e");
+    }
+  }
+
+  Future<void> _clearTenantDataBoxes() async {
+    // X-18: kOutboxBoxName used to be in this list, so logging out - or a
+    // different owner signing in on the same till - wiped the durable queue.
+    // Every box below is a CACHE that the server can rebuild; the outbox is
+    // unsent work, and clearing it destroys settlements and KOTs that never
+    // reached the sheet. Each op carries its own outletId, so keeping the queue
+    // across a tenant switch delivers each op to the outlet it belongs to.
+    try {
+      final pending = Hive.isBoxOpen(kOutboxBoxName)
+          ? Hive.box(kOutboxBoxName).length
+          : (await Hive.openBox(kOutboxBoxName)).length;
+      if (pending > 0) {
+        debugPrint('Notice: preserving $pending un-synced outbox op(s) across '
+            'tenant data clear.');
+      }
+    } catch (e) {
+      debugPrint('Notice: could not inspect outbox before clear: $e');
+    }
+
+    final boxesToClear = [
+      kInventoryBoxName,
+      kCustomersBoxName,
+      kLedgerBoxName,
+      kBillsBoxName,
+      kSuppliersBoxName,
+      kPurchaseOrdersBoxName,
+      kReturnsBoxName,
+      kShopUsersBoxName,
+      kSelfPickupNotesBoxName,
+      'expenses',
+    ];
+
+    for (final boxName in boxesToClear) {
+      try {
+        if (Hive.isBoxOpen(boxName)) {
+          await Hive.box(boxName).clear();
+        } else {
+          final b = await Hive.openBox(boxName);
+          await b.clear();
+        }
+      } catch (e) {
+        debugPrint("Notice: clearing box $boxName: $e");
+      }
+    }
+
+    // Clean tenant-scoped keys from restaurant_config_box (P-26)
+    try {
+      if (Hive.isBoxOpen('restaurant_config_box')) {
+        final rBox = Hive.box('restaurant_config_box');
+        final rKeys = rBox.keys.where((k) {
+          final s = k.toString();
+          return s.startsWith('restaurant_menu_dishes') ||
+              s.startsWith('menu_') ||
+              s.startsWith('category_');
+        }).toList();
+        for (final k in rKeys) {
+          await rBox.delete(k);
+        }
+      }
+    } catch (e) {
+      debugPrint("Notice: clearing restaurant_config_box tenant keys: $e");
+    }
+
+    // Clean tenant-scoped order/table/sheet keys from configBox
+    try {
+      if (Hive.isBoxOpen('configBox')) {
+        final cBox = Hive.box('configBox');
+        final cKeys = cBox.keys.where((k) {
+          final s = k.toString();
+          return s.startsWith('kot_orders_') ||
+              s.startsWith('restaurant_tables_') ||
+              s.startsWith('restaurant_sheet_id_') ||
+              s.startsWith('restaurant_menu_dishes_') ||
+              s == 'restaurant_menu_dishes' ||
+              s == 'smtp_config';
+        }).toList();
+        for (final k in cKeys) {
+          await cBox.delete(k);
+        }
+      }
+    } catch (e) {
+      debugPrint("Notice: clearing configBox tenant keys: $e");
+    }
+  }
+
+  /// Custom Username or Email & Password Authentication against Master Control Plane Firestore
+  Future<String?> login(String usernameOrEmail, String password, {bool rememberMe = false, String? mfaCode}) async {
+    final conn = _ref.read(firebaseConnectionServiceProvider);
+    final firestore = conn.masterFirestore;
+
+    try {
+      final box = Hive.box('configBox');
+      final input = usernameOrEmail.trim().toLowerCase();
+      final lastEmail = box.get('saas_last_email') as String?;
+      if (lastEmail != null && lastEmail.isNotEmpty && lastEmail != input) {
+        debugPrint("Different tenant login detected ($lastEmail -> $input). Purging previous tenant caches...");
+        await _clearTenantDataBoxes();
+      }
+
+      // 1. Search in /users collection in Master Firebase Control Plane (with 5s timeout for offline fallback)
+      Map<String, dynamic>? userData;
+      String? userId;
+
+      // 0. The server checks the password first (FirebaseAuthBridge). A
+      //    verified login is also a Firebase sign-in, which is what the
+      //    locked-down rules will key on. A definite "wrong password" from the
+      //    server is final. Only when the server cannot answer (offline, not
+      //    configured yet) does the app fall back to checking it here.
+      bool passwordValid = false;
+      final serverLogin = await FirebaseAuthBridge.signInForLogin(
+        firestore: firestore,
+        identifier: input,
+        password: password,
+        mfaCode: mfaCode,
+      );
+      // Platform admin: the server runs the second step itself.
+      if (serverLogin.status == ServerLoginStatus.mfaRequired) {
+        _pendingAdminLogin = (input, password);
+        return 'MFA_REQUIRED:${serverLogin.email ?? kAdminEmail}';
+      }
+      if (serverLogin.status == ServerLoginStatus.mfaFailed) {
+        switch (serverLogin.errorCode) {
+          case 'MFA_EXPIRED':
+            return 'That code has expired. Tap "Resend code" for a new one.';
+          case 'MFA_LOCKED':
+            return 'Too many wrong codes. Tap "Resend code" for a new one.';
+          default:
+            return 'Invalid 2-step verification code.';
+        }
+      }
+      if (serverLogin.status == ServerLoginStatus.ok) _pendingAdminLogin = null;
+      if (serverLogin.status == ServerLoginStatus.rejected) {
+        return serverLogin.errorCode == 'RATE_LIMITED'
+            ? "Too many attempts. Please wait ten minutes and try again."
+            : "Invalid username/email or password";
+      }
+      if (serverLogin.status == ServerLoginStatus.ok) {
+        final uid = serverLogin.uid!;
+        for (final col in const ['users', 'staff_users']) {
+          final doc = await firestore.collection(col).doc(uid).get().timeout(const Duration(seconds: 6));
+          if (doc.exists) {
+            userId = doc.id;
+            userData = doc.data();
+            passwordValid = true;
+            break;
+          }
+        }
+      }
+
+      if (!passwordValid) {
+        // 1a. First attempt: Query by username
+        var userQuery = await firestore
+            .collection('users')
+            .where('username', isEqualTo: input)
+            .limit(1)
+            .get()
+            .timeout(const Duration(seconds: 5));
+
+        // 1b. Fallback: Query by email
+        if (userQuery.docs.isEmpty) {
+          userQuery = await firestore
+              .collection('users')
+              .where('email', isEqualTo: input)
+              .limit(1)
+              .get()
+              .timeout(const Duration(seconds: 5));
+        }
+
+        if (userQuery.docs.isNotEmpty) {
+          final userDoc = userQuery.docs.first;
+          userId = userDoc.id;
+          userData = userDoc.data();
+        } else {
+          // 1c. Fallback: Check /staff_users collection
+          final staffQuery = await firestore
+              .collection('staff_users')
+              .where('username', isEqualTo: input)
+              .limit(1)
+              .get()
+              .timeout(const Duration(seconds: 4));
+          if (staffQuery.docs.isNotEmpty) {
+            final staffDoc = staffQuery.docs.first;
+            userId = staffDoc.id;
+            userData = staffDoc.data();
+          } else {
+            final staffEmailQuery = await firestore
+                .collection('staff_users')
+                .where('email', isEqualTo: input)
+                .limit(1)
+                .get()
+                .timeout(const Duration(seconds: 4));
+            if (staffEmailQuery.docs.isNotEmpty) {
+              final staffDoc = staffEmailQuery.docs.first;
+              userId = staffDoc.id;
+              userData = staffDoc.data();
+            }
+          }
+        }
+
+        if (userData == null || userId == null) {
+          return "Invalid username/email or password";
+        }
+
+        final passwordHash = userData['passwordHash'] as String?;
+        final plainPassword = userData['password'] as String?;
+
+        passwordValid = false;
+        if (passwordHash != null && passwordHash.isNotEmpty) {
+          try {
+            passwordValid = BCrypt.checkpw(password, passwordHash);
+          } catch (_) {}
+        }
+        if (!passwordValid && plainPassword != null && plainPassword.isNotEmpty) {
+          passwordValid = (password == plainPassword);
+        }
+        // (A hard-coded master-admin password used to be accepted here — "admin"
+        // among them — and it shipped in the public web bundle. Removed: the
+        // admin signs in with the password stored on their account, like
+        // everyone else.)
+      }
+
+      if (!passwordValid || userData == null || userId == null) {
+        return "Invalid username/email or password";
+      }
+
+      final role = userData['role'] ?? 'STAFF';
+      final orgId = userData['organizationId'] ?? '';
+      final franchiseId = userData['franchiseId'];
+      final userEmail = (userData['email'] as String?)?.trim().toLowerCase() ?? input;
+      final username = (userData['username'] as String?)?.trim().toLowerCase() ?? input;
+
+      // Two-Factor Authentication (2MFA) challenge for Master Admin
+      final bool isMasterAdmin = role == 'MASTER_ADMIN' ||
+          isMasterAdminEmail(userEmail) ||
+          orgId == 'SYSTEM_ADMIN' ||
+          userId == 'usr_master_admin';
+
+      // When the server verified this login it has already run the second
+      // step (checkAdminSecondStep_ in Code.gs). The app's own e-mail code is
+      // only the fallback for when the server can't be reached.
+      if (isMasterAdmin && serverLogin.status != ServerLoginStatus.ok) {
+        final bool is2faEnabled = await PlatformSecurityService.is2faEnabled();
+        if (is2faEnabled) {
+          final targetMfaEmail = (userEmail.isNotEmpty && userEmail.contains('@'))
+              ? userEmail
+              : kAdminEmail;
+
+          if (mfaCode == null || mfaCode.trim().isEmpty) {
+            final otpRes = await OtpVerificationService.sendMfaLoginOtp(
+              email: targetMfaEmail,
+              clientName: userData['fullName'] ?? 'SmartBizz Platform Admin',
+            );
+            // No Firebase session for an admin until the second step passes.
+            await FirebaseAuthBridge.signOut(firestore);
+            if (otpRes['success'] != true) {
+              return "Failed to send 2-step verification code: ${otpRes['message'] ?? 'Please try again'}";
+            }
+            return 'MFA_REQUIRED:$targetMfaEmail';
+          } else {
+            final verifyRes = await OtpVerificationService.verifyEmailOtp(
+              email: targetMfaEmail,
+              enteredOtp: mfaCode.trim(),
+            );
+            if (verifyRes['success'] != true) {
+              await FirebaseAuthBridge.signOut(firestore);
+              return verifyRes['message'] ?? 'Invalid or expired 2-step verification code.';
+            }
+          }
+        }
+      }
+
+      if (role != 'OWNER' && role != 'CLIENT' && role != 'MASTER_ADMIN' && (franchiseId == null || franchiseId.toString().trim().isEmpty)) {
+        // Allow unassigned outlet only if organization has default
+      }
+
+      // 2. Fetch Organization
+      SaasOrganization organization;
+      if (orgId == 'SYSTEM_ADMIN') {
+        organization = SaasOrganization(
+          id: 'SYSTEM_ADMIN',
+          name: 'SmartBiz Administrator',
+          appName: 'SmartBiz Control Panel',
+        );
+      } else {
+        final orgDoc = await firestore.collection('organizations').doc(orgId).get().timeout(const Duration(seconds: 5));
+        if (!orgDoc.exists) return "Organization not found";
+        final orgData = orgDoc.data()!;
+        if (orgData['status'] != 'ACTIVE') return "Organization is suspended";
+        organization = SaasOrganization.fromFirestore(orgData, orgId);
+
+        // RESTRICTION: For tenant owners/clients (root tenant without franchiseId),
+        // strictly enforce that only the onboarding registered email can log in.
+        // Store-scoped owners (role OWNER with franchiseId) run their allocated outlet.
+        if ((role == 'OWNER' || role == 'CLIENT') && (franchiseId == null || franchiseId.toString().trim().isEmpty)) {
+          final registeredOwnerEmail = (organization.ownerGoogleEmail ?? orgData['ownerEmail'] ?? orgData['email'])?.toString().trim().toLowerCase();
+
+          if (registeredOwnerEmail != null && registeredOwnerEmail.isNotEmpty) {
+            if (userEmail.isNotEmpty && userEmail != registeredOwnerEmail) {
+              return "Access Denied: Only the registered store owner ($registeredOwnerEmail) is authorized to log in to this store.";
+            }
+          } else {
+            // First owner login on legacy store: bind to this verified owner
+            await firestore.collection('organizations').doc(orgId).set({
+              'ownerGoogleEmail': userEmail,
+              'ownerEmail': userEmail,
+            }, SetOptions(merge: true));
+            organization = SaasOrganization.fromFirestore({
+              ...orgData,
+              'ownerGoogleEmail': userEmail,
+              'ownerEmail': userEmail,
+            }, orgId);
+          }
+        }
+      }
+
+      // 3. Fetch License
+      SaasLicense license;
+      if (orgId == 'SYSTEM_ADMIN') {
+        license = SaasLicense(
+          planTier: 'ENTERPRISE',
+          status: 'ACTIVE',
+          maxFranchises: 999,
+          maxUsers: 999,
+          maxDevices: 999,
+          features: {
+            'inventoryEnabled': true,
+            'reportsEnabled': true,
+            'loyaltyEnabled': true,
+            'onlineOrderingEnabled': true,
+            'whiteLabelEnabled': true,
+          },
+          startDate: DateTime.now(),
+          endDate: DateTime.now().add(const Duration(days: 36500)),
+        );
+      } else {
+        final licDoc = await firestore.collection('licenses').doc(orgId).get().timeout(const Duration(seconds: 5));
+        // A server read renews this device's offline licence lease.
+        if (licDoc.exists && !licDoc.metadata.isFromCache) unawaited(LicenseLease.recordValidated(orgId));
+        if (!licDoc.exists) return "License details not found";
+        
+        final Map<String, dynamic> licData = Map<String, dynamic>.from(licDoc.data()!);
+        if (!licData.containsKey('maxFranchises')) {
+          try {
+            final limitsDoc = await firestore.collection('limits').doc(orgId).get().timeout(const Duration(seconds: 5));
+            if (limitsDoc.exists) {
+              final limData = limitsDoc.data()!;
+              licData['maxFranchises'] = limData['maxFranchises'];
+              licData['maxUsers'] = limData['maxUsers'];
+              licData['maxDevices'] = limData['maxDevices'];
+            }
+          } catch (_) {}
+        }
+
+        // Legacy mirror, only when the licence carries no feature map.
+        if (licData['features'] == null) {
+          try {
+            final featDoc = await firestore.collection('features').doc(orgId).get().timeout(const Duration(seconds: 5));
+            if (featDoc.exists) {
+              final featData = featDoc.data()!;
+              licData['features'] = featData['features'];
+              licData['planProfile'] ??= featData['planProfile'];
+            }
+          } catch (_) {}
+        }
+
+        license = SaasLicense.fromFirestore(licData);
+      }
+
+      if (license.isExpired) return "License has expired";
+      if (license.isPastDue) return "License payment past due";
+
+      // The resolved limits (docs/PLATFORM_STRUCTURE.md §3). An offline
+      // store (by its organisation's storage mode, or the licence's own) is
+      // one device and one user, the owner, whatever the document says.
+      final limitsEnt = Entitlements.fromLicense(
+        license,
+        storageMode: StorageModes.isOffline(organization.storageMode) ? organization.storageMode : null,
+      );
+
+      // Offline has one user: the owner. Staff cannot sign in to it; the
+      // owner (and the platform admin) always can.
+      final roleKey = role.toString().trim().toUpperCase();
+      final isOwnerLogin = roleKey == 'OWNER' || roleKey == 'CLIENT' || isMasterAdmin;
+      // (Only the offline family is checked here: a cloud store's user count
+      // is enforced where staff are created, so an older licence with a low
+      // count never locks existing staff out.)
+      if (!isOwnerLogin && limitsEnt.isPureOffline) {
+        await FirebaseAuthBridge.signOut(firestore);
+        return "Offline stores have one user — the owner. Ask the owner to move to Basic or above to add staff.";
+      }
+
+      // 4. Fetch Device limit registration (Except for system master admin)
+      String deviceUuid = 'web-device';
+      if (role != 'MASTER_ADMIN') {
+        deviceUuid = await _getDeviceUuid();
+        final deviceRegRef = firestore.collection('device_registry').doc(deviceUuid);
+        final deviceDoc = await deviceRegRef.get().timeout(const Duration(seconds: 5));
+
+        if (!deviceDoc.exists) {
+          final orgDevices = await firestore
+              .collection('device_registry')
+              .where('organizationId', isEqualTo: orgId)
+              .get().timeout(const Duration(seconds: 5));
+          
+          // Use the resolved entitlement cap, not the raw licence field: a
+          // pure-offline tenant is one device whatever the licence document
+          // happens to say, and the previous check let a second till register
+          // against an offline plan.
+          final deviceCap = limitsEnt.maxDevices;
+          if (orgDevices.docs.length >= deviceCap) {
+            // Return structured prefix so the login UI can offer remote logout
+            return 'DEVICE_LIMIT:$orgId:${orgDevices.docs.length}:$deviceCap';
+          }
+
+          // Register device
+          await deviceRegRef.set({
+            'userId': userId,
+            'organizationId': orgId,
+            'modelName': await _getDeviceModel(),
+            'osVersion': await _getDeviceOs(),
+            'lastLogin': FieldValue.serverTimestamp(),
+          });
+        } else {
+          // Update last login
+          await deviceRegRef.update({
+            'lastLogin': FieldValue.serverTimestamp(),
+          });
+        }
+      }
+
+      // 5. Fetch encrypted customer Firebase Config or Excel Cloud Config
+      final configDoc = await firestore.collection('firebase_configs').doc(orgId).get().timeout(const Duration(seconds: 5));
+      Map<String, String>? decryptedConfig;
+      if (configDoc.exists) {
+        final configData = configDoc.data()!;
+        final encryptedStr = configData['encryptedConfig'] as String;
+        final iv = configData['iv'] as String;
+        decryptedConfig = conn.decryptConfig(orgId, encryptedStr, iv);
+        await conn.initializeCustomerApp(orgId, decryptedConfig);
+      }
+
+      // Check for Excel / Google Sheets backend configuration
+      final excelDoc = await firestore.collection('excel_configs').doc(orgId).get().timeout(const Duration(seconds: 5));
+      final Map<String, dynamic>? excelData = excelDoc.data();
+      final String? spreadsheetId = excelData != null ? excelData['spreadsheetId'] as String? : null;
+
+      String? storeSpreadsheetId;
+      if (franchiseId != null && franchiseId.toString().isNotEmpty) {
+        try {
+          final franDoc = await firestore.collection('franchises').doc(franchiseId.toString()).get().timeout(const Duration(seconds: 4));
+          if (franDoc.exists) {
+            storeSpreadsheetId = franDoc.data()?['spreadsheet_id'] as String?;
+          }
+        } catch (e) {
+          debugPrint("Failed to fetch store spreadsheet for franchise $franchiseId: $e");
+        }
+      }
+
+      final activeSpreadsheetId = (storeSpreadsheetId != null && storeSpreadsheetId.isNotEmpty)
+          ? storeSpreadsheetId
+          : spreadsheetId;
+
+      final user = SaasUser(
+        id: userId,
+        email: userEmail,
+        username: username,
+        fullName: userData['fullName'] ?? userData['name'] ?? username,
+        role: role,
+        organizationId: orgId,
+        franchiseId: franchiseId,
+        mustChangePassword: userData['mustChangePassword'] == true,
+      );
+
+      // Save to local Hive cache
+      final emailKey = userEmail;
+      final usernameKey = username;
+
+      await box.put('saas_username_to_email_$usernameKey', emailKey);
+      await box.put('saas_username_to_email_$input', emailKey);
+
+      // Cache credentials locally for offline verification
+      await box.put('saas_password_hash_$emailKey', (userData['passwordHash'] as String?) ?? BCrypt.hashpw(password, BCrypt.gensalt()));
+      await box.put('saas_user_$emailKey', jsonEncode(user.toJson()));
+      await box.put('saas_org_$emailKey', jsonEncode(organization.toJson()));
+      await box.put('saas_license_$emailKey', jsonEncode(license.toJson()));
+      if (configDoc.exists) {
+        await box.put('saas_firebase_config_$emailKey', configDoc.data()!['encryptedConfig']);
+        await box.put('saas_firebase_config_iv_$emailKey', configDoc.data()!['iv']);
+      }
+      if (activeSpreadsheetId != null && activeSpreadsheetId.isNotEmpty) {
+        await box.put('saas_spreadsheet_id_$emailKey', activeSpreadsheetId);
+        await box.put('saas_spreadsheet_id', activeSpreadsheetId);
+        await box.put('spreadsheet_id', activeSpreadsheetId);
+      } else {
+        await box.delete('saas_spreadsheet_id');
+        await box.delete('spreadsheet_id');
+      }
+      if (franchiseId != null) {
+        await box.put('saas_active_franchise_id_$emailKey', franchiseId);
+      }
+
+      // Standard active session pointers
+      await box.put('saas_logged_in', true);
+      await box.put('saas_remember_me', rememberMe);
+      await box.put('saas_login_timestamp', DateTime.now().toIso8601String());
+      // The password version this sign-in used; a later change on any device
+      // signs this one out (see the user listener).
+      await box.put('saas_pwd_changed_seen', _pwdChangedMillis(userData['passwordChangedAt']));
+      await box.put('saas_last_email', input);
+      await box.put('saas_last_username', username);
+      await box.put('saas_user', jsonEncode(user.toJson()));
+      await box.put('saas_org', jsonEncode(organization.toJson()));
+      await box.put('saas_license', jsonEncode(license.toJson()));
+      await box.put('pure_offline_mode', organization.storageMode == 'PURE_OFFLINE');
+      if (configDoc.exists) {
+        await box.put('saas_firebase_config', configDoc.data()!['encryptedConfig']);
+        await box.put('saas_firebase_config_iv', configDoc.data()!['iv']);
+      }
+      if (franchiseId != null) {
+        await box.put('saas_active_franchise_id', franchiseId);
+      }
+
+      // Add to saved accounts list
+      final List<dynamic> savedAccountsRaw = box.get('saas_saved_accounts') ?? [];
+      final List<String> savedAccounts = savedAccountsRaw.map((e) => e.toString()).toList();
+      if (!savedAccounts.contains(emailKey)) {
+        savedAccounts.add(emailKey);
+        await box.put('saas_saved_accounts', savedAccounts);
+      }
+
+      state = SaasSessionState(
+        currentUser: user,
+        currentOrganization: organization,
+        currentLicense: license,
+        activeFranchiseId: franchiseId ?? box.get('saas_active_franchise_id'),
+        isMockMode: false,
+        savedUsers: state.savedUsers,
+      );
+
+      // Populate active staff member in restaurantAuthProvider for immediate role-based UI resolution
+      final primaryRole = StaffRoleExtension.fromKey(role);
+      final staffMember = StaffMember(
+        id: userId,
+        name: user.fullName,
+        username: username,
+        email: userEmail,
+        role: primaryRole,
+        roles: [primaryRole],
+        assignedOutletId: franchiseId?.toString(),
+        isActive: true,
+      );
+      _ref.read(restaurantAuthProvider.notifier).setActiveStaff(staffMember);
+      if (role != 'MASTER_ADMIN') {
+        await _ref.read(restaurantAuthProvider.notifier).saveStaffMember(staffMember);
+      }
+
+      await _updateSavedUsersList();
+
+      await _initializeSaaSLocalProfile(userEmail, organization.name);
+
+      _setupRealtimeListeners(orgId);
+      refreshSessionFromFirestore();
+
+      // Log Audit Event
+      await logAudit(
+        orgId: orgId,
+        userId: userId,
+        actionType: 'LOGIN',
+        details: 'User logged in successfully from device $deviceUuid',
+      );
+
+      return null; // success
+    } catch (e) {
+      debugPrint("Online login error, checking connectivity fallback: $e");
+      final errStr = e.toString().toLowerCase();
+      final isNetwork = e is TimeoutException ||
+                        e is SocketException ||
+                        errStr.contains('network') ||
+                        errStr.contains('unavailable') ||
+                        errStr.contains('failed-precondition') ||
+                        errStr.contains('deadline-exceeded');
+      if (isNetwork) {
+        return await _attemptOfflineLogin(usernameOrEmail, password, rememberMe);
+      }
+      return "Login failed: ${e.toString()}";
+    }
+  }
+
+  /// Resends 2-Step Verification code to the Master Admin email
+  Future<Map<String, dynamic>> resendMfaCode(String email) async {
+    // Server-run second step: asking again without a code sends a new one.
+    final pending = _pendingAdminLogin;
+    if (pending != null) {
+      final conn = _ref.read(firebaseConnectionServiceProvider);
+      final r = await FirebaseAuthBridge.signInForLogin(
+        firestore: conn.masterFirestore,
+        identifier: pending.$1,
+        password: pending.$2,
+      );
+      if (r.status == ServerLoginStatus.mfaRequired) return {'success': true};
+      if (r.status == ServerLoginStatus.rejected && r.errorCode == 'RATE_LIMITED') {
+        return {'success': false, 'message': 'Too many codes sent. Please wait ten minutes.'};
+      }
+      if (r.status != ServerLoginStatus.unavailable) {
+        return {'success': false, 'message': 'Could not send a new code. Please sign in again.'};
+      }
+    }
+    final is2fa = await PlatformSecurityService.is2faEnabled();
+    if (!is2fa) {
+      return {'success': false, 'message': '2-Factor Authentication is currently disabled on the platform.'};
+    }
+    final cleanEmail = email.trim().toLowerCase();
+    final targetEmail = (cleanEmail.isNotEmpty && cleanEmail.contains('@'))
+        ? cleanEmail
+        : kAdminEmail;
+    return await OtpVerificationService.sendMfaLoginOtp(
+      email: targetEmail,
+      clientName: 'SmartBizz Platform Admin',
+    );
+  }
+
+  /// Attempts offline verification of credentials stored locally.
+  Future<String?> _attemptOfflineLogin(String usernameOrEmail, String password, bool rememberMe) async {
+    final box = Hive.box('configBox');
+    final input = usernameOrEmail.trim().toLowerCase();
+    final mappedEmail = box.get('saas_username_to_email_$input') as String?;
+    final emailKey = mappedEmail ?? input;
+    final passwordHash = box.get('saas_password_hash_$emailKey') as String?;
+
+    if (passwordHash == null) {
+      return "No network connection. No cached credentials found for this account ($input). Please connect to the internet to log in for the first time.";
+    }
+
+    if (!BCrypt.checkpw(password, passwordHash)) {
+      return "Invalid username/email or password";
+    }
+
+    final userJson = box.get('saas_user_$emailKey') as String?;
+    final orgJson = box.get('saas_org_$emailKey') as String?;
+    final licJson = box.get('saas_license_$emailKey') as String?;
+
+    if (userJson == null || orgJson == null || licJson == null) {
+      return "Local credentials cache is incomplete. Please connect to the internet to log in.";
+    }
+
+    final user = SaasUser.fromJson(jsonDecode(userJson));
+    // The platform admin always signs in online: the second step needs the
+    // server, and an offline admin session could not do anything anyway.
+    if (user.role.toUpperCase() == 'MASTER_ADMIN' || user.organizationId == 'SYSTEM_ADMIN') {
+      return "The platform admin console needs an internet connection to sign in.";
+    }
+    final organization = SaasOrganization.fromJson(jsonDecode(orgJson));
+    final license = SaasLicense.fromJson(jsonDecode(licJson));
+    final franchiseId = box.get('saas_active_franchise_id_$emailKey');
+
+    // Restore Firebase customer configuration if available
+    final encryptedConfig = box.get('saas_firebase_config_$emailKey') as String?;
+    final iv = box.get('saas_firebase_config_iv_$emailKey') as String?;
+    final conn = _ref.read(firebaseConnectionServiceProvider);
+    if (encryptedConfig != null && iv != null) {
+      try {
+        final decryptedConfig = conn.decryptConfig(user.organizationId, encryptedConfig, iv);
+        await conn.initializeCustomerApp(user.organizationId, decryptedConfig);
+      } catch (e) {
+        debugPrint("Error restoring offline customer app connection: $e");
+      }
+    }
+
+    // Set standard active session pointers
+    await box.put('saas_logged_in', true);
+    await box.put('saas_remember_me', rememberMe);
+    await box.put('saas_login_timestamp', DateTime.now().toIso8601String());
+    await box.put('saas_last_email', input);
+    await box.put('saas_user', userJson);
+    await box.put('saas_org', orgJson);
+    await box.put('saas_license', licJson);
+    if (encryptedConfig != null && iv != null) {
+      await box.put('saas_firebase_config', encryptedConfig);
+      await box.put('saas_firebase_config_iv', iv);
+    }
+    if (franchiseId != null) {
+      await box.put('saas_active_franchise_id', franchiseId);
+    }
+
+    // Add to saved accounts list
+    final List<dynamic> savedAccountsRaw = box.get('saas_saved_accounts') ?? [];
+    final List<String> savedAccounts = savedAccountsRaw.map((e) => e.toString()).toList();
+    if (!savedAccounts.contains(emailKey)) {
+      savedAccounts.add(emailKey);
+      await box.put('saas_saved_accounts', savedAccounts);
+    }
+
+    state = SaasSessionState(
+      currentUser: user,
+      currentOrganization: organization,
+      currentLicense: license,
+      activeFranchiseId: franchiseId ?? box.get('saas_active_franchise_id'),
+      isMockMode: false,
+      savedUsers: state.savedUsers,
+    );
+
+    // Populate active staff member in restaurantAuthProvider for immediate role-based UI resolution
+    final primaryRole = StaffRoleExtension.fromKey(user.role);
+    final staffMember = StaffMember(
+      id: user.id,
+      name: user.fullName,
+      username: user.username,
+      email: user.email,
+      role: primaryRole,
+      roles: [primaryRole],
+      assignedOutletId: franchiseId?.toString(),
+      isActive: true,
+    );
+    _ref.read(restaurantAuthProvider.notifier).setActiveStaff(staffMember);
+
+    await _updateSavedUsersList();
+
+    await _initializeSaaSLocalProfile(user.email, organization.name);
+
+    debugPrint("Offline login successfully verified for: ${user.email} (as ${user.role})");
+    return null; // success!
+  }
+
+  /// Restores existing local offline session from Hive immediately without internet.
+  Future<bool> restoreLocalSession() async {
+    final box = Hive.box('configBox');
+    final userJson = box.get('saas_user') as String?;
+    final orgJson = box.get('saas_org') as String?;
+    final licJson = box.get('saas_license') as String?;
+
+    if (userJson != null && orgJson != null && licJson != null) {
+      try {
+        final user = SaasUser.fromJson(jsonDecode(userJson));
+        final org = SaasOrganization.fromJson(jsonDecode(orgJson));
+        final lic = SaasLicense.fromJson(jsonDecode(licJson));
+
+        // Offline and LOCAL_NETWORK tenants make no cloud calls (no webhooks).
+        if (StorageModes.isOffline(org.storageMode) || StorageModes.isLocalNetwork(org.storageMode)) {
+          CloudGate.setOffline(true);
+        }
+
+        final primaryRole = StaffRoleExtension.fromKey(user.role);
+        final staffMember = StaffMember(
+          id: user.id,
+          name: user.fullName,
+          username: user.username,
+          email: user.email,
+          role: primaryRole,
+          roles: [primaryRole],
+          assignedOutletId: user.franchiseId,
+          isActive: true,
+        );
+        _ref.read(restaurantAuthProvider.notifier).setActiveStaff(staffMember);
+
+        await box.put('saas_logged_in', true);
+        await box.put('session_active', true);
+
+        state = SaasSessionState(
+          currentUser: user,
+          currentOrganization: org,
+          currentLicense: lic,
+          activeFranchiseId: user.franchiseId,
+          isMockMode: false,
+          isInitializing: false,
+        );
+        return true;
+      } catch (e) {
+        debugPrint("Error restoring local offline session: $e");
+      }
+    }
+    return false;
+  }
+
+  /// Provisions and launches an instant local offline store (free edition).
+  /// Runs 100% locally with Hive storage, requires 0 network calls, 0 domain dependencies,
+  /// and is fully immune to domain expirations or remote cloud server downtime.
+  Future<void> provisionLocalOfflineStore({
+    required String storeName,
+    required String businessCategory,
+    String? ownerName,
+  }) async {
+    final cleanCategory = businessCategory.trim().isNotEmpty
+        ? businessCategory.trim()
+        : BusinessCategories.kirana;
+    final resolvedVertical = Verticals.resolve(businessCategory: cleanCategory);
+    final orgId = 'org_local_${DateTime.now().millisecondsSinceEpoch.toRadixString(36)}';
+    final resolvedOwnerName = (ownerName != null && ownerName.trim().isNotEmpty)
+        ? ownerName.trim()
+        : 'Store Owner';
+    final storeLabel = storeName.trim().isNotEmpty ? storeName.trim() : 'Local Store';
+
+    // 1. Resolve offline starter package for this trade
+    final starterPackage = PackageCatalog.starter(resolvedVertical, PackageTier.offline);
+    final plan = SubscriptionPlan.validityOnly(
+      id: 'plan_local_offline',
+      name: 'Local Offline Free Edition',
+      validityDays: 36500, // 100 years
+      billingCycle: 'lifetime',
+    );
+    final composed = LicenseComposer.compose(starterPackage, plan);
+    final licenseMap = composed.toLicenseFields(status: 'ACTIVE');
+    final license = SaasLicense.fromJson(licenseMap);
+
+    // 2. Build local organization
+    final organization = SaasOrganization(
+      id: orgId,
+      name: storeLabel,
+      appName: storeLabel,
+      storageMode: StorageModes.pureOffline,
+      vertical: resolvedVertical,
+      businessCategory: cleanCategory,
+      status: 'ACTIVE',
+      tableCount: resolvedVertical == Verticals.restaurant ? 15 : 0,
+      operatingMode: resolvedVertical == Verticals.restaurant ? 'dineFirstPostpaid' : 'counterService',
+    );
+
+    // 3. Build local owner user
+    final user = SaasUser(
+      id: 'usr_local_owner',
+      email: 'owner@localhost',
+      username: 'owner',
+      fullName: resolvedOwnerName,
+      role: 'OWNER',
+      organizationId: orgId,
+      mustChangePassword: false,
+    );
+
+    // 4. Save to local Hive
+    final box = Hive.box('configBox');
+    await box.put('saas_org', jsonEncode(organization.toJson()));
+    await box.put('saas_user', jsonEncode(user.toJson()));
+    await box.put('saas_license', jsonEncode(license.toJson()));
+    await box.put('saas_logged_in', true);
+    await box.put('session_active', true);
+    await box.put('saas_remember_me', true);
+    await box.put('saas_is_client_license', true);
+    await box.put('saas_login_timestamp', DateTime.now().toIso8601String());
+    await box.put('saas_last_email', user.email);
+    await box.put('current_org_id', orgId);
+    await box.put('default_org_id', orgId);
+    await box.put('pure_offline_mode', true);
+    final machineId = await DeviceFingerprintService.getMachineId();
+    await box.put('_sbz_bound_lic_$orgId', machineId);
+    await box.put('_sbz_active_machine_id', machineId);
+    await box.put('is_activated', true);
+    await box.put('local_username', resolvedOwnerName);
+
+    // Enforce CloudGate pure offline
+    await LicenseLease.recordValidated(orgId);
+    CloudGate.setOffline(true);
+
+    // 5. Setup active staff in restaurantAuthProvider
+    final primaryRole = StaffRole.owner;
+    final staffMember = StaffMember(
+      id: user.id,
+      name: user.fullName,
+      username: user.username,
+      email: user.email,
+      role: primaryRole,
+      roles: [primaryRole],
+      isActive: true,
+    );
+    _ref.read(restaurantAuthProvider.notifier).setActiveStaff(staffMember);
+
+    // 6. Initialize local templates/profile
+    await _initializeSaaSLocalProfile(user.email, organization.name);
+
+    // 7. Update session state
+    state = SaasSessionState(
+      currentUser: user,
+      currentOrganization: organization,
+      currentLicense: license,
+      isMockMode: false,
+      isInitializing: false,
+    );
+
+    debugPrint("[Local Offline] Successfully provisioned and launched local store: $storeLabel ($orgId, $resolvedVertical)");
+  }
+
+  /// Activates an offline local store using an official cryptographically-signed
+  /// Client License Key issued by the Platform Admin.
+  /// Unlocks all entitled features (e.g. Local LAN Hub Server, Split Billing,
+  /// Customer-Facing Display, Visual Floor Plan, Recipe BOM, Multi-Device).
+  Future<void> activateWithClientLicense(
+    ClientLicensePayload payload, {
+    String? ownerName,
+  }) async {
+    final cleanCategory = payload.vertical == Verticals.restaurant ? 'Restaurant' : payload.vertical;
+    final resolvedVertical = Verticals.resolve(businessCategory: cleanCategory, vertical: payload.vertical);
+    final orgId = payload.orgId.trim().isNotEmpty
+        ? payload.orgId.trim()
+        : 'org_local_${DateTime.now().millisecondsSinceEpoch.toRadixString(36)}';
+    final resolvedOwnerName = (ownerName != null && ownerName.trim().isNotEmpty)
+        ? ownerName.trim()
+        : 'Store Owner';
+    final storeLabel = payload.storeName.trim().isNotEmpty ? payload.storeName.trim() : 'Local Store';
+
+    // 2. Build local organization. The storage mode is the key's
+    // (PURE_OFFLINE / CLIENTS_OWN_SHEETS / LOCAL_NETWORK) when the tier's
+    // package allows it (contract §6b), else the tier's default; never a
+    // silent LOCAL_NETWORK.
+    final keyTier = PackageTier.tryParse(payload.tier) ?? PackageTier.offline;
+    final keyMode = payload.storageMode.trim().toUpperCase();
+    final effectiveStorageMode = keyTier.isOffline
+        ? StorageModes.pureOffline
+        : (PackageCatalog.starter(resolvedVertical, keyTier).allowedStorageModes.contains(keyMode)
+            ? keyMode
+            : keyTier.defaultStorageMode);
+
+    // 1. Build SaasLicense matching the official signed payload. On a local
+    // network hub the hub server and the customer display are core
+    // (Entitlements rule 3.1); the map says so too for older readers.
+    final effectiveFeatures = Map<String, bool>.from(payload.features);
+    if (effectiveStorageMode == StorageModes.localNetwork && resolvedVertical != Verticals.kirana) {
+      effectiveFeatures[FeatureKeys.localLanServer] = true;
+      effectiveFeatures[FeatureKeys.customerDisplay] = true;
+    }
+
+    final license = SaasLicense(
+      planTier: payload.tier,
+      planProfile: payload.packageId,
+      status: 'ACTIVE',
+      tier: payload.tier,
+      features: effectiveFeatures,
+      featuresResolvedFor: resolvedVertical,
+      vertical: resolvedVertical,
+      maxDevices: resolvedVertical == Verticals.kirana ? 1 : payload.maxDevices,
+      maxFranchises: resolvedVertical == Verticals.kirana ? 1 : payload.maxOutlets,
+      maxUsers: resolvedVertical == Verticals.kirana ? 1 : payload.maxUsers,
+      allowedRoles: resolvedVertical == Verticals.kirana ? const ['OWNER'] : payload.allowedRoles,
+      startDate: payload.issuedAt,
+      endDate: payload.validUntil,
+    );
+    final organization = SaasOrganization(
+      id: orgId,
+      name: storeLabel,
+      appName: storeLabel,
+      storageMode: effectiveStorageMode,
+      vertical: resolvedVertical,
+      businessCategory: cleanCategory,
+      status: 'ACTIVE',
+      tableCount: resolvedVertical == Verticals.restaurant ? 20 : 0,
+      operatingMode: resolvedVertical == Verticals.restaurant ? 'dineFirstPostpaid' : 'counterService',
+    );
+
+    // 3. Build local owner user
+    final user = SaasUser(
+      id: 'usr_local_owner',
+      email: 'owner@localhost',
+      username: 'owner',
+      fullName: resolvedOwnerName,
+      role: 'OWNER',
+      organizationId: orgId,
+      mustChangePassword: false,
+    );
+
+    // 4. Save to local Hive
+    final box = Hive.box('configBox');
+    await box.put('saas_org', jsonEncode(organization.toJson()));
+    await box.put('saas_user', jsonEncode(user.toJson()));
+    await box.put('saas_license', jsonEncode(license.toJson()));
+    await box.put('saas_logged_in', true);
+    await box.put('session_active', true);
+    await box.put('saas_remember_me', true);
+    await box.put('saas_is_client_license', true);
+    await box.put('saas_login_timestamp', DateTime.now().toIso8601String());
+    await box.put('saas_client_license_org_id', orgId);
+    await box.put('saas_last_email', user.email);
+    await box.put('current_org_id', orgId);
+    await box.put('default_org_id', orgId);
+    await box.put('pure_offline_mode', effectiveStorageMode == StorageModes.pureOffline);
+    final machineId = await DeviceFingerprintService.getMachineId();
+    await box.put('_sbz_bound_lic_$orgId', machineId);
+    await box.put('_sbz_active_machine_id', machineId);
+    await box.put('is_activated', true);
+    await box.put('local_username', resolvedOwnerName);
+
+    // Record signed lease validity
+
+    await LicenseLease.recordValidated(orgId);
+
+    // Enforce CloudGate pure offline
+
+    CloudGate.setOffline(true);
+
+    // 5. Setup active staff in restaurantAuthProvider
+    final primaryRole = StaffRole.owner;
+    final staffMember = StaffMember(
+      id: user.id,
+      name: user.fullName,
+      username: user.username,
+      email: user.email,
+      role: primaryRole,
+      roles: [primaryRole],
+      isActive: true,
+    );
+    _ref.read(restaurantAuthProvider.notifier).setActiveStaff(staffMember);
+
+    // 6. Initialize local templates/profile
+    await _initializeSaaSLocalProfile(user.email, organization.name);
+
+    // 7. Update session state
+    state = SaasSessionState(
+      currentUser: user,
+      currentOrganization: organization,
+      currentLicense: license,
+      isMockMode: false,
+      isInitializing: false,
+    );
+
+    debugPrint("[Client Licence] Successfully activated local store: $storeLabel ($orgId, $resolvedVertical, tier: ${payload.tier})");
+
+  }
+
+  /// Connects a secondary satellite terminal (Waiter Pad, Kitchen KDS, CFD, or secondary billing till)
+  /// to an active Master Host PC on the local Wi-Fi LAN without requiring a separate license.
+  ///
+  /// The satellite has no tier of its own (contract §6b): its licence is the
+  /// host's, as the hub returned it at pairing ([SatelliteEntitlement]).
+  /// Throws a [StateError] for a kirana or Offline host, or a role the hub
+  /// does not allow.
+  Future<void> connectSatelliteTerminal({
+    required String hubAddress,
+    required String terminalRole,
+    String? storeName,
+    String? pin,
+    String? businessCategory,
+  }) async {
+    final cleanHub = LanHubClient.normaliseHub(hubAddress);
+    final orgId = 'org_satellite_${cleanHub.hashCode.toRadixString(36).replaceAll('-', 'n')}';
+
+    // Map the role for the host's trade BEFORE pairing: a shop hub answers
+    // 400 to WAITER/KITCHEN, so a shop satellite asks for BILLING instead.
+    // The trade comes from the hub's ping when it says, else from the form.
+    String? hubVertical;
+    final ping = await LanHubClient.instance.ping(cleanHub);
+    if (ping != null && (ping['vertical'] ?? '').toString().trim().isNotEmpty) {
+      hubVertical = ping['vertical'].toString();
+    }
+    final expectedVertical = Verticals.resolve(
+      vertical: hubVertical,
+      businessCategory: hubVertical == null ? businessCategory : null,
+    );
+    final requestedRole = SatelliteEntitlement.roleForTrade(terminalRole, expectedVertical);
+
+    // Pair: the host checks the PIN and hands out the bearer token every
+    // later call carries. A wrong PIN or an unreachable host stops here.
+    final pairing = await LanHubClient.instance.pair(
+      hub: cleanHub,
+      pin: pin ?? '',
+      role: requestedRole,
+      deviceName: storeName?.trim().isNotEmpty == true ? storeName!.trim() : 'Satellite ($requestedRole)',
+    );
+    // Re-check against what the hub actually allows (its trade wins over the
+    // form): a WAITER/KITCHEN request to a shop that the ping did not reveal
+    // becomes BILLING here; anything else the hub refuses is a StateError.
+    // The satellite's entitlement is the host's (contract §6b): the hub's
+    // trade, tier, features, device cap and roles, and nothing of its own.
+    // Kirana (single device), an Offline host or a role the hub does not
+    // allow stop here with a StateError naming the allowed roles.
+    final String effectiveTerminalRole;
+    final SaasLicense license;
+    try {
+      effectiveTerminalRole = SatelliteEntitlement.resolveRole(
+        pairing,
+        SatelliteEntitlement.roleForTrade(
+          requestedRole,
+          SatelliteEntitlement.verticalOf(pairing, fallbackCategory: businessCategory),
+        ),
+      );
+      license = SatelliteEntitlement.buildSatelliteLicense(
+        pairing,
+        effectiveTerminalRole,
+        fallbackCategory: businessCategory,
+      );
+    } catch (_) {
+      // The host already issued a token for this device; give it back so the
+      // failed attempt does not count against the licence's device limit.
+      await LanHubClient.instance.unpair();
+      rethrow;
+    }
+    final resolvedVertical = license.vertical;
+    final resolvedCategory = SatelliteEntitlement.categoryOf(pairing, fallbackCategory: businessCategory);
+    final label = pairing.storeName.trim().isNotEmpty
+        ? pairing.storeName.trim()
+        : (storeName?.trim().isNotEmpty == true ? storeName!.trim() : 'Local LAN Satellite');
+
+    final user = SaasUser(
+      id: 'usr_lan_${effectiveTerminalRole.toLowerCase()}_${DateTime.now().millisecondsSinceEpoch.toRadixString(36)}',
+      email: '${effectiveTerminalRole.toLowerCase()}@localhub',
+      username: effectiveTerminalRole.toLowerCase(),
+      fullName: 'Satellite Terminal ($effectiveTerminalRole)',
+      role: effectiveTerminalRole,
+      organizationId: orgId,
+      mustChangePassword: false,
+    );
+
+    final org = SaasOrganization(
+      id: orgId,
+      name: label,
+      appName: label,
+      storageMode: StorageModes.localNetwork,
+      vertical: resolvedVertical,
+      businessCategory: resolvedCategory,
+      status: 'ACTIVE',
+      tableCount: resolvedVertical == Verticals.restaurant ? 20 : 0,
+      operatingMode: resolvedVertical == Verticals.restaurant ? 'dineFirstPostpaid' : 'counterService',
+    );
+
+    final box = Hive.box('configBox');
+    // Writes queued for an earlier host belong to that host, not this one.
+    await LanWriteQueue.instance.clear();
+    await box.put('saas_org', jsonEncode(org.toJson()));
+    await box.put('saas_user', jsonEncode(user.toJson()));
+    await box.put('saas_license', jsonEncode(license.toJson()));
+    await box.put('saas_master_hub_url', cleanHub);
+    await box.put('saas_is_satellite_client', true);
+    await box.put('saas_is_client_license', true);
+    await box.put('saas_logged_in', true);
+    await box.put('session_active', true);
+    await box.put('saas_remember_me', true);
+    await box.put('saas_login_timestamp', DateTime.now().toIso8601String());
+    await box.put('pure_offline_mode', false);
+    await box.put('is_activated', true);
+    await box.put('local_username', user.fullName);
+
+    final machineId = await DeviceFingerprintService.getMachineId();
+    await box.put('_sbz_bound_lic_$orgId', machineId);
+    await box.put('_sbz_active_machine_id', machineId);
+
+    await LicenseLease.recordValidated(orgId);
+    CloudGate.setOffline(true);
+
+    final primaryRole = StaffRoleExtension.fromKey(effectiveTerminalRole);
+    final staffMember = StaffMember(
+      id: user.id,
+      name: user.fullName,
+      username: user.username,
+      email: user.email,
+      role: primaryRole,
+      roles: [primaryRole],
+      isActive: true,
+    );
+    _ref.read(restaurantAuthProvider.notifier).setActiveStaff(staffMember);
+    await _initializeSaaSLocalProfile(user.email, org.name);
+
+    state = SaasSessionState(
+      currentUser: user,
+      currentOrganization: org,
+      currentLicense: license,
+      isMockMode: false,
+      isInitializing: false,
+    );
+
+    debugPrint("[Satellite Client] Connected to Master Hub: $cleanHub as $effectiveTerminalRole (${license.tier}, $resolvedVertical)");
+  }
+
+  /// Switch active store context to manage or operate a specific organization & outlet.
+
+  Future<void> switchStoreContext({
+
+    required SaasOrganization org,
+
+    String? outletId,
+  }) async {
+    try {
+      final currentUser = state.currentUser;
+      final isMaster = (currentUser?.role.toUpperCase() == 'MASTER_ADMIN') ||
+          isMasterAdminEmail(currentUser?.email);
+
+      // SECURITY ISOLATION GUARD:
+      // Non-Master Admin users can ONLY ever operate within their assigned organization.
+      // They are strictly forbidden from switching to or accessing any other tenant organization.
+      if (!isMaster && currentUser != null && org.id != currentUser.organizationId) {
+        debugPrint("[Security Guard] Access Denied: User (${currentUser.email}) cannot access store ${org.id}. Retaining allocated store: ${currentUser.organizationId}");
+        return;
+      }
+
+      // OUTLET ISOLATION GUARD:
+      // If a staff user is assigned to a specific branch/outlet (e.g. Cashier / Waiter locked to outlet),
+      // and is not an Owner or Manager, they cannot switch to other outlets.
+      final String userRole = currentUser?.role.toUpperCase() ?? '';
+      final bool isStoreManager = isMaster || userRole == 'OWNER' || userRole == 'CLIENT' || userRole == 'MANAGER';
+      if (!isStoreManager && currentUser?.franchiseId != null && currentUser!.franchiseId!.isNotEmpty) {
+        if (outletId != null && outletId != currentUser.franchiseId) {
+          debugPrint("[Security Guard] Staff user ${currentUser.email} is locked to outlet ${currentUser.franchiseId}; cannot switch to $outletId.");
+          outletId = currentUser.franchiseId;
+        }
+      }
+
+      final conn = _ref.read(firebaseConnectionServiceProvider);
+      final firestore = conn.masterFirestore;
+
+      // 1. Fetch latest License for this organization
+      SaasLicense? lic;
+      try {
+        final licDoc = await firestore.collection('licenses').doc(org.id).get();
+        // A server read renews this device's offline licence lease.
+        if (licDoc.exists && !licDoc.metadata.isFromCache) unawaited(LicenseLease.recordValidated(org.id));
+        if (licDoc.exists) {
+          lic = SaasLicense.fromFirestore(licDoc.data()!);
+        }
+      } catch (e) {
+        debugPrint("Error fetching license during switchStoreContext: $e");
+      }
+
+      // 2. Fetch outlet details if outletId is provided
+      String? outletSpreadsheetId;
+      String? outletName;
+      if (outletId != null && outletId.isNotEmpty) {
+        try {
+          final outDoc = await firestore.collection('outlets').doc(outletId).get();
+          if (outDoc.exists) {
+            final outData = outDoc.data()!;
+            outletSpreadsheetId = outData['spreadsheet_id'] as String? ?? outData['googleSheetId'] as String?;
+            outletName = outData['name'] as String?;
+          } else {
+            final franDoc = await firestore.collection('franchises').doc(outletId).get();
+            if (franDoc.exists) {
+              final franData = franDoc.data()!;
+              outletSpreadsheetId = franData['spreadsheet_id'] as String? ?? franData['googleSheetId'] as String?;
+              outletName = franData['name'] as String?;
+            }
+          }
+        } catch (e) {
+          debugPrint("Error fetching outlet during switchStoreContext: $e");
+        }
+      }
+
+      final activeSpreadsheetId = (outletSpreadsheetId != null && outletSpreadsheetId.isNotEmpty)
+          ? outletSpreadsheetId
+          : (org.googleSheetId != null && org.googleSheetId!.isNotEmpty)
+              ? org.googleSheetId
+              : null;
+
+      // 3. Update Hive storage
+      final box = Hive.box('configBox');
+      await box.put('current_org_id', org.id);
+      await box.put('saas_org', jsonEncode(org.toJson()));
+      await box.put('pure_offline_mode', org.storageMode == 'PURE_OFFLINE');
+
+      if (outletId != null && outletId.isNotEmpty) {
+        await box.put('current_outlet_id', outletId);
+        await box.put('saas_active_franchise_id', outletId);
+        if (outletName != null && outletName.isNotEmpty) {
+          await box.put('current_outlet_name', outletName);
+        }
+      } else {
+        await box.delete('current_outlet_id');
+        await box.delete('saas_active_franchise_id');
+        await box.delete('current_outlet_name');
+      }
+
+      if (activeSpreadsheetId != null && activeSpreadsheetId.isNotEmpty) {
+        await box.put('spreadsheet_id', activeSpreadsheetId);
+        await box.put('saas_spreadsheet_id', activeSpreadsheetId);
+      }
+
+      // Also update restaurant_config_box
+      try {
+        final rBox = await Hive.openBox('restaurant_config_box');
+        await rBox.put('restaurant_name', org.name);
+        if (activeSpreadsheetId != null && activeSpreadsheetId.isNotEmpty) {
+          await rBox.put('restaurant_sheet_id_${org.id}', activeSpreadsheetId);
+          await rBox.put('google_sheet_id', activeSpreadsheetId);
+        }
+      } catch (e) {
+        debugPrint("Error updating restaurant_config_box: $e");
+      }
+
+      // 4. Update memory state
+      state = state.copyWith(
+        currentOrganization: org,
+        currentLicense: lic ?? state.currentLicense,
+        activeFranchiseId: outletId,
+        currentUser: state.currentUser?.copyWith(organizationId: org.id, franchiseId: outletId),
+      );
+
+      // 5. Update active Staff Member in restaurantAuthProvider
+      if (state.currentUser != null) {
+        final u = state.currentUser!;
+        final primaryRole = StaffRoleExtension.fromKey(u.role);
+        final staffMember = StaffMember(
+          id: u.id,
+          name: u.fullName,
+          username: u.username,
+          email: u.email,
+          role: primaryRole,
+          roles: [primaryRole],
+          assignedOutletId: outletId,
+          isActive: true,
+        );
+        _ref.read(restaurantAuthProvider.notifier).setActiveStaff(staffMember);
+      }
+
+      // 6. Setup real-time listeners for the new organization
+      _setupRealtimeListeners(org.id);
+
+      debugPrint("[Store Switcher] Switched active store to ${org.name} ($outletId)");
+    } catch (e) {
+      debugPrint("switchStoreContext error: $e");
+    }
+  }
+
+  /// Allows Master Admin to inspect, demo, or launch POS for a specific organization and optional outlet.
+  Future<void> switchOrganizationForMasterAdmin(String orgId, {String? outletId}) async {
+    final currentUser = state.currentUser;
+    final isMaster = (currentUser?.role.toUpperCase() == 'MASTER_ADMIN') ||
+        isMasterAdminEmail(currentUser?.email);
+    if (!isMaster) return;
+
+    try {
+      final conn = _ref.read(firebaseConnectionServiceProvider);
+      final firestore = conn.masterFirestore;
+
+      final orgDoc = await firestore.collection('organizations').doc(orgId).get();
+      if (!orgDoc.exists) return;
+      final orgData = orgDoc.data()!;
+      final org = SaasOrganization.fromFirestore(orgData, orgId);
+
+      await switchStoreContext(org: org, outletId: outletId);
+      debugPrint("[Master Admin support view] Switched active organization to ${org.name} ($orgId, outlet: $outletId)");
+    } catch (e) {
+      debugPrint("switchOrganizationForMasterAdmin error: $e");
+    }
+  }
+
+  /// Write operational Audit Logs to Control Plane
+  Future<void> logAudit({
+    required String orgId,
+    required String userId,
+    required String actionType,
+    required String details,
+    String? userName,
+    String? orgName,
+    String? franchiseName,
+  }) async {
+    try {
+      final conn = _ref.read(firebaseConnectionServiceProvider);
+      final firestore = conn.masterFirestore;
+
+      // 1. Resolve User Name and Email
+      String resolvedUserName = userName ?? '';
+      if (resolvedUserName.isEmpty) {
+        if (state.currentUser != null && state.currentUser!.id == userId) {
+          resolvedUserName = "${state.currentUser!.fullName} (${state.currentUser!.email})";
+        } else {
+          try {
+            final userDoc = await firestore.collection('users').doc(userId).get();
+            if (userDoc.exists) {
+              final data = userDoc.data()!;
+              final fName = data['fullName'] ?? '';
+              final email = data['email'] ?? '';
+              if (fName.isNotEmpty && email.isNotEmpty) {
+                resolvedUserName = "$fName ($email)";
+              } else if (fName.isNotEmpty) {
+                resolvedUserName = fName;
+              } else {
+                resolvedUserName = email;
+              }
+            }
+          } catch (_) {}
+        }
+      }
+      if (resolvedUserName.isEmpty) resolvedUserName = userId;
+
+      // 2. Resolve Org Name
+      String resolvedOrgName = orgName ?? '';
+      if (resolvedOrgName.isEmpty) {
+        if (state.currentOrganization != null && state.currentOrganization!.id == orgId) {
+          resolvedOrgName = state.currentOrganization!.name;
+        } else {
+          try {
+            final orgDoc = await firestore.collection('organizations').doc(orgId).get();
+            if (orgDoc.exists) {
+              resolvedOrgName = orgDoc.data()?['name'] ?? '';
+            }
+          } catch (_) {}
+        }
+      }
+      if (resolvedOrgName.isEmpty) resolvedOrgName = orgId;
+
+      // 3. Resolve Franchise Name
+      String resolvedFranchiseName = franchiseName ?? '';
+      if (resolvedFranchiseName.isEmpty) {
+        final fId = state.activeFranchiseId;
+        if (fId != null) {
+          try {
+            final fBox = Hive.box(kFranchisesBoxName);
+            final cached = fBox.get(fId);
+            if (cached != null) {
+              final franchise = Map<String, dynamic>.from(cached as Map);
+              resolvedFranchiseName = franchise['name'] ?? '';
+            }
+          } catch (_) {}
+
+          if (resolvedFranchiseName.isEmpty && !state.isMockMode) {
+            try {
+              final franchiseDoc = await firestore.collection('franchises').doc(fId).get();
+              if (franchiseDoc.exists) {
+                resolvedFranchiseName = franchiseDoc.data()?['name'] ?? '';
+              }
+            } catch (_) {}
+          }
+        }
+      }
+
+      await firestore.collection('audit_logs').add({
+        'organizationId': orgId,
+        'organizationName': resolvedOrgName,
+        'userId': userId,
+        'userName': resolvedUserName,
+        'actionType': actionType,
+        'details': details,
+        'franchiseId': state.activeFranchiseId,
+        'franchiseName': resolvedFranchiseName.isNotEmpty ? resolvedFranchiseName : null,
+        'timestamp': FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      debugPrint("Failed to write audit log: $e");
+    }
+  }
+
+  Future<void> setActiveFranchise(String franchiseId) async {
+    final role = state.currentUser?.role;
+    if (role == 'OWNER' || role == 'CLIENT' || role == 'MASTER_ADMIN') {
+      state = state.copyWith(activeFranchiseId: franchiseId);
+      final box = Hive.box('configBox');
+      await box.put('saas_active_franchise_id', franchiseId);
+
+      // Look up and bind the store's dedicated spreadsheet
+      String? sheetId;
+      try {
+        if (!state.isMockMode) {
+          final conn = _ref.read(firebaseConnectionServiceProvider);
+          final firestore = conn.masterFirestore;
+          final outletDoc = await firestore.collection('outlets').doc(franchiseId).get();
+          if (outletDoc.exists) {
+            sheetId = (outletDoc.data()?['googleSheetId'] ?? outletDoc.data()?['spreadsheet_id']) as String?;
+          }
+          if (sheetId == null || sheetId.isEmpty) {
+            final doc = await firestore.collection('franchises').doc(franchiseId).get();
+            if (doc.exists) {
+              sheetId = (doc.data()?['spreadsheet_id'] ?? doc.data()?['googleSheetId']) as String?;
+            }
+          }
+        } else {
+          final fBox = Hive.box(kFranchisesBoxName);
+          final raw = fBox.get(franchiseId);
+          if (raw is Map) {
+            sheetId = (raw['spreadsheet_id'] ?? raw['googleSheetId']) as String?;
+          }
+        }
+      } catch (e) {
+        debugPrint("Error looking up franchise spreadsheet: $e");
+      }
+
+      if (sheetId != null && sheetId.isNotEmpty) {
+        await box.put('spreadsheet_id', sheetId);
+        await box.put('saas_spreadsheet_id', sheetId);
+        await box.put('google_sheet_id', sheetId);
+        if (state.currentOrganization != null) {
+          await box.put('restaurant_sheet_id_${state.currentOrganization!.id}', sheetId);
+        }
+      }
+    }
+  }
+
+  void clearActiveFranchise() {
+    state = SaasSessionState(
+      currentUser: state.currentUser,
+      currentOrganization: state.currentOrganization,
+      currentLicense: state.currentLicense,
+      activeFranchiseId: null,
+      isMockMode: state.isMockMode,
+    );
+    final box = Hive.box('configBox');
+    box.delete('saas_active_franchise_id');
+  }
+
+  /// One-click self-service toggle that enables the Zero-WAN Local LAN Server Hub
+  /// on this terminal, activates local network sync in license/organization,
+  /// and spins up LocalRestaurantLanServer on port 8080.
+  Future<bool> enableLocalLanHubForCurrentStore() async {
+    try {
+      final currentLic = state.currentLicense;
+      final currentOrg = state.currentOrganization;
+      if (currentLic == null && currentOrg == null) return false;
+
+      // Contract §6b: Offline is PURE_OFFLINE only and kirana is a single
+      // device; only a Basic+ package may move to a local network hub.
+      final hubTier = PackageTier.tryParse(currentLic?.tier) ??
+          (StorageModes.isOffline(currentOrg?.storageMode) ? PackageTier.offline : PackageTier.basic);
+      if (hubTier.isOffline ||
+          state.vertical == Verticals.kirana ||
+          !PackageCatalog.starter(state.vertical, hubTier).allowedStorageModes.contains(StorageModes.localNetwork)) {
+        debugPrint('enableLocalLanHubForCurrentStore: ${hubTier.id} / ${state.vertical} cannot run a local network hub');
+        return false;
+      }
+
+      final updatedFeatures = Map<String, bool>.from(currentLic?.features ?? {});
+      updatedFeatures[FeatureKeys.localLanServer] = true;
+      updatedFeatures[FeatureKeys.customerDisplay] = true;
+      if (state.vertical != 'kirana') {
+        updatedFeatures[FeatureKeys.splitBilling] = true;
+      }
+
+      final updatedLic = (currentLic != null)
+          ? currentLic.copyWith(features: updatedFeatures)
+          : SaasLicense(
+              planTier: 'STANDARD',
+              status: 'ACTIVE',
+              tier: 'standard',
+              features: updatedFeatures,
+              vertical: state.vertical,
+              maxDevices: 5,
+              maxFranchises: 1,
+              maxUsers: 10,
+              startDate: DateTime.now(),
+              endDate: DateTime.now().add(const Duration(days: 365)),
+            );
+
+      final updatedOrg = (currentOrg != null)
+          ? currentOrg.copyWith(storageMode: StorageModes.localNetwork)
+          : SaasOrganization(
+              id: 'org_local',
+              name: 'Local Store',
+              appName: 'Local Store',
+              storageMode: StorageModes.localNetwork,
+              vertical: state.vertical,
+              status: 'ACTIVE',
+            );
+
+      state = state.copyWith(
+        currentLicense: updatedLic,
+        currentOrganization: updatedOrg,
+      );
+
+      final box = Hive.box('configBox');
+      await box.put('saas_license', jsonEncode(updatedLic.toJson()));
+      await box.put('saas_org', jsonEncode(updatedOrg.toJson()));
+      await box.put('saas_is_client_license', true);
+
+      // Start the local LAN hub server
+      await LocalRestaurantLanServer.instance.startServer();
+      return true;
+    } catch (e) {
+      debugPrint('enableLocalLanHubForCurrentStore error: ');
+      return false;
+    }
+  }
+
+  void updateLicense(SaasLicense newLicense) {
+    state = state.copyWith(currentLicense: newLicense);
+    final box = Hive.box('configBox');
+    box.put('saas_license', jsonEncode(newLicense.toJson()));
+
+    // Persist to Firestore if not mock mode
+    if (!state.isMockMode && state.currentOrganization != null) {
+      try {
+        final conn = _ref.read(firebaseConnectionServiceProvider);
+        final orgId = state.currentOrganization!.id;
+        
+        conn.masterFirestore.collection('licenses').doc(orgId).set(
+          newLicense.toFirestore(),
+          SetOptions(merge: true),
+        );
+        
+        conn.masterFirestore.collection('limits').doc(orgId).set({
+          'maxFranchises': newLicense.maxFranchises,
+          'maxUsers': newLicense.maxUsers,
+          'maxDevices': newLicense.maxDevices,
+        }, SetOptions(merge: true));
+      } catch (e) {
+        debugPrint("Failed to persist license updates to Firestore: $e");
+      }
+    }
+  }
+
+  void updateBranding({String? name, String? appName, String? primaryColor, String? secondaryColor, String? splashImageUrl}) {
+    if (state.currentOrganization != null) {
+      final updatedOrg = SaasOrganization(
+        id: state.currentOrganization!.id,
+        name: name ?? state.currentOrganization!.name,
+        appName: appName ?? state.currentOrganization!.appName,
+        logoUrl: state.currentOrganization!.logoUrl,
+        primaryColor: primaryColor ?? state.currentOrganization!.primaryColor,
+        secondaryColor: secondaryColor ?? state.currentOrganization!.secondaryColor,
+        splashImageUrl: splashImageUrl ?? state.currentOrganization!.splashImageUrl,
+      );
+      state = state.copyWith(currentOrganization: updatedOrg);
+      final box = Hive.box('configBox');
+      box.put('saas_org', jsonEncode(updatedOrg.toJson()));
+    }
+  }
+
+  void updateCurrentUserDetails({String? fullName, String? email}) {
+    if (state.currentUser != null) {
+      final updatedUser = SaasUser(
+        id: state.currentUser!.id,
+        email: email ?? state.currentUser!.email,
+        fullName: fullName ?? state.currentUser!.fullName,
+        role: state.currentUser!.role,
+        organizationId: state.currentUser!.organizationId,
+        franchiseId: state.currentUser!.franchiseId,
+      );
+      state = state.copyWith(currentUser: updatedUser);
+      final box = Hive.box('configBox');
+      box.put('saas_user', jsonEncode(updatedUser.toJson()));
+    }
+  }
+
+  bool simulateAddDevice(String uuid) {
+    final orgMode = state.currentOrganization?.storageMode;
+    final limit = Entitlements.fromLicense(
+      state.currentLicense,
+      storageMode: orgMode != null && StorageModes.isOffline(orgMode) ? orgMode : null,
+    ).maxDevices;
+    final box = Hive.box('configBox');
+    final activeDeviceUuids = List<String>.from(box.get('saas_active_device_uuids', defaultValue: <String>[]));
+    
+    if (activeDeviceUuids.contains(uuid)) {
+      return true;
+    }
+    
+    if (activeDeviceUuids.length >= limit) {
+      return false;
+    }
+    
+    activeDeviceUuids.add(uuid);
+    box.put('saas_active_device_uuids', activeDeviceUuids);
+    return true;
+  }
+
+  void resetSimulatedDevices() {
+    final box = Hive.box('configBox');
+    box.delete('saas_active_device_uuids');
+  }
+
+  /// Switch the session context to manage a specific tenant organization (Master Admin utility)
+  Future<String?> enterOrganizationConsole(String orgId) async {
+    if (state.currentUser?.role != 'MASTER_ADMIN') {
+      return "Access Denied: Only Master Admins can access tenant consoles.";
+    }
+
+    final conn = _ref.read(firebaseConnectionServiceProvider);
+    final firestore = conn.masterFirestore;
+
+    try {
+      if (orgId == 'SYSTEM_ADMIN') {
+        // Switch back to master admin context
+        final systemOrg = SaasOrganization(
+          id: 'SYSTEM_ADMIN',
+          name: 'SmartBiz Administrator',
+          appName: 'SmartBiz Control Panel',
+        );
+
+        final systemLicense = SaasLicense(
+          planTier: 'ENTERPRISE',
+          status: 'ACTIVE',
+          maxFranchises: 999,
+          maxUsers: 999,
+          maxDevices: 999,
+          features: {
+            'inventoryEnabled': true,
+            'reportsEnabled': true,
+            'loyaltyEnabled': true,
+            'onlineOrderingEnabled': true,
+            'whiteLabelEnabled': true,
+          },
+          startDate: DateTime.now(),
+          endDate: DateTime.now().add(const Duration(days: 36500)),
+        );
+
+        await conn.disconnectCustomerApp();
+
+        state = SaasSessionState(
+          currentUser: state.currentUser,
+          currentOrganization: systemOrg,
+          currentLicense: systemLicense,
+          activeFranchiseId: null,
+          isMockMode: state.isMockMode,
+        );
+
+        return null;
+      }
+
+      // 1. Fetch Organization
+      final orgDoc = await firestore.collection('organizations').doc(orgId).get();
+      if (!orgDoc.exists) return "Organization not found";
+      final orgData = orgDoc.data()!;
+      final organization = SaasOrganization.fromFirestore(orgData, orgId);
+
+      // 2. Fetch License
+      final licDoc = await firestore.collection('licenses').doc(orgId).get();
+      // A server read renews this device's offline licence lease.
+      if (licDoc.exists && !licDoc.metadata.isFromCache) unawaited(LicenseLease.recordValidated(orgId));
+      if (!licDoc.exists) return "License details not found";
+      
+      final Map<String, dynamic> licData = Map<String, dynamic>.from(licDoc.data()!);
+      if (!licData.containsKey('maxFranchises')) {
+        try {
+          final limitsDoc = await firestore.collection('limits').doc(orgId).get();
+          if (limitsDoc.exists) {
+            final limData = limitsDoc.data()!;
+            licData['maxFranchises'] = limData['maxFranchises'];
+            licData['maxUsers'] = limData['maxUsers'];
+            licData['maxDevices'] = limData['maxDevices'];
+          }
+        } catch (_) {}
+      }
+
+      // Legacy mirror, only when the licence carries no feature map.
+      if (licData['features'] == null) {
+        try {
+          final featDoc = await firestore.collection('features').doc(orgId).get();
+          if (featDoc.exists) {
+            final featData = featDoc.data()!;
+            licData['features'] = featData['features'];
+            licData['planProfile'] ??= featData['planProfile'];
+          }
+        } catch (_) {}
+      }
+
+      final license = SaasLicense.fromFirestore(licData);
+
+      // 3. Fetch encrypted customer Firebase Config
+      final configDoc = await firestore.collection('firebase_configs').doc(orgId).get();
+      if (configDoc.exists) {
+        final configData = configDoc.data()!;
+        final encryptedStr = configData['encryptedConfig'] as String;
+        final iv = configData['iv'] as String;
+        final decryptedConfig = conn.decryptConfig(orgId, encryptedStr, iv);
+        await conn.initializeCustomerApp(orgId, decryptedConfig);
+      } else {
+        await conn.disconnectCustomerApp();
+      }
+
+      // 4. Update the state with target organization details while preserving user
+      state = SaasSessionState(
+        currentUser: state.currentUser,
+        currentOrganization: organization,
+        currentLicense: license,
+        activeFranchiseId: null,
+        isMockMode: state.isMockMode,
+      );
+
+      if (state.currentUser != null) {
+        final u = state.currentUser!;
+        final primaryRole = StaffRoleExtension.fromKey(u.role);
+        final staffMember = StaffMember(
+          id: u.id,
+          name: u.fullName,
+          username: u.username,
+          email: u.email,
+          role: primaryRole,
+          roles: [primaryRole],
+          assignedOutletId: null,
+          isActive: true,
+        );
+        _ref.read(restaurantAuthProvider.notifier).setActiveStaff(staffMember);
+      }
+
+      return null; // success
+    } catch (e) {
+      debugPrint("Failed to enter organization console: $e");
+      return "Failed to enter organization console: ${e.toString()}";
+    }
+  }
+
+  Future<void> clearSession() async {
+    _pendingAdminLogin = null;
+    _cancelListeners();
+    unawaited(FirebaseAuthBridge.signOut(_ref.read(firebaseConnectionServiceProvider).masterFirestore));
+    final box = Hive.box('configBox');
+    await box.put('saas_logged_in', false);
+    await box.put('session_active', false);
+    await box.delete('saas_remember_me');
+    await box.delete('saas_login_timestamp');
+    await box.delete('saas_user');
+    await box.delete('saas_org');
+    await box.delete('saas_license');
+    await box.delete('saas_firebase_config');
+    await box.delete('saas_firebase_config_iv');
+    await box.delete('saas_active_franchise_id');
+    await box.delete('spreadsheet_id');
+    await box.delete('saas_spreadsheet_id');
+    await box.delete('current_user_email');
+    await box.delete('pure_offline_mode');
+
+    // A satellite that signs out stops following its host; the flag must
+    // not survive into a later host or cloud session on this device.
+    if (box.get('saas_is_satellite_client') == true) {
+      try {
+        LanHubFeed.shared?.stop();
+        await LanWriteQueue.instance.clear();
+        await LanHubClient.instance.unpair();
+      } catch (_) {}
+    }
+    await box.delete('saas_is_satellite_client');
+
+    final keysToRemove = box.keys
+        .where((k) =>
+            k.toString().startsWith('store_google_') ||
+            k.toString().startsWith('storage_mode_'))
+        .toList();
+    for (final k in keysToRemove) {
+      await box.delete(k);
+    }
+
+    await _clearTenantDataBoxes();
+
+    try {
+      await ClientLedgerCloudRouterService.signOut();
+    } catch (_) {}
+
+    try {
+      _ref.read(restaurantAuthProvider.notifier).setActiveStaff(null);
+    } catch (_) {}
+
+    if (!mounted) return;
+    await _ref.read(firebaseConnectionServiceProvider).disconnectCustomerApp();
+
+    if (!mounted) return;
+    state = SaasSessionState(isMockMode: false, savedUsers: state.savedUsers);
+  }
+
+  /// Removes ALL device_registry entries for the given organization so a
+  /// locked-out user can re-register on a new device.
+  Future<void> forceLogoutOtherDevices(String organizationId) async {
+    final conn = _ref.read(firebaseConnectionServiceProvider);
+    final firestore = conn.masterFirestore;
+
+    try {
+      final orgDevices = await firestore
+          .collection('device_registry')
+          .where('organizationId', isEqualTo: organizationId)
+          .get()
+          .timeout(const Duration(seconds: 8));
+
+      final batch = firestore.batch();
+      for (final doc in orgDevices.docs) {
+        batch.delete(doc.reference);
+      }
+      await batch.commit();
+
+      debugPrint('Cleared ${orgDevices.docs.length} device(s) from registry for org $organizationId');
+    } catch (e) {
+      debugPrint('Failed to clear device registry: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> _updateSavedUsersList() async {
+    final box = Hive.box('configBox');
+    final List<dynamic> savedEmailsRaw = box.get('saas_saved_accounts') ?? [];
+    final List<String> savedEmails = savedEmailsRaw.map((e) => e.toString().toLowerCase().trim()).toList();
+    
+    final List<SaasUser> loadedUsers = [];
+    for (final email in savedEmails) {
+      final emailKey = email.toLowerCase().trim();
+      final userJson = box.get('saas_user_$emailKey') as String?;
+      if (userJson != null) {
+        try {
+          final user = SaasUser.fromJson(Map<String, dynamic>.from(jsonDecode(userJson)));
+          loadedUsers.add(user);
+        } catch (_) {}
+      }
+    }
+    
+    if (mounted) {
+      state = state.copyWith(savedUsers: loadedUsers);
+    }
+  }
+
+  Future<String?> switchAccount(String email, {String? password}) async {
+    final box = Hive.box('configBox');
+    final emailKey = email.trim().toLowerCase();
+    
+    final List<dynamic> savedAccountsRaw = box.get('saas_saved_accounts') ?? [];
+    final List<String> savedAccounts = savedAccountsRaw.map((e) => e.toString()).toList();
+    if (!savedAccounts.contains(emailKey)) {
+      return "Account not found in saved list";
+    }
+    final cachedHash = box.get('saas_password_hash_$emailKey') as String?;
+    if (password == null || password.isEmpty) {
+      return "Password required to switch accounts";
+    }
+    if (cachedHash == null || !BCrypt.checkpw(password, cachedHash)) {
+      return "Invalid email or password";
+    }
+
+    final userJson = box.get('saas_user_$emailKey') as String?;
+    final orgJson = box.get('saas_org_$emailKey') as String?;
+    final licJson = box.get('saas_license_$emailKey') as String?;
+    final encryptedConfig = box.get('saas_firebase_config_$emailKey') as String?;
+    final iv = box.get('saas_firebase_config_iv_$emailKey') as String?;
+    final franchiseId = box.get('saas_active_franchise_id_$emailKey') as String?;
+
+    if (userJson == null || orgJson == null || licJson == null) {
+      return "Cache data is incomplete for this account";
+    }
+
+    // Disconnect old customer app first
+    final conn = _ref.read(firebaseConnectionServiceProvider);
+    await conn.disconnectCustomerApp();
+
+    // Set standard active session pointers
+    await box.put('saas_logged_in', true);
+    await box.put('saas_remember_me', true);
+    await box.put('saas_login_timestamp', DateTime.now().toIso8601String());
+    await box.put('saas_last_email', emailKey);
+    await box.put('saas_user', userJson);
+    await box.put('saas_org', orgJson);
+    await box.put('saas_license', licJson);
+    if (encryptedConfig != null && iv != null) {
+      await box.put('saas_firebase_config', encryptedConfig);
+      await box.put('saas_firebase_config_iv', iv);
+    } else {
+      await box.delete('saas_firebase_config');
+      await box.delete('saas_firebase_config_iv');
+    }
+    if (franchiseId != null) {
+      await box.put('saas_active_franchise_id', franchiseId);
+    } else {
+      await box.delete('saas_active_franchise_id');
+    }
+
+    final user = SaasUser.fromJson(jsonDecode(userJson));
+    final organization = SaasOrganization.fromJson(jsonDecode(orgJson));
+    final license = SaasLicense.fromJson(jsonDecode(licJson));
+
+    if (encryptedConfig != null && iv != null) {
+      try {
+        final decryptedConfig = conn.decryptConfig(user.organizationId, encryptedConfig, iv);
+        await conn.initializeCustomerApp(user.organizationId, decryptedConfig);
+      } catch (e) {
+        debugPrint("Error switching customer Firebase app: $e");
+      }
+    }
+
+    state = SaasSessionState(
+      currentUser: user,
+      currentOrganization: organization,
+      currentLicense: license,
+      activeFranchiseId: franchiseId ?? box.get('saas_active_franchise_id'),
+      isMockMode: false,
+      savedUsers: state.savedUsers,
+    );
+
+    _setupRealtimeListeners(organization.id);
+    await _initializeSaaSLocalProfile(email, organization.name);
+
+    await _updateSavedUsersList();
+    
+    // Eagerly refresh in background from Firestore to get any updated limits/details
+    refreshSessionFromFirestore();
+
+    return null; // success
+  }
+
+  Future<void> removeAccount(String email) async {
+    final box = Hive.box('configBox');
+    final emailKey = email.trim().toLowerCase();
+    
+    final List<dynamic> savedAccountsRaw = box.get('saas_saved_accounts') ?? [];
+    final List<String> savedAccounts = savedAccountsRaw.map((e) => e.toString()).toList();
+    if (savedAccounts.contains(emailKey)) {
+      savedAccounts.remove(emailKey);
+      await box.put('saas_saved_accounts', savedAccounts);
+    }
+
+    // Clear cached keys
+    await box.delete('saas_password_hash_$emailKey');
+    await box.delete('saas_user_$emailKey');
+    await box.delete('saas_org_$emailKey');
+    await box.delete('saas_license_$emailKey');
+    await box.delete('saas_firebase_config_$emailKey');
+    await box.delete('saas_firebase_config_iv_$emailKey');
+    await box.delete('saas_active_franchise_id_$emailKey');
+
+    await _updateSavedUsersList();
+
+    // If the removed account was the active one, clear active session
+    if (state.currentUser?.email.trim().toLowerCase() == emailKey) {
+      await clearSession();
+    }
+  }
+
+  // --- Device Info Helpers ---
+  Future<String> _getDeviceUuid() async {
+    final deviceInfo = DeviceInfoPlugin();
+    if (kIsWeb) return 'web-device';
+    if (Platform.isAndroid) {
+      final androidInfo = await deviceInfo.androidInfo;
+      return androidInfo.id;
+    } else if (Platform.isIOS) {
+      final iosInfo = await deviceInfo.iosInfo;
+      return iosInfo.identifierForVendor ?? 'ios-unknown-device';
+    }
+    return 'desktop-device';
+  }
+
+  Future<String> _getDeviceModel() async {
+    final deviceInfo = DeviceInfoPlugin();
+    if (kIsWeb) return 'Web Browser';
+    if (Platform.isAndroid) {
+      final androidInfo = await deviceInfo.androidInfo;
+      return "${androidInfo.manufacturer} ${androidInfo.model}";
+    } else if (Platform.isIOS) {
+      final iosInfo = await deviceInfo.iosInfo;
+      return iosInfo.utsname.machine;
+    }
+    return Platform.operatingSystem;
+  }
+
+  Future<String> _getDeviceOs() async {
+    final deviceInfo = DeviceInfoPlugin();
+    if (kIsWeb) return 'Web';
+    if (Platform.isAndroid) {
+      final androidInfo = await deviceInfo.androidInfo;
+      return "Android ${androidInfo.version.release}";
+    } else if (Platform.isIOS) {
+      final iosInfo = await deviceInfo.iosInfo;
+      return "iOS ${iosInfo.systemVersion}";
+    }
+    return Platform.operatingSystemVersion;
+  }
+
+  Future<void> _initializeSaaSLocalProfile(String email, String orgName) async {
+    final box = Hive.box('configBox');
+    final String cleanEmail = email.toLowerCase().trim();
+    final bool completed = box.get('profile_completed_$cleanEmail', defaultValue: false);
+    if (!completed) {
+      await box.put('shop_name_$cleanEmail', orgName.trim());
+      await box.put('shop_phone_$cleanEmail', '');
+      await box.put('shop_address_$cleanEmail', 'HQ');
+      await box.put('shop_vpas_$cleanEmail', ['merchant@upi']);
+      await box.put('tpl_invoice_$cleanEmail', "Thank you for shopping at {shop_name}! Your invoice {bill_id} for ₹{amount} is attached.\n\n{bill_details}");
+      await box.put('tpl_reminder_$cleanEmail', "Dear {customer_name}, this is a friendly reminder from {shop_name} regarding your outstanding due balance of ₹{due_amount}. Please settle this balance at your earliest convenience.");
+      await box.put('tpl_receipt_$cleanEmail', 'Hello {customer_name},\n\nWe have successfully received your payment of *₹{receipt_amount}* {payment_details}.\n\n🏪 *Shop:* {shop_name}\n💰 *Amount Paid:* ₹{receipt_amount}\n💳 *Remaining Outstanding Balance:* ₹{remaining_balance}\n\nThank you for your payment! 🙏');
+      await box.put('pdf_title_$cleanEmail', 'RETAIL INVOICE');
+      await box.put('pdf_footer_$cleanEmail', 'Thank you for shopping with us! Have a wonderful day!');
+      await box.put('pdf_color_$cleanEmail', 'purple');
+      await box.put('profile_completed_$cleanEmail', true);
+      await box.put('registry_verified_$cleanEmail', true);
+      
+      if (box.get('spreadsheet_id') == null) {
+        await box.put('spreadsheet_id', 'saas_database_link');
+      }
+    }
+  }
+
+  void _setupRealtimeListeners(String orgId) {
+    _cancelListeners();
+    if (orgId == 'SYSTEM_ADMIN' || state.isMockMode) return;
+
+    // An offline till renews its licence lease the moment it sees a network
+    // again, so a shop that connects once a week is never locked out.
+    _leaseConnSub?.cancel();
+    _leaseConnSub = Connectivity().onConnectivityChanged.listen((results) {
+      final online = results.any((r) => r != ConnectivityResult.none);
+      if (online && mounted && state.currentUser != null) {
+        refreshSessionFromFirestore();
+      }
+    });
+
+    try {
+      final conn = _ref.read(firebaseConnectionServiceProvider);
+      final firestore = conn.masterFirestore;
+
+      _licenseListener = firestore.collection('licenses').doc(orgId).snapshots().listen((licSnapshot) async {
+        if (!licSnapshot.exists || !mounted) return;
+        if (!licSnapshot.metadata.isFromCache) unawaited(LicenseLease.recordValidated(orgId));
+        try {
+          final Map<String, dynamic> licData = Map<String, dynamic>.from(licSnapshot.data()!);
+          if (!licData.containsKey('maxFranchises')) {
+            final limitsDoc = await firestore.collection('limits').doc(orgId).get();
+            if (limitsDoc.exists) {
+               final limData = limitsDoc.data()!;
+              licData['maxFranchises'] = limData['maxFranchises'];
+              licData['maxUsers'] = limData['maxUsers'];
+              licData['maxDevices'] = limData['maxDevices'];
+            }
+          }
+          
+          if (licData['features'] == null) {
+            final featDoc = await firestore.collection('features').doc(orgId).get();
+            if (featDoc.exists) {
+              final featData = featDoc.data()!;
+              licData['features'] = featData['features'];
+              licData['planProfile'] ??= featData['planProfile'];
+            }
+          }
+
+          final newLicense = SaasLicense.fromFirestore(licData);
+          final box = Hive.box('configBox');
+          await box.put('saas_license', jsonEncode(newLicense.toJson()));
+          
+          final email = state.currentUser?.email;
+          if (email != null) {
+            await box.put('saas_license_${email.toLowerCase().trim()}', jsonEncode(newLicense.toJson()));
+          }
+
+          if (mounted) state = state.copyWith(currentLicense: newLicense);
+        } catch (e) {
+          debugPrint("Realtime license sync error: $e");
+        }
+      }, onError: (e) {
+        debugPrint("Realtime license listener error: $e");
+      });
+
+      // The mirror listener only matters for a licence that has no feature map
+      // of its own; otherwise the licence listener above is the single source.
+      _featuresListener = firestore.collection('features').doc(orgId).snapshots().listen((featSnapshot) async {
+        if (!featSnapshot.exists || state.currentLicense == null || !mounted) return;
+        if (state.currentLicense!.features.isNotEmpty) return;
+        try {
+          final featData = featSnapshot.data()!;
+          final Map<String, dynamic> featuresMap = Map<String, dynamic>.from(featData['features'] ?? {});
+          final updatedFeatures = featuresMap.map((key, value) => MapEntry(key, value == true));
+          final newLicense = state.currentLicense!.copyWith(features: updatedFeatures);
+          
+          final box = Hive.box('configBox');
+          await box.put('saas_license', jsonEncode(newLicense.toJson()));
+          
+          final email = state.currentUser?.email;
+          if (email != null) {
+            await box.put('saas_license_${email.toLowerCase().trim()}', jsonEncode(newLicense.toJson()));
+          }
+
+          if (mounted) state = state.copyWith(currentLicense: newLicense);
+        } catch (e) {
+          debugPrint("Realtime features sync error: $e");
+        }
+      }, onError: (e) {
+        debugPrint("Realtime features listener error: $e");
+      });
+
+      _orgListener = firestore.collection('organizations').doc(orgId).snapshots().listen((orgSnapshot) async {
+        if (!mounted) return;
+        if (!orgSnapshot.exists) {
+          debugPrint("🚨 [Realtime] Organization $orgId was deleted from Firestore. Terminating session...");
+          await clearSession();
+          return;
+        }
+        try {
+          final orgData = orgSnapshot.data()!;
+          final newOrg = SaasOrganization.fromFirestore(orgData, orgId);
+          
+          final box = Hive.box('configBox');
+          await box.put('saas_org', jsonEncode(newOrg.toJson()));
+          
+          final email = state.currentUser?.email;
+          if (email != null) {
+            await box.put('saas_org_${email.toLowerCase().trim()}', jsonEncode(newOrg.toJson()));
+          }
+
+          if (mounted) state = state.copyWith(currentOrganization: newOrg);
+        } catch (e) {
+          debugPrint("Realtime org details sync error: $e");
+        }
+      }, onError: (e) {
+        debugPrint("Realtime org details listener error: $e");
+      });
+
+      final currentUserId = state.currentUser?.id;
+      if (currentUserId != null && currentUserId != 'usr_master_admin') {
+        _userListener = firestore.collection('users').doc(currentUserId).snapshots().listen((userSnapshot) async {
+          if (!mounted) return;
+          if (!userSnapshot.exists) {
+            debugPrint("🚨 [Realtime] User $currentUserId was deleted from Firestore. Terminating session...");
+            await clearSession();
+            return;
+          }
+          final uData = userSnapshot.data();
+          if (uData != null) {
+            final uStatus = (uData['status'] ?? 'ACTIVE').toString().toUpperCase();
+            if (uStatus == 'DELETED' || uStatus == 'INACTIVE') {
+              debugPrint("🚨 [Realtime] User $currentUserId is marked $uStatus. Terminating session...");
               await clearSession();
               return;
             }
-          }
-
-          if (encryptedConfig != null && iv != null) {
-            final config = conn.decryptConfig(user.organizationId, encryptedConfig, iv);
-            await conn.initializeCustomerApp(user.organizationId, config);
-          }
-
-          if (!mounted) return;
-          state = SaasSessionState(
-            currentUser: user,
-            currentOrganization: org,
-            currentLicense: license,
-            activeFranchiseId: user.franchiseId ?? box.get('saas_active_franchise_id'),
-            isMockMode: false,
-            isInitializing: false,
-            savedUsers: state.savedUsers,
-          );
-
-          // Populate active staff member in restaurantAuthProvider for immediate role-based UI resolution
-          final primaryRole = StaffRoleExtension.fromKey(user.role);
-          final staffMember = StaffMember(
-            id: user.id,
-            name: user.fullName,
-            username: user.username,
-            email: user.email,
-            role: primaryRole,
-            roles: [primaryRole],
-            assignedOutletId: user.franchiseId,
-            isActive: true,
-          );
-          _ref.read(restaurantAuthProvider.notifier).setActiveStaff(staffMember);
-
-          _setupRealtimeListeners(org.id);
-          await _initializeSaaSLocalProfile(user.email, org.name);
-
-          // Eagerly refresh from Firestore to get any updated limits/details, or evict if deleted
-          await refreshSessionFromFirestore();
-        } else {
-          await clearSession();
-        }
-      } catch (e) {
-        debugPrint("Auto-login restoration failed: $e");
-        await clearSession();
-      }
-    } else {
-      if (mounted) {
-        state = state.copyWith(isInitializing: false);
-      }
-    }
-  }
-
-  /// Refreshes current user, organization, and license details from master Firestore
-  Future<void> refreshSessionFromFirestore() async {
-    if (state.isMockMode || state.currentUser == null) return;
-    
-    final conn = _ref.read(firebaseConnectionServiceProvider);
-    final userId = state.currentUser!.id;
-    final orgId = state.currentUser!.organizationId;
-    final box = Hive.box('configBox');
-
-    try {
-      final firestore = conn.masterFirestore;
-      // 1. Fetch User doc
-      final userDoc = await firestore.collection('users').doc(userId).get();
-      SaasUser? updatedUser;
-      if (userDoc.exists) {
-        final userData = userDoc.data()!;
-        final userStatus = (userData['status'] ?? 'ACTIVE').toString().toUpperCase();
-        if (userStatus == 'DELETED' || userStatus == 'INACTIVE') {
-          debugPrint("🚨 User $userId is marked $userStatus in Firestore. Evicting session...");
-          await clearSession();
-          return;
-        }
-        updatedUser = SaasUser(
-          id: userId,
-          email: userData['email'] ?? state.currentUser!.email,
-          fullName: userData['fullName'] ?? state.currentUser!.fullName,
-          role: userData['role'] ?? state.currentUser!.role,
-          organizationId: userData['organizationId'] ?? state.currentUser!.organizationId,
-          franchiseId: userData['franchiseId'],
-          mustChangePassword: userData['mustChangePassword'] == true,
-        );
-        await box.put('saas_user', jsonEncode(updatedUser.toJson()));
-      } else if (userId != 'usr_master_admin') {
-        debugPrint("🚨 User $userId does not exist in Firestore. Evicting session...");
-        await clearSession();
-        return;
-      }
-
-      // 2. Fetch Organization
-      SaasOrganization? updatedOrg;
-      if (orgId == 'SYSTEM_ADMIN') {
-        updatedOrg = SaasOrganization(
-          id: 'SYSTEM_ADMIN',
-          name: 'SmartBiz Administrator',
-          appName: 'SmartBiz Control Panel',
-        );
-        await box.put('saas_org', jsonEncode(updatedOrg.toJson()));
-      } else {
-        final orgDoc = await firestore.collection('organizations').doc(orgId).get();
-        if (orgDoc.exists) {
-          final orgData = orgDoc.data()!;
-          updatedOrg = SaasOrganization.fromFirestore(orgData, orgId);
-          await box.put('saas_org', jsonEncode(updatedOrg.toJson()));
-        } else {
-          debugPrint("🚨 Organization $orgId does not exist in Firestore. Evicting session...");
-          await clearSession();
-          return;
-        }
-      }
-
-      // 3. Fetch License
-      SaasLicense? updatedLicense;
-      if (orgId == 'SYSTEM_ADMIN') {
-        updatedLicense = SaasLicense(
-          planTier: 'ENTERPRISE',
-          status: 'ACTIVE',
-          maxFranchises: 999,
-          maxUsers: 999,
-          maxDevices: 999,
-          features: {
-            'inventoryEnabled': true,
-            'reportsEnabled': true,
-            'loyaltyEnabled': true,
-            'onlineOrderingEnabled': true,
-            'whiteLabelEnabled': true,
-          },
-          startDate: DateTime.now(),
-          endDate: DateTime.now().add(const Duration(days: 36500)),
-        );
-        await box.put('saas_license', jsonEncode(updatedLicense.toJson()));
-      } else {
-        final licDoc = await firestore.collection('licenses').doc(orgId).get();
-        // A server read renews this device's offline licence lease.
-        if (licDoc.exists && !licDoc.metadata.isFromCache) unawaited(LicenseLease.recordValidated(orgId));
-        if (licDoc.exists) {
-          final Map<String, dynamic> licData = Map<String, dynamic>.from(licDoc.data()!);
-          if (!licData.containsKey('maxFranchises')) {
-            try {
-              final limitsDoc = await firestore.collection('limits').doc(orgId).get();
-              if (limitsDoc.exists) {
-                final limData = limitsDoc.data()!;
-                licData['maxFranchises'] = limData['maxFranchises'];
-                licData['maxUsers'] = limData['maxUsers'];
-                licData['maxDevices'] = limData['maxDevices'];
-              }
-            } catch (_) {}
-          }
-
-          // licenses/{orgId} is the authority. The features/{orgId} mirror is
-          // read only for documents that predate it (no 'features' on the licence).
-          if (licData['features'] == null) {
-            try {
-              final featDoc = await firestore.collection('features').doc(orgId).get();
-              if (featDoc.exists) {
-                final featData = featDoc.data()!;
-                licData['features'] = featData['features'];
-                licData['planProfile'] ??= featData['planProfile'];
-              }
-            } catch (_) {}
-          }
-
-          updatedLicense = SaasLicense.fromFirestore(licData);
-          await box.put('saas_license', jsonEncode(updatedLicense.toJson()));
-          
-          // Save to local cache keyed by email if logged in user matches the org
-          final email = state.currentUser?.email;
-          if (email != null && orgId == state.currentUser?.organizationId) {
-            final emailKey = email.toLowerCase().trim();
-            await box.put('saas_license_$emailKey', jsonEncode(updatedLicense.toJson()));
-          }
-        }
-      }
-
-      // 4. Update memory state
-      await box.put('pure_offline_mode', updatedOrg.storageMode == 'PURE_OFFLINE');
-
-      state = SaasSessionState(
-        currentUser: updatedUser ?? state.currentUser,
-        currentOrganization: updatedOrg,
-        currentLicense: updatedLicense ?? state.currentLicense,
-        activeFranchiseId: state.activeFranchiseId,
-        isMockMode: false,
-      );
-    } catch (e) {
-      debugPrint("Failed to refresh SaaS session from Firestore: $e");
-    }
-  }
-
-
-  Future<void> _clearTenantDataBoxes() async {
-    // X-18: kOutboxBoxName used to be in this list, so logging out - or a
-    // different owner signing in on the same till - wiped the durable queue.
-    // Every box below is a CACHE that the server can rebuild; the outbox is
-    // unsent work, and clearing it destroys settlements and KOTs that never
-    // reached the sheet. Each op carries its own outletId, so keeping the queue
-    // across a tenant switch delivers each op to the outlet it belongs to.
-    try {
-      final pending = Hive.isBoxOpen(kOutboxBoxName)
-          ? Hive.box(kOutboxBoxName).length
-          : (await Hive.openBox(kOutboxBoxName)).length;
-      if (pending > 0) {
-        debugPrint('Notice: preserving $pending un-synced outbox op(s) across '
-            'tenant data clear.');
-      }
-    } catch (e) {
-      debugPrint('Notice: could not inspect outbox before clear: $e');
-    }
-
-    final boxesToClear = [
-      kInventoryBoxName,
-      kCustomersBoxName,
-      kLedgerBoxName,
-      kBillsBoxName,
-      kSuppliersBoxName,
-      kPurchaseOrdersBoxName,
-      kReturnsBoxName,
-      kShopUsersBoxName,
-      kSelfPickupNotesBoxName,
-      'expenses',
-    ];
-
-    for (final boxName in boxesToClear) {
-      try {
-        if (Hive.isBoxOpen(boxName)) {
-          await Hive.box(boxName).clear();
-        } else {
-          final b = await Hive.openBox(boxName);
-          await b.clear();
-        }
-      } catch (e) {
-        debugPrint("Notice: clearing box $boxName: $e");
-      }
-    }
-
-    // Clean tenant-scoped keys from restaurant_config_box (P-26)
-    try {
-      if (Hive.isBoxOpen('restaurant_config_box')) {
-        final rBox = Hive.box('restaurant_config_box');
-        final rKeys = rBox.keys.where((k) {
-          final s = k.toString();
-          return s.startsWith('restaurant_menu_dishes') ||
-              s.startsWith('menu_') ||
-              s.startsWith('category_');
-        }).toList();
-        for (final k in rKeys) {
-          await rBox.delete(k);
-        }
-      }
-    } catch (e) {
-      debugPrint("Notice: clearing restaurant_config_box tenant keys: $e");
-    }
-
-    // Clean tenant-scoped order/table/sheet keys from configBox
-    try {
-      if (Hive.isBoxOpen('configBox')) {
-        final cBox = Hive.box('configBox');
-        final cKeys = cBox.keys.where((k) {
-          final s = k.toString();
-          return s.startsWith('kot_orders_') ||
-              s.startsWith('restaurant_tables_') ||
-              s.startsWith('restaurant_sheet_id_') ||
-              s.startsWith('restaurant_menu_dishes_') ||
-              s == 'restaurant_menu_dishes' ||
-              s == 'smtp_config';
-        }).toList();
-        for (final k in cKeys) {
-          await cBox.delete(k);
-        }
-      }
-    } catch (e) {
-      debugPrint("Notice: clearing configBox tenant keys: $e");
-    }
-  }
-
-  /// Custom Username or Email & Password Authentication against Master Control Plane Firestore
-  Future<String?> login(String usernameOrEmail, String password, {bool rememberMe = false, String? mfaCode}) async {
-    final conn = _ref.read(firebaseConnectionServiceProvider);
-    final firestore = conn.masterFirestore;
-
-    try {
-      final box = Hive.box('configBox');
-      final input = usernameOrEmail.trim().toLowerCase();
-      final lastEmail = box.get('saas_last_email') as String?;
-      if (lastEmail != null && lastEmail.isNotEmpty && lastEmail != input) {
-        debugPrint("Different tenant login detected ($lastEmail -> $input). Purging previous tenant caches...");
-        await _clearTenantDataBoxes();
-      }
-
-      // 1. Search in /users collection in Master Firebase Control Plane (with 5s timeout for offline fallback)
-      Map<String, dynamic>? userData;
-      String? userId;
-
-      // 0. The server checks the password first (FirebaseAuthBridge). A
-      //    verified login is also a Firebase sign-in, which is what the
-      //    locked-down rules will key on. A definite "wrong password" from the
-      //    server is final. Only when the server cannot answer (offline, not
-      //    configured yet) does the app fall back to checking it here.
-      bool passwordValid = false;
-      final serverLogin = await FirebaseAuthBridge.signInForLogin(
-        firestore: firestore,
-        identifier: input,
-        password: password,
-        mfaCode: mfaCode,
-      );
-      // Platform admin: the server runs the second step itself.
-      if (serverLogin.status == ServerLoginStatus.mfaRequired) {
-        _pendingAdminLogin = (input, password);
-        return 'MFA_REQUIRED:${serverLogin.email ?? kAdminEmail}';
-      }
-      if (serverLogin.status == ServerLoginStatus.mfaFailed) {
-        switch (serverLogin.errorCode) {
-          case 'MFA_EXPIRED':
-            return 'That code has expired. Tap "Resend code" for a new one.';
-          case 'MFA_LOCKED':
-            return 'Too many wrong codes. Tap "Resend code" for a new one.';
-          default:
-            return 'Invalid 2-step verification code.';
-        }
-      }
-      if (serverLogin.status == ServerLoginStatus.ok) _pendingAdminLogin = null;
-      if (serverLogin.status == ServerLoginStatus.rejected) {
-        return serverLogin.errorCode == 'RATE_LIMITED'
-            ? "Too many attempts. Please wait ten minutes and try again."
-            : "Invalid username/email or password";
-      }
-      if (serverLogin.status == ServerLoginStatus.ok) {
-        final uid = serverLogin.uid!;
-        for (final col in const ['users', 'staff_users']) {
-          final doc = await firestore.collection(col).doc(uid).get().timeout(const Duration(seconds: 6));
-          if (doc.exists) {
-            userId = doc.id;
-            userData = doc.data();
-            passwordValid = true;
-            break;
-          }
-        }
-      }
-
-      if (!passwordValid) {
-        // 1a. First attempt: Query by username
-        var userQuery = await firestore
-            .collection('users')
-            .where('username', isEqualTo: input)
-            .limit(1)
-            .get()
-            .timeout(const Duration(seconds: 5));
-
-        // 1b. Fallback: Query by email
-        if (userQuery.docs.isEmpty) {
-          userQuery = await firestore
-              .collection('users')
-              .where('email', isEqualTo: input)
-              .limit(1)
-              .get()
-              .timeout(const Duration(seconds: 5));
-        }
-
-        if (userQuery.docs.isNotEmpty) {
-          final userDoc = userQuery.docs.first;
-          userId = userDoc.id;
-          userData = userDoc.data();
-        } else {
-          // 1c. Fallback: Check /staff_users collection
-          final staffQuery = await firestore
-              .collection('staff_users')
-              .where('username', isEqualTo: input)
-              .limit(1)
-              .get()
-              .timeout(const Duration(seconds: 4));
-          if (staffQuery.docs.isNotEmpty) {
-            final staffDoc = staffQuery.docs.first;
-            userId = staffDoc.id;
-            userData = staffDoc.data();
-          } else {
-            final staffEmailQuery = await firestore
-                .collection('staff_users')
-                .where('email', isEqualTo: input)
-                .limit(1)
-                .get()
-                .timeout(const Duration(seconds: 4));
-            if (staffEmailQuery.docs.isNotEmpty) {
-              final staffDoc = staffEmailQuery.docs.first;
-              userId = staffDoc.id;
-              userData = staffDoc.data();
-            }
-          }
-        }
-
-        if (userData == null || userId == null) {
-          return "Invalid username/email or password";
-        }
-
-        final passwordHash = userData['passwordHash'] as String?;
-        final plainPassword = userData['password'] as String?;
-
-        passwordValid = false;
-        if (passwordHash != null && passwordHash.isNotEmpty) {
-          try {
-            passwordValid = BCrypt.checkpw(password, passwordHash);
-          } catch (_) {}
-        }
-        if (!passwordValid && plainPassword != null && plainPassword.isNotEmpty) {
-          passwordValid = (password == plainPassword);
-        }
-        // (A hard-coded master-admin password used to be accepted here — "admin"
-        // among them — and it shipped in the public web bundle. Removed: the
-        // admin signs in with the password stored on their account, like
-        // everyone else.)
-      }
-
-      if (!passwordValid || userData == null || userId == null) {
-        return "Invalid username/email or password";
-      }
-
-
-      final role = userData['role'] ?? 'STAFF';
-      final orgId = userData['organizationId'] ?? '';
-      final franchiseId = userData['franchiseId'];
-      final userEmail = (userData['email'] as String?)?.trim().toLowerCase() ?? input;
-      final username = (userData['username'] as String?)?.trim().toLowerCase() ?? input;
-
-      // Two-Factor Authentication (2MFA) challenge for Master Admin
-      final bool isMasterAdmin = role == 'MASTER_ADMIN' ||
-          isMasterAdminEmail(userEmail) ||
-          orgId == 'SYSTEM_ADMIN' ||
-          userId == 'usr_master_admin';
-
-      // When the server verified this login it has already run the second
-      // step (checkAdminSecondStep_ in Code.gs). The app's own e-mail code is
-      // only the fallback for when the server can't be reached.
-      if (isMasterAdmin && serverLogin.status != ServerLoginStatus.ok) {
-        final bool is2faEnabled = await PlatformSecurityService.is2faEnabled();
-        if (is2faEnabled) {
-          final targetMfaEmail = (userEmail.isNotEmpty && userEmail.contains('@'))
-              ? userEmail
-              : kAdminEmail;
-
-          if (mfaCode == null || mfaCode.trim().isEmpty) {
-            final otpRes = await OtpVerificationService.sendMfaLoginOtp(
-              email: targetMfaEmail,
-              clientName: userData['fullName'] ?? 'SmartBizz Platform Admin',
-            );
-            // No Firebase session for an admin until the second step passes.
-            await FirebaseAuthBridge.signOut(firestore);
-            if (otpRes['success'] != true) {
-              return "Failed to send 2-step verification code: ${otpRes['message'] ?? 'Please try again'}";
-            }
-            return 'MFA_REQUIRED:$targetMfaEmail';
-          } else {
-            final verifyRes = await OtpVerificationService.verifyEmailOtp(
-              email: targetMfaEmail,
-              enteredOtp: mfaCode.trim(),
-            );
-            if (verifyRes['success'] != true) {
-              await FirebaseAuthBridge.signOut(firestore);
-              return verifyRes['message'] ?? 'Invalid or expired 2-step verification code.';
-            }
-          }
-        }
-      }
-
-      if (role != 'OWNER' && role != 'CLIENT' && role != 'MASTER_ADMIN' && (franchiseId == null || franchiseId.toString().trim().isEmpty)) {
-        // Allow unassigned outlet only if organization has default
-      }
-
-      // 2. Fetch Organization
-      SaasOrganization organization;
-      if (orgId == 'SYSTEM_ADMIN') {
-        organization = SaasOrganization(
-          id: 'SYSTEM_ADMIN',
-          name: 'SmartBiz Administrator',
-          appName: 'SmartBiz Control Panel',
-        );
-      } else {
-        final orgDoc = await firestore.collection('organizations').doc(orgId).get().timeout(const Duration(seconds: 5));
-        if (!orgDoc.exists) return "Organization not found";
-        final orgData = orgDoc.data()!;
-        if (orgData['status'] != 'ACTIVE') return "Organization is suspended";
-        organization = SaasOrganization.fromFirestore(orgData, orgId);
-
-        // RESTRICTION: For tenant owners/clients (root tenant without franchiseId),
-        // strictly enforce that only the onboarding registered email can log in.
-        // Store-scoped owners (role OWNER with franchiseId) run their allocated outlet.
-        if ((role == 'OWNER' || role == 'CLIENT') && (franchiseId == null || franchiseId.toString().trim().isEmpty)) {
-          final registeredOwnerEmail = (organization.ownerGoogleEmail ?? orgData['ownerEmail'] ?? orgData['email'])?.toString().trim().toLowerCase();
-
-          if (registeredOwnerEmail != null && registeredOwnerEmail.isNotEmpty) {
-            if (userEmail.isNotEmpty && userEmail != registeredOwnerEmail) {
-              return "Access Denied: Only the registered store owner ($registeredOwnerEmail) is authorized to log in to this store.";
-            }
-          } else {
-            // First owner login on legacy store: bind to this verified owner
-            await firestore.collection('organizations').doc(orgId).set({
-              'ownerGoogleEmail': userEmail,
-              'ownerEmail': userEmail,
-            }, SetOptions(merge: true));
-            organization = SaasOrganization.fromFirestore({
-              ...orgData,
-              'ownerGoogleEmail': userEmail,
-              'ownerEmail': userEmail,
-            }, orgId);
-          }
-        }
-      }
-
-      // 3. Fetch License
-      SaasLicense license;
-      if (orgId == 'SYSTEM_ADMIN') {
-        license = SaasLicense(
-          planTier: 'ENTERPRISE',
-          status: 'ACTIVE',
-          maxFranchises: 999,
-          maxUsers: 999,
-          maxDevices: 999,
-          features: {
-            'inventoryEnabled': true,
-            'reportsEnabled': true,
-            'loyaltyEnabled': true,
-            'onlineOrderingEnabled': true,
-            'whiteLabelEnabled': true,
-          },
-          startDate: DateTime.now(),
-          endDate: DateTime.now().add(const Duration(days: 36500)),
-        );
-      } else {
-        final licDoc = await firestore.collection('licenses').doc(orgId).get().timeout(const Duration(seconds: 5));
-        // A server read renews this device's offline licence lease.
-        if (licDoc.exists && !licDoc.metadata.isFromCache) unawaited(LicenseLease.recordValidated(orgId));
-        if (!licDoc.exists) return "License details not found";
-        
-        final Map<String, dynamic> licData = Map<String, dynamic>.from(licDoc.data()!);
-        if (!licData.containsKey('maxFranchises')) {
-          try {
-            final limitsDoc = await firestore.collection('limits').doc(orgId).get().timeout(const Duration(seconds: 5));
-            if (limitsDoc.exists) {
-              final limData = limitsDoc.data()!;
-              licData['maxFranchises'] = limData['maxFranchises'];
-              licData['maxUsers'] = limData['maxUsers'];
-              licData['maxDevices'] = limData['maxDevices'];
-            }
-          } catch (_) {}
-        }
-
-        // Legacy mirror, only when the licence carries no feature map.
-        if (licData['features'] == null) {
-          try {
-            final featDoc = await firestore.collection('features').doc(orgId).get().timeout(const Duration(seconds: 5));
-            if (featDoc.exists) {
-              final featData = featDoc.data()!;
-              licData['features'] = featData['features'];
-              licData['planProfile'] ??= featData['planProfile'];
-            }
-          } catch (_) {}
-        }
-
-        license = SaasLicense.fromFirestore(licData);
-      }
-
-      if (license.isExpired) return "License has expired";
-      if (license.isPastDue) return "License payment past due";
-
-      // The resolved limits (docs/PLATFORM_STRUCTURE.md §3). An offline
-      // store (by its organisation's storage mode, or the licence's own) is
-      // one device and one user, the owner, whatever the document says.
-      final limitsEnt = Entitlements.fromLicense(
-        license,
-        storageMode: StorageModes.isOffline(organization.storageMode) ? organization.storageMode : null,
-      );
-
-      // Offline has one user: the owner. Staff cannot sign in to it; the
-      // owner (and the platform admin) always can.
-      final roleKey = role.toString().trim().toUpperCase();
-      final isOwnerLogin = roleKey == 'OWNER' || roleKey == 'CLIENT' || isMasterAdmin;
-      // (Only the offline family is checked here: a cloud store's user count
-      // is enforced where staff are created, so an older licence with a low
-      // count never locks existing staff out.)
-      if (!isOwnerLogin && limitsEnt.isPureOffline) {
-        await FirebaseAuthBridge.signOut(firestore);
-        return "Offline stores have one user — the owner. Ask the owner to move to Basic or above to add staff.";
-      }
-
-      // 4. Fetch Device limit registration (Except for system master admin)
-      String deviceUuid = 'web-device';
-      if (role != 'MASTER_ADMIN') {
-        deviceUuid = await _getDeviceUuid();
-        final deviceRegRef = firestore.collection('device_registry').doc(deviceUuid);
-        final deviceDoc = await deviceRegRef.get().timeout(const Duration(seconds: 5));
-
-        if (!deviceDoc.exists) {
-          final orgDevices = await firestore
-              .collection('device_registry')
-              .where('organizationId', isEqualTo: orgId)
-              .get().timeout(const Duration(seconds: 5));
-          
-          // Use the resolved entitlement cap, not the raw licence field: a
-          // pure-offline tenant is one device whatever the licence document
-          // happens to say, and the previous check let a second till register
-          // against an offline plan.
-          final deviceCap = limitsEnt.maxDevices;
-          if (orgDevices.docs.length >= deviceCap) {
-            // Return structured prefix so the login UI can offer remote logout
-            return 'DEVICE_LIMIT:$orgId:${orgDevices.docs.length}:$deviceCap';
-          }
-
-          // Register device
-          await deviceRegRef.set({
-            'userId': userId,
-            'organizationId': orgId,
-            'modelName': await _getDeviceModel(),
-            'osVersion': await _getDeviceOs(),
-            'lastLogin': FieldValue.serverTimestamp(),
-          });
-        } else {
-          // Update last login
-          await deviceRegRef.update({
-            'lastLogin': FieldValue.serverTimestamp(),
-          });
-        }
-      }
-
-      // 5. Fetch encrypted customer Firebase Config or Excel Cloud Config
-      final configDoc = await firestore.collection('firebase_configs').doc(orgId).get().timeout(const Duration(seconds: 5));
-      Map<String, String>? decryptedConfig;
-      if (configDoc.exists) {
-        final configData = configDoc.data()!;
-        final encryptedStr = configData['encryptedConfig'] as String;
-        final iv = configData['iv'] as String;
-        decryptedConfig = conn.decryptConfig(orgId, encryptedStr, iv);
-        await conn.initializeCustomerApp(orgId, decryptedConfig);
-      }
-
-      // Check for Excel / Google Sheets backend configuration
-      final excelDoc = await firestore.collection('excel_configs').doc(orgId).get().timeout(const Duration(seconds: 5));
-      final Map<String, dynamic>? excelData = excelDoc.data();
-      final String? spreadsheetId = excelData != null ? excelData['spreadsheetId'] as String? : null;
-
-      String? storeSpreadsheetId;
-      if (franchiseId != null && franchiseId.toString().isNotEmpty) {
-        try {
-          final franDoc = await firestore.collection('franchises').doc(franchiseId.toString()).get().timeout(const Duration(seconds: 4));
-          if (franDoc.exists) {
-            storeSpreadsheetId = franDoc.data()?['spreadsheet_id'] as String?;
-          }
-        } catch (e) {
-          debugPrint("Failed to fetch store spreadsheet for franchise $franchiseId: $e");
-        }
-      }
-
-      final activeSpreadsheetId = (storeSpreadsheetId != null && storeSpreadsheetId.isNotEmpty)
-          ? storeSpreadsheetId
-          : spreadsheetId;
-
-      final user = SaasUser(
-        id: userId,
-        email: userEmail,
-        username: username,
-        fullName: userData['fullName'] ?? userData['name'] ?? username,
-        role: role,
-        organizationId: orgId,
-        franchiseId: franchiseId,
-        mustChangePassword: userData['mustChangePassword'] == true,
-      );
-
-      // Save to local Hive cache
-      final emailKey = userEmail;
-      final usernameKey = username;
-
-      await box.put('saas_username_to_email_$usernameKey', emailKey);
-      await box.put('saas_username_to_email_$input', emailKey);
-
-      // Cache credentials locally for offline verification
-      await box.put('saas_password_hash_$emailKey', (userData['passwordHash'] as String?) ?? BCrypt.hashpw(password, BCrypt.gensalt()));
-      await box.put('saas_user_$emailKey', jsonEncode(user.toJson()));
-      await box.put('saas_org_$emailKey', jsonEncode(organization.toJson()));
-      await box.put('saas_license_$emailKey', jsonEncode(license.toJson()));
-      if (configDoc.exists) {
-        await box.put('saas_firebase_config_$emailKey', configDoc.data()!['encryptedConfig']);
-        await box.put('saas_firebase_config_iv_$emailKey', configDoc.data()!['iv']);
-      }
-      if (activeSpreadsheetId != null && activeSpreadsheetId.isNotEmpty) {
-        await box.put('saas_spreadsheet_id_$emailKey', activeSpreadsheetId);
-        await box.put('saas_spreadsheet_id', activeSpreadsheetId);
-        await box.put('spreadsheet_id', activeSpreadsheetId);
-      } else {
-        await box.delete('saas_spreadsheet_id');
-        await box.delete('spreadsheet_id');
-      }
-      if (franchiseId != null) {
-        await box.put('saas_active_franchise_id_$emailKey', franchiseId);
-      }
-
-      // Standard active session pointers
-      await box.put('saas_logged_in', true);
-      await box.put('saas_remember_me', rememberMe);
-      await box.put('saas_login_timestamp', DateTime.now().toIso8601String());
-      // The password version this sign-in used; a later change on any device
-      // signs this one out (see the user listener).
-      await box.put('saas_pwd_changed_seen', _pwdChangedMillis(userData['passwordChangedAt']));
-      await box.put('saas_last_email', input);
-      await box.put('saas_last_username', username);
-      await box.put('saas_user', jsonEncode(user.toJson()));
-      await box.put('saas_org', jsonEncode(organization.toJson()));
-      await box.put('saas_license', jsonEncode(license.toJson()));
-      await box.put('pure_offline_mode', organization.storageMode == 'PURE_OFFLINE');
-      if (configDoc.exists) {
-        await box.put('saas_firebase_config', configDoc.data()!['encryptedConfig']);
-        await box.put('saas_firebase_config_iv', configDoc.data()!['iv']);
-      }
-      if (franchiseId != null) {
-        await box.put('saas_active_franchise_id', franchiseId);
-      }
-
-      // Add to saved accounts list
-      final List<dynamic> savedAccountsRaw = box.get('saas_saved_accounts') ?? [];
-      final List<String> savedAccounts = savedAccountsRaw.map((e) => e.toString()).toList();
-      if (!savedAccounts.contains(emailKey)) {
-        savedAccounts.add(emailKey);
-        await box.put('saas_saved_accounts', savedAccounts);
-      }
-
-      state = SaasSessionState(
-        currentUser: user,
-        currentOrganization: organization,
-        currentLicense: license,
-        activeFranchiseId: franchiseId ?? box.get('saas_active_franchise_id'),
-        isMockMode: false,
-        savedUsers: state.savedUsers,
-      );
-
-      // Populate active staff member in restaurantAuthProvider for immediate role-based UI resolution
-      final primaryRole = StaffRoleExtension.fromKey(role);
-      final staffMember = StaffMember(
-        id: userId,
-        name: user.fullName,
-        username: username,
-        email: userEmail,
-        role: primaryRole,
-        roles: [primaryRole],
-        assignedOutletId: franchiseId?.toString(),
-        isActive: true,
-      );
-      _ref.read(restaurantAuthProvider.notifier).setActiveStaff(staffMember);
-      if (role != 'MASTER_ADMIN') {
-        await _ref.read(restaurantAuthProvider.notifier).saveStaffMember(staffMember);
-      }
-
-      await _updateSavedUsersList();
-
-      await _initializeSaaSLocalProfile(userEmail, organization.name);
-
-      _setupRealtimeListeners(orgId);
-      refreshSessionFromFirestore();
-
-      // Log Audit Event
-      await logAudit(
-        orgId: orgId,
-        userId: userId,
-        actionType: 'LOGIN',
-        details: 'User logged in successfully from device $deviceUuid',
-      );
-
-      return null; // success
-    } catch (e) {
-      debugPrint("Online login error, checking connectivity fallback: $e");
-      final errStr = e.toString().toLowerCase();
-      final isNetwork = e is TimeoutException ||
-                        e is SocketException ||
-                        errStr.contains('network') ||
-                        errStr.contains('unavailable') ||
-                        errStr.contains('failed-precondition') ||
-                        errStr.contains('deadline-exceeded');
-      if (isNetwork) {
-        return await _attemptOfflineLogin(usernameOrEmail, password, rememberMe);
-      }
-      return "Login failed: ${e.toString()}";
-    }
-  }
-
-  /// Resends 2-Step Verification code to the Master Admin email
-  Future<Map<String, dynamic>> resendMfaCode(String email) async {
-    // Server-run second step: asking again without a code sends a new one.
-    final pending = _pendingAdminLogin;
-    if (pending != null) {
-      final conn = _ref.read(firebaseConnectionServiceProvider);
-      final r = await FirebaseAuthBridge.signInForLogin(
-        firestore: conn.masterFirestore,
-        identifier: pending.$1,
-        password: pending.$2,
-      );
-      if (r.status == ServerLoginStatus.mfaRequired) return {'success': true};
-      if (r.status == ServerLoginStatus.rejected && r.errorCode == 'RATE_LIMITED') {
-        return {'success': false, 'message': 'Too many codes sent. Please wait ten minutes.'};
-      }
-      if (r.status != ServerLoginStatus.unavailable) {
-        return {'success': false, 'message': 'Could not send a new code. Please sign in again.'};
-      }
-    }
-    final is2fa = await PlatformSecurityService.is2faEnabled();
-    if (!is2fa) {
-      return {'success': false, 'message': '2-Factor Authentication is currently disabled on the platform.'};
-    }
-    final cleanEmail = email.trim().toLowerCase();
-    final targetEmail = (cleanEmail.isNotEmpty && cleanEmail.contains('@'))
-        ? cleanEmail
-        : kAdminEmail;
-    return await OtpVerificationService.sendMfaLoginOtp(
-      email: targetEmail,
-      clientName: 'SmartBizz Platform Admin',
-    );
-  }
-
-  /// Attempts offline verification of credentials stored locally.
-  Future<String?> _attemptOfflineLogin(String usernameOrEmail, String password, bool rememberMe) async {
-    final box = Hive.box('configBox');
-    final input = usernameOrEmail.trim().toLowerCase();
-    final mappedEmail = box.get('saas_username_to_email_$input') as String?;
-    final emailKey = mappedEmail ?? input;
-    final passwordHash = box.get('saas_password_hash_$emailKey') as String?;
-
-    if (passwordHash == null) {
-      return "No network connection. No cached credentials found for this account ($input). Please connect to the internet to log in for the first time.";
-    }
-
-    if (!BCrypt.checkpw(password, passwordHash)) {
-      return "Invalid username/email or password";
-    }
-
-    final userJson = box.get('saas_user_$emailKey') as String?;
-    final orgJson = box.get('saas_org_$emailKey') as String?;
-    final licJson = box.get('saas_license_$emailKey') as String?;
-
-    if (userJson == null || orgJson == null || licJson == null) {
-      return "Local credentials cache is incomplete. Please connect to the internet to log in.";
-    }
-
-    final user = SaasUser.fromJson(jsonDecode(userJson));
-    // The platform admin always signs in online: the second step needs the
-    // server, and an offline admin session could not do anything anyway.
-    if (user.role.toUpperCase() == 'MASTER_ADMIN' || user.organizationId == 'SYSTEM_ADMIN') {
-      return "The platform admin console needs an internet connection to sign in.";
-    }
-    final organization = SaasOrganization.fromJson(jsonDecode(orgJson));
-    final license = SaasLicense.fromJson(jsonDecode(licJson));
-    final franchiseId = box.get('saas_active_franchise_id_$emailKey');
-
-    // Restore Firebase customer configuration if available
-    final encryptedConfig = box.get('saas_firebase_config_$emailKey') as String?;
-    final iv = box.get('saas_firebase_config_iv_$emailKey') as String?;
-    final conn = _ref.read(firebaseConnectionServiceProvider);
-    if (encryptedConfig != null && iv != null) {
-      try {
-        final decryptedConfig = conn.decryptConfig(user.organizationId, encryptedConfig, iv);
-        await conn.initializeCustomerApp(user.organizationId, decryptedConfig);
-      } catch (e) {
-        debugPrint("Error restoring offline customer app connection: $e");
-      }
-    }
-
-    // Set standard active session pointers
-    await box.put('saas_logged_in', true);
-    await box.put('saas_remember_me', rememberMe);
-    await box.put('saas_login_timestamp', DateTime.now().toIso8601String());
-    await box.put('saas_last_email', input);
-    await box.put('saas_user', userJson);
-    await box.put('saas_org', orgJson);
-    await box.put('saas_license', licJson);
-    if (encryptedConfig != null && iv != null) {
-      await box.put('saas_firebase_config', encryptedConfig);
-      await box.put('saas_firebase_config_iv', iv);
-    }
-    if (franchiseId != null) {
-      await box.put('saas_active_franchise_id', franchiseId);
-    }
-
-    // Add to saved accounts list
-    final List<dynamic> savedAccountsRaw = box.get('saas_saved_accounts') ?? [];
-    final List<String> savedAccounts = savedAccountsRaw.map((e) => e.toString()).toList();
-    if (!savedAccounts.contains(emailKey)) {
-      savedAccounts.add(emailKey);
-      await box.put('saas_saved_accounts', savedAccounts);
-    }
-
-    state = SaasSessionState(
-      currentUser: user,
-      currentOrganization: organization,
-      currentLicense: license,
-      activeFranchiseId: franchiseId ?? box.get('saas_active_franchise_id'),
-      isMockMode: false,
-      savedUsers: state.savedUsers,
-    );
-
-    // Populate active staff member in restaurantAuthProvider for immediate role-based UI resolution
-    final primaryRole = StaffRoleExtension.fromKey(user.role);
-    final staffMember = StaffMember(
-      id: user.id,
-      name: user.fullName,
-      username: user.username,
-      email: user.email,
-      role: primaryRole,
-      roles: [primaryRole],
-      assignedOutletId: franchiseId?.toString(),
-      isActive: true,
-    );
-    _ref.read(restaurantAuthProvider.notifier).setActiveStaff(staffMember);
-
-    await _updateSavedUsersList();
-
-    await _initializeSaaSLocalProfile(user.email, organization.name);
-
-    debugPrint("Offline login successfully verified for: ${user.email} (as ${user.role})");
-    return null; // success!
-  }
-
-  /// Restores existing local offline session from Hive immediately without internet.
-  Future<bool> restoreLocalSession() async {
-    final box = Hive.box('configBox');
-    final userJson = box.get('saas_user') as String?;
-    final orgJson = box.get('saas_org') as String?;
-    final licJson = box.get('saas_license') as String?;
-
-    if (userJson != null && orgJson != null && licJson != null) {
-      try {
-        final user = SaasUser.fromJson(jsonDecode(userJson));
-        final org = SaasOrganization.fromJson(jsonDecode(orgJson));
-        final lic = SaasLicense.fromJson(jsonDecode(licJson));
-
-        if (StorageModes.isOffline(org.storageMode)) {
-          CloudGate.setOffline(true);
-        }
-
-        final primaryRole = StaffRoleExtension.fromKey(user.role);
-        final staffMember = StaffMember(
-          id: user.id,
-          name: user.fullName,
-          username: user.username,
-          email: user.email,
-          role: primaryRole,
-          roles: [primaryRole],
-          assignedOutletId: user.franchiseId,
-          isActive: true,
-        );
-        _ref.read(restaurantAuthProvider.notifier).setActiveStaff(staffMember);
-
-        await box.put('saas_logged_in', true);
-        await box.put('session_active', true);
-
-        state = SaasSessionState(
-          currentUser: user,
-          currentOrganization: org,
-          currentLicense: lic,
-          activeFranchiseId: user.franchiseId,
-          isMockMode: false,
-          isInitializing: false,
-        );
-        return true;
-      } catch (e) {
-        debugPrint("Error restoring local offline session: $e");
-      }
-    }
-    return false;
-  }
-
-  /// Provisions and launches an instant local offline store (free edition).
-  /// Runs 100% locally with Hive storage, requires 0 network calls, 0 domain dependencies,
-  /// and is fully immune to domain expirations or remote cloud server downtime.
-  Future<void> provisionLocalOfflineStore({
-    required String storeName,
-    required String businessCategory,
-    String? ownerName,
-  }) async {
-    final cleanCategory = businessCategory.trim().isNotEmpty
-        ? businessCategory.trim()
-        : BusinessCategories.kirana;
-    final resolvedVertical = Verticals.resolve(businessCategory: cleanCategory);
-    final orgId = 'org_local_${DateTime.now().millisecondsSinceEpoch.toRadixString(36)}';
-    final resolvedOwnerName = (ownerName != null && ownerName.trim().isNotEmpty)
-        ? ownerName.trim()
-        : 'Store Owner';
-    final storeLabel = storeName.trim().isNotEmpty ? storeName.trim() : 'Local Store';
-
-    // 1. Resolve offline starter package for this trade
-    final starterPackage = PackageCatalog.starter(resolvedVertical, PackageTier.offline);
-    final plan = SubscriptionPlan.validityOnly(
-      id: 'plan_local_offline',
-      name: 'Local Offline Free Edition',
-      validityDays: 36500, // 100 years
-      billingCycle: 'lifetime',
-    );
-    final composed = LicenseComposer.compose(starterPackage, plan);
-    final licenseMap = composed.toLicenseFields(status: 'ACTIVE');
-    final license = SaasLicense.fromJson(licenseMap);
-
-    // 2. Build local organization
-    final organization = SaasOrganization(
-      id: orgId,
-      name: storeLabel,
-      appName: storeLabel,
-      storageMode: StorageModes.pureOffline,
-      vertical: resolvedVertical,
-      businessCategory: cleanCategory,
-      status: 'ACTIVE',
-      tableCount: resolvedVertical == Verticals.restaurant ? 15 : 0,
-      operatingMode: resolvedVertical == Verticals.restaurant ? 'dineFirstPostpaid' : 'counterService',
-    );
-
-    // 3. Build local owner user
-    final user = SaasUser(
-      id: 'usr_local_owner',
-      email: 'owner@localhost',
-      username: 'owner',
-      fullName: resolvedOwnerName,
-      role: 'OWNER',
-      organizationId: orgId,
-      mustChangePassword: false,
-    );
-
-    // 4. Save to local Hive
-    final box = Hive.box('configBox');
-    await box.put('saas_org', jsonEncode(organization.toJson()));
-    await box.put('saas_user', jsonEncode(user.toJson()));
-    await box.put('saas_license', jsonEncode(license.toJson()));
-    await box.put('saas_logged_in', true);
-    await box.put('saas_remember_me', true);
-    await box.put('saas_last_email', user.email);
-    await box.put('current_org_id', orgId);
-    await box.put('default_org_id', orgId);
-
-    // Enforce CloudGate pure offline
-    CloudGate.setOffline(true);
-
-    // 5. Setup active staff in restaurantAuthProvider
-    final primaryRole = StaffRole.owner;
-    final staffMember = StaffMember(
-      id: user.id,
-      name: user.fullName,
-      username: user.username,
-      email: user.email,
-      role: primaryRole,
-      roles: [primaryRole],
-      isActive: true,
-    );
-    _ref.read(restaurantAuthProvider.notifier).setActiveStaff(staffMember);
-
-    // 6. Initialize local templates/profile
-    await _initializeSaaSLocalProfile(user.email, organization.name);
-
-    // 7. Update session state
-    state = SaasSessionState(
-      currentUser: user,
-      currentOrganization: organization,
-      currentLicense: license,
-      isMockMode: false,
-      isInitializing: false,
-    );
-
-    debugPrint("[Local Offline] Successfully provisioned and launched local store: $storeLabel ($orgId, $resolvedVertical)");
-  }
-
-  /// Activates an offline local store using an official cryptographically-signed
-  /// Client License Key issued by the Platform Admin.
-  /// Unlocks all entitled features (e.g. Local LAN Hub Server, Split Billing,
-  /// Customer-Facing Display, Visual Floor Plan, Recipe BOM, Multi-Device).
-  Future<void> activateWithClientLicense(
-    ClientLicensePayload payload, {
-    String? ownerName,
-  }) async {
-    final cleanCategory = payload.vertical == Verticals.restaurant ? 'Restaurant' : payload.vertical;
-    final resolvedVertical = Verticals.resolve(businessCategory: cleanCategory, vertical: payload.vertical);
-    final orgId = payload.orgId.trim().isNotEmpty
-        ? payload.orgId.trim()
-        : 'org_local_${DateTime.now().millisecondsSinceEpoch.toRadixString(36)}';
-    final resolvedOwnerName = (ownerName != null && ownerName.trim().isNotEmpty)
-        ? ownerName.trim()
-        : 'Store Owner';
-    final storeLabel = payload.storeName.trim().isNotEmpty ? payload.storeName.trim() : 'Local Store';
-
-    // 1. Build SaasLicense matching the official signed payload
-    final license = SaasLicense(
-      planTier: payload.tier,
-      planProfile: payload.packageId,
-      status: 'ACTIVE',
-      tier: payload.tier,
-      features: payload.features,
-      featuresResolvedFor: resolvedVertical,
-      vertical: resolvedVertical,
-      maxDevices: payload.maxDevices,
-      maxFranchises: payload.maxOutlets,
-      maxUsers: payload.maxUsers,
-      allowedRoles: payload.allowedRoles,
-      startDate: payload.issuedAt,
-      endDate: payload.validUntil,
-    );
-
-    // 2. Build local organization
-    final effectiveStorageMode = (payload.storageMode.isNotEmpty && payload.storageMode.toUpperCase() != StorageModes.pureOffline)
-        ? payload.storageMode
-        : (payload.tier.toLowerCase() != 'offline' ? StorageModes.localNetwork : StorageModes.pureOffline);
-    final organization = SaasOrganization(
-      id: orgId,
-      name: storeLabel,
-      appName: storeLabel,
-      storageMode: effectiveStorageMode,
-      vertical: resolvedVertical,
-      businessCategory: cleanCategory,
-      status: 'ACTIVE',
-      tableCount: resolvedVertical == Verticals.restaurant ? 20 : 0,
-      operatingMode: resolvedVertical == Verticals.restaurant ? 'dineFirstPostpaid' : 'counterService',
-    );
-
-    // 3. Build local owner user
-    final user = SaasUser(
-      id: 'usr_local_owner',
-      email: 'owner@localhost',
-      username: 'owner',
-      fullName: resolvedOwnerName,
-      role: 'OWNER',
-      organizationId: orgId,
-      mustChangePassword: false,
-    );
-
-    // 4. Save to local Hive
-    final box = Hive.box('configBox');
-    await box.put('saas_org', jsonEncode(organization.toJson()));
-    await box.put('saas_user', jsonEncode(user.toJson()));
-    await box.put('saas_license', jsonEncode(license.toJson()));
-    await box.put('saas_logged_in', true);
-    await box.put('saas_remember_me', true);
-    await box.put('saas_last_email', user.email);
-    await box.put('current_org_id', orgId);
-    await box.put('default_org_id', orgId);
-
-    // Record signed lease validity
-    await LicenseLease.recordValidated(orgId);
-
-    // Enforce CloudGate pure offline
-    CloudGate.setOffline(true);
-
-    // 5. Setup active staff in restaurantAuthProvider
-    final primaryRole = StaffRole.owner;
-    final staffMember = StaffMember(
-      id: user.id,
-      name: user.fullName,
-      username: user.username,
-      email: user.email,
-      role: primaryRole,
-      roles: [primaryRole],
-      isActive: true,
-    );
-    _ref.read(restaurantAuthProvider.notifier).setActiveStaff(staffMember);
-
-    // 6. Initialize local templates/profile
-    await _initializeSaaSLocalProfile(user.email, organization.name);
-
-    // 7. Update session state
-    state = SaasSessionState(
-      currentUser: user,
-      currentOrganization: organization,
-      currentLicense: license,
-      isMockMode: false,
-      isInitializing: false,
-    );
-
-    debugPrint("[Client Licence] Successfully activated local store: $storeLabel ($orgId, $resolvedVertical, tier: ${payload.tier})");
-  }
-
-  /// Switch active store context to manage or operate a specific organization & outlet.
-  Future<void> switchStoreContext({
-    required SaasOrganization org,
-    String? outletId,
-  }) async {
-    try {
-      final currentUser = state.currentUser;
-      final isMaster = (currentUser?.role.toUpperCase() == 'MASTER_ADMIN') ||
-          isMasterAdminEmail(currentUser?.email);
-
-      // SECURITY ISOLATION GUARD:
-      // Non-Master Admin users can ONLY ever operate within their assigned organization.
-      // They are strictly forbidden from switching to or accessing any other tenant organization.
-      if (!isMaster && currentUser != null && org.id != currentUser.organizationId) {
-        debugPrint("[Security Guard] Access Denied: User (${currentUser.email}) cannot access store ${org.id}. Retaining allocated store: ${currentUser.organizationId}");
-        return;
-      }
-
-      // OUTLET ISOLATION GUARD:
-      // If a staff user is assigned to a specific branch/outlet (e.g. Cashier / Waiter locked to outlet),
-      // and is not an Owner or Manager, they cannot switch to other outlets.
-      final String userRole = currentUser?.role.toUpperCase() ?? '';
-      final bool isStoreManager = isMaster || userRole == 'OWNER' || userRole == 'CLIENT' || userRole == 'MANAGER';
-      if (!isStoreManager && currentUser?.franchiseId != null && currentUser!.franchiseId!.isNotEmpty) {
-        if (outletId != null && outletId != currentUser.franchiseId) {
-          debugPrint("[Security Guard] Staff user ${currentUser.email} is locked to outlet ${currentUser.franchiseId}; cannot switch to $outletId.");
-          outletId = currentUser.franchiseId;
-        }
-      }
-
-      final conn = _ref.read(firebaseConnectionServiceProvider);
-      final firestore = conn.masterFirestore;
-
-      // 1. Fetch latest License for this organization
-      SaasLicense? lic;
-      try {
-        final licDoc = await firestore.collection('licenses').doc(org.id).get();
-        // A server read renews this device's offline licence lease.
-        if (licDoc.exists && !licDoc.metadata.isFromCache) unawaited(LicenseLease.recordValidated(org.id));
-        if (licDoc.exists) {
-          lic = SaasLicense.fromFirestore(licDoc.data()!);
-        }
-      } catch (e) {
-        debugPrint("Error fetching license during switchStoreContext: $e");
-      }
-
-      // 2. Fetch outlet details if outletId is provided
-      String? outletSpreadsheetId;
-      String? outletName;
-      if (outletId != null && outletId.isNotEmpty) {
-        try {
-          final outDoc = await firestore.collection('outlets').doc(outletId).get();
-          if (outDoc.exists) {
-            final outData = outDoc.data()!;
-            outletSpreadsheetId = outData['spreadsheet_id'] as String? ?? outData['googleSheetId'] as String?;
-            outletName = outData['name'] as String?;
-          } else {
-            final franDoc = await firestore.collection('franchises').doc(outletId).get();
-            if (franDoc.exists) {
-              final franData = franDoc.data()!;
-              outletSpreadsheetId = franData['spreadsheet_id'] as String? ?? franData['googleSheetId'] as String?;
-              outletName = franData['name'] as String?;
-            }
-          }
-        } catch (e) {
-          debugPrint("Error fetching outlet during switchStoreContext: $e");
-        }
-      }
-
-      final activeSpreadsheetId = (outletSpreadsheetId != null && outletSpreadsheetId.isNotEmpty)
-          ? outletSpreadsheetId
-          : (org.googleSheetId != null && org.googleSheetId!.isNotEmpty)
-              ? org.googleSheetId
-              : null;
-
-      // 3. Update Hive storage
-      final box = Hive.box('configBox');
-      await box.put('current_org_id', org.id);
-      await box.put('saas_org', jsonEncode(org.toJson()));
-      await box.put('pure_offline_mode', org.storageMode == 'PURE_OFFLINE');
-
-      if (outletId != null && outletId.isNotEmpty) {
-        await box.put('current_outlet_id', outletId);
-        await box.put('saas_active_franchise_id', outletId);
-        if (outletName != null && outletName.isNotEmpty) {
-          await box.put('current_outlet_name', outletName);
-        }
-      } else {
-        await box.delete('current_outlet_id');
-        await box.delete('saas_active_franchise_id');
-        await box.delete('current_outlet_name');
-      }
-
-      if (activeSpreadsheetId != null && activeSpreadsheetId.isNotEmpty) {
-        await box.put('spreadsheet_id', activeSpreadsheetId);
-        await box.put('saas_spreadsheet_id', activeSpreadsheetId);
-      }
-
-      // Also update restaurant_config_box
-      try {
-        final rBox = await Hive.openBox('restaurant_config_box');
-        await rBox.put('restaurant_name', org.name);
-        if (activeSpreadsheetId != null && activeSpreadsheetId.isNotEmpty) {
-          await rBox.put('restaurant_sheet_id_${org.id}', activeSpreadsheetId);
-          await rBox.put('google_sheet_id', activeSpreadsheetId);
-        }
-      } catch (e) {
-        debugPrint("Error updating restaurant_config_box: $e");
-      }
-
-      // 4. Update memory state
-      state = state.copyWith(
-        currentOrganization: org,
-        currentLicense: lic ?? state.currentLicense,
-        activeFranchiseId: outletId,
-        currentUser: state.currentUser?.copyWith(organizationId: org.id, franchiseId: outletId),
-      );
-
-      // 5. Update active Staff Member in restaurantAuthProvider
-      if (state.currentUser != null) {
-        final u = state.currentUser!;
-        final primaryRole = StaffRoleExtension.fromKey(u.role);
-        final staffMember = StaffMember(
-          id: u.id,
-          name: u.fullName,
-          username: u.username,
-          email: u.email,
-          role: primaryRole,
-          roles: [primaryRole],
-          assignedOutletId: outletId,
-          isActive: true,
-        );
-        _ref.read(restaurantAuthProvider.notifier).setActiveStaff(staffMember);
-      }
-
-      // 6. Setup real-time listeners for the new organization
-      _setupRealtimeListeners(org.id);
-
-      debugPrint("[Store Switcher] Switched active store to ${org.name} ($outletId)");
-    } catch (e) {
-      debugPrint("switchStoreContext error: $e");
-    }
-  }
-
-  /// Allows Master Admin to inspect, demo, or launch POS for a specific organization and optional outlet.
-  Future<void> switchOrganizationForMasterAdmin(String orgId, {String? outletId}) async {
-    final currentUser = state.currentUser;
-    final isMaster = (currentUser?.role.toUpperCase() == 'MASTER_ADMIN') ||
-        isMasterAdminEmail(currentUser?.email);
-    if (!isMaster) return;
-
-    try {
-      final conn = _ref.read(firebaseConnectionServiceProvider);
-      final firestore = conn.masterFirestore;
-
-      final orgDoc = await firestore.collection('organizations').doc(orgId).get();
-      if (!orgDoc.exists) return;
-      final orgData = orgDoc.data()!;
-      final org = SaasOrganization.fromFirestore(orgData, orgId);
-
-      await switchStoreContext(org: org, outletId: outletId);
-      debugPrint("[Master Admin support view] Switched active organization to ${org.name} ($orgId, outlet: $outletId)");
-    } catch (e) {
-      debugPrint("switchOrganizationForMasterAdmin error: $e");
-    }
-  }
-
-  /// Write operational Audit Logs to Control Plane
-  Future<void> logAudit({
-    required String orgId,
-    required String userId,
-    required String actionType,
-    required String details,
-    String? userName,
-    String? orgName,
-    String? franchiseName,
-  }) async {
-    try {
-      final conn = _ref.read(firebaseConnectionServiceProvider);
-      final firestore = conn.masterFirestore;
-
-      // 1. Resolve User Name and Email
-      String resolvedUserName = userName ?? '';
-      if (resolvedUserName.isEmpty) {
-        if (state.currentUser != null && state.currentUser!.id == userId) {
-          resolvedUserName = "${state.currentUser!.fullName} (${state.currentUser!.email})";
-        } else {
-          try {
-            final userDoc = await firestore.collection('users').doc(userId).get();
-            if (userDoc.exists) {
-              final data = userDoc.data()!;
-              final fName = data['fullName'] ?? '';
-              final email = data['email'] ?? '';
-              if (fName.isNotEmpty && email.isNotEmpty) {
-                resolvedUserName = "$fName ($email)";
-              } else if (fName.isNotEmpty) {
-                resolvedUserName = fName;
-              } else {
-                resolvedUserName = email;
-              }
-            }
-          } catch (_) {}
-        }
-      }
-      if (resolvedUserName.isEmpty) resolvedUserName = userId;
-
-      // 2. Resolve Org Name
-      String resolvedOrgName = orgName ?? '';
-      if (resolvedOrgName.isEmpty) {
-        if (state.currentOrganization != null && state.currentOrganization!.id == orgId) {
-          resolvedOrgName = state.currentOrganization!.name;
-        } else {
-          try {
-            final orgDoc = await firestore.collection('organizations').doc(orgId).get();
-            if (orgDoc.exists) {
-              resolvedOrgName = orgDoc.data()?['name'] ?? '';
-            }
-          } catch (_) {}
-        }
-      }
-      if (resolvedOrgName.isEmpty) resolvedOrgName = orgId;
-
-      // 3. Resolve Franchise Name
-      String resolvedFranchiseName = franchiseName ?? '';
-      if (resolvedFranchiseName.isEmpty) {
-        final fId = state.activeFranchiseId;
-        if (fId != null) {
-          try {
-            final fBox = Hive.box(kFranchisesBoxName);
-            final cached = fBox.get(fId);
-            if (cached != null) {
-              final franchise = Map<String, dynamic>.from(cached as Map);
-              resolvedFranchiseName = franchise['name'] ?? '';
-            }
-          } catch (_) {}
-
-          if (resolvedFranchiseName.isEmpty && !state.isMockMode) {
-            try {
-              final franchiseDoc = await firestore.collection('franchises').doc(fId).get();
-              if (franchiseDoc.exists) {
-                resolvedFranchiseName = franchiseDoc.data()?['name'] ?? '';
-              }
-            } catch (_) {}
-          }
-        }
-      }
-
-      await firestore.collection('audit_logs').add({
-        'organizationId': orgId,
-        'organizationName': resolvedOrgName,
-        'userId': userId,
-        'userName': resolvedUserName,
-        'actionType': actionType,
-        'details': details,
-        'franchiseId': state.activeFranchiseId,
-        'franchiseName': resolvedFranchiseName.isNotEmpty ? resolvedFranchiseName : null,
-        'timestamp': FieldValue.serverTimestamp(),
-      });
-    } catch (e) {
-      debugPrint("Failed to write audit log: $e");
-    }
-  }
-
-  Future<void> setActiveFranchise(String franchiseId) async {
-    final role = state.currentUser?.role;
-    if (role == 'OWNER' || role == 'CLIENT' || role == 'MASTER_ADMIN') {
-      state = state.copyWith(activeFranchiseId: franchiseId);
-      final box = Hive.box('configBox');
-      await box.put('saas_active_franchise_id', franchiseId);
-
-      // Look up and bind the store's dedicated spreadsheet
-      String? sheetId;
-      try {
-        if (!state.isMockMode) {
-          final conn = _ref.read(firebaseConnectionServiceProvider);
-          final firestore = conn.masterFirestore;
-          final outletDoc = await firestore.collection('outlets').doc(franchiseId).get();
-          if (outletDoc.exists) {
-            sheetId = (outletDoc.data()?['googleSheetId'] ?? outletDoc.data()?['spreadsheet_id']) as String?;
-          }
-          if (sheetId == null || sheetId.isEmpty) {
-            final doc = await firestore.collection('franchises').doc(franchiseId).get();
-            if (doc.exists) {
-              sheetId = (doc.data()?['spreadsheet_id'] ?? doc.data()?['googleSheetId']) as String?;
-            }
-          }
-        } else {
-          final fBox = Hive.box(kFranchisesBoxName);
-          final raw = fBox.get(franchiseId);
-          if (raw is Map) {
-            sheetId = (raw['spreadsheet_id'] ?? raw['googleSheetId']) as String?;
-          }
-        }
-      } catch (e) {
-        debugPrint("Error looking up franchise spreadsheet: $e");
-      }
-
-      if (sheetId != null && sheetId.isNotEmpty) {
-        await box.put('spreadsheet_id', sheetId);
-        await box.put('saas_spreadsheet_id', sheetId);
-        await box.put('google_sheet_id', sheetId);
-        if (state.currentOrganization != null) {
-          await box.put('restaurant_sheet_id_${state.currentOrganization!.id}', sheetId);
-        }
-      }
-    }
-  }
-
-  void clearActiveFranchise() {
-    state = SaasSessionState(
-      currentUser: state.currentUser,
-      currentOrganization: state.currentOrganization,
-      currentLicense: state.currentLicense,
-      activeFranchiseId: null,
-      isMockMode: state.isMockMode,
-    );
-    final box = Hive.box('configBox');
-    box.delete('saas_active_franchise_id');
-  }
-
-  void updateLicense(SaasLicense newLicense) {
-    state = state.copyWith(currentLicense: newLicense);
-    final box = Hive.box('configBox');
-    box.put('saas_license', jsonEncode(newLicense.toJson()));
-
-    // Persist to Firestore if not mock mode
-    if (!state.isMockMode && state.currentOrganization != null) {
-      try {
-        final conn = _ref.read(firebaseConnectionServiceProvider);
-        final orgId = state.currentOrganization!.id;
-        
-        conn.masterFirestore.collection('licenses').doc(orgId).set(
-          newLicense.toFirestore(),
-          SetOptions(merge: true),
-        );
-        
-        conn.masterFirestore.collection('limits').doc(orgId).set({
-          'maxFranchises': newLicense.maxFranchises,
-          'maxUsers': newLicense.maxUsers,
-          'maxDevices': newLicense.maxDevices,
-        }, SetOptions(merge: true));
-      } catch (e) {
-        debugPrint("Failed to persist license updates to Firestore: $e");
-      }
-    }
-  }
-
-  void updateBranding({String? name, String? appName, String? primaryColor, String? secondaryColor, String? splashImageUrl}) {
-    if (state.currentOrganization != null) {
-      final updatedOrg = SaasOrganization(
-        id: state.currentOrganization!.id,
-        name: name ?? state.currentOrganization!.name,
-        appName: appName ?? state.currentOrganization!.appName,
-        logoUrl: state.currentOrganization!.logoUrl,
-        primaryColor: primaryColor ?? state.currentOrganization!.primaryColor,
-        secondaryColor: secondaryColor ?? state.currentOrganization!.secondaryColor,
-        splashImageUrl: splashImageUrl ?? state.currentOrganization!.splashImageUrl,
-      );
-      state = state.copyWith(currentOrganization: updatedOrg);
-      final box = Hive.box('configBox');
-      box.put('saas_org', jsonEncode(updatedOrg.toJson()));
-    }
-  }
-
-  void updateCurrentUserDetails({String? fullName, String? email}) {
-    if (state.currentUser != null) {
-      final updatedUser = SaasUser(
-        id: state.currentUser!.id,
-        email: email ?? state.currentUser!.email,
-        fullName: fullName ?? state.currentUser!.fullName,
-        role: state.currentUser!.role,
-        organizationId: state.currentUser!.organizationId,
-        franchiseId: state.currentUser!.franchiseId,
-      );
-      state = state.copyWith(currentUser: updatedUser);
-      final box = Hive.box('configBox');
-      box.put('saas_user', jsonEncode(updatedUser.toJson()));
-    }
-  }
-
-  bool simulateAddDevice(String uuid) {
-    final orgMode = state.currentOrganization?.storageMode;
-    final limit = Entitlements.fromLicense(
-      state.currentLicense,
-      storageMode: orgMode != null && StorageModes.isOffline(orgMode) ? orgMode : null,
-    ).maxDevices;
-    final box = Hive.box('configBox');
-    final activeDeviceUuids = List<String>.from(box.get('saas_active_device_uuids', defaultValue: <String>[]));
-    
-    if (activeDeviceUuids.contains(uuid)) {
-      return true;
-    }
-    
-    if (activeDeviceUuids.length >= limit) {
-      return false;
-    }
-    
-    activeDeviceUuids.add(uuid);
-    box.put('saas_active_device_uuids', activeDeviceUuids);
-    return true;
-  }
-
-  void resetSimulatedDevices() {
-    final box = Hive.box('configBox');
-    box.delete('saas_active_device_uuids');
-  }
-
-  /// Switch the session context to manage a specific tenant organization (Master Admin utility)
-  Future<String?> enterOrganizationConsole(String orgId) async {
-    if (state.currentUser?.role != 'MASTER_ADMIN') {
-      return "Access Denied: Only Master Admins can access tenant consoles.";
-    }
-
-    final conn = _ref.read(firebaseConnectionServiceProvider);
-    final firestore = conn.masterFirestore;
-
-    try {
-      if (orgId == 'SYSTEM_ADMIN') {
-        // Switch back to master admin context
-        final systemOrg = SaasOrganization(
-          id: 'SYSTEM_ADMIN',
-          name: 'SmartBiz Administrator',
-          appName: 'SmartBiz Control Panel',
-        );
-
-        final systemLicense = SaasLicense(
-          planTier: 'ENTERPRISE',
-          status: 'ACTIVE',
-          maxFranchises: 999,
-          maxUsers: 999,
-          maxDevices: 999,
-          features: {
-            'inventoryEnabled': true,
-            'reportsEnabled': true,
-            'loyaltyEnabled': true,
-            'onlineOrderingEnabled': true,
-            'whiteLabelEnabled': true,
-          },
-          startDate: DateTime.now(),
-          endDate: DateTime.now().add(const Duration(days: 36500)),
-        );
-
-        await conn.disconnectCustomerApp();
-
-        state = SaasSessionState(
-          currentUser: state.currentUser,
-          currentOrganization: systemOrg,
-          currentLicense: systemLicense,
-          activeFranchiseId: null,
-          isMockMode: state.isMockMode,
-        );
-
-        return null;
-      }
-
-      // 1. Fetch Organization
-      final orgDoc = await firestore.collection('organizations').doc(orgId).get();
-      if (!orgDoc.exists) return "Organization not found";
-      final orgData = orgDoc.data()!;
-      final organization = SaasOrganization.fromFirestore(orgData, orgId);
-
-      // 2. Fetch License
-      final licDoc = await firestore.collection('licenses').doc(orgId).get();
-      // A server read renews this device's offline licence lease.
-      if (licDoc.exists && !licDoc.metadata.isFromCache) unawaited(LicenseLease.recordValidated(orgId));
-      if (!licDoc.exists) return "License details not found";
-      
-      final Map<String, dynamic> licData = Map<String, dynamic>.from(licDoc.data()!);
-      if (!licData.containsKey('maxFranchises')) {
-        try {
-          final limitsDoc = await firestore.collection('limits').doc(orgId).get();
-          if (limitsDoc.exists) {
-            final limData = limitsDoc.data()!;
-            licData['maxFranchises'] = limData['maxFranchises'];
-            licData['maxUsers'] = limData['maxUsers'];
-            licData['maxDevices'] = limData['maxDevices'];
-          }
-        } catch (_) {}
-      }
-
-      // Legacy mirror, only when the licence carries no feature map.
-      if (licData['features'] == null) {
-        try {
-          final featDoc = await firestore.collection('features').doc(orgId).get();
-          if (featDoc.exists) {
-            final featData = featDoc.data()!;
-            licData['features'] = featData['features'];
-            licData['planProfile'] ??= featData['planProfile'];
-          }
-        } catch (_) {}
-      }
-
-      final license = SaasLicense.fromFirestore(licData);
-
-      // 3. Fetch encrypted customer Firebase Config
-      final configDoc = await firestore.collection('firebase_configs').doc(orgId).get();
-      if (configDoc.exists) {
-        final configData = configDoc.data()!;
-        final encryptedStr = configData['encryptedConfig'] as String;
-        final iv = configData['iv'] as String;
-        final decryptedConfig = conn.decryptConfig(orgId, encryptedStr, iv);
-        await conn.initializeCustomerApp(orgId, decryptedConfig);
-      } else {
-        await conn.disconnectCustomerApp();
-      }
-
-      // 4. Update the state with target organization details while preserving user
-      state = SaasSessionState(
-        currentUser: state.currentUser,
-        currentOrganization: organization,
-        currentLicense: license,
-        activeFranchiseId: null,
-        isMockMode: state.isMockMode,
-      );
-
-      if (state.currentUser != null) {
-        final u = state.currentUser!;
-        final primaryRole = StaffRoleExtension.fromKey(u.role);
-        final staffMember = StaffMember(
-          id: u.id,
-          name: u.fullName,
-          username: u.username,
-          email: u.email,
-          role: primaryRole,
-          roles: [primaryRole],
-          assignedOutletId: null,
-          isActive: true,
-        );
-        _ref.read(restaurantAuthProvider.notifier).setActiveStaff(staffMember);
-      }
-
-      return null; // success
-    } catch (e) {
-      debugPrint("Failed to enter organization console: $e");
-      return "Failed to enter organization console: ${e.toString()}";
-    }
-  }
-
-  Future<void> clearSession() async {
-    _pendingAdminLogin = null;
-    _cancelListeners();
-    unawaited(FirebaseAuthBridge.signOut(_ref.read(firebaseConnectionServiceProvider).masterFirestore));
-    final box = Hive.box('configBox');
-    await box.put('saas_logged_in', false);
-    await box.put('session_active', false);
-    await box.delete('saas_remember_me');
-    await box.delete('saas_login_timestamp');
-    await box.delete('saas_user');
-    await box.delete('saas_org');
-    await box.delete('saas_license');
-    await box.delete('saas_firebase_config');
-    await box.delete('saas_firebase_config_iv');
-    await box.delete('saas_active_franchise_id');
-    await box.delete('spreadsheet_id');
-    await box.delete('saas_spreadsheet_id');
-    await box.delete('current_user_email');
-    await box.delete('pure_offline_mode');
-
-    final keysToRemove = box.keys
-        .where((k) =>
-            k.toString().startsWith('store_google_') ||
-            k.toString().startsWith('storage_mode_'))
-        .toList();
-    for (final k in keysToRemove) {
-      await box.delete(k);
-    }
-
-    await _clearTenantDataBoxes();
-
-    try {
-      await ClientLedgerCloudRouterService.signOut();
-    } catch (_) {}
-
-    try {
-      _ref.read(restaurantAuthProvider.notifier).setActiveStaff(null);
-    } catch (_) {}
-
-    if (!mounted) return;
-    await _ref.read(firebaseConnectionServiceProvider).disconnectCustomerApp();
-
-    if (!mounted) return;
-    state = SaasSessionState(isMockMode: false, savedUsers: state.savedUsers);
-  }
-
-  /// Removes ALL device_registry entries for the given organization so a
-  /// locked-out user can re-register on a new device.
-  Future<void> forceLogoutOtherDevices(String organizationId) async {
-    final conn = _ref.read(firebaseConnectionServiceProvider);
-    final firestore = conn.masterFirestore;
-
-    try {
-      final orgDevices = await firestore
-          .collection('device_registry')
-          .where('organizationId', isEqualTo: organizationId)
-          .get()
-          .timeout(const Duration(seconds: 8));
-
-      final batch = firestore.batch();
-      for (final doc in orgDevices.docs) {
-        batch.delete(doc.reference);
-      }
-      await batch.commit();
-
-      debugPrint('Cleared ${orgDevices.docs.length} device(s) from registry for org $organizationId');
-    } catch (e) {
-      debugPrint('Failed to clear device registry: $e');
-      rethrow;
-    }
-  }
-
-  Future<void> _updateSavedUsersList() async {
-    final box = Hive.box('configBox');
-    final List<dynamic> savedEmailsRaw = box.get('saas_saved_accounts') ?? [];
-    final List<String> savedEmails = savedEmailsRaw.map((e) => e.toString().toLowerCase().trim()).toList();
-    
-    final List<SaasUser> loadedUsers = [];
-    for (final email in savedEmails) {
-      final emailKey = email.toLowerCase().trim();
-      final userJson = box.get('saas_user_$emailKey') as String?;
-      if (userJson != null) {
-        try {
-          final user = SaasUser.fromJson(Map<String, dynamic>.from(jsonDecode(userJson)));
-          loadedUsers.add(user);
-        } catch (_) {}
-      }
-    }
-    
-    if (mounted) {
-      state = state.copyWith(savedUsers: loadedUsers);
-    }
-  }
-
-  Future<String?> switchAccount(String email, {String? password}) async {
-    final box = Hive.box('configBox');
-    final emailKey = email.trim().toLowerCase();
-    
-    final List<dynamic> savedAccountsRaw = box.get('saas_saved_accounts') ?? [];
-    final List<String> savedAccounts = savedAccountsRaw.map((e) => e.toString()).toList();
-    if (!savedAccounts.contains(emailKey)) {
-      return "Account not found in saved list";
-    }
-    final cachedHash = box.get('saas_password_hash_$emailKey') as String?;
-    if (password == null || password.isEmpty) {
-      return "Password required to switch accounts";
-    }
-    if (cachedHash == null || !BCrypt.checkpw(password, cachedHash)) {
-      return "Invalid email or password";
-    }
-
-    final userJson = box.get('saas_user_$emailKey') as String?;
-    final orgJson = box.get('saas_org_$emailKey') as String?;
-    final licJson = box.get('saas_license_$emailKey') as String?;
-    final encryptedConfig = box.get('saas_firebase_config_$emailKey') as String?;
-    final iv = box.get('saas_firebase_config_iv_$emailKey') as String?;
-    final franchiseId = box.get('saas_active_franchise_id_$emailKey') as String?;
-
-    if (userJson == null || orgJson == null || licJson == null) {
-      return "Cache data is incomplete for this account";
-    }
-
-    // Disconnect old customer app first
-    final conn = _ref.read(firebaseConnectionServiceProvider);
-    await conn.disconnectCustomerApp();
-
-    // Set standard active session pointers
-    await box.put('saas_logged_in', true);
-    await box.put('saas_remember_me', true);
-    await box.put('saas_login_timestamp', DateTime.now().toIso8601String());
-    await box.put('saas_last_email', emailKey);
-    await box.put('saas_user', userJson);
-    await box.put('saas_org', orgJson);
-    await box.put('saas_license', licJson);
-    if (encryptedConfig != null && iv != null) {
-      await box.put('saas_firebase_config', encryptedConfig);
-      await box.put('saas_firebase_config_iv', iv);
-    } else {
-      await box.delete('saas_firebase_config');
-      await box.delete('saas_firebase_config_iv');
-    }
-    if (franchiseId != null) {
-      await box.put('saas_active_franchise_id', franchiseId);
-    } else {
-      await box.delete('saas_active_franchise_id');
-    }
-
-    final user = SaasUser.fromJson(jsonDecode(userJson));
-    final organization = SaasOrganization.fromJson(jsonDecode(orgJson));
-    final license = SaasLicense.fromJson(jsonDecode(licJson));
-
-    if (encryptedConfig != null && iv != null) {
-      try {
-        final decryptedConfig = conn.decryptConfig(user.organizationId, encryptedConfig, iv);
-        await conn.initializeCustomerApp(user.organizationId, decryptedConfig);
-      } catch (e) {
-        debugPrint("Error switching customer Firebase app: $e");
-      }
-    }
-
-    state = SaasSessionState(
-      currentUser: user,
-      currentOrganization: organization,
-      currentLicense: license,
-      activeFranchiseId: franchiseId ?? box.get('saas_active_franchise_id'),
-      isMockMode: false,
-      savedUsers: state.savedUsers,
-    );
-
-    _setupRealtimeListeners(organization.id);
-    await _initializeSaaSLocalProfile(email, organization.name);
-
-    await _updateSavedUsersList();
-    
-    // Eagerly refresh in background from Firestore to get any updated limits/details
-    refreshSessionFromFirestore();
-
-    return null; // success
-  }
-
-  Future<void> removeAccount(String email) async {
-    final box = Hive.box('configBox');
-    final emailKey = email.trim().toLowerCase();
-    
-    final List<dynamic> savedAccountsRaw = box.get('saas_saved_accounts') ?? [];
-    final List<String> savedAccounts = savedAccountsRaw.map((e) => e.toString()).toList();
-    if (savedAccounts.contains(emailKey)) {
-      savedAccounts.remove(emailKey);
-      await box.put('saas_saved_accounts', savedAccounts);
-    }
-
-    // Clear cached keys
-    await box.delete('saas_password_hash_$emailKey');
-    await box.delete('saas_user_$emailKey');
-    await box.delete('saas_org_$emailKey');
-    await box.delete('saas_license_$emailKey');
-    await box.delete('saas_firebase_config_$emailKey');
-    await box.delete('saas_firebase_config_iv_$emailKey');
-    await box.delete('saas_active_franchise_id_$emailKey');
-
-    await _updateSavedUsersList();
-
-    // If the removed account was the active one, clear active session
-    if (state.currentUser?.email.trim().toLowerCase() == emailKey) {
-      await clearSession();
-    }
-  }
-
-  // --- Device Info Helpers ---
-  Future<String> _getDeviceUuid() async {
-    final deviceInfo = DeviceInfoPlugin();
-    if (kIsWeb) return 'web-device';
-    if (Platform.isAndroid) {
-      final androidInfo = await deviceInfo.androidInfo;
-      return androidInfo.id;
-    } else if (Platform.isIOS) {
-      final iosInfo = await deviceInfo.iosInfo;
-      return iosInfo.identifierForVendor ?? 'ios-unknown-device';
-    }
-    return 'desktop-device';
-  }
-
-  Future<String> _getDeviceModel() async {
-    final deviceInfo = DeviceInfoPlugin();
-    if (kIsWeb) return 'Web Browser';
-    if (Platform.isAndroid) {
-      final androidInfo = await deviceInfo.androidInfo;
-      return "${androidInfo.manufacturer} ${androidInfo.model}";
-    } else if (Platform.isIOS) {
-      final iosInfo = await deviceInfo.iosInfo;
-      return iosInfo.utsname.machine;
-    }
-    return Platform.operatingSystem;
-  }
-
-  Future<String> _getDeviceOs() async {
-    final deviceInfo = DeviceInfoPlugin();
-    if (kIsWeb) return 'Web';
-    if (Platform.isAndroid) {
-      final androidInfo = await deviceInfo.androidInfo;
-      return "Android ${androidInfo.version.release}";
-    } else if (Platform.isIOS) {
-      final iosInfo = await deviceInfo.iosInfo;
-      return "iOS ${iosInfo.systemVersion}";
-    }
-    return Platform.operatingSystemVersion;
-  }
-
-  Future<void> _initializeSaaSLocalProfile(String email, String orgName) async {
-    final box = Hive.box('configBox');
-    final String cleanEmail = email.toLowerCase().trim();
-    final bool completed = box.get('profile_completed_$cleanEmail', defaultValue: false);
-    if (!completed) {
-      await box.put('shop_name_$cleanEmail', orgName.trim());
-      await box.put('shop_phone_$cleanEmail', '');
-      await box.put('shop_address_$cleanEmail', 'HQ');
-      await box.put('shop_vpas_$cleanEmail', ['merchant@upi']);
-      await box.put('tpl_invoice_$cleanEmail', "Thank you for shopping at {shop_name}! Your invoice {bill_id} for ₹{amount} is attached.\n\n{bill_details}");
-      await box.put('tpl_reminder_$cleanEmail', "Dear {customer_name}, this is a friendly reminder from {shop_name} regarding your outstanding due balance of ₹{due_amount}. Please settle this balance at your earliest convenience.");
-      await box.put('tpl_receipt_$cleanEmail', 'Hello {customer_name},\n\nWe have successfully received your payment of *₹{receipt_amount}* {payment_details}.\n\n🏪 *Shop:* {shop_name}\n💰 *Amount Paid:* ₹{receipt_amount}\n💳 *Remaining Outstanding Balance:* ₹{remaining_balance}\n\nThank you for your payment! 🙏');
-      await box.put('pdf_title_$cleanEmail', 'RETAIL INVOICE');
-      await box.put('pdf_footer_$cleanEmail', 'Thank you for shopping with us! Have a wonderful day!');
-      await box.put('pdf_color_$cleanEmail', 'purple');
-      await box.put('profile_completed_$cleanEmail', true);
-      await box.put('registry_verified_$cleanEmail', true);
-      
-      if (box.get('spreadsheet_id') == null) {
-        await box.put('spreadsheet_id', 'saas_database_link');
-      }
-    }
-  }
-
-  void _setupRealtimeListeners(String orgId) {
-    _cancelListeners();
-    if (orgId == 'SYSTEM_ADMIN' || state.isMockMode) return;
-
-    // An offline till renews its licence lease the moment it sees a network
-    // again, so a shop that connects once a week is never locked out.
-    _leaseConnSub?.cancel();
-    _leaseConnSub = Connectivity().onConnectivityChanged.listen((results) {
-      final online = results.any((r) => r != ConnectivityResult.none);
-      if (online && mounted && state.currentUser != null) {
-        refreshSessionFromFirestore();
-      }
-    });
-
-    try {
-      final conn = _ref.read(firebaseConnectionServiceProvider);
-      final firestore = conn.masterFirestore;
-
-      _licenseListener = firestore.collection('licenses').doc(orgId).snapshots().listen((licSnapshot) async {
-        if (!licSnapshot.exists || !mounted) return;
-        if (!licSnapshot.metadata.isFromCache) unawaited(LicenseLease.recordValidated(orgId));
-        try {
-          final Map<String, dynamic> licData = Map<String, dynamic>.from(licSnapshot.data()!);
-          if (!licData.containsKey('maxFranchises')) {
-            final limitsDoc = await firestore.collection('limits').doc(orgId).get();
-            if (limitsDoc.exists) {
-               final limData = limitsDoc.data()!;
-              licData['maxFranchises'] = limData['maxFranchises'];
-              licData['maxUsers'] = limData['maxUsers'];
-              licData['maxDevices'] = limData['maxDevices'];
-            }
-          }
-          
-          if (licData['features'] == null) {
-            final featDoc = await firestore.collection('features').doc(orgId).get();
-            if (featDoc.exists) {
-              final featData = featDoc.data()!;
-              licData['features'] = featData['features'];
-              licData['planProfile'] ??= featData['planProfile'];
-            }
-          }
-
-          final newLicense = SaasLicense.fromFirestore(licData);
-          final box = Hive.box('configBox');
-          await box.put('saas_license', jsonEncode(newLicense.toJson()));
-          
-          final email = state.currentUser?.email;
-          if (email != null) {
-            await box.put('saas_license_${email.toLowerCase().trim()}', jsonEncode(newLicense.toJson()));
-          }
-
-          if (mounted) state = state.copyWith(currentLicense: newLicense);
-        } catch (e) {
-          debugPrint("Realtime license sync error: $e");
-        }
-      }, onError: (e) {
-        debugPrint("Realtime license listener error: $e");
-      });
-
-      // The mirror listener only matters for a licence that has no feature map
-      // of its own; otherwise the licence listener above is the single source.
-      _featuresListener = firestore.collection('features').doc(orgId).snapshots().listen((featSnapshot) async {
-        if (!featSnapshot.exists || state.currentLicense == null || !mounted) return;
-        if (state.currentLicense!.features.isNotEmpty) return;
-        try {
-          final featData = featSnapshot.data()!;
-          final Map<String, dynamic> featuresMap = Map<String, dynamic>.from(featData['features'] ?? {});
-          final updatedFeatures = featuresMap.map((key, value) => MapEntry(key, value == true));
-          final newLicense = state.currentLicense!.copyWith(features: updatedFeatures);
-          
-          final box = Hive.box('configBox');
-          await box.put('saas_license', jsonEncode(newLicense.toJson()));
-          
-          final email = state.currentUser?.email;
-          if (email != null) {
-            await box.put('saas_license_${email.toLowerCase().trim()}', jsonEncode(newLicense.toJson()));
-          }
-
-          if (mounted) state = state.copyWith(currentLicense: newLicense);
-        } catch (e) {
-          debugPrint("Realtime features sync error: $e");
-        }
-      }, onError: (e) {
-        debugPrint("Realtime features listener error: $e");
-      });
-
-      _orgListener = firestore.collection('organizations').doc(orgId).snapshots().listen((orgSnapshot) async {
-        if (!mounted) return;
-        if (!orgSnapshot.exists) {
-          debugPrint("🚨 [Realtime] Organization $orgId was deleted from Firestore. Terminating session...");
-          await clearSession();
-          return;
-        }
-        try {
-          final orgData = orgSnapshot.data()!;
-          final newOrg = SaasOrganization.fromFirestore(orgData, orgId);
-          
-          final box = Hive.box('configBox');
-          await box.put('saas_org', jsonEncode(newOrg.toJson()));
-          
-          final email = state.currentUser?.email;
-          if (email != null) {
-            await box.put('saas_org_${email.toLowerCase().trim()}', jsonEncode(newOrg.toJson()));
-          }
-
-          if (mounted) state = state.copyWith(currentOrganization: newOrg);
-        } catch (e) {
-          debugPrint("Realtime org details sync error: $e");
-        }
-      }, onError: (e) {
-        debugPrint("Realtime org details listener error: $e");
-      });
-
-      final currentUserId = state.currentUser?.id;
-      if (currentUserId != null && currentUserId != 'usr_master_admin') {
-        _userListener = firestore.collection('users').doc(currentUserId).snapshots().listen((userSnapshot) async {
-          if (!mounted) return;
-          if (!userSnapshot.exists) {
-            debugPrint("🚨 [Realtime] User $currentUserId was deleted from Firestore. Terminating session...");
-            await clearSession();
-            return;
-          }
-          final uData = userSnapshot.data();
-          if (uData != null) {
-            final uStatus = (uData['status'] ?? 'ACTIVE').toString().toUpperCase();
-            if (uStatus == 'DELETED' || uStatus == 'INACTIVE') {
-              debugPrint("🚨 [Realtime] User $currentUserId is marked $uStatus. Terminating session...");
-              await clearSession();
-              return;
-            }
-            // Password changed (here or on another device) after this device
-            // signed in: sign out so the new password is needed.
-            // Compared against the value seen at sign-in, not the device
-            // clock, so a slow clock can't cause a sign-out loop.
-            if (userSnapshot.metadata.isFromCache) return;
-            final changed = _pwdChangedMillis(uData['passwordChangedAt']);
-            final box = Hive.box('configBox');
-            final seen = box.get('saas_pwd_changed_seen');
-            if (seen is! int) {
-              await box.put('saas_pwd_changed_seen', changed);
-            } else if (changed > seen) {
-              debugPrint("🔐 [Realtime] Password changed for $currentUserId. Signing out...");
-              await box.put('saas_signed_out_reason', 'PASSWORD_CHANGED');
-              // The offline copy of the old password must not keep working.
-              final em = state.currentUser?.email.trim().toLowerCase();
-              if (em != null && em.isNotEmpty) await box.delete('saas_password_hash_$em');
-              await clearSession();
-              return;
-            }
-          }
-        }, onError: (e) {
-          debugPrint("Realtime user listener error: $e");
-        });
-      }
-    } catch (e) {
-      debugPrint("Failed to setup realtime listeners (probably Firebase not initialized): $e");
-    }
-  }
-
-  static int _pwdChangedMillis(dynamic v) {
-    if (v is Timestamp) return v.millisecondsSinceEpoch;
-    if (v is DateTime) return v.millisecondsSinceEpoch;
-    if (v is int) return v;
-    return DateTime.tryParse((v ?? '').toString())?.millisecondsSinceEpoch ?? 0;
-  }
-
-  void _cancelListeners() {
-    _licenseListener?.cancel();
-    _featuresListener?.cancel();
-    _orgListener?.cancel();
-    _userListener?.cancel();
-  }
-
-  /// Switches active restaurant branch / outlet context
-  Future<void> switchOutlet(String? outletId) async {
-    state = state.copyWith(activeFranchiseId: outletId);
-    final box = Hive.box('configBox');
-    await box.put('saas_active_franchise_id', outletId);
-  }
-
-  @override
-  void dispose() {
-    _cancelListeners();
-    _leaseConnSub?.cancel();
-    super.dispose();
-  }
-}
+            // Password changed (here or on another device) after this device
+            // signed in: sign out so the new password is needed.
+            // Compared against the value seen at sign-in, not the device
+            // clock, so a slow clock can't cause a sign-out loop.
+            if (userSnapshot.metadata.isFromCache) return;
+            final changed = _pwdChangedMillis(uData['passwordChangedAt']);
+            final box = Hive.box('configBox');
+            final seen = box.get('saas_pwd_changed_seen');
+            if (seen is! int) {
+              await box.put('saas_pwd_changed_seen', changed);
+            } else if (changed > seen) {
+              debugPrint("🔐 [Realtime] Password changed for $currentUserId. Signing out...");
+              await box.put('saas_signed_out_reason', 'PASSWORD_CHANGED');
+              // The offline copy of the old password must not keep working.
+              final em = state.currentUser?.email.trim().toLowerCase();
+              if (em != null && em.isNotEmpty) await box.delete('saas_password_hash_$em');
+              await clearSession();
+              return;
+            }
+          }
+        }, onError: (e) {
+          debugPrint("Realtime user listener error: $e");
+        });
+      }
+    } catch (e) {
+      debugPrint("Failed to setup realtime listeners (probably Firebase not initialized): $e");
+    }
+  }
+
+  static int _pwdChangedMillis(dynamic v) {
+    if (v is Timestamp) return v.millisecondsSinceEpoch;
+    if (v is DateTime) return v.millisecondsSinceEpoch;
+    if (v is int) return v;
+    return DateTime.tryParse((v ?? '').toString())?.millisecondsSinceEpoch ?? 0;
+  }
+
+  void _cancelListeners() {
+    _licenseListener?.cancel();
+    _featuresListener?.cancel();
+    _orgListener?.cancel();
+    _userListener?.cancel();
+  }
+
+  /// Switches active restaurant branch / outlet context
+  Future<void> switchOutlet(String? outletId) async {
+    state = state.copyWith(activeFranchiseId: outletId);
+    final box = Hive.box('configBox');
+    await box.put('saas_active_franchise_id', outletId);
+  }
+
+  @override
+  void dispose() {
+    _cancelListeners();
+    _leaseConnSub?.cancel();
+    super.dispose();
+  }
+}

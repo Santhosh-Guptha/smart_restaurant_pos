@@ -1,19 +1,16 @@
 import 'dart:convert';
 
-import 'package:crypto/crypto.dart' as crypto;
 import 'package:flutter/foundation.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pointycastle/export.dart';
 
 import '../core/entitlements.dart';
 import '../core/lease_public_key.dart';
+import '../core/license_lease.dart';
 import '../core/package_model.dart';
 import '../providers/saas_session_provider.dart';
+import 'apps_script_backend_service.dart';
 import 'device_fingerprint_service.dart';
 import 'local_restaurant_lan_server.dart';
-
-/// Cryptographic salt matching backend twins
-const String kPlatformCryptoSalt = "SmartDinePosZeroCostPlatform2026S";
 
 /// Decoded payload from an official SmartBizz Client Licence Key.
 class ClientLicensePayload {
@@ -120,23 +117,29 @@ class ClientLicenseService {
 
   static const String tokenPrefix = 'SBZ-LIC-';
 
-  /// Generates a signed license token string formatted as:
-  /// `SBZ-LIC-<base64UrlPayload>.<base64UrlSignature>`
-  static String generateToken(ClientLicensePayload payload, {String? hmacSecret}) {
-    final payloadJson = jsonEncode(payload.toJson());
-    final payloadB64 = base64Url.encode(utf8.encode(payloadJson));
+  /// Keys are minted only by Code.gs (`ISSUE_CLIENT_LICENCE`, platform admin,
+  /// RSA-SHA256 with LEASE_SIGNING_KEY). Nothing in the app can sign one:
+  /// the HMAC scheme that used a salt shipped in this binary was removed
+  /// because anyone could mint a key for any tier.
+  ///
+  /// Format: `SBZ-LIC-<base64url payload JSON>.<base64url RSA signature>`.
+  /// The signature covers the payload base64url text exactly as sent.
+  static Future<String?> issueToken(ClientLicensePayload payload) =>
+      AppsScriptBackendService.issueClientLicence(payload.toJson());
 
-    // Sign payload
-    final secret = hmacSecret ?? '${payload.orgId}_hmac_$kPlatformCryptoSalt';
-    final hmac = crypto.Hmac(crypto.sha256, utf8.encode(secret));
-    final digest = hmac.convert(utf8.encode(payloadB64));
-    final sigB64 = base64Url.encode(digest.bytes);
+  /// Public key used to check keys; tests inject their own pair.
+  @visibleForTesting
+  static RSAPublicKey? publicKeyOverride;
 
-    return '$tokenPrefix$payloadB64.$sigB64';
-  }
+  static RSAPublicKey get _publicKey =>
+      publicKeyOverride ??
+      RSAPublicKey(
+        BigInt.parse(kLeasePublicModulusHex, radix: 16),
+        BigInt.from(kLeasePublicExponent),
+      );
 
-  /// Verifies the cryptographic signature and decodes the license token.
-  /// Returns null if token is tampered, invalid, or expired.
+  /// Verifies the RSA signature and decodes the token.
+  /// Returns null if the token is tampered, unsigned, or expired.
   static ClientLicensePayload? verifyAndDecode(String rawToken, {bool allowExpired = false}) {
     try {
       var token = rawToken.trim();
@@ -144,12 +147,16 @@ class ClientLicenseService {
         token = token.substring(tokenPrefix.length);
       }
       final parts = token.split('.');
-      if (parts.length != 2) return null;
-
+      if (parts.length != 2 || parts[0].isEmpty || parts[1].isEmpty) return null;
       final payloadB64 = parts[0];
       final sigB64 = parts[1];
 
-      // 1. Decode JSON payload (normalize base64url padding if missing)
+      // Signature first: an unsigned payload is never even parsed.
+      if (!_verifyRsaSignature(payloadB64, sigB64)) {
+        debugPrint('ClientLicenseService: signature verification failed');
+        return null;
+      }
+
       var normalizedPayload = payloadB64;
       while (normalizedPayload.length % 4 != 0) {
         normalizedPayload += '=';
@@ -162,29 +169,7 @@ class ClientLicenseService {
         debugPrint('ClientLicenseService: token expired on ${payload.validUntil}');
         return null;
       }
-
-      // 2. Verify signature (Method A: HMAC verification with padded and unpadded tolerance)
-      final secret = '${payload.orgId}_hmac_$kPlatformCryptoSalt';
-      final hmac = crypto.Hmac(crypto.sha256, utf8.encode(secret));
-
-      final digestRaw = hmac.convert(utf8.encode(payloadB64));
-      final sigRaw = base64Url.encode(digestRaw.bytes).replaceAll('=', '');
-
-      final digestNorm = hmac.convert(utf8.encode(normalizedPayload));
-      final sigNorm = base64Url.encode(digestNorm.bytes).replaceAll('=', '');
-
-      final cleanSig = sigB64.replaceAll('=', '');
-      if (cleanSig == sigRaw || cleanSig == sigNorm) {
-        return payload;
-      }
-
-      // Method B: RSA Public Key verification fallback
-      if (_verifyRsaSignature(payloadB64, sigB64)) {
-        return payload;
-      }
-
-      debugPrint('ClientLicenseService: signature verification failed');
-      return null;
+      return payload;
     } catch (e) {
       debugPrint('ClientLicenseService: parse error: $e');
       return null;
@@ -193,23 +178,40 @@ class ClientLicenseService {
 
   static bool _verifyRsaSignature(String payloadB64, String sigB64) {
     try {
-      final key = RSAPublicKey(
-        BigInt.parse(kLeasePublicModulusHex, radix: 16),
-        BigInt.from(kLeasePublicExponent),
-      );
-      final signer = RSASigner(SHA256Digest(), '0609608648016503040201')
-        ..init(false, PublicKeyParameter<RSAPublicKey>(key));
-
-      // Pad base64 if needed
       var normalizedSig = sigB64.replaceAll('-', '+').replaceAll('_', '/');
       while (normalizedSig.length % 4 != 0) {
         normalizedSig += '=';
       }
+      final sig = RSASignature(base64Decode(normalizedSig));
 
-      return signer.verifySignature(
-        Uint8List.fromList(utf8.encode(payloadB64)),
-        RSASignature(base64Decode(normalizedSig)),
-      );
+      bool check(String payload) {
+        try {
+          final signer = RSASigner(SHA256Digest(), '0609608648016503040201')
+            ..init(false, PublicKeyParameter<RSAPublicKey>(_publicKey));
+          return signer.verifySignature(
+            Uint8List.fromList(utf8.encode(payload)),
+            sig,
+          );
+        } catch (_) {
+          return false;
+        }
+      }
+
+      // 1. Raw payload as received
+      if (check(payloadB64)) return true;
+
+      // 2. Unpadded payload (Code.gs and TestLicenceSigner default to unpadded)
+      final unpadded = payloadB64.replaceAll('=', '');
+      if (unpadded != payloadB64 && check(unpadded)) return true;
+
+      // 3. Padded payload (if signed originally with standard base64 padding)
+      var padded = unpadded;
+      while (padded.length % 4 != 0) {
+        padded += '=';
+      }
+      if (padded != payloadB64 && check(padded)) return true;
+
+      return false;
     } catch (_) {
       return false;
     }
@@ -217,12 +219,21 @@ class ClientLicenseService {
 
   /// Activates the verified license into the local SaaS session and starts
   /// entitled services (such as the Local LAN Hub Server if licensed).
+  ///
+  /// [token] is the signed key the payload came from; it is kept on the
+  /// device so every start can re-check it (LicenseLease._checkClientKey).
   static Future<bool> activateLicense(
     ClientLicensePayload payload, {
-    required WidgetRef ref,
+    required dynamic ref,
+    required String token,
     String? ownerName,
   }) async {
     try {
+      // Never activate from a payload alone: the key must verify here too.
+      final verified = verifyAndDecode(token);
+      if (verified == null || verified.orgId != payload.orgId) {
+        throw Exception('Licence key is not signed by SmartBizz');
+      }
       // Validate hardware machine binding (prevent reuse across multiple physical machines)
       final bindResult = await DeviceFingerprintService.validateBinding(payload);
       if (!bindResult.isValid) {
@@ -232,12 +243,14 @@ class ClientLicenseService {
 
       final notifier = ref.read(saasSessionProvider.notifier);
       await notifier.activateWithClientLicense(payload, ownerName: ownerName);
+      await LicenseLease.storeClientKey(payload.orgId, token);
 
       // Lock binding on current machine
       await DeviceFingerprintService.recordActivationBinding(payload);
 
       // If Local LAN Server is entitled, ensure service is ready
-      if (payload.features[FeatureKeys.localLanServer] == true) {
+      if (payload.features[FeatureKeys.localLanServer] == true ||
+          payload.storageMode == StorageModes.localNetwork) {
         try {
           if (!LocalRestaurantLanServer.instance.isRunning) {
             await LocalRestaurantLanServer.instance.startServer();

@@ -8,6 +8,9 @@ import '../../core/entitlements.dart';
 import '../../core/package_model.dart';
 import '../admin/widgets/tier_visuals.dart';
 import '../admin/widgets/trade_selector.dart';
+import '../../core/design_tokens.dart';
+import '../../widgets/responsive_field_row.dart';
+import '../../widgets/max_width_body.dart';
 import '../../widgets/package_features_breakdown_widget.dart';
 import '../../services/package_service.dart';
 import '../../services/otp_verification_service.dart';
@@ -16,6 +19,7 @@ import '../../services/smtp_email_service.dart';
 import '../../services/subscription_plan_service.dart';
 import '../../services/tenant_provisioning_service.dart';
 import '../../utils/ui_feedback.dart';
+import 'local_offline_store_dialog.dart';
 
 class ClientSignUpScreen extends ConsumerStatefulWidget {
   const ClientSignUpScreen({super.key});
@@ -45,6 +49,8 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
 
   bool get _isFreeTrial => _selectedOption == 'free_trial';
   bool get _isEnterprise => _selectedOption == 'enterprise';
+  bool get _isLocalLan => _selectedOption == 'local_lan';
+  /// Basic and above, and the local network hub: requests only (contract §6a/§6b).
   bool get _isPaidPackage => !_isFreeTrial && !_isEnterprise;
 
   bool _obscurePassword = true;
@@ -235,6 +241,7 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
   }
 
   String get _submitButtonLabel {
+    if (_isLocalLan) return "Submit Local Network Hub Request";
     if (_isEnterprise) return "Submit Enterprise Request";
     if (_isPaidPackage) return "Submit Package Request";
     switch (_vertical) {
@@ -263,8 +270,16 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
   PackageTier get _selectedTier {
     if (_isFreeTrial) return _trialTier;
     if (_isEnterprise) return PackageTier.enterprise;
+    // A local network hub needs more than one device: Basic is the lowest
+    // tier that may run one (contract §6b); the admin may onboard higher.
+    if (_isLocalLan) return PackageTier.basic;
     return PackageTier.tryParse(_selectedOption) ?? PackageTier.basic;
   }
+
+  /// The storage mode the request asks for: a local network hub, else the
+  /// tier's default (own Sheets; Offline on the device).
+  String get _requestedStorageMode =>
+      _isLocalLan ? StorageModes.localNetwork : _selectedTier.defaultStorageMode;
 
   /// The features of this trade's package at [tier] (only keys that apply
   /// to the trade are ever on).
@@ -317,6 +332,7 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
     bool isLast = false,
   }) {
     final selected = _selectedOption == optionValue;
+    final isNarrow = MediaQuery.sizeOf(context).width < 420;
     return InkWell(
       onTap: () => setState(() => _selectedOption = optionValue),
       borderRadius: BorderRadius.circular(14),
@@ -365,14 +381,14 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
               ],
             ),
             Padding(
-              padding: const EdgeInsets.only(left: 58),
+              padding: EdgeInsets.only(left: isNarrow ? 0 : 58, top: isNarrow ? 8 : 0),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const SizedBox(height: 4),
                   Text(
                     subtitle,
-                    style: TextStyle(color: context.textSecondary, fontSize: 11.5, height: 1.3),
+                    style: TextStyle(color: context.textSecondary, fontSize: DS.fontMicro, height: 1.3),
                   ),
                   if (heading != null) ...[
                     const SizedBox(height: 10),
@@ -390,7 +406,7 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
                         Expanded(
                           child: Text(
                             limits,
-                            style: TextStyle(color: context.textSecondary, fontSize: 11.5, fontWeight: FontWeight.w600),
+                            style: TextStyle(color: context.textSecondary, fontSize: DS.fontMicro, fontWeight: FontWeight.w600),
                           ),
                         ),
                       ],
@@ -416,7 +432,7 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
                         Expanded(
                           child: Text(
                             notice,
-                            style: TextStyle(color: context.textSecondary, fontSize: 11, height: 1.35),
+                            style: TextStyle(color: context.textSecondary, fontSize: DS.fontMicro, height: 1.35),
                           ),
                         ),
                       ],
@@ -666,7 +682,9 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
         final tier = _selectedTier;
         final vertical = Verticals.forCategory(_businessCategory);
         final packageId = PackageCatalog.starterId(vertical, tier);
-        final packageLabel = PackageCatalog.nameFor(vertical, tier);
+        final packageLabel = _isLocalLan
+            ? '${PackageCatalog.nameFor(vertical, tier)} (local network hub)'
+            : PackageCatalog.nameFor(vertical, tier);
         final fallbackSuffix = vertical == Verticals.restaurant
             ? "Restaurant"
             : vertical == Verticals.supermarket
@@ -693,7 +711,10 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
           'requestedPlanLabel': packageLabel,
           'requestedPackageId': packageId,
           'requestedTier': tier.id,
-          'requestedStorageMode': tier.defaultStorageMode,
+          'requestedStorageMode': _requestedStorageMode,
+          if (_isLocalLan)
+            'note': 'Self-hosted local network hub requested: the ledger on the host PC, '
+                'devices on the store Wi-Fi pair with it and count against the package\'s device limit.',
           'vertical': vertical,
           'isEnterprise': false,
           'createdAt': FieldValue.serverTimestamp(),
@@ -1099,7 +1120,8 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
         ),
       ),
       body: SafeArea(
-        child: Center(
+        child: MaxWidthBody(
+          maxWidth: 520,
           child: SingleChildScrollView(
             padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 12.0),
             child: ConstrainedBox(
@@ -1160,59 +1182,53 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
                     const SizedBox(height: 20),
 
                     // SECTION 1: BUSINESS & OWNER BASICS
-                    Row(
+                    ResponsiveFieldRow(
+                      minFieldWidth: 200,
                       children: [
-                        Expanded(
-                          flex: 3,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text("Category *", style: TextStyle(color: context.textSecondary, fontSize: 13, fontWeight: FontWeight.w600)),
-                              const SizedBox(height: 6),
-                              DropdownButtonFormField<String>(
-                                initialValue: _businessCategory,
-                                isExpanded: true,
-                                borderRadius: BorderRadius.circular(14),
-                                icon: Icon(Icons.keyboard_arrow_down_rounded, color: context.textSecondary, size: 20),
-                                dropdownColor: context.surfaceColor,
-                                style: TextStyle(color: context.textPrimary, fontSize: 13),
-                                decoration: ClassicTheme.inputDecorationFor(context, hintText: "Category"),
-                                items: _categories.map((c) => DropdownMenuItem(
-                                  value: c,
-                                  child: Text(c, style: TextStyle(fontSize: 12, color: context.textPrimary), overflow: TextOverflow.ellipsis),
-                                )).toList(),
-                                onChanged: (v) {
-                                  if (v != null) {
-                                    // Tiers are the same for every trade; only the
-                                    // package (its features) follows the category.
-                                    setState(() => _businessCategory = v);
-                                  }
-                                },
-                              ),
-                            ],
-                          ),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text("Category *", style: TextStyle(color: context.textSecondary, fontSize: 13, fontWeight: FontWeight.w600)),
+                            const SizedBox(height: 6),
+                            DropdownButtonFormField<String>(
+                              initialValue: _businessCategory,
+                              isExpanded: true,
+                              borderRadius: BorderRadius.circular(14),
+                              icon: Icon(Icons.keyboard_arrow_down_rounded, color: context.textSecondary, size: 20),
+                              dropdownColor: context.surfaceColor,
+                              style: TextStyle(color: context.textPrimary, fontSize: 13),
+                              decoration: ClassicTheme.inputDecorationFor(context, hintText: "Category"),
+                              items: _categories.map((c) => DropdownMenuItem(
+                                value: c,
+                                child: Text(c, style: TextStyle(fontSize: 12, color: context.textPrimary), overflow: TextOverflow.ellipsis),
+                              )).toList(),
+                              onChanged: (v) {
+                                if (v != null) {
+                                  // Tiers are the same for every trade; only the
+                                  // package (its features) follows the category.
+                                  setState(() => _businessCategory = v);
+                                }
+                              },
+                            ),
+                          ],
                         ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          flex: 3,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text("Mobile Number *", style: TextStyle(color: context.textSecondary, fontSize: 13, fontWeight: FontWeight.w600)),
-                              const SizedBox(height: 6),
-                              TextFormField(
-                                controller: _mobileController,
-                                keyboardType: TextInputType.phone,
-                                style: TextStyle(color: context.textPrimary, fontSize: 14),
-                                decoration: ClassicTheme.inputDecorationFor(
-                                  context,
-                                  hintText: "10-digit mobile",
-                                  prefixIcon: Icon(Icons.phone_android_outlined, color: context.textSecondary, size: 20),
-                                ),
-                                validator: (v) => v == null || v.trim().length < 10 ? "10-digit mobile required" : null,
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text("Mobile Number *", style: TextStyle(color: context.textSecondary, fontSize: 13, fontWeight: FontWeight.w600)),
+                            const SizedBox(height: 6),
+                            TextFormField(
+                              controller: _mobileController,
+                              keyboardType: TextInputType.phone,
+                              style: TextStyle(color: context.textPrimary, fontSize: 14),
+                              decoration: ClassicTheme.inputDecorationFor(
+                                context,
+                                hintText: "10-digit mobile",
+                                prefixIcon: Icon(Icons.phone_android_outlined, color: context.textSecondary, size: 20),
                               ),
-                            ],
-                          ),
+                              validator: (v) => v == null || v.trim().length < 10 ? "10-digit mobile required" : null,
+                            ),
+                          ],
                         ),
                       ],
                     ),
@@ -1246,6 +1262,83 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
                     ),
                     const SizedBox(height: 20),
 
+                    // LOCAL LAN ONBOARDING QUICK BANNER
+                    Container(
+                      margin: const EdgeInsets.only(bottom: 20),
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: ClassicTheme.infoBlue.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: ClassicTheme.infoBlue.withValues(alpha: 0.3)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: ClassicTheme.infoBlue.withValues(alpha: 0.15),
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: const Icon(Icons.lan_rounded, color: ClassicTheme.infoBlue, size: 20),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      "Joining a store's local network hub?",
+                                      style: TextStyle(
+                                        color: context.textPrimary,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      "This device becomes a satellite of a host PC that is already licensed and running the hub on the store Wi-Fi. It needs the host's address and pairing PIN; no account is created here.",
+                                      style: TextStyle(color: context.textSecondary, fontSize: DS.fontMicro),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          ResponsiveFieldRow(
+                            minFieldWidth: 180,
+                            spacing: 8,
+                            children: [
+                              OutlinedButton.icon(
+                                icon: const Icon(Icons.tablet_mac_rounded, size: 16),
+                                label: const Text("Join an existing hub (satellite)", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: context.textPrimary,
+                                  side: BorderSide(color: context.borderColor),
+                                  minimumSize: const Size.fromHeight(44),
+                                  padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                ),
+                                onPressed: () {
+                                  LocalOfflineStoreDialog.show(
+                                    context,
+                                    initialTab: 0,
+                                    initialStoreName: _shopNameController.text.trim(),
+                                    initialOwnerName: _nameController.text.trim(),
+                                    initialCategory: _businessCategory,
+                                    initialRole: LanDeviceRole.satelliteClient,
+                                  );
+                                },
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+
                     // SECTION 2: PLAN SELECTION
                     Text("Select Onboarding Option", style: TextStyle(color: context.textSecondary, fontSize: 13, fontWeight: FontWeight.w600)),
                     const SizedBox(height: 8),
@@ -1263,9 +1356,9 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
                             color: ClassicTheme.successEmerald.withValues(alpha: 0.15),
                             borderRadius: BorderRadius.circular(4),
                           ),
-                          child: const Text(
+                          child: Text(
                             "INSTANT ACCESS",
-                            style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: ClassicTheme.successEmerald),
+                            style: TextStyle(fontSize: DS.fontMicro, fontWeight: FontWeight.bold, color: ClassicTheme.successEmerald),
                           ),
                         ),
                         subtitle: _freeTrialSubtitle,
@@ -1276,6 +1369,53 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
                       );
                     }),
                     const SizedBox(height: 8),
+                    // --- Local LAN Hub Option ---
+                    _buildOptionCard(
+                      optionValue: 'local_lan',
+                      primaryAccent: primaryAccent,
+                      icon: Icons.hub_rounded,
+                      title: "Self-Hosted Local LAN Hub (PC + Satellites)",
+                      badge: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: ClassicTheme.infoBlue.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                            "LOCAL NETWORK",
+                            style: TextStyle(fontSize: DS.fontMicro, fontWeight: FontWeight.bold, color: ClassicTheme.infoBlue),
+                        ),
+                      ),
+                      subtitle: "The ledger lives on a host PC in the store; tablets and billing terminals on the store Wi-Fi pair with it without depending on the cloud.",
+                      heading: "Local network hub",
+                      limits: "Basic package or higher · the host PC is device 1 · paired devices count against the package's device limit",
+                      notice: "A request like the paid packages: the admin onboards you and issues a signed licence key for the host PC. Not available for Kirana (single device).",
+                    ),
+                    const SizedBox(height: 8),
+                    if (_isLocalLan) ...[
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: ClassicTheme.infoBlue.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: ClassicTheme.infoBlue.withValues(alpha: 0.3)),
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Icon(Icons.info_outline_rounded, color: ClassicTheme.infoBlue, size: 18),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                "A local network hub is a request, like the paid packages: verify your e-mail, submit, and the admin onboards you on a Basic or higher package with a signed licence key for the host PC. Tablets then pair with the host over the store Wi-Fi.",
+                                style: TextStyle(fontSize: DS.fontMicro, color: context.textSecondary, height: 1.35),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                    ],
                     // --- This trade's packages, tier by tier: requests only, no
                     // free trial on any of them (contract §6a) ---
                     ...const [
@@ -1297,9 +1437,9 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
                               color: ClassicTheme.warningAmber.withValues(alpha: 0.15),
                               borderRadius: BorderRadius.circular(4),
                             ),
-                            child: const Text(
-                              "REQUEST ONLY",
-                              style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: ClassicTheme.warningAmber),
+                            child: Text(
+                            "REQUEST ONLY",
+                            style: TextStyle(fontSize: DS.fontMicro, fontWeight: FontWeight.bold, color: ClassicTheme.warningAmber),
                             ),
                           ),
                           subtitle: tier.isOffline
@@ -1327,9 +1467,9 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
                           color: ClassicTheme.warningAmber.withValues(alpha: 0.15),
                           borderRadius: BorderRadius.circular(4),
                         ),
-                        child: const Text(
-                          "ADMIN APPROVAL",
-                          style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: ClassicTheme.warningAmber),
+                        child: Text(
+                            "ADMIN APPROVAL",
+                            style: TextStyle(fontSize: DS.fontMicro, fontWeight: FontWeight.bold, color: ClassicTheme.warningAmber),
                         ),
                       ),
                       subtitle: _enterpriseSubtitle,

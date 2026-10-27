@@ -427,6 +427,38 @@ class AppsScriptBackendService {
     }
   }
 
+  /// Asks Code.gs to sign a client licence key (`ISSUE_CLIENT_LICENCE`).
+  /// Platform admin only; the server signs with the RSA lease key and
+  /// writes `licenses/{orgId}` from the same payload. Returns the token or
+  /// null (not signed in as admin, server not configured, offline).
+  static Future<String?> issueClientLicence(Map<String, dynamic> payload) async {
+    try {
+      final url = getWebhookUrl();
+      if (!_isValidUrl(url)) return null;
+      final res = await postWithRedirects(
+        Uri.parse(url),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'secret': _secretToken,
+          'action': 'ISSUE_CLIENT_LICENCE',
+          'idToken': await _idToken(),
+          'payload': payload,
+        }),
+        timeout: const Duration(seconds: 20),
+      );
+      if (res.statusCode < 200 || res.statusCode >= 300) return null;
+      final data = jsonDecode(res.body);
+      if (data is Map && data['success'] == true && data['token'] is String) {
+        return data['token'] as String;
+      }
+      debugPrint('issueClientLicence refused: ${data is Map ? data['error_code'] : res.body}');
+      return null;
+    } catch (e) {
+      debugPrint('AppsScriptBackendService issueClientLicence error: $e');
+      return null;
+    }
+  }
+
   /// 6. Send OTP Email for Client Registration
   static Future<bool> sendOtpEmail({
     required String email,

@@ -1,4 +1,6 @@
 import 'customer_display_screen.dart';
+import 'package:qr_flutter/qr_flutter.dart';
+import '../../services/client_license_service.dart';
 import 'dart:convert';
 import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
@@ -1462,11 +1464,13 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
               ),
             ],
           ),
+          // Every trade with more than one device pairs through the hub
+          // (shops: BILLING / MANAGER tills; restaurants also WAITER / KITCHEN).
+          const SizedBox(height: 20),
+          _buildSectionHeader('Local LAN Hub (host till for paired devices)', Icons.router_rounded),
+          const SizedBox(height: 12),
+          _buildLocalLanServerCard(),
           if (isRest) ...[
-            const SizedBox(height: 20),
-            _buildSectionHeader('Self-Hosted Local LAN Hub Server (Zero-WAN Multi-Terminal)', Icons.router_rounded),
-            const SizedBox(height: 12),
-            _buildLocalLanServerCard(),
             const SizedBox(height: 16),
             _buildCustomerDisplayCard(),
           ],
@@ -1477,9 +1481,11 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
 
   Widget _buildLocalLanServerCard() {
     final entitlements = ref.watch(entitlementsProvider);
-    final isLicensed = entitlements.isEnabled(FeatureKeys.localLanServer);
+    final session = ref.watch(saasSessionProvider);
+    final isLocalNetworkMode = session.currentOrganization?.storageMode == StorageModes.localNetwork;
+    final isLicensed = entitlements.isEnabled(FeatureKeys.localLanServer) || isLocalNetworkMode;
     final lanServer = LocalRestaurantLanServer.instance;
-    final isRunning = isLicensed && lanServer.isRunning;
+    final isRunning = lanServer.isRunning;
     final url = lanServer.serverUrl;
 
     return _buildCard(
@@ -1495,7 +1501,7 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
                     children: [
                       Icon(
                         Icons.dns_rounded,
-                        color: isRunning ? ClassicTheme.successEmerald : context.textSecondary,
+                        color: isRunning ? ClassicTheme.successEmerald : (isLicensed ? context.textPrimary : ClassicTheme.primaryAccent),
                         size: 20,
                       ),
                       const SizedBox(width: 8),
@@ -1509,22 +1515,22 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
                         decoration: BoxDecoration(
                           color: isRunning
                               ? ClassicTheme.tintSuccess
-                              : (isLicensed ? context.sunkenSurface : ClassicTheme.tintDanger),
+                              : (isLicensed ? context.sunkenSurface : ClassicTheme.primaryAccent.withValues(alpha: 0.12)),
                           borderRadius: BorderRadius.circular(8),
                           border: Border.all(
                             color: isRunning
                                 ? ClassicTheme.successEmerald
-                                : (isLicensed ? context.borderColor : ClassicTheme.dangerRed.withValues(alpha: 0.5)),
+                                : (isLicensed ? context.borderColor : ClassicTheme.primaryAccent.withValues(alpha: 0.5)),
                           ),
                         ),
                         child: Text(
-                          isRunning ? 'ACTIVE' : (isLicensed ? 'OFFLINE' : 'LICENCE REQUIRED'),
+                          isRunning ? 'ACTIVE' : (isLicensed ? 'STANDBY (OFFLINE)' : 'HUB READY'),
                           style: TextStyle(
                             fontSize: 10,
                             fontWeight: FontWeight.w900,
                             color: isRunning
                                 ? ClassicTheme.successEmerald
-                                : (isLicensed ? context.textSecondary : ClassicTheme.dangerRed),
+                                : (isLicensed ? context.textSecondary : ClassicTheme.primaryAccent),
                           ),
                         ),
                       ),
@@ -1532,12 +1538,14 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    isLicensed
-                        ? 'Enables waiter tablets, KDS displays and secondary devices to sync locally over Wi-Fi without internet.'
-                        : 'Self-hosted Local Host requires a platform admin licence. Contact administrator to enable Local LAN Server.',
+                    isRunning
+                        ? 'The Local LAN Hub is running on this till. Other devices running SmartBizz pair with it over the store Wi-Fi using the PIN below.'
+                        : (isLicensed
+                            ? 'The Local LAN Hub is off. Switch it on so other devices running SmartBizz can pair with this till.'
+                            : 'Multi-device hub: waiter pads, kitchen screens and extra tills share this till\'s tables and orders over Wi-Fi, no internet needed.'),
                     style: TextStyle(
                       fontSize: 12,
-                      color: isLicensed ? context.textSecondary : ClassicTheme.dangerRed,
+                      color: isRunning ? ClassicTheme.successEmerald : context.textSecondary,
                     ),
                   ),
                 ],
@@ -1546,31 +1554,75 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
             Switch.adaptive(
               value: isRunning,
               activeThumbColor: ClassicTheme.successEmerald,
-              onChanged: !isLicensed
-                  ? null
-                  : (val) async {
-                      HapticFeedback.lightImpact();
-                      if (val) {
-                        final ok = await lanServer.startServer();
-                        if (mounted) {
-                          setState(() {});
-                          if (ok) {
-                            AppToast.showSuccess(context, 'LAN Server Started on Port ${lanServer.port}');
-                          } else {
-                            AppToast.showError(context, 'Failed to start LAN server on port ${lanServer.port}');
-                          }
-                        }
-                      } else {
-                        await lanServer.stopServer();
-                        if (mounted) {
-                          setState(() {});
-                          AppToast.showInfo(context, 'LAN Server Stopped');
-                        }
-                      }
-                    },
+              onChanged: (val) async {
+                HapticFeedback.lightImpact();
+                if (val) {
+                  if (!isLicensed) {
+                    final ok = await ref.read(saasSessionProvider.notifier).enableLocalLanHubForCurrentStore();
+                    if (!ok) {
+                      if (mounted) AppToast.showError(context, 'Failed to enable Local LAN Hub');
+                      return;
+                    }
+                  }
+                  final ok = await lanServer.startServer();
+                  if (mounted) {
+                    setState(() {});
+                    if (ok) {
+                      AppToast.showSuccess(context, 'LAN Server Started on Port ${lanServer.port}');
+                    } else {
+                      AppToast.showError(context, 'Failed to start LAN server on port ${lanServer.port}');
+                    }
+                  }
+                } else {
+                  await lanServer.stopServer();
+                  if (mounted) {
+                    setState(() {});
+                    AppToast.showInfo(context, 'LAN Server Stopped');
+                  }
+                }
+              },
             ),
           ],
         ),
+        if (!isLicensed) ...[
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 10,
+            runSpacing: 8,
+            children: [
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: ClassicTheme.successEmerald,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+                icon: const Icon(Icons.bolt_rounded, size: 16),
+                label: const Text('Quick Enable Local LAN Hub', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                onPressed: () async {
+                  final ok = await ref.read(saasSessionProvider.notifier).enableLocalLanHubForCurrentStore();
+                  if (mounted) {
+                    setState(() {});
+                    if (ok) {
+                      AppToast.showSuccess(context, 'Local LAN Hub Server enabled & started on port ${lanServer.port}!');
+                    } else {
+                      AppToast.showError(context, 'Failed to enable Local LAN Hub');
+                    }
+                  }
+                },
+              ),
+              OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+                icon: const Icon(Icons.vpn_key_rounded, size: 16),
+                label: const Text('Activate Licence Token', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                onPressed: _showActivateLicenceDialog,
+              ),
+            ],
+          ),
+        ],
         if (isRunning) ...[
           const SizedBox(height: 14),
           Divider(color: context.borderColor),
@@ -1610,13 +1662,208 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
               ],
             ),
           ),
-          const SizedBox(height: 8),
-          Text(
-            'Endpoints: /api/v1/ping • /api/v1/tables • /api/v1/kot • /api/v1/kds/orders • /api/v1/cfd',
-            style: TextStyle(fontSize: 11, fontStyle: FontStyle.italic, color: context.textSecondary),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: ClassicTheme.primaryAccent,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+                icon: const Icon(Icons.qr_code_2_rounded, size: 16),
+                label: const Text('Show Satellite Pairing QR', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                onPressed: () => _showSatellitePairingDialog(context, url, lanServer.getPairingPin()),
+              ),
+              const SizedBox(width: 10),
+              OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+                icon: const Icon(Icons.network_check_rounded, size: 16),
+                label: const Text('Test LAN Ping', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                onPressed: () async {
+                  try {
+                    final response = await lanServer.testInternalPing();
+                    if (mounted) {
+                      if (response) {
+                        AppToast.showSuccess(context, 'LAN Server is responding normally (HTTP 200 OK)!');
+                      } else {
+                        AppToast.showError(context, 'LAN Server did not respond to ping');
+                      }
+                    }
+                  } catch (e) {
+                    if (mounted) AppToast.showError(context, 'Ping check error: $e');
+                  }
+                },
+              ),
+            ],
           ),
+          const SizedBox(height: 12),
+          _buildLanPairingPanel(lanServer),
         ],
       ],
+    );
+  }
+
+  /// PIN, device count and the paired devices list for the Local LAN Hub.
+  Widget _buildLanPairingPanel(LocalRestaurantLanServer lanServer) {
+    final pin = lanServer.getPairingPin();
+    final devices = lanServer.pairedDevices;
+    final maxDevices = lanServer.licensedMaxDevices;
+    final count = devices.length + 1;
+    final full = count >= maxDevices;
+    final ip = lanServer.localIpAddress ?? 'localhost';
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: context.sunkenSurface,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: context.borderColor),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('PAIRING PIN', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: context.textSecondary, letterSpacing: 1.2)),
+                    const SizedBox(height: 4),
+                    SelectableText(
+                      pin.isEmpty ? '------' : pin,
+                      style: TextStyle(fontSize: 36, fontWeight: FontWeight.w800, letterSpacing: 8, color: ClassicTheme.primaryAccent, fontFeatures: const [FontFeature.tabularFigures()]),
+                    ),
+                    const SizedBox(height: 2),
+                    Text('Host: $ip:${lanServer.port}', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: context.textPrimary)),
+                    Text(
+                      'Open SmartBizz on the other device, choose "Connect to host", enter this address and PIN.',
+                      style: TextStyle(fontSize: 11, color: context.textSecondary),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 10),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: full ? ClassicTheme.warningAmber.withValues(alpha: 0.15) : ClassicTheme.successEmerald.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      'Devices $count / $maxDevices',
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: full ? ClassicTheme.warningAmber : ClassicTheme.successEmerald),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                    icon: const Icon(Icons.refresh_rounded, size: 16),
+                    label: const Text('Rotate PIN', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                    onPressed: () {
+                      lanServer.rotatePairingPin();
+                      if (mounted) setState(() {});
+                      AppToast.showInfo(context, 'New pairing PIN issued. Paired devices stay connected.');
+                    },
+                  ),
+                ],
+              ),
+            ],
+          ),
+          if (full) ...[
+            const SizedBox(height: 8),
+            Text(
+              'Device limit reached: this licence covers $maxDevices device${maxDevices == 1 ? '' : 's'} including this host. Remove a device below or ask for a higher tier before pairing another.',
+              style: TextStyle(fontSize: 11, color: ClassicTheme.warningAmber, fontWeight: FontWeight.w600),
+            ),
+          ],
+          const SizedBox(height: 12),
+          Text('PAIRED DEVICES', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: context.textSecondary, letterSpacing: 1.2)),
+          const SizedBox(height: 6),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            decoration: BoxDecoration(
+              color: context.canvasColor,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: context.borderColor),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.desktop_windows_rounded, size: 18, color: ClassicTheme.primaryAccent),
+                const SizedBox(width: 10),
+                Expanded(child: Text('This host (OWNER)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: context.textPrimary))),
+                Text('1 of $maxDevices', style: TextStyle(fontSize: 11, color: context.textSecondary)),
+              ],
+            ),
+          ),
+          if (devices.isEmpty) ...[
+            const SizedBox(height: 6),
+            Text('No satellite paired yet.', style: TextStyle(fontSize: 11, color: context.textSecondary)),
+          ],
+          for (final d in devices) ...[
+            const SizedBox(height: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: context.canvasColor,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: context.borderColor),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    (d['role'] ?? '') == 'KITCHEN'
+                        ? Icons.soup_kitchen_rounded
+                        : (d['role'] ?? '') == 'WAITER'
+                            ? Icons.tablet_android_rounded
+                            : Icons.point_of_sale_rounded,
+                    size: 18,
+                    color: ClassicTheme.primaryAccent,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '${d['deviceName'] ?? 'Satellite'} (${d['role'] ?? ''})',
+                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: context.textPrimary),
+                        ),
+                        Text(
+                          'id ${d['id'] ?? ''} • paired ${(d['pairedAt'] ?? '').toString().split('T').first}',
+                          style: TextStyle(fontSize: 10, color: context.textSecondary),
+                        ),
+                      ],
+                    ),
+                  ),
+                  TextButton.icon(
+                    style: TextButton.styleFrom(foregroundColor: ClassicTheme.dangerRed),
+                    icon: const Icon(Icons.link_off_rounded, size: 16),
+                    label: const Text('Remove', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                    onPressed: () {
+                      lanServer.revokeDevice((d['id'] ?? '').toString());
+                      if (mounted) setState(() {});
+                      AppToast.showInfo(context, 'Device removed. It must pair again with the PIN.');
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
     );
   }
 
@@ -1828,8 +2075,6 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
   }
 
   Widget _buildCustomerDisplayCard() {
-    final entitlements = ref.watch(entitlementsProvider);
-    final isLicensed = entitlements.isEnabled(FeatureKeys.customerDisplay);
 
     return _buildCard(
       children: [
@@ -1844,7 +2089,7 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
                     children: [
                       Icon(
                         Icons.tv_rounded,
-                        color: isLicensed ? ClassicTheme.secondaryAccent : context.textSecondary,
+                        color: ClassicTheme.secondaryAccent,
                         size: 20,
                       ),
                       const SizedBox(width: 8),
@@ -1856,16 +2101,16 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                         decoration: BoxDecoration(
-                          color: isLicensed ? ClassicTheme.secondaryAccent.withValues(alpha: 0.12) : context.sunkenSurface,
+                          color: ClassicTheme.secondaryAccent.withValues(alpha: 0.12),
                           borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: isLicensed ? ClassicTheme.secondaryAccent : context.borderColor),
+                          border: Border.all(color: ClassicTheme.secondaryAccent),
                         ),
                         child: Text(
-                          isLicensed ? 'READY' : 'LOCKED',
+                          'READY',
                           style: TextStyle(
                             fontSize: 10,
                             fontWeight: FontWeight.w900,
-                            color: isLicensed ? ClassicTheme.secondaryAccent : context.textSecondary,
+                            color: ClassicTheme.secondaryAccent,
                           ),
                         ),
                       ),
@@ -1881,18 +2126,14 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
             ),
             ElevatedButton.icon(
               style: ElevatedButton.styleFrom(
-                backgroundColor: isLicensed ? ClassicTheme.secondaryAccent : context.sunkenSurface,
-                foregroundColor: isLicensed ? Colors.white : context.textSecondary,
+                backgroundColor: ClassicTheme.secondaryAccent,
+                foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
               ),
-              icon: Icon(isLicensed ? Icons.open_in_new_rounded : Icons.lock_outline_rounded, size: 16),
+              icon: const Icon(Icons.open_in_new_rounded, size: 16),
               label: const Text('Open CFD', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
               onPressed: () {
-                if (!isLicensed) {
-                  AppToast.showInfo(context, entitlements.explain(FeatureKeys.customerDisplay));
-                  return;
-                }
                 Navigator.of(context).push(
                   MaterialPageRoute(builder: (_) => const CustomerDisplayScreen()),
                 );
@@ -1901,6 +2142,194 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
           ],
         ),
       ],
+    );
+  }
+
+  void _showActivateLicenceDialog() {
+    final tokenCtrl = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            Icon(Icons.vpn_key_rounded, color: ClassicTheme.primaryAccent, size: 22),
+            const SizedBox(width: 10),
+            const Text('Activate License Token', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+          ],
+        ),
+        content: SizedBox(
+          width: 440,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Paste your cryptographically signed SmartBizz license token (SBZ-LIC-...) or enter your activation key to unlock offline and LAN features.',
+                style: TextStyle(fontSize: 12, color: dialogCtx.textSecondary),
+              ),
+              const SizedBox(height: 14),
+              TextField(
+                controller: tokenCtrl,
+                maxLines: 3,
+                style: const TextStyle(fontSize: 12, fontFamily: 'monospace'),
+                decoration: InputDecoration(
+                  hintText: 'SBZ-LIC-...',
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                  contentPadding: const EdgeInsets.all(10),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: ClassicTheme.primaryAccent,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () async {
+              final raw = tokenCtrl.text.trim();
+              if (raw.isEmpty) {
+                AppToast.showError(dialogCtx, 'Please enter a valid token');
+                return;
+              }
+              final payload = ClientLicenseService.verifyAndDecode(raw);
+              if (payload == null) {
+                AppToast.showError(dialogCtx, 'Invalid or corrupted license signature');
+                return;
+              }
+              Navigator.pop(dialogCtx);
+              final success = await ClientLicenseService.activateLicense(payload, ref: ref, token: raw);
+              if (mounted) {
+                setState(() {});
+                if (success) {
+                  AppToast.showSuccess(context, 'License successfully activated for \${payload.storeName}!');
+                } else {
+                  AppToast.showError(context, 'License activation failed');
+                }
+              }
+            },
+            child: const Text('Verify & Activate'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showSatellitePairingDialog(BuildContext context, String url, String pairingPin) {
+    final session = ref.read(saasSessionProvider);
+    final storeName = session.currentOrganization?.name ?? 'SmartBizz Store';
+    final qrPayload = jsonEncode({
+      'hub': url,
+      'pin': pairingPin,
+      'store': storeName,
+    });
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: ClassicTheme.primaryAccent.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(Icons.wifi_tethering_rounded, color: ClassicTheme.primaryAccent, size: 22),
+            ),
+            const SizedBox(width: 10),
+            const Text('Satellite Device Pairing', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+          ],
+        ),
+        content: SizedBox(
+          width: 360,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.grey.shade300),
+                ),
+                child: QrImageView(
+                  data: qrPayload,
+                  version: QrVersions.auto,
+                  size: 180,
+                  backgroundColor: Colors.white,
+                  padding: EdgeInsets.zero,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                decoration: BoxDecoration(
+                  color: ClassicTheme.tintSuccess,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: ClassicTheme.successEmerald.withValues(alpha: 0.5)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text('PAIRING PIN: ', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                    SelectableText(
+                      pairingPin,
+                      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: ClassicTheme.successEmerald, letterSpacing: 2),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'Scan this QR code from the SmartBizz app on any Waiter Pad, Kitchen KDS, or Customer Display on the same Wi-Fi network, or type the address and PIN by hand.',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 11, color: ctx.textSecondary),
+              ),
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: ctx.sunkenSurface,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: ctx.borderColor),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: SelectableText(
+                        url,
+                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: ClassicTheme.primaryAccent),
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.copy_rounded, size: 16),
+                      tooltip: 'Copy URL',
+                      onPressed: () {
+                        Clipboard.setData(ClipboardData(text: url));
+                        AppToast.showInfo(ctx, 'Endpoint copied to clipboard');
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
     );
   }
 

@@ -5,6 +5,8 @@ import 'package:qr_flutter/qr_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/classic_theme.dart';
+import '../../../core/design_tokens.dart';
+import '../../../utils/ui_feedback.dart';
 import '../../../core/upi_payment.dart';
 
 /// The QR the customer at the counter scans, carrying the exact amount.
@@ -74,13 +76,16 @@ class UpiQrPaymentSheet extends StatelessWidget {
 
     return AlertDialog(
       backgroundColor: context.surfaceColor,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+      actionsOverflowButtonSpacing: 8,
+      actionsOverflowDirection: VerticalDirection.down,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(DS.radiusLg),
         side: BorderSide(color: context.borderColor),
       ),
       contentPadding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
-      content: SizedBox(
-        width: 360,
+      content: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 360),
         child: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -99,49 +104,53 @@ class UpiQrPaymentSheet extends StatelessWidget {
               if (uri.isEmpty)
                 _noUpiId(context)
               else ...[
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    // Always white, whatever the app theme: a dark-mode QR is
-                    // a QR most phone cameras will not read.
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
-                    boxShadow: [
-                      BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 8, offset: const Offset(0, 2)),
-                    ],
-                  ),
-                  child: QrImageView(
-                    data: uri,
-                    version: QrVersions.auto,
-                    size: 220,
-                    gapless: true,
-                    backgroundColor: Colors.white,
-                  ),
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final qrSize = (constraints.maxWidth - 32).clamp(150.0, 220.0);
+                    return Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        // Always white, whatever the app theme: a dark-mode QR is
+                        // a QR most phone cameras will not read.
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(DS.radiusMd),
+                        boxShadow: [
+                          BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 8, offset: const Offset(0, 2)),
+                        ],
+                      ),
+                      child: QrImageView(
+                        data: uri,
+                        version: QrVersions.auto,
+                        size: qrSize,
+                        gapless: true,
+                        backgroundColor: Colors.white,
+                      ),
+                    );
+                  },
                 ),
                 const SizedBox(height: 10),
                 InkWell(
                   onTap: () async {
                     await Clipboard.setData(ClipboardData(text: upiId));
                     if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('UPI ID copied'), duration: Duration(seconds: 2)),
-                      );
+                      AppToast.showSuccess(context, 'UPI ID copied to clipboard');
                     }
                   },
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(DS.radiusSm),
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
+                      mainAxisSize: MainAxisSize.min,
                       children: [
                         Flexible(
                           child: Text(upiId,
-                              style: TextStyle(
-                                  fontSize: 13, fontWeight: FontWeight.w600, color: ClassicTheme.infoBlue),
+                              style: const TextStyle(
+                                  fontSize: DS.fontCaption, fontWeight: FontWeight.w600, color: ClassicTheme.infoBlue),
                               overflow: TextOverflow.ellipsis),
                         ),
                         const SizedBox(width: 6),
-                        const Icon(Icons.copy_rounded, size: 14, color: ClassicTheme.infoBlue),
+                        const Icon(Icons.copy_rounded, size: 15, color: ClassicTheme.infoBlue),
                       ],
                     ),
                   ),
@@ -151,7 +160,7 @@ class UpiQrPaymentSheet extends StatelessWidget {
                     textAlign: TextAlign.center),
                 const SizedBox(height: 4),
                 Text('GPay, PhonePe, Paytm or any UPI app',
-                    style: TextStyle(fontSize: 11.5, color: context.textMuted)),
+                    style: TextStyle(fontSize: DS.fontMicro, color: context.textMuted)),
                 if (_handheld) ...[
                   const SizedBox(height: 10),
                   // On a phone or a waiter tablet nobody can scan the screen
@@ -174,9 +183,7 @@ class UpiQrPaymentSheet extends StatelessWidget {
                         ok = false;
                       }
                       if (!ok && context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('No UPI app found on this device')),
-                        );
+                        AppToast.showError(context, 'No UPI app found on this device', title: 'UPI App Unavailable');
                       }
                     },
                   ),
@@ -199,7 +206,7 @@ class UpiQrPaymentSheet extends StatelessWidget {
                       child: Text(
                         'Settle only after the credit shows in your own UPI app. '
                         'A customer\u2019s success screen is not proof of payment.',
-                        style: TextStyle(fontSize: 11.5, color: context.textSecondary, height: 1.35),
+                        style: TextStyle(fontSize: DS.fontMicro, color: context.textSecondary, height: 1.35),
                       ),
                     ),
                   ],
@@ -213,6 +220,9 @@ class UpiQrPaymentSheet extends StatelessWidget {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context, false),
+          style: TextButton.styleFrom(
+            minimumSize: const Size(80, 44),
+          ),
           child: Text('Cancel', style: TextStyle(color: context.textSecondary)),
         ),
         ElevatedButton.icon(
@@ -221,8 +231,9 @@ class UpiQrPaymentSheet extends StatelessWidget {
           style: ElevatedButton.styleFrom(
             backgroundColor: ClassicTheme.successEmerald,
             foregroundColor: Colors.white,
+            minimumSize: const Size(140, 44),
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(DS.radiusMd)),
           ),
           onPressed: () => Navigator.pop(context, true),
         ),

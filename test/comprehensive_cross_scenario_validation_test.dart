@@ -8,6 +8,8 @@ import 'package:smart_restaurant_pos/core/saas_models.dart';
 import 'package:smart_restaurant_pos/core/subscription_plan_model.dart';
 import 'package:smart_restaurant_pos/core/license_composer.dart';
 import 'package:smart_restaurant_pos/services/client_license_service.dart';
+
+import 'support/test_licence_signer.dart';
 import 'package:smart_restaurant_pos/services/device_fingerprint_service.dart';
 
 void main() {
@@ -16,6 +18,7 @@ void main() {
   late Directory tempDir;
 
   setUpAll(() async {
+    TestLicenceSigner.install();
     tempDir = await Directory.systemTemp.createTemp('sbz_comprehensive_val_');
     Hive.init(tempDir.path);
     if (!Hive.isBoxOpen('configBox')) {
@@ -61,7 +64,7 @@ void main() {
         validUntil: DateTime.now().toUtc().add(const Duration(days: 365)),
       );
 
-      final token = ClientLicenseService.generateToken(foreignPayload);
+      final token = TestLicenceSigner.sign(foreignPayload);
       final decoded = ClientLicenseService.verifyAndDecode(token);
       expect(decoded, isNotNull);
 
@@ -90,7 +93,7 @@ void main() {
         issuedAt: DateTime.now().toUtc(),
         validUntil: DateTime.now().toUtc().add(const Duration(days: 365)),
       );
-      final localToken = ClientLicenseService.generateToken(localPayload);
+      final localToken = TestLicenceSigner.sign(localPayload);
       final localDecoded = ClientLicenseService.verifyAndDecode(localToken);
       expect(localDecoded, isNotNull);
 
@@ -137,7 +140,7 @@ void main() {
         validUntil: DateTime.now().toUtc().add(const Duration(days: 30)),
       );
 
-      final validToken = ClientLicenseService.generateToken(payload);
+      final validToken = TestLicenceSigner.sign(payload);
       expect(ClientLicenseService.verifyAndDecode(validToken), isNotNull);
 
       // 1. Bit-flip tampering signature
@@ -168,7 +171,7 @@ void main() {
         issuedAt: DateTime.now().toUtc().subtract(const Duration(days: 60)),
         validUntil: DateTime.now().toUtc().subtract(const Duration(days: 1)),
       );
-      final expiredToken = ClientLicenseService.generateToken(expiredPayload);
+      final expiredToken = TestLicenceSigner.sign(expiredPayload);
       expect(ClientLicenseService.verifyAndDecode(expiredToken), isNull);
       expect(ClientLicenseService.verifyAndDecode(expiredToken, allowExpired: true)?.isExpired, isTrue);
     });

@@ -169,6 +169,7 @@ class DeviceFingerprintService {
   /// Checks whether this machine is authorized to run the previously activated license for [orgId].
   /// Returns false if a hardware mismatch is detected (e.g. copied database / cloned storage).
   static Future<bool> isCurrentMachineAuthorized(String orgId) async {
+    if (orgId.startsWith('org_satellite_')) return true;
     try {
       final box = Hive.isBoxOpen(_boxName) ? Hive.box(_boxName) : await Hive.openBox(_boxName);
       final boundMachine = box.get('$_boundLicensesPrefix$orgId');
@@ -179,6 +180,8 @@ class DeviceFingerprintService {
       return true; // Not yet bound or non-offline org
     } catch (e) {
       debugPrint('DeviceFingerprintService.isCurrentMachineAuthorized error: $e');
+      // Fail closed: a binding that cannot be read is not a pass. The caller
+      // sends the owner through re-validation rather than running unbound.
       return false;
     }
   }

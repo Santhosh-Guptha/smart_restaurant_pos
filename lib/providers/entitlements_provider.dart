@@ -29,7 +29,9 @@ final entitlementsProvider = Provider<Entitlements>((ref) {
 
   // The one place the network switch is set. Everything that talks to the
   // cloud consults CloudGate first, so an offline tenant makes no requests.
-  CloudGate.setOffline(resolved.isPureOffline && !isPlatformAdmin);
+  // A LOCAL_NETWORK tenant (host or satellite) is offline to the cloud too:
+  // its ledger is the hub, and no webhook or Sheets call ever leaves the LAN.
+  CloudGate.setOffline((resolved.isPureOffline || resolved.isLocalNetwork) && !isPlatformAdmin);
   // The store's Google Sheet layout (tab names, headers) follows its trade.
   SheetLayout.setActiveVertical(vertical);
   return resolved;

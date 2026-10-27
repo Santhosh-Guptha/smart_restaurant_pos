@@ -50,7 +50,7 @@ class UpiPayment {
       'cu': 'INR',
     };
 
-    final tn = (note ?? '').trim();
+    final tn = (note ?? '').replaceAll(RegExp(r'[\r\n\t]+'), ' ').trim();
     if (tn.isNotEmpty) {
       params['tn'] = tn.length > noteLimit ? tn.substring(0, noteLimit) : tn;
     }

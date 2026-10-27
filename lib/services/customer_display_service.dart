@@ -1,4 +1,10 @@
+import 'dart:async';
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
+import 'package:hive_flutter/hive_flutter.dart';
+
+import 'lan_hub_client.dart';
 
 /// State snapshot broadcast to customer-facing secondary displays (CFD).
 class CustomerDisplaySnapshot {
@@ -128,6 +134,45 @@ class CustomerDisplayService extends ChangeNotifier {
   static final CustomerDisplayService instance = CustomerDisplayService._();
 
   CustomerDisplaySnapshot _currentSnapshot = const CustomerDisplaySnapshot();
+  Timer? _hubMirror;
+  bool _mirrorBusy = false;
+
+  /// On a paired satellite, follows the host's display (`GET /api/v1/cfd`)
+  /// about once a second while a customer-facing screen is open. On the
+  /// host, or when unpaired, this is a no-op.
+  void startHubMirror({Duration every = const Duration(seconds: 1)}) {
+    if (_hubMirror != null) return;
+    bool satellite = false;
+    try {
+      satellite = Hive.isBoxOpen('configBox') &&
+          Hive.box('configBox').get('saas_is_satellite_client') == true &&
+          LanHubClient.instance.isPaired;
+    } catch (_) {}
+    if (!satellite) return;
+    _hubMirror = Timer.periodic(every, (_) => _pullFromHub());
+    _pullFromHub();
+  }
+
+  void stopHubMirror() {
+    _hubMirror?.cancel();
+    _hubMirror = null;
+  }
+
+  Future<void> _pullFromHub() async {
+    if (_mirrorBusy) return;
+    _mirrorBusy = true;
+    try {
+      final m = await LanHubClient.instance.fetchCfd();
+      if (m == null) return;
+      final next = CustomerDisplaySnapshot.fromMap(m);
+      if (jsonEncode(next.toMap()) != jsonEncode(_currentSnapshot.toMap())) {
+        updateSnapshot(next);
+      }
+    } catch (_) {
+    } finally {
+      _mirrorBusy = false;
+    }
+  }
 
   CustomerDisplaySnapshot get snapshot => _currentSnapshot;
 

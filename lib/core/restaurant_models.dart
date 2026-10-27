@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package_model.dart';
 import '../services/saas_crypto_service.dart';
 import '../services/ordering_platform_config_service.dart';
 
@@ -101,7 +102,9 @@ class KitchenStation {
   factory KitchenStation.fromMap(Map<String, dynamic> map) => KitchenStation(
     id: (map['id'] ?? '').toString(),
     name: (map['name'] ?? 'Station').toString(),
-    sendsToKitchen: map['sendsToKitchen'] != false,
+    sendsToKitchen: Verticals.isShop(Verticals.resolve(vertical: map['vertical']?.toString(), businessCategory: map['businessCategory']?.toString() ?? map['category']?.toString()))
+        ? false
+        : map['sendsToKitchen'] != false,
     displayOrder: (map['displayOrder'] as num?)?.toInt() ?? 0,
     defaultPrinter: map['defaultPrinter']?.toString(),
   );
@@ -787,7 +790,9 @@ class KotItem {
       voidedQty: (map['voidedQty'] as num?)?.toDouble() ?? 0.0,
       voidReason: map['voidReason']?.toString(),
       voidedBy: map['voidedBy']?.toString(),
-      sendsToKitchen: map['sendsToKitchen'] != false,
+      sendsToKitchen: Verticals.isShop(Verticals.resolve(vertical: map['vertical']?.toString(), businessCategory: map['businessCategory']?.toString() ?? map['category']?.toString()))
+          ? false
+          : map['sendsToKitchen'] != false,
       seatNo: (map['seatNo'] as num?)?.toInt() ?? (map['seat_no'] as num?)?.toInt(),
       selectedModifiers: ((map['selectedModifiers'] as List?) ?? (map['modifiers'] as List?) ?? [])
           .map((m) => ItemModifierOption.fromMap(Map<String, dynamic>.from(m as Map)))
@@ -1470,7 +1475,9 @@ class RestaurantMenuItem {
           : const ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
       description: map['description']?.toString(),
       imageUrl: map['imageUrl']?.toString(),
-      sendsToKitchen: map['sendsToKitchen'] != false,
+      sendsToKitchen: Verticals.isShop(Verticals.resolve(vertical: map['vertical']?.toString(), businessCategory: map['businessCategory']?.toString() ?? map['category']?.toString()))
+          ? false
+          : map['sendsToKitchen'] != false,
       modifierGroups: ((map['modifierGroups'] as List?) ?? (map['modifiers'] as List?) ?? [])
           .map((m) => ItemModifierGroup.fromMap(Map<String, dynamic>.from(m as Map)))
           .toList(),

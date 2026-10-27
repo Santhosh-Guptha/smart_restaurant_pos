@@ -1,342 +1,355 @@
-<!DOCTYPE html>
-<html lang="en" data-cat="retail">
+<!doctype html>
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="description" content="SmartBizz for clothing, footwear, electronics, mobile, hardware and general retail shops. Scan the tag, bill in seconds, and keep the regulars&#x27; part payments straight. A shop counter that fits how you sell, from one store to several.">
-<meta name="theme-color" content="#0f1219">
+<title>Retail · SmartBizz POS</title>
+<meta name="description" content="SmartBizz POS for clothing, footwear, electronics, mobile and hardware shops: barcode billing, size and colour variants, customer khata, stock with reorder levels and GST bills.">
 <link rel="canonical" href="https://smartbizz.devmonks.space/retail/">
 <meta property="og:type" content="website">
-<meta property="og:title" content="Retail &amp; fashion — SmartBizz">
-<meta property="og:description" content="SmartBizz for clothing, footwear, electronics, mobile, hardware and general retail shops. Scan the tag, bill in seconds, and keep the regulars&#x27; part payments straight. A shop counter that fits how you sell, from one store to several.">
+<meta property="og:title" content="Retail · SmartBizz POS">
+<meta property="og:description" content="SmartBizz POS for clothing, footwear, electronics, mobile and hardware shops: barcode billing, size and colour variants, customer khata, stock with reorder levels and GST bills.">
 <meta property="og:url" content="https://smartbizz.devmonks.space/retail/">
-<link rel="icon" href="/assets/logo.png">
+<meta name="theme-color" content="#070F24" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#F6F3EC" media="(prefers-color-scheme: light)">
+<link rel="icon" href="/pos/favicon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Sora:wght@300;400;500;600&display=swap" rel="stylesheet">
-<title>Retail &amp; fashion — SmartBizz</title>
-<link rel="stylesheet" href="/assets/site.css?v=a00a8e7e">
-<link rel="stylesheet" href="/assets/fx.css?v=a00a8e7e">
-<script>try{var t=localStorage.getItem("sb-theme");if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700;12..96,800&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#070F24;--ink-2:#0F2557;--ink-3:#1D3F8F;--paper:#F6F3EC;
+  --sun-a:#FFC857;--sun-b:#FF6B3D;--sun:linear-gradient(100deg,var(--sun-a),var(--sun-b));--ok:#5FD3A3;--warn:#FF9A6B;
+  --t-rest:#E2563D;--t-kir:#C77A0A;--t-sup:#1F6FB2;--t-pha:#1F7F78;--t-ret:#8E3B8F;--trade:var(--t-rest);
+  --display:'Bricolage Grotesque',"Avenir Next Condensed","Arial Narrow",sans-serif;
+  --body:'Figtree',"Segoe UI",Helvetica,Arial,sans-serif;
+  --gutter:clamp(16px,5vw,64px);--max:1180px;--nav:64px;--r:16px;
+  --bg:#070F24;--bg-2:#0C1A3D;--bg-3:#122A5E;--fg:#F6F3EC;--fg-2:#AEB9D6;--fg-3:#8391B8;
+  --line:rgba(246,243,236,.12);--line-2:rgba(246,243,236,.24);--shadow:0 24px 60px -30px rgba(0,0,0,.9);
+  color-scheme:dark;
+}
+@media (prefers-color-scheme: light){:root{
+  --bg:#F6F3EC;--bg-2:#FFFFFF;--bg-3:#EDE6D8;--fg:#070F24;--fg-2:#3D4A6E;--fg-3:#6F7CA3;
+  --line:rgba(7,15,36,.12);--line-2:rgba(7,15,36,.24);--shadow:0 24px 60px -30px rgba(7,15,36,.35);color-scheme:light}}
+[data-trade=restaurant]{--trade:var(--t-rest)}[data-trade=kirana]{--trade:var(--t-kir)}[data-trade=supermarket]{--trade:var(--t-sup)}
+[data-trade=pharmacy]{--trade:var(--t-pha)}[data-trade=retail]{--trade:var(--t-ret)}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:calc(var(--nav) + 12px)}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--body);font-size:clamp(16px,1.05vw,17px);line-height:1.5;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+a{color:inherit;text-decoration:none}
+img,svg{max-width:100%;display:block}
+h1,h2,h3{font-family:var(--display);font-weight:800;line-height:1.02;letter-spacing:-.02em;margin:0;text-wrap:balance}
+h2{font-size:clamp(1.7rem,3.4vw,2.6rem)}
+h3{font-size:1.05rem;font-weight:700;letter-spacing:-.01em}
+p{margin:0}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+.wrap{width:min(100% - 2*var(--gutter),var(--max));margin-inline:auto}
+.eyebrow{display:inline-flex;align-items:center;gap:10px;font:600 .74rem/1 var(--body);letter-spacing:.16em;text-transform:uppercase;color:var(--trade)}
+.eyebrow::before{content:"";width:18px;height:2px;background:var(--trade)}
+.sub{color:var(--fg-2);max-width:60ch;margin-top:10px}
+:focus-visible{outline:2px solid var(--sun-a);outline-offset:3px;border-radius:6px}
+.skip{position:absolute;left:-999px;top:8px;z-index:99;background:var(--sun);color:#1B0E05;padding:8px 14px;border-radius:8px}
+.skip:focus{left:8px}
+.section{padding:clamp(48px,7vw,88px) 0}
+.section .head{margin-bottom:28px}
+
+/* buttons */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:.85em 1.4em;border-radius:999px;font:600 .98rem var(--body);border:1px solid transparent;cursor:pointer;white-space:nowrap;transition:transform .2s,background .2s}
+.btn:hover{transform:translateY(-1px)}
+.btn-sun{background:var(--sun);color:#1B0E05;box-shadow:0 12px 28px -14px rgba(255,140,60,.7)}
+.btn-ghost{border-color:var(--line-2);background:transparent}
+.btn-ghost:hover{background:var(--bg-3)}
+.btn-sm{padding:.6em 1.1em;font-size:.9rem}
+
+/* nav */
+.nav{position:sticky;top:0;z-index:50;background:color-mix(in srgb,var(--bg) 82%,transparent);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-bottom:1px solid var(--line)}
+.nav .wrap{display:flex;align-items:center;gap:20px;height:var(--nav)}
+.brand{display:flex;align-items:center;gap:10px;font:800 1.15rem var(--display);letter-spacing:-.02em}
+.brand svg{width:32px;height:32px;border-radius:8px}
+.nav-links{display:flex;gap:2px;margin-left:auto;font-weight:500;color:var(--fg-2);font-size:.95rem}
+.nav-links a{padding:8px 11px;border-radius:999px}
+.nav-links a:hover{color:var(--fg);background:var(--bg-3)}
+.menu-btn{display:none;margin-left:auto;border:1px solid var(--line-2);border-radius:10px;padding:7px 12px;font-weight:600;font-size:.9rem}
+@media (max-width:900px){.nav-links,.nav .btn{display:none}.menu-btn{display:block}
+  .nav.open .nav-links{display:flex;flex-direction:column;position:absolute;left:0;right:0;top:100%;padding:10px var(--gutter) 18px;background:var(--bg);border-bottom:1px solid var(--line)}
+  .nav.open .nav-links a{padding:12px 12px;font-size:1.05rem}}
+
+/* hero */
+.hero{position:relative;padding:clamp(40px,7vw,88px) 0 clamp(56px,7vw,88px);overflow:hidden;isolation:isolate}
+.hero::before{content:"";position:absolute;z-index:-1;inset:-40% -20% auto auto;width:min(80vw,900px);aspect-ratio:1;border-radius:50%;filter:blur(90px);opacity:.35;background:radial-gradient(circle at 40% 40%,var(--trade),var(--sun-b) 45%,transparent 70%);transition:background .6s}
+.hero .wrap{display:grid;grid-template-columns:1.05fr .95fr;gap:clamp(28px,5vw,64px);align-items:center}
+.hero h1{font-size:clamp(2.6rem,6vw,5rem);max-width:13ch;margin-top:18px}
+.hero .lede{margin-top:18px;max-width:40ch;font-size:clamp(1.05rem,1.3vw,1.2rem);color:var(--fg-2)}
+.hero .cta{display:flex;gap:12px;flex-wrap:wrap;margin-top:26px}
+.hero .fine{margin-top:14px;font-size:.88rem;color:var(--fg-3)}
+@media (max-width:860px){.hero .wrap{grid-template-columns:1fr}.hero h1{max-width:none}}
+
+/* trade switcher */
+.switch{display:flex;flex-wrap:wrap;gap:8px;margin-top:26px}
+.pick{display:inline-flex;align-items:center;gap:8px;padding:6px 14px 6px 6px;border-radius:999px;border:1px solid var(--line-2);background:var(--bg-2);font-weight:600;font-size:.88rem;color:var(--fg-2);transition:border-color .2s,color .2s}
+.pick svg{width:24px;height:24px;border-radius:50%;background:var(--c)}
+.pick:hover{color:var(--fg)}
+.pick[aria-pressed=true],.pick.on{border-color:var(--c);color:var(--fg);box-shadow:inset 0 0 0 1px var(--c)}
+.tagline{margin-top:14px;font-size:1rem;color:var(--fg-2);min-height:1.5em}
+
+/* mock screen */
+.stage{position:relative}
+.device{position:relative;margin-inline:auto;width:min(100%,420px);border-radius:28px;padding:10px;background:#0A1430;border:1px solid rgba(255,255,255,.14);box-shadow:var(--shadow)}
+.device .app{border-radius:20px;overflow:hidden;background:#0F1D45;color:#F6F3EC;font-size:.86rem}
+.device .bar{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;background:linear-gradient(120deg,var(--trade),color-mix(in srgb,var(--trade) 55%,#0F1D45))}
+.device .bar b{display:block;font-size:1rem}.device .bar small{opacity:.85}
+.device .bar svg{width:30px;height:30px;border-radius:8px;background:rgba(255,255,255,.18)}
+.device .ctx{display:flex;justify-content:space-between;align-items:center;padding:12px 16px 4px;color:#AEB9D6;font-size:.8rem}
+.device .pill{padding:3px 9px;border-radius:999px;background:rgba(95,211,163,.16);color:var(--ok);font-weight:600;font-size:.74rem}
+.device .row{display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:10px 16px;border-bottom:1px solid rgba(255,255,255,.07)}
+.device .row small{display:block;color:#8391B8;font-size:.76rem}
+.device .row em{font-style:normal;font-weight:600}
+.device .total{display:flex;justify-content:space-between;align-items:baseline;padding:14px 16px 6px}
+.device .total b{font:800 1.5rem var(--display)}
+.device .pay{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;padding:12px 16px 16px}
+.device .pay span{text-align:center;padding:9px 2px;border-radius:10px;background:rgba(255,255,255,.08);font-weight:600;font-size:.76rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.device .pay span:first-child{background:var(--sun);color:#1B0E05}
+.toast{position:absolute;left:50%;bottom:-14px;transform:translateX(-50%);white-space:nowrap;display:flex;align-items:center;gap:8px;padding:9px 13px;border-radius:12px;background:var(--bg-2);border:1px solid var(--line-2);box-shadow:var(--shadow);font-size:.8rem;font-weight:600}
+.toast .dot{width:8px;height:8px;border-radius:50%;background:var(--ok)}
+@media (max-width:860px){.stage{margin-top:8px}}
+
+/* per-trade blocks */
+[data-for]{display:none}
+body[data-trade=restaurant] [data-for=restaurant],body[data-trade=kirana] [data-for=kirana],body[data-trade=supermarket] [data-for=supermarket],
+body[data-trade=pharmacy] [data-for=pharmacy],body[data-trade=retail] [data-for=retail]{display:block}
+
+/* how */
+.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;counter-reset:s}
+.step{position:relative;padding:22px 20px 20px 20px;border:1px solid var(--line);border-radius:var(--r);background:var(--bg-2)}
+.step::before{counter-increment:s;content:"0" counter(s);display:block;font:800 .8rem var(--display);color:var(--trade);margin-bottom:10px;letter-spacing:.1em}
+.step p{color:var(--fg-2);margin-top:6px;font-size:.95rem}
+@media (max-width:760px){.steps{grid-template-columns:1fr}}
+
+/* features */
+.group{margin-top:26px}
+.group h3{font:600 .78rem/1 var(--body);letter-spacing:.14em;text-transform:uppercase;color:var(--fg-3);margin-bottom:12px;display:flex;align-items:center;gap:10px}
+.group h3::after{content:"";flex:1;height:1px;background:var(--line)}
+.feats{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px}
+.feat{display:flex;flex-direction:column;gap:5px;padding:14px 15px;border:1px solid var(--line);border-radius:14px;background:var(--bg-2)}
+.feat b{font-weight:700}
+.feat p{color:var(--fg-2);font-size:.9rem;flex:1}
+.tag{align-self:flex-start;margin-top:4px;font-size:.7rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:3px 8px;border-radius:999px;background:var(--bg-3);color:var(--fg-2)}
+.tag.offline{background:rgba(95,211,163,.16);color:var(--ok)}
+.tag.lan{background:color-mix(in srgb,var(--trade) 18%,transparent);color:var(--trade)}
+.tag.soon,.tag.addon{border:1px dashed var(--line-2);background:transparent;color:var(--fg-3)}
+.legend{display:flex;flex-wrap:wrap;gap:8px 16px;margin-top:18px;font-size:.85rem;color:var(--fg-3)}
+
+/* packages */
+.tiers{display:grid;grid-template-columns:repeat(5,1fr);gap:10px}
+.tier{display:flex;flex-direction:column;gap:10px;padding:20px 18px;border:1px solid var(--line);border-radius:var(--r);background:var(--bg-2);position:relative}
+.tier.hot{border-color:var(--sun-a);box-shadow:0 0 0 1px var(--sun-a) inset}
+.tier .badge{position:absolute;top:-11px;left:18px;background:var(--sun);color:#1B0E05;font-size:.7rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:3px 9px;border-radius:999px}
+.tier .name{font:800 1.35rem var(--display)}
+.tier .who{color:var(--fg-2);font-size:.9rem;min-height:2.7em}
+.lim{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;padding:10px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.lim b{display:block;font:800 1.15rem var(--display)}.lim small{color:var(--fg-3);font-size:.72rem}
+.tier ul{list-style:none;margin:0;padding:0;display:grid;gap:6px;font-size:.9rem;flex:1;align-content:start}
+.tier li{padding-left:18px;position:relative}
+.tier li::before{content:"";position:absolute;left:0;top:.5em;width:9px;height:9px;border-radius:50%;background:var(--ok)}
+.tier li.all{color:var(--fg-2)}.tier li.all::before{background:var(--fg-3)}
+.tier .data{font-size:.82rem;color:var(--fg-3)}
+.tier .btn{width:100%}
+@media (max-width:1080px){.tiers{grid-template-columns:repeat(auto-fit,minmax(210px,1fr))}}
+.note{margin-top:16px;font-size:.88rem;color:var(--fg-3);max-width:70ch}
+
+/* data */
+.data-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.data-card{padding:22px;border-radius:var(--r);border:1px solid var(--line);background:var(--bg-2)}
+.data-card b{display:block;font:800 1.1rem var(--display);margin-bottom:8px}
+.data-card p{color:var(--fg-2)}
+.data-card blockquote{margin:0;padding-left:14px;border-left:3px solid var(--trade);color:var(--fg)}
+@media (max-width:760px){.data-grid{grid-template-columns:1fr}}
+
+/* lan */
+.lanbox{display:grid;grid-template-columns:1fr 1fr;gap:clamp(20px,4vw,48px);align-items:center;padding:clamp(22px,4vw,40px);border-radius:24px;border:1px solid var(--line);background:linear-gradient(135deg,var(--bg-2),var(--bg-3))}
+.lanbox .steps{grid-template-columns:1fr;gap:10px}
+.lanbox .net{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:12px}
+.lanbox .box{padding:14px 12px;border-radius:12px;background:var(--bg);border:1px solid var(--line-2);text-align:center;font-size:.86rem;font-weight:600}
+.lanbox .box small{display:block;font-weight:400;color:var(--fg-3);font-size:.76rem;margin-top:3px}
+.lanbox .wifi{font-size:.74rem;color:var(--trade);font-weight:700;letter-spacing:.08em;text-transform:uppercase;text-align:center}
+.lanbox .tabs{display:grid;gap:8px}
+@media (max-width:860px){.lanbox{grid-template-columns:1fr}}
+
+/* faq */
+.faq{display:grid;grid-template-columns:1fr 1.4fr;gap:clamp(20px,4vw,56px)}
+details{border-top:1px solid var(--line);padding:14px 0}
+details:last-child{border-bottom:1px solid var(--line)}
+summary{cursor:pointer;font-weight:700;list-style:none;display:flex;justify-content:space-between;gap:12px}
+summary::-webkit-details-marker{display:none}
+summary::after{content:"+";color:var(--fg-3);font-weight:400}
+details[open] summary::after{content:"–"}
+details .a{margin-top:8px;color:var(--fg-2);font-size:.95rem}
+.not{margin-top:30px;font-size:.88rem;color:var(--fg-3)}
+.not span{display:block}
+@media (max-width:760px){.faq{grid-template-columns:1fr}}
+
+/* final + footer */
+.final{padding:clamp(48px,8vw,96px) 0;text-align:center}
+.final h2{font-size:clamp(2rem,5vw,3.6rem)}
+.final .cta{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-top:24px}
+footer{border-top:1px solid var(--line);padding:26px 0 calc(26px + env(safe-area-inset-bottom,0px));font-size:.86rem;color:var(--fg-3)}
+footer .wrap{display:flex;flex-wrap:wrap;gap:10px 22px;justify-content:space-between;align-items:center}
+footer nav{display:flex;flex-wrap:wrap;gap:4px 18px}
+footer a:hover{color:var(--fg)}
+.others{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+</style>
 </head>
-<body>
-<a class="skip" href="#main">Skip to content</a>
-<div class="fx-progress" aria-hidden="true"><i></i></div>
-<nav>
+<body data-trade="retail">
+<a class="skip" href="#top">Skip to content</a>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <linearGradient id="g-sun" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FFC857"/><stop offset="1" stop-color="#FF6B3D"/></linearGradient>
+    <linearGradient id="g-brand" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1D3F8F"/><stop offset="1" stop-color="#0A1A40"/></linearGradient>
+    <symbol id="i-brand" viewBox="0 0 1024 1024"><rect width="1024" height="1024" fill="url(#g-brand)"/><path d="M650,372 C612,302 420,300 402,392 C388,462 470,490 520,506 C582,525 652,548 640,632 C626,722 430,726 374,650" fill="none" stroke="url(#g-sun)" stroke-width="84" stroke-linecap="round"/><path d="M0,-46 C6,-10 10,-6 46,0 C10,6 6,10 0,46 C-6,10 -10,6 -46,0 C-10,-6 -6,-10 0,-46Z" fill="#FFC857" transform="translate(724,300)"/></symbol>
+    <symbol id="i-rest" viewBox="0 0 1024 1024"><g fill="none" stroke="#fff" stroke-width="56" stroke-linecap="round" stroke-linejoin="round"><path d="M300,616 C300,480 396,404 512,404 C628,404 724,480 724,616 Z"/><path d="M262,664 H762"/><path d="M512,404 V372"/><circle cx="512" cy="352" r="22" fill="#fff" stroke="none"/></g></symbol>
+    <symbol id="i-kir" viewBox="0 0 1024 1024"><g fill="none" stroke="#fff" stroke-width="56" stroke-linecap="round" stroke-linejoin="round" transform="translate(0,22)"><path d="M300,352 H724 L766,462 C756,520 649,520 639,462 C629,520 522,520 512,462 C502,520 395,520 385,462 C375,520 268,520 258,462 Z"/><path d="M322,540 V716 H702 V540"/><path d="M466,716 V616 H558 V716"/></g></symbol>
+    <symbol id="i-sup" viewBox="0 0 1024 1024"><g fill="none" stroke="#fff" stroke-width="56" stroke-linecap="round" stroke-linejoin="round"><path d="M248,330 H324 L384,606 H690 L744,414 H352"/><circle cx="420" cy="690" r="36"/><circle cx="662" cy="690" r="36"/></g></symbol>
+    <symbol id="i-pha" viewBox="0 0 1024 1024"><g fill="none" stroke="#fff" stroke-width="56" stroke-linejoin="round"><path d="M450,296 H574 V450 H728 V574 H574 V728 H450 V574 H296 V450 H450 Z"/></g></symbol>
+    <symbol id="i-ret" viewBox="0 0 1024 1024"><g fill="none" stroke="#fff" stroke-width="56" stroke-linecap="round" stroke-linejoin="round"><path d="M318,424 H706 L682,722 H342 Z"/><path d="M420,424 V386 C420,332 460,300 512,300 C564,300 604,332 604,386 V424"/></g></symbol>
+  </defs>
+</svg>
+<header class="nav" id="nav">
   <div class="wrap">
-    <a class="logo" href="/"><img src="/assets/logo.png" alt="SmartBizz" width="34" height="34">SmartBizz</a>
-    <ul id="navList"><li><a href="/restaurants/">Restaurant</a></li><li><a href="/kirana/">Kirana</a></li><li><a href="/supermarket/">Supermarket</a></li><li><a href="/pharmacy/">Pharmacy</a></li><li><a href="/retail/" aria-current="page">Retail</a></li><li class="nav-sep" aria-hidden="true"></li><li><a href="/#suite">The suite</a></li><li><a href="/#plans">Packages</a></li></ul>
-    <div class="nav-act"><button class="icon-btn" id="themeBtn" type="button" aria-label="Switch light or dark"><span class="i-sun">☀</span><span class="i-moon">☾</span></button><a class="btn lamp sm" href="/register/" onclick="openTrialModal(); return false;">Start free trial</a><button class="icon-btn burger" id="navBtn" type="button" aria-label="Menu" aria-expanded="false" aria-controls="navList"><i></i><i></i><i></i></button></div>
+    <a class="brand" href="/" aria-label="SmartBizz home"><svg><use href="#i-brand"/></svg>SmartBizz</a>
+    <button class="menu-btn" id="menuBtn" aria-expanded="false" aria-controls="navLinks">Menu</button>
+    <nav class="nav-links" id="navLinks">
+      <a href="/#trades">Business types</a>
+      <a href="/#features">Features</a>
+      <a href="/#packages">Packages</a>
+      <a href="/#data">Your data</a>
+      <a href="/#faq">FAQ</a>
+      <a href="/pos/">Sign in</a>
+    </nav>
+    <a class="btn btn-sun btn-sm" href="/register/">Start free 14-day trial</a>
   </div>
-</nav>
-<main id="main">
-<section class="hero" id="top">
-  <div class="lamp-glow"></div>
+</header>
+<main id="top">
+<section class="hero" id="hero">
   <div class="wrap">
     <div>
-      <p class="kicker">For fashion, electronics, hardware &amp; general retail</p>
-      <h1>Sell it,<br>bill it,<br><em class="grad" style="font-style:italic;font-weight:500">remember it.</em></h1>
-      <p class="lede">Scan the tag, bill in seconds, and keep the regulars' part payments straight. <strong>A shop counter that fits how you sell</strong>, from one store to several.</p>
-      <div class="hero-cta">
-        <a class="btn lamp" href="/register/" onclick="openTrialModal(); return false;">Start 14-day free trial →</a>
-        <a class="btn ghost" href="#tiers">See features by package</a>
+      <p class="eyebrow">For clothing, footwear, electronics, mobile and hardware shops</p>
+      <h1>SmartBizz POS for retail.</h1>
+      <p class="lede">Size and colour variants, part payments, khata and stock by barcode.</p>
+      <div class="cta">
+        <a class="btn btn-sun" href="/register/?category=retail">Start free 14-day trial</a>
+        <a class="btn btn-ghost" href="#packages">See packages</a>
       </div>
-      <p class="hero-note"><b>Free to start.</b> Runs on the phone, tablet or PC you already own. No card. Not a payment gateway: bills are paid to your own UPI ID, in cash or on your card machine.</p>
+      <p class="fine">Offline package free for 14 days. No card.</p>
+      <div class="switch" id="trades" role="group" aria-label="Business type"><a class="pick" href="/restaurants/" style="--c:var(--t-rest)"><svg><use href="#i-rest"/></svg>Restaurant</a><a class="pick" href="/kirana/" style="--c:var(--t-kir)"><svg><use href="#i-kir"/></svg>Kirana</a><a class="pick" href="/supermarket/" style="--c:var(--t-sup)"><svg><use href="#i-sup"/></svg>Supermarket</a><a class="pick" href="/pharmacy/" style="--c:var(--t-pha)"><svg><use href="#i-pha"/></svg>Pharmacy</a><a class="pick on" href="/retail/" style="--c:var(--t-ret)" aria-current="page"><svg><use href="#i-ret"/></svg>Retail</a></div>
+      
     </div>
-    <div class="dv" data-cat="retail" id="device"><div class="dv-stage"><div class="dv-glow"></div><div class="orbit" aria-hidden="true"><div class="orbit-ring"><span class="orb" style="--a:0.0deg"><span class="orb-in">🧾<b>Counter billing</b></span></span><span class="orb" style="--a:36.0deg"><span class="orb-in">🏷️<b>Barcode billing</b></span></span><span class="orb" style="--a:72.0deg"><span class="orb-in">💸<b>UPI QR at the till</b></span></span><span class="orb" style="--a:108.0deg"><span class="orb-in">🖨️<b>Thermal printing</b></span></span><span class="orb" style="--a:144.0deg"><span class="orb-in">🧮<b>GST bills</b></span></span><span class="orb" style="--a:180.0deg"><span class="orb-in">📒<b>Customer khata</b></span></span><span class="orb" style="--a:216.0deg"><span class="orb-in">✉️<b>E-mail bills</b></span></span><span class="orb" style="--a:252.0deg"><span class="orb-in">📦<b>Stock management</b></span></span><span class="orb" style="--a:288.0deg"><span class="orb-in">👥<b>Staff &amp; roles</b></span></span><span class="orb" style="--a:324.0deg"><span class="orb-in">🌙<b>Shifts &amp; day-end</b></span></span></div></div><div class="tablet"><div class="fx-glare"></div><div class="tablet-cam"></div><div class="tablet-scr" id="tabScr"><div class="app-bar"><div><b>Barcode Billing</b><small>Counter · Sat rush</small></div><span class="app-badge">Shift ✓</span></div><div class="split"><div class="main"><div class="scan"><span>▮▯▮▮▯▮</span> DJ-M-IND <i></i></div><div class="ln"><span>Denim jacket M<small>1 × ₹1,899</small></span><b>₹1,899</b></div><div class="ln"><span>Cotton tee L<small>2 × ₹499</small></span><b>₹998</b></div><div class="ln"><span>Sneakers UK 9<small>1 × ₹2,499</small></span><b>₹2,499</b></div><div class="ln"><span>Socks pack<small>1 × ₹299</small></span><b>₹299</b></div></div><div class="side"><div class="side-h">Customer</div><div class="khata"><b>Priya S.</b><small>6 visits · last 12 Aug</small><div class="due">₹0 <span>due</span></div><div class="mini">Part-paid ₹2,000 cleared</div></div><div class="tot"><span>Bill</span><b>₹5,695</b></div><div class="pay"><span class="upi-qr"></span><span>UPI QR on screen</span></div></div></div></div></div><div class="phone-s"><div class="phone-notch"></div><div class="phone-scr" id="phScr"><div class="ph-top"><b>Pay</b><small>UPI</small></div><div class="ph-qr"><span class="upi-qr big"></span></div><div class="ph-amt">₹5,695</div><div class="ph-note">Straight to the shop's bank</div><div class="ph-ok">✓ Paid</div></div></div></div><p class="dv-cap">Drawn from the real screen, with sample data.</p></div>
+    <div class="stage">
+  <div class="device" aria-label="SmartBizz Retail till, sample bill">
+    <div class="app">
+      <div class="bar"><div><b>Trendz Fashion</b><small>Counter 1 · Walk-in</small></div><svg><use href="#i-ret"/></svg></div>
+      <div class="ctx"><span>Bill #TZ-0456</span><span class="pill">Variant picked</span></div>
+      <div class="row"><span>Cotton kurta (M / Blue)<small>1 × ₹899</small></span><em>₹899</em></div><div class="row"><span>Slim jeans (32 / Black)<small>1 × ₹1,499</small></span><em>₹1,499</em></div><div class="row"><span>Belt (Brown)<small>1 × ₹349</small></span><em>₹349</em></div><div class="row"><span>Socks<small>3 × ₹99</small></span><em>₹297</em></div>
+      <div class="total"><span>Total incl. GST</span><b>₹3,044</b></div>
+      <div class="pay"><span>Cash</span><span>UPI</span><span>Card</span><span>Part pay</span></div>
+    </div>
+  </div>
+  <div class="toast"><span class="dot"></span>Kurta M / Blue · 5 left in stock</div>
+</div>
   </div>
 </section>
 
-<div class="ribbon" aria-hidden="true"><div class="marquee"><span>Barcode billing</span><span>Customer khata</span><span>Stock &amp; reorder levels</span><span>GST bills</span><span>Held bills</span><span>Staff PINs</span><span>Cloud ledger in your Drive</span><span>Multiple stores</span><span>Barcode billing</span><span>Customer khata</span><span>Stock &amp; reorder levels</span><span>GST bills</span><span>Held bills</span><span>Staff PINs</span><span>Cloud ledger in your Drive</span><span>Multiple stores</span></div></div>
+<section class="section" id="how" style="padding-top:0">
+  <div class="wrap"><div class="head"><p class="eyebrow">How it works</p><h2>Three steps to your first bill.</h2></div>
+  <div class="steps"><div class="step"><h3>Sign up</h3><p>Pick your trade, verify your e-mail. No card.</p></div><div class="step"><h3>Bill on day one</h3><p>The 14-day trial is the Offline package: one device, data on it.</p></div><div class="step"><h3>Grow by request</h3><p>Ask for Basic or above in the app. We issue a signed licence key; Windows sets up in one click.</p></div></div></div>
+</section>
 
-<section id="problems">
+<section class="section" id="features">
   <div class="wrap">
-    <p class="kicker rv">Built around the counter you actually run</p>
-    <h2 class="rv d1">Problems you face,<br>and how SmartBizz solves them.</h2>
-    <p class="lede rv d2">Each answer names the first package that includes it.</p>
-    <div class="probs"><article class="prob rv d1"><p class="prob-k">The problem</p><h3>Stock spread across more than one outlet</h3><p class="prob-k fix">How SmartBizz solves it</p><p>Premium runs up to 3 outlets under one owner login, each with its own sheet and staff, and stock management tracks quantities and reorder levels.</p><span class="tier t-plan">From Premium</span></article><article class="prob rv d2"><p class="prob-k">The problem</p><h3>The weekend rush</h3><p class="prob-k fix">How SmartBizz solves it</p><p>Barcode billing, and park a bill while the customer tries one more thing. Add a second till on Basic.</p><span class="tier t-free">From Offline</span></article><article class="prob rv d3"><p class="prob-k">The problem</p><h3>Customers paying in parts</h3><p class="prob-k fix">How SmartBizz solves it</p><p>The customer khata records each part payment and shows what is still due.</p><span class="tier t-free">From Offline</span></article><article class="prob rv d4"><p class="prob-k">The problem</p><h3>Discounts nobody can account for</h3><p class="prob-k fix">How SmartBizz solves it</p><p>Staff logins with roles and PINs. Voids need a manager PIN, and every discount has a name on it.</p><span class="tier t-free">From Offline</span></article><article class="prob rv d5"><p class="prob-k">The problem</p><h3>Not knowing what sells and what sits</h3><p class="prob-k fix">How SmartBizz solves it</p><p>Sales analytics by product, hour and staff member, and stock levels with reorder warnings.</p><span class="tier t-free">From Offline</span></article><article class="prob rv d5"><p class="prob-k">The problem</p><h3>Bills customers can keep</h3><p class="prob-k fix">How SmartBizz solves it</p><p>E-mail the bill to the customer at checkout.</p><span class="tier t-plan">From Standard</span></article></div>
+    <div class="head"><p class="eyebrow">Every feature</p><h2>Everything the retail counter does.</h2>
+      <p class="sub">The tag says the package a feature starts at.</p></div>
+    <div class="group"><h3>Billing</h3><div class="feats"><div class="feat"><b>Billing</b><p>Ring up, discount, settle by cash, UPI QR, card or khata.</p><span class="tag offline">Offline</span></div><div class="feat"><b>Counter till</b><p>Fast counter screen with token numbers.</p><span class="tag offline">Offline</span></div><div class="feat"><b>Barcode billing</b><p>Scan with a USB or Bluetooth scanner, or search by name.</p><span class="tag offline">Offline</span></div><div class="feat"><b>Receipt printing</b><p>58 and 80 mm thermal printers over Bluetooth, USB or network.</p><span class="tag offline">Offline</span></div></div></div><div class="group"><h3>Menu &amp; stock</h3><div class="feats"><div class="feat"><b>Products &amp; pricing</b><p>Categories, prices, MRP, units and barcodes in one list.</p><span class="tag offline">Offline</span></div><div class="feat"><b>Stock &amp; reorder levels</b><p>Size and colour variants, reorder levels and purchase entries.</p><span class="tag offline">Offline</span></div></div></div><div class="group"><h3>Customers</h3><div class="feats"><div class="feat"><b>Customer khata</b><p>Credit per customer: dues, payments and the running balance.</p><span class="tag offline">Offline</span></div><div class="feat"><b>E-mail bills</b><p>The bill reaches the customer&#x27;s inbox at checkout.</p><span class="tag standard">Standard</span></div></div></div><div class="group"><h3>Cloud &amp; data</h3><div class="feats"><div class="feat"><b>Backup &amp; restore</b><p>Encrypted backup file you can restore on another device.</p><span class="tag offline">Offline</span></div><div class="feat"><b>Cloud ledger</b><p>Bills and payments in a Google Sheet in your own Drive.</p><span class="tag basic">Basic</span></div><div class="feat"><b>Multiple stores</b><p>Branches under one owner login, each with its own sheet.</p><span class="tag premium">Premium</span></div></div></div><div class="group"><h3>Devices &amp; network</h3><div class="feats"><div class="feat"><b>Local network hub</b><p>A host PC hub; tablets on store Wi-Fi share one ledger.</p><span class="tag lan">Local network</span></div><div class="feat"><b>Customer display</b><p>A second screen with the live cart, total and UPI QR.</p><span class="tag lan">Local network</span></div></div></div><div class="group"><h3>Admin</h3><div class="feats"><div class="feat"><b>Store settings</b><p>Store details, GST, UPI IDs, receipt footer and opening hours.</p><span class="tag offline">Offline</span></div><div class="feat"><b>Staff &amp; roles</b><p>Owner, manager and cashier logins, roles and PINs.</p><span class="tag offline">Offline</span></div><div class="feat"><b>Shift &amp; day-end</b><p>Shift close, counted cash and the Z-report.</p><span class="tag offline">Offline</span></div><div class="feat"><b>Expenses</b><p>Daily outgoings recorded against the cash drawer.</p><span class="tag offline">Offline</span></div><div class="feat"><b>Sales analytics</b><p>Sales by product, hour and staff member, on the device.</p><span class="tag offline">Offline</span></div></div></div>
+    <p class="legend"><span>Offline = in the free trial</span><span>Add-on = switched on per client</span><span>Local network = included in local network mode, Basic and above</span></p>
   </div>
 </section>
 
-<section class="band" id="stations">
+<section class="section" id="packages" style="padding-top:0">
   <div class="wrap">
-    <p class="kicker rv">Where the day happens</p>
-    <h2 class="rv d1">One app, every station.</h2>
-    <p class="lede rv d2">Each station sees what its job needs and nothing else.</p>
-    <div class="cats three"><div class="cat rv d1" style="--c:var(--lamp)"><span class="ico" aria-hidden="true">🧾</span><h3>Counter</h3><p>Scan the tag, bill it, print it, take UPI at the desk.</p></div><div class="cat rv d2" style="--c:var(--lamp)"><span class="ico" aria-hidden="true">📒</span><h3>Customers</h3><p>Credit, part payments and what each customer owes.</p></div><div class="cat rv d3" style="--c:var(--lamp)"><span class="ico" aria-hidden="true">🏷️</span><h3>Catalogue</h3><p>Products, categories, rates and stock in a list you control.</p></div></div>
+    <div class="head"><p class="eyebrow">Packages</p><h2>Start on Offline. Move up by request.</h2>
+      <p class="sub">A package is your trade's features at a tier. Offline is the free 14-day trial, no card. Basic and above are requests, with no trial.</p></div>
+    <div class="tiers"><div class="tier hot"><span class="badge">Free trial · no card</span><div class="name">Offline</div><p class="who">The free trial. One device, one store, the owner.</p><div class="lim"><div><b>1</b><small>device</small></div><div><b>1</b><small>store</small></div><div><b>1</b><small>user</small></div></div><ul><li>Billing, Counter till, Barcode billing, Receipt printing</li><li>Products &amp; pricing, Stock &amp; reorder levels</li><li>Customer khata</li><li>Backup &amp; restore</li><li>Store settings, Staff &amp; roles, Shift &amp; day-end, Expenses, Sales analytics</li></ul><p class="data">Data kept on this device</p><a class="btn btn-sun btn-sm" href="/register/?category=retail&amp;plan=trial">Start free trial</a></div><div class="tier"><div class="name">Basic</div><p class="who">A second device and a ledger you own.</p><div class="lim"><div><b>2</b><small>devices</small></div><div><b>1</b><small>store</small></div><div><b>3</b><small>users</small></div></div><ul><li class="all">All of Offline</li><li>Cloud ledger</li><li>Local network mode: hub, customer display</li></ul><p class="data">Your own Google Drive, or a local network hub</p><a class="btn btn-ghost btn-sm" href="/register/?category=retail&amp;plan=basic">Request Basic</a></div><div class="tier"><div class="name">Standard</div><p class="who">Several counters and staff.</p><div class="lim"><div><b>5</b><small>devices</small></div><div><b>1</b><small>store</small></div><div><b>10</b><small>users</small></div></div><ul><li class="all">All of Basic</li><li>E-mail bills</li></ul><p class="data">Your own Google Drive, or a local network hub</p><a class="btn btn-ghost btn-sm" href="/register/?category=retail&amp;plan=standard">Request Standard</a></div><div class="tier"><div class="name">Premium</div><p class="who">More than one store.</p><div class="lim"><div><b>10</b><small>devices</small></div><div><b>3</b><small>stores</small></div><div><b>25</b><small>users</small></div></div><ul><li class="all">All of Standard</li><li>Multiple stores</li></ul><p class="data">Your own Google Drive, or a local network hub</p><a class="btn btn-ghost btn-sm" href="/register/?category=retail&amp;plan=premium">Request Premium</a></div><div class="tier"><div class="name">Enterprise</div><p class="who">Limits set for your business.</p><div class="lim"><div><b>20+</b><small>devices</small></div><div><b>10+</b><small>stores</small></div><div><b>50+</b><small>users</small></div></div><ul><li class="all">All of Premium</li><li>Devices, stores and users set per client</li><li>Set up with our team</li></ul><p class="data">Your own Google Drive, or a local network hub</p><a class="btn btn-ghost btn-sm" href="/support.html">Talk to us</a></div></div><p class="note">Basic to Premium limits are the defaults and can be adjusted for your business. Enterprise is set per client.</p>
   </div>
 </section>
 
-<section id="tiers">
+<section class="section" id="data" style="padding-top:0">
   <div class="wrap">
-    <p class="kicker rv">Packages for clothing</p>
-    <h2 class="rv d1">Features and limits,<br>package by package.</h2>
-    <p class="lede rv d2">Five packages: Offline, Basic, Standard, Premium and Enterprise. Each one includes everything in the package before it, and only features that apply to retail businesses are listed. The 14-day free trial is the Offline package.</p>
-    <div class="trows"><article class="trow rv" id="tier-offline"><div class="trow-h"><span class="tier t-free">Offline</span><h3>Features available for Retail — Offline</h3><dl class="lims"><div><dt>Devices</dt><dd>1 device</dd></div><div><dt>Outlets</dt><dd>1 outlet</dd></div><div><dt>Users</dt><dd>1 user (the owner)</dd></div><div><dt>Roles</dt><dd>Owner</dd></div><div><dt>Data</dt><dd>Data on this device</dd></div></dl><a class="btn lamp sm" href="/register/" onclick="openTrialModal(); return false;">Start free trial</a></div><ul class="tfeat"><li><b>Billing</b> — Ring up a sale, apply discounts, settle by cash, UPI QR, card machine or khata, and print the bill. Voids need a manager PIN.</li><li><b>Products &amp; pricing</b> — Categories, prices, MRP, units, barcodes.</li><li><b>Barcode billing</b> — Scan with a USB or Bluetooth scanner, or search by name.</li><li><b>Customer khata</b> — Credit per customer: dues, payments and the running balance.</li><li><b>Stock management</b> — Quantities on hand, reorder levels, goods-in entries, stock counts and history.</li><li><b>Counter till</b> — The counter billing screen with token numbering.</li><li><b>Receipt printing</b> — Bluetooth, USB and network thermal printers, 58 and 80 mm.</li><li><b>Store settings</b> — Store details, GST, your own UPI IDs, receipt footer and opening hours.</li><li><b>Shift &amp; day-end</b> — Shift close, counted cash and the Z-report.</li><li><b>Staff &amp; roles</b> — Logins, roles and PINs on this device.</li><li><b>Backup &amp; restore</b> — An encrypted backup file you can restore on another device.</li><li><b>Expenses</b> — Record daily outgoings against the cash drawer.</li><li><b>Sales analytics</b> — Sales by item, hour and staff member, from this device.</li></ul></article><article class="trow rv" id="tier-basic"><div class="trow-h"><span class="tier t-plan">Basic</span><h3>Features available for Retail — Basic</h3><dl class="lims"><div><dt>Devices</dt><dd>2 devices</dd></div><div><dt>Outlets</dt><dd>1 outlet</dd></div><div><dt>Users</dt><dd>3 users</dd></div><div><dt>Roles</dt><dd>Owner, manager, billing</dd></div><div><dt>Data</dt><dd>Data in your own Google Drive</dd></div></dl><a class="btn ghost sm" href="javascript:void(0)" onclick="openContactModal('Basic package — Retail &amp; fashion')">Ask for a quote</a></div><ul class="tfeat"><li class="inc"><b>Everything in Offline</b></li><li><b>Cloud ledger</b> — Bills and payments sync to a Google Sheet in your own Google Drive; staff can be given access and see sales from other tills.</li></ul></article><article class="trow rv" id="tier-standard"><div class="trow-h"><span class="tier t-plan">Standard</span><h3>Features available for Retail — Standard</h3><dl class="lims"><div><dt>Devices</dt><dd>5 devices</dd></div><div><dt>Outlets</dt><dd>1 outlet</dd></div><div><dt>Users</dt><dd>10 users</dd></div><div><dt>Roles</dt><dd>Owner, manager, billing</dd></div><div><dt>Data</dt><dd>Data in your own Google Drive</dd></div></dl><a class="btn ghost sm" href="javascript:void(0)" onclick="openContactModal('Standard package — Retail &amp; fashion')">Ask for a quote</a></div><ul class="tfeat"><li class="inc"><b>Everything in Basic</b></li><li><b>E-mail bills</b> — Send the digital bill to the customer&#x27;s e-mail at checkout.</li></ul></article><article class="trow rv" id="tier-premium"><div class="trow-h"><span class="tier t-plan">Premium</span><h3>Features available for Retail — Premium</h3><dl class="lims"><div><dt>Devices</dt><dd>10 devices</dd></div><div><dt>Outlets</dt><dd>3 outlets</dd></div><div><dt>Users</dt><dd>25 users</dd></div><div><dt>Roles</dt><dd>Owner, manager, billing</dd></div><div><dt>Data</dt><dd>Data in your own Google Drive</dd></div></dl><a class="btn ghost sm" href="javascript:void(0)" onclick="openContactModal('Premium package — Retail &amp; fashion')">Ask for a quote</a></div><ul class="tfeat"><li class="inc"><b>Everything in Standard</b></li><li><b>Multiple stores</b> — Branches under one owner login, each with its own sheet and staff.</li></ul></article><article class="trow rv" id="tier-enterprise"><div class="trow-h"><span class="tier t-plan">Enterprise</span><h3>Features available for Retail — Enterprise</h3><dl class="lims"><div><dt>Devices</dt><dd>Tailored to you</dd></div><div><dt>Outlets</dt><dd>Tailored to you</dd></div><div><dt>Users</dt><dd>Tailored to you</dd></div><div><dt>Roles</dt><dd>Owner, manager, billing</dd></div><div><dt>Data</dt><dd>Data in your own Google Drive</dd></div></dl><a class="btn ghost sm" href="javascript:void(0)" onclick="openContactModal('Enterprise package — Retail &amp; fashion')">Ask for a quote</a></div><ul class="tfeat"><li class="inc"><b>Everything in Premium</b></li><li><b>Custom limits</b> — Devices, outlets and users set to fit your business.</li></ul></article></div>
-    <p class="addons rv"><b>Add-ons.</b> Extra features for your trade can be added to your package. Tell us what your counter needs and we will switch on the ones that apply to your trade.</p>
+    <div class="head"><p class="eyebrow">Your data</p><h2>How your data is kept.</h2></div>
+    <div class="data-grid">
+      <div class="data-card"><b>Offline</b><blockquote>Works securely on your device without depending on the cloud.</blockquote><p style="margin-top:10px">Export an encrypted backup and restore it on another device.</p></div>
+      <div class="data-card"><b>Basic, Standard, Premium, Enterprise</b><blockquote>Your business data stays in your own Google Drive. We do not take your business data; only limited usage analytics such as bill counts are collected.</blockquote><p style="margin-top:10px">Or keep the ledger on your own PC in local network mode.</p></div>
+    </div>
   </div>
 </section>
 
-<section id="data" class="band">
+<section class="section" id="network" style="padding-top:0">
   <div class="wrap">
-    <p class="kicker rv">Your data</p>
-    <h2 class="rv d1">Where your records live.</h2>
-    <div class="data-cards"><div class="data-card rv d1"><span class="plan-tag">Offline</span><h3>On your device</h3><p>Works securely on your device without depending on the cloud. Export an encrypted backup whenever you like and restore it on another device.</p></div><div class="data-card rv d2"><span class="plan-tag">Basic · Standard · Premium · Enterprise</span><h3>In your own Google Drive</h3><p>Your business data stays in your own Google Drive. We do not take your business data; only limited usage analytics such as bill counts are collected.</p></div></div>
-    <p class="data-more rv d3">Payments are settled by cash, your card machine or a UPI QR for your own UPI ID. SmartBizz is not a payment gateway. Read the <a href="/privacy.html">privacy policy</a>.</p>
+    <div class="lanbox">
+      <div>
+        <p class="eyebrow">Local network mode</p><h2>One store, several devices, your own network.</h2><p class="sub">Local network mode, Basic and above.</p>
+        <div class="steps" style="margin-top:20px"><div class="step"><h3>Host PC</h3><p>The Windows PC runs the hub and keeps the ledger.</p></div><div class="step"><h3>Pair tablets</h3><p>Each tablet joins the store Wi-Fi and enters the hub&#x27;s 6-digit PIN.</p></div><div class="step"><h3>Device limit</h3><p>Host plus tablets count against your tier: 2, 5, 10 or 20+.</p></div></div>
+        <p class="note">Works on the store network without depending on the internet. Not for Kirana, which is one device.</p>
+      </div>
+      <div class="net" aria-hidden="true">
+        <div class="box">Host PC<small>hub + ledger</small></div>
+        <div class="wifi">store Wi-Fi<br>PIN pairing</div>
+        <div class="tabs"><div class="box">Tablet 1<small>billing</small></div><div class="box">Tablet 2<small>manager</small></div><div class="box">Tablet 3<small>kitchen or display</small></div></div>
+      </div>
+    </div>
   </div>
 </section>
 
-<section>
-  <div class="wrap">
-    <p class="kicker rv">Straight answers</p>
-    <h2 class="rv d1">Before you ask.</h2>
-    <div class="faqs rv d2"><details class="rv"><summary>Can it handle sizes and colours?</summary><p>Size and colour variants are not supported yet. Today you add each size or colour as its own product with its own barcode and price.</p></details><details class="rv"><summary>Can I handle returns and exchanges?</summary><p>Sales returns are not a feature today, so we do not list them in any package. Tell us how you handle them and we will tell you what fits.</p></details><details class="rv"><summary>Do I get the customer&#x27;s balance?</summary><p>Yes. The khata shows every credit bill and payment per customer, and what they still owe.</p></details><details class="rv"><summary>Can I take UPI at the counter?</summary><p>Yes. The till shows a QR for the exact amount paid to your own UPI ID. SmartBizz is not a payment gateway.</p></details></div>
+<section class="section" id="faq">
+  <div class="wrap faq">
+    <div>
+      <p class="eyebrow">Questions</p><h2>Straight answers.</h2>
+      <p class="sub">Anything else? <a href="/support.html" style="text-decoration:underline">Ask us</a>.</p>
+      <p class="not"><b>Not built, so not claimed:</b><span>No payment gateway</span><span>No sales returns or exchanges</span><span>Restaurant recipe stock is coming soon</span></p>
+      <p class="sub" style="margin-top:28px;font-size:.88rem">Other trades</p>
+      <div class="others"><a class="pick" href="/restaurants/" style="--c:var(--t-rest)"><svg><use href="#i-rest"/></svg>Restaurant</a><a class="pick" href="/kirana/" style="--c:var(--t-kir)"><svg><use href="#i-kir"/></svg>Kirana</a><a class="pick" href="/supermarket/" style="--c:var(--t-sup)"><svg><use href="#i-sup"/></svg>Supermarket</a><a class="pick" href="/pharmacy/" style="--c:var(--t-pha)"><svg><use href="#i-pha"/></svg>Pharmacy</a></div>
+    </div>
+    <div><details open><summary>What does the free trial include?</summary><p class="a">The trade&#x27;s Offline package for 14 days: one device, one store, the owner. No card. Basic and above are requests, with no trial.</p></details><details><summary>Does it keep working if the internet drops?</summary><p class="a">Offline runs on the device; the licence is re-checked online within 30 days. Basic and above keep billing and sync when the connection returns.</p></details><details><summary>Where is my data?</summary><p class="a">Offline: Works securely on your device without depending on the cloud. Basic and above: Your business data stays in your own Google Drive. We do not take your business data; only limited usage analytics such as bill counts are collected.</p></details><details><summary>Can several tablets share one store without the cloud?</summary><p class="a">Yes, on Basic and above in local network mode. A Windows PC runs the hub; tablets pair with a PIN on the store Wi-Fi.</p></details><details><summary>Do you take a cut of UPI payments?</summary><p class="a">No. SmartBizz is not a payment gateway. The till shows a QR for your own UPI ID; cash and your card machine work as before.</p></details><details><summary>Can I keep my printer?</summary><p class="a">Yes, if it is an ESC/POS thermal printer, 58 or 80 mm, over Bluetooth, USB or the network.</p></details></div>
   </div>
 </section>
 
 <section class="final" id="start">
-  <div class="fx-floor" aria-hidden="true"><i></i></div><div class="lamp-glow"></div>
   <div class="wrap">
-    <h2 class="rv">Try it on tomorrow’s counter.</h2>
-    <p class="lede rv d1" style="margin-left:auto;margin-right:auto">Fourteen days on the Offline package, no card. Running more than one counter or outlet? Register and we will set you up on the right package.</p>
-    <div class="hero-cta rv d2" style="justify-content:center">
-      <a class="btn lamp" href="/register/" onclick="openTrialModal(); return false;">Start 14-day free trial →</a>
-      <a class="btn ghost" href="/register/?category=retail">Register your retail business</a>
-    </div>
-    <p class="kicker" style="margin-top:56px">The same app also runs</p>
-    <div class="alsofor" style="justify-content:center"><a href="/restaurants/">🍽️ Restaurants &amp; cafés</a><a href="/kirana/">🏪 Kirana &amp; grocery</a><a href="/supermarket/">🛒 Supermarkets</a><a href="/pharmacy/">💊 Pharmacies</a></div>
+    <h2>Open your retail counter today.</h2>
+    <p class="sub" style="margin-inline:auto">Sign up, verify your e-mail, bill your first customer.</p>
+    <div class="cta"><a class="btn btn-sun" href="/register/?category=retail">Start free 14-day trial</a><a class="btn btn-ghost" href="/support.html">Talk to us</a></div>
   </div>
 </section>
-
 </main>
 <footer>
-  <div class="wrap foot">
-    <div class="foot-brand"><span class="logo" style="font-size:20px"><img src="/assets/logo.png" alt="SmartBizz" width="28" height="28">SmartBizz</span>
-    <p>One till. Every kind of counter. Billing software for Indian counters, from a single Offline till to many outlets.</p><a class="btn lamp sm" href="/register/" onclick="openTrialModal(); return false;">Start 14-day free trial</a></div>
-    <div><h2 class="foot-h">Trades</h2><ul><li><a href="/restaurants/">🍽️ Restaurants &amp; cafés</a></li><li><a href="/kirana/">🏪 Kirana &amp; grocery</a></li><li><a href="/supermarket/">🛒 Supermarkets</a></li><li><a href="/pharmacy/">💊 Pharmacies</a></li><li><a href="/retail/">👗 Retail &amp; fashion</a></li></ul></div>
-    <div><h2 class="foot-h">Product</h2><ul><li><a href="/#suite">The suite</a></li><li><a href="/#compare">Compare trades</a></li><li><a href="/#plans">Packages</a></li><li><a href="/#data">Your data</a></li><li><a href="/register/">Register your business</a></li><li><a href="/r/?org=DEMO&amp;table=1">Guest QR demo</a></li><li><a href="/pos/">Web till sign-in</a></li></ul></div>
-    <div><h2 class="foot-h">Help</h2><ul><li><a href="/support.html">Support</a></li><li><a href="javascript:void(0)" onclick="openContactModal('General enquiry')">Talk to us</a></li><li><a href="/privacy.html">Privacy</a></li><li><a href="/terms.html">Terms</a></li><li><a href="/deletion.html">Delete your data</a></li></ul></div>
+  <div class="wrap">
+    <span>© <span id="yr">2026</span> DevMonks · SmartBizz POS</span>
+    <nav><a href="/privacy.html">Privacy</a><a href="/terms.html">Terms</a><a href="/support.html">Support</a><a href="/deletion.html">Data deletion</a><a href="/pos/">Sign in</a></nav>
   </div>
-  <div class="wrap foot-base"><span>© SmartBizz by DevMonks. Not a payment gateway — your money goes straight to your bank.</span><a href="#top">Back to top ↑</a></div>
 </footer>
-<!-- ═══════════════ MODAL 1: FREE TRIAL REGISTRATION (MATCHES MOBILE APP) ═══════════════ -->
-<div class="modal-overlay" id="trialModal" role="dialog" aria-modal="true" aria-labelledby="trialModalTitle" style="display:none">
-  <div class="modal-box">
-    <button class="modal-close" onclick="closeModals()" aria-label="Close modal">✕</button>
-    <div id="trialFormContainer">
-      <div class="modal-head">
-        <span class="badge" style="display:inline-block;margin-bottom:8px">14-Day Free Access</span>
-        <h3 id="trialModalTitle">Register Your Free Trial</h3>
-        <p>The Offline package for your trade — billing, printing, staff, day-end, expenses and sales analytics, plus tables and kitchen tickets for restaurants or barcode billing, khata and stock for shops — for fourteen days, on one device.</p>
-      </div>
-
-      <div class="plan-pill">
-        <span><strong>Your trial:</strong> 14 days, reviewed and activated by our team</span>
-        <span style="font-weight:700">No card</span>
-      </div>
-
-      <div class="plan-pill" style="align-items:flex-start;line-height:1.5">
-        <span><strong>What you get:</strong> the Offline package — one device, one outlet, one user. It works securely on your device without depending on the cloud. The cloud ledger in your own Google Drive, more devices, e-mail bills, multiple outlets and (for restaurants) the kitchen display, waiter ordering and QR ordering are on Basic, Standard and Premium; ask us and we will show you.</span>
-      </div>
-
-      <form id="trialForm" onsubmit="handleTrialSubmit(event)">
-        <div class="form-grid">
-          <div class="form-field">
-            <label for="trial_clientName">Your Full Name *</label>
-            <input type="text" id="trial_clientName" class="form-input" placeholder="e.g. Rahul Sharma" required>
-          </div>
-          <div class="form-field">
-            <label for="trial_shopName">Business Name *</label>
-            <input type="text" id="trial_shopName" class="form-input" placeholder="e.g. The Royal Bistro" required>
-          </div>
-          <div class="form-field">
-            <label for="trial_businessCategory">Business Category *</label>
-            <select id="trial_businessCategory" class="form-select" required>
-              <optgroup label="Food &amp; hospitality">
-                <option value="Restaurant &amp; Cafe" selected>Restaurant &amp; Cafe</option>
-                <option value="Fast Food / QSR">Fast Food / QSR</option>
-                <option value="Fine Dining &amp; Bar">Fine Dining &amp; Bar</option>
-                <option value="Bakery &amp; Sweets">Bakery &amp; Sweets</option>
-                <option value="Food Court / Kiosk">Food Court / Kiosk</option>
-                <option value="Cloud Kitchen / Delivery">Cloud Kitchen / Delivery</option>
-                <option value="Pizzeria / Italian">Pizzeria / Italian</option>
-                <option value="Coffee House / Tea Lounge">Coffee House / Tea Lounge</option>
-                <option value="Other Hospitality">Other Hospitality</option>
-              </optgroup>
-              <optgroup label="Shops &amp; retail">
-                <option value="Kirana / Grocery Store">Kirana / Grocery Store</option>
-                <option value="Supermarket / Departmental Store">Supermarket / Departmental Store</option>
-                <option value="Pharmacy / Medical Store">Pharmacy / Medical Store</option>
-                <option value="General Retail / Fashion / Electronics">General Retail / Fashion / Electronics</option>
-              </optgroup>
-            </select>
-          </div>
-          <div class="form-field">
-            <label for="trial_mobile">Mobile / WhatsApp (10 digits) *</label>
-            <input type="tel" id="trial_mobile" class="form-input" placeholder="e.g. 9876543210" pattern="[0-9]{10}" maxlength="10" required>
-          </div>
-          <div class="form-field form-col-2">
-            <label for="trial_email">Email Address *</label>
-            <input type="email" id="trial_email" class="form-input" placeholder="e.g. rahul@royalbistro.com" required>
-          </div>
-          <div class="form-field">
-            <label for="trial_address">City / Location *</label>
-            <input type="text" id="trial_address" class="form-input" placeholder="e.g. Indiranagar, Bengaluru" required>
-          </div>
-          <div class="form-field">
-            <label for="trial_referralSource">How Did You Hear About Us? *</label>
-            <select id="trial_referralSource" class="form-select">
-              <option value="Friend / Retailer Referral" selected>Friend / Retailer Referral</option>
-              <option value="Google / Web Search">Google / Web Search</option>
-              <option value="Social Media / Instagram">Social Media / Instagram</option>
-              <option value="Field Representative">Field Representative / Poster</option>
-              <option value="Other Channel">Other Channel</option>
-            </select>
-          </div>
-          <div class="form-field form-col-2">
-            <label for="trial_gstNo">GSTIN / Tax ID (Optional)</label>
-            <input type="text" id="trial_gstNo" class="form-input" placeholder="e.g. 29AAAAA0000A1Z5 (Optional)" uppercase>
-          </div>
-        </div>
-
-        <button type="submit" id="trialSubmitBtn" class="btn lamp form-submit-btn">
-          <span>Activate 14-Day Free Trial →</span>
-        </button>
-        <p class="form-note">🔒 No credit card required. The details on this form are sent to our team to set up your trial. On the Offline package your business records are kept on your device, and you can export an encrypted backup whenever you like.</p>
-      </form>
-    </div>
-
-    <!-- Success View for Trial -->
-    <div id="trialSuccessView" class="success-view" style="display:none">
-      <div class="success-ring" id="trialSuccessRing">✓</div>
-      <h3 id="trialSuccessTitle">Your trial is ready</h3>
-      <p id="trialSuccessMsg">Thank you! Your 14-day free trial has been created.</p>
-      <div class="success-box" id="trialSuccessBox">
-        <div><strong>✉️ Check your inbox:</strong> we have emailed your organisation ID and a temporary password to <span id="trialClientEmailDisp"></span>. You will set your own password the first time you sign in.</div>
-        <div style="margin-top:4px"><strong>📱 Your trial includes:</strong> the Offline package for your trade on one device: billing, thermal printing and your day's reports, with your records kept on that device. The cloud ledger in your own Google Drive, more devices and multiple outlets are on the paid packages.</div>
-        <div style="margin-top:4px"><strong>🤝 Stuck?</strong> message us on WhatsApp below and we will walk you through setup the same day.</div>
-      </div>
-      <div class="success-actions">
-        <a id="trialWhatsAppBtn" class="btn lamp" style="width:100%;justify-content:center" href="#" target="_blank" rel="noopener">Chat on WhatsApp for Instant Setup →</a>
-        <a class="btn ghost" style="width:100%;justify-content:center" href="/r/?org=DEMO&table=1">See the QR ordering demo (a paid feature)</a>
-        <button type="button" class="btn sm ghost" style="width:100%;justify-content:center;margin-top:6px" onclick="closeModals()">Close Window</button>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- ═══════════════ MODAL 2: FOR MORE DETAILS CONTACT (BASIC + BUSINESS DETAILS) ═══════════════ -->
-<div class="modal-overlay" id="contactModal" role="dialog" aria-modal="true" aria-labelledby="contactModalTitle" style="display:none">
-  <div class="modal-box">
-    <button class="modal-close" onclick="closeModals()" aria-label="Close modal">✕</button>
-    <div id="contactFormContainer">
-      <div class="modal-head">
-        <span class="badge" style="display:inline-block;margin-bottom:8px">Commercial Rollout</span>
-        <h3 id="contactModalTitle">Request Package Details</h3>
-        <p>Provide your basic and business details, and our solutions team will prepare tailored pricing and an operations walkthrough.</p>
-      </div>
-
-      <div class="plan-pill">
-        <span><strong>Inquiring About:</strong> <span id="contactPlanLabel">Setting up my venue</span></span>
-        <span style="font-weight:700">Custom Quote</span>
-      </div>
-
-      <form id="contactForm" onsubmit="handleContactSubmit(event)">
-        <input type="hidden" id="contact_selectedPlan" value="Setting up my venue">
-        
-        <!-- Section A: Basic Details -->
-        <p style="font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--lamp);margin:0 0 10px">1. Basic Contact Details</p>
-        <div class="form-grid" style="margin-top:0">
-          <div class="form-field">
-            <label for="contact_name">Contact Person Name *</label>
-            <input type="text" id="contact_name" class="form-input" placeholder="e.g. Vikram Verma" required>
-          </div>
-          <div class="form-field">
-            <label for="contact_email">Business Email Address *</label>
-            <input type="email" id="contact_email" class="form-input" placeholder="e.g. vikram@brewhouse.in" required>
-          </div>
-          <div class="form-field">
-            <label for="contact_phone">Phone / WhatsApp Number *</label>
-            <input type="tel" id="contact_phone" class="form-input" placeholder="e.g. 9845012345" required>
-          </div>
-          <div class="form-field">
-            <label for="contact_city">City &amp; State *</label>
-            <input type="text" id="contact_city" class="form-input" placeholder="e.g. Mumbai, Maharashtra" required>
-          </div>
-        </div>
-
-        <!-- Section B: Business Details -->
-        <p style="font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--lamp);margin:16px 0 10px">2. Business &amp; Operations Details</p>
-        <div class="form-grid" style="margin-top:0">
-          <div class="form-field">
-            <label for="contact_brandName">Business / Brand Name *</label>
-            <input type="text" id="contact_brandName" class="form-input" placeholder="e.g. Toit Brewpub &amp; Kitchen" required>
-          </div>
-          <div class="form-field">
-            <label for="contact_businessModel">Venue Type / Format *</label>
-            <select id="contact_businessModel" class="form-select">
-              <option value="Casual Dining &amp; Cafe" selected>Casual Dining &amp; Cafe</option>
-              <option value="Kirana / Supermarket Chain">Kirana / Supermarket Chain</option>
-              <option value="Pharmacy Chain">Pharmacy Chain</option>
-              <option value="Retail Chain">Retail Chain</option>
-              <option value="Fine Dining &amp; Bar">Fine Dining &amp; Bar / Lounge</option>
-              <option value="Quick Service (QSR) Chain">Quick Service (QSR) Chain</option>
-              <option value="Multi-Location Franchise">Multi-Location Franchise</option>
-              <option value="Cloud Kitchen Network">Cloud Kitchen Network</option>
-              <option value="Food Court Dining">Food Court / Multiple Counters</option>
-            </select>
-          </div>
-          <div class="form-field">
-            <label for="contact_outletsCount">Number of Outlets *</label>
-            <select id="contact_outletsCount" class="form-select">
-              <option value="1 Outlet (High Volume)" selected>1 Outlet (High Volume)</option>
-              <option value="2 to 5 Outlets">2 to 5 Outlets</option>
-              <option value="6 to 15 Outlets">6 to 15 Outlets</option>
-              <option value="15+ Outlets (National Chain)">15+ Outlets (National Chain)</option>
-            </select>
-          </div>
-          <div class="form-field">
-            <label for="contact_stationsCount">Stations Needed per Outlet *</label>
-            <select id="contact_stationsCount" class="form-select">
-              <option value="1-2 Billing Tills + 1 KDS" selected>1-2 Billing Tills + 1 Kitchen Screen</option>
-              <option value="3-5 Tills + 2 Kitchen Screens">3-5 Tills + 2 Kitchen Screens</option>
-              <option value="6+ Tills + Multi-Pass KDS + Waiters">6+ Tills + Multi-Pass KDS + Waiters</option>
-            </select>
-          </div>
-          <div class="form-field form-col-2">
-            <label for="contact_requirements">Specific Requirements / Hardware Needs</label>
-            <textarea id="contact_requirements" class="form-textarea" rows="2" placeholder="e.g. Need wireless Bluetooth printer recommendations, dual till screens, or Excel menu migration."></textarea>
-          </div>
-        </div>
-
-        <button type="submit" id="contactSubmitBtn" class="btn lamp form-submit-btn">
-          <span>Send this to us →</span>
-        </button>
-        <p class="form-note">⚡ Dedicated solutions architect connects within 2–4 business hours.</p>
-      </form>
-    </div>
-
-    <!-- Success View for Contact -->
-    <div id="contactSuccessView" class="success-view" style="display:none">
-      <div class="success-ring" style="border-color:var(--lamp);color:var(--lamp);background:color-mix(in srgb,var(--lamp) 14%,transparent)">💼</div>
-      <h3>Business Inquiry Received!</h3>
-      <p id="contactSuccessMsg">Thank you! Your requirements have been received by our commercial team.</p>
-      <div class="success-box">
-        <div><strong>📋 With our team:</strong> your message is in the queue and someone will pick it up.</div>
-        <div style="margin-top:4px"><strong>✉️ We have on file:</strong> <span id="contactClientEmailDisp"></span></div>
-        <div style="margin-top:4px"><strong>⏱️ Response Window:</strong> An enterprise solution architect will connect within <strong>2 to 4 business hours</strong> with custom pricing.</div>
-      </div>
-      <div class="success-actions">
-        <a id="contactWhatsAppBtn" class="btn lamp" style="width:100%;justify-content:center" href="#" target="_blank" rel="noopener">Connect Directly on WhatsApp →</a>
-        <a id="contactEmailDirectBtn" class="btn ghost" style="width:100%;justify-content:center" href="#">Email Platform Team Direct</a>
-        <button type="button" class="btn sm ghost" style="width:100%;justify-content:center;margin-top:6px" onclick="closeModals()">Close Window</button>
-      </div>
-    </div>
-  </div>
-</div>
-
-<script>window.SB_CATEGORY = 'General Retail / Fashion / Electronics';</script>
-<script src="/assets/site.js?v=a00a8e7e"></script>
-<script src="/assets/fx.js?v=a00a8e7e" defer></script>
+<script>
+(function(){
+  var nav=document.getElementById('nav'),btn=document.getElementById('menuBtn');
+  if(btn){btn.addEventListener('click',function(){var o=nav.classList.toggle('open');btn.setAttribute('aria-expanded',o);});}
+  document.querySelectorAll('#navLinks a').forEach(function(a){a.addEventListener('click',function(){nav.classList.remove('open');});});
+  var y=document.getElementById('yr');if(y)y.textContent=new Date().getFullYear();
+  var picks=document.querySelectorAll('button.pick[data-trade]');
+  function setTrade(t){document.body.setAttribute('data-trade',t);
+    picks.forEach(function(p){p.setAttribute('aria-pressed',p.getAttribute('data-trade')===t);});
+    try{localStorage.setItem('sb-trade',t);}catch(e){}}
+  if(picks.length){
+    picks.forEach(function(p){p.addEventListener('click',function(){setTrade(p.getAttribute('data-trade'));});});
+    var want=null;try{want=(new URLSearchParams(location.search).get('trade')||localStorage.getItem('sb-trade'));}catch(e){}
+    if(want&&document.querySelector('button.pick[data-trade="'+want+'"]'))setTrade(want);
+  }
+})();
+</script>
 </body>
 </html>

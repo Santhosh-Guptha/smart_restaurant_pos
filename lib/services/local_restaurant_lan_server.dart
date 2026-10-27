@@ -1,18 +1,34 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import '../core/constants.dart';
+import '../core/package_model.dart';
 import '../core/restaurant_models.dart';
 import 'customer_display_service.dart';
 import 'kds_voice_announcer.dart';
+import 'restaurant_ledger.dart';
+
+/// Why the hub refused to pair a device.
+enum PairRefusal { wrongPin, locked, deviceLimit, roleNotAllowed }
+
+/// Outcome of [LocalRestaurantLanServer.pairDeviceChecked].
+class PairOutcome {
+  final String? token;
+  final PairRefusal? refusal;
+  final int maxDevices;
+  const PairOutcome._({this.token, this.refusal, required this.maxDevices});
+  bool get ok => token != null;
+}
 
 /// Embedded Local LAN Server for Self-Hosted Restaurant Deployments.
 ///
 /// Runs an in-process HTTP server on the primary POS till (Windows PC or Android terminal),
 /// allowing Waiter Pads, Kitchen KDS screens, and Customer Displays on the local Wi-Fi
-/// to exchange orders, table states, and ticket updates with 0ms WAN latency and
-/// zero reliance on an active internet connection.
+/// to exchange orders, table states, and ticket updates on the store network,
+/// without depending on an internet connection.
 class LocalRestaurantLanServer {
   LocalRestaurantLanServer._();
   static final LocalRestaurantLanServer instance = LocalRestaurantLanServer._();
@@ -32,6 +48,14 @@ class LocalRestaurantLanServer {
     if (_isRunning) return true;
     _port = port;
 
+    if (kIsWeb) {
+      _localIpAddress = 'localhost';
+      _isRunning = true;
+      LanHostFlag.hosting = true;
+      debugPrint('LocalRestaurantLanServer running in web mode at $serverUrl');
+      return true;
+    }
+
     try {
       _localIpAddress = await _detectLocalIp();
 
@@ -43,9 +67,11 @@ class LocalRestaurantLanServer {
       );
 
       _isRunning = true;
+      LanHostFlag.hosting = true;
       _server!.listen(_handleRequest, onError: (e) {
         debugPrint('LocalRestaurantLanServer error: $e');
       });
+      _watchHostLedger();
 
       debugPrint('LocalRestaurantLanServer running at $serverUrl');
       return true;
@@ -56,15 +82,230 @@ class LocalRestaurantLanServer {
     }
   }
 
+  /// Public accessor to detect the host LAN IPv4 address (e.g. 192.168.x.x)
+  Future<String> detectLocalIp() async {
+    if (_localIpAddress != null &&
+        _localIpAddress!.isNotEmpty &&
+        _localIpAddress != '127.0.0.1' &&
+        _localIpAddress != 'localhost') {
+      return _localIpAddress!;
+    }
+    _localIpAddress = await _detectLocalIp();
+    return _localIpAddress!;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Pairing and access tokens
+  //
+  // The PIN is random, lives on the host and is shown only on the host's
+  // screen; it is never returned by any endpoint. A satellite exchanges it
+  // once (POST /api/v1/pair) for a bearer token; every other endpoint except
+  // /api/v1/ping requires that token. Five wrong PINs in a minute lock
+  // pairing for a minute.
+  // ---------------------------------------------------------------------------
+  static const String _pinKey = '_sbz_lan_pairing_pin';
+  static const String _tokensKey = '_sbz_lan_tokens';
+  static const int _maxPairFailures = 5;
+  final Map<String, Map<String, dynamic>> _tokens = {};
+  final List<DateTime> _pairFailures = [];
+  final Random _random = Random.secure();
+
+  /// Retrieves or provisions the host's pairing PIN (six random digits).
+  String getPairingPin() {
+    try {
+      if (Hive.isBoxOpen('configBox')) {
+        final box = Hive.box('configBox');
+        final pin = box.get(_pinKey);
+        if (pin is String && RegExp(r'^\d{6}$').hasMatch(pin.trim())) return pin.trim();
+        final fresh = List.generate(6, (_) => _random.nextInt(10)).join();
+        box.put(_pinKey, fresh);
+        return fresh;
+      }
+    } catch (_) {}
+    return '';
+  }
+
+  /// Issues a new PIN; every paired satellite keeps its token.
+  String rotatePairingPin() {
+    final fresh = List.generate(6, (_) => _random.nextInt(10)).join();
+    try {
+      if (Hive.isBoxOpen('configBox')) Hive.box('configBox').put(_pinKey, fresh);
+    } catch (_) {}
+    return fresh;
+  }
+
+  /// Paired satellites: token id -> {role, deviceName, pairedAt}.
+  List<Map<String, dynamic>> get pairedDevices {
+    _loadTokens();
+    return _tokens.entries
+        .map((e) => {...e.value, 'id': e.key.substring(0, 8)})
+        .toList(growable: false);
+  }
+
+  /// Removes a paired satellite by the short id shown in [pairedDevices].
+  void revokeDevice(String shortId) {
+    _loadTokens();
+    _tokens.removeWhere((k, _) => k.startsWith(shortId));
+    _saveTokens();
+  }
+
+  void _loadTokens() {
+    if (_tokens.isNotEmpty) return;
+    try {
+      final raw = Hive.isBoxOpen('configBox') ? Hive.box('configBox').get(_tokensKey) : null;
+      if (raw is String && raw.isNotEmpty) {
+        final m = jsonDecode(raw);
+        if (m is Map) {
+          m.forEach((k, v) {
+            if (v is Map) _tokens[k.toString()] = Map<String, dynamic>.from(v);
+          });
+        }
+      }
+    } catch (_) {}
+  }
+
+  void _saveTokens() {
+    try {
+      if (Hive.isBoxOpen('configBox')) Hive.box('configBox').put(_tokensKey, jsonEncode(_tokens));
+    } catch (_) {}
+  }
+
+  bool _pairingLocked() {
+    final cutoff = DateTime.now().subtract(const Duration(minutes: 1));
+    _pairFailures.removeWhere((t) => t.isBefore(cutoff));
+    return _pairFailures.length >= _maxPairFailures;
+  }
+
+  /// Devices the host licence allows in total, the host itself included.
+  int get licensedMaxDevices {
+    try {
+      final rawLic = _configBox?.get('saas_license');
+      final licMap = rawLic is String ? jsonDecode(rawLic) : null;
+      if (licMap is Map && licMap['maxDevices'] is num) {
+        return (licMap['maxDevices'] as num).toInt();
+      }
+    } catch (_) {}
+    return 1;
+  }
+
+  /// Paired satellites plus the host.
+  int get deviceCount => pairedDevices.length + 1;
+
+  /// The host's trade, resolved like the app does (category wins).
+  String get _hostVertical {
+    try {
+      final rawOrg = _configBox?.get('saas_org');
+      final orgMap = rawOrg is String ? jsonDecode(rawOrg) : null;
+      if (orgMap is Map) {
+        return Verticals.resolve(
+          vertical: orgMap['vertical']?.toString(),
+          businessCategory: orgMap['businessCategory']?.toString(),
+        );
+      }
+    } catch (_) {}
+    return Verticals.restaurant;
+  }
+
+  bool get _hostIsRestaurant => _hostVertical == Verticals.restaurant;
+
+  /// Checks [pin] and, when it matches, issues a bearer token for the caller.
+  /// Returns null on a wrong PIN, while pairing is locked, when the licence's
+  /// device limit is reached or when the role is not allowed for this trade;
+  /// [pairDeviceChecked] tells them apart.
+  @visibleForTesting
+  String? pairDevice({required String pin, required String role, required String deviceName}) =>
+      pairDeviceChecked(pin: pin, role: role, deviceName: deviceName).token;
+
+  /// [pairDevice] with the reason for a refusal.
+  @visibleForTesting
+  PairOutcome pairDeviceChecked({required String pin, required String role, required String deviceName}) {
+    final max = licensedMaxDevices;
+    if (_pairingLocked()) return PairOutcome._(refusal: PairRefusal.locked, maxDevices: max);
+    final expected = getPairingPin();
+    if (expected.isEmpty || pin.trim() != expected) {
+      _pairFailures.add(DateTime.now());
+      return PairOutcome._(refusal: PairRefusal.wrongPin, maxDevices: max);
+    }
+    final upperRole = role.toUpperCase();
+    if (!_hostIsRestaurant && (upperRole == 'WAITER' || upperRole == 'KITCHEN')) {
+      return PairOutcome._(refusal: PairRefusal.roleNotAllowed, maxDevices: max);
+    }
+    _loadTokens();
+    // The host is one device; satellites fill the rest of the licence.
+    if (_tokens.length + 1 >= max) {
+      return PairOutcome._(refusal: PairRefusal.deviceLimit, maxDevices: max);
+    }
+    final bytes = List<int>.generate(32, (_) => _random.nextInt(256));
+    final token = base64UrlEncode(bytes).replaceAll('=', '');
+    _tokens[token] = {
+      'id': token.substring(0, 8),
+      'role': upperRole,
+      'deviceName': deviceName,
+      'pairedAt': DateTime.now().toIso8601String(),
+    };
+    _saveTokens();
+    return PairOutcome._(token: token, maxDevices: max);
+  }
+
+  /// The paired device behind a request, or null.
+  Map<String, dynamic>? _authorised(HttpRequest request) {
+    final header = request.headers.value(HttpHeaders.authorizationHeader) ?? '';
+    if (!header.startsWith('Bearer ')) return null;
+    final token = header.substring(7).trim();
+    if (token.isEmpty) return null;
+    _loadTokens();
+    return _tokens[token];
+  }
+
+  /// Entitlement the host shares with a paired satellite (never the PIN).
+  Map<String, dynamic> _storeInfo() {
+    final box = Hive.isBoxOpen('configBox') ? Hive.box('configBox') : null;
+    final rawOrg = box?.get('saas_org');
+    final orgMap = rawOrg is String ? jsonDecode(rawOrg) : {};
+    final rawLic = box?.get('saas_license');
+    final licMap = rawLic is String ? jsonDecode(rawLic) : {};
+    return {
+      'status': 'ok',
+      'storeName': orgMap['name'] ?? 'SmartBizz Store',
+      'vertical': orgMap['vertical'] ?? 'restaurant',
+      'businessCategory': orgMap['businessCategory'] ?? '',
+      'storageMode': orgMap['storageMode'] ?? '',
+      'tier': licMap['tier'] ?? licMap['planTier'] ?? '',
+      'features': licMap['features'] is Map ? licMap['features'] : {},
+      'maxDevices': licMap['maxDevices'] ?? 1,
+      'allowedRoles': licMap['allowedRoles'] ?? const ['OWNER'],
+      'endDate': licMap['endDate'],
+    };
+  }
+
   /// Stops the local LAN server.
   Future<void> stopServer() async {
+    _pairFailures.clear();
     if (!_isRunning || _server == null) return;
     try {
       await _server!.close(force: true);
     } catch (_) {}
     _server = null;
     _isRunning = false;
+    LanHostFlag.hosting = false;
+    await _ledgerWatch?.cancel();
+    _ledgerWatch = null;
     debugPrint('LocalRestaurantLanServer stopped.');
+  }
+
+  /// Performs a quick test ping against the running server instance.
+  Future<bool> testInternalPing() async {
+    if (!_isRunning) return false;
+    if (kIsWeb) return true;
+    try {
+      final client = HttpClient()..connectionTimeout = const Duration(seconds: 2);
+      final req = await client.getUrl(Uri.parse('http://127.0.0.1:$_port/api/v1/ping'));
+      final res = await req.close();
+      client.close();
+      return res.statusCode == HttpStatus.ok;
+    } catch (_) {
+      return _isRunning;
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -72,11 +313,21 @@ class LocalRestaurantLanServer {
   // ---------------------------------------------------------------------------
 
   Future<void> _handleRequest(HttpRequest request) async {
-    // Add CORS headers for web/tablet clients
-    request.response.headers.add('Access-Control-Allow-Origin', '*');
+    // CORS: only a browser page served by this host (or a dev page on
+    // localhost) may call the API from a web origin; native clients send no
+    // Origin header and are unaffected.
+    final origin = request.headers.value('origin');
+    if (origin != null) {
+      final o = Uri.tryParse(origin);
+      final ownHosts = {'localhost', '127.0.0.1', _localIpAddress ?? ''};
+      if (o != null && ownHosts.contains(o.host)) {
+        request.response.headers.add('Access-Control-Allow-Origin', origin);
+        request.response.headers.add('Vary', 'Origin');
+      }
+    }
     request.response.headers.add(
       'Access-Control-Allow-Methods',
-      'GET, POST, PUT, DELETE, OPTIONS',
+      'GET, POST, OPTIONS',
     );
     request.response.headers.add(
       'Access-Control-Allow-Headers',
@@ -92,24 +343,153 @@ class LocalRestaurantLanServer {
     final path = request.uri.path;
 
     try {
+      if (path == '/api/v1/pair') {
+        if (request.method != 'POST') {
+          request.response.statusCode = HttpStatus.methodNotAllowed;
+          await _respondJson(request, {'error': 'Method not allowed'});
+          return;
+        }
+        Map<String, dynamic> body;
+        try {
+          final raw = await utf8.decoder.bind(request).join();
+          final decoded = jsonDecode(raw);
+          body = decoded is Map ? Map<String, dynamic>.from(decoded) : {};
+        } catch (_) {
+          body = {};
+        }
+        if (_pairingLocked()) {
+          request.response.statusCode = HttpStatus.tooManyRequests;
+          await _respondJson(request, {'error': 'Too many wrong PINs. Try again in a minute.'});
+          return;
+        }
+        final outcome = pairDeviceChecked(
+          pin: (body['pin'] ?? '').toString(),
+          role: (body['role'] ?? 'WAITER').toString(),
+          deviceName: (body['deviceName'] ?? 'Satellite').toString(),
+        );
+        if (outcome.refusal == PairRefusal.deviceLimit) {
+          request.response.statusCode = HttpStatus.conflict;
+          await _respondJson(request, {'error': 'Device limit reached', 'maxDevices': outcome.maxDevices});
+          return;
+        }
+        if (outcome.refusal == PairRefusal.roleNotAllowed) {
+          request.response.statusCode = HttpStatus.badRequest;
+          await _respondJson(request, {'error': 'This store has no WAITER or KITCHEN devices; pair as BILLING or MANAGER'});
+          return;
+        }
+        if (outcome.refusal == PairRefusal.locked) {
+          request.response.statusCode = HttpStatus.tooManyRequests;
+          await _respondJson(request, {'error': 'Too many wrong PINs. Try again in a minute.'});
+          return;
+        }
+        final token = outcome.token;
+        if (token == null) {
+          request.response.statusCode = HttpStatus.unauthorized;
+          await _respondJson(request, {'error': 'Wrong pairing PIN'});
+          return;
+        }
+        await _respondJson(request, {'token': token, ..._storeInfo()});
+        return;
+      }
+
+      // Everything below needs a paired device, except the reachability ping.
+      if (path != '/api/v1/ping' && _authorised(request) == null) {
+        request.response.statusCode = HttpStatus.unauthorized;
+        request.response.headers.add(HttpHeaders.wwwAuthenticateHeader, 'Bearer realm="SmartBizz LAN Hub"');
+        await _respondJson(request, {'error': 'Pair this device with the host first'});
+        return;
+      }
+
       if (path == '/api/v1/ping') {
+        if (request.method != 'GET' && request.method != 'HEAD') {
+          request.response.statusCode = HttpStatus.methodNotAllowed;
+          await _respondJson(request, {'error': 'Method not allowed'});
+          return;
+        }
         await _respondJson(request, {
           'status': 'ok',
           'server': 'SmartBizz Local LAN Hub',
-          'version': '1.2.1',
+          'version': '1.3.1',
           'ip': _localIpAddress,
           'port': _port,
+          // The trade only, so a satellite can ask for a role this store
+          // has (a shop has no WAITER/KITCHEN) before it spends a PIN try.
+          'vertical': _hostVertical,
           'timestamp': DateTime.now().toIso8601String(),
         });
-      } else if (path == '/api/v1/tables' && request.method == 'GET') {
+      } else if (path == '/api/v1/unpair') {
+        if (request.method != 'POST') {
+          request.response.statusCode = HttpStatus.methodNotAllowed;
+          await _respondJson(request, {'error': 'Method not allowed'});
+          return;
+        }
+        // The caller gives its own seat back (a failed connect, or
+        // "Disconnect" on the satellite); nothing else can be revoked here.
+        final header = request.headers.value(HttpHeaders.authorizationHeader) ?? '';
+        final tok = header.startsWith('Bearer ') ? header.substring(7).trim() : '';
+        _loadTokens();
+        _tokens.remove(tok);
+        _saveTokens();
+        await _respondJson(request, {'status': 'unpaired'});
+      } else if (path == '/api/v1/store') {
+        if (request.method != 'GET') {
+          request.response.statusCode = HttpStatus.methodNotAllowed;
+          await _respondJson(request, {'error': 'Method not allowed'});
+          return;
+        }
+        await _respondJson(request, _storeInfo());
+      } else if (path == '/api/v1/orders') {
+        if (request.method == 'GET') {
+          await _handleGetKdsOrders(request);
+        } else if (request.method == 'POST') {
+          await _handlePostKot(request);
+        } else {
+          request.response.statusCode = HttpStatus.methodNotAllowed;
+          await _respondJson(request, {'error': 'Method not allowed'});
+        }
+      } else if (path == '/api/v1/tables') {
+        if (request.method != 'GET') {
+          request.response.statusCode = HttpStatus.methodNotAllowed;
+          await _respondJson(request, {'error': 'Method not allowed'});
+          return;
+        }
         await _handleGetTables(request);
-      } else if (path == '/api/v1/kot' && request.method == 'POST') {
-        await _handlePostKot(request);
-      } else if (path == '/api/v1/kds/orders' && request.method == 'GET') {
+      } else if (path == '/api/v1/tables/status') {
+        if (request.method != 'POST') {
+          request.response.statusCode = HttpStatus.methodNotAllowed;
+          await _respondJson(request, {'error': 'Method not allowed'});
+          return;
+        }
+        await _handlePostTableStatus(request);
+      } else if (path == '/api/v1/kot') {
+        if (request.method == 'POST') {
+          await _handlePostKot(request);
+        } else if (request.method == 'GET') {
+          await _handleGetKdsOrders(request);
+        } else {
+          request.response.statusCode = HttpStatus.methodNotAllowed;
+          await _respondJson(request, {'error': 'Method not allowed'});
+        }
+      } else if (path == '/api/v1/kds/orders') {
+        if (request.method != 'GET') {
+          request.response.statusCode = HttpStatus.methodNotAllowed;
+          await _respondJson(request, {'error': 'Method not allowed'});
+          return;
+        }
         await _handleGetKdsOrders(request);
-      } else if (path == '/api/v1/kds/status' && request.method == 'POST') {
+      } else if (path == '/api/v1/kds/status') {
+        if (request.method != 'POST') {
+          request.response.statusCode = HttpStatus.methodNotAllowed;
+          await _respondJson(request, {'error': 'Method not allowed'});
+          return;
+        }
         await _handleUpdateKdsStatus(request);
-      } else if (path == '/api/v1/cfd' && request.method == 'GET') {
+      } else if (path == '/api/v1/cfd') {
+        if (request.method != 'GET') {
+          request.response.statusCode = HttpStatus.methodNotAllowed;
+          await _respondJson(request, {'error': 'Method not allowed'});
+          return;
+        }
         await _respondJson(request, CustomerDisplayService.instance.snapshot.toMap());
       } else {
         request.response.statusCode = HttpStatus.notFound;
@@ -117,97 +497,360 @@ class LocalRestaurantLanServer {
       }
     } catch (e) {
       debugPrint('LocalRestaurantLanServer request error: $e');
-      request.response.statusCode = HttpStatus.internalServerError;
-      await _respondJson(request, {'error': e.toString()});
+      try {
+        request.response.statusCode = HttpStatus.internalServerError;
+        await _respondJson(request, {'error': e.toString()});
+      } catch (_) {}
     }
   }
 
   // ---------------------------------------------------------------------------
-  // Endpoint Handlers
+  // Ledger access and change feed
+  //
+  // The host's ledger is what its own screens read: configBox
+  // `kot_orders_<org>` and `restaurant_tables_<org>`. Every write bumps
+  // LanRevision; a satellite asks `?since=<rev>&wait=<ms>` and is answered as
+  // soon as something changes (or when the wait elapses) with the entries
+  // whose revision is newer than `since`.
   // ---------------------------------------------------------------------------
+  static const int _maxWaitMs = 25000;
 
-  Future<void> _handleGetTables(HttpRequest request) async {
-    final list = <Map<String, dynamic>>[];
-    if (Hive.isBoxOpen('restaurantTablesBox')) {
-      final box = Hive.box('restaurantTablesBox');
-      for (final key in box.keys) {
-        final val = box.get(key);
-        if (val is Map) {
-          list.add(Map<String, dynamic>.from(val));
-        }
+  final Map<String, String> _orderSnapshot = {};
+  final Map<String, int> _orderRevs = {};
+  final Map<String, String> _tableSnapshot = {};
+  final Map<String, int> _tableRevs = {};
+  StreamSubscription<BoxEvent>? _ledgerWatch;
+
+  Box? get _configBox => Hive.isBoxOpen('configBox') ? Hive.box('configBox') : null;
+
+  /// Host screens that still write `kot_orders_*` / `restaurant_tables_*`
+  /// straight into Hive also wake the long-polls.
+  void _watchHostLedger() {
+    _ledgerWatch?.cancel();
+    final box = _configBox;
+    if (box == null) return;
+    _ledgerWatch = box.watch().listen((event) {
+      final k = event.key.toString();
+      if (k.startsWith('kot_orders_') || k.startsWith('restaurant_tables_')) {
+        LanRevision.instance.bump();
+      }
+    });
+  }
+
+  /// The host's org id, resolved the same way the screens do.
+  String hostOrgId() {
+    final box = _configBox;
+    String? sessionOrg;
+    try {
+      final rawOrg = box?.get('saas_org');
+      final orgMap = rawOrg is String ? jsonDecode(rawOrg) : null;
+      if (orgMap is Map) sessionOrg = orgMap['id']?.toString();
+    } catch (_) {}
+    return resolveOutletId(sessionOrgId: sessionOrg, hiveBox: box);
+  }
+
+  String get _ordersKey => 'kot_orders_${hostOrgId()}';
+  String get _tablesKey => 'restaurant_tables_${hostOrgId()}';
+
+  List<Map<String, dynamic>> _readList(String key) {
+    try {
+      final raw = _configBox?.get(key);
+      if (raw is! List) return [];
+      return raw.whereType<Map>().map((m) => Map<String, dynamic>.from(m)).toList();
+    } catch (e) {
+      debugPrint('LocalRestaurantLanServer read $key: $e');
+      return [];
+    }
+  }
+
+  /// Compares the live list with the last snapshot and stamps every changed
+  /// entry with the current revision (bumping it when a change came from a
+  /// screen that wrote Hive directly). Returns the entries newer than [since].
+  List<Map<String, dynamic>> _changedSince({
+    required List<Map<String, dynamic>> live,
+    required Map<String, String> snapshot,
+    required Map<String, int> revs,
+    required String Function(Map<String, dynamic>) idOf,
+    required int since,
+  }) {
+    final changed = <String>[];
+    for (final m in live) {
+      final id = idOf(m);
+      if (id.isEmpty) continue;
+      final sig = jsonEncode(m);
+      if (snapshot[id] != sig) {
+        snapshot[id] = sig;
+        changed.add(id);
       }
     }
-    await _respondJson(request, {'tables': list});
+    if (changed.isNotEmpty) {
+      final rev = LanRevision.instance.bump();
+      for (final id in changed) {
+        revs[id] = rev;
+      }
+    }
+    if (since <= 0) return live;
+    return live.where((m) => (revs[idOf(m)] ?? 0) > since).toList();
+  }
+
+  static String _tableId(Map<String, dynamic> m) => (m['id'] ?? m['table'] ?? '').toString();
+
+  Future<void> _handleGetTables(HttpRequest request) async {
+    final since = int.tryParse(request.uri.queryParameters['since'] ?? '') ?? 0;
+    final wait = (int.tryParse(request.uri.queryParameters['wait'] ?? '') ?? 0).clamp(0, _maxWaitMs);
+    var changed = _changedSince(
+      live: _readList(_tablesKey),
+      snapshot: _tableSnapshot,
+      revs: _tableRevs,
+      idOf: _tableId,
+      since: since,
+    );
+    if (since > 0 && wait > 0 && changed.isEmpty && LanRevision.instance.current <= since) {
+      await LanRevision.instance.waitForChange(Duration(milliseconds: wait));
+      changed = _changedSince(
+        live: _readList(_tablesKey),
+        snapshot: _tableSnapshot,
+        revs: _tableRevs,
+        idOf: _tableId,
+        since: since,
+      );
+    }
+    await _respondJson(request, {
+      'rev': LanRevision.instance.current,
+      'full': since <= 0,
+      'tables': changed,
+    });
+  }
+
+  Future<void> _handleGetKdsOrders(HttpRequest request) async {
+    final since = int.tryParse(request.uri.queryParameters['since'] ?? '') ?? 0;
+    final wait = (int.tryParse(request.uri.queryParameters['wait'] ?? '') ?? 0).clamp(0, _maxWaitMs);
+    var changed = _changedSince(
+      live: _readList(_ordersKey),
+      snapshot: _orderSnapshot,
+      revs: _orderRevs,
+      idOf: canonicalId,
+      since: since,
+    );
+    if (since > 0 && wait > 0 && changed.isEmpty && LanRevision.instance.current <= since) {
+      await LanRevision.instance.waitForChange(Duration(milliseconds: wait));
+      changed = _changedSince(
+        live: _readList(_ordersKey),
+        snapshot: _orderSnapshot,
+        revs: _orderRevs,
+        idOf: canonicalId,
+        since: since,
+      );
+    }
+    await _respondJson(request, {
+      'rev': LanRevision.instance.current,
+      'full': since <= 0,
+      'orders': changed,
+    });
+  }
+
+  /// Reads a JSON object body or answers 400 and returns null.
+  Future<Map<String, dynamic>?> _readJsonObject(HttpRequest request) async {
+    final bodyStr = await utf8.decodeStream(request);
+    if (bodyStr.trim().isEmpty) {
+      request.response.statusCode = HttpStatus.badRequest;
+      await _respondJson(request, {'error': 'Request body cannot be empty'});
+      return null;
+    }
+    dynamic decoded;
+    try {
+      decoded = jsonDecode(bodyStr);
+    } catch (_) {
+      request.response.statusCode = HttpStatus.badRequest;
+      await _respondJson(request, {'error': 'Malformed JSON payload'});
+      return null;
+    }
+    if (decoded is! Map) {
+      request.response.statusCode = HttpStatus.badRequest;
+      await _respondJson(request, {'error': 'Payload must be a JSON object'});
+      return null;
+    }
+    return Map<String, dynamic>.from(decoded);
+  }
+
+  /// Who sent a write: the paired device behind the bearer token.
+  Map<String, dynamic> _sourceOf(HttpRequest request) {
+    final dev = _authorised(request) ?? const <String, dynamic>{};
+    final header = request.headers.value(HttpHeaders.authorizationHeader) ?? '';
+    final tok = header.startsWith('Bearer ') ? header.substring(7).trim() : '';
+    return {
+      'deviceId': (dev['id'] ?? (tok.length >= 8 ? tok.substring(0, 8) : '')).toString(),
+      'role': (dev['role'] ?? '').toString(),
+      'deviceName': (dev['deviceName'] ?? '').toString(),
+      'at': DateTime.now().toIso8601String(),
+    };
+  }
+
+  static int _kitchenRank(String s) {
+    switch (s.toUpperCase()) {
+      case 'SERVED':
+        return 3;
+      case 'READY':
+        return 2;
+      case 'PREPARING':
+        return 1;
+      default:
+        return 0;
+    }
   }
 
   Future<void> _handlePostKot(HttpRequest request) async {
-    final bodyStr = await utf8.decodeStream(request);
-    final map = jsonDecode(bodyStr) as Map<String, dynamic>;
-    final order = KotOrder.fromMap(map, map['id']?.toString() ?? 'kot_${DateTime.now().millisecondsSinceEpoch}');
-
-    // Persist to local Hive
-    if (Hive.isBoxOpen('kotOrdersBox')) {
-      final box = Hive.box('kotOrdersBox');
-      await box.put(order.id, order.toMap());
+    final map = await _readJsonObject(request);
+    if (map == null) return;
+    final rawItems = map['items'];
+    if (rawItems == null || (rawItems is List && rawItems.isEmpty)) {
+      request.response.statusCode = HttpStatus.badRequest;
+      await _respondJson(request, {'error': 'Missing required parameter: items'});
+      return;
     }
 
-    // Trigger KDS acoustic chime and TTS announcement
+    final order = KotOrder.fromMap(map, map['id']?.toString() ?? 'kot_${DateTime.now().millisecondsSinceEpoch}');
+    final incoming = Map<String, dynamic>.from(map);
+    incoming['id'] = order.id;
+    incoming['source'] = _sourceOf(request);
+
+    var isNew = true;
     try {
-      await KdsVoiceAnnouncer.instance.announceNewOrders([order]);
-    } catch (_) {}
+      final list = _readList(_ordersKey);
+      final idx = list.indexWhere((m) => canonicalId(m) == order.canonicalKey);
+      if (idx >= 0) {
+        isNew = false;
+        final existing = list[idx];
+        final merged = Map<String, dynamic>.from(existing)..addAll(incoming);
+        // Host wins on kitchen progress: a stale satellite copy never moves a
+        // ticket backwards. Explicit changes go through /api/v1/kds/status.
+        var hostAhead = false;
+        try {
+          final was = KotOrder.fromMap(existing, order.id).effectiveKitchenStatus;
+          final now = KotOrder.fromMap(incoming, order.id).effectiveKitchenStatus;
+          hostAhead = _kitchenRank(was) > _kitchenRank(now);
+        } catch (_) {}
+        if (hostAhead) {
+          for (final k in ['kitchenStatus', 'status', 'readyAt', 'servedAt', 'completedAt']) {
+            if (existing.containsKey(k)) merged[k] = existing[k];
+          }
+        }
+        list[idx] = merged;
+      } else {
+        list.add(incoming);
+      }
+      await _configBox?.put(_ordersKey, list);
+    } catch (e) {
+      debugPrint('Error persisting KOT order: $e');
+    }
+    final rev = LanRevision.instance.bump();
+
+    // The chime belongs to the host's kitchen screen; satellites announce
+    // from their own feed.
+    if (isNew && order.effectiveKitchenStatus == 'PENDING') {
+      try {
+        await KdsVoiceAnnouncer.instance.announceNewOrders([order]);
+      } catch (_) {}
+    }
 
     await _respondJson(request, {
       'status': 'received',
       'kotNumber': order.kotNumber,
       'id': order.id,
+      'rev': rev,
     });
   }
 
-  Future<void> _handleGetKdsOrders(HttpRequest request) async {
-    final list = <Map<String, dynamic>>[];
-    if (Hive.isBoxOpen('kotOrdersBox')) {
-      final box = Hive.box('kotOrdersBox');
-      for (final key in box.keys) {
-        final val = box.get(key);
-        if (val is Map) {
-          list.add(Map<String, dynamic>.from(val));
-        }
-      }
+  Future<void> _handleUpdateKdsStatus(HttpRequest request) async {
+    final map = await _readJsonObject(request);
+    if (map == null) return;
+    final orderId = (map['orderId']?.toString() ?? '').trim();
+    final newStatus = (map['kitchenStatus']?.toString() ?? 'READY').trim().toUpperCase();
+    final orderStatus = map['status']?.toString().trim().toUpperCase();
+
+    if (orderId.isEmpty) {
+      request.response.statusCode = HttpStatus.badRequest;
+      await _respondJson(request, {'error': 'Missing required parameter: orderId'});
+      return;
     }
-    await _respondJson(request, {'orders': list});
+
+    try {
+      final list = _readList(_ordersKey);
+      final idx = list.indexWhere((m) => canonicalId(m) == orderId || (m['id'] ?? '').toString() == orderId);
+      if (idx < 0) {
+        request.response.statusCode = HttpStatus.notFound;
+        await _respondJson(request, {'error': 'Order not found: $orderId'});
+        return;
+      }
+      final updated = Map<String, dynamic>.from(list[idx]);
+      final stamp = DateTime.now().toIso8601String();
+      updated['kitchenStatus'] = newStatus;
+      if (orderStatus != null && orderStatus.isNotEmpty) {
+        updated['status'] = orderStatus;
+      } else if (updated['paymentStatus'] != 'PAID') {
+        updated['status'] = newStatus;
+      }
+      if (newStatus == 'READY') updated['readyAt'] = stamp;
+      if (newStatus == 'SERVED') {
+        updated['servedAt'] = stamp;
+        updated['completedAt'] = stamp;
+      }
+      updated['source'] = _sourceOf(request);
+      list[idx] = updated;
+      await _configBox?.put(_ordersKey, list);
+    } catch (e) {
+      debugPrint('Error updating KDS status: $e');
+    }
+    final rev = LanRevision.instance.bump();
+
+    await _respondJson(request, {'status': 'updated', 'orderId': orderId, 'kitchenStatus': newStatus, 'rev': rev});
   }
 
-  Future<void> _handleUpdateKdsStatus(HttpRequest request) async {
-    final bodyStr = await utf8.decodeStream(request);
-    final map = jsonDecode(bodyStr) as Map<String, dynamic>;
-    final orderId = map['orderId']?.toString() ?? '';
-    final newStatus = map['kitchenStatus']?.toString() ?? 'READY';
-
-    if (Hive.isBoxOpen('kotOrdersBox') && orderId.isNotEmpty) {
-      final box = Hive.box('kotOrdersBox');
-      final existing = box.get(orderId);
-      if (existing is Map) {
-        final updated = Map<String, dynamic>.from(existing);
-        updated['kitchenStatus'] = newStatus;
-        if (newStatus == 'READY') {
-          updated['readyAt'] = DateTime.now().toIso8601String();
-        }
-        await box.put(orderId, updated);
-      }
+  /// `POST /api/v1/tables/status {table|id, status, ...}` upserts one table's
+  /// state. Extra keys (currentOrderId, guestCount, ...) are merged in.
+  Future<void> _handlePostTableStatus(HttpRequest request) async {
+    final map = await _readJsonObject(request);
+    if (map == null) return;
+    final id = _tableId(map);
+    final status = (map['status'] ?? '').toString().trim();
+    if (id.isEmpty || status.isEmpty) {
+      request.response.statusCode = HttpStatus.badRequest;
+      await _respondJson(request, {'error': 'Missing required parameters: table, status'});
+      return;
     }
-
-    await _respondJson(request, {'status': 'updated', 'orderId': orderId, 'kitchenStatus': newStatus});
+    try {
+      final list = _readList(_tablesKey);
+      final idx = list.indexWhere((m) => _tableId(m) == id);
+      final patch = Map<String, dynamic>.from(map)..remove('table');
+      patch['id'] = id;
+      patch['source'] = _sourceOf(request);
+      if (idx >= 0) {
+        list[idx] = Map<String, dynamic>.from(list[idx])..addAll(patch);
+      } else {
+        list.add(patch);
+      }
+      await _configBox?.put(_tablesKey, list);
+    } catch (e) {
+      debugPrint('Error updating table status: $e');
+    }
+    final rev = LanRevision.instance.bump();
+    await _respondJson(request, {'status': 'updated', 'table': id, 'tableStatus': status, 'rev': rev});
   }
 
   Future<void> _respondJson(HttpRequest request, Map<String, dynamic> data) async {
-    request.response.headers.contentType = ContentType.json;
-    final jsonStr = jsonEncode(data);
-    request.response.write(jsonStr);
-    await request.response.close();
+    try {
+      request.response.headers.contentType = ContentType.json;
+      final jsonStr = jsonEncode(data);
+      request.response.write(jsonStr);
+      await request.response.close();
+    } catch (e) {
+      debugPrint('LocalRestaurantLanServer response write error: $e');
+    }
   }
 
   /// Detects the local LAN IPv4 address of the host machine (e.g. 192.168.1.x).
   Future<String> _detectLocalIp() async {
+    if (kIsWeb) return 'localhost';
     try {
       final interfaces = await NetworkInterface.list(
         type: InternetAddressType.IPv4,

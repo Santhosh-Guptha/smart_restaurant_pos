@@ -1,9 +1,20 @@
 {
-  "version": "2.4.1",
-  "releaseTag": "prod-2026-10-26",
-  "lastDeployedAt": "2026-10-26T15:32:34.199Z",
+  "version": "2.4.2",
+  "releaseTag": "prod-2026-10-27",
+  "lastDeployedAt": "2026-10-27T17:43:03.855Z",
   "targetEndpoint": "https://script.google.com/macros/s/AKfycbwZIs_n5hCtSBqkyPOVqeZZBY1XjUAv4NjYWj8O3AY2i0Fw0Rl2OV-TA-IgmlvRbo7pFQ/exec",
   "history": [
+    {
+      "version": "2.4.2",
+      "releaseTag": "prod-2026-10-27",
+      "timestamp": "2026-10-27T17:43:03.855Z",
+      "notes": "Production release deployment",
+      "checksums": {
+        "codeGs": "0e1dba8350fb5131f97a4c3bd62bb4d33aac33c57b00abad34a6c8b4c8a99ef5",
+        "firestoreGs": "860f1f65ff7478ba0b2bdc257e5b3e0b2490a94ad007644decad2ba6e99bb0e0",
+        "bcryptGs": "e8071f519a88f3ab6e856ff88d4877015858a223c797e45588a32a05b1a7b187"
+      }
+    },
     {
       "version": "2.4.1",
       "releaseTag": "prod-2026-10-26",

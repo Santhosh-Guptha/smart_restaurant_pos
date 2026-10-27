@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 import '../../../core/classic_theme.dart';
 import '../../../services/client_license_service.dart';
+import '../../../services/client_setup_package_generator.dart';
 import '../../../core/design_tokens.dart';
 import '../../../core/entitlements.dart';
 import '../../../core/package_model.dart';
@@ -119,6 +120,17 @@ class _TenantAccessDialogState extends ConsumerState<TenantAccessDialog> {
 
   /// The licence's tier, read as the app reads it.
   PackageTier get _tier => LicenceEdits.tierOf(_licenceRaw, storageMode: _storageMode);
+
+  /// The storage mode a client licence key carries: the tenant's own mode
+  /// when the tier's package allows it (contract §6b: Offline is
+  /// PURE_OFFLINE only; Basic+ own Sheets or a local network hub), else the
+  /// tier's default. Never coerced to LOCAL_NETWORK.
+  String get _keyStorageMode {
+    final tier = _tier;
+    if (tier.isOffline) return StorageModes.pureOffline;
+    final allowed = PackageCatalog.starter(_vertical, tier).allowedStorageModes;
+    return allowed.contains(_storageMode) ? _storageMode : tier.defaultStorageMode;
+  }
 
   Future<void> _load() async {
     try {
@@ -814,6 +826,16 @@ class _TenantAccessDialogState extends ConsumerState<TenantAccessDialog> {
                       _extendRow(),
                       const SizedBox(height: DS.space2),
                       _action(
+                        icon: Icons.file_download_outlined,
+                        color: ClassicTheme.successEmerald,
+                        title: 'Download 1-Click Client Setup Package (.bat)',
+                        subtitle:
+                            'Generates and downloads a complete 1-click Windows installer with inbuilt licence key, '
+                            'local database setup, and LAN firewall configuration for ${widget.orgName}.',
+                        onTap: _downloadClientSetupPackage,
+                      ),
+                      const SizedBox(height: DS.space2),
+                      _action(
                         icon: Icons.key_rounded,
                         color: ClassicTheme.primaryAccent,
                         title: 'Issue Client Licence Key (Local Host)',
@@ -1040,6 +1062,61 @@ class _TenantAccessDialogState extends ConsumerState<TenantAccessDialog> {
         ),
       );
 
+  Future<void> _downloadClientSetupPackage() async {
+    final rawFeatures = _licenceRaw['features'];
+    final Map<String, bool> featMap = {};
+    if (rawFeatures is Map) {
+      for (final e in rawFeatures.entries) {
+        featMap[e.key.toString()] = e.value == true;
+      }
+    }
+    if (_keyStorageMode == StorageModes.localNetwork && _vertical != Verticals.kirana) {
+      // On a local network hub the hub server and the customer display are
+      // core (Entitlements rule 3.1); the signed map says so too.
+      featMap[FeatureKeys.localLanServer] = true;
+      featMap[FeatureKeys.customerDisplay] = true;
+    }
+
+    final rawRoles = _licenceRaw['allowedRoles'];
+    final List<String> rolesList = [];
+    if (rawRoles is List) {
+      for (final r in rawRoles) {
+        rolesList.add(r.toString());
+      }
+    }
+
+    final payload = ClientLicensePayload(
+      version: 1,
+      orgId: widget.orgId,
+      storeName: widget.orgName,
+      vertical: _vertical,
+      tier: _tier.name,
+      packageId: _packageId.isNotEmpty ? _packageId : '${_vertical}_${_tier.name}',
+      planName: (_licenceRaw['planName'] ?? '${_tier.label} Annual Licence').toString(),
+      storageMode: _keyStorageMode,
+      machineId: 'ANY',
+      features: featMap,
+      maxDevices: _maxDevices,
+      maxOutlets: 1,
+      maxUsers: (_licenceRaw['maxUsers'] is num) ? (_licenceRaw['maxUsers'] as num).toInt() : 5,
+      allowedRoles: rolesList.isNotEmpty ? rolesList : ['OWNER', 'MANAGER', 'BILLING'],
+      issuedAt: DateTime.now().toUtc(),
+      validUntil: _endDate?.toUtc() ?? DateTime.now().toUtc().add(const Duration(days: 365)),
+    );
+
+    final err = await ClientSetupPackageGenerator.issueAndDownloadSetupBatch(payload);
+    if (!mounted) return;
+    if (err != null) {
+      AppToast.showError(context, err, title: 'Key not issued');
+      return;
+    }
+    AppToast.showSuccess(
+      context,
+      '1-Click Setup File Downloaded!',
+      subtitle: 'Give SmartBizz_Setup_${widget.orgName}.bat to client to run on their PC.',
+    );
+  }
+
   void _showIssueClientLicenseDialog() {
     final rawFeatures = _licenceRaw['features'];
     final Map<String, bool> featMap = {};
@@ -1047,6 +1124,12 @@ class _TenantAccessDialogState extends ConsumerState<TenantAccessDialog> {
       for (final e in rawFeatures.entries) {
         featMap[e.key.toString()] = e.value == true;
       }
+    }
+    if (_keyStorageMode == StorageModes.localNetwork && _vertical != Verticals.kirana) {
+      // On a local network hub the hub server and the customer display are
+      // core (Entitlements rule 3.1); the signed map says so too.
+      featMap[FeatureKeys.localLanServer] = true;
+      featMap[FeatureKeys.customerDisplay] = true;
     }
 
     final rawRoles = _licenceRaw['allowedRoles'];
@@ -1059,8 +1142,8 @@ class _TenantAccessDialogState extends ConsumerState<TenantAccessDialog> {
 
     final machineIdCtrl = TextEditingController(text: 'ANY');
 
-    String buildToken(String targetMachineId) {
-      final payload = ClientLicensePayload(
+    ClientLicensePayload buildPayload(String targetMachineId) {
+      return ClientLicensePayload(
         version: 1,
         orgId: widget.orgId,
         storeName: widget.orgName,
@@ -1068,7 +1151,7 @@ class _TenantAccessDialogState extends ConsumerState<TenantAccessDialog> {
         tier: _tier.name,
         packageId: _packageId.isNotEmpty ? _packageId : '${_vertical}_${_tier.name}',
         planName: (_licenceRaw['planName'] ?? '${_tier.label} Annual Licence').toString(),
-        storageMode: _storageMode == StorageModes.pureOffline ? StorageModes.pureOffline : StorageModes.localNetwork,
+        storageMode: _keyStorageMode,
         machineId: targetMachineId.trim().isEmpty ? 'ANY' : targetMachineId.trim(),
         features: featMap,
         maxDevices: _maxDevices,
@@ -1078,8 +1161,12 @@ class _TenantAccessDialogState extends ConsumerState<TenantAccessDialog> {
         issuedAt: DateTime.now().toUtc(),
         validUntil: _endDate?.toUtc() ?? DateTime.now().toUtc().add(const Duration(days: 365)),
       );
-      return ClientLicenseService.generateToken(payload);
     }
+
+    // The key is signed by Code.gs (ISSUE_CLIENT_LICENCE); the app only shows it.
+    String? issuedToken;
+    String? issuedForMachine;
+    bool issuing = false;
 
     showDialog(
       context: context,
@@ -1087,7 +1174,24 @@ class _TenantAccessDialogState extends ConsumerState<TenantAccessDialog> {
         builder: (ctx, setDlgState) {
           final currentMId = machineIdCtrl.text.trim();
           final isLockedSpecific = currentMId.isNotEmpty && currentMId.toUpperCase() != 'ANY';
-          final token = buildToken(currentMId);
+          if (issuedForMachine != null && issuedForMachine != currentMId) {
+            issuedToken = null; // a different machine id needs a new signature
+          }
+          final token = issuedToken;
+
+          Future<void> issueNow() async {
+            setDlgState(() => issuing = true);
+            final t = await ClientLicenseService.issueToken(buildPayload(currentMId));
+            if (!ctx.mounted) return;
+            setDlgState(() {
+              issuing = false;
+              issuedToken = t;
+              issuedForMachine = currentMId;
+            });
+            if (t == null && ctx.mounted) {
+              AppToast.showError(ctx, ClientSetupPackageGenerator.issueFailedMessage, title: 'Key not issued');
+            }
+          }
 
           return AlertDialog(
             backgroundColor: context.surfaceColor,
@@ -1191,7 +1295,18 @@ class _TenantAccessDialogState extends ConsumerState<TenantAccessDialog> {
                         borderRadius: BorderRadius.circular(DS.radiusMd),
                         border: Border.all(color: context.borderColor),
                       ),
-                      child: SelectableText(
+                      child: token == null
+                          ? Align(
+                              alignment: Alignment.centerLeft,
+                              child: TextButton.icon(
+                                onPressed: issuing ? null : issueNow,
+                                icon: issuing
+                                    ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
+                                    : const Icon(Icons.key_rounded, size: 16),
+                                label: Text(issuing ? 'Asking the server to sign…' : 'Issue signed key'),
+                              ),
+                            )
+                          : SelectableText(
                         token,
                         style: const TextStyle(fontFamily: 'monospace', fontSize: 10),
                       ),
@@ -1205,7 +1320,7 @@ class _TenantAccessDialogState extends ConsumerState<TenantAccessDialog> {
                     Text(
                       '1. Send this licence key to the store owner.\n'
                       '2. On client till, click \'Activate with Licence\' and paste this key.\n'
-                      '3. The key cryptographically binds to the client physical machine, unlocking POS and Local LAN Hub with zero cloud dependency.',
+                      '3. The key cryptographically binds to the client physical machine, unlocking the POS and the Local LAN Hub without depending on the cloud.',
                       style: TextStyle(fontSize: 11, color: context.textSecondary, height: 1.4),
                     ),
                   ],
@@ -1217,25 +1332,57 @@ class _TenantAccessDialogState extends ConsumerState<TenantAccessDialog> {
                 onPressed: () => Navigator.pop(ctx),
                 child: const Text('Close'),
               ),
+              OutlinedButton.icon(
+                onPressed: issuing
+                    ? null
+                    : () async {
+                        final err = await ClientSetupPackageGenerator.issueAndDownloadLicenseJson(buildPayload(currentMId));
+                        if (!mounted) return;
+                        if (err != null) {
+                          AppToast.showError(context, err, title: 'Key not issued');
+                          return;
+                        }
+                        if (ctx.mounted) Navigator.pop(ctx);
+                        AppToast.showSuccess(context, 'Licence JSON Downloaded!');
+                      },
+                icon: const Icon(Icons.data_object_rounded, size: 16),
+                label: const Text('Download .json'),
+              ),
+              OutlinedButton.icon(
+                onPressed: token == null
+                    ? null
+                    : () async {
+                        await Clipboard.setData(ClipboardData(text: token));
+                        if (!mounted) return;
+                        if (ctx.mounted) Navigator.pop(ctx);
+                        AppToast.showSuccess(context, 'Licence Token Copied!');
+                      },
+                icon: const Icon(Icons.copy_rounded, size: 16),
+                label: const Text('Copy Token'),
+              ),
               ElevatedButton.icon(
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: ClassicTheme.primaryAccent,
+                  backgroundColor: ClassicTheme.successEmerald,
                   foregroundColor: Colors.white,
                 ),
-                onPressed: () async {
-                  await Clipboard.setData(ClipboardData(text: token));
+                onPressed: issuing
+                    ? null
+                    : () async {
+                  final err = await ClientSetupPackageGenerator.issueAndDownloadSetupBatch(buildPayload(currentMId));
                   if (!mounted) return;
-                  if (ctx.mounted) {
-                    Navigator.pop(ctx);
+                  if (err != null) {
+                    AppToast.showError(context, err, title: 'Key not issued');
+                    return;
                   }
+                  if (ctx.mounted) Navigator.pop(ctx);
                   AppToast.showSuccess(
                     context,
-                    'Licence Key Copied!',
-                    subtitle: 'Ready to send to ${widget.orgName}.',
+                    '1-Click Setup File Downloaded!',
+                    subtitle: 'Send SmartBizz_Setup_${widget.orgName}.bat to client to run on their PC.',
                   );
                 },
-                icon: const Icon(Icons.copy_rounded, size: 16),
-                label: const Text('Copy Licence Key'),
+                icon: const Icon(Icons.file_download_outlined, size: 16),
+                label: const Text('Download 1-Click .bat'),
               ),
             ],
           );

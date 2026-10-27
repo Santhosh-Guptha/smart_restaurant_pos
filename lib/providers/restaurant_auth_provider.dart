@@ -103,7 +103,7 @@ class RestaurantAuthNotifier extends StateNotifier<RestaurantAuthState> {
 
     try {
       if (_ref != null) {
-        final saas = _ref!.read(saasSessionProvider);
+        final saas = _ref.read(saasSessionProvider);
         final user = saas.currentUser;
         final org = saas.currentOrganization;
         if (user?.role.toUpperCase() == 'MASTER_ADMIN' || isMasterAdminEmail(user?.email)) {
@@ -266,6 +266,7 @@ class RestaurantAuthNotifier extends StateNotifier<RestaurantAuthState> {
         ? OperatingMode.payFirstQSR
         : OperatingMode.dineFirstPostpaid;
 
+    if (!mounted) return;
     state = state.copyWith(
       staffList: loaded,
       operatingMode: mode,

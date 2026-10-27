@@ -168,25 +168,36 @@ class BillCalculator {
     for (final line in lines) {
       subtotalPaise += line.lineTotalPaise;
     }
+    if (subtotalPaise < 0) subtotalPaise = 0;
 
     // 2. Discount
     int discountPaise = 0;
-    if (discount != null && discount.value > 0) {
+    if (discount != null && discount.value > 0 && subtotalPaise > 0) {
       if (discount.type == DiscountType.percentage) {
-        discountPaise = ((subtotalPaise * discount.value) / 100).round();
+        final clampedPercent = (discount.value.isNaN || discount.value.isInfinite)
+            ? 0.0
+            : discount.value.clamp(0.0, 100.0);
+        discountPaise = ((subtotalPaise * clampedPercent) / 100).round();
       } else {
-        discountPaise = (discount.value * 100).round();
+        final flatRupees = (discount.value.isNaN || discount.value.isInfinite)
+            ? 0.0
+            : discount.value;
+        discountPaise = (flatRupees * 100).round();
       }
       if (discountPaise > subtotalPaise) {
         discountPaise = subtotalPaise;
+      }
+      if (discountPaise < 0) {
+        discountPaise = 0;
       }
     }
 
     final int netAfterDiscount = (subtotalPaise - discountPaise).clamp(0, subtotalPaise);
 
     // 3. Service Charge (applied on net amount after discount)
-    final int serviceChargePaise = serviceChargeBps > 0
-        ? ((netAfterDiscount * serviceChargeBps) / 10000).round()
+    final safeServiceChargeBps = serviceChargeBps.clamp(0, 10000);
+    final int serviceChargePaise = safeServiceChargeBps > 0
+        ? ((netAfterDiscount * safeServiceChargeBps) / 10000).round()
         : 0;
 
     // 4. Taxable & GST calculation
@@ -359,9 +370,9 @@ class PaymentRecord {
     invoiceNo: map['invoiceNo']?.toString(),
     orderId: map['orderId']?.toString(),
     mode: (map['mode'] ?? map['paymentMode'] ?? 'CASH').toString(),
-    amountPaise: (map['amountPaise'] as num?)?.toInt() ??
+    amountPaise: (map['amountPaise'] as num?)?.round() ??
         ((map['amount'] as num?)?.toDouble() != null ? ((map['amount'] as num).toDouble() * 100).round() : 0),
-    tipPaise: (map['tipPaise'] as num?)?.toInt() ??
+    tipPaise: (map['tipPaise'] as num?)?.round() ??
         ((map['tip'] as num?)?.toDouble() != null ? ((map['tip'] as num).toDouble() * 100).round() : 0),
     refUtr: (map['refUtr'] ?? map['ref'] ?? map['utr'] ?? map['transactionId'])?.toString(),
     gatewayId: map['gatewayId']?.toString(),
