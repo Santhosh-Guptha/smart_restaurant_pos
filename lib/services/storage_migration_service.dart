@@ -10,7 +10,9 @@ import '../core/restaurant_models.dart';
 import '../sync/local_store.dart';
 import '../sync/outbox.dart';
 import 'apps_script_backend_service.dart';
+import 'package:googleapis/sheets/v4.dart' as sheets;
 import 'restaurant_sheets_service.dart';
+import 'sheet_layout.dart';
 
 /// The four steps of a storage-mode change, in the order they run.
 enum MigrationStep { consent, provision, migrate, verify }
@@ -216,13 +218,22 @@ class StorageMigrationService {
             }, SetOptions(merge: true));
           } catch (_) {}
 
-          final registered = await AppsScriptBackendService.registerTenant(
+          var registered = await AppsScriptBackendService.registerTenant(
             orgId: orgId,
             spreadsheetId: sheetId,
             orgName: orgName,
             upiId: upiId,
           );
-          if (!registered && !kIsWeb) {
+          if (!registered) {
+            await Future.delayed(const Duration(seconds: 2));
+            registered = await AppsScriptBackendService.registerTenant(
+              orgId: orgId,
+              spreadsheetId: sheetId,
+              orgName: orgName,
+              upiId: upiId,
+            );
+          }
+          if (!registered) {
             await _markStep(orgId, MigrationStep.provision, 'FAILED', detail: 'webhook registration failed');
             return 'The cloud webhook did not accept the new store. Check the connection and try again.';
           }
@@ -322,13 +333,23 @@ class StorageMigrationService {
   static Future<List<Map<String, dynamic>>> _localOrders(String orgId) async {
     final byId = <String, Map<String, dynamic>>{};
     try {
-      final raw = Hive.box('configBox').get('kot_orders_$orgId');
-      if (raw is List) {
-        for (final item in raw) {
-          if (item is Map) {
-            final m = Map<String, dynamic>.from(item);
-            final id = canonicalId(m);
-            if (id.isNotEmpty) byId[id] = m;
+      if (Hive.isBoxOpen('configBox')) {
+        final box = Hive.box('configBox');
+        for (final k in box.keys) {
+          final key = k.toString();
+          if (key.startsWith('kot_orders_') || key.startsWith('bills_')) {
+            final raw = box.get(key);
+            if (raw is List) {
+              for (final item in raw) {
+                if (item is Map) {
+                  final m = Map<String, dynamic>.from(item);
+                  final itemOrg = (m['orgId'] ?? m['organizationId'] ?? '').toString();
+                  if (itemOrg.isNotEmpty && itemOrg != orgId) continue;
+                  final id = canonicalId(m);
+                  if (id.isNotEmpty) byId[id] = m;
+                }
+              }
+            }
           }
         }
       }
@@ -415,8 +436,94 @@ class StorageMigrationService {
         await RestaurantSheetsService.syncTables(
             authenticatedClient: client, sheetId: sheetId, tables: tables);
       }
+
+      // Customer Khata sync (F-28)
+      if (Hive.isBoxOpen('configBox')) {
+        final rawKhata = Hive.box('configBox').get('customer_khata_$orgId');
+        if (rawKhata is List && rawKhata.isNotEmpty) {
+          final khataRows = <List<dynamic>>[];
+          for (final c in rawKhata) {
+            if (c is Map) {
+              final txs = c['transactions'];
+              if (txs is List && txs.isNotEmpty) {
+                for (final tx in txs) {
+                  if (tx is Map) {
+                    khataRows.add([
+                      tx['id'] ?? '',
+                      tx['date'] ?? '',
+                      c['customerName'] ?? '',
+                      c['phone'] ?? '',
+                      tx['type'] ?? 'Credit',
+                      tx['amount'] ?? 0.0,
+                      tx['notes'] ?? '',
+                    ]);
+                  }
+                }
+              } else {
+                khataRows.add([
+                  c['id'] ?? '',
+                  (c['createdAt'] ?? '').toString(),
+                  c['customerName'] ?? '',
+                  c['phone'] ?? '',
+                  'Balance',
+                  c['creditBalance'] ?? 0.0,
+                  'Opening ledger',
+                ]);
+              }
+            }
+          }
+          if (khataRows.isNotEmpty) {
+            try {
+              final api = sheets.SheetsApi(client);
+              final layout = SheetLayout.forVertical(SheetLayout.activeVertical);
+              final khataTab = layout.tabsByRole[SheetRole.khata] ?? 'Customer Khata';
+              await api.spreadsheets.values.append(
+                sheets.ValueRange(values: khataRows),
+                sheetId,
+                SheetLayout.anchor(khataTab),
+                valueInputOption: 'USER_ENTERED',
+              );
+            } catch (e) {
+              debugPrint('[migration] khata sync note: $e');
+            }
+          }
+        }
+      }
+
+      // Expenses sync (F-28)
+      if (Hive.isBoxOpen('expenses')) {
+        final rawExp = Hive.box('expenses').values.whereType<Map>().toList();
+        final expRows = <List<dynamic>>[];
+        for (final exp in rawExp) {
+          final expOrg = (exp['organization_id'] ?? exp['organizationId'])?.toString();
+          if (expOrg != null && expOrg.isNotEmpty && expOrg != orgId) continue;
+          expRows.add([
+            exp['id'] ?? '',
+            exp['date'] ?? exp['timestamp'] ?? '',
+            exp['category'] ?? 'General',
+            exp['amount'] ?? 0.0,
+            exp['vendor'] ?? exp['vendorName'] ?? '',
+            exp['notes'] ?? exp['note'] ?? '',
+          ]);
+        }
+        if (expRows.isNotEmpty) {
+          try {
+            final api = sheets.SheetsApi(client);
+            final layout = SheetLayout.forVertical(SheetLayout.activeVertical);
+            final expTab = layout.tabsByRole[SheetRole.expenses] ?? 'Kitchen Expenses';
+            await api.spreadsheets.values.append(
+              sheets.ValueRange(values: expRows),
+              sheetId,
+              SheetLayout.anchor(expTab),
+              valueInputOption: 'USER_ENTERED',
+            );
+          } catch (e) {
+            debugPrint('[migration] expenses sync note: $e');
+          }
+        }
+      }
     } catch (e) {
-      debugPrint('[migration] menu/tables sync note: $e');
+      debugPrint('[migration] menu/tables/khata/expenses sync note: $e');
     }
 
     await _markStep(orgId, MigrationStep.migrate, 'DONE', detail: '$total bills sent');
@@ -449,6 +556,26 @@ class StorageMigrationService {
       byId[id] = {...byId[id] ?? {}, ...r};
     }
     await box.put('kot_orders_$orgId', byId.values.toList());
+
+    // Hydrate menu and stock from Firestore if local cache is empty (F-30)
+    try {
+      final cfg = Hive.isBoxOpen('restaurant_config_box') ? Hive.box('restaurant_config_box') : null;
+      final localDishes = (cfg?.get('restaurant_menu_dishes') as List?) ?? [];
+      if (localDishes.isEmpty) {
+        final storeDoc = await FirebaseFirestore.instance.collection('public_stores').doc(orgId).get();
+        if (storeDoc.exists && storeDoc.data()?['menu_items'] is List) {
+          final cloudDishes = (storeDoc.data()!['menu_items'] as List)
+              .map((e) => Map<String, dynamic>.from(e as Map))
+              .toList();
+          if (cloudDishes.isNotEmpty) {
+            await cfg?.put('restaurant_menu_dishes', cloudDishes);
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('[migration] menu pull down note: $e');
+    }
+
     await _markStep(orgId, MigrationStep.migrate, 'DONE',
         detail: '${remote.length} cloud bills merged ($added new)');
     _emit(MigrationStep.migrate, '${remote.length} cloud bills merged, $added new on this device.',

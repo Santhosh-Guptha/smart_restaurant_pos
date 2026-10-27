@@ -290,11 +290,25 @@
 
       // Device-Level Session Locking: If diner is currently ordering on a specific table, keep session
       if (activeLockedTable && rawTable && activeLockedTable !== rawTable) {
-        const localOrders = loadLocalOrderHistory();
-        const hasUnfinishedOrders = localOrders.some(o => {
-          const st = String(o.status || '').toUpperCase();
-          return st !== 'PAID' && st !== 'SUCCESS' && st !== 'CANCELLED';
-        });
+        const lockedToken = (state.organizationId && activeLockedTable) ? `${state.organizationId}_T${activeLockedTable}` : null;
+        let hasUnfinishedOrders = false;
+        if (lockedToken) {
+          try {
+            const raw = localStorage.getItem('sb_orders_' + lockedToken);
+            const localOrders = raw ? JSON.parse(raw) : [];
+            hasUnfinishedOrders = localOrders.some(o => {
+              const st = String(o.status || '').toUpperCase();
+              return st !== 'PAID' && st !== 'SUCCESS' && st !== 'CANCELLED';
+            });
+          } catch (e) {}
+        }
+        if (!hasUnfinishedOrders) {
+          const directOrders = loadLocalOrderHistory();
+          hasUnfinishedOrders = directOrders.some(o => {
+            const st = String(o.status || '').toUpperCase();
+            return st !== 'PAID' && st !== 'SUCCESS' && st !== 'CANCELLED';
+          });
+        }
         if (hasUnfinishedOrders) {
           console.warn(`[Security] Locked to active Table ${activeLockedTable}. Cannot switch to Table ${rawTable} mid-meal.`);
           state.tableNumber = activeLockedTable;
@@ -4005,11 +4019,13 @@
       }
 
       // 1. Fast Store Profile Resolution from Firestore (100ms CDN)
+      let storeFound = false;
       if (state.organizationId) {
         try {
           const publicStoreUrl = `https://firestore.googleapis.com/v1/projects/smartdine-restaurant-pos/databases/(default)/documents/public_stores/${encodeURIComponent(state.organizationId)}`;
           const storeResp = await fetch(publicStoreUrl);
           if (storeResp.ok) {
+            storeFound = true;
             const storeDoc = await storeResp.json();
             const f = storeDoc.fields || {};
             if (f.name?.stringValue && (!state.restaurant.name || state.restaurant.name === 'Restaurant')) {
@@ -4050,6 +4066,15 @@
                 state.isKitchenClosed = true;
               }
             }
+          } else if (storeResp.status === 404 && !state.googleSheetId && !state.restaurantSlug) {
+            console.warn(`[Init] Store ${state.organizationId} not found (404).`);
+            state.error = {
+              title: 'Store Not Found',
+              message: 'Unable to find store or load menu for this QR code. Please verify the link or ask staff.'
+            };
+            state.loading = false;
+            renderError();
+            return;
           }
         } catch (e) {
           console.warn('[Init] Public store profile resolution notice:', e);
@@ -4059,6 +4084,16 @@
 
       try {
         state.menuItems = await loadMenu();
+
+        if (state.organizationId && !storeFound && (!state.menuItems || state.menuItems.length === 0)) {
+          state.error = {
+            title: 'Store Not Found',
+            message: 'Unable to find store or load menu for this QR code. Please verify the link or ask staff.'
+          };
+          state.loading = false;
+          renderError();
+          return;
+        }
 
         const cats = [...new Set(state.menuItems.map(i => i.category || 'All Items'))];
         state.categories = ['All', ...cats];
@@ -4130,6 +4165,7 @@
     // =========================================================================
     //  Global Window Bindings for HTML inline onclick
     // =========================================================================
+    window.state = state;
     window.init = init;
     window.openNameModal = openNameModal;
     window.closeNameModal = closeNameModal;

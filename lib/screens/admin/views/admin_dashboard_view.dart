@@ -4,7 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../../core/classic_theme.dart';
 import '../../../core/entitlements.dart';
 import '../../../core/package_model.dart';
-import '../../dashboard/restaurant_home_screen.dart';
+import '../dialogs/tenant_hierarchy_dialog.dart';
 import '../../restaurant/branch_management_screen.dart';
 import '../../settings/staff_management_screen.dart';
 import '../../../providers/saas_session_provider.dart';
@@ -886,7 +886,7 @@ class AdminDashboardView extends ConsumerWidget {
                 TextButton.icon(
                   onPressed: () {
                     ref.read(tenantFilterProvider.notifier).state = const TenantFilterState();
-                    onNavigateToTenants!();
+                    onNavigateToTenants();
                   },
                   icon: const Icon(Icons.arrow_forward_rounded, size: 15),
                   label: const Text('View All Stores', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
@@ -968,14 +968,13 @@ class AdminDashboardView extends ConsumerWidget {
                                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
                                   ),
-                                  icon: const Icon(Icons.rocket_launch_rounded, size: 14),
-                                  label: const Text('Launch POS', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-                                  onPressed: () async {
-                                    await ref.read(saasSessionProvider.notifier).switchOrganizationForMasterAdmin(docId);
-                                    if (context.mounted) {
-                                      Navigator.push(context, MaterialPageRoute(builder: (_) => const RestaurantHomeScreen()));
-                                    }
-                                  },
+                                  icon: const Icon(Icons.account_tree_rounded, size: 14),
+                                  label: const Text('Hierarchy & Analytics', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                                  onPressed: () => TenantHierarchyDialog.show(
+                                    context,
+                                    orgId: docId,
+                                    orgName: name,
+                                  ),
                                 ),
                                 OutlinedButton.icon(
                                   style: OutlinedButton.styleFrom(
@@ -1064,14 +1063,13 @@ class AdminDashboardView extends ConsumerWidget {
                                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                                   ),
-                                  icon: const Icon(Icons.rocket_launch_rounded, size: 15),
-                                  label: const Text('Launch POS', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                                  onPressed: () async {
-                                    await ref.read(saasSessionProvider.notifier).switchOrganizationForMasterAdmin(docId);
-                                    if (context.mounted) {
-                                      Navigator.push(context, MaterialPageRoute(builder: (_) => const RestaurantHomeScreen()));
-                                    }
-                                  },
+                                  icon: const Icon(Icons.account_tree_rounded, size: 15),
+                                  label: const Text('Hierarchy & Analytics', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                                  onPressed: () => TenantHierarchyDialog.show(
+                                    context,
+                                    orgId: docId,
+                                    orgName: name,
+                                  ),
                                 ),
                                 const SizedBox(width: 8),
                                 OutlinedButton.icon(

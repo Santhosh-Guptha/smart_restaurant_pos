@@ -16,6 +16,7 @@ import '../../services/apps_script_backend_service.dart';
 import '../../services/client_ledger_cloud_router_service.dart';
 import '../../services/database_cleanup_service.dart';
 import '../../services/smtp_email_service.dart';
+import '../../services/app_icon_service.dart';
 import '../../core/constants.dart';
 import '../../utils/ui_feedback.dart';
 import '../../core/classic_theme.dart';
@@ -38,6 +39,8 @@ import '../admin/views/admin_plans_view.dart';
 import '../admin/views/admin_migrations_view.dart';
 import '../admin/views/admin_business_analytics_view.dart';
 import '../admin/dialogs/tenant_access_dialog.dart';
+import '../admin/dialogs/tenant_hierarchy_dialog.dart';
+import '../admin/dialogs/demo_showcase_dialog.dart';
 import '../admin/widgets/tenant_package_editor.dart';
 import '../admin/widgets/tier_visuals.dart';
 import 'restaurant_home_screen.dart';
@@ -1167,7 +1170,6 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
 
   Widget _buildTopBar(BuildContext context, {required bool isMobile}) {
     final screenWidth = MediaQuery.of(context).size.width;
-    final isCompact = screenWidth < 950;
     final isVeryCompact = screenWidth < 800;
 
     final sectionTitles = [
@@ -1240,6 +1242,22 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
               ],
             ),
           ),
+          const SizedBox(width: 10),
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: ClassicTheme.primaryAccentIndigo.withValues(alpha: 0.12),
+              foregroundColor: ClassicTheme.primaryAccentIndigo,
+              elevation: 0,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+                side: BorderSide(color: ClassicTheme.primaryAccentIndigo.withValues(alpha: 0.3)),
+              ),
+            ),
+            icon: const Icon(Icons.auto_awesome_rounded, size: 16),
+            label: const Text("Showcase Demo", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+            onPressed: () => DemoShowcaseDialog.show(context),
+          ),
         ],
       ),
     );
@@ -1267,16 +1285,34 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
             ),
             child: Row(
               children: [
-                Container(
-                  padding: const EdgeInsets.all(7),
-                  decoration: BoxDecoration(
-                    color: ClassicTheme.primaryAccentIndigo.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Icon(
-                    Icons.restaurant_rounded,
-                    color: ClassicTheme.primaryAccentIndigo,
-                    size: 20,
+                Tooltip(
+                  message: "SmartBizz Platform Administration",
+                  child: Container(
+                    width: 36,
+                    height: 36,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: ClassicTheme.primaryAccentIndigo.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(9),
+                    ),
+                    clipBehavior: Clip.antiAlias,
+                    child: Image.asset(
+                      'lib/assets/logo.png',
+                      width: 24,
+                      height: 24,
+                      fit: BoxFit.contain,
+                      errorBuilder: (_, __, ___) => Image.asset(
+                        AppIconService.assetFor(AppIconService.brand),
+                        width: 36,
+                        height: 36,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => Icon(
+                          Icons.admin_panel_settings_rounded,
+                          color: ClassicTheme.primaryAccentIndigo,
+                          size: 20,
+                        ),
+                      ),
+                    ),
                   ),
                 ),
                 if (showExpanded) ...[
@@ -1518,6 +1554,15 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
                     padding: EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                     child: Divider(height: 1),
                   ),
+                _buildActionItem(
+                  context,
+                  title: "Showcase Demo Mode",
+                  icon: Icons.auto_awesome_rounded,
+                  iconColor: ClassicTheme.warningAmber,
+                  onTap: () => DemoShowcaseDialog.show(context),
+                  showExpanded: showExpanded,
+                  isMobile: isMobile,
+                ),
                 _buildActionItem(
                   context,
                   title: "Cloud Webhook",
@@ -4302,17 +4347,13 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
                                     IconButton(
-                                      icon: const Icon(Icons.play_circle_fill_rounded, color: ClassicTheme.infoBlue, size: 22),
-                                      tooltip: "Open $name's POS (support view)",
-                                      onPressed: () async {
-                                        await ref.read(saasSessionProvider.notifier).switchOrganizationForMasterAdmin(docId);
-                                        if (context.mounted) {
-                                          Navigator.push(
-                                            context,
-                                            MaterialPageRoute(builder: (_) => const RestaurantHomeScreen()),
-                                          );
-                                        }
-                                      },
+                                      icon: const Icon(Icons.account_tree_rounded, color: ClassicTheme.infoBlue, size: 21),
+                                      tooltip: "Tenant Details, Outlets & Analytics",
+                                      onPressed: () => TenantHierarchyDialog.show(
+                                        context,
+                                        orgId: docId,
+                                        orgName: name,
+                                      ),
                                     ),
                                     IconButton(
                                       icon: const Icon(Icons.card_membership_rounded, color: ClassicTheme.successEmerald, size: 20),
@@ -4531,17 +4572,13 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                                     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                                   ),
-                                  icon: const Icon(Icons.rocket_launch_rounded, size: 15),
-                                  label: const Text("Launch Store POS", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-                                  onPressed: () async {
-                                    await ref.read(saasSessionProvider.notifier).switchOrganizationForMasterAdmin(docId);
-                                    if (context.mounted) {
-                                      Navigator.push(
-                                        context,
-                                        MaterialPageRoute(builder: (_) => const RestaurantHomeScreen()),
-                                      );
-                                    }
-                                  },
+                                  icon: const Icon(Icons.account_tree_rounded, size: 15),
+                                  label: const Text("Outlets & Analytics", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                                  onPressed: () => TenantHierarchyDialog.show(
+                                    context,
+                                    orgId: docId,
+                                    orgName: name,
+                                  ),
                                 ),
                                 OutlinedButton.icon(
                                   style: OutlinedButton.styleFrom(

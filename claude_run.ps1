@@ -20,7 +20,6 @@ function Step($name) { Write-Host ''; Write-Host "===== $name =====" }
 $ok = @{}
 
 Step 'git'
-git -c core.autocrlf=true checkout fix/category-alignment 2>&1 | Out-Host
 git log --oneline -1 2>&1 | Out-Host
 
 Step 'flutter --version'
@@ -58,6 +57,11 @@ if ($NoDeploy) {
   if ($LASTEXITCODE -ne 0) { firebase login }
   firebase deploy --only hosting 2>&1 | Out-Host
   $ok.deploy = ($LASTEXITCODE -eq 0)
+}
+
+Step 'secure vault sync & drive backup'
+if (Get-Command python -ErrorAction SilentlyContinue) {
+  python tools\vault\sync_vault.py 2>&1 | Out-Host
 }
 
 Step 'SUMMARY'

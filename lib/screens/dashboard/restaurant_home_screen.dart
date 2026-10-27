@@ -1193,7 +1193,7 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
                                        FeatureGatedButton.showUpgradeNotice(
                                          context,
                                          featureLabel: cardMeta.titleFor(ent.vertical, entitlements: entitlements),
-                                         customMessage: '${cardMeta.titleFor(ent.vertical, entitlements: entitlements)} is available with ' + upLabel + '. Contact your administrator or tap below to request it.',
+                                         customMessage: '${cardMeta.titleFor(ent.vertical, entitlements: entitlements)} is available with $upLabel. Contact your administrator or tap below to request it.',
                                        );
                                        return;
                                      }

@@ -328,6 +328,15 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
     );
   }
 
+  String _getEffectiveOutletId() {
+    final saasSession = ref.read(saasSessionProvider);
+    final fid = saasSession.activeFranchiseId;
+    if (fid != null && fid.isNotEmpty) return fid;
+    final aid = saasSession.assignedOutletId;
+    if (aid != null && aid.isNotEmpty) return aid;
+    return _getEffectiveOrgId();
+  }
+
   @override
   void dispose() {
     _tabController.dispose();
@@ -768,7 +777,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
         // stored on them.
         final sendsToKitchen = _vl.isRestaurant && item['sendsToKitchen'] != false;
         final basePrice = (item['price'] as num?)?.toDouble() ?? 0.0;
-        final delta = mods.fold<double>(0.0, (sum, m) => sum + m.priceDelta);
+        final delta = mods.fold<double>(0.0, (acc, m) => acc + m.priceDelta);
 
         _cart.add(
           KotItem(
@@ -2376,9 +2385,10 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                   );
 
                   final bDate = "${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}";
+                  final effectiveOutletId = _getEffectiveOutletId();
                   final report = DayEndReport(
                     businessDate: bDate,
-                    outletId: orgId,
+                    outletId: effectiveOutletId,
                     grossPaise: grossP,
                     discountPaise: discountP,
                     taxPaise: taxP,
@@ -2404,7 +2414,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                       .closeShift(orgId);
 
                   final ok = await AppsScriptBackendService.closeDay(
-                    outletId: orgId,
+                    outletId: effectiveOutletId,
                     reportData: report.toMap(),
                     spreadsheetId: sheetId,
                   );
@@ -3277,11 +3287,12 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
 
       int queued = 0;
       int lost = 0;
+      final effectiveOutletId = _getEffectiveOutletId();
 
       bool billOk = false;
       try {
         billOk = await AppsScriptBackendService.saveBill(
-          outletId: orgId,
+          outletId: effectiveOutletId,
           billData: billPayload,
           clientRequestId: clientRequestId,
         );
@@ -3289,7 +3300,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
         debugPrint('saveBill error for $targetBillId: $e');
       }
       if (!billOk) {
-        if (await _queueCounterWrite(orgId, 'SAVE_BILL', clientRequestId, billPayload)) {
+        if (await _queueCounterWrite(effectiveOutletId, 'SAVE_BILL', clientRequestId, billPayload)) {
           queued++;
         } else {
           lost++;
@@ -3326,14 +3337,14 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
             final amt = (sp['amount'] as num?)?.toDouble() ?? 0.0;
             final mode = (sp['mode'] ?? 'CASH').toString();
             if (amt > 0) {
-              final r = await _sendOrQueuePayment(orgId, payment(mode, (amt * 100).round()));
+              final r = await _sendOrQueuePayment(effectiveOutletId, payment(mode, (amt * 100).round()));
               if (r == _CloudOutcome.queued) queued++;
               if (r == _CloudOutcome.lost) lost++;
             }
           }
         } else {
           final r = await _sendOrQueuePayment(
-            orgId,
+            effectiveOutletId,
             payment(paymentMode, orderTotals.grandTotalPaise),
           );
           if (r == _CloudOutcome.queued) queued++;
@@ -3365,14 +3376,14 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
   // ── Cloud write safety net (X-18, counter path) ───────────────────────────
 
   Future<bool> _queueCounterWrite(
-    String orgId,
+    String outletId,
     String action,
     String clientRequestId,
     Map<String, dynamic> payload,
   ) async {
     try {
       await Outbox.enqueue(
-        outletId: orgId,
+        outletId: outletId,
         action: action,
         clientRequestId: clientRequestId,
         payload: payload,
@@ -3387,12 +3398,12 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
   /// A payment the guest has already made is the one write that must never be
   /// dropped: lose the ledger row and the day-close total is short by exactly
   /// what is in the drawer.
-  Future<_CloudOutcome> _sendOrQueuePayment(String orgId, Map<String, dynamic> paymentData) async {
+  Future<_CloudOutcome> _sendOrQueuePayment(String outletId, Map<String, dynamic> paymentData) async {
     final reqId = paymentData['paymentId']?.toString() ?? const Uuid().v4();
     bool ok = false;
     try {
       ok = await AppsScriptBackendService.recordPayment(
-        outletId: orgId,
+        outletId: outletId,
         paymentData: paymentData,
         clientRequestId: reqId,
       );
@@ -3400,7 +3411,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
       debugPrint('recordPayment error: $e');
     }
     if (ok) return _CloudOutcome.sent;
-    return (await _queueCounterWrite(orgId, 'RECORD_PAYMENT', reqId, paymentData))
+    return (await _queueCounterWrite(outletId, 'RECORD_PAYMENT', reqId, paymentData))
         ? _CloudOutcome.queued
         : _CloudOutcome.lost;
   }
@@ -3886,11 +3897,12 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
           );
 
         final grandTotal = billGrandTotalP / 100.0;
+        final effectiveOutletId = _getEffectiveOutletId();
 
         // Record in Payments ledger
         try {
           await AppsScriptBackendService.recordPayment(
-            outletId: orgId,
+            outletId: effectiveOutletId,
             spreadsheetId: sheetId ?? '',
             paymentData: {
               'paymentId': 'PAY-${const Uuid().v4()}',
@@ -3959,7 +3971,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
           updatedOrderData['client_request_id'] = settleRequestId;
 
           await AppsScriptBackendService.saveBill(
-            outletId: orgId,
+            outletId: effectiveOutletId,
             spreadsheetId: sheetId ?? '',
             clientRequestId: settleRequestId,
             billData: updatedOrderData,
@@ -4766,7 +4778,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
       );
 
       await AppsScriptBackendService.voidOrder(
-        outletId: orgId,
+        outletId: _getEffectiveOutletId(),
         orderId: orderId,
         reason: reason,
         authorizedBy: authorizer,

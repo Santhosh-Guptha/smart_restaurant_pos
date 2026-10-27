@@ -105,6 +105,13 @@ service cloud.firestore {
       allow read, write: if true;
     }
 
+    match /password_resets/{tokenId} {
+      allow read, write: if true;
+      match /{allChildren=**} {
+        allow read, write: if true;
+      }
+    }
+
     match /registration_requests/{requestId} {
       allow read, write: if true;
     }

@@ -3,8 +3,16 @@
  * SMARTBIZZ POS CLOUD BACKEND (Google Apps Script)
  * Automatically creates & manages Google Spreadsheets in your Google Drive.
  * 100% Zero-Server & Zero-Firebase Architecture.
+ * Release: v2.4.1 [prod-2026-10-26] (Timestamp: 2026-10-26T15:32:34.199Z)
  * =========================================================================
  */
+
+// ── VERSION & RELEASE TRACKING (Automated by deploy_code_gs) ───────────────
+const CODE_GS_VERSION = "2.4.1";
+const CODE_GS_RELEASE_TAG = "prod-2026-10-26";
+const CODE_GS_BUILD_TIMESTAMP = "2026-10-26T15:32:34.199Z";
+// ─────────────────────────────────────────────────────────────────────────────
+
 
 const SECRET_TOKEN = "SMART_POS_SECURE_TOKEN_2026";
 
@@ -286,6 +294,10 @@ function doPost(e) {
       case "WHATSAPP_NOTIFICATION":
         return handleSendWhatsAppNotification(json);
 
+      case "BACKUP_VAULT":
+      case "UPLOAD_VAULT":
+        return handleBackupVault(json);
+
       default:
         return responseJson({ success: false, error: "Unknown action: " + action });
     }
@@ -293,6 +305,39 @@ function doPost(e) {
     return responseJson({ success: false, error: err.toString() });
   }
 }
+
+/**
+ * Handles backup and synchronization of the confidential release vault
+ * directly into the owner's Google Drive folder 'SmartBizz_Production_Vault'.
+ */
+function handleBackupVault(data) {
+  try {
+    var fileName = data.filename || ("SmartBizz_Vault_Backup_" + Utilities.formatDate(new Date(), "GMT", "yyyyMMdd_HHmmss") + ".zip");
+    var contentBase64 = data.content_base64 || data.contentBase64;
+    if (!contentBase64) {
+      return responseJson({ success: false, error: "Missing content_base64 payload." });
+    }
+    var bytes = Utilities.base64Decode(contentBase64);
+    var blob = Utilities.newBlob(bytes, "application/zip", fileName);
+    
+    var folderName = "SmartBizz_Production_Vault";
+    var folders = DriveApp.getFoldersByName(folderName);
+    var folder = folders.hasNext() ? folders.next() : DriveApp.createFolder(folderName);
+    
+    var file = folder.createFile(blob);
+    return responseJson({
+      success: true,
+      message: "Vault uploaded to Google Drive successfully.",
+      fileId: file.getId(),
+      fileName: file.getName(),
+      folderId: folder.getId(),
+      url: file.getUrl()
+    });
+  } catch (e) {
+    return responseJson({ success: false, error: "Drive upload failed: " + e.toString() });
+  }
+}
+
 
 function getInventorySheet(ss) {
   return ss.getSheetByName("Products & Stock") ||
@@ -2220,6 +2265,8 @@ function doGet(e) {
   return responseJson({
     status: "ONLINE",
     message: "SmartBizz Google Apps Script Webhook is active and running.",
+    version: typeof CODE_GS_VERSION !== 'undefined' ? CODE_GS_VERSION : "2.4.1",
+    releaseTag: typeof CODE_GS_RELEASE_TAG !== 'undefined' ? CODE_GS_RELEASE_TAG : "prod-2026-10-26",
     timestamp: new Date().toISOString()
   });
 }
@@ -3952,7 +3999,10 @@ var FEATURE_CATALOG_ = [
   { key: "inventoryEnabled",      label: "Stock & recipes",                tier: "na", need: "cloud", deps: ["menuManagement"], v: R_ONLY_ },
   { key: "barcodeBilling",        label: "Barcode billing",                tier: "oa", need: "none", deps: [], v: SHOPS_ONLY_ },
   { key: "customerKhata",         label: "Customer khata",                 tier: "oa", need: "none", deps: [], v: SHOPS_ONLY_ },
-  { key: "stockManagement",       label: "Stock management",               tier: "oa", need: "none", deps: [], v: SHOPS_ONLY_ }
+  { key: "stockManagement",       label: "Stock management",               tier: "oa", need: "none", deps: [], v: SHOPS_ONLY_ },
+  { key: "splitBilling",          label: "Split billing & multi-tender",   tier: "oa", need: "none", deps: ["billing"], v: R_ONLY_ },
+  { key: "customerDisplay",       label: "Customer display",               tier: "oa", need: "none", deps: [], v: R_ONLY_ },
+  { key: "localLanServer",        label: "Local LAN server",               tier: "oa", need: "none", deps: [], v: R_ONLY_ }
 ];
 
 /** FeatureCatalog.comingSoon: never switched on, never offered. */

@@ -35,6 +35,10 @@ import '../../core/entitlements.dart';
 import '../../core/feature_route_guard.dart';
 import '../../core/cloud_gate.dart';
 import '../../providers/entitlements_provider.dart';
+import 'widgets/visual_floor_canvas.dart';
+import '../../services/customer_display_service.dart';
+import '../../services/restaurant_split_bill_service.dart';
+import '../../services/recipe_inventory_service.dart';
 
 class TableManagementScreen extends ConsumerStatefulWidget {
   final int initialTabIndex;
@@ -51,6 +55,8 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen>
 
   List<RestaurantTable> _tables = [];
   List<KotOrder> _kotOrders = [];
+  bool _isVisualFloorView = false;
+  bool _isDesignerMode = false;
 
   String _generateSessionId(String orgId, String tableNumber) {
     final now = DateTime.now();
@@ -69,6 +75,25 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen>
       sessionOrgId: saasSession.currentOrganization?.id,
       hiveBox: Hive.isBoxOpen('configBox') ? Hive.box('configBox') : null,
     );
+  }
+
+  String _effectiveOutletId(String orgId) {
+    final activeOutletId = ref.read(saasSessionProvider).activeFranchiseId;
+    return (activeOutletId != null && activeOutletId.isNotEmpty) ? activeOutletId : orgId;
+  }
+
+  String _tableKey(String orgId) {
+    final activeOutletId = ref.read(saasSessionProvider).activeFranchiseId;
+    return (activeOutletId != null && activeOutletId.isNotEmpty)
+        ? 'restaurant_tables_${orgId}_$activeOutletId'
+        : 'restaurant_tables_$orgId';
+  }
+
+  String _kotKey(String orgId) {
+    final activeOutletId = ref.read(saasSessionProvider).activeFranchiseId;
+    return (activeOutletId != null && activeOutletId.isNotEmpty)
+        ? 'kot_orders_${orgId}_$activeOutletId'
+        : 'kot_orders_$orgId';
   }
 
   @override
@@ -1368,6 +1393,17 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen>
         elevation: 0,
         actions: [
           IconButton(
+            tooltip: _isVisualFloorView ? 'Switch to Table Cards' : 'Switch to 2D Visual Floor Plan',
+            icon: Icon(_isVisualFloorView ? Icons.grid_view_rounded : Icons.map_rounded, color: Colors.white, size: 22),
+            onPressed: () => setState(() => _isVisualFloorView = !_isVisualFloorView),
+          ),
+          if (_isVisualFloorView)
+            IconButton(
+              tooltip: _isDesignerMode ? 'Lock Table Positions' : 'Designer Mode (Drag & Arrange)',
+              icon: Icon(_isDesignerMode ? Icons.check_circle_outline : Icons.edit_location_alt_outlined, color: _isDesignerMode ? Colors.amberAccent : Colors.white, size: 22),
+              onPressed: () => setState(() => _isDesignerMode = !_isDesignerMode),
+            ),
+          IconButton(
             tooltip: 'Dish Availability (86 Dish)',
             icon: const Icon(Icons.restaurant_menu_rounded, color: Colors.white, size: 22),
             onPressed: () => _showDishAvailabilityDialog(context),
@@ -1446,7 +1482,9 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen>
             child: RefreshIndicator(
               onRefresh: _handleRefresh,
               color: ClassicTheme.primaryAccent,
-              child: _buildFloorLayoutTab(orgId, shopName, shopPhone, shopAddress),
+              child: _isVisualFloorView
+                  ? _buildVisualFloorView(orgId, shopName, shopPhone, shopAddress)
+                  : _buildFloorLayoutTab(orgId, shopName, shopPhone, shopAddress),
             ),
           ),
         ],
@@ -1458,6 +1496,58 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen>
         label: const Text('New Table', style: TextStyle(fontWeight: FontWeight.bold)),
         onPressed: () => _showAddTableDialog(orgId, shopName),
       ),
+    );
+  }
+
+  Widget _buildVisualFloorView(String orgId, String shopName, String shopPhone, String shopAddress) {
+    if (_tables.isEmpty) {
+      return _buildFloorLayoutTab(orgId, shopName, shopPhone, shopAddress);
+    }
+    final filteredTables = _selectedSection == 'ALL'
+        ? _tables
+        : _tables.where((t) => t.section == _selectedSection).toList();
+
+    return Column(
+      children: [
+        if (_isDesignerMode)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            color: ClassicTheme.infoBlue.withValues(alpha: 0.15),
+            child: Row(
+              children: [
+                const Icon(Icons.touch_app_rounded, color: ClassicTheme.infoBlue, size: 18),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Text(
+                    'Designer Mode Active: Drag tables on the floor plan to reposition. Layout saves automatically.',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: ClassicTheme.infoBlue),
+                  ),
+                ),
+                TextButton(
+                  onPressed: () => setState(() => _isDesignerMode = false),
+                  child: const Text('Done', style: TextStyle(fontWeight: FontWeight.bold)),
+                ),
+              ],
+            ),
+          ),
+        Expanded(
+          child: VisualFloorCanvas(
+            tables: filteredTables,
+            isEditMode: _isDesignerMode,
+            onTableTap: (table) => _showTableActionsModal(table, shopName, shopPhone, shopAddress, orgId),
+            onTableMoved: (table, newX, newY) async {
+              final idx = _tables.indexWhere((t) => t.id == table.id);
+              if (idx != -1) {
+                setState(() {
+                  _tables[idx] = _tables[idx].copyWith(posX: newX, posY: newY);
+                });
+                await _saveTablesToHive(orgId);
+              }
+            },
+          ),
+        ),
+      ],
     );
   }
 
@@ -3164,6 +3254,25 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen>
           final note = cleanTableNum.isNotEmpty ? 'Table $cleanTableNum Bill' : '$tName Bill';
           final upiUri = 'upi://pay?pa=$upiId&pn=${Uri.encodeComponent(shopName)}&am=${totalPayable.toStringAsFixed(2)}&cu=INR&tn=${Uri.encodeComponent(note)}';
 
+          // Broadcast live checkout cart to Customer-Facing Display (CFD) if enabled
+          if (ref.read(entitlementsProvider).isEnabled(FeatureKeys.customerDisplay)) {
+            CustomerDisplayService.instance.showCheckout(
+              restaurantName: shopName,
+              tableName: tName,
+              items: allItems.map((i) => CustomerDisplayLineItem(
+                name: i.name,
+                qty: i.qty.toDouble(),
+                unitPrice: i.price,
+                lineTotal: i.price * i.qty,
+              )).toList(),
+              subtotal: dishesSubtotal,
+              tax: gstAmount,
+              serviceCharge: scAmount,
+              totalAmount: totalPayable,
+              upiPayload: upiUri,
+            );
+          }
+
           return SafeArea(
             child: Padding(
               padding: EdgeInsets.only(
@@ -3467,156 +3576,440 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen>
                         ),
                         onPressed: () async {
                           Navigator.pop(ctx);
-                          HapticFeedback.heavyImpact();
-
-                          final activeStaff = ref.read(restaurantAuthProvider).activeStaff?.name ?? 'Restaurant Cashier';
-                          final orgId = _getEffectiveOrgId();
-                          final sheetId = _getGoogleSheetId(orgId);
-                          final primaryOrder = activeOrders.isNotEmpty ? activeOrders.first : order;
-                          final primaryOrderId = primaryOrder?.id ?? 'ORD-${DateTime.now().millisecondsSinceEpoch}';
-                          final roundIds = activeOrders.map((o) => o.id).toSet().toList();
-
-                          // 1. Vacate table in Hive
-                          if (resolvedTable != null || cleanTableNum.isNotEmpty) {
-                            final box = Hive.isBoxOpen('configBox') ? Hive.box('configBox') : null;
-                            if (box != null) {
-                              final rawTables = box.get('restaurant_tables_$orgId') as List? ?? [];
-                              final updatedTables = rawTables.map((t) {
-                                if (t is Map) {
-                                  final numStr = (t['tableNumber'] ?? '').toString().replaceAll(RegExp(r'[^0-9]'), '');
-                                  final nameStr = (t['name'] ?? '').toString().toLowerCase();
-                                  final matchesNum = cleanTableNum.isNotEmpty && numStr == cleanTableNum;
-                                  final matchesName = nameStr == tName.toLowerCase();
-                                  if (matchesNum || matchesName || (resolvedTable != null && t['id'] == resolvedTable.id)) {
-                                    final m = Map<String, dynamic>.from(t);
-                                    m['status'] = 'VACANT';
-                                    m['activeOrderCount'] = 0;
-                                    m['currentBillAmount'] = 0.0;
-                                    m['currentCustomerName'] = null;
-                                    m['activeSessionId'] = null;
-                                    return m;
-                                  }
-                                }
-                                return t;
-                              }).toList();
-                              await box.put('restaurant_tables_$orgId', updatedTables);
-                            }
-                          }
-
-                          // 2. Mark all orders as PAID in Hive
-                          final box = Hive.isBoxOpen('configBox') ? Hive.box('configBox') : null;
-                          if (box != null) {
-                            final rawOrders = box.get('kot_orders_$orgId') as List? ?? [];
-                            final updatedOrders = rawOrders.map((ro) {
-                              if (ro is Map) {
-                                final rId = (ro['id'] ?? ro['bill_id'] ?? '').toString();
-                                final rTable = (ro['tableName'] ?? ro['tableNumber'] ?? '').toString().replaceAll(RegExp(r'[^0-9]'), '');
-                                final matches = roundIds.contains(rId) || (cleanTableNum.isNotEmpty && rTable == cleanTableNum);
-                                if (matches) {
-                                  final m = Map<String, dynamic>.from(ro);
-                                  m['status'] = 'PAID';
-                                  m['paymentStatus'] = 'PAID';
-                                  m['isPaid'] = true;
-                                  m['paymentMode'] = selectedPaymentMode;
-                                  m['settledBy'] = activeStaff;
-                                  m['cashierName'] = activeStaff;
-                                  return m;
-                                }
-                              }
-                              return ro;
-                            }).toList();
-                            await box.put('kot_orders_$orgId', updatedOrders);
-                          }
-
-                          // 3. Record Payment Webhook
-                          try {
-                            await AppsScriptBackendService.recordPayment(
-                              outletId: orgId,
-                              spreadsheetId: sheetId.isNotEmpty && !sheetId.startsWith('sheet_ORG') ? sheetId : '',
-                              paymentData: {
-                                'paymentId': 'PAY-${const Uuid().v4()}',
-                                'orderId': primaryOrderId,
-                                'invoiceNo': primaryOrderId,
-                                'mode': selectedPaymentMode.toUpperCase(),
-                                'amountP': (totalPayable * 100).round(),
-                                'byStaffId': activeStaff,
-                                'staffId': activeStaff,
-                                'collectedBy': activeStaff,
-                                'cashierName': activeStaff,
-                                'waiterName': waiterName,
-                                'at': DateTime.now().toIso8601String(),
-                              },
-                            );
-                          } catch (e) {
-                            debugPrint('AppsScript recordPayment error: $e');
-                          }
-
-                          // 4. Save ONE single consolidated bill Webhook
-                          try {
-                            final billPayload = {
-                              'id': primaryOrderId,
-                              'bill_id': primaryOrderId,
-                              'tableName': tName,
-                              'table_name': tName,
-                              'tableNumber': cleanTableNum,
-                              'status': 'PAID',
-                              'paymentStatus': 'PAID',
-                              'paymentMode': selectedPaymentMode,
-                              'isPaid': true,
-                              'totalAmount': totalPayable,
-                              'total': totalPayable,
-                              'subtotal': dishesSubtotal,
-                              'service_charge': scAmount,
-                              'gst': gstAmount,
-                              'tip': selectedTip,
-                              'settledBy': activeStaff,
-                              'cashierName': activeStaff,
-                              'waiterName': waiterName,
-                              'customerName': custName.isNotEmpty ? custName : tName,
-                              'customerPhone': custPhone,
-                              'sessionRoundsCount': activeOrders.length,
-                              'roundIds': roundIds,
-                              'items': allItems.map((it) => {
-                                'id': it.productId,
-                                'productId': it.productId,
-                                'name': it.name,
-                                'price': it.price,
-                                'qty': it.qty,
-                                'subtotal': it.price * it.qty,
-                                'isTaxExempt': it.isTaxExempt,
-                              }).toList(),
-                            };
-                            await AppsScriptBackendService.saveBill(
-                              outletId: orgId,
-                              spreadsheetId: sheetId.isNotEmpty && !sheetId.startsWith('sheet_ORG') ? sheetId : '',
-                              billData: billPayload,
-                            );
-                          } catch (e) {
-                            debugPrint('AppsScript saveBill error: $e');
-                          }
-
-                          // 5. Update local state
-                          setState(() {
-                            _kotOrders.removeWhere((o) => roundIds.contains(o.id) || (cleanTableNum.isNotEmpty && o.tableName.replaceAll(RegExp(r'[^0-9]'), '') == cleanTableNum));
-                            _updateTableStateFromOrders();
-                          });
-
-                          if (mounted && context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text('✅ ₹${totalPayable.toStringAsFixed(2)} collected via $selectedPaymentMode. $tName is now Vacant!'),
-                                backgroundColor: ClassicTheme.successEmerald,
-                                duration: const Duration(seconds: 3),
-                              ),
-                            );
-                          }
+                          await _finalizeSettlement(
+                            totalAmount: totalPayable,
+                            dishesSubtotal: dishesSubtotal,
+                            scAmount: scAmount,
+                            gstAmount: gstAmount,
+                            selectedTip: selectedTip,
+                            selectedPaymentMode: selectedPaymentMode,
+                            tName: tName,
+                            cleanTableNum: cleanTableNum,
+                            custName: custName,
+                            custPhone: custPhone,
+                            waiterName: waiterName,
+                            resolvedTable: resolvedTable,
+                            activeOrders: activeOrders,
+                            allItems: allItems,
+                            primaryOrderFallback: order,
+                          );
                         },
                       ),
                     ),
+                    if (ref.watch(entitlementsProvider).isEnabled(FeatureKeys.splitBilling)) ...[
+                      const SizedBox(height: 10),
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: ClassicTheme.secondaryAccent,
+                            side: BorderSide(color: ClassicTheme.secondaryAccent.withValues(alpha: 0.6)),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
+                          icon: const Icon(Icons.call_split_rounded, size: 18),
+                          label: const Text(
+                            'Split Bill (Multi-Tender / Equal Shares)',
+                            style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                          ),
+                          onPressed: () {
+                            Navigator.pop(ctx);
+                            _showSplitBillDialog(
+                              totalAmount: totalPayable,
+                              dishesSubtotal: dishesSubtotal,
+                              scAmount: scAmount,
+                              gstAmount: gstAmount,
+                              selectedTip: selectedTip,
+                              tableName: tName,
+                              cleanTableNum: cleanTableNum,
+                              custName: custName,
+                              custPhone: custPhone,
+                              waiterName: waiterName,
+                              resolvedTable: resolvedTable,
+                              activeOrders: activeOrders,
+                              allItems: allItems,
+                              primaryOrderFallback: order,
+                            );
+                          },
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
             ),
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> _finalizeSettlement({
+    required double totalAmount,
+    required double dishesSubtotal,
+    required double scAmount,
+    required double gstAmount,
+    required double selectedTip,
+    required String selectedPaymentMode,
+    required String tName,
+    required String cleanTableNum,
+    required String custName,
+    required String custPhone,
+    required String waiterName,
+    required RestaurantTable? resolvedTable,
+    required List<KotOrder> activeOrders,
+    required List<KotItem> allItems,
+    KotOrder? primaryOrderFallback,
+    List<PaymentTender>? tenders,
+  }) async {
+    HapticFeedback.heavyImpact();
+
+    final activeStaff = ref.read(restaurantAuthProvider).activeStaff?.name ?? 'Restaurant Cashier';
+    final orgId = _getEffectiveOrgId();
+    final sheetId = _getGoogleSheetId(orgId);
+    final primaryOrder = activeOrders.isNotEmpty ? activeOrders.first : primaryOrderFallback;
+    final primaryOrderId = primaryOrder?.id ?? 'ORD-${DateTime.now().millisecondsSinceEpoch}';
+    final roundIds = activeOrders.map((o) => o.id).toSet().toList();
+
+    // 1. Vacate table in Hive
+    if (resolvedTable != null || cleanTableNum.isNotEmpty) {
+      final box = Hive.isBoxOpen('configBox') ? Hive.box('configBox') : null;
+      if (box != null) {
+        final tKey = _tableKey(orgId);
+        final rawTables = box.get(tKey) as List? ?? [];
+        final updatedTables = rawTables.map((t) {
+          if (t is Map) {
+            final numStr = (t['tableNumber'] ?? '').toString().replaceAll(RegExp(r'[^0-9]'), '');
+            final nameStr = (t['name'] ?? '').toString().toLowerCase();
+            final matchesNum = cleanTableNum.isNotEmpty && numStr == cleanTableNum;
+            final matchesName = nameStr == tName.toLowerCase();
+            if (matchesNum || matchesName || (resolvedTable != null && t['id'] == resolvedTable.id)) {
+              final m = Map<String, dynamic>.from(t);
+              m['status'] = 'VACANT';
+              m['activeOrderCount'] = 0;
+              m['currentBillAmount'] = 0.0;
+              m['currentCustomerName'] = null;
+              m['activeSessionId'] = null;
+              return m;
+            }
+          }
+          return t;
+        }).toList();
+        await box.put(tKey, updatedTables);
+      }
+    }
+
+    // 2. Mark all orders as PAID in Hive
+    final box = Hive.isBoxOpen('configBox') ? Hive.box('configBox') : null;
+    if (box != null) {
+      final kKey = _kotKey(orgId);
+      final rawOrders = box.get(kKey) as List? ?? [];
+      final updatedOrders = rawOrders.map((ro) {
+        if (ro is Map) {
+          final rId = (ro['id'] ?? ro['bill_id'] ?? '').toString();
+          final rTable = (ro['tableName'] ?? ro['tableNumber'] ?? '').toString().replaceAll(RegExp(r'[^0-9]'), '');
+          final matches = roundIds.contains(rId) || (cleanTableNum.isNotEmpty && rTable == cleanTableNum);
+          if (matches) {
+            final m = Map<String, dynamic>.from(ro);
+            m['status'] = 'PAID';
+            m['paymentStatus'] = 'PAID';
+            m['isPaid'] = true;
+            m['paymentMode'] = selectedPaymentMode;
+            m['settledBy'] = activeStaff;
+            m['cashierName'] = activeStaff;
+            return m;
+          }
+        }
+        return ro;
+      }).toList();
+      await box.put(kKey, updatedOrders);
+    }
+
+    // 3. Customer-Facing Display: broadcast Payment Complete if enabled
+    if (ref.read(entitlementsProvider).isEnabled(FeatureKeys.customerDisplay)) {
+      final saasSession = ref.read(saasSessionProvider);
+      final currentShopName = saasSession.currentOrganization?.name ?? 'SmartBizz Restaurant';
+      CustomerDisplayService.instance.markPaymentComplete(
+        restaurantName: currentShopName,
+        totalAmount: totalAmount,
+      );
+    }
+
+    // 4. Raw Food Depletion: Deduct inventory stock based on Recipe BOM
+    try {
+      await RecipeInventoryService.instance.deductIngredientsForItems(allItems);
+    } catch (e) {
+      debugPrint('Recipe BOM auto-depletion notice: $e');
+    }
+
+    // 5. Record Payment Webhook
+    try {
+      await AppsScriptBackendService.recordPayment(
+        outletId: _effectiveOutletId(orgId),
+        spreadsheetId: sheetId.isNotEmpty && !sheetId.startsWith('sheet_ORG') ? sheetId : '',
+        paymentData: {
+          'paymentId': 'PAY-${const Uuid().v4()}',
+          'orderId': primaryOrderId,
+          'invoiceNo': primaryOrderId,
+          'mode': selectedPaymentMode.toUpperCase(),
+          'amountP': (totalAmount * 100).round(),
+          'byStaffId': activeStaff,
+          'staffId': activeStaff,
+          'collectedBy': activeStaff,
+          'cashierName': activeStaff,
+          'waiterName': waiterName,
+          'at': DateTime.now().toIso8601String(),
+        },
+      );
+    } catch (e) {
+      debugPrint('AppsScript recordPayment error: $e');
+    }
+
+    // 6. Save ONE single consolidated bill Webhook
+    try {
+      final billPayload = {
+        'id': primaryOrderId,
+        'bill_id': primaryOrderId,
+        'tableName': tName,
+        'table_name': tName,
+        'tableNumber': cleanTableNum,
+        'status': 'PAID',
+        'paymentStatus': 'PAID',
+        'paymentMode': selectedPaymentMode,
+        'isPaid': true,
+        'totalAmount': totalAmount,
+        'total': totalAmount,
+        'subtotal': dishesSubtotal,
+        'service_charge': scAmount,
+        'gst': gstAmount,
+        'tip': selectedTip,
+        'settledBy': activeStaff,
+        'cashierName': activeStaff,
+        'waiterName': waiterName,
+        'customerName': custName.isNotEmpty ? custName : tName,
+        'customerPhone': custPhone,
+        'sessionRoundsCount': activeOrders.length,
+        'roundIds': roundIds,
+        'items': allItems.map((it) => {
+          'id': it.productId,
+          'productId': it.productId,
+          'name': it.name,
+          'price': it.price,
+          'qty': it.qty,
+          'subtotal': it.price * it.qty,
+          'isTaxExempt': it.isTaxExempt,
+        }).toList(),
+      };
+      await AppsScriptBackendService.saveBill(
+        outletId: orgId,
+        spreadsheetId: sheetId.isNotEmpty && !sheetId.startsWith('sheet_ORG') ? sheetId : '',
+        billData: billPayload,
+      );
+    } catch (e) {
+      debugPrint('AppsScript saveBill error: $e');
+    }
+
+    // 7. Update local state
+    setState(() {
+      _kotOrders.removeWhere((o) => roundIds.contains(o.id) || (cleanTableNum.isNotEmpty && o.tableName.replaceAll(RegExp(r'[^0-9]'), '') == cleanTableNum));
+      _updateTableStateFromOrders();
+    });
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('✅ ₹${totalAmount.toStringAsFixed(2)} collected via $selectedPaymentMode. $tName is now Vacant!'),
+          backgroundColor: ClassicTheme.successEmerald,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    }
+  }
+
+  void _showSplitBillDialog({
+    required double totalAmount,
+    required double dishesSubtotal,
+    required double scAmount,
+    required double gstAmount,
+    required double selectedTip,
+    required String tableName,
+    required String cleanTableNum,
+    required String custName,
+    required String custPhone,
+    required String waiterName,
+    required RestaurantTable? resolvedTable,
+    required List<KotOrder> activeOrders,
+    required List<KotItem> allItems,
+    KotOrder? primaryOrderFallback,
+  }) {
+    int splitCount = 2;
+    var shares = RestaurantSplitBillService.calculateEqualSplit(totalAmount: totalAmount, parts: splitCount);
+    final tenders = <PaymentTender>[];
+
+    showDialog(
+      context: context,
+      builder: (dlgCtx) => StatefulBuilder(
+        builder: (context, setDlgState) {
+          final totalTendered = tenders.fold<double>(0.0, (s, t) => s + t.amount);
+          final remaining = (totalAmount - totalTendered).clamp(0.0, totalAmount);
+
+          return AlertDialog(
+            backgroundColor: context.surfaceColor,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+            title: Row(
+              children: [
+                Icon(Icons.call_split_rounded, color: ClassicTheme.secondaryAccent),
+                const SizedBox(width: 8),
+                Text('Split Bill — $tableName', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: context.textPrimary)),
+              ],
+            ),
+            content: SizedBox(
+              width: ClassicTheme.dialogWidth(context, 420),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: ClassicTheme.primaryAccent.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text('Total Bill to Split:', style: TextStyle(fontWeight: FontWeight.w600)),
+                          Text('₹${totalAmount.toStringAsFixed(2)}', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16, color: ClassicTheme.primaryAccent)),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    Row(
+                      children: [
+                        const Text('Split into:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                        const Spacer(),
+                        IconButton(
+                          icon: const Icon(Icons.remove_circle_outline),
+                          onPressed: splitCount > 2 ? () {
+                            setDlgState(() {
+                              splitCount--;
+                              shares = RestaurantSplitBillService.calculateEqualSplit(totalAmount: totalAmount, parts: splitCount);
+                            });
+                          } : null,
+                        ),
+                        Text('$splitCount Guests', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                        IconButton(
+                          icon: const Icon(Icons.add_circle_outline),
+                          onPressed: splitCount < 10 ? () {
+                            setDlgState(() {
+                              splitCount++;
+                              shares = RestaurantSplitBillService.calculateEqualSplit(totalAmount: totalAmount, parts: splitCount);
+                            });
+                          } : null,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    const Text('Calculated Shares (Penny-Balanced):', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                    const SizedBox(height: 6),
+                    ...shares.map((sh) => Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 3),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text('• ${sh.label}', style: const TextStyle(fontSize: 13)),
+                          Text('₹${sh.targetAmount.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                        ],
+                      ),
+                    )),
+                    const Divider(height: 24),
+                    Text('Record Tender Payment (Remaining: ₹${remaining.toStringAsFixed(2)}):', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                    const SizedBox(height: 8),
+                    if (tenders.isNotEmpty) ...[
+                      ...tenders.map((t) => ListTile(
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                        leading: const Icon(Icons.check_circle, color: ClassicTheme.successEmerald, size: 18),
+                        title: Text('${t.method}: ₹${t.amount.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                        subtitle: Text(t.reference ?? 'Guest', style: const TextStyle(fontSize: 11)),
+                      )),
+                      const SizedBox(height: 8),
+                    ],
+                    if (remaining > 0.01)
+                      Wrap(
+                        spacing: 8,
+                        children: [
+                          ActionChip(
+                            avatar: const Icon(Icons.qr_code, size: 16),
+                            label: Text('UPI ₹${(shares.isNotEmpty ? shares[tenders.length % shares.length].targetAmount : remaining).clamp(0.0, remaining).toStringAsFixed(2)}'),
+                            onPressed: () {
+                              setDlgState(() {
+                                final amt = (shares.isNotEmpty ? shares[tenders.length % shares.length].targetAmount : remaining).clamp(0.0, remaining);
+                                tenders.add(PaymentTender(id: const Uuid().v4(), method: 'UPI', amount: amt, reference: 'Guest ${tenders.length + 1}'));
+                              });
+                            },
+                          ),
+                          ActionChip(
+                            avatar: const Icon(Icons.money, size: 16),
+                            label: const Text('Cash Share'),
+                            onPressed: () {
+                              setDlgState(() {
+                                final amt = (shares.isNotEmpty ? shares[tenders.length % shares.length].targetAmount : remaining).clamp(0.0, remaining);
+                                tenders.add(PaymentTender(id: const Uuid().v4(), method: 'CASH', amount: amt, reference: 'Guest ${tenders.length + 1}'));
+                              });
+                            },
+                          ),
+                          ActionChip(
+                            avatar: const Icon(Icons.credit_card, size: 16),
+                            label: const Text('Card Share'),
+                            onPressed: () {
+                              setDlgState(() {
+                                final amt = (shares.isNotEmpty ? shares[tenders.length % shares.length].targetAmount : remaining).clamp(0.0, remaining);
+                                tenders.add(PaymentTender(id: const Uuid().v4(), method: 'CARD', amount: amt, reference: 'Guest ${tenders.length + 1}'));
+                              });
+                            },
+                          ),
+                        ],
+                      ),
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dlgCtx),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: ClassicTheme.successEmerald,
+                  foregroundColor: Colors.white,
+                ),
+                onPressed: remaining <= 0.05 ? () async {
+                  Navigator.pop(dlgCtx);
+                  await _finalizeSettlement(
+                    totalAmount: totalAmount,
+                    dishesSubtotal: dishesSubtotal,
+                    scAmount: scAmount,
+                    gstAmount: gstAmount,
+                    selectedTip: selectedTip,
+                    selectedPaymentMode: 'SPLIT (${tenders.map((t) => "${t.method}:₹${t.amount.toStringAsFixed(0)}").join(", ")})',
+                    tName: tableName,
+                    cleanTableNum: cleanTableNum,
+                    custName: custName,
+                    custPhone: custPhone,
+                    waiterName: waiterName,
+                    resolvedTable: resolvedTable,
+                    activeOrders: activeOrders,
+                    allItems: allItems,
+                    primaryOrderFallback: primaryOrderFallback,
+                    tenders: tenders,
+                  );
+                } : null,
+                child: Text(remaining <= 0.05 ? 'Complete Split Settlement' : 'Remaining ₹${remaining.toStringAsFixed(2)}'),
+              ),
+            ],
           );
         },
       ),

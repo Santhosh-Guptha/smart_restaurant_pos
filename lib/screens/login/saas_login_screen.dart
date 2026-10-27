@@ -8,6 +8,10 @@ import '../../providers/auth_provider.dart';
 import '../../utils/ui_feedback.dart';
 import '../../providers/theme_provider.dart';
 import 'client_signup_screen.dart';
+import 'forgot_password_dialog.dart';
+import 'password_reset_screen.dart';
+import 'local_offline_store_dialog.dart';
+import 'package:flutter/foundation.dart';
 
 class SaaSLoginScreen extends ConsumerStatefulWidget {
   const SaaSLoginScreen({super.key});
@@ -58,6 +62,22 @@ class _SaaSLoginScreenState extends ConsumerState<SaaSLoginScreen> {
         if (!mounted) return;
         AppToast.showInfo(context, 'Your password was changed',
             subtitle: 'Sign in with the new password.');
+      });
+    }
+
+    if (kIsWeb) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        try {
+          final uri = Uri.base;
+          final bool hasResetParam = uri.queryParameters.containsKey('token') ||
+              (uri.hasFragment && uri.fragment.contains('reset-password'));
+          if (hasResetParam && mounted) {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const PasswordResetScreen()),
+            );
+          }
+        } catch (_) {}
       });
     }
   }
@@ -457,6 +477,26 @@ class _SaaSLoginScreenState extends ConsumerState<SaaSLoginScreen> {
                                             "Stay signed in",
                                             style: TextStyle(color: context.textSecondary, fontSize: 13),
                                           ),
+                                          const Spacer(),
+                                          TextButton(
+                                            style: TextButton.styleFrom(
+                                              padding: EdgeInsets.zero,
+                                              minimumSize: Size.zero,
+                                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                            ),
+                                            onPressed: () => ForgotPasswordDialog.show(
+                                              context,
+                                              initialEmail: _emailController.text.trim(),
+                                            ),
+                                            child: Text(
+                                              "Forgot Password?",
+                                              style: TextStyle(
+                                                color: ClassicTheme.primaryAccent,
+                                                fontSize: 12.5,
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                            ),
+                                          ),
                                         ],
                                       ),
                                       const SizedBox(height: 20),
@@ -519,6 +559,44 @@ class _SaaSLoginScreenState extends ConsumerState<SaaSLoginScreen> {
                           },
                           child: Text(
                             "Register Here",
+                            style: TextStyle(
+                              color: ClassicTheme.primaryAccent,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.wifi_off_rounded, size: 14, color: context.textSecondary),
+                        const SizedBox(width: 6),
+                        Text(
+                          "Self-hosted / offline? ",
+                          style: TextStyle(color: context.textSecondary, fontSize: 13),
+                        ),
+                        GestureDetector(
+                          onTap: () => LocalOfflineStoreDialog.show(context, initialTab: 0),
+                          child: Text(
+                            "Open Free Till",
+                            style: TextStyle(
+                              color: ClassicTheme.successEmerald,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                        Text(
+                          " • ",
+                          style: TextStyle(color: context.textSecondary, fontSize: 13),
+                        ),
+                        GestureDetector(
+                          onTap: () => LocalOfflineStoreDialog.show(context, initialTab: 1),
+                          child: Text(
+                            "Activate Licence",
                             style: TextStyle(
                               color: ClassicTheme.primaryAccent,
                               fontWeight: FontWeight.bold,

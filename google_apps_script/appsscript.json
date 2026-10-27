@@ -1,0 +1,12 @@
+{
+  "timeZone": "Asia/Kolkata",
+  "dependencies": {
+    "libraries": []
+  },
+  "exceptionLogging": "STACKDRIVER",
+  "runtimeVersion": "V8",
+  "webapp": {
+    "executeAs": "USER_DEPLOYING",
+    "access": "ANYONE"
+  }
+}

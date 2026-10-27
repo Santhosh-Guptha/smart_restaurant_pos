@@ -1,4 +1,6 @@
+import 'customer_display_screen.dart';
 import 'dart:convert';
+import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import '../../widgets/max_width_body.dart';
 import '../../widgets/responsive_field_row.dart';
@@ -7,6 +9,7 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../../billing/scale_barcode.dart';
+import '../../services/local_restaurant_lan_server.dart';
 import '../../core/classic_theme.dart';
 import '../../core/design_tokens.dart';
 import '../../core/cloud_gate.dart';
@@ -1459,8 +1462,161 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
               ),
             ],
           ),
+          if (isRest) ...[
+            const SizedBox(height: 20),
+            _buildSectionHeader('Self-Hosted Local LAN Hub Server (Zero-WAN Multi-Terminal)', Icons.router_rounded),
+            const SizedBox(height: 12),
+            _buildLocalLanServerCard(),
+            const SizedBox(height: 16),
+            _buildCustomerDisplayCard(),
+          ],
         ],
       ),
+    );
+  }
+
+  Widget _buildLocalLanServerCard() {
+    final entitlements = ref.watch(entitlementsProvider);
+    final isLicensed = entitlements.isEnabled(FeatureKeys.localLanServer);
+    final lanServer = LocalRestaurantLanServer.instance;
+    final isRunning = isLicensed && lanServer.isRunning;
+    final url = lanServer.serverUrl;
+
+    return _buildCard(
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.dns_rounded,
+                        color: isRunning ? ClassicTheme.successEmerald : context.textSecondary,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Local LAN Server Hub',
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: context.textPrimary),
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: isRunning
+                              ? ClassicTheme.tintSuccess
+                              : (isLicensed ? context.sunkenSurface : ClassicTheme.tintDanger),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: isRunning
+                                ? ClassicTheme.successEmerald
+                                : (isLicensed ? context.borderColor : ClassicTheme.dangerRed.withValues(alpha: 0.5)),
+                          ),
+                        ),
+                        child: Text(
+                          isRunning ? 'ACTIVE' : (isLicensed ? 'OFFLINE' : 'LICENCE REQUIRED'),
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w900,
+                            color: isRunning
+                                ? ClassicTheme.successEmerald
+                                : (isLicensed ? context.textSecondary : ClassicTheme.dangerRed),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    isLicensed
+                        ? 'Enables waiter tablets, KDS displays and secondary devices to sync locally over Wi-Fi without internet.'
+                        : 'Self-hosted Local Host requires a platform admin licence. Contact administrator to enable Local LAN Server.',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: isLicensed ? context.textSecondary : ClassicTheme.dangerRed,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Switch.adaptive(
+              value: isRunning,
+              activeThumbColor: ClassicTheme.successEmerald,
+              onChanged: !isLicensed
+                  ? null
+                  : (val) async {
+                      HapticFeedback.lightImpact();
+                      if (val) {
+                        final ok = await lanServer.startServer();
+                        if (mounted) {
+                          setState(() {});
+                          if (ok) {
+                            AppToast.showSuccess(context, 'LAN Server Started on Port ${lanServer.port}');
+                          } else {
+                            AppToast.showError(context, 'Failed to start LAN server on port ${lanServer.port}');
+                          }
+                        }
+                      } else {
+                        await lanServer.stopServer();
+                        if (mounted) {
+                          setState(() {});
+                          AppToast.showInfo(context, 'LAN Server Stopped');
+                        }
+                      }
+                    },
+            ),
+          ],
+        ),
+        if (isRunning) ...[
+          const SizedBox(height: 14),
+          Divider(color: context.borderColor),
+          const SizedBox(height: 10),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: context.sunkenSurface,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: context.borderColor),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.wifi_tethering_rounded, color: ClassicTheme.primaryAccent, size: 20),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Master Server Endpoint:', style: TextStyle(fontSize: 11, color: context.textSecondary)),
+                      const SizedBox(height: 2),
+                      SelectableText(
+                        url,
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: ClassicTheme.primaryAccent),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.copy_rounded, size: 18),
+                  tooltip: 'Copy Local Server URL',
+                  onPressed: () {
+                    Clipboard.setData(ClipboardData(text: url));
+                    AppToast.showInfo(context, 'Server URL copied to clipboard!');
+                  },
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Endpoints: /api/v1/ping • /api/v1/tables • /api/v1/kot • /api/v1/kds/orders • /api/v1/cfd',
+            style: TextStyle(fontSize: 11, fontStyle: FontStyle.italic, color: context.textSecondary),
+          ),
+        ],
+      ],
     );
   }
 
@@ -1670,4 +1826,82 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
       ),
     );
   }
+
+  Widget _buildCustomerDisplayCard() {
+    final entitlements = ref.watch(entitlementsProvider);
+    final isLicensed = entitlements.isEnabled(FeatureKeys.customerDisplay);
+
+    return _buildCard(
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.tv_rounded,
+                        color: isLicensed ? ClassicTheme.secondaryAccent : context.textSecondary,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Customer Facing Display (CFD)',
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: context.textPrimary),
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: isLicensed ? ClassicTheme.secondaryAccent.withValues(alpha: 0.12) : context.sunkenSurface,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: isLicensed ? ClassicTheme.secondaryAccent : context.borderColor),
+                        ),
+                        child: Text(
+                          isLicensed ? 'READY' : 'LOCKED',
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w900,
+                            color: isLicensed ? ClassicTheme.secondaryAccent : context.textSecondary,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Secondary screen for guests showing live order items, subtotal, taxes, discounts, and UPI QR code.',
+                    style: TextStyle(fontSize: 12, color: context.textSecondary),
+                  ),
+                ],
+              ),
+            ),
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: isLicensed ? ClassicTheme.secondaryAccent : context.sunkenSurface,
+                foregroundColor: isLicensed ? Colors.white : context.textSecondary,
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              icon: Icon(isLicensed ? Icons.open_in_new_rounded : Icons.lock_outline_rounded, size: 16),
+              label: const Text('Open CFD', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+              onPressed: () {
+                if (!isLicensed) {
+                  AppToast.showInfo(context, entitlements.explain(FeatureKeys.customerDisplay));
+                  return;
+                }
+                Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const CustomerDisplayScreen()),
+                );
+              },
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
 }

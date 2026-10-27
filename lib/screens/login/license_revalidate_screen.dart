@@ -7,6 +7,8 @@ import '../../core/design_tokens.dart';
 import '../../core/license_lease.dart';
 import '../../core/responsive.dart';
 import '../../providers/saas_session_provider.dart';
+import '../counter_billing/fast_qsr_billing_screen.dart';
+import '../dashboard/restaurant_home_screen.dart';
 import '../../services/license_lease_service.dart';
 
 /// Shown when this device has gone too long without checking its licence
@@ -37,13 +39,23 @@ class _LicenseRevalidateScreenState extends ConsumerState<LicenseRevalidateScree
     if (!mounted) return;
     final org = ref.read(saasSessionProvider).currentOrganization;
     final now = LicenseLease.check(orgId: org?.id ?? '', storageMode: org?.storageMode);
+    if (!now.blocked) {
+      if (mounted) {
+        if (Navigator.of(context).canPop()) {
+          Navigator.of(context).pop();
+        } else {
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(builder: (_) => const RestaurantHomeScreen()),
+          );
+        }
+      }
+      return;
+    }
     setState(() {
       _busy = false;
-      _result = now.blocked
-          ? (FirebaseAuth.instance.currentUser == null
-              ? 'This device needs to sign in again online to renew its licence. Sign out, then sign in.'
-              : 'Still could not reach the licence server. Check the internet connection and try again.')
-          : null;
+      _result = FirebaseAuth.instance.currentUser == null
+          ? 'This device needs to sign in again online to renew its licence. Sign out, then sign in.'
+          : 'Still could not reach the licence server. Check the internet connection and try again.';
     });
   }
 
@@ -120,6 +132,23 @@ class _LicenseRevalidateScreenState extends ConsumerState<LicenseRevalidateScree
                               ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
                               : const Icon(Icons.refresh_rounded),
                           label: const Text('Check now', style: TextStyle(fontWeight: FontWeight.w700)),
+                        ),
+                      ),
+                      const SizedBox(height: DS.space3),
+                      SizedBox(
+                        height: DS.tapTargetComfortable,
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: ClassicTheme.successEmerald,
+                            side: const BorderSide(color: ClassicTheme.successEmerald),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(DS.radiusMd)),
+                          ),
+                          onPressed: () => Navigator.of(context).push(
+                            MaterialPageRoute(builder: (_) => const FastQsrBillingScreen()),
+                          ),
+                          icon: const Icon(Icons.point_of_sale_rounded, color: ClassicTheme.successEmerald),
+                          label: const Text('Keep billing (Offline Till)', style: TextStyle(fontWeight: FontWeight.w700)),
                         ),
                       ),
                       const SizedBox(height: DS.space3),

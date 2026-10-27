@@ -73,3 +73,19 @@ Claude outputs/
 test_automation/node_modules/
 test_automation/test-results/
 test_automation/playwright-report/
+
+# Security Vault & Production Credentials
+secure_vault/
+android/key.properties
+!android/key.properties.example
+android/app/*.jks
+android/app/*.keystore
+test_automation/.env*
+!test_automation/.env.test.example
+
+# Confidential Runbooks & Internal Architecture Plans
+DEPLOYMENT_RUNBOOK.md
+SECURITY_NOTES.md
+SYSTEM_DOCUMENTATION.md
+findings.md
+implementation_plan*.md

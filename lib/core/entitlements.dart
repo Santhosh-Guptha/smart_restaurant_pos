@@ -48,6 +48,11 @@ class FeatureKeys {
   static const String customerKhata     = 'customerKhata';
   static const String stockManagement   = 'stockManagement';
 
+  // ── Advanced Restaurant & Self-Hosted Features ────────────────────────
+  static const String splitBilling      = 'splitBilling';
+  static const String customerDisplay   = 'customerDisplay';
+  static const String localLanServer    = 'localLanServer';
+
   /// Legacy flag. Offline is now an operating mode derived from the
   /// organisation's `storageMode`; this key is honoured as an alias for one
   /// release so tenants saved before the change keep resolving correctly.
@@ -189,6 +194,8 @@ class FeatureDef {
       case FeatureKeys.qsrBilling:
       case FeatureKeys.thermalPrinting:
       case FeatureKeys.barcodeBilling:
+      case FeatureKeys.customerDisplay:
+      case FeatureKeys.splitBilling:
         return 'POS & Billing';
 
       case FeatureKeys.menuManagement:
@@ -202,6 +209,7 @@ class FeatureDef {
       case FeatureKeys.dualPrinting:
       case FeatureKeys.kdsEnabled:
       case FeatureKeys.waiterOrdering:
+      case FeatureKeys.localLanServer:
         return 'Dine-In & Kitchen';
 
       case FeatureKeys.customerKhata:
@@ -520,6 +528,31 @@ class FeatureCatalog {
       tier: CommercialTier.offlineAddOn,
       iconCode: 'inventory',
       verticals: {'kirana', 'supermarket', 'pharmacy', 'retail'},
+    ),
+    FeatureDef(
+      key: FeatureKeys.splitBilling,
+      label: 'Split billing & multi-tender',
+      description: 'Split dine-in checks equally or by items with multi-tender settlement.',
+      tier: CommercialTier.offlineAddOn,
+      iconCode: 'call_split',
+      dependsOn: [FeatureKeys.billing],
+      verticals: {'restaurant'},
+    ),
+    FeatureDef(
+      key: FeatureKeys.customerDisplay,
+      label: 'Customer display',
+      description: 'Secondary display showing live cart items, totals and dynamic UPI QR.',
+      tier: CommercialTier.offlineAddOn,
+      iconCode: 'tv',
+      verticals: {'restaurant'},
+    ),
+    FeatureDef(
+      key: FeatureKeys.localLanServer,
+      label: 'Local LAN server',
+      description: 'Embedded HTTP hub for offline multi-device tables and KDS sync on local Wi-Fi.',
+      tier: CommercialTier.offlineAddOn,
+      iconCode: 'dns',
+      verticals: {'restaurant'},
     ),
   ];
 

@@ -8,6 +8,7 @@ import '../../core/constants.dart';
 import '../../utils/ui_feedback.dart';
 import '../../services/smtp_email_service.dart';
 import '../../core/classic_theme.dart';
+import '../counter_billing/fast_qsr_billing_screen.dart';
 
 class SaaSExpiredScreen extends ConsumerStatefulWidget {
   const SaaSExpiredScreen({super.key});
@@ -222,6 +223,26 @@ class _SaaSExpiredScreenState extends ConsumerState<SaaSExpiredScreen> {
                           ),
                         ),
                       ),
+                    const SizedBox(height: 10),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 48,
+                      child: OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: ClassicTheme.successEmerald,
+                          side: const BorderSide(color: ClassicTheme.successEmerald, width: 1.5),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                        onPressed: () => Navigator.of(context).push(
+                          MaterialPageRoute(builder: (_) => const FastQsrBillingScreen()),
+                        ),
+                        icon: const Icon(Icons.point_of_sale_rounded, size: 18, color: ClassicTheme.successEmerald),
+                        label: const Text(
+                          "Keep billing (Offline Till)",
+                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                        ),
+                      ),
+                    ),
                     const SizedBox(height: 10),
                     Row(
                       children: [

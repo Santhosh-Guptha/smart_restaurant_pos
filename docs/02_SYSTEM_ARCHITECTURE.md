@@ -148,7 +148,7 @@ sequenceDiagram
   Note over OTP: fallback when the server doesn't answer:<br/>legacy Firestore email_otps path
   App->>GAS: START_TRIAL {client_name, shop_name, email, mobile, business_category, password, email_proof, packageId, tier, vertical, storageMode}
   GAS->>GAS: rate limit (3/mobile/24h), LockService, EMAIL_EXISTS check
-  GAS->>GAS: trialPlan_() → composeLicence_() (tier offline or basic)
+  GAS->>GAS: trialPlan_() → composeLicence_() (tier always offline, §6a)
   GAS->>FS: fsSet_ organizations/{orgId}, users/{usr_*}, licenses/{orgId}, features/{orgId}, limits/{orgId}, outlets/outlet_{orgId}, franchises/outlet_{orgId}
   GAS->>FS: fsMerge_ registration_requests/{requestId} (if given)
   GAS-->>App: success + credentials

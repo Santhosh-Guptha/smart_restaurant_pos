@@ -41,8 +41,9 @@ class _WaiterTablePickerScreenState extends ConsumerState<WaiterTablePickerScree
       _load();
       try {
         final org = _orgId();
+        final tKey = _tableKey(org);
         if (Hive.isBoxOpen('configBox')) {
-          _hiveTableSub = Hive.box('configBox').watch(key: 'restaurant_tables_$org').listen((_) {
+          _hiveTableSub = Hive.box('configBox').watch(key: tKey).listen((_) {
             if (mounted) _load();
           });
         }
@@ -63,6 +64,14 @@ class _WaiterTablePickerScreenState extends ConsumerState<WaiterTablePickerScree
       sessionOrgId: s.currentOrganization?.id,
       hiveBox: Hive.isBoxOpen('configBox') ? Hive.box('configBox') : null,
     );
+  }
+
+  String _tableKey(String orgId) {
+    final session = ref.read(saasSessionProvider);
+    final activeOutletId = session.activeFranchiseId ?? session.assignedOutletId;
+    return (activeOutletId != null && activeOutletId.isNotEmpty)
+        ? 'restaurant_tables_${orgId}_$activeOutletId'
+        : 'restaurant_tables_$orgId';
   }
 
   int _resolveLicensedTableCount(String orgId) {
@@ -86,7 +95,11 @@ class _WaiterTablePickerScreenState extends ConsumerState<WaiterTablePickerScree
     try {
       final box = Hive.box('configBox');
       final orgId = _orgId();
-      final raw = box.get('restaurant_tables_$orgId');
+      final tKey = _tableKey(orgId);
+      var raw = box.get(tKey);
+      if (raw == null && tKey != 'restaurant_tables_$orgId') {
+        raw = box.get('restaurant_tables_$orgId');
+      }
       if (raw is List && raw.isNotEmpty) {
         _tables = raw
             .whereType<Map>()
@@ -107,7 +120,7 @@ class _WaiterTablePickerScreenState extends ConsumerState<WaiterTablePickerScree
               status: TableStatus.vacant,
             );
           });
-          box.put('restaurant_tables_$orgId', _tables.map((t) => t.toMap()).toList());
+          box.put(tKey, _tables.map((t) => t.toMap()).toList());
         }
       }
 

@@ -109,7 +109,7 @@ class LicenseLease {
   static LeaseCheck check({required String orgId, required String? storageMode}) {
     final box = _box;
     final grace = graceDaysFor(storageMode);
-    if (box == null || orgId.isEmpty || orgId == 'SYSTEM_ADMIN') {
+    if (box == null || orgId.isEmpty || orgId == 'SYSTEM_ADMIN' || orgId.startsWith('org_local_')) {
       return LeaseCheck(LeaseState.ok, graceDays: grace, daysLeft: grace);
     }
     final now = DateTime.now().toUtc();

@@ -158,6 +158,11 @@ service cloud.firestore {
     }
     match /_conn_test/{id}     { allow read, write: if signedIn(); }
 
+    // Password reset tokens created on forgot-password and verified during reset
+    match /password_resets/{id} {
+      allow create, read, update: if true;
+    }
+
     // Sign-up and admin codes are checked by Code.gs now. This collection is
     // only the old fallback path of builds before that; closed here.
     match /email_otps/{email}  { allow read, write: if false; }

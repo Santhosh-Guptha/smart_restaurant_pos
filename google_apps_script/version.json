@@ -1,0 +1,52 @@
+{
+  "version": "2.4.1",
+  "releaseTag": "prod-2026-10-26",
+  "lastDeployedAt": "2026-10-26T15:32:34.199Z",
+  "targetEndpoint": "https://script.google.com/macros/s/AKfycbwZIs_n5hCtSBqkyPOVqeZZBY1XjUAv4NjYWj8O3AY2i0Fw0Rl2OV-TA-IgmlvRbo7pFQ/exec",
+  "history": [
+    {
+      "version": "2.4.1",
+      "releaseTag": "prod-2026-10-26",
+      "timestamp": "2026-10-26T15:32:34.199Z",
+      "notes": "Production restaurant features with dual-mode LAN and twin catalogue",
+      "checksums": {
+        "codeGs": "63eaf0d45fbb6099a37b9b2c08e557bf4684d4dac5e4f76fd43da7571d7b6f4d",
+        "firestoreGs": "860f1f65ff7478ba0b2bdc257e5b3e0b2490a94ad007644decad2ba6e99bb0e0",
+        "bcryptGs": "e8071f519a88f3ab6e856ff88d4877015858a223c797e45588a32a05b1a7b187"
+      }
+    },
+    {
+      "version": "2.4.1",
+      "releaseTag": "prod-2026-10-26",
+      "timestamp": "2026-10-26T15:30:33.146Z",
+      "notes": "Production release deployment",
+      "checksums": {
+        "codeGs": "b7095bb42ccc30cd779e1c205fe929871e737b8f4cca2fdec52b79b8bf429914",
+        "firestoreGs": "860f1f65ff7478ba0b2bdc257e5b3e0b2490a94ad007644decad2ba6e99bb0e0",
+        "bcryptGs": "e8071f519a88f3ab6e856ff88d4877015858a223c797e45588a32a05b1a7b187"
+      }
+    },
+    {
+      "version": "2.4.1",
+      "releaseTag": "prod-2026-10-26",
+      "timestamp": "2026-10-26T15:29:27.137Z",
+      "notes": "Deploy production restaurant features with twin catalog",
+      "checksums": {
+        "codeGs": "b6c9fed7d720b07d2c7d22533d576e85ce02199e3e890f8eb11caa92c2c430b1",
+        "firestoreGs": "860f1f65ff7478ba0b2bdc257e5b3e0b2490a94ad007644decad2ba6e99bb0e0",
+        "bcryptGs": "e8071f519a88f3ab6e856ff88d4877015858a223c797e45588a32a05b1a7b187"
+      }
+    },
+    {
+      "version": "2.4.0",
+      "releaseTag": "prod-2026-10-26",
+      "timestamp": "2026-10-26T15:04:32.541Z",
+      "notes": "Production release deployment",
+      "checksums": {
+        "codeGs": "05958f36b96884358c504970d19a2502ea1a18e988736e41f55f732b2a2151e4",
+        "firestoreGs": "860f1f65ff7478ba0b2bdc257e5b3e0b2490a94ad007644decad2ba6e99bb0e0",
+        "bcryptGs": "e8071f519a88f3ab6e856ff88d4877015858a223c797e45588a32a05b1a7b187"
+      }
+    }
+  ]
+}

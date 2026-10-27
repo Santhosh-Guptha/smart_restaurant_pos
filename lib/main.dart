@@ -1,3 +1,4 @@
+import 'screens/restaurant/customer_display_screen.dart';
 import 'core/receipt/receipt_context_builder.dart';
 import 'core/package_model.dart';
 import 'core/license_lease.dart';
@@ -34,6 +35,7 @@ import 'screens/login/saas_expired_screen.dart';
 import 'screens/login/first_login_password_screen.dart';
 import 'screens/dashboard/master_admin_screen.dart';
 import 'screens/login/app_update_required_screen.dart';
+import 'screens/login/password_reset_screen.dart';
 
 final appVersionProvider = StreamProvider<Map<String, dynamic>?>((ref) {
   final conn = ref.read(firebaseConnectionServiceProvider);
@@ -330,6 +332,26 @@ class SmartBizzApp extends ConsumerWidget {
       },
       home: homeScreen,
       onGenerateRoute: (settings) {
+        final name = settings.name ?? '';
+        if (name == '/customer-display' || name.startsWith('/customer-display')) {
+          return MaterialPageRoute(
+            builder: (context) => const CustomerDisplayScreen(),
+            settings: settings,
+          );
+        }
+        if (name.contains('reset-password')) {
+          String? token;
+          String? email;
+          try {
+            final uri = Uri.parse(name);
+            token = uri.queryParameters['token'];
+            email = uri.queryParameters['email'];
+          } catch (_) {}
+          return MaterialPageRoute(
+            builder: (context) => PasswordResetScreen(token: token, email: email),
+            settings: settings,
+          );
+        }
         return MaterialPageRoute(
           builder: (context) => homeScreen,
           settings: settings,

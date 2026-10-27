@@ -376,7 +376,7 @@ maxFranchises (outlets), maxUsers, allowedRoles, dates, `featuresResolvedFor`, `
 - **Roles** (`LicenseComposer.rolesFor`): offline → OWNER only; shops → OWNER, MANAGER, BILLING; restaurant
   Standard and above with more than one device → also WAITER, KITCHEN.
 - Apps Script `composeLicence_()` in `Code.gs` mirrors the composer for server-created trials
-  (`START_TRIAL`, tier from the request: offline or basic).
+  (`START_TRIAL`; the trial is always offline, contract §6a — the request's tier is logged and clamped).
 
 ### 10.5 Add-ons and client edits
 An add-on is a key that applies to the client's trade, is not in its package, and that the storage mode and

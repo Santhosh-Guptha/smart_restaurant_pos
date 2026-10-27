@@ -222,6 +222,12 @@ class RestaurantTable {
   final String? currentCustomerName;
   final String? currentCustomerPhone;
   final String? currentOrderSource;
+  final double? posX;
+  final double? posY;
+  final String shape; // 'square', 'round', 'rectangle'
+  final double? tableWidth;
+  final double? tableHeight;
+  final double rotation;
 
   RestaurantTable({
     required this.id,
@@ -248,6 +254,12 @@ class RestaurantTable {
     this.currentCustomerName,
     this.currentCustomerPhone,
     this.currentOrderSource,
+    this.posX,
+    this.posY,
+    this.shape = 'square',
+    this.tableWidth,
+    this.tableHeight,
+    this.rotation = 0.0,
   });
 
   String get qrMenuUrl {
@@ -287,6 +299,12 @@ class RestaurantTable {
     String? currentCustomerName,
     String? currentCustomerPhone,
     String? currentOrderSource,
+    double? posX,
+    double? posY,
+    String? shape,
+    double? tableWidth,
+    double? tableHeight,
+    double? rotation,
     bool clearCustomerInfo = false,
     bool clearReservation = false,
     bool clearSession = false,
@@ -316,6 +334,12 @@ class RestaurantTable {
       currentCustomerName: clearCustomerInfo ? null : (currentCustomerName ?? this.currentCustomerName),
       currentCustomerPhone: clearCustomerInfo ? null : (currentCustomerPhone ?? this.currentCustomerPhone),
       currentOrderSource: clearCustomerInfo ? null : (currentOrderSource ?? this.currentOrderSource),
+      posX: posX ?? this.posX,
+      posY: posY ?? this.posY,
+      shape: shape ?? this.shape,
+      tableWidth: tableWidth ?? this.tableWidth,
+      tableHeight: tableHeight ?? this.tableHeight,
+      rotation: rotation ?? this.rotation,
     );
   }
 
@@ -345,6 +369,12 @@ class RestaurantTable {
       'currentCustomerName': currentCustomerName,
       'currentCustomerPhone': currentCustomerPhone,
       'currentOrderSource': currentOrderSource,
+      'posX': posX,
+      'posY': posY,
+      'shape': shape,
+      'width': tableWidth,
+      'height': tableHeight,
+      'rotation': rotation,
       'updatedAt': DateTime.now().toIso8601String(),
     };
   }
@@ -394,6 +424,12 @@ class RestaurantTable {
       currentCustomerName: map['currentCustomerName']?.toString() ?? map['customerName']?.toString(),
       currentCustomerPhone: map['currentCustomerPhone']?.toString() ?? map['customerPhone']?.toString(),
       currentOrderSource: map['currentOrderSource']?.toString() ?? map['orderSource']?.toString(),
+      posX: (map['posX'] as num?)?.toDouble(),
+      posY: (map['posY'] as num?)?.toDouble(),
+      shape: map['shape']?.toString() ?? 'square',
+      tableWidth: (map['width'] as num?)?.toDouble() ?? (map['tableWidth'] as num?)?.toDouble(),
+      tableHeight: (map['height'] as num?)?.toDouble() ?? (map['tableHeight'] as num?)?.toDouble(),
+      rotation: (map['rotation'] as num?)?.toDouble() ?? 0.0,
     );
   }
 }

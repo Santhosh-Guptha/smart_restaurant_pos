@@ -342,4 +342,37 @@ const Map<String, FeatureUsage> kFeatureUsage = {
     screens: ['Stock Manager'],
     controls: ['Home card: Stock Manager'],
   ),
+  FeatureKeys.splitBilling: FeatureUsage(
+    note:
+        'Split bills evenly or item-by-item among guests with support for multiple '
+        'tender types (cash, UPI, card) per share, automatic balance recalculation '
+        'and receipt printouts.',
+    whenOff:
+        'The Split Bill button in the payment collection dialog is disabled.',
+    screens: ['Table management', 'Dine-in till'],
+    controls: ['Split Bill dialog', 'Equal split', 'Item-by-item split', 'Multi-tender payment'],
+    implemented: true,
+  ),
+  FeatureKeys.customerDisplay: FeatureUsage(
+    note:
+        'Customer Facing Display (CFD). Real-time secondary monitor or browser '
+        'screen that shows order items, subtotal, taxes, discounts, and dynamic '
+        'UPI QR code for seamless contactless payment.',
+    whenOff:
+        'The secondary customer display window and broadcast are disabled.',
+    screens: ['Customer Facing Display (CFD)'],
+    controls: ['Open Customer Display', 'Live cart sync', 'Dynamic UPI QR'],
+    implemented: true,
+  ),
+  FeatureKeys.localLanServer: FeatureUsage(
+    note:
+        'Embedded HTTP & WebSocket local hub server. Runs directly on the till '
+        'to coordinate table status, KOTs, and kitchen orders across local '
+        'tablets and screens over Wi-Fi without cloud dependencies.',
+    whenOff:
+        'The Local LAN Server cannot be started. Requires licensed entitlement.',
+    screens: ['Store settings: Local LAN Hub'],
+    controls: ['Start/Stop Local LAN Server', 'Port configuration', 'LAN IP endpoint'],
+    implemented: true,
+  ),
 };

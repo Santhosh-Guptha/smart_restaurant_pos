@@ -4,7 +4,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:flutter/services.dart';
 import '../../../core/classic_theme.dart';
+import '../../../services/client_license_service.dart';
 import '../../../core/design_tokens.dart';
 import '../../../core/entitlements.dart';
 import '../../../core/package_model.dart';
@@ -810,6 +812,16 @@ class _TenantAccessDialogState extends ConsumerState<TenantAccessDialog> {
                         ),
                       const SizedBox(height: DS.space2),
                       _extendRow(),
+                      const SizedBox(height: DS.space2),
+                      _action(
+                        icon: Icons.key_rounded,
+                        color: ClassicTheme.primaryAccent,
+                        title: 'Issue Client Licence Key (Local Host)',
+                        subtitle:
+                            'Generates an official cryptographically-signed licence key '
+                            'for self-hosted LAN server & offline local POS deployment.',
+                        onTap: _showIssueClientLicenseDialog,
+                      ),
                       const SizedBox(height: DS.space3),
                       _sectionLabel('Close'),
                       _action(
@@ -1027,4 +1039,161 @@ class _TenantAccessDialogState extends ConsumerState<TenantAccessDialog> {
           ),
         ),
       );
+
+  void _showIssueClientLicenseDialog() {
+    final rawFeatures = _licenceRaw['features'];
+    final Map<String, bool> featMap = {};
+    if (rawFeatures is Map) {
+      for (final e in rawFeatures.entries) {
+        featMap[e.key.toString()] = e.value == true;
+      }
+    }
+
+    final rawRoles = _licenceRaw['allowedRoles'];
+    final List<String> rolesList = [];
+    if (rawRoles is List) {
+      for (final r in rawRoles) {
+        rolesList.add(r.toString());
+      }
+    }
+
+    final payload = ClientLicensePayload(
+      version: 1,
+      orgId: widget.orgId,
+      storeName: widget.orgName,
+      vertical: _vertical,
+      tier: _tier.name,
+      packageId: _packageId.isNotEmpty ? _packageId : '${_vertical}_${_tier.name}',
+      planName: (_licenceRaw['planName'] ?? '${_tier.label} Annual Licence').toString(),
+      storageMode: StorageModes.pureOffline,
+      features: featMap,
+      maxDevices: _maxDevices,
+      maxOutlets: 1,
+      maxUsers: (_licenceRaw['maxUsers'] is num) ? (_licenceRaw['maxUsers'] as num).toInt() : 5,
+      allowedRoles: rolesList.isNotEmpty ? rolesList : ['OWNER', 'MANAGER', 'BILLING'],
+      issuedAt: DateTime.now().toUtc(),
+      validUntil: _endDate?.toUtc() ?? DateTime.now().toUtc().add(const Duration(days: 365)),
+    );
+
+    final token = ClientLicenseService.generateToken(payload);
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: context.surfaceColor,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(DS.radiusXl)),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: ClassicTheme.primaryAccent.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(DS.radiusMd),
+              ),
+              child: Icon(Icons.key_rounded, color: ClassicTheme.primaryAccent, size: 22),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text("Client Local Host Licence", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: context.textPrimary)),
+                  Text(widget.orgName, style: TextStyle(fontSize: 12, color: context.textSecondary)),
+                ],
+              ),
+            ),
+          ],
+        ),
+        content: SizedBox(
+          width: 480,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: ClassicTheme.successEmerald.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(DS.radiusMd),
+                    border: Border.all(color: ClassicTheme.successEmerald.withValues(alpha: 0.3)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.verified_rounded, color: ClassicTheme.successEmerald, size: 20),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          "Trade: ${Verticals.shortLabel(_vertical)}  •  Tier: ${_tier.label}  •  Max Devices: $_maxDevices",
+                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: ClassicTheme.successEmerald),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  "Cryptographically Signed Licence Key:",
+                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: context.textPrimary),
+                ),
+                const SizedBox(height: 6),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: context.sunkenSurface,
+                    borderRadius: BorderRadius.circular(DS.radiusMd),
+                    border: Border.all(color: context.borderColor),
+                  ),
+                  child: SelectableText(
+                    token,
+                    style: const TextStyle(fontFamily: 'monospace', fontSize: 10),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  "Instructions for Client:",
+                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: context.textPrimary),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  "1. Copy this licence key and send to the client.\n"
+                  "2. On client till, click 'Activate with Licence' and paste this key.\n"
+                  "3. The local POS and Local LAN Hub Server unlock automatically with 100% offline survivability.",
+                  style: TextStyle(fontSize: 11, color: context.textSecondary, height: 1.4),
+                ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text("Close"),
+          ),
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: ClassicTheme.primaryAccent,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () async {
+              await Clipboard.setData(ClipboardData(text: token));
+              if (!mounted) return;
+              if (ctx.mounted) {
+                Navigator.pop(ctx);
+              }
+              AppToast.showSuccess(
+                context,
+                "Licence Key Copied!",
+                subtitle: "Ready to send to ${widget.orgName}.",
+              );
+            },
+            icon: const Icon(Icons.copy_rounded, size: 16),
+            label: const Text("Copy Licence Key"),
+          ),
+        ],
+      ),
+    );
+  }
+
 }
