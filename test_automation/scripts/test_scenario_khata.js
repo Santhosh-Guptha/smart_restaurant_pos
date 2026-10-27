@@ -6,7 +6,7 @@ const { chromium } = require('@playwright/test');
 const path = require('path');
 const fs = require('fs');
 
-const POS_URL = 'https://smartbizz.devmonks.space/pos';
+const POS_URL = process.env.POS_URL || 'http://localhost:4173/pos';
 const SCREENSHOT_DIR = path.join(__dirname, '..', 'test-results', 'screenshots', 'advanced');
 
 if (!fs.existsSync(SCREENSHOT_DIR)) {
@@ -31,8 +31,12 @@ async function testCustomerKhata() {
 
   // Login
   console.log('2. Logging in as kirana.offline@devmonks.space...');
-  await page.locator('input[aria-label="Enter username or email"]').fill('kirana.offline@devmonks.space');
-  await page.locator('input[aria-label="Enter your password"]').fill('SmartBizz@2026!');
+  const userInput = page.locator('input[aria-label="Enter username or email"]');
+  await userInput.click();
+  await userInput.fill('kirana.offline@devmonks.space');
+  const passInput = page.locator('input[aria-label="Enter your password"]');
+  await passInput.click();
+  await passInput.fill('SmartBizz@2026!');
   await page.locator('flt-semantics[role="button"]:has-text("Sign In")').click();
 
   // Wait for dashboard
@@ -43,9 +47,9 @@ async function testCustomerKhata() {
   await page.waitForTimeout(2500);
   console.log('✅ Dashboard loaded.');
 
-  // Click Customer Khata specifically using getByText
+  // Click Customer Khata specifically using flt-semantics locator
   console.log('3. Opening Customer Khata card...');
-  const khataTarget = page.getByText('Customer Khata', { exact: true });
+  const khataTarget = page.locator('flt-semantics[role="button"]:has-text("Customer Khata")').first();
   await khataTarget.click();
   await page.waitForTimeout(3000);
 
@@ -53,13 +57,20 @@ async function testCustomerKhata() {
   console.log('📸 Captured 01_khata_screen_view.png');
 
   // Check if Add Customer button is present
-  const addBtn = page.getByText('Add Customer', { exact: false }).first();
-  if (await addBtn.isVisible()) {
-    console.log('4. Clicking Add Customer...');
-    await addBtn.click();
-    await page.waitForTimeout(1500);
-    await page.screenshot({ path: path.join(SCREENSHOT_DIR, '02_khata_add_modal.png') });
-    console.log('📸 Captured 02_khata_add_modal.png');
+  const addBtn = page.getByRole('button', { name: /Add Customer|Add Your First Customer/i }).first();
+  let clickedAdd = false;
+  if (await addBtn.isVisible().catch(() => false)) {
+    console.log('4. Clicking Add Customer button...');
+    await addBtn.click({ force: true }).catch(() => {});
+    clickedAdd = true;
+  } else {
+    console.log('4. Clicking Add Your First Customer center button...');
+    await page.mouse.click(720, 665);
+    clickedAdd = true;
+  }
+  await page.waitForTimeout(2000);
+  await page.screenshot({ path: path.join(SCREENSHOT_DIR, '02_khata_add_modal.png') });
+  console.log('📸 Captured 02_khata_add_modal.png');
 
     // Fill form
     const inputs = page.locator('input');
@@ -83,13 +94,12 @@ async function testCustomerKhata() {
 
     // Click Save / Add
     const saveBtn = page.locator('flt-semantics[role="button"]:has-text("Add Customer"), flt-semantics[role="button"]:has-text("Save")').last();
-    if (await saveBtn.isVisible()) {
-      await saveBtn.click();
+    if (await saveBtn.isVisible().catch(() => false)) {
+      await saveBtn.click({ force: true });
       await page.waitForTimeout(2500);
       await page.screenshot({ path: path.join(SCREENSHOT_DIR, '04_khata_customer_saved.png') });
       console.log('📸 Captured 04_khata_customer_saved.png');
     }
-  }
 
   await browser.close();
   console.log('=== CUSTOMER KHATA TEST FINISHED ===');

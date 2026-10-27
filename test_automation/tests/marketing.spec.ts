@@ -24,6 +24,11 @@ test.describe('Marketing Hub — smartbizz.devmonks.space/', () => {
 
   test('TC-MKT-002 · Nav links are all present', { tag: '@marketing' }, async ({ page }) => {
     await page.goto(BASE + '/');
+    const burger = page.locator('#navBtn');
+    if (await burger.isVisible().catch(() => false)) {
+      await burger.click();
+      await page.waitForTimeout(300);
+    }
     for (const label of ['Restaurant', 'Kirana', 'Supermarket', 'Pharmacy', 'Retail']) {
       await expect(page.getByRole('navigation').getByRole('link', { name: label })).toBeVisible();
     }
@@ -110,6 +115,11 @@ test.describe('Trade pages', () => {
 
     test(`TC-MKT-011 · ${trade.label} page has correct aria-current on nav`, { tag: '@marketing @a11y' }, async ({ page }) => {
       await page.goto(BASE + trade.path);
+      const burger = page.locator('#navBtn');
+      if (await burger.isVisible().catch(() => false)) {
+        await burger.click();
+        await page.waitForTimeout(300);
+      }
       const current = page.getByRole('navigation')
         .getByRole('link', { name: new RegExp(trade.label, 'i') });
       await expect(current).toHaveAttribute('aria-current', 'page');
@@ -210,7 +220,8 @@ test.describe('Support and Legal Pages', () => {
   test('TC-MKT-034 · Register form validates required fields', { tag: '@marketing @forms' }, async ({ page }) => {
     await page.goto(BASE + '/register/');
     // Try to submit empty form
-    await page.getByRole('button', { name: /submit|register|start/i }).click();
+    await page.getByRole('button', { name: /send|submit|register|start/i }).click();
+    await page.waitForTimeout(500);
     // Should show validation errors
     const errors = await page.locator('[aria-invalid="true"], .err:not(:empty)').count();
     expect(errors, 'Required field validation should trigger').toBeGreaterThan(0);

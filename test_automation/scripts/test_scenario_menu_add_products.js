@@ -2,7 +2,7 @@ const { chromium } = require('@playwright/test');
 const fs = require('fs');
 const path = require('path');
 
-const POS_URL = 'https://smartbizz.devmonks.space/pos';
+const POS_URL = process.env.POS_URL || 'http://localhost:4173/pos';
 const SCREENSHOT_DIR = path.join(__dirname, '../test-results/screenshots/scenarios');
 
 if (!fs.existsSync(SCREENSHOT_DIR)) {

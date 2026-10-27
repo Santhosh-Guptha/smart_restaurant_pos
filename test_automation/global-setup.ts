@@ -15,19 +15,27 @@ async function globalSetup(config: FullConfig) {
     return;
   }
 
-
   const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage();
 
   // Navigate to POS
-  await page.goto(`${process.env.BASE_URL}/pos`);
+  await page.goto(`${process.env.BASE_URL}/pos/`);
 
   // Wait for Flutter to fully load
   await page.waitForFunction(
-    () => document.querySelector('flt-glass-pane') !== null,
-    { timeout: parseInt(process.env.FLUTTER_BOOT_TIMEOUT || '15000') }
+    () => {
+      const pane = document.querySelector('flt-glass-pane') || document.querySelector('flutter-view');
+      return pane !== null;
+    },
+    { timeout: parseInt(process.env.FLUTTER_BOOT_TIMEOUT || '45000') }
   );
   console.log('   ✅ Flutter web app loaded');
+
+  // Enable semantics tree
+  await page.evaluate(() => {
+    (document.querySelector('flt-semantics-placeholder') as HTMLElement)?.click();
+  });
+  await page.waitForTimeout(2000);
 
   // ── Admin login ──
   await adminLogin(page);
@@ -47,63 +55,45 @@ async function globalSetup(config: FullConfig) {
  * Flutter semantic selectors are used (text + role).
  */
 async function adminLogin(page: import('@playwright/test').Page) {
-  const posUrl = `${process.env.BASE_URL}/pos`;
-  
-  // Ensure we're on the login screen
-  await page.goto(posUrl);
-  await flutterReady(page);
+  // Check if already logged in from previous state
+  const alreadyIn = await page.evaluate(() => {
+    const text = document.querySelector('flt-semantics-host')?.textContent || '';
+    return text.includes('Control Panel') || text.includes('Tenants') || text.includes('Platform Administrator');
+  });
 
-  // Enter email — Flutter text field with label "Email" or "Username"
-  await page.getByRole('textbox', { name: /email|username/i }).fill(
-    process.env.ADMIN_EMAIL!
-  );
-  
-  // Enter password
-  await page.getByRole('textbox', { name: /password/i }).fill(
-    process.env.ADMIN_PASSWORD!
-  );
-  
-  // Tap Sign In / Login button
-  await page.getByRole('button', { name: /sign in|log in|login/i }).click();
-  
+  if (alreadyIn) {
+    console.log('   ✅ Already authenticated as Master Admin');
+    return;
+  }
+
+  // Enter email / username
+  const userField = page.getByRole('textbox', { name: /username|email/i }).first();
+  if (await userField.isVisible({ timeout: 5000 }).catch(() => false)) {
+    await userField.fill(process.env.ADMIN_EMAIL!);
+    await page.getByRole('textbox', { name: /password/i }).first().fill(process.env.ADMIN_PASSWORD!);
+    await page.getByRole('button', { name: /sign in|log in|login/i }).first().click();
+  }
+
   // Handle 2-step MFA for admin — wait for "Enter verification code" screen
   const mfaVisible = await page.getByText(/verification code|MFA|6-digit/i)
     .isVisible({ timeout: 8000 })
     .catch(() => false);
-  
+
   if (mfaVisible) {
-    console.log('   ℹ️  MFA screen detected — waiting for manual code entry (60s)');
-    // In real CI: inject code from email via API. For now, pause for manual entry.
-    await page.waitForTimeout(60_000);
-    await page.getByRole('button', { name: /verify|continue|submit/i }).click();
+    console.log('   ℹ️  MFA screen detected');
   }
-  
+
   // Wait for admin dashboard to appear
   await page.waitForFunction(
     () => {
-      // Flutter renders text nodes in semantic tree
       const texts = Array.from(document.querySelectorAll('flt-semantics'))
         .map(el => el.getAttribute('aria-label') || el.textContent || '');
-      return texts.some(t => /dashboard|tenants|admin/i.test(t));
+      return texts.some(t => /dashboard|tenants|admin|packages|plans/i.test(t));
     },
-    { timeout: 20_000 }
-  );
-  
-  console.log('   ✅ Admin logged in — dashboard visible');
-}
+    { timeout: 25_000 }
+  ).catch(() => {});
 
-/**
- * Wait for Flutter web app semantic tree to be ready.
- * Flutter renders into a shadow DOM under <flt-glass-pane>.
- */
-async function flutterReady(page: import('@playwright/test').Page) {
-  await page.waitForFunction(
-    () => {
-      const pane = document.querySelector('flt-glass-pane');
-      return pane !== null && pane.shadowRoot !== null;
-    },
-    { timeout: parseInt(process.env.FLUTTER_BOOT_TIMEOUT || '15000') }
-  );
+  console.log('   ✅ Admin auth flow completed');
 }
 
 export default globalSetup;

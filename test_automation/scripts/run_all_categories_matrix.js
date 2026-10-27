@@ -2,8 +2,8 @@ const { chromium } = require('@playwright/test');
 const fs = require('fs');
 const path = require('path');
 
-const POS_URL = 'https://smartbizz.devmonks.space/pos';
-const BASE_GUEST_URL = 'https://smartbizz.devmonks.space/r';
+const POS_URL = process.env.POS_URL || 'http://localhost:4173/pos';
+const BASE_GUEST_URL = process.env.BASE_GUEST_URL || 'http://localhost:4173/r';
 const SCREENSHOT_DIR = path.join(__dirname, '../test-results/screenshots/matrix');
 
 if (!fs.existsSync(SCREENSHOT_DIR)) {

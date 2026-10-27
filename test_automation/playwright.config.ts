@@ -88,7 +88,7 @@ export default defineConfig({
     {
       name: 'marketing-mobile',
       testMatch: /.*marketing.*\.spec\.ts/,
-      use: { ...devices['iPhone 14'] },
+      use: { ...devices['Pixel 7'] },
     },
 
     // ─── POS app tests (Flutter web — Chrome only for WASM) ───
@@ -106,7 +106,8 @@ export default defineConfig({
       testMatch: /.*pos.*\.spec\.ts/,
       dependencies: ['setup-admin'],
       use: {
-        ...devices['iPad (gen 7)'],
+        ...devices['Desktop Chrome'],
+        viewport: { width: 1024, height: 768 },
         baseURL: (process.env.BASE_URL || 'https://smartbizz.devmonks.space') + '/pos',
       },
     },
