@@ -29,11 +29,37 @@ class LeaseCheck {
   final DateTime? validatedAt;
   final int graceDays;
   final int daysLeft;
-  static const int warnDays = 5;
+  static const int warnDays = 7;
 
   const LeaseCheck(this.state, {this.validatedAt, this.graceDays = 0, this.daysLeft = 0});
 
   bool get blocked => state == LeaseState.mustRevalidate || state == LeaseState.clockRolledBack;
+
+  /// Advance warning threshold (7 days before the offline lease hard-stops).
+  static const int advanceWarningDays = 7;
+
+  /// True if the 30-day offline lease expires within 7 days.
+  bool get isNearExpiry => !blocked && (daysLeft <= advanceWarningDays || state == LeaseState.expiringSoon);
+
+  /// Merchant-facing advance warning banner message.
+  String? get warningMessage {
+    if (blocked) {
+      if (state == LeaseState.clockRolledBack) {
+        return 'Device clock rolled back. Correct system time to resume billing.';
+      }
+      return 'Offline lease has expired. Please connect to the internet once to renew your lease.';
+    }
+    if (isNearExpiry) {
+      if (daysLeft <= 0) {
+        return 'Offline lease expires today. Connect to the internet or renew your key to avoid interruption.';
+      } else if (daysLeft == 1) {
+        return 'Offline lease expires in 1 day. Connect to the internet or renew your key to avoid interruption.';
+      } else {
+        return 'Offline lease expires in $daysLeft days. Connect to the internet or renew your key to avoid interruption.';
+      }
+    }
+    return null;
+  }
 }
 
 /// How long a device may run without reaching the licence server.
@@ -259,6 +285,14 @@ class LicenseLease {
       daysLeft: left < 0 ? 0 : left,
     );
   }
+
+  /// Checks whether the organization's offline lease expires within 7 days.
+  static bool isNearExpiry({required String orgId, required String? storageMode}) =>
+      check(orgId: orgId, storageMode: storageMode).isNearExpiry;
+
+  /// Advance warning message if the lease expires within 7 days.
+  static String? advanceWarning({required String orgId, required String? storageMode}) =>
+      check(orgId: orgId, storageMode: storageMode).warningMessage;
 }
 
 /// A lease issued and signed by the server. See Code.gs handleLicenseLease_.

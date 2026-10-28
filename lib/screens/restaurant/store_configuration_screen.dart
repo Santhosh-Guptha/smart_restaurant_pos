@@ -1866,6 +1866,31 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
           if (devices.isEmpty) ...[
             const SizedBox(height: 6),
             Text('No satellite paired yet.', style: TextStyle(fontSize: 11, color: context.textSecondary)),
+          ] else ...[
+            const SizedBox(height: 10),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'PAIRED SATELLITES (${devices.length})',
+                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: context.textSecondary, letterSpacing: 0.8),
+                ),
+                TextButton.icon(
+                  style: TextButton.styleFrom(
+                    foregroundColor: ClassicTheme.dangerRed,
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  ),
+                  icon: const Icon(Icons.link_off_rounded, size: 14),
+                  label: const Text('Unpair All', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                  onPressed: () {
+                    lanServer.unpairAllSatellites();
+                    if (mounted) setState(() {});
+                    AppToast.showInfo(context, 'All satellite devices have been unpaired.');
+                  },
+                ),
+              ],
+            ),
           ],
           for (final d in devices) ...[
             const SizedBox(height: 6),
@@ -1908,7 +1933,7 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
                     icon: const Icon(Icons.link_off_rounded, size: 16),
                     label: const Text('Remove', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                     onPressed: () {
-                      lanServer.revokeDevice((d['id'] ?? '').toString());
+                      lanServer.revokeSatellite((d['id'] ?? '').toString());
                       if (mounted) setState(() {});
                       AppToast.showInfo(context, 'Device removed. It must pair again with the PIN.');
                     },

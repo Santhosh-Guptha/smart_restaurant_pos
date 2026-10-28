@@ -26,4 +26,29 @@ void main() {
     expect(SignedLease.parse(_payload, 'bm90IGEgc2lnbmF0dXJl'), isNull);
     expect(SignedLease.parse('', _sig), isNull);
   });
+
+  group('Issue 138: LeaseCheck advance warning', () {
+    test('isNearExpiry returns true when daysLeft <= 7 and formats message', () {
+      const okNotNear = LeaseCheck(LeaseState.ok, daysLeft: 10);
+      expect(okNotNear.isNearExpiry, false);
+      expect(okNotNear.warningMessage, isNull);
+
+      const near7 = LeaseCheck(LeaseState.expiringSoon, daysLeft: 7);
+      expect(near7.isNearExpiry, true);
+      expect(near7.warningMessage, contains('7 days'));
+
+      const near1 = LeaseCheck(LeaseState.expiringSoon, daysLeft: 1);
+      expect(near1.isNearExpiry, true);
+      expect(near1.warningMessage, contains('1 day'));
+
+      const near0 = LeaseCheck(LeaseState.expiringSoon, daysLeft: 0);
+      expect(near0.isNearExpiry, true);
+      expect(near0.warningMessage, contains('today'));
+
+      const blockedExpired = LeaseCheck(LeaseState.mustRevalidate, daysLeft: 0);
+      expect(blockedExpired.isNearExpiry, false);
+      expect(blockedExpired.blocked, true);
+      expect(blockedExpired.warningMessage, contains('has expired'));
+    });
+  });
 }

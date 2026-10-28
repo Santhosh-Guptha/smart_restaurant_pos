@@ -25,6 +25,7 @@ import '../../widgets/feature_gated_widget.dart';
 import '../../providers/theme_provider.dart';
 import '../../core/vertical_labels.dart';
 import '../../core/package_model.dart';
+import '../../core/license_lease.dart';
 
 import '../counter_billing/fast_qsr_billing_screen.dart';
 import '../restaurant/table_management_screen.dart';
@@ -504,6 +505,50 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
     );
   }
 
+  Widget _buildLeaseRenewalWarning(String orgId, String? storageMode) {
+    if (orgId.isEmpty) return const SizedBox.shrink();
+    final lease = LicenseLease.check(orgId: orgId, storageMode: storageMode);
+    if (!lease.isNearExpiry) return const SizedBox.shrink();
+
+    final msg = lease.warningMessage ?? 'Offline lease expires soon. Connect to the internet to renew.';
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: ClassicTheme.warningAmber.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: ClassicTheme.warningAmber.withValues(alpha: 0.4)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.warning_amber_rounded, color: ClassicTheme.warningAmber, size: 22),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Offline Lease Renewal Notice',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    color: context.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  msg,
+                  style: TextStyle(fontSize: 12, color: context.textSecondary, height: 1.4),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final restaurantAuth = ref.watch(restaurantAuthProvider);
@@ -917,6 +962,13 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
               // Plan running out — owner only.
               if (isOwner && _planNeedsAttention(saasSession.currentLicense))
                 _buildPlanBanner(saasSession.currentLicense!),
+
+              // Advance offline lease renewal warning (Issue 138)
+              if (isOwner)
+                _buildLeaseRenewalWarning(
+                  saasSession.currentOrganization?.id ?? user?.organizationId ?? '',
+                  saasSession.currentOrganization?.storageMode,
+                ),
 
               // Welcome Shift Banner
               _buildWelcomeBanner(user?.fullName ?? user?.email ?? 'Partner', storeName, roleDisplayName),

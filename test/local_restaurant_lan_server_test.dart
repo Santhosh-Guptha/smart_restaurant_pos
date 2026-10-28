@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:hive_flutter/hive_flutter.dart';
@@ -347,6 +348,102 @@ void main() {
       final other = await http.get(url, headers: {'Origin': 'http://evil.example'});
       expect(other.headers.containsKey('access-control-allow-origin'), false);
       await LocalRestaurantLanServer.instance.stopServer();
+    });
+
+    test('Issue 110: revokeSatellite invalidates token and decrements paired count', () async {
+      final s = LocalRestaurantLanServer.instance;
+      await s.startServer(port: 8893);
+      final pin = s.getPairingPin();
+      final res = await http.post(
+        Uri.parse('http://127.0.0.1:8893/api/v1/pair'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'pin': pin, 'role': 'WAITER', 'deviceName': 'waiter pad 1'}),
+      );
+      expect(res.statusCode, 200);
+      final token = (jsonDecode(res.body) as Map<String, dynamic>)['token'] as String;
+      expect(s.pairedDevices.isNotEmpty, true);
+
+      final storeRes = await http.get(
+        Uri.parse('http://127.0.0.1:8893/api/v1/store'),
+        headers: {'Authorization': 'Bearer $token'},
+      );
+      expect(storeRes.statusCode, 200);
+
+      final countBefore = s.pairedDevices.length;
+      s.revokeSatellite(token);
+      expect(s.pairedDevices.length, countBefore - 1);
+
+      final revokedStore = await http.get(
+        Uri.parse('http://127.0.0.1:8893/api/v1/store'),
+        headers: {'Authorization': 'Bearer $token'},
+      );
+      expect(revokedStore.statusCode, 401);
+      await s.stopServer();
+    });
+
+    test('Issue 110: unpairAllSatellites unpairs all connected satellites', () async {
+      final s = LocalRestaurantLanServer.instance;
+      await s.startServer(port: 8894);
+      final pin = s.getPairingPin();
+      final res1 = await http.post(
+        Uri.parse('http://127.0.0.1:8894/api/v1/pair'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'pin': pin, 'role': 'WAITER', 'deviceName': 'waiter pad A'}),
+      );
+      final token1 = (jsonDecode(res1.body) as Map<String, dynamic>)['token'] as String;
+
+      final res2 = await http.post(
+        Uri.parse('http://127.0.0.1:8894/api/v1/pair'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'pin': pin, 'role': 'KITCHEN', 'deviceName': 'kitchen display B'}),
+      );
+      final token2 = (jsonDecode(res2.body) as Map<String, dynamic>)['token'] as String;
+      expect(s.pairedDevices.length, greaterThanOrEqualTo(2));
+
+      s.unpairAllSatellites();
+      expect(s.pairedDevices.isEmpty, true);
+
+      final store1 = await http.get(
+        Uri.parse('http://127.0.0.1:8894/api/v1/store'),
+        headers: {'Authorization': 'Bearer $token1'},
+      );
+      expect(store1.statusCode, 401);
+
+      final store2 = await http.get(
+        Uri.parse('http://127.0.0.1:8894/api/v1/store'),
+        headers: {'Authorization': 'Bearer $token2'},
+      );
+      expect(store2.statusCode, 401);
+      await s.stopServer();
+    });
+
+    test('Issue 102: Port collision fallback automatically binds to next available port', () async {
+      final s = LocalRestaurantLanServer.instance;
+      ServerSocket? blocker;
+      try {
+        blocker = await ServerSocket.bind(InternetAddress.anyIPv4, 8080);
+      } catch (_) {}
+
+      int? callbackPort;
+      LocalRestaurantLanServer.onPortBound = (p) {
+        callbackPort = p;
+      };
+
+      final started = await s.startServer(port: 8080);
+      expect(started, true);
+      expect(s.isRunning, true);
+      if (blocker != null) {
+        expect(s.port, greaterThanOrEqualTo(8081));
+        expect(s.port, lessThanOrEqualTo(8089));
+        expect(callbackPort, s.port);
+      }
+
+      final ping = await http.get(Uri.parse('http://127.0.0.1:${s.port}/api/v1/ping'));
+      expect(ping.statusCode, 200);
+
+      LocalRestaurantLanServer.onPortBound = null;
+      await s.stopServer();
+      await blocker?.close();
     });
   });
 }

@@ -10,6 +10,7 @@ import 'package:http/http.dart' as http;
 import '../../core/constants.dart';
 import '../../core/license_guard.dart';
 import '../../core/restaurant_models.dart';
+import '../../core/order_calculation_engine.dart';
 import '../../providers/daily_token_provider.dart';
 import '../../providers/restaurant_auth_provider.dart';
 import '../../providers/saas_session_provider.dart';
@@ -72,6 +73,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
   Timer? _pollTimer;
   StreamSubscription<BoxEvent>? _ledgerSub;
   bool _isSending = false;
+  bool _isSettling = false;
 
   String _getEffectiveOrgId() {
     final saasSession = ref.read(saasSessionProvider);
@@ -824,32 +826,25 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
       });
     }
 
-    // This round's own money. The table bill is the sum of its rounds.
-    final roundSubtotal = newRoundItemsList.fold<double>(
-      0.0,
-      (sum, item) => sum + (((item['price'] as num?)?.toDouble() ?? 0.0) * ((item['qty'] as num?)?.toDouble() ?? 1.0)),
+    // This round's own money. Standardized through OrderCalculationEngine.
+    final roundTotals = OrderCalculationEngine.calculateOrderTotals(
+      items: newRoundItemsList,
+      serviceChargeRate: _storeServiceChargeRate,
+      gstRate: _storeGstRate,
+      orderType: 'DINE_IN',
     );
-    final taxableSubtotal = newRoundItemsList
-        .where((item) => item['isTaxExempt'] != true && item['is_tax_exempt'] != true)
-        .fold<double>(
-          0.0,
-          (sum, item) => sum + (((item['price'] as num?)?.toDouble() ?? 0.0) * ((item['qty'] as num?)?.toDouble() ?? 1.0)),
-        );
-    final roundServiceCharge = roundSubtotal * (_storeServiceChargeRate / 100);
-    final taxableSc = roundSubtotal > 0 ? (roundServiceCharge * (taxableSubtotal / roundSubtotal)) : 0.0;
-    final roundGst = (taxableSubtotal + taxableSc) * (_storeGstRate / 100);
-    final roundTotalAmount = roundSubtotal + roundServiceCharge + roundGst;
+    final roundSubtotal = roundTotals.subtotal;
+    final roundServiceCharge = roundTotals.serviceCharge;
+    final roundGst = roundTotals.cgst + roundTotals.sgst;
+    final roundTotalAmount = roundTotals.grandTotal;
 
-    // Integer-paise components so the server does not have to re-derive the tax
-    // split -- without these it falls back to a hardcoded 5%, which recorded
-    // CGST 27.50 and a 143.00 "round-off" on a 1,298.00 bill at an 18% store.
-    final roundSubtotalP = (roundSubtotal * 100).round();
-    final roundScP = (roundServiceCharge * 100).round();
-    final roundTaxableP = (taxableSubtotal * 100).round() + (taxableSc * 100).round();
-    final roundGstP = (roundGst * 100).round();
-    final roundCgstP = (roundGstP / 2).round();
-    final roundSgstP = roundGstP - roundCgstP;
-    final roundGrandTotalP = (roundTotalAmount * 100).round();
+    final roundSubtotalP = roundTotals.subtotalPaise;
+    final roundScP = roundTotals.serviceChargePaise;
+    final roundTaxableP = roundTotals.taxablePaise;
+    final roundGstP = roundTotals.cgstPaise + roundTotals.sgstPaise;
+    final roundCgstP = roundTotals.cgstPaise;
+    final roundSgstP = roundTotals.sgstPaise;
+    final roundGrandTotalP = roundTotals.grandTotalPaise;
 
     final clientRequestId = const Uuid().v4();
 
@@ -896,6 +891,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
           'subtotalP': roundSubtotalP,
           'serviceChargeP': roundScP,
           'taxableP': roundTaxableP,
+          'gstP': roundGstP,
           'cgstP': roundCgstP,
           'sgstP': roundSgstP,
           'roundOffP': 0,
@@ -1393,31 +1389,25 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
               return rawI;
             }).toList();
             m['items'] = rawItems;
-            // Recalculate totals
-            double sub = 0.0;
-            double taxableSub = 0.0;
-            for (final rim in rawItems) {
-              if (rim is Map) {
-                final vQty = (rim['voidedQty'] as num?)?.toDouble() ?? 0.0;
-                final qty = (rim['qty'] as num?)?.toDouble() ?? 0.0;
-                final activeQty = (qty - vQty).clamp(0.0, 999.0);
-                final p = (rim['price'] as num?)?.toDouble() ?? 0.0;
-                final lineTotal = p * activeQty;
-                sub += lineTotal;
-                if (rim['isTaxExempt'] != true && rim['is_tax_exempt'] != true) {
-                  taxableSub += lineTotal;
-                }
-              }
-            }
-            final sc = sub * (_storeServiceChargeRate / 100);
-            final taxableSc = sub > 0 ? (sc * (taxableSub / sub)) : 0.0;
-            final gst = (taxableSub + taxableSc) * (_storeGstRate / 100);
-            m['subtotal'] = sub;
-            m['serviceCharge'] = sc;
-            m['service_charge'] = sc;
-            m['gst'] = gst;
-            m['totalAmount'] = sub + sc + gst;
-            m['total_amount'] = sub + sc + gst;
+            // Recalculate totals with unified OrderCalculationEngine
+            final recTotals = OrderCalculationEngine.calculateOrderTotals(
+              items: rawItems,
+              serviceChargeRate: _storeServiceChargeRate,
+              gstRate: _storeGstRate,
+              orderType: 'DINE_IN',
+            );
+            m['subtotal'] = recTotals.subtotal;
+            m['serviceCharge'] = recTotals.serviceCharge;
+            m['service_charge'] = recTotals.serviceCharge;
+            m['gst'] = recTotals.cgst + recTotals.sgst;
+            m['totalAmount'] = recTotals.grandTotal;
+            m['total_amount'] = recTotals.grandTotal;
+            m['subtotalP'] = recTotals.subtotalPaise;
+            m['serviceChargeP'] = recTotals.serviceChargePaise;
+            m['taxableP'] = recTotals.taxablePaise;
+            m['cgstP'] = recTotals.cgstPaise;
+            m['sgstP'] = recTotals.sgstPaise;
+            m['totalP'] = recTotals.grandTotalPaise;
             return m;
           }
           return item;
@@ -1569,15 +1559,13 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
 
   // ── Settle Table Bill Dialog with Dynamic UPI QR & Toggleable Service Charge ──────────────────────────
   void _showSettleBillDialog() {
-    // Calculate table totals across all active orders
-    double tableSubtotal = 0.0;
+    // Calculate table totals across all active orders (filtering voided items)
     final List<KotItem> allItems = [];
     for (final ord in _tableOrders) {
       allItems.addAll(ord.items);
-      for (final item in ord.items) {
-        tableSubtotal += item.price * item.qty;
-      }
     }
+    final activeItems = OrderCalculationEngine.filterActiveItems(allItems);
+    double tableSubtotal = activeItems.fold<double>(0.0, (prev, item) => prev + (item.price * item.effectiveQty));
     if (tableSubtotal <= 0 && _tableOrders.isNotEmpty) {
       tableSubtotal = _tableOrders.fold<double>(0.0, (prev, o) => prev + o.totalAmount);
     }
@@ -1596,13 +1584,16 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
       backgroundColor: Colors.transparent,
       builder: (ctx) => StatefulBuilder(
         builder: (context, setModalState) {
-          final double taxableSubtotal = allItems
-              .where((item) => !item.isTaxExempt)
-              .fold<double>(0.0, (prev, item) => prev + (item.price * item.qty));
-          final double scAmt = includeServiceCharge ? (tableSubtotal * (_storeServiceChargeRate / 100)) : 0.0;
-          final double taxableSc = tableSubtotal > 0 ? (scAmt * (taxableSubtotal / tableSubtotal)) : 0.0;
-          final double gstAmt = (taxableSubtotal + taxableSc) * (_storeGstRate / 100);
-          final double totalPayable = tableSubtotal + scAmt + gstAmt + _selectedTip;
+          final settleTotals = OrderCalculationEngine.calculateOrderTotals(
+            items: activeItems,
+            serviceChargeRate: includeServiceCharge ? _storeServiceChargeRate : 0.0,
+            gstRate: _storeGstRate,
+            orderType: 'DINE_IN',
+          );
+          final double currentSubtotal = settleTotals.subtotal;
+          final double scAmt = settleTotals.serviceCharge;
+          final double gstAmt = settleTotals.cgst + settleTotals.sgst;
+          final double totalPayable = settleTotals.grandTotal + _selectedTip;
 
           final saasSession = ref.read(saasSessionProvider);
           final shopName = saasSession.currentOrganization?.name ?? 'SmartBizz Restaurant';
@@ -1897,14 +1888,15 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                           padding: const EdgeInsets.symmetric(vertical: 14),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                         ),
-                        onPressed: () async {
+                        onPressed: _isSettling ? null : () async {
+                          if (_isSettling) return;
                           if (await _confirmUnservedVacate()) {
                             if (ctx.mounted) Navigator.pop(ctx);
                             _processSettlePayment(
                               'UPI',
                               totalPayable,
                               _selectedTip,
-                              subtotal: tableSubtotal,
+                              subtotal: currentSubtotal,
                               serviceCharge: scAmt,
                               gst: gstAmt,
                               customerEmail: emailCtrl.text.trim(),
@@ -2000,14 +1992,15 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                           padding: const EdgeInsets.symmetric(vertical: 14),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                         ),
-                        onPressed: () async {
+                        onPressed: _isSettling ? null : () async {
+                          if (_isSettling) return;
                           if (await _confirmUnservedVacate()) {
                             if (ctx.mounted) Navigator.pop(ctx);
                             _processSettlePayment(
                               'CASH',
                               totalPayable,
                               _selectedTip,
-                              subtotal: tableSubtotal,
+                              subtotal: currentSubtotal,
                               serviceCharge: scAmt,
                               gst: gstAmt,
                               customerEmail: emailCtrl.text.trim(),
@@ -2028,14 +2021,15 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                           padding: const EdgeInsets.symmetric(vertical: 14),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                         ),
-                        onPressed: () async {
+                        onPressed: _isSettling ? null : () async {
+                          if (_isSettling) return;
                           if (await _confirmUnservedVacate()) {
                             if (ctx.mounted) Navigator.pop(ctx);
                             _processSettlePayment(
                               'CARD',
                               totalPayable,
                               _selectedTip,
-                              subtotal: tableSubtotal,
+                              subtotal: currentSubtotal,
                               serviceCharge: scAmt,
                               gst: gstAmt,
                               customerEmail: emailCtrl.text.trim(),
@@ -2134,6 +2128,8 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
     double gst = 0.0,
     String? customerEmail,
   }) async {
+    if (_isSettling) return;
+    _isSettling = true;
     final orgId = _getEffectiveOrgId();
     final tNum = cleanTableId(widget.table.tableNumber);
     final tableName = widget.table.name.trim().isNotEmpty
@@ -2146,14 +2142,15 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
     final staffRole = activeStaff?.role.name ?? currentUser?.role ?? 'WAITER';
 
     try {
-      // 1. Consolidate all items across all rounds for this table into a single unified item list
+      // 1. Consolidate all items across all rounds for this table into a single unified item list (Issue 44: exclude voided items)
       final List<Map<String, dynamic>> consolidatedItems = [];
       for (final ord in _tableOrders) {
         for (final it in ord.items) {
+          if (it.isVoided || it.effectiveQty <= 0) continue;
           consolidatedItems.add({
             'productId': it.productId,
             'name': it.name,
-            'qty': it.qty,
+            'qty': it.effectiveQty,
             'price': it.price,
             'notes': it.notes,
             'isVeg': it.isVeg,
@@ -2387,6 +2384,12 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
       }
     } catch (e) {
       debugPrint('Error settling payment: $e');
+    } finally {
+      if (mounted) {
+        setState(() => _isSettling = false);
+      } else {
+        _isSettling = false;
+      }
     }
   }
 

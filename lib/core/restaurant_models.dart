@@ -718,6 +718,19 @@ class KotItem {
     return price + modifierDelta;
   }
 
+  double get totalPrice => unitPriceWithModifiers * effectiveQty;
+  double get totalPriceWithModifiers => unitPriceWithModifiers * effectiveQty;
+
+  /// Whether this item has been completely cancelled or voided (Issue 44)
+  bool get isVoided =>
+      (voidedBy != null && voidedBy!.isNotEmpty) ||
+      (voidReason != null && voidReason!.isNotEmpty) ||
+      (voidedQty >= qty && qty > 0) ||
+      kitchenStatus == 'VOIDED';
+
+  /// Effective non-voided quantity remaining on the check (Issue 44)
+  double get effectiveQty => (qty - voidedQty).clamp(0.0, qty);
+
   KotItem({
     this.lineId,
     required this.productId,
@@ -759,22 +772,36 @@ class KotItem {
       'voidedQty': voidedQty,
       'voidReason': voidReason,
       'voidedBy': voidedBy,
+      'isVoided': isVoided,
+      'voided': isVoided,
       'sendsToKitchen': sendsToKitchen,
       'seatNo': seatNo,
       'seat_no': seatNo,
       'selectedModifiers': selectedModifiers.map((m) => m.toMap()).toList(),
-      'subtotal': unitPriceWithModifiers * qty,
+      'subtotal': unitPriceWithModifiers * effectiveQty,
       'isTaxExempt': isTaxExempt,
       'is_tax_exempt': isTaxExempt,
     };
   }
 
   factory KotItem.fromMap(Map<String, dynamic> map) {
+    final isExplicitlyVoided = map['isVoided'] == true ||
+        map['voided'] == true ||
+        map['is_voided'] == true ||
+        (map['kitchenStatus']?.toString().toUpperCase() == 'VOIDED');
+    final rawQty = (map['qty'] as num?)?.toDouble() ?? (map['quantity'] as num?)?.toDouble() ?? 1.0;
+    final parsedVoidedQty = isExplicitlyVoided
+        ? rawQty
+        : ((map['voidedQty'] as num?)?.toDouble() ?? (map['voided_qty'] as num?)?.toDouble() ?? 0.0);
+    final parsedVoidedBy = isExplicitlyVoided
+        ? (map['voidedBy']?.toString() ?? 'VOIDED')
+        : map['voidedBy']?.toString();
+
     return KotItem(
       lineId: map['lineId']?.toString(),
       productId: (map['productId'] ?? map['id'] ?? '').toString(),
       name: (map['name'] ?? 'Unknown Item').toString(),
-      qty: (map['qty'] as num?)?.toDouble() ?? (map['quantity'] as num?)?.toDouble() ?? 1.0,
+      qty: rawQty,
       unit: (map['unit'] ?? 'plate').toString(),
       price: () {
         final p = (map['price'] as num?)?.toDouble() ?? (map['rate'] as num?)?.toDouble() ?? 0.0;
@@ -787,9 +814,9 @@ class KotItem {
       kitchenStatus: map['kitchenStatus']?.toString(),
       station: map['station']?.toString(),
       courseNo: (map['courseNo'] as num?)?.toInt(),
-      voidedQty: (map['voidedQty'] as num?)?.toDouble() ?? 0.0,
+      voidedQty: parsedVoidedQty,
       voidReason: map['voidReason']?.toString(),
-      voidedBy: map['voidedBy']?.toString(),
+      voidedBy: parsedVoidedBy,
       sendsToKitchen: Verticals.isShop(Verticals.resolve(vertical: map['vertical']?.toString(), businessCategory: map['businessCategory']?.toString() ?? map['category']?.toString()))
           ? false
           : map['sendsToKitchen'] != false,
@@ -948,6 +975,16 @@ class KotOrder {
 
   /// Universal dedup key using canonical ID
   String get canonicalKey => canonicalId(this);
+
+  /// Active, non-voided items on this order (Issue 44)
+  List<KotItem> get activeItems => items.where((it) => !it.isVoided && it.effectiveQty > 0).toList();
+
+  /// Total count of active items excluding voided lines (Issue 44)
+  int get activeItemCount => activeItems.length;
+
+  /// Subtotal for all active, non-voided items on this order (Issue 44)
+  double get activeSubtotal => activeItems.fold<double>(
+      0.0, (acc, it) => acc + (it.unitPriceWithModifiers * it.effectiveQty));
 
   /// Effective payment status: PAID, PARTIAL, UNPAID, VOIDED, REFUNDED (B-04)
   String get effectivePaymentStatus {

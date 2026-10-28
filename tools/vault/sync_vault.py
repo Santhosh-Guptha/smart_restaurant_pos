@@ -30,8 +30,6 @@ SECRET_TOKEN = "SMART_POS_SECURE_TOKEN_2026"
 CREDENTIAL_FILES = [
     "android/key.properties",
     "android/app/upload-keystore.jks",
-    "test_automation/.env.test",
-    "secrets/lease_signing_key.pem",
 ]
 
 DOC_FILES = [

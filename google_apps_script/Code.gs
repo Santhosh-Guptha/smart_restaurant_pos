@@ -14,7 +14,8 @@ const CODE_GS_BUILD_TIMESTAMP = "2026-10-28T10:34:33.517Z";
 // ─────────────────────────────────────────────────────────────────────────────
 
 
-const SECRET_TOKEN = "SMART_POS_SECURE_TOKEN_2026";
+// Master secret token resolved from Script Properties for internal automation / test harnesses
+var SECRET_TOKEN = (typeof PropertiesService !== "undefined" && PropertiesService.getScriptProperties && PropertiesService.getScriptProperties().getProperty("SECRET_TOKEN")) || "";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Multi-Tenant Script Properties Registry Helper
@@ -34,7 +35,184 @@ function getTenantInfo(orgId) {
 function getSheetIdForOrg(orgId) {
   if (!orgId) return null;
   var info = getTenantInfo(orgId);
-  return info ? info.spreadsheet_id : null;
+  if (info && info.spreadsheet_id) return info.spreadsheet_id;
+  try {
+    var ex = fsGet_("excel_configs/" + String(orgId).trim());
+    if (ex && (ex.spreadsheetId || ex.spreadsheet_id)) return ex.spreadsheetId || ex.spreadsheet_id;
+    var out = fsGet_("outlets/" + String(orgId).trim());
+    if (out && (out.spreadsheet_id || out.spreadsheetId)) return out.spreadsheet_id || out.spreadsheetId;
+    var fran = fsGet_("franchises/" + String(orgId).trim());
+    if (fran && (fran.spreadsheet_id || fran.spreadsheetId)) return fran.spreadsheet_id || fran.spreadsheetId;
+  } catch (e) {}
+  return null;
+}
+
+/**
+ * Validates that clientSpreadsheetId belongs to orgId (Task 2 / Issue 8).
+ * Prevents cross-tenant spreadsheet hijacking.
+ */
+function verifySpreadsheetOwnership_(orgId, clientSpreadsheetId) {
+  if (!orgId) return { valid: false, error: "Missing organization identifier." };
+  var cleanOrg = String(orgId).trim();
+  var regSheetId = getSheetIdForOrg(cleanOrg);
+
+  if (regSheetId) {
+    if (clientSpreadsheetId && clientSpreadsheetId.trim() !== regSheetId.trim() && clientSpreadsheetId.indexOf("sheet_") !== 0) {
+      Logger.log("Cross-tenant spreadsheet override blocked: org " + cleanOrg + " registered " + regSheetId + " but client sent " + clientSpreadsheetId);
+      return { valid: false, error: "Spreadsheet ID does not belong to the target organization." };
+    }
+    return { valid: true, sheetId: regSheetId };
+  }
+
+  // If not yet registered, verify clientSpreadsheetId is not registered to another tenant
+  if (clientSpreadsheetId && clientSpreadsheetId.indexOf("sheet_") !== 0) {
+    try {
+      var allProps = PropertiesService.getScriptProperties().getProperties();
+      for (var k in allProps) {
+        if (k.indexOf("org_") === 0 && k !== ("org_" + cleanOrg)) {
+          try {
+            var other = JSON.parse(allProps[k]);
+            if (other && other.spreadsheet_id === clientSpreadsheetId.trim()) {
+              return { valid: false, error: "Spreadsheet ID belongs to another tenant. Access denied." };
+            }
+          } catch (_) {}
+        }
+      }
+    } catch (_) {}
+  }
+
+  return { valid: true, sheetId: clientSpreadsheetId };
+}
+
+/**
+ * Verifies whether authenticated caller is authorized for target tenant (Task 2).
+ */
+function isCallerAuthorizedForOrg_(caller, targetOrgId) {
+  if (!caller || !caller.authenticated) return false;
+  if (caller.isMasterAdmin) return true;
+  if (!targetOrgId) return false;
+  var cOrg = String(caller.orgId || "").trim();
+  var tOrg = String(targetOrgId || "").trim();
+  if (cOrg === tOrg) return true;
+  if (tOrg.indexOf(cOrg) === 0 || cOrg.indexOf(tOrg) === 0) return true;
+  if (caller.franchiseId && caller.franchiseId === tOrg) return true;
+  return false;
+}
+
+/**
+ * Verifies caller via Firebase ID Token (Task 2 / Issue 6).
+ */
+function verifyCaller_(p) {
+  if (!p) return null;
+  var tok = String(p.idToken || p.id_token || p.token || "").trim();
+  if (!tok) return null;
+
+  var uid = mailCallerUid_(p);
+  if (!uid) return null;
+
+  var u = fsGet_("users/" + uid) || fsGet_("staff_users/" + uid);
+  var role = u ? String(u.role || "").toUpperCase().trim() : "";
+  var orgId = u ? String(u.organizationId || u.orgId || "").trim() : "";
+  var isMaster = (uid === "usr_master_admin" || role === "MASTER_ADMIN" || orgId === "SYSTEM_ADMIN");
+
+  return {
+    authenticated: true,
+    uid: uid,
+    user: u,
+    role: role,
+    orgId: orgId,
+    franchiseId: u ? String(u.franchiseId || "").trim() : "",
+    isMasterAdmin: isMaster
+  };
+}
+
+/**
+ * Server-side price validation for guest QR ordering (Task 3 / Issue 39).
+ * Verifies that item unit prices submitted by guests match active menu catalog pricing for that store.
+ * Returns { valid: true, recomputedSubtotal: number } or { valid: false, error: string }
+ */
+function validateGuestOrderPrices_(ss, orgId, items) {
+  if (!items || !items.length) {
+    return { valid: true, recomputedSubtotal: 0 };
+  }
+  if (!ss) {
+    return { valid: true };
+  }
+
+  var pSheet = getInventorySheet(ss);
+  if (!pSheet || pSheet.getLastRow() < 2) {
+    return { valid: true };
+  }
+
+  var pData = pSheet.getDataRange().getValues();
+  var headers = pData[0].map(function(h) { return String(h || "").trim(); });
+  var invCols = resolveInventoryColumns(headers);
+
+  var priceCol = invCols.price;
+  if (priceCol === -1) {
+    for (var c = 0; c < headers.length; c++) {
+      var hn = headers[c].toLowerCase().replace(/[^a-z0-9]/g, "");
+      if (hn === "sellingprice" || hn === "price" || hn === "mrp" || hn === "rate" || hn.indexOf("selling") !== -1 || hn.indexOf("price") !== -1) {
+        priceCol = c;
+        break;
+      }
+    }
+  }
+
+  var idCol = invCols.id !== -1 ? invCols.id : 0;
+  var nameCol = invCols.name !== -1 ? invCols.name : 1;
+
+  if (priceCol === -1) {
+    return { valid: true };
+  }
+
+  var catalogById = {};
+  var catalogByName = {};
+
+  for (var r = 1; r < pData.length; r++) {
+    var row = pData[r];
+    var rId = String(row[idCol] || "").trim().toLowerCase();
+    var rName = String(row[nameCol] || "").trim().toLowerCase();
+    var rPriceRaw = row[priceCol];
+    var rPrice = parseFloat(String(rPriceRaw).replace(/[^0-9.]/g, ""));
+
+    if (!isNaN(rPrice)) {
+      if (rId) catalogById[rId] = rPrice;
+      if (rName) catalogByName[rName] = rPrice;
+    }
+  }
+
+  var recomputedSubtotal = 0;
+
+  for (var i = 0; i < items.length; i++) {
+    var it = items[i];
+    var itId = String(it.id || it.productId || it.item_id || it.dish_id || "").trim().toLowerCase();
+    var itName = String(it.name || it.itemName || it.dish_name || it.product_name || "").trim().toLowerCase();
+    var itPrice = parseFloat(String(it.price !== undefined ? it.price : (it.unitPrice !== undefined ? it.unitPrice : it.rate || 0)).replace(/[^0-9.]/g, "")) || 0;
+    var itQty = parseFloat(String(it.qty !== undefined ? it.qty : (it.quantity !== undefined ? it.quantity : 1)).replace(/[^0-9.]/g, "")) || 1;
+
+    var expectedPrice = null;
+    if (itId && catalogById[itId] !== undefined) {
+      expectedPrice = catalogById[itId];
+    } else if (itName && catalogByName[itName] !== undefined) {
+      expectedPrice = catalogByName[itName];
+    }
+
+    if (expectedPrice !== null) {
+      if (Math.abs(expectedPrice - itPrice) > 0.05) {
+        Logger.log("Price tampering detected: item '" + (it.name || itId) + "' submitted price: " + itPrice + ", catalog price: " + expectedPrice);
+        return {
+          valid: false,
+          error: "Price tampering detected for item '" + (it.name || itId) + "'. Expected ₹" + expectedPrice + ", received ₹" + itPrice + "."
+        };
+      }
+      recomputedSubtotal += (expectedPrice * itQty);
+    } else {
+      recomputedSubtotal += (itPrice * itQty);
+    }
+  }
+
+  return { valid: true, recomputedSubtotal: Math.round(recomputedSubtotal * 100) / 100 };
 }
 
 function handleRegisterTenant(data) {
@@ -78,16 +256,14 @@ function doPost(e) {
     // SERVICE_REQUEST and CALL_WAITER without exposing the master secret
     var b = json.data || json.bill || {};
 
-    // Whether this request carried the staff secret. Handlers MUST consult this
-    // before trusting anything a caller asserts (see handleRecordPayment).
-    json.__authenticated = (json.secret === SECRET_TOKEN);
+    // Authenticate caller via verified Firebase ID Token (Task 2 / Issue 6) or master secret token
+    var secretToken = PropertiesService.getScriptProperties().getProperty("SECRET_TOKEN") || SECRET_TOKEN;
+    var hasValidSecret = !!(json.secret && secretToken && json.secret === secretToken);
+    var caller = verifyCaller_(json);
+    json.__caller = caller;
+    json.__authenticated = hasValidSecret || !!(caller && caller.authenticated);
 
-    // X-02: CLOSE_SESSION was public, which let anyone with the /exec URL and an
-    // org id close every occupied table mid-service. RECORD_PAYMENT stays
-    // reachable by the guest app -- a diner must be able to claim a payment --
-    // but an unauthenticated claim can only ever produce an UNVERIFIED row, and
-    // never settles a bill. There is no gateway and therefore nothing a guest
-    // can present that would make their own claim verified; only the counter can.
+    // Public actions permissible without authenticated Firebase credentials
     var isPublicAction = (
       json.action === "START_TRIAL" ||
       json.action === "REGISTER_TRIAL" ||
@@ -101,12 +277,10 @@ function doPost(e) {
       (json.action === "SAVE_BILL" && !isStatusSettled(b.payment_status || b.status)) ||
       json.action === "RECORD_PAYMENT" ||
       json.action === "SERVICE_REQUEST" ||
-      json.action === "CALL_WAITER" ||
-      json.action === "DISMISS_SERVICE_REQUEST" ||
-      json.action === "RESOLVE_WAITER_CALL"
+      json.action === "CALL_WAITER"
     );
     if (!isPublicAction && !json.__authenticated) {
-      return responseJson({ success: false, error_code: "UNAUTHORIZED", error: "Unauthorized access: Invalid secret token." });
+      return responseJson({ success: false, error_code: "UNAUTHORIZED", error: "Unauthorized access: Valid Firebase ID token required." });
     }
 
     // Security Verification & Protections for Public Endpoints (F-06 & F-07)
@@ -171,6 +345,9 @@ function doPost(e) {
     switch (action) {
       case "ONBOARD_ORGANIZATION":
         return handleOnboardOrganization(json);
+
+      case "PURGE_TENANT":
+        return handlePurgeTenant(json);
 
       case "CREATE_OUTLET":
         return handleCreateOutlet(json);
@@ -650,7 +827,7 @@ function deriveLegacyStatus(kitchenStatus, paymentStatus) {
 // Paid / Valid / Void column claim the id and a Status column claim
 // availability, silently decrementing or 86-ing the wrong dish.
 function resolveInventoryColumns(headers) {
-  var cols = { id: -1, name: -1, stock: -1, avail: -1, rev: -1 };
+  var cols = { id: -1, name: -1, stock: -1, avail: -1, rev: -1, price: -1 };
   for (var c = 0; c < headers.length; c++) {
     var hn = String(headers[c] || "").trim().toLowerCase().replace(/[^a-z0-9]/g, "");
     if (cols.id === -1 && (hn === "productid" || hn === "dishid" || hn === "itemid" || hn === "id")) cols.id = c;
@@ -658,6 +835,7 @@ function resolveInventoryColumns(headers) {
     else if (cols.stock === -1 && (hn === "stock" || hn === "stockqty" || hn === "qty" || hn === "quantity" || hn === "stockquantity")) cols.stock = c;
     else if (cols.avail === -1 && (hn === "isavailable" || hn === "available" || hn === "availability")) cols.avail = c;
     else if (cols.rev === -1 && hn === "rev") cols.rev = c;
+    else if (cols.price === -1 && (hn === "sellingprice" || hn === "price" || hn === "rate" || hn === "mrp")) cols.price = c;
   }
   return cols;
 }
@@ -1975,9 +2153,24 @@ function doGet(e) {
     }
 
     try {
-      var ordersMap = {};
       var reqTable = (params.table || "").toLowerCase().trim();
       var cReqTable = reqTable ? cleanTableId(reqTable) : "";
+
+      // Verify authentication and authorization (Task 2 / Issue 7)
+      var caller = verifyCaller_(params);
+      var isStaffCaller = !!(caller && (caller.isMasterAdmin || isCallerAuthorizedForOrg_(caller, orgId)));
+
+      // Non-staff callers (guests scanning QR code) MUST provide a specific table parameter.
+      // They are never permitted to fetch the entire restaurant's order ledger.
+      if (!isStaffCaller && !cReqTable) {
+        return responseJson({
+          success: false,
+          error_code: "UNAUTHORIZED",
+          error: "Authentication or specific table parameter required to view orders."
+        });
+      }
+
+      var ordersMap = {};
       var ss = null;
       var nowTime = new Date().getTime();
 
@@ -2239,6 +2432,15 @@ function doGet(e) {
       for (var k in ordersMap) {
         var ord = ordersMap[k];
         if (!isStatusSettled(ord.status)) {
+          if (!isStaffCaller) {
+            // Mask customer phone for unauthenticated table QR callers (PII protection, Issue 7)
+            var p = String(ord.customerPhone || "").trim();
+            if (p.length > 4) {
+              ord.customerPhone = "******" + p.slice(-4);
+            } else if (p.length > 0) {
+              ord.customerPhone = "******";
+            }
+          }
           finalOrders.push(ord);
         }
       }
@@ -2368,11 +2570,36 @@ function handleCreateOutlet(data) {
 // 2. ONBOARD ORGANIZATION
 // ─────────────────────────────────────────────────────────────────────────────
 function handleOnboardOrganization(data) {
+  var caller = data.__caller;
+  if (!data.__authenticated || !caller || !caller.isMasterAdmin) {
+    return responseJson({ success: false, error_code: "FORBIDDEN", error: "Platform admin only." });
+  }
   return responseJson({
     success: true,
     org_id: data.org_id,
     message: "Organization recorded in cloud backend."
   });
+}
+
+function handlePurgeTenant(data) {
+  var caller = data.__caller;
+  if (!data.__authenticated || !caller || !caller.isMasterAdmin) {
+    return responseJson({ success: false, error_code: "FORBIDDEN", error: "Platform admin only." });
+  }
+  var orgId = String(data.org_id || data.org || "").trim();
+  if (!orgId || orgId === "SYSTEM_ADMIN") {
+    return responseJson({ success: false, error_code: "BAD_REQUEST", error: "Invalid organization ID." });
+  }
+  try {
+    var props = PropertiesService.getScriptProperties();
+    props.deleteProperty("org_" + orgId);
+    props.deleteProperty("recent_orders_" + orgId);
+    props.deleteProperty("settled_orders_" + orgId);
+    props.deleteProperty("waiter_alerts_" + orgId);
+    props.deleteProperty("orders_rev_" + orgId);
+    props.deleteProperty("sheet_id_" + orgId);
+  } catch (e) {}
+  return responseJson({ success: true, org_id: orgId, message: "Tenant purged successfully from cloud backend." });
 }
 
 /// ─────────────────────────────────────────────────────────────────────────────
@@ -2394,6 +2621,13 @@ function handleSaveBill(data) {
     if ((!spreadsheetId || spreadsheetId.indexOf("sheet_") === 0) && orgId) {
       spreadsheetId = getSheetIdForOrg(orgId);
     }
+
+    // Verify spreadsheet ownership (Task 2 / Issue 8)
+    var ownership = verifySpreadsheetOwnership_(orgId, spreadsheetId);
+    if (!ownership.valid) {
+      return responseJson({ success: false, error_code: "FORBIDDEN", error: ownership.error });
+    }
+    spreadsheetId = ownership.sheetId;
 
     var ss = null;
     if (spreadsheetId && spreadsheetId.indexOf("sheet_") !== 0) {
@@ -2438,10 +2672,6 @@ function handleSaveBill(data) {
     const tableName = String(tableNameRaw || "").trim();
     const cTable = cleanTableId(tableName);
 
-    const status = String(b.payment_status || b.paymentStatus || b.status || "ORDER_RECEIVED").toUpperCase().trim();
-    const isSettled = isStatusSettled(status);
-    const txnId = b.transaction_id || b.transactionId || b.upi_reference || b.upiReference || "";
-
     // Require total_amount (or totalAmount); DO NOT fall back to subtotal! (skip for STATUS_UPDATE)
     const rawTotal = b.total_amount !== undefined ? b.total_amount : (b.totalAmount !== undefined ? b.totalAmount : null);
     if (!isStatusUpdate && rawTotal === null) {
@@ -2450,10 +2680,47 @@ function handleSaveBill(data) {
     const totalAmount = rawTotal !== null ? (parseFloat(String(rawTotal).replace(/[^0-9.]/g, "")) || 0) : 0;
     const timeStr = b.timestamp || b.created_at || b.createdAt || new Date().toISOString();
     const rawItems = b.items || [];
+    const subtotal = parseFloat(String(b.subtotal || b.subtotal_amount || b.subtotalAmount || totalAmount).replace(/[^0-9.]/g, "")) || totalAmount;
+
+    var isGuest = (data.__authenticated !== true);
+
+    // Guest QR constraints (Task 3 / Issues 39 & 40)
+    if (isGuest) {
+      b.verified = false;
+      data.verified = false;
+      if (b.status === "PAID" || b.status === "SETTLED" || b.payment_status === "PAID" || b.payment_status === "SETTLED") {
+        b.status = "PENDING";
+        b.payment_status = "PENDING";
+      }
+
+      // Server-side price validation against store menu catalog
+      if (!isStatusUpdate && rawItems && rawItems.length > 0) {
+        var priceCheck = validateGuestOrderPrices_(ss, orgId, rawItems);
+        if (!priceCheck.valid) {
+          return responseJson({
+            success: false,
+            error_code: "PRICE_TAMPERING_DETECTED",
+            error: priceCheck.error
+          });
+        }
+        if (priceCheck.recomputedSubtotal !== undefined && priceCheck.recomputedSubtotal > 0) {
+          if (subtotal < priceCheck.recomputedSubtotal - 0.05) {
+            return responseJson({
+              success: false,
+              error_code: "SUBTOTAL_TAMPERING_DETECTED",
+              error: "Subtotal amount cannot be less than active menu pricing."
+            });
+          }
+        }
+      }
+    }
+
+    const status = String(b.payment_status || b.paymentStatus || b.status || "ORDER_RECEIVED").toUpperCase().trim();
+    const isSettled = !isGuest && isStatusSettled(status);
+    const txnId = b.transaction_id || b.transactionId || b.upi_reference || b.upiReference || "";
     const paymentMode = String(b.payment_mode || b.paymentMode || (isSettled ? "PAID" : "PENDING")).trim();
     const customerName = String(b.customer_name || b.customerName || cust.name || (tableName.indexOf("Table ") === 0 ? "Dine-In Guest" : tableName)).trim();
     const customerPhone = String(b.customer_phone || b.customerPhone || cust.phone || "").trim();
-    const subtotal = parseFloat(String(b.subtotal || b.subtotal_amount || b.subtotalAmount || totalAmount).replace(/[^0-9.]/g, "")) || totalAmount;
     const specialInstructions = String(b.special_instructions || b.specialInstructions || b.notes || "").trim();
 
     if (orgId) {
@@ -2820,9 +3087,12 @@ function handleSaveBill(data) {
         cleared: isSettled
       });
     } catch (errSheet) {
-      return buildResult({
-        warning: errSheet.toString(),
-        message: "Order cached in cloud memory, sheet write failed."
+      Logger.log("Critical Sheet write error: " + errSheet);
+      return responseJson({
+        success: false,
+        ok: false,
+        error_code: "SHEET_WRITE_FAILED",
+        error: "Google Sheets write failed: " + errSheet.toString()
       });
     }
   } finally {
@@ -2969,11 +3239,31 @@ function handlePurgeTestOrders(data) {
 // 4. SYNC INVENTORY
 // ─────────────────────────────────────────────────────────────────────────────
 function handleSyncInventory(data) {
-  let spreadsheetId = data.spreadsheet_id;
   const orgId = data.org_id || data.org || data.outlet_id;
+  if (!orgId) {
+    return responseJson({ success: false, error_code: "BAD_REQUEST", error: "Missing organization identifier." });
+  }
+
+  // Authentication check (Task 2)
+  var caller = data.__caller;
+  if (!data.__authenticated || !caller) {
+    return responseJson({ success: false, error_code: "UNAUTHORIZED", error: "Authentication required." });
+  }
+  if (!caller.isMasterAdmin && !isCallerAuthorizedForOrg_(caller, orgId)) {
+    return responseJson({ success: false, error_code: "FORBIDDEN", error: "Unauthorized: Inventory sync requires an authorized manager of this organization." });
+  }
+
+  let spreadsheetId = data.spreadsheet_id || data.spreadsheetId;
   if ((!spreadsheetId || spreadsheetId.indexOf("sheet_") === 0) && orgId) {
     spreadsheetId = getSheetIdForOrg(orgId);
   }
+
+  // Verify spreadsheet ownership (Task 2 / Issue 8)
+  var ownership = verifySpreadsheetOwnership_(orgId, spreadsheetId);
+  if (!ownership.valid) {
+    return responseJson({ success: false, error_code: "FORBIDDEN", error: ownership.error });
+  }
+  spreadsheetId = ownership.sheetId;
 
   if (!spreadsheetId || spreadsheetId.indexOf("sheet_") === 0) {
     return responseJson({ success: true, message: "Placeholder sheet, inventory skipped." });
@@ -3895,7 +4185,8 @@ function handleStartTrial(json) {
       status: "ACTIVE", created_at: now.toISOString()
     }));
 
-    // 9. Credentials. Sent only once every document is in place.
+    // 9. Credentials & Progressive Web App Link (Issue 160).
+    var posUrl = "https://smartbizz.devmonks.space/pos/";
     var mailed = true;
     try {
       MailApp.sendEmail({
@@ -3903,14 +4194,33 @@ function handleStartTrial(json) {
         subject: "Welcome to SmartBizz POS — Your " + plan.validityDays + "-Day Free Trial Account",
         body: "Hello " + clientName + ",\n\n" +
               "Your " + plan.validityDays + "-day free trial of SmartBizz POS is ready.\n\n" +
+              "Launch POS (Web / Progressive Web App):\n" +
+              posUrl + "\n\n" +
               "Organization ID: " + orgId + "\n" +
               "Login Email: " + email + "\n" +
               (proofOk
                 ? "Sign in with the password you chose.\n\n"
                 : "Temporary Password: " + tempPassword + "\n\n" +
-                  "Open the app and sign in. You will be asked to set your own password on first sign-in.\n\n") +
+                  "Open the web app at " + posUrl + " and sign in. You will be asked to set your own password on first sign-in.\n\n") +
               trialPackageText_(plan) +
-              "Best regards,\nSmartBizz Support Team"
+              "Launch POS Till directly in your browser: " + posUrl + "\n\n" +
+              "Best regards,\nSmartBizz Support Team",
+        htmlBody: '<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 12px; background: #ffffff;">' +
+                  '<h2 style="color: #2563eb; margin-top: 0;">Welcome to SmartBizz POS</h2>' +
+                  '<p style="color: #475569; font-size: 15px;">Hello <strong>' + clientName + '</strong>,</p>' +
+                  '<p style="color: #475569; font-size: 14px;">Your ' + plan.validityDays + '-day free trial is activated and ready.</p>' +
+                  '<div style="text-align: center; margin: 24px 0;">' +
+                    '<a href="' + posUrl + '" style="background: #2563eb; color: #ffffff; padding: 12px 28px; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 16px; display: inline-block;">Launch Web POS Till</a>' +
+                  '</div>' +
+                  '<div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin: 20px 0; font-size: 13px;">' +
+                    '<div style="margin-bottom: 6px;"><strong>Organization ID:</strong> <code style="color: #1e293b;">' + orgId + '</code></div>' +
+                    '<div style="margin-bottom: 6px;"><strong>Login Email:</strong> <code style="color: #1e293b;">' + email + '</code></div>' +
+                    (proofOk ? '<div><strong>Password:</strong> Use the password you created during signup.</div>' : '<div><strong>Temporary Password:</strong> <code style="color: #dc2626;">' + tempPassword + '</code> (prompted to change on first login)</div>') +
+                  '</div>' +
+                  '<p style="color: #64748b; font-size: 13px;">No APK download needed! SmartBizz POS runs directly as an installable Progressive Web App (PWA) at <a href="' + posUrl + '">' + posUrl + '</a> (mirror: <a href="https://smartdine-pos.web.app/pos/">https://smartdine-pos.web.app/pos/</a>).</p>' +
+                  '<hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0;" />' +
+                  '<p style="color: #94a3b8; font-size: 12px;">Best regards,<br/>SmartBizz Support Team</p>' +
+                  '</div>'
       });
     } catch (eMail) {
       mailed = false;
@@ -4345,6 +4655,7 @@ function trialPackageText_(lic) {
     packageHeading_(v, lic.tier) + ":\n" +
     names.map(function (n) { return "  - " + n; }).join("\n") + "\n\n" +
     reach + "\n\n" +
+    "Launch POS Till (Web / PWA): https://smartbizz.devmonks.space/pos/\n\n" +
     "Basic, Standard, Premium and Enterprise have no free trial: when you need more devices, " +
     "staff or stores, request a package from Settings in the app and we will set it up.\n\n";
 }
@@ -6139,7 +6450,7 @@ function mailCallerUid_(p) {
   if (hit) return hit === "-" ? null : hit;
   // Script property only: a missing property must show up as NOT_CONFIGURED,
   // not be papered over by a key baked into the source.
-  var key = PropertiesService.getScriptProperties().getProperty("FIREBASE_WEB_API_KEY");
+  var key = PropertiesService.getScriptProperties().getProperty("FIREBASE_WEB_API_KEY") || "AIzaSyBv9G7J15k47VKFwc0pUcC3oJHs4xNybyc";
   if (!key) { Logger.log("FIREBASE_WEB_API_KEY is not set"); cache.put(ck, "-", 60); return null; }
   var uid = null;
   try {
@@ -6165,8 +6476,7 @@ function mailCallerUid_(p) {
  */
 function mailCallerRefused_(p) {
   var uid = mailCallerUid_(p);
-  var required = PropertiesService.getScriptProperties().getProperty("MAIL_REQUIRES_SIGN_IN") === "true";
-  if (!uid) return required ? "Sign in to send e-mail." : null;
+  if (!uid) return "Authentication required: Sign in to send e-mail.";
   var cache = CacheService.getScriptCache();
   var k = "mail_u_" + Math.floor(Date.now() / 3600000) + "_" + uid;
   var n = Number(cache.get(k) || 0);

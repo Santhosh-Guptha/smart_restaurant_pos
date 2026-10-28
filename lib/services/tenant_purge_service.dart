@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import '../core/constants.dart';
+import 'apps_script_backend_service.dart';
 
 /// Comprehensive, fail-safe tenant purge service.
 ///
@@ -219,6 +220,13 @@ class TenantPurgeService {
       }
     } catch (e) {
       debugPrint('⚠️ [TenantPurgeService] Local Hive cache cleanup note: $e');
+    }
+
+    // 9. Purge tenant properties & memory cache from Google Apps Script backend
+    try {
+      await AppsScriptBackendService.purgeTenant(orgId: cleanOrgId);
+    } catch (e) {
+      debugPrint('⚠️ [TenantPurgeService] Apps Script purge notice: $e');
     }
 
     debugPrint('✅ [TenantPurgeService] Purge completed for $cleanOrgId: $totalDeleted documents removed.');

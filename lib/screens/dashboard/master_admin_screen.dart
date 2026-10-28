@@ -267,14 +267,14 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
                     style: TextStyle(color: context.textPrimary, fontSize: 13, height: 1.4),
                   ),
                   const SizedBox(height: 16),
-                  Text("Type 'RESET_DATA' to confirm:", style: TextStyle(color: context.textSecondary, fontSize: 12, fontWeight: FontWeight.bold)),
+                  Text("Type 'DELETE ALL MERCHANTS' to confirm:", style: TextStyle(color: context.textSecondary, fontSize: 12, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 6),
                   TextField(
                     controller: confirmationController,
                     style: TextStyle(color: context.textPrimary, fontWeight: FontWeight.bold),
                     decoration: ClassicTheme.inputDecorationFor(
                       context,
-                      hintText: "RESET_DATA",
+                      hintText: "DELETE ALL MERCHANTS",
                     ),
                     onChanged: (_) => setDialogState(() {}),
                   ),
@@ -287,7 +287,7 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
                 child: Text("Cancel", style: TextStyle(color: context.textSecondary)),
               ),
               ElevatedButton(
-                onPressed: (isCleaning || confirmationController.text.trim() != 'RESET_DATA')
+                onPressed: (isCleaning || confirmationController.text.trim().toUpperCase() != 'DELETE ALL MERCHANTS')
                     ? null
                     : () async {
                         setDialogState(() => isCleaning = true);

@@ -22,7 +22,7 @@ import '../../providers/restaurant_auth_provider.dart';
 import '../../providers/saas_session_provider.dart';
 import '../../services/apps_script_backend_service.dart';
 import '../../widgets/digital_pos_bill_dialog.dart';
-import '../../billing/bill_calculator.dart';
+import '../../core/order_calculation_engine.dart';
 import '../../sync/outbox.dart';
 import '../../sync/local_store.dart';
 import '../../core/entitlements.dart';
@@ -842,6 +842,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
   }
 
   Discount? _appliedDiscount;
+  bool _isSettling = false;
 
   BillTotals get _billTotals {
     final lines = _cart.map((i) => BillLine(
@@ -852,13 +853,14 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
       taxRateBps: i.isTaxExempt ? 0 : (_gstRate * 100).round(),
     )).toList();
 
-    return BillCalculator.compute(
-      lines: lines,
+    return OrderCalculationEngine.calculateOrderTotals(
+      items: lines,
       discount: _appliedDiscount,
-      serviceChargeBps: (_serviceChargeRate * 100).round(),
+      serviceChargeRate: OrderCalculationEngine.isDineIn(_orderType) ? _serviceChargeRate : 0.0,
+      gstRate: _gstRate,
+      orderType: _orderType,
       taxMode: TaxMode.exclusive,
       roundOffEnabled: true,
-      defaultTaxRateBps: (_gstRate * 100).round(),
     );
   }
 
@@ -1731,7 +1733,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                           padding: const EdgeInsets.symmetric(vertical: 14),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                         ),
-                        onPressed: () {
+                        onPressed: _isSettling ? null : () {
                           Navigator.pop(ctx);
                           _completeOrder(paymentMode: 'CASH', isPaid: true, existingOrderToAppend: existingOrderToAppend);
                         },
@@ -1748,7 +1750,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                           padding: const EdgeInsets.symmetric(vertical: 14),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                         ),
-                        onPressed: () async {
+                        onPressed: _isSettling ? null : () async {
                           // Show the customer the QR for this exact amount and
                           // settle only when the cashier says the money landed.
                           final amountPaise = _payableTotalPaise(existingOrderToAppend);
@@ -1777,7 +1779,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                           padding: const EdgeInsets.symmetric(vertical: 14),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                         ),
-                        onPressed: () {
+                        onPressed: _isSettling ? null : () {
                           Navigator.pop(ctx);
                           _completeOrder(paymentMode: 'CARD', isPaid: true, existingOrderToAppend: existingOrderToAppend);
                         },
@@ -1832,6 +1834,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
     for (final e in oldItems) {
       if (e is! Map) continue;
       final i = Map<String, dynamic>.from(e);
+      if (OrderCalculationEngine.isVoidedItem(i)) continue;
       combined.add(BillLine(
         productId: (i['id'] ?? i['productId'] ?? '').toString(),
         name: (i['name'] ?? '').toString(),
@@ -1851,13 +1854,17 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
     }
     if (combined.isEmpty) return _billTotals.grandTotalPaise;
 
-    return BillCalculator.compute(
-      lines: combined,
+    final targetOrderType = (existingOrderToAppend['orderType'] ?? existingOrderToAppend['order_type'] ?? _orderType).toString();
+    final isDineIn = OrderCalculationEngine.isDineIn(targetOrderType);
+
+    return OrderCalculationEngine.calculateOrderTotals(
+      items: combined,
       discount: _appliedDiscount,
-      serviceChargeBps: (_serviceChargeRate * 100).round(),
+      serviceChargeRate: isDineIn ? _serviceChargeRate : 0.0,
+      gstRate: _gstRate,
+      orderType: targetOrderType,
       taxMode: TaxMode.exclusive,
       roundOffEnabled: true,
-      defaultTaxRateBps: (_gstRate * 100).round(),
     ).grandTotalPaise;
   }
 
@@ -1973,7 +1980,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton(
-                      onPressed: remaining > 0.01 || sum <= 0
+                      onPressed: (_isSettling || remaining > 0.01 || sum <= 0)
                           ? null
                           : () {
                               Navigator.pop(ctx);
@@ -2201,6 +2208,19 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                 if (entered <= 0) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(content: Text('Please enter a valid discount value greater than 0.')),
+                  );
+                  return;
+                }
+                if (isPercentage && entered > 100) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Discount percentage cannot exceed 100%.'), backgroundColor: ClassicTheme.dangerRed),
+                  );
+                  return;
+                }
+                final cartSubtotal = _cart.fold<double>(0.0, (acc, item) => acc + item.totalPriceWithModifiers);
+                if (!isPercentage && entered > cartSubtotal) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Flat discount cannot exceed subtotal (₹${cartSubtotal.toStringAsFixed(2)}).'), backgroundColor: ClassicTheme.dangerRed),
                   );
                   return;
                 }
@@ -2698,8 +2718,9 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
     Map<String, dynamic>? existingOrderToAppend,
     List<Map<String, dynamic>>? splitPayments,
   }) async {
-    if (_isCompletingOrder) return;
+    if (_isCompletingOrder || _isSettling) return;
     _isCompletingOrder = true;
+    _isSettling = true;
     try {
       await _completeOrderInner(
         paymentMode: paymentMode,
@@ -2711,6 +2732,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
       // Cleared whatever happened, including a throw: leaving it set would
       // lock the till out of taking any further payment until it restarted.
       _isCompletingOrder = false;
+      _isSettling = false;
     }
   }
 
@@ -2843,21 +2865,26 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
               });
             }
 
+            final targetOrderType = (oldOrder['orderType'] ?? oldOrder['order_type'] ?? _orderType).toString();
+            final isDineIn = OrderCalculationEngine.isDineIn(targetOrderType);
+
             final allLines = newItemsList.map((i) => BillLine(
               productId: (i['id'] ?? i['productId'] ?? '').toString(),
               name: (i['name'] ?? '').toString(),
               qty: (i['qty'] as num?)?.toDouble() ?? 1.0,
               unitPaise: (((i['price'] as num?)?.toDouble() ?? 0.0) * 100).round(),
               taxRateBps: (i['isTaxExempt'] == true || i['is_tax_exempt'] == true) ? 0 : (_gstRate * 100).round(),
+              isVoided: OrderCalculationEngine.isVoidedItem(i),
             )).toList();
 
-            final appendedTotals = BillCalculator.compute(
-              lines: allLines,
+            final appendedTotals = OrderCalculationEngine.calculateOrderTotals(
+              items: allLines,
               discount: _appliedDiscount,
-              serviceChargeBps: (_serviceChargeRate * 100).round(),
+              serviceChargeRate: isDineIn ? _serviceChargeRate : 0.0,
+              gstRate: _gstRate,
+              orderType: targetOrderType,
               taxMode: TaxMode.exclusive,
               roundOffEnabled: true,
-              defaultTaxRateBps: (_gstRate * 100).round(),
             );
 
             orderTotals = appendedTotals;
@@ -3734,8 +3761,9 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
     // Same guard as `_completeOrder`, for the same reason: this writes a row
     // to the payments ledger and pushes it to the cloud, so two taps on the
     // sheet's button recorded the money twice.
-    if (_isCompletingOrder) return;
+    if (_isCompletingOrder || _isSettling) return;
     _isCompletingOrder = true;
+    _isSettling = true;
     try {
       await _settlePendingBillInner(
         order: order,
@@ -3745,6 +3773,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
       );
     } finally {
       _isCompletingOrder = false;
+      _isSettling = false;
     }
   }
 
@@ -4531,7 +4560,7 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                                         : 'Mark Payment Done & Settle (₹${total.toStringAsFixed(2)})')),
                             style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.bold),
                           ),
-                          onPressed: () async {
+                          onPressed: _isSettling ? null : () async {
                             Navigator.pop(ctx);
                             HapticFeedback.heavyImpact();
                             await _settlePendingBill(

@@ -52,6 +52,8 @@ class BillLine {
   /// silent 500 on a line the caller never set would under-tax an 18% item on
   /// a store whose default is 18%. Absence has to be representable.
   final int? taxRateBps;
+  final int discountPaise;
+  final bool isVoided;
 
   const BillLine({
     this.lineId,
@@ -60,9 +62,12 @@ class BillLine {
     required this.qty,
     required this.unitPaise,
     this.taxRateBps,
+    this.discountPaise = 0,
+    this.isVoided = false,
   });
 
-  int get lineTotalPaise => (qty * unitPaise).round();
+  int get grossTotalPaise => (qty.clamp(0.0, double.infinity) * unitPaise.clamp(0, 100000000)).round();
+  int get lineTotalPaise => (grossTotalPaise - discountPaise.clamp(0, grossTotalPaise)).clamp(0, grossTotalPaise);
 
   Map<String, dynamic> toMap() => {
     'lineId': lineId,
@@ -71,6 +76,9 @@ class BillLine {
     'qty': qty,
     'unitPaise': unitPaise,
     'taxRateBps': taxRateBps,
+    'discountPaise': discountPaise,
+    'isVoided': isVoided,
+    'grossTotalPaise': grossTotalPaise,
     'lineTotalPaise': lineTotalPaise,
   };
 }
@@ -82,6 +90,7 @@ class BillTotals {
   final int taxablePaise;
   final int cgstPaise;
   final int sgstPaise;
+  final int igstPaise;
   final int roundOffPaise;
   final int grandTotalPaise;
 
@@ -92,6 +101,7 @@ class BillTotals {
     required this.taxablePaise,
     required this.cgstPaise,
     required this.sgstPaise,
+    this.igstPaise = 0,
     required this.roundOffPaise,
     required this.grandTotalPaise,
   });
@@ -102,6 +112,9 @@ class BillTotals {
   double get taxable => taxablePaise / 100.0;
   double get cgst => cgstPaise / 100.0;
   double get sgst => sgstPaise / 100.0;
+  double get igst => igstPaise / 100.0;
+  double get totalTax => (cgstPaise + sgstPaise + igstPaise) / 100.0;
+  int get totalTaxPaise => cgstPaise + sgstPaise + igstPaise;
   double get roundOff => roundOffPaise / 100.0;
   double get grandTotal => grandTotalPaise / 100.0;
 
@@ -112,6 +125,7 @@ class BillTotals {
     'taxablePaise': taxablePaise,
     'cgstPaise': cgstPaise,
     'sgstPaise': sgstPaise,
+    'igstPaise': igstPaise,
     'roundOffPaise': roundOffPaise,
     'grandTotalPaise': grandTotalPaise,
     'subtotal': subtotal,
@@ -120,6 +134,8 @@ class BillTotals {
     'taxable': taxable,
     'cgst': cgst,
     'sgst': sgst,
+    'igst': igst,
+    'totalTax': totalTax,
     'roundOff': roundOff,
     'grandTotal': grandTotal,
   };
@@ -154,7 +170,7 @@ class BillCalculator {
   }
 
   /// Canonical tax and bill calculation.
-  /// Order: subtotal -> discount -> serviceCharge -> taxable -> CGST/SGST -> roundOff -> grandTotal.
+  /// Order: subtotal -> discount -> serviceCharge -> taxable -> CGST/SGST/IGST -> roundOff -> grandTotal.
   static BillTotals compute({
     required List<BillLine> lines,
     Discount? discount,
@@ -162,10 +178,14 @@ class BillCalculator {
     required TaxMode taxMode,
     required bool roundOffEnabled,
     int defaultTaxRateBps = 500, // 5% default GST
+    bool isInterstate = false,
   }) {
+    // 0. Exclude voided lines (Issue 44)
+    final activeLines = lines.where((l) => !l.isVoided).toList();
+
     // 1. Subtotal
     int subtotalPaise = 0;
-    for (final line in lines) {
+    for (final line in activeLines) {
       subtotalPaise += line.lineTotalPaise;
     }
     if (subtotalPaise < 0) subtotalPaise = 0;
@@ -204,6 +224,7 @@ class BillCalculator {
     int taxablePaise = 0;
     int cgstPaise = 0;
     int sgstPaise = 0;
+    int igstPaise = 0;
 
     // Per-line tax rates. BillLine.taxRateBps was written to the OrderItems
     // sheet per line but this method taxed the whole bill at defaultTaxRateBps
@@ -218,7 +239,7 @@ class BillCalculator {
     // whichever mode the bill is in. A single-rate bill collapses to one group
     // and produces the same numbers as before.
     final Map<int, int> groupSubtotal = {};
-    for (final line in lines) {
+    for (final line in activeLines) {
       final rate = line.taxRateBps ?? defaultTaxRateBps;
       groupSubtotal[rate] = (groupSubtotal[rate] ?? 0) + line.lineTotalPaise;
     }
@@ -233,49 +254,38 @@ class BillCalculator {
     final Map<int, int> groupSc =
         _apportion(serviceChargePaise, groupNet, netAfterDiscount);
 
+    int totalTaxPaise = 0;
     if (taxMode == TaxMode.exclusive) {
       // Service charge is taxable
-      int totalTaxPaise = 0;
       for (final r in groupNet.keys) {
         final gTaxable = groupNet[r]! + (groupSc[r] ?? 0);
         taxablePaise += gTaxable;
         totalTaxPaise += ((gTaxable * r) / 10000).round();
       }
-      cgstPaise = (totalTaxPaise / 2).round();
-      sgstPaise = totalTaxPaise - cgstPaise;
     } else {
       // Inclusive: line prices already contain tax.
-      //
-      // This branch used to back out the tax from the line net only, then add
-      // the service charge into `taxablePaise` untaxed:
-      //     baseTaxable = net / (1 + r);  taxable = baseTaxable + SC
-      //     tax         = net - baseTaxable
-      // The declared taxable value therefore included the service charge while
-      // the declared GST did not, so `tax != taxable * r`. Under Indian GST a
-      // service charge is part of the value of supply and attracts tax at the
-      // same rate, so the restaurant was declaring a taxable value it had not
-      // collected the tax on - and, unlike exclusive mode, the same outlet
-      // taxed its service charge differently purely because of the tax mode.
-      //
-      // An outlet on inclusive pricing means "the amount shown is the amount
-      // paid", so the fix backs the tax out of the all-in amount INCLUDING the
-      // service charge. The guest-facing total is unchanged; the split is now
-      // internally consistent, and the service charge bears tax in both modes.
-      int totalTaxPaise = 0;
       for (final r in groupNet.keys) {
         final gInclusive = groupNet[r]! + (groupSc[r] ?? 0);
         final gTaxable = ((gInclusive * 10000) / (10000 + r)).round();
         taxablePaise += gTaxable;
         totalTaxPaise += gInclusive - gTaxable;
       }
-      cgstPaise = (totalTaxPaise / 2).round();
-      sgstPaise = totalTaxPaise - cgstPaise;
     }
 
-    // 5. Pre-round sum. In both modes this is now taxable + CGST + SGST, which
+    if (isInterstate) {
+      igstPaise = totalTaxPaise;
+      cgstPaise = 0;
+      sgstPaise = 0;
+    } else {
+      cgstPaise = (totalTaxPaise / 2).round();
+      sgstPaise = totalTaxPaise - cgstPaise;
+      igstPaise = 0;
+    }
+
+    // 5. Pre-round sum. In both modes this is now taxable + tax, which
     // is the invariant every downstream consumer (receipt, Payments ledger,
     // Z-report, GST return) depends on.
-    final int preRound = taxablePaise + cgstPaise + sgstPaise;
+    final int preRound = (taxablePaise + cgstPaise + sgstPaise + igstPaise).clamp(0, 100000000000);
 
     // 6. Round-Off to nearest rupee (100 paise)
     int roundOffPaise = 0;
@@ -289,7 +299,7 @@ class BillCalculator {
         } else {
           roundOffPaise = -remainder;
         }
-        grandTotalPaise = preRound + roundOffPaise;
+        grandTotalPaise = (preRound + roundOffPaise).clamp(0, 100000000000);
       }
     }
 
@@ -300,8 +310,9 @@ class BillCalculator {
       taxablePaise: taxablePaise,
       cgstPaise: cgstPaise,
       sgstPaise: sgstPaise,
+      igstPaise: igstPaise,
       roundOffPaise: roundOffPaise,
-      grandTotalPaise: grandTotalPaise,
+      grandTotalPaise: grandTotalPaise.clamp(0, 100000000000),
     );
   }
 }

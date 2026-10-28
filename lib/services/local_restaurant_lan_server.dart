@@ -38,6 +38,15 @@ class LocalRestaurantLanServer {
   int _port = 8080;
   String? _localIpAddress;
 
+  static const String _portKey = '_sbz_lan_port';
+  static final StreamController<int> _portBroadcastController = StreamController<int>.broadcast();
+
+  /// Stream of active bound ports for clients and UI subscribers.
+  static Stream<int> get portStream => _portBroadcastController.stream;
+
+  /// Optional callback invoked when a port is successfully bound.
+  static void Function(int port)? onPortBound;
+
   bool get isRunning => _isRunning;
   int get port => _port;
   String? get localIpAddress => _localIpAddress;
@@ -145,16 +154,43 @@ class LocalRestaurantLanServer {
     try {
       _localIpAddress = await _detectLocalIp();
 
-      // Bind to all local interfaces (IPv4)
-      _server = await HttpServer.bind(
-        InternetAddress.anyIPv4,
-        _port,
-        shared: true,
-      );
+      // Issue 102: Port collision fallback
+      // If binding to default port 8080 fails with SocketException (port in use),
+      // automatically try ports 8081, 8082, up to 8089.
+      final portsToTry = (port == 8080)
+          ? List<int>.generate(10, (i) => 8080 + i)
+          : [port];
 
+      HttpServer? boundServer;
+      int boundPort = port;
+
+      for (final candidatePort in portsToTry) {
+        try {
+          boundServer = await HttpServer.bind(
+            InternetAddress.anyIPv4,
+            candidatePort,
+            shared: true,
+          );
+          boundPort = candidatePort;
+          break;
+        } on SocketException catch (e) {
+          debugPrint('LocalRestaurantLanServer port $candidatePort unavailable: $e');
+          if (candidatePort == portsToTry.last) {
+            rethrow;
+          }
+        }
+      }
+
+      _server = boundServer;
+      _port = boundPort;
       _isRunning = true;
       LanHostFlag.hosting = true;
       _bindToCurrentOutlet();
+      try {
+        _configBox?.put(_portKey, _port);
+      } catch (_) {}
+      _portBroadcastController.add(_port);
+      onPortBound?.call(_port);
       _server!.listen(_handleRequest, onError: (e) {
         debugPrint('LocalRestaurantLanServer error: $e');
       });
@@ -230,12 +266,31 @@ class LocalRestaurantLanServer {
         .toList(growable: false);
   }
 
-  /// Removes a paired satellite by the short id shown in [pairedDevices].
-  void revokeDevice(String shortId) {
+  /// Revokes a paired satellite by its full bearer token or short ID,
+  /// immediately invalidating access and releasing the seat.
+  void revokeSatellite(String token) {
     _loadTokens();
-    _tokens.removeWhere((k, _) => k.startsWith(shortId));
+    final clean = token.trim();
+    if (_tokens.containsKey(clean)) {
+      _tokens.remove(clean);
+    } else {
+      _tokens.removeWhere((k, _) =>
+          k == clean ||
+          k.startsWith(clean) ||
+          (k.length >= 8 && k.substring(0, 8) == clean));
+    }
     _saveTokens();
   }
+
+  /// Invalidates all paired satellite tokens, freeing all client seats.
+  void unpairAllSatellites() {
+    _loadTokens();
+    _tokens.clear();
+    _saveTokens();
+  }
+
+  /// Removes a paired satellite by the short id shown in [pairedDevices].
+  void revokeDevice(String shortId) => revokeSatellite(shortId);
 
   void _loadTokens() {
     if (_tokens.isNotEmpty) return;

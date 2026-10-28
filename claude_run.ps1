@@ -60,6 +60,9 @@ if ($NoDeploy) {
 }
 
 Step 'secure vault sync & drive backup'
+# Security guard: Never mirror unencrypted private signing keys to Google Drive
+$leakedKey = Join-Path $PSScriptRoot 'secure_vault\credentials\lease_signing_key.pem'
+if (Test-Path $leakedKey) { Remove-Item $leakedKey -Force }
 if (Get-Command python -ErrorAction SilentlyContinue) {
   python tools\vault\sync_vault.py 2>&1 | Out-Host
 }

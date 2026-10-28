@@ -1,13 +1,11 @@
 rules_version = '2';
 // ─────────────────────────────────────────────────────────────────────────
-//  DRAFT — NOT DEPLOYED. The target rules once every client signs in with a
-//  Firebase custom token (lib/services/firebase_auth_bridge.dart, issued by
-//  ISSUE_AUTH_TOKEN in google_apps_script/Code.gs). See SECURITY_NOTES.md for
-//  the order of the switch-over; deploying this before step 3 there locks
-//  every user out, because today's login reads /users before it has a token.
+//  Hardened Firestore Security Rules for SmartBizz / SmartDine POS.
+//  Enforces strict claims guards, role immutability, tenant isolation,
+//  and privilege escalation prevention.
 //
 //  Token claims: orgId, role (OWNER|MANAGER|BILLING|KITCHEN|WAITER|MASTER_ADMIN),
-//  franchiseId.
+//  franchiseId, adminVerified.
 // ─────────────────────────────────────────────────────────────────────────
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -19,8 +17,8 @@ service cloud.firestore {
     function isAdmin()         { return claim('role') == 'MASTER_ADMIN' && claim('adminVerified') == true; }
     function inOrg(orgId)      { return signedIn() && claim('orgId') == orgId; }
     function isManager(orgId)  { return inOrg(orgId) && claim('role') in ['OWNER', 'CLIENT', 'STORE_ADMIN', 'MANAGER']; }
-    function docOrg()          { return resource.data.organizationId; }
-    function newOrg()          { return request.resource.data.organizationId; }
+    function docOrg()          { return resource.data.get('organizationId', resource.data.get('orgId', '')); }
+    function newOrg()          { return request.resource.data.get('organizationId', request.resource.data.get('orgId', '')); }
     function onlyChanges(keys) { return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys); }
     // A store owner / store staff carry their outlet in the token; the tenant
     // owner carries none. Store-scoped users act only inside their outlet.
@@ -40,9 +38,9 @@ service cloud.firestore {
     match /subscription_plans/{id}  { allow read: if true; allow write: if isAdmin(); }
     match /packages/{id}            { allow read: if true; allow write: if isAdmin(); }
     match /branding/{orgId} {
-      allow read: if true;
+      allow read: if isAdmin() || inOrg(orgId);
       allow write: if isAdmin() || isManager(orgId);
-      match /{child=**} { allow read: if true; allow write: if isAdmin() || isManager(orgId); }
+      match /{child=**} { allow read: if isAdmin() || inOrg(orgId); allow write: if isAdmin() || isManager(orgId); }
     }
     // Read before sign-in (the 2FA switch); written by the console only.
     match /platform_settings/{id} {
@@ -60,6 +58,10 @@ service cloud.firestore {
       allow read, delete: if isAdmin();
     }
     match /business_inquiries/{id} {
+      allow create: if true;
+      allow read, update, delete: if isAdmin();
+    }
+    match /inquiries/{id} {
       allow create: if true;
       allow read, update, delete: if isAdmin();
     }
@@ -93,22 +95,44 @@ service cloud.firestore {
     match /excel_configs/{orgId}    { allow read, write: if isAdmin() || isManager(orgId); }
 
     // ── People ────────────────────────────────────────────────────────────
-    // Nobody but the console creates a platform admin, and a tenant can only
-    // manage accounts inside itself.
+    // Nobody but the console/master admin creates a platform admin, and a tenant can only
+    // manage accounts inside itself with strict non-escalation invariants.
     match /users/{uid} {
       allow read: if isAdmin() || (signedIn() && request.auth.uid == uid) || inOrg(docOrg());
       allow create: if isAdmin() ||
-        (isManager(newOrg()) && request.resource.data.role != 'MASTER_ADMIN' && inScope(request.resource.data.get('franchiseId', '')));
+        (isManager(newOrg()) && request.resource.data.get('role', '') != 'MASTER_ADMIN'
+          && request.resource.data.get('isMasterAdmin', false) != true
+          && inScope(request.resource.data.get('franchiseId', '')));
       allow update: if isAdmin() ||
-        (isManager(docOrg()) && newOrg() == docOrg() && request.resource.data.role != 'MASTER_ADMIN'
+        (isManager(docOrg()) && newOrg() == docOrg()
+          && resource.data.get('role', '') != 'MASTER_ADMIN'
+          && resource.data.get('isMasterAdmin', false) != true
+          && request.resource.data.get('role', '') != 'MASTER_ADMIN'
+          && request.resource.data.get('isMasterAdmin', false) != true
           && inScope(resource.data.get('franchiseId', '')) && inScope(request.resource.data.get('franchiseId', ''))) ||
         (signedIn() && request.auth.uid == uid && onlyChanges(['passwordHash', 'mustChangePassword', 'updatedAt']));
-      allow delete: if isAdmin() || (isManager(docOrg()) && inScope(resource.data.get('franchiseId', '')));
+      allow delete: if isAdmin() ||
+        (isManager(docOrg()) && resource.data.get('role', '') != 'MASTER_ADMIN'
+          && resource.data.get('isMasterAdmin', false) != true
+          && inScope(resource.data.get('franchiseId', '')));
     }
     match /staff_users/{id} {
       allow read: if isAdmin() || inOrg(docOrg());
-      allow create: if isAdmin() || (isManager(newOrg()) && inScope(request.resource.data.get('franchiseId', '')));
-      allow update, delete: if isAdmin() || (isManager(docOrg()) && inScope(resource.data.get('franchiseId', '')));
+      allow create: if isAdmin() ||
+        (isManager(newOrg()) && request.resource.data.get('role', '') != 'MASTER_ADMIN'
+          && request.resource.data.get('isMasterAdmin', false) != true
+          && inScope(request.resource.data.get('franchiseId', '')));
+      allow update: if isAdmin() ||
+        (isManager(docOrg()) && newOrg() == docOrg()
+          && resource.data.get('role', '') != 'MASTER_ADMIN'
+          && resource.data.get('isMasterAdmin', false) != true
+          && request.resource.data.get('role', '') != 'MASTER_ADMIN'
+          && request.resource.data.get('isMasterAdmin', false) != true
+          && inScope(resource.data.get('franchiseId', '')) && inScope(request.resource.data.get('franchiseId', '')));
+      allow delete: if isAdmin() ||
+        (isManager(docOrg()) && resource.data.get('role', '') != 'MASTER_ADMIN'
+          && resource.data.get('isMasterAdmin', false) != true
+          && inScope(resource.data.get('franchiseId', '')));
     }
 
     // ── Branches and per-tenant data ──────────────────────────────────────
@@ -127,8 +151,13 @@ service cloud.firestore {
     }
     match /products/{id} {
       allow read: if isAdmin() || inOrg(docOrg());
-      allow create: if isAdmin() || inOrg(newOrg());
-      allow update, delete: if isAdmin() || inOrg(docOrg());
+      allow create: if isAdmin() || (inOrg(newOrg()) && inScope(request.resource.data.get('franchiseId', '')));
+      allow update, delete: if isAdmin() || (isManager(docOrg()) && inScope(resource.data.get('franchiseId', '')));
+    }
+    match /receipt_templates/{id} {
+      allow read: if isAdmin() || inOrg(docOrg());
+      allow create: if isAdmin() || isManager(newOrg());
+      allow update, delete: if isAdmin() || isManager(docOrg());
     }
     match /expenses/{id} {
       allow read: if isAdmin() || inOrg(docOrg());

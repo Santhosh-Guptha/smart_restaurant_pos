@@ -381,13 +381,25 @@ class Outbox {
           pendingCount.value = box.length;
         } else {
           final newAttempts = op.attempts + 1;
-          if (newAttempts >= maxAttempts) {
-            // S-6: Max attempts reached, move to dead letter box
-            debugPrint('[Outbox] Op ${op.id} exceeded max attempts ($maxAttempts). Moving to dead letter queue.');
+          final isCriticalFinancialOp = op.action == 'SAVE_BILL' || op.action == 'RECORD_PAYMENT';
+          final errLower = (opError ?? '').toLowerCase();
+          final isTransientError = errLower.contains('socket') ||
+              errLower.contains('timeout') ||
+              errLower.contains('clientexception') ||
+              errLower.contains('cloudofflineexception') ||
+              errLower.contains('network') ||
+              errLower.contains('connection') ||
+              errLower.contains('handshake') ||
+              errLower.contains('busy') ||
+              errLower.contains('http 5');
+
+          // Never drop critical financial transactions or transient network errors to dead-letter
+          if (newAttempts >= maxAttempts && !isCriticalFinancialOp && !isTransientError) {
+            debugPrint('[Outbox] Non-recoverable op ${op.id} exceeded max attempts ($maxAttempts). Moving to dead letter queue.');
             await _moveToDeadLetter(box, op, opError ?? 'Exceeded max attempts ($maxAttempts)');
           } else {
             // S-6 & S-7: Exponential backoff with jitter: min(2^attempts, 300)s + [0, 5)s jitter
-            final baseSeconds = math.min(math.pow(2, newAttempts).toInt(), 300);
+            final baseSeconds = math.min(math.pow(2, math.min(newAttempts, 8)).toInt(), 300);
             final jitter = math.Random().nextInt(5);
             final nextAttempt = DateTime.now().add(Duration(seconds: baseSeconds + jitter));
 

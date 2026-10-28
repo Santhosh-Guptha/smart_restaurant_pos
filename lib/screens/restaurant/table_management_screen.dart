@@ -15,6 +15,7 @@ import '../../core/classic_theme.dart';
 import '../../core/constants.dart';
 import '../../core/license_guard.dart';
 import '../../core/restaurant_models.dart';
+import '../../core/order_calculation_engine.dart';
 import '../../providers/saas_session_provider.dart';
 import '../../services/table_qr_pdf_service.dart';
 import '../../services/apps_script_backend_service.dart';
@@ -54,6 +55,7 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen>
     with FeatureRouteGuard<TableManagementScreen> {
   String _selectedSection = 'ALL';
   bool _isSyncingOrders = false;
+  bool _isSettling = false;
 
   List<RestaurantTable> _tables = [];
   List<KotOrder> _kotOrders = [];
@@ -541,8 +543,24 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen>
       } else {
         final hasBilled = activeOrdersForTable.any((o) =>
             o.status == KotStatus.completed || o.status == KotStatus.paymentPending);
-        final totalAmount = activeOrdersForTable.fold<double>(0.0, (prev, o) => prev + o.totalAmount);
-        final totalItems = activeOrdersForTable.fold<int>(0, (prev, o) => prev + o.items.length);
+        final activeItems = activeOrdersForTable
+            .expand((o) => o.items)
+            .where((it) => !it.isVoided && it.effectiveQty > 0)
+            .toList();
+        final totalItems = activeItems.length;
+
+        final double totalAmount;
+        if (activeItems.isNotEmpty) {
+          final tableTotals = OrderCalculationEngine.calculateOrderTotals(
+            items: activeItems,
+            serviceChargeRate: _getServiceChargeRate(),
+            gstRate: _getGstRate(),
+            orderType: 'DINE_IN',
+          );
+          totalAmount = tableTotals.grandTotal;
+        } else {
+          totalAmount = 0.0;
+        }
 
         // Scan all active orders for the first valid, non-generic customer name
         String? custName;
@@ -892,13 +910,13 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen>
         final exists = _settledBills.any((b) => (b['bill_id'] ?? b['id']) == bId || (b['bill_id'] ?? b['id']) == p.id);
         if (!exists) {
           try {
-            final double subtotal = p.totalAmount;
-            final double taxableSubtotal = p.items.isNotEmpty
-                ? p.items.where((it) => !it.isTaxExempt).fold<double>(0.0, (sum, it) => sum + (it.price * it.qty))
-                : subtotal;
-            final double gstAmount = showGst ? (taxableSubtotal * (taxPct / 100.0)) : 0.0;
-            final double cgstAmount = gstAmount / 2.0;
-            final double finalTotal = subtotal + gstAmount;
+            final activeItems = OrderCalculationEngine.filterActiveItems(p.items);
+            final totals = OrderCalculationEngine.calculateOrderTotals(
+              items: activeItems,
+              serviceChargeRate: 0.0,
+              gstRate: showGst ? taxPct : 0.0,
+              orderType: p.orderType ?? 'DINE_IN',
+            );
 
             final billMap = {
               'bill_id': bId,
@@ -911,30 +929,27 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen>
               },
               'customer_name': (p.customerName?.isNotEmpty == true) ? p.customerName! : p.tableName,
               'customer_phone': p.customerPhone ?? '',
-              'items': p.items.map((it) => {
+              'items': activeItems.map((it) => {
                 'id': it.productId,
                 'productId': it.productId,
                 'name': it.name,
-                'qty': it.qty,
+                'qty': it.effectiveQty,
                 'price': it.price,
-                'subtotal': it.price * it.qty,
-                'total': it.price * it.qty,
+                'subtotal': it.price * it.effectiveQty,
+                'total': it.price * it.effectiveQty,
                 'orderedBy': it.orderedBy ?? p.customerName,
                 'deviceId': it.deviceId ?? p.deviceId,
                 'isTaxExempt': it.isTaxExempt,
                 'is_tax_exempt': it.isTaxExempt,
               }).toList(),
-              'subtotal': subtotal,
-              'subtotal_amount': subtotal,
+              'subtotal': totals.subtotal,
+              'subtotal_amount': totals.subtotal,
               'tax_percentage': taxPct,
-              'gst_amount': gstAmount,
-              'cgst_amount': cgstAmount,
-              // Derived, not halved again: rounding each half independently
-              // let the two printed lines sum to a paise more than the tax in
-              // the total.
-              'sgst_amount': gstAmount - cgstAmount,
-              'total': finalTotal,
-              'total_amount': finalTotal,
+              'gst_amount': totals.cgst + totals.sgst,
+              'cgst_amount': totals.cgst,
+              'sgst_amount': totals.sgst,
+              'total': totals.grandTotal,
+              'total_amount': totals.grandTotal,
               'payment_mode': p.paymentMode?.isNotEmpty == true ? p.paymentMode : 'UPI',
               'payment_status': 'SUCCESS',
               'order_source': 'DINE_IN_QR',
@@ -1081,12 +1096,10 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen>
     final org = saasSession.currentOrganization;
 
     final List<Map<String, dynamic>> allItems = [];
-    double subtotal = 0.0;
     String guestName = 'Table ${table.tableNumber}';
     String guestPhone = '';
 
-    double taxableSubtotal = 0.0;
-
+    final rawKotItems = <KotItem>[];
     for (final order in activeOrdersForTable) {
       if (guestName.startsWith('Table') && order.customerName != null && order.customerName!.isNotEmpty) {
         guestName = order.customerName!;
@@ -1094,26 +1107,50 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen>
       if (guestPhone.isEmpty && order.customerPhone != null && order.customerPhone!.isNotEmpty) {
         guestPhone = order.customerPhone!;
       }
-      for (final it in order.items) {
-        final lineSubtotal = it.price * it.qty;
-        allItems.add({
-          'name': it.name,
-          'qty': it.qty,
-          'price': it.price,
-          'subtotal': lineSubtotal,
-          'orderedBy': it.orderedBy ?? guestName,
-          'isTaxExempt': it.isTaxExempt,
-        });
-        subtotal += lineSubtotal;
-        if (!it.isTaxExempt) {
-          taxableSubtotal += lineSubtotal;
-        }
-      }
+      rawKotItems.addAll(order.items);
     }
 
-    if (subtotal <= 0) {
+    final activeItems = OrderCalculationEngine.filterActiveItems(rawKotItems);
+    for (final it in activeItems) {
+      allItems.add({
+        'name': it.name,
+        'qty': it.effectiveQty,
+        'price': it.price,
+        'subtotal': it.price * it.effectiveQty,
+        'orderedBy': it.orderedBy ?? guestName,
+        'isTaxExempt': it.isTaxExempt,
+      });
+    }
+
+    final double taxPct = (printerState.taxPercentage ?? 0.0);
+    final totals = OrderCalculationEngine.calculateOrderTotals(
+      items: activeItems,
+      serviceChargeRate: 0.0,
+      gstRate: (printerState.showGst && taxPct > 0) ? taxPct : 0.0,
+      orderType: 'DINE_IN',
+    );
+
+    double subtotal = totals.subtotal;
+    double gstAmount = totals.cgst + totals.sgst;
+    double cgstAmount = totals.cgst;
+    double sgstAmount = totals.sgst;
+    double finalTotal = totals.grandTotal;
+
+    if (subtotal <= 0 && table.currentBillAmount > 0) {
       subtotal = table.currentBillAmount;
-      taxableSubtotal = subtotal;
+      final fallbackTotals = OrderCalculationEngine.calculateOrderTotals(
+        items: [
+          {'name': 'Dine-In Food Order', 'qty': 1, 'price': subtotal, 'isTaxExempt': false}
+        ],
+        serviceChargeRate: 0.0,
+        gstRate: (printerState.showGst && taxPct > 0) ? taxPct : 0.0,
+        orderType: 'DINE_IN',
+      );
+      subtotal = fallbackTotals.subtotal;
+      gstAmount = fallbackTotals.cgst + fallbackTotals.sgst;
+      cgstAmount = fallbackTotals.cgst;
+      sgstAmount = fallbackTotals.sgst;
+      finalTotal = fallbackTotals.grandTotal;
       allItems.add({
         'name': 'Dine-In Food Order',
         'qty': 1,
@@ -1122,11 +1159,6 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen>
         'isTaxExempt': false,
       });
     }
-
-    final double taxPct = (printerState.taxPercentage ?? 0.0);
-    final bool showGst = printerState.showGst && taxPct > 0;
-    final double gstAmount = showGst ? (taxableSubtotal * (taxPct / 100.0)) : 0.0;
-    final double finalTotal = subtotal + gstAmount;
 
     final billMap = {
       'bill_id': 'TAB_${table.tableNumber}_${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}',
@@ -1140,8 +1172,8 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen>
       'subtotal_amount': subtotal,
       'tax_percentage': taxPct,
       'gst_amount': gstAmount,
-      'cgst_amount': gstAmount / 2.0,
-      'sgst_amount': gstAmount - (gstAmount / 2.0),
+      'cgst_amount': cgstAmount,
+      'sgst_amount': sgstAmount,
       'total_amount': finalTotal,
       'payment_mode': 'Dine-In Running Bill',
       'table_name': 'Table ${table.tableNumber}',
@@ -3193,23 +3225,7 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen>
     for (final ord in activeOrders) {
       allItems.addAll(ord.items);
     }
-
-    double dishesSubtotal = 0.0;
-    double taxableSubtotal = 0.0;
-    for (final it in allItems) {
-      final lineSubtotal = it.price * it.qty;
-      dishesSubtotal += lineSubtotal;
-      if (!it.isTaxExempt) {
-        taxableSubtotal += lineSubtotal;
-      }
-    }
-    if (dishesSubtotal <= 0) {
-      dishesSubtotal = activeOrders.fold<double>(0.0, (s, o) => s + o.totalAmount);
-      if (dishesSubtotal <= 0 && resolvedTable != null) {
-        dishesSubtotal = resolvedTable.currentBillAmount;
-      }
-      taxableSubtotal = dishesSubtotal;
-    }
+    final activeItems = OrderCalculationEngine.filterActiveItems(allItems);
 
     String custName = '';
     String custPhone = '';
@@ -3249,12 +3265,16 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen>
       ),
       builder: (ctx) => StatefulBuilder(
         builder: (context, setModalState) {
-          final scAmount = includeServiceCharge ? (dishesSubtotal * (scRate / 100.0)) : 0.0;
-          final taxableSc = (dishesSubtotal > 0 && taxableSubtotal > 0)
-              ? (scAmount * (taxableSubtotal / dishesSubtotal))
-              : (taxableSubtotal > 0 ? scAmount : 0.0);
-          final gstAmount = (taxableSubtotal + taxableSc) * (gstRate / 100.0);
-          final totalPayable = dishesSubtotal + scAmount + gstAmount + selectedTip;
+          final totals = OrderCalculationEngine.calculateOrderTotals(
+            items: activeItems,
+            serviceChargeRate: includeServiceCharge ? scRate : 0.0,
+            gstRate: gstRate,
+            orderType: 'DINE_IN',
+          );
+          final dishesSubtotal = totals.subtotal;
+          final scAmount = totals.serviceCharge;
+          final gstAmount = totals.cgst + totals.sgst;
+          final totalPayable = totals.grandTotal + selectedTip;
 
           final upiId = _getDefaultUpiId();
           final note = cleanTableNum.isNotEmpty ? 'Table $cleanTableNum Bill' : '$tName Bill';
@@ -3265,11 +3285,11 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen>
             CustomerDisplayService.instance.showCheckout(
               restaurantName: shopName,
               tableName: tName,
-              items: allItems.map((i) => CustomerDisplayLineItem(
+              items: activeItems.map((i) => CustomerDisplayLineItem(
                 name: i.name,
-                qty: i.qty.toDouble(),
+                qty: i.effectiveQty,
                 unitPrice: i.price,
-                lineTotal: i.price * i.qty,
+                lineTotal: i.price * i.effectiveQty,
               )).toList(),
               subtotal: dishesSubtotal,
               tax: gstAmount,
@@ -3580,7 +3600,8 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen>
                                   : 'Confirm Card Payment (₹${totalPayable.toStringAsFixed(2)})'),
                           style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.bold),
                         ),
-                        onPressed: () async {
+                        onPressed: _isSettling ? null : () async {
+                          if (_isSettling) return;
                           Navigator.pop(ctx);
                           await _finalizeSettlement(
                             totalAmount: totalPayable,
@@ -3596,7 +3617,7 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen>
                             waiterName: waiterName,
                             resolvedTable: resolvedTable,
                             activeOrders: activeOrders,
-                            allItems: allItems,
+                            allItems: activeItems,
                             primaryOrderFallback: order,
                           );
                         },
@@ -3618,7 +3639,8 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen>
                             'Split Bill (Multi-Tender / Equal Shares)',
                             style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
                           ),
-                          onPressed: () {
+                          onPressed: _isSettling ? null : () {
+                            if (_isSettling) return;
                             Navigator.pop(ctx);
                             _showSplitBillDialog(
                               totalAmount: totalPayable,
@@ -3633,7 +3655,7 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen>
                               waiterName: waiterName,
                               resolvedTable: resolvedTable,
                               activeOrders: activeOrders,
-                              allItems: allItems,
+                              allItems: activeItems,
                               primaryOrderFallback: order,
                             );
                           },
@@ -3668,14 +3690,17 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen>
     KotOrder? primaryOrderFallback,
     List<PaymentTender>? tenders,
   }) async {
-    HapticFeedback.heavyImpact();
+    if (_isSettling) return;
+    _isSettling = true;
+    try {
+      HapticFeedback.heavyImpact();
 
-    final activeStaff = ref.read(restaurantAuthProvider).activeStaff?.name ?? 'Restaurant Cashier';
-    final orgId = _getEffectiveOrgId();
-    final sheetId = _getGoogleSheetId(orgId);
-    final primaryOrder = activeOrders.isNotEmpty ? activeOrders.first : primaryOrderFallback;
-    final primaryOrderId = primaryOrder?.id ?? 'ORD-${DateTime.now().millisecondsSinceEpoch}';
-    final roundIds = activeOrders.map((o) => o.id).toSet().toList();
+      final activeStaff = ref.read(restaurantAuthProvider).activeStaff?.name ?? 'Restaurant Cashier';
+      final orgId = _getEffectiveOrgId();
+      final sheetId = _getGoogleSheetId(orgId);
+      final primaryOrder = activeOrders.isNotEmpty ? activeOrders.first : primaryOrderFallback;
+      final primaryOrderId = primaryOrder?.id ?? 'ORD-${DateTime.now().millisecondsSinceEpoch}';
+      final roundIds = activeOrders.map((o) => o.id).toSet().toList();
 
     // 1. Vacate table in Hive
     if (resolvedTable != null || cleanTableNum.isNotEmpty) {
@@ -3796,13 +3821,13 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen>
         'customerPhone': custPhone,
         'sessionRoundsCount': activeOrders.length,
         'roundIds': roundIds,
-        'items': allItems.map((it) => {
+        'items': OrderCalculationEngine.filterActiveItems(allItems).map((it) => {
           'id': it.productId,
           'productId': it.productId,
           'name': it.name,
           'price': it.price,
-          'qty': it.qty,
-          'subtotal': it.price * it.qty,
+          'qty': it.effectiveQty,
+          'subtotal': it.price * it.effectiveQty,
           'isTaxExempt': it.isTaxExempt,
         }).toList(),
       };
@@ -3830,7 +3855,14 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen>
         ),
       );
     }
+  } finally {
+    if (mounted) {
+      setState(() => _isSettling = false);
+    } else {
+      _isSettling = false;
+    }
   }
+}
 
   void _showSplitBillDialog({
     required double totalAmount,
@@ -3992,7 +4024,8 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen>
                   backgroundColor: ClassicTheme.successEmerald,
                   foregroundColor: Colors.white,
                 ),
-                onPressed: remaining <= 0.05 ? () async {
+                onPressed: (_isSettling || remaining > 0.05) ? null : () async {
+                  if (_isSettling) return;
                   Navigator.pop(dlgCtx);
                   await _finalizeSettlement(
                     totalAmount: totalAmount,
@@ -4008,11 +4041,11 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen>
                     waiterName: waiterName,
                     resolvedTable: resolvedTable,
                     activeOrders: activeOrders,
-                    allItems: allItems,
+                    allItems: OrderCalculationEngine.filterActiveItems(allItems),
                     primaryOrderFallback: primaryOrderFallback,
                     tenders: tenders,
                   );
-                } : null,
+                },
                 child: Text(remaining <= 0.05 ? 'Complete Split Settlement' : 'Remaining ₹${remaining.toStringAsFixed(2)}'),
               ),
             ],
@@ -4461,8 +4494,16 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen>
 
                       setState(() {
                         _kotOrders = _kotOrders.map((o) {
-                          if (selectedTables.contains(o.tableId) ||
-                              selectedTables.any((tId) => o.tableName.toLowerCase().contains('table $tId'.toLowerCase()))) {
+                          final normName = o.tableName.trim().toLowerCase();
+                          final matchesSourceTable = selectedTables.contains(o.tableId) ||
+                              selectedTables.any((tId) {
+                                final cleanTid = tId.trim().toLowerCase();
+                                return normName == cleanTid ||
+                                    normName == 'table $cleanTid' ||
+                                    normName == 'counter $cleanTid' ||
+                                    o.tableId.trim().toLowerCase() == cleanTid;
+                              });
+                          if (matchesSourceTable) {
                             return o.copyWith(
                               tableId: targetTable.tableNumber,
                               tableName: targetName,

@@ -1,3 +1,5 @@
+import 'dart:convert';
+import 'package:hive_flutter/hive_flutter.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import '../../widgets/max_width_body.dart';
@@ -46,6 +48,28 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
     return false;
   }
 
+  /// Resolves the max allowed staff/user count directly from the tenant's license quota.
+  int _resolveLicensedMaxUsers() {
+    try {
+      if (Hive.isBoxOpen('configBox')) {
+        final raw = Hive.box('configBox').get('saas_license');
+        if (raw is String && raw.isNotEmpty) {
+          final map = jsonDecode(raw);
+          if (map is Map && map['maxUsers'] is num) {
+            return (map['maxUsers'] as num).toInt();
+          }
+        } else if (raw is Map && raw['maxUsers'] is num) {
+          return (raw['maxUsers'] as num).toInt();
+        }
+      }
+    } catch (_) {}
+    final sessionLic = ref.read(saasSessionProvider).currentLicense;
+    if (sessionLic != null && sessionLic.maxUsers > 0) {
+      return sessionLic.maxUsers;
+    }
+    return ref.read(entitlementsProvider).maxUsers;
+  }
+
   /// Active users counted against the licence: the owner plus every active
   /// staff member (the owner's own staff record, if any, is not counted twice).
   int _usersInUse(List<StaffMember> staffList) {
@@ -73,7 +97,7 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
               child: Text(
                 isKirana
                     ? 'Kirana is single-user'
-                    : (ownerOnly ? 'One user on Offline' : 'User limit reached'),
+                    : (ownerOnly ? 'Single-User Plan' : 'Staff Quota Limit Reached'),
                 style: TextStyle(color: context.textPrimary, fontWeight: FontWeight.bold),
               ),
             ),
@@ -83,16 +107,15 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
           isKirana
               ? 'Kirana stores are owner-operated (one user). To add cashiers, managers, and staff accounts, please upgrade your business category to Supermarket.'
               : (ownerOnly
-                  ? 'Offline stores have one user — the owner. Move to Basic or above to add staff.'
-                  : 'Your package allows up to $maxUsers users, including the owner.\n\n'
-                      'To add more team members${restaurant ? " across your stations" : ""}, ask for a '
-                      'bigger package, or deactivate someone who no longer needs access.'),
+                  ? 'Your current offline plan allows 1 user (the owner). To add more staff members across your store, please upgrade your subscription tier or request a quota increase from admin.'
+                  : 'Your license allows up to $maxUsers active user(s), including the store owner.\n\n'
+                      'To add more staff members${restaurant ? " across your stations" : ""}, please upgrade your subscription tier or request a quota increase from admin, or deactivate an inactive staff member.'),
           style: TextStyle(color: context.textSecondary, fontSize: 13, height: 1.4),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('OK'),
+            child: const Text('Cancel'),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
@@ -103,7 +126,7 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
               Navigator.pop(ctx);
               PlanRequestSheet.show(context);
             },
-            child: const Text('Ask for more', style: TextStyle(fontWeight: FontWeight.bold)),
+            child: const Text('Upgrade Tier / Request Quota', style: TextStyle(fontWeight: FontWeight.bold)),
           ),
         ],
       ),
@@ -119,16 +142,17 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
     final allowedRoles = license?.allowedRoles ??
         ['OWNER', 'MANAGER', 'BILLING', 'KITCHEN', 'WAITER'];
 
-    // User limit (docs/PLATFORM_STRUCTURE.md §3): Offline is one user, the
-    // owner; every other tier allows maxUsers active users, the owner
-    // included. Editing an existing member is always allowed.
+    // User limit (docs/PLATFORM_STRUCTURE.md §3, Issue 137):
+    // Check current active staff count against tenant license quota (saas_license -> maxUsers).
     final seatEnt = ref.read(entitlementsProvider);
+    final quotaMaxUsers = _resolveLicensedMaxUsers();
+    final effectiveMaxUsers = (seatEnt.isPureOffline || (seatEnt.vertical == Verticals.kirana)) ? 1 : quotaMaxUsers;
     final allStaff = ref.read(restaurantAuthProvider).staffList;
     final staffList = allStaff.where((s) => !_isExcludedStaff(s)).toList();
     final usersInUse = _usersInUse(staffList);
-    final ownerOnly = seatEnt.isPureOffline || seatEnt.maxUsers <= 1;
-    if (existing == null && (ownerOnly || usersInUse >= seatEnt.maxUsers)) {
-      _showUserLimitDialog(ownerOnly: ownerOnly, maxUsers: seatEnt.maxUsers, restaurant: vl.isRestaurant, vertical: vertical);
+    final ownerOnly = seatEnt.isPureOffline || (seatEnt.vertical == Verticals.kirana) || effectiveMaxUsers <= 1;
+    if (existing == null && (ownerOnly || usersInUse >= effectiveMaxUsers)) {
+      _showUserLimitDialog(ownerOnly: ownerOnly, maxUsers: effectiveMaxUsers, restaurant: vl.isRestaurant, vertical: vertical);
       return;
     }
 
@@ -612,6 +636,22 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
                   return;
                 }
 
+                // Issue 137: Enforce staff quota before creating new staff
+                if (existing == null && (ownerOnly || usersInUse >= effectiveMaxUsers)) {
+                  if (ctx.mounted) {
+                    Navigator.pop(ctx);
+                  }
+                  if (mounted) {
+                    _showUserLimitDialog(
+                      ownerOnly: ownerOnly,
+                      maxUsers: effectiveMaxUsers,
+                      restaurant: vl.isRestaurant,
+                      vertical: vertical,
+                    );
+                  }
+                  return;
+                }
+
                 // Uniqueness check in local staff roster
                 final duplicateLocal = staffList.any((s) =>
                     s.id != existing?.id &&
@@ -944,7 +984,8 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
     final allStaff = ref.watch(restaurantAuthProvider).staffList;
     final staffList = allStaff.where((s) => !_isExcludedStaff(s)).toList();
     final ent = ref.watch(entitlementsProvider);
-    final maxUsers = ent.maxUsers;
+    final quotaMaxUsers = _resolveLicensedMaxUsers();
+    final maxUsers = (ent.isPureOffline || (ent.vertical == Verticals.kirana)) ? 1 : quotaMaxUsers;
     final usersInUse = _usersInUse(staffList);
 
     return Scaffold(

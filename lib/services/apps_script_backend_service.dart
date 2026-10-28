@@ -17,7 +17,6 @@ typedef ClientLicenceIssueResult = ({String? token, String? errorCode, String? e
 class AppsScriptBackendService {
   static const String _defaultWebhookUrl =
       'https://script.google.com/macros/s/AKfycbwZIs_n5hCtSBqkyPOVqeZZBY1XjUAv4NjYWj8O3AY2i0Fw0Rl2OV-TA-IgmlvRbo7pFQ/exec';
-  static const String _secretToken = "SMART_POS_SECURE_TOKEN_2026";
 
 
   static String getWebhookUrl() {
@@ -172,11 +171,12 @@ class AppsScriptBackendService {
         return {'success': true, 'org_id': orgId, 'is_mock': true};
       }
 
+      final idTok = await _idToken();
       final res = await postWithRedirects(
         Uri.parse(url),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
-          'secret': _secretToken,
+          if (idTok != null) 'idToken': idTok,
           'action': 'ONBOARD_ORGANIZATION',
           'org_id': orgId,
           'org_name': orgName,
@@ -243,11 +243,12 @@ class AppsScriptBackendService {
         };
       }
 
+      final idTok = await _idToken();
       final res = await postWithRedirects(
         Uri.parse(url),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
-          'secret': _secretToken,
+          if (idTok != null) 'idToken': idTok,
           'action': 'CREATE_OUTLET',
           'org_id': orgId,
           'outlet_id': outletId,
@@ -312,11 +313,12 @@ class AppsScriptBackendService {
 
       final resolvedSheetId = resolveSpreadsheetId(orgId: outletId, explicitId: spreadsheetId);
 
+      final idTok = await _idToken();
       final res = await postWithRedirects(
         Uri.parse(url),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
-          'secret': _secretToken,
+          if (idTok != null) 'idToken': idTok,
           'action': 'SAVE_BILL',
           'outlet_id': outletId,
           'spreadsheet_id': resolvedSheetId ?? '',
@@ -375,11 +377,12 @@ class AppsScriptBackendService {
 
       final resolvedSheetId = resolveSpreadsheetId(orgId: outletId, explicitId: spreadsheetId);
 
+      final idTok = await _idToken();
       final res = await postWithRedirects(
         Uri.parse(url),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
-          'secret': _secretToken,
+          if (idTok != null) 'idToken': idTok,
           'action': 'SYNC_INVENTORY',
           'outlet_id': outletId,
           'spreadsheet_id': resolvedSheetId ?? '',
@@ -403,11 +406,12 @@ class AppsScriptBackendService {
       final url = getWebhookUrl();
       if (!_isValidUrl(url)) return null;
 
+      final idTok = await _idToken();
       final res = await postWithRedirects(
         Uri.parse(url),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
-          'secret': _secretToken,
+          if (idTok != null) 'idToken': idTok,
           'action': 'FETCH_MASTER_ANALYTICS',
         }),
         timeout: const Duration(seconds: 15),
@@ -462,10 +466,10 @@ class AppsScriptBackendService {
           errorMessage: 'No cloud webhook is configured on this console (Settings → Cloud webhook URL).',
         );
       }
+      final idTok = await _idToken();
       final body = <String, dynamic>{
-        'secret': _secretToken,
+        if (idTok != null) 'idToken': idTok,
         'action': 'ISSUE_CLIENT_LICENCE',
-        'idToken': await _idToken(),
         'payload': payload,
       };
       if (adminUsername != null && adminUsername.trim().isNotEmpty && adminPassword != null && adminPassword.isNotEmpty) {
@@ -511,13 +515,13 @@ class AppsScriptBackendService {
       final url = getWebhookUrl();
       if (!_isValidUrl(url)) return false;
 
+      final idTok = await _idToken();
       final res = await postWithRedirects(
         Uri.parse(url),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
-          'secret': _secretToken,
+          if (idTok != null) 'idToken': idTok,
           'action': 'SEND_OTP_EMAIL',
-          'idToken': await _idToken(),
           'email': email,
           'client_name': clientName,
           'otp_code': otpCode,
@@ -553,13 +557,13 @@ class AppsScriptBackendService {
       final url = getWebhookUrl();
       if (!_isValidUrl(url)) return {'success': false, 'error': 'Invalid webhook URL.'};
 
+      final idTok = await _idToken();
       final res = await postWithRedirects(
         Uri.parse(url),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
-          'secret': _secretToken,
+          if (idTok != null) 'idToken': idTok,
           'action': 'SEND_EMAIL',
-          'idToken': await _idToken(),
           'to': to.trim(),
           'subject': subject.trim(),
           'text': text.trim(),
@@ -605,17 +609,19 @@ class AppsScriptBackendService {
       if (!_isValidUrl(url)) return false;
       if (spreadsheetId.isEmpty || spreadsheetId.startsWith('sheet_ORG')) return true;
 
+      final idTok = await _idToken();
       // On Web, use GET to avoid browser CORS redirect issues on POST
       if (kIsWeb) {
         try {
-          final getUri = Uri.parse(url).replace(queryParameters: {
+          final qParams = <String, String>{
             'action': 'REGISTER_TENANT',
-            'secret': _secretToken,
             'org_id': orgId.trim(),
             'spreadsheet_id': spreadsheetId.trim(),
             'org_name': orgName ?? '',
             'upi_id': upiId ?? '',
-          });
+          };
+          if (idTok != null) qParams['idToken'] = idTok;
+          final getUri = Uri.parse(url).replace(queryParameters: qParams);
           final getRes = await getWithRedirects(getUri, timeout: const Duration(seconds: 12));
           if (getRes.statusCode >= 200 && getRes.statusCode < 300) {
             return true;
@@ -629,7 +635,7 @@ class AppsScriptBackendService {
         Uri.parse(url),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
-          'secret': _secretToken,
+          if (idTok != null) 'idToken': idTok,
           'action': 'REGISTER_TENANT',
           'org_id': orgId.trim(),
           'spreadsheet_id': spreadsheetId.trim(),
@@ -887,11 +893,12 @@ class AppsScriptBackendService {
 
       final resolvedSheetId = resolveSpreadsheetId(orgId: orgId, explicitId: spreadsheetId);
 
+      final idTok = await _idToken();
       final res = await postWithRedirects(
         Uri.parse(url),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
-          'secret': _secretToken,
+          if (idTok != null) 'idToken': idTok,
           'action': 'DISMISS_SERVICE_REQUEST',
           'org_id': orgId.trim(),
           'spreadsheet_id': resolvedSheetId ?? '',
@@ -945,11 +952,12 @@ class AppsScriptBackendService {
       final effectiveRequestId = clientRequestId ?? const Uuid().v4();
       final resolvedSheetId = resolveSpreadsheetId(orgId: orgId, explicitId: spreadsheetId);
 
+      final idTok = await _idToken();
       final res = await postWithRedirects(
         Uri.parse(url),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
-          'secret': _secretToken,
+          if (idTok != null) 'idToken': idTok,
           'action': 'SAVE_BILL',
           'org_id': orgId.trim(),
           'spreadsheet_id': resolvedSheetId ?? '',
@@ -999,11 +1007,12 @@ class AppsScriptBackendService {
       final effectiveRequestId = clientRequestId ?? const Uuid().v4();
       final resolvedSheetId = resolveSpreadsheetId(orgId: orgId, explicitId: spreadsheetId);
 
+      final idTok = await _idToken();
       final res = await postWithRedirects(
         Uri.parse(url),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
-          'secret': _secretToken,
+          if (idTok != null) 'idToken': idTok,
           'action': 'CLEAR_TABLE',
           'org_id': orgId.trim(),
           'spreadsheet_id': resolvedSheetId ?? '',
@@ -1527,7 +1536,10 @@ class AppsScriptBackendService {
       if (!_isValidUrl(url)) return null;
 
       final bodyWithSecret = Map<String, dynamic>.from(payload);
-      bodyWithSecret.putIfAbsent('secret', () => _secretToken);
+      final idTok = await _idToken();
+      if (idTok != null) {
+        bodyWithSecret['idToken'] = idTok;
+      }
 
       // Auto-resolve spreadsheetId if missing or unconfigured
       final currentSheet = bodyWithSecret['spreadsheetId'] ?? bodyWithSecret['spreadsheet_id'];
@@ -1595,5 +1607,36 @@ class AppsScriptBackendService {
   static bool _isValidUrl(String url) {
     return url.startsWith('https://script.google.com') && !url.contains('YOUR_APPS_SCRIPT_ID');
   }
-}
 
+  /// Purges tenant data and cache in cloud Apps Script backend (Master Admin only).
+  static Future<Map<String, dynamic>> purgeTenant({
+    required String orgId,
+  }) async {
+    try {
+      final url = getWebhookUrl();
+      if (!_isValidUrl(url)) return {'success': false, 'error': 'Webhook not configured'};
+      final idTok = await _idToken();
+      final res = await postWithRedirects(
+        Uri.parse(url),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          if (idTok != null) 'idToken': idTok,
+          'action': 'PURGE_TENANT',
+          'org_id': orgId.trim(),
+        }),
+        timeout: const Duration(seconds: 15),
+      );
+      if (res.statusCode >= 200 && res.statusCode < 300) {
+        try {
+          final decoded = jsonDecode(res.body);
+          if (decoded is Map<String, dynamic>) return decoded;
+        } catch (_) {}
+        return {'success': true};
+      }
+      return {'success': false, 'error': 'HTTP ${res.statusCode}: ${res.body}'};
+    } catch (e) {
+      debugPrint("AppsScriptBackendService purgeTenant error: $e");
+      return {'success': false, 'error': e.toString()};
+    }
+  }
+}

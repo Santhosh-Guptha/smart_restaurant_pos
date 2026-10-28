@@ -260,9 +260,24 @@ class _RestaurantAnalyticsScreenState
         allTransactions.addAll(list);
       }
 
+      // Helper to exclude voided, cancelled, and deleted transactions (Issues 43 & 48)
+      bool isTxVoided(Map<String, dynamic> t) {
+        final stUpper = (t['status'] ?? t['orderStatus'] ?? '').toString().toUpperCase();
+        final payUpper = (t['paymentStatus'] ?? t['payment_status'] ?? '').toString().toUpperCase();
+        return stUpper == 'CANCELLED' ||
+            stUpper == 'VOIDED' ||
+            payUpper == 'VOIDED' ||
+            payUpper == 'CANCELLED' ||
+            t['isVoided'] == true ||
+            t['tombstone'] == true ||
+            t['isDeleted'] == true ||
+            (t['voidedBy'] != null && t['voidedBy'].toString().isNotEmpty);
+      }
+
       // 2. Filter transactions by _selectedPeriod
       final now = DateTime.now();
       final filtered = allTransactions.where((t) {
+        if (isTxVoided(t)) return false;
         final dt = _parseDt(t['createdAt'] ?? t['timestamp'] ?? t['paidAt']);
         if (dt == null) return false;
 
@@ -312,6 +327,7 @@ class _RestaurantAnalyticsScreenState
       double prevRevenue = 0.0;
       int prevCount = 0;
       for (final t in allTransactions) {
+        if (isTxVoided(t)) continue;
         final dt = _parseDt(t['createdAt'] ?? t['timestamp'] ?? t['paidAt']);
         if (dt == null) continue;
         if (!dt.isBefore(prevStart) && dt.isBefore(prevEnd)) {
@@ -426,6 +442,7 @@ class _RestaurantAnalyticsScreenState
       final daysMap = {1: 'Mon', 2: 'Tue', 3: 'Wed', 4: 'Thu', 5: 'Fri', 6: 'Sat', 7: 'Sun'};
       final Map<int, double> dowSales = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0};
       for (final t in allTransactions) {
+        if (isTxVoided(t)) continue;
         final dt = _parseDt(t['createdAt'] ?? t['timestamp'] ?? t['paidAt']);
         if (dt != null) {
           final amt = (t['grandTotal'] ?? t['totalAmount'] ?? t['subtotal'] ?? 0.0) as num;
@@ -477,6 +494,7 @@ class _RestaurantAnalyticsScreenState
 
         final rawList = storeTransactions[oId] ?? [];
         final storeFiltered = rawList.where((t) {
+          if (isTxVoided(t)) return false;
           final dt = _parseDt(t['createdAt'] ?? t['timestamp'] ?? t['paidAt']);
           if (dt == null) return false;
           switch (_selectedPeriod) {
@@ -530,19 +548,37 @@ class _RestaurantAnalyticsScreenState
 
       perStoreList.sort((a, b) => (b['revenue'] as double).compareTo(a['revenue'] as double));
 
-      // 8. Payment Tender Breakdown
+      // 8. Payment Tender Breakdown (handles split payments accurately, Issue 43)
       double upiRev = 0.0;
       double cashRev = 0.0;
       double cardRev = 0.0;
       for (final t in filtered) {
-        final mode = (t['paymentMode'] ?? t['payment_mode'] ?? t['paymentMethod'] ?? '').toString().toUpperCase();
-        final amt = ((t['grandTotal'] ?? t['totalAmount'] ?? t['subtotal'] ?? 0.0) as num).toDouble();
-        if (mode.contains('CASH')) {
-          cashRev += amt;
-        } else if (mode.contains('CARD')) {
-          cardRev += amt;
+        final rawSplits = t['splitPayments'] ?? t['payments'] ?? t['split'];
+        if (rawSplits is List && rawSplits.isNotEmpty) {
+          for (final p in rawSplits) {
+            if (p is Map) {
+              final pMode = (p['mode'] ?? p['paymentMode'] ?? '').toString().toUpperCase();
+              final pRawAmt = p['amount'] ?? ((p['amountPaise'] is num) ? (p['amountPaise'] as num) / 100.0 : 0.0);
+              final pAmt = (pRawAmt as num).toDouble();
+              if (pMode.contains('CASH')) {
+                cashRev += pAmt;
+              } else if (pMode.contains('CARD')) {
+                cardRev += pAmt;
+              } else {
+                upiRev += pAmt;
+              }
+            }
+          }
         } else {
-          upiRev += amt;
+          final mode = (t['paymentMode'] ?? t['payment_mode'] ?? t['paymentMethod'] ?? '').toString().toUpperCase();
+          final amt = ((t['grandTotal'] ?? t['totalAmount'] ?? t['subtotal'] ?? 0.0) as num).toDouble();
+          if (mode.contains('CASH')) {
+            cashRev += amt;
+          } else if (mode.contains('CARD')) {
+            cardRev += amt;
+          } else {
+            upiRev += amt;
+          }
         }
       }
 
