@@ -178,10 +178,10 @@ class LanWriteQueue extends ChangeNotifier {
   List<Map<String, dynamic>> get pending {
     try {
       final raw = _box?.get(key);
-      if (raw is! List) return const [];
+      if (raw is! List) return <Map<String, dynamic>>[];
       return raw.whereType<Map>().map((m) => Map<String, dynamic>.from(m)).toList();
     } catch (_) {
-      return const [];
+      return <Map<String, dynamic>>[];
     }
   }
 

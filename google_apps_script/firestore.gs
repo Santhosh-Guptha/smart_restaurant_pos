@@ -27,7 +27,7 @@ var FS_PROJECT = (function() {
   } catch (e) {}
   return "smartdine-restaurant-pos";
 })();
-var FS_USE_OAUTH = false;
+var FS_USE_OAUTH = true;
 var FS_BASE = "https://firestore.googleapis.com/v1/projects/" + FS_PROJECT + "/databases/(default)/documents";
 
 function fsHeaders_() {

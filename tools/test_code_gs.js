@@ -77,6 +77,10 @@ global.UrlFetchApp = {
   })
 };
 
+global.ScriptApp = {
+  getOAuthToken: () => 'mock_oauth_token_123'
+};
+
 global.LockService = {
   getScriptLock: () => ({
     tryLock: () => true,
