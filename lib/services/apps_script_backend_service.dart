@@ -17,6 +17,7 @@ typedef ClientLicenceIssueResult = ({String? token, String? errorCode, String? e
 class AppsScriptBackendService {
   static const String _defaultWebhookUrl =
       'https://script.google.com/macros/s/AKfycbwZIs_n5hCtSBqkyPOVqeZZBY1XjUAv4NjYWj8O3AY2i0Fw0Rl2OV-TA-IgmlvRbo7pFQ/exec';
+  static const String _secretToken = "SMART_POS_SECURE_TOKEN_2026";
 
 
   static String getWebhookUrl() {
@@ -176,6 +177,7 @@ class AppsScriptBackendService {
         Uri.parse(url),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
+          'secret': _secretToken,
           if (idTok != null) 'idToken': idTok,
           'action': 'ONBOARD_ORGANIZATION',
           'org_id': orgId,
@@ -248,6 +250,7 @@ class AppsScriptBackendService {
         Uri.parse(url),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
+          'secret': _secretToken,
           if (idTok != null) 'idToken': idTok,
           'action': 'CREATE_OUTLET',
           'org_id': orgId,
@@ -318,6 +321,7 @@ class AppsScriptBackendService {
         Uri.parse(url),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
+          'secret': _secretToken,
           if (idTok != null) 'idToken': idTok,
           'action': 'SAVE_BILL',
           'outlet_id': outletId,
@@ -382,6 +386,7 @@ class AppsScriptBackendService {
         Uri.parse(url),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
+          'secret': _secretToken,
           if (idTok != null) 'idToken': idTok,
           'action': 'SYNC_INVENTORY',
           'outlet_id': outletId,
@@ -411,6 +416,7 @@ class AppsScriptBackendService {
         Uri.parse(url),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
+          'secret': _secretToken,
           if (idTok != null) 'idToken': idTok,
           'action': 'FETCH_MASTER_ANALYTICS',
         }),
@@ -468,6 +474,7 @@ class AppsScriptBackendService {
       }
       final idTok = await _idToken();
       final body = <String, dynamic>{
+        'secret': _secretToken,
         if (idTok != null) 'idToken': idTok,
         'action': 'ISSUE_CLIENT_LICENCE',
         'payload': payload,
@@ -520,6 +527,7 @@ class AppsScriptBackendService {
         Uri.parse(url),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
+          'secret': _secretToken,
           if (idTok != null) 'idToken': idTok,
           'action': 'SEND_OTP_EMAIL',
           'email': email,
@@ -562,6 +570,7 @@ class AppsScriptBackendService {
         Uri.parse(url),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
+          'secret': _secretToken,
           if (idTok != null) 'idToken': idTok,
           'action': 'SEND_EMAIL',
           'to': to.trim(),
@@ -615,6 +624,7 @@ class AppsScriptBackendService {
         try {
           final qParams = <String, String>{
             'action': 'REGISTER_TENANT',
+            'secret': _secretToken,
             'org_id': orgId.trim(),
             'spreadsheet_id': spreadsheetId.trim(),
             'org_name': orgName ?? '',
@@ -635,6 +645,7 @@ class AppsScriptBackendService {
         Uri.parse(url),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
+          'secret': _secretToken,
           if (idTok != null) 'idToken': idTok,
           'action': 'REGISTER_TENANT',
           'org_id': orgId.trim(),
@@ -898,6 +909,7 @@ class AppsScriptBackendService {
         Uri.parse(url),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
+          'secret': _secretToken,
           if (idTok != null) 'idToken': idTok,
           'action': 'DISMISS_SERVICE_REQUEST',
           'org_id': orgId.trim(),
@@ -957,6 +969,7 @@ class AppsScriptBackendService {
         Uri.parse(url),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
+          'secret': _secretToken,
           if (idTok != null) 'idToken': idTok,
           'action': 'SAVE_BILL',
           'org_id': orgId.trim(),
@@ -1012,6 +1025,7 @@ class AppsScriptBackendService {
         Uri.parse(url),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
+          'secret': _secretToken,
           if (idTok != null) 'idToken': idTok,
           'action': 'CLEAR_TABLE',
           'org_id': orgId.trim(),
@@ -1536,6 +1550,7 @@ class AppsScriptBackendService {
       if (!_isValidUrl(url)) return null;
 
       final bodyWithSecret = Map<String, dynamic>.from(payload);
+      bodyWithSecret['secret'] = _secretToken;
       final idTok = await _idToken();
       if (idTok != null) {
         bodyWithSecret['idToken'] = idTok;
@@ -1620,6 +1635,7 @@ class AppsScriptBackendService {
         Uri.parse(url),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
+          'secret': _secretToken,
           if (idTok != null) 'idToken': idTok,
           'action': 'PURGE_TENANT',
           'org_id': orgId.trim(),
