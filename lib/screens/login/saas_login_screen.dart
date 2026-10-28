@@ -575,13 +575,13 @@ class _SaaSLoginScreenState extends ConsumerState<SaaSLoginScreen> {
                         Icon(Icons.wifi_off_rounded, size: 14, color: context.textSecondary),
                         const SizedBox(width: 6),
                         Text(
-                          "Self-hosted / offline? ",
+                          "Host PC or second device? ",
                           style: TextStyle(color: context.textSecondary, fontSize: 13),
                         ),
                         GestureDetector(
                           onTap: () => LocalOfflineStoreDialog.show(context, initialTab: 0),
                           child: Text(
-                            "Open Free Till",
+                            "Free trial / satellite",
                             style: TextStyle(
                               color: ClassicTheme.successEmerald,
                               fontWeight: FontWeight.bold,

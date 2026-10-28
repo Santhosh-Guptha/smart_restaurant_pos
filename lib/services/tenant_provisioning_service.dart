@@ -438,6 +438,8 @@ class TenantProvisioningService {
         'orgId': orgId,
         'userId': newUserId,
         'email': cleanEmail,
+        'username': cleanUsername,
+        'mustChangePassword': mustChangePassword,
         'outletId': primaryOutletId,
         'planName': plan.name,
         'packageId': package.id,

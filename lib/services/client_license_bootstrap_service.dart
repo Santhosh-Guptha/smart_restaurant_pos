@@ -54,7 +54,9 @@ class ClientLicenseBootstrapService {
         payload,
         ref: ref,
         token: token,
-        ownerName: '${payload.storeName} Owner',
+        // The owner's name comes from the key (ownerName); the store-name
+        // fallback is for keys issued before the server added it.
+        ownerName: payload.ownerName.isNotEmpty ? payload.ownerName : '${payload.storeName} Owner',
       );
 
       if (success) {

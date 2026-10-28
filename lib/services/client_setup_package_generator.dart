@@ -174,26 +174,30 @@ class ClientSetupPackageGenerator {
     });
   }
 
-  /// What the admin sees when the server will not sign a key.
+  /// What the admin sees when the server will not sign a key and gave no
+  /// reason ([ClientLicenseService.issueErrorMessage] has the specific ones).
   static const String issueFailedMessage =
       'The server did not issue the licence key. Sign in as the platform admin '
       'with the cloud webhook configured and LEASE_SIGNING_KEY set, then try again.';
 
   /// Asks Code.gs for a signed key, then downloads the .bat. Returns null on
-  /// success, else the message to show.
+  /// success, else the message to show. The file carries the payload the
+  /// server signed (store name and owner from the tenant's documents).
   static Future<String?> issueAndDownloadSetupBatch(ClientLicensePayload payload) async {
-    final token = await ClientLicenseService.issueToken(payload);
-    if (token == null) return issueFailedMessage;
-    await downloadSetupBatchFile(payload, token);
+    final res = await ClientLicenseService.issueKey(payload);
+    final token = res.token;
+    if (token == null) return ClientLicenseService.issueErrorMessage(res.errorCode, res.errorMessage);
+    await downloadSetupBatchFile(ClientLicenseService.verifyAndDecode(token) ?? payload, token);
     return null;
   }
 
   /// Asks Code.gs for a signed key, then downloads the .json. Returns null on
   /// success, else the message to show.
   static Future<String?> issueAndDownloadLicenseJson(ClientLicensePayload payload) async {
-    final token = await ClientLicenseService.issueToken(payload);
-    if (token == null) return issueFailedMessage;
-    await downloadLicenseJson(payload, token);
+    final res = await ClientLicenseService.issueKey(payload);
+    final token = res.token;
+    if (token == null) return ClientLicenseService.issueErrorMessage(res.errorCode, res.errorMessage);
+    await downloadLicenseJson(ClientLicenseService.verifyAndDecode(token) ?? payload, token);
     return null;
   }
 

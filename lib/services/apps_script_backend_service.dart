@@ -8,6 +8,10 @@ import 'package:uuid/uuid.dart';
 import '../core/cloud_gate.dart';
 import 'sheet_layout.dart';
 
+/// What `ISSUE_CLIENT_LICENCE` answered: the signed key, or why not
+/// ([AppsScriptBackendService.issueClientLicence]).
+typedef ClientLicenceIssueResult = ({String? token, String? errorCode, String? errorMessage});
+
 /// Service that interacts with the Zero-Cost Google Apps Script Webhook
 /// for automated Multi-Tenant Organization, Outlet, and Spreadsheet management.
 class AppsScriptBackendService {
@@ -429,35 +433,71 @@ class AppsScriptBackendService {
 
   /// Asks Code.gs to sign a client licence key (`ISSUE_CLIENT_LICENCE`).
   /// Platform admin only; the server signs with the RSA lease key and
-  /// writes `licenses/{orgId}` from the same payload. Returns the token or
-  /// null (not signed in as admin, server not configured, offline).
-  static Future<String?> issueClientLicence(Map<String, dynamic> payload) async {
+  /// writes `licenses/{orgId}` from the same payload.
+  ///
+  /// The admin proves who they are with the console's Firebase ID token
+  /// (custom-token bridge) or, when the console holds none, with
+  /// [adminUsername] / [adminPassword] re-entered for this call; the server
+  /// checks them like `ISSUE_AUTH_TOKEN`. The password is sent once over
+  /// HTTPS and never stored.
+  ///
+  /// Returns the token, or the server's `error_code` and message so the
+  /// dialog can say why (`SIGN_IN_REQUIRED`, `NOT_CONFIGURED`, `FORBIDDEN`,
+  /// `NO_ORG`, `INVALID`, `RATE_LIMITED`, `BAD_REQUEST`); [kIssueErrorNoWebhook]
+  /// when no webhook is configured and [kIssueErrorNetwork] when the server
+  /// could not be reached.
+  static Future<ClientLicenceIssueResult> issueClientLicence(
+    Map<String, dynamic> payload, {
+    String? adminUsername,
+    String? adminPassword,
+  }) async {
     try {
       final url = getWebhookUrl();
-      if (!_isValidUrl(url)) return null;
+      if (!_isValidUrl(url)) {
+        return (
+          token: null,
+          errorCode: kIssueErrorNoWebhook,
+          errorMessage: 'No cloud webhook is configured on this console (Settings → Cloud webhook URL).',
+        );
+      }
+      final body = <String, dynamic>{
+        'secret': _secretToken,
+        'action': 'ISSUE_CLIENT_LICENCE',
+        'idToken': await _idToken(),
+        'payload': payload,
+      };
+      if (adminUsername != null && adminUsername.trim().isNotEmpty && adminPassword != null && adminPassword.isNotEmpty) {
+        body['adminUsername'] = adminUsername.trim();
+        body['adminPassword'] = adminPassword;
+      }
       final res = await postWithRedirects(
         Uri.parse(url),
         headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'secret': _secretToken,
-          'action': 'ISSUE_CLIENT_LICENCE',
-          'idToken': await _idToken(),
-          'payload': payload,
-        }),
-        timeout: const Duration(seconds: 20),
+        body: jsonEncode(body),
+        timeout: const Duration(seconds: 25),
       );
-      if (res.statusCode < 200 || res.statusCode >= 300) return null;
+      if (res.statusCode < 200 || res.statusCode >= 300) {
+        return (token: null, errorCode: kIssueErrorNetwork, errorMessage: 'The server answered HTTP ${res.statusCode}.');
+      }
       final data = jsonDecode(res.body);
       if (data is Map && data['success'] == true && data['token'] is String) {
-        return data['token'] as String;
+        return (token: data['token'] as String, errorCode: null, errorMessage: null);
       }
-      debugPrint('issueClientLicence refused: ${data is Map ? data['error_code'] : res.body}');
-      return null;
+      final code = (data is Map ? data['error_code'] : null)?.toString() ?? 'REFUSED';
+      final msg = (data is Map ? (data['error'] ?? data['message']) : null)?.toString();
+      debugPrint('issueClientLicence refused: $code');
+      return (token: null, errorCode: code, errorMessage: msg);
     } catch (e) {
       debugPrint('AppsScriptBackendService issueClientLicence error: $e');
-      return null;
+      return (token: null, errorCode: kIssueErrorNetwork, errorMessage: 'The server could not be reached: $e');
     }
   }
+
+  /// `errorCode` of [issueClientLicence] when this console has no webhook URL.
+  static const String kIssueErrorNoWebhook = 'NO_WEBHOOK';
+
+  /// `errorCode` of [issueClientLicence] when the request never got an answer.
+  static const String kIssueErrorNetwork = 'NETWORK';
 
   /// 6. Send OTP Email for Client Registration
   static Future<bool> sendOtpEmail({

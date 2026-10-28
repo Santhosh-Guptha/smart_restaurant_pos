@@ -3,14 +3,14 @@
  * SMARTBIZZ POS CLOUD BACKEND (Google Apps Script)
  * Automatically creates & manages Google Spreadsheets in your Google Drive.
  * 100% Zero-Server & Zero-Firebase Architecture.
- * Release: v2.4.2 [prod-2026-10-27] (Timestamp: 2026-10-27T17:43:03.855Z)
+ * Release: v2.4.2 [prod-2026-10-27] (Timestamp: 2026-10-28T06:59:49.543Z)
  * =========================================================================
  */
 
 // ── VERSION & RELEASE TRACKING (Automated by deploy_code_gs) ───────────────
 const CODE_GS_VERSION = "2.4.2";
 const CODE_GS_RELEASE_TAG = "prod-2026-10-27";
-const CODE_GS_BUILD_TIMESTAMP = "2026-10-27T17:43:03.855Z";
+const CODE_GS_BUILD_TIMESTAMP = "2026-10-28T06:59:49.543Z";
 // ─────────────────────────────────────────────────────────────────────────────
 
 
@@ -6230,30 +6230,131 @@ function handleLicenseLease_(p) {
 }
 
 /**
- * ISSUE_CLIENT_LICENCE (platform admin only; needs the staff secret AND an
- * admin idToken). Signs a client licence key with the platform's RSA key, so
- * the app can verify it with lease_public_key.dart and nothing in the app can
- * mint one. Also materialises `licenses/{orgId}` from the same payload, so the
- * Feature Matrix and the licence dialog see the tenant (contract §5).
+ * ISSUE_CLIENT_LICENCE (platform admin only). Signs a client licence key
+ * with the platform's RSA key, so the app can verify it with
+ * lease_public_key.dart and nothing in the app can mint one. Also
+ * materialises `licenses/{orgId}` from the same payload, so the Feature
+ * Matrix and the licence dialog see the tenant (contract §5).
  *
- * Body: { idToken, payload: {v, orgId, storeName, vertical, tier, packageId,
- *         planName, storageMode, features, maxDevices, maxOutlets, maxUsers,
- *         allowedRoles, machineId, issuedAt?, validUntil} }
- * Reply: { success, token: "SBZ-LIC-<base64url payload>.<base64url sig>", payload }
+ * Who may ask (docs/10_ONBOARDING.md §4): either
+ *   - `idToken`: the console's Firebase ID token (custom-token bridge; needs
+ *     FIREBASE_SA_EMAIL / FIREBASE_SA_PRIVATE_KEY and FIREBASE_WEB_API_KEY), or
+ *   - `adminUsername` + `adminPassword`: the platform admin's own credentials,
+ *     re-entered in the console and checked here with bcryptCheck_ against
+ *     the MASTER_ADMIN user exactly as ISSUE_AUTH_TOKEN does (same lockout
+ *     counter: eight wrong passwords in ten minutes lock the identifier).
+ *     The password is never logged or stored.
+ *
+ * The tenant must exist: `organizations/{orgId}` is read for the store name
+ * and the owner (ownerEmail / ownerName / ownerUsername go into the signed
+ * payload, so the till can create the owner's local account from the key).
+ *
+ * Body: { idToken? | adminUsername?+adminPassword?, payload: {orgId, vertical,
+ *         tier, packageId, planName, storageMode, features, maxDevices,
+ *         maxOutlets, maxUsers, allowedRoles, machineId, validUntil} }
+ * Reply: { success: true, token: "SBZ-LIC-<base64url payload>.<base64url sig>", payload }
+ *     or { success: false, error_code, error } with error_code one of
+ *        NOT_CONFIGURED (LEASE_SIGNING_KEY missing), SIGN_IN_REQUIRED (no ID
+ *        token and no admin credentials), INVALID (wrong admin password),
+ *        RATE_LIMITED, FORBIDDEN (not the platform admin), NO_ORG (onboard the
+ *        tenant first), BAD_REQUEST.
  */
 function handleIssueClientLicence_(json) {
   var pem = String(PropertiesService.getScriptProperties().getProperty("LEASE_SIGNING_KEY") || "").replace(/\\n/g, "\n");
-  if (!pem) return responseJson({ success: false, error_code: "NOT_CONFIGURED", error: "LEASE_SIGNING_KEY is not set." });
-  var uid = mailCallerUid_(json);
-  if (!uid) return responseJson({ success: false, error_code: "SIGN_IN_REQUIRED" });
-  var u = fsGet_("users/" + uid);
-  var isAdmin = !!u && (uid === "usr_master_admin" || String(u.role || "").toUpperCase() === "MASTER_ADMIN" || u.organizationId === "SYSTEM_ADMIN");
-  if (!isAdmin) return responseJson({ success: false, error_code: "FORBIDDEN", error: "Platform admin only." });
+  if (!pem) return responseJson({ success: false, error_code: "NOT_CONFIGURED", error: "LEASE_SIGNING_KEY is not set in the Apps Script project." });
+
+  var admin = clientLicenceAdmin_(json);
+  if (admin.error_code) return responseJson({ success: false, error_code: admin.error_code, error: admin.error });
 
   var p = json.payload || {};
   var orgId = String(p.orgId || "").trim();
   if (!orgId || orgId === "SYSTEM_ADMIN") return responseJson({ success: false, error_code: "BAD_REQUEST", error: "orgId required." });
-  var vertical = verticalFor_(p.businessCategory || p.vertical || "");
+  var r = issueClientLicenceFor_(orgId, p, admin, pem);
+  if (r.error_code) return responseJson({ success: false, error_code: r.error_code, error: r.error });
+  return responseJson({ success: true, token: r.token, payload: r.payload, via: admin.via });
+}
+
+/**
+ * Who is asking for a client licence key. Returns {uid, email, via} for the
+ * platform admin, else {error_code, error}. ID token first; the re-entered
+ * admin password second (same checks and lockout as handleIssueAuthToken_).
+ */
+function clientLicenceAdmin_(json) {
+  function isAdminUser_(id, u) {
+    return !!u && (id === "usr_master_admin" || String(u.role || "").toUpperCase() === "MASTER_ADMIN" || u.organizationId === "SYSTEM_ADMIN");
+  }
+  var uid = mailCallerUid_(json);
+  if (uid) {
+    var tokUser = fsGet_("users/" + uid);
+    if (!isAdminUser_(uid, tokUser)) return { error_code: "FORBIDDEN", error: "Platform admin only." };
+    return { uid: uid, email: String(tokUser.email || uid), via: "ID_TOKEN" };
+  }
+  var id = String(json.adminUsername || "").trim().toLowerCase();
+  var pw = String(json.adminPassword || "");
+  if (!id || !pw) {
+    return {
+      error_code: "SIGN_IN_REQUIRED",
+      error: "The console is not signed in to Firebase (custom-token bridge not configured). Enter the platform admin password to sign the key."
+    };
+  }
+  var cache = CacheService.getScriptCache();
+  var failKey = "authfail_" + Utilities.base64EncodeWebSafe(id).slice(0, 200);
+  var fails = Number(cache.get(failKey) || 0);
+  if (fails >= 8) return { error_code: "RATE_LIMITED", error: "Too many wrong passwords. Wait ten minutes and try again." };
+  var hit = null;
+  var lookups = [["users", "username"], ["users", "email"]];
+  for (var i = 0; i < lookups.length && !hit; i++) {
+    var rows = fsQueryEq_(lookups[i][0], lookups[i][1], id, 1);
+    if (rows.length > 0) hit = rows[0];
+  }
+  if (!hit && id === "usr_master_admin") {
+    var master = fsGet_("users/usr_master_admin");
+    if (master) hit = { id: "usr_master_admin", data: master };
+  }
+  var u = hit ? (hit.data || {}) : {};
+  var hash = String(u.passwordHash || "");
+  var ok = false;
+  if (hash) { try { ok = bcryptCheck_(pw, hash); } catch (e) { ok = false; } }
+  if (!ok && !hash && u.password) ok = (pw === String(u.password));
+  var status = String(u.status || "ACTIVE").toUpperCase();
+  if (!hit || !ok || status !== "ACTIVE" || u.isActive === false) {
+    cache.put(failKey, String(fails + 1), 600);
+    return { error_code: "INVALID", error: "Wrong platform admin username or password." };
+  }
+  if (!isAdminUser_(hit.id, u)) return { error_code: "FORBIDDEN", error: "Platform admin only." };
+  return { uid: hit.id, email: String(u.email || hit.id), via: "ADMIN_PASSWORD" };
+}
+
+/**
+ * The owner of an organisation: organizations.ownerUserId first, else the
+ * org's OWNER user with no store (franchiseId), else what the org doc says.
+ * Returns {userId, email, name, username}; fields may be "".
+ */
+function orgOwner_(orgId, org) {
+  var owner = null, ownerId = "";
+  if (org.ownerUserId) {
+    owner = fsGet_("users/" + org.ownerUserId);
+    if (owner) ownerId = String(org.ownerUserId);
+  }
+  if (!owner) {
+    var rows = fsQueryEq_("users", "organizationId", orgId, 20);
+    for (var i = 0; i < rows.length; i++) {
+      var d = rows[i].data || {};
+      if (String(d.role || "").toUpperCase() === "OWNER" && !d.franchiseId) { owner = d; ownerId = rows[i].id; break; }
+    }
+  }
+  owner = owner || {};
+  return {
+    userId: ownerId,
+    email: String(owner.email || org.ownerEmail || org.ownerGoogleEmail || org.email || "").trim().toLowerCase(),
+    name: String(owner.fullName || owner.name || org.clientName || org.ownerName || "").trim(),
+    username: String(owner.username || org.ownerUsername || "").trim()
+  };
+}
+
+/** The signed payload for an organisation, as the server builds it (shared with the smoke test). */
+function clientLicencePayload_(orgId, p, org, owner, issuerUid, now) {
+  var vertical = verticalFor_(p.businessCategory || p.vertical || org.vertical || org.businessCategory || "");
   var tier = String(p.tier || "offline").toLowerCase();
   var offline = tier === "offline";
   var storageMode = String(p.storageMode || "").toUpperCase();
@@ -6262,16 +6363,16 @@ function handleIssueClientLicence_(json) {
   if (offline) storageMode = "PURE_OFFLINE";
   else if (storageMode !== "CLIENTS_OWN_SHEETS" && storageMode !== "LOCAL_NETWORK") storageMode = "CLIENTS_OWN_SHEETS";
   function n(v, d) { var x = Number(v); return x >= 1 ? Math.floor(x) : d; }
-  var now = new Date();
   var validUntil = p.validUntil ? new Date(p.validUntil) : new Date(now.getTime() + 365 * 86400000);
-  if (isNaN(validUntil.getTime()) || validUntil <= now) return responseJson({ success: false, error_code: "BAD_REQUEST", error: "validUntil must be in the future." });
+  if (isNaN(validUntil.getTime()) || validUntil <= now) return { error_code: "BAD_REQUEST", error: "validUntil must be in the future." };
   var features = (p.features && typeof p.features === "object") ? p.features : {};
   var roles = Array.isArray(p.allowedRoles) && p.allowedRoles.length ? p.allowedRoles.map(String) : ["OWNER"];
+  var storeName = String(p.storeName || org.name || org.appName || org.businessName || "").trim();
   // Offline is always one device, one outlet, one user (contract §3).
-  var payload = {
+  return {
     v: 1,
     orgId: orgId,
-    storeName: String(p.storeName || ""),
+    storeName: storeName,
     vertical: vertical,
     tier: tier,
     packageId: String(p.packageId || (vertical + "_" + tier)),
@@ -6285,29 +6386,107 @@ function handleIssueClientLicence_(json) {
     machineId: String(p.machineId || "ANY").trim() || "ANY",
     issuedAt: now.toISOString(),
     validUntil: validUntil.toISOString(),
-    issuedBy: uid
+    issuedBy: issuerUid,
+    // The owner, so the till creates the owner's local account from the key
+    // (docs/10_ONBOARDING.md §4 and the login matrix).
+    ownerEmail: owner.email,
+    ownerName: owner.name,
+    ownerUsername: owner.username,
+    ownerUserId: owner.userId
   };
+}
+
+/** "SBZ-LIC-<base64url payload>.<base64url RSA-SHA256 sig>"; the signature covers the base64url text. */
+function signClientLicence_(payload, pem) {
   var payloadB64 = Utilities.base64EncodeWebSafe(JSON.stringify(payload)).replace(/=+$/, "");
   var sig = Utilities.base64EncodeWebSafe(Utilities.computeRsaSha256Signature(payloadB64, pem)).replace(/=+$/, "");
+  return "SBZ-LIC-" + payloadB64 + "." + sig;
+}
 
+/** Decodes a key's payload (no signature check: Apps Script has no RSA verify). null when malformed. */
+function parseClientLicence_(token) {
+  var t = String(token || "");
+  if (t.indexOf("SBZ-LIC-") === 0) t = t.slice(8);
+  var parts = t.split(".");
+  if (parts.length !== 2 || !parts[0] || !parts[1]) return null;
+  try {
+    return JSON.parse(Utilities.newBlob(Utilities.base64DecodeWebSafe(parts[0])).getDataAsString());
+  } catch (e) {
+    return null;
+  }
+}
+
+/**
+ * Issues the key for one organisation: reads the org and its owner, signs,
+ * writes licenses/{orgId} and the audit row. Returns {token, payload} or
+ * {error_code, error}. `admin` is {uid, email, via} from clientLicenceAdmin_.
+ */
+function issueClientLicenceFor_(orgId, p, admin, pem) {
+  var org = fsGet_("organizations/" + orgId);
+  if (!org) return { error_code: "NO_ORG", error: "No organisation " + orgId + ". Onboard the tenant first (Tenants -> New Tenant, or from the lead), then issue the key." };
+  var owner = orgOwner_(orgId, org);
+  var now = new Date();
+  var payload = clientLicencePayload_(orgId, p, org, owner, admin.uid, now);
+  if (payload.error_code) return payload;
+  var token = signClientLicence_(payload, pem);
+  var validUntil = new Date(payload.validUntil);
   try {
     fsMerge_("licenses/" + orgId, {
-      packageId: payload.packageId, tier: tier, vertical: vertical, storageMode: storageMode,
-      features: features, featuresResolvedFor: vertical,
+      packageId: payload.packageId, tier: payload.tier, vertical: payload.vertical, storageMode: payload.storageMode,
+      features: payload.features, featuresResolvedFor: payload.vertical,
       maxDevices: payload.maxDevices, maxFranchises: payload.maxOutlets, maxUsers: payload.maxUsers,
       allowedRoles: payload.allowedRoles, status: "ACTIVE", planName: payload.planName,
       startDate: now, endDate: validUntil, licenceKeyIssuedAt: now, licenceKeyMachineId: payload.machineId,
-      updatedAt: now, updatedBy: uid
+      updatedAt: now, updatedBy: admin.uid
     });
     fsCreate_("audit_logs", {
       action: "CLIENT_LICENCE_ISSUED", actionType: "CLIENT_LICENCE_ISSUED", targetOrgId: orgId, organizationId: orgId,
-      details: "Licence key issued: " + payload.packageId + " until " + validUntil.toISOString().slice(0, 10) + " · machine " + payload.machineId,
-      by: String(u.email || uid), priority: "HIGH", timestamp: now
+      details: "Licence key issued: " + payload.packageId + " until " + validUntil.toISOString().slice(0, 10) +
+        " · machine " + payload.machineId + " · owner " + (owner.email || "(none)") + " · verified by " + admin.via,
+      by: admin.email, priority: "HIGH", timestamp: now
     });
   } catch (e) {
     Logger.log("ISSUE_CLIENT_LICENCE firestore: " + e);
   }
-  return responseJson({ success: true, token: "SBZ-LIC-" + payloadB64 + "." + sig, payload: payload });
+  return { token: token, payload: payload };
+}
+
+/**
+ * Run from the editor next to smokeTestTrialProvisioning. Proves the signing
+ * key is set and a key round-trips: signs a fixture payload, parses the token
+ * back and compares the fields. Writes nothing -- unless Script property
+ * SMOKE_ORG_ID names a real organisation, in which case it issues a real key
+ * for it through issueClientLicenceFor_ (writes licenses/{orgId} and an
+ * audit row) and checks that document was written.
+ */
+function smokeTestIssueClientLicence() {
+  var props = PropertiesService.getScriptProperties();
+  var pem = String(props.getProperty("LEASE_SIGNING_KEY") || "").replace(/\\n/g, "\n");
+  if (!pem) throw new Error("LEASE_SIGNING_KEY is not set (Project settings -> Script properties)");
+  var now = new Date();
+  var fixtureOrg = { name: "Smoke Test Store", vertical: "restaurant", businessCategory: "Restaurant" };
+  var fixtureOwner = { userId: "usr_smoke", email: "owner@example.com", name: "Smoke Owner", username: "smoke_owner" };
+  var payload = clientLicencePayload_("ORG00SMOKE", { tier: "basic", storageMode: "LOCAL_NETWORK", maxDevices: 2, maxUsers: 3, allowedRoles: ["OWNER", "MANAGER", "BILLING"], features: { billing: true } }, fixtureOrg, fixtureOwner, "usr_master_admin", now);
+  if (payload.error_code) throw new Error(payload.error);
+  var token = signClientLicence_(payload, pem);
+  var back = parseClientLicence_(token);
+  if (!back) throw new Error("token did not parse");
+  ["orgId", "storeName", "vertical", "tier", "packageId", "storageMode", "maxDevices", "ownerEmail", "ownerName", "ownerUsername", "validUntil"].forEach(function (k) {
+    if (String(back[k]) !== String(payload[k])) throw new Error("field " + k + " did not round-trip: " + back[k] + " != " + payload[k]);
+  });
+  if (back.maxDevices !== 2 || back.storageMode !== "LOCAL_NETWORK" || back.packageId !== "restaurant_basic") throw new Error("payload rules broken: " + JSON.stringify(back));
+  Logger.log("Signed key OK (" + token.slice(0, 24) + "..., " + token.length + " chars); payload round-trips; owner " + back.ownerEmail + ".");
+  var smokeOrg = String(props.getProperty("SMOKE_ORG_ID") || "").trim();
+  if (smokeOrg) {
+    var r = issueClientLicenceFor_(smokeOrg, { tier: "basic", storageMode: "CLIENTS_OWN_SHEETS" }, { uid: "usr_master_admin", email: "smoke-test", via: "SMOKE_TEST" }, pem);
+    if (r.error_code) throw new Error(r.error_code + ": " + r.error);
+    var lic = fsGet_("licenses/" + smokeOrg);
+    if (!lic || !lic.licenceKeyIssuedAt) throw new Error("licenses/" + smokeOrg + " was not written");
+    Logger.log("Real key issued for " + smokeOrg + " (owner " + (r.payload.ownerEmail || "none") + "); licenses/" + smokeOrg + " written.");
+  } else {
+    Logger.log("Firestore write not exercised (set Script property SMOKE_ORG_ID to a real org id to issue a real key).");
+  }
+  return "OK";
 }
 
 /** Secret for signing e-mail proofs; created on first use, kept in Script properties. */

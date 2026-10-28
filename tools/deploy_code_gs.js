@@ -25,7 +25,7 @@ const { execSync, spawnSync } = require('child_process');
 const os = require('os');
 
 // Paths
-const ROOT_DIR = path.resolve(__dirname, '..');
+const ROOT_DIR = fs.realpathSync(path.resolve(__dirname, '..'));
 const GAS_DIR = path.join(ROOT_DIR, 'google_apps_script');
 const TOOLS_DIR = path.join(ROOT_DIR, 'tools');
 const RELEASES_DIR = path.join(GAS_DIR, 'releases');
@@ -519,13 +519,22 @@ function attemptClaspPush(options) {
     return { pushed: false, reason: 'dry_run' };
   }
 
-  info('CLASP', 'Running: npx @google/clasp push...');
+  info('CLASP', 'Running: clasp push...');
   try {
-    const pushOutput = execSync('npx @google/clasp push --force', {
-      cwd: GAS_DIR,
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'pipe']
-    });
+    let pushOutput;
+    try {
+      pushOutput = execSync('clasp push --force', {
+        cwd: GAS_DIR,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe']
+      });
+    } catch (_) {
+      pushOutput = execSync('npx @google/clasp push --force', {
+        cwd: GAS_DIR,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe']
+      });
+    }
     success('CLASP', `clasp push succeeded:\n${pushOutput.trim()}`);
     return { pushed: true, output: pushOutput };
   } catch (err) {

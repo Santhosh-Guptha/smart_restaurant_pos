@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:bcrypt/bcrypt.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import '../../core/classic_theme.dart';
+import '../../core/cloud_gate.dart';
 import '../../providers/saas_session_provider.dart';
 import '../../utils/ui_feedback.dart';
 
@@ -45,20 +46,36 @@ class _FirstLoginPasswordScreenState extends ConsumerState<FirstLoginPasswordScr
 
       final newPassword = _newPasswordController.text.trim();
       final newHash = BCrypt.hashpw(newPassword, BCrypt.gensalt());
-
-      // 1. Update Firestore users doc
-      await FirebaseFirestore.instance.collection('users').doc(user.id).update({
-        'passwordHash': newHash,
-        'mustChangePassword': false,
-        'passwordChangedAt': FieldValue.serverTimestamp(),
-      });
-
-      // 2. Update local Hive cache
       final box = Hive.box('configBox');
       final emailKey = user.email.trim().toLowerCase();
+
+      // A store activated with a licence key keeps the owner's password on
+      // this device (docs/10_ONBOARDING.md §4): the hash is written here and
+      // the platform is updated only when the cloud gate is open and the
+      // server reachable. Every other tenant (including an Offline-package
+      // tenant on its first, online, login) writes the platform first; a
+      // failure there is an error, because the next online login would
+      // still see the old hash.
+      final keyedStore = box.get('saas_is_client_license', defaultValue: false) == true;
+      Future<bool> writePlatform() async {
+        await FirebaseFirestore.instance.collection('users').doc(user.id).update({
+          'passwordHash': newHash,
+          'mustChangePassword': false,
+          'passwordChangedAt': FieldValue.serverTimestamp(),
+        });
+        return true;
+      }
+      if (keyedStore) {
+        await CloudGate.run<bool>(writePlatform);
+      } else {
+        await writePlatform();
+      }
+
+      // 2. Update local Hive cache (the offline sign-in reads this hash)
       await box.put('saas_password_hash_$emailKey', newHash);
 
-      // 3. Refresh user session in state
+      // 3. Refresh user session in state (local for a keyed or offline store)
+      await ref.read(saasSessionProvider.notifier).markPasswordChangedLocally();
       await ref.read(saasSessionProvider.notifier).refreshSessionFromFirestore();
 
       if (mounted) {

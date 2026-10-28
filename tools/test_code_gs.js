@@ -58,6 +58,19 @@ global.Utilities = {
     const buf = typeof str === 'string' ? Buffer.from(str) : Buffer.from(str.map(b => (b < 0 ? b + 256 : b)));
     return buf.toString('base64').replace(/\+/g, '-').replace(/\//g, '_');
   },
+  base64DecodeWebSafe: (str) => {
+    let s = str.replace(/-/g, '+').replace(/_/g, '/');
+    while (s.length % 4) s += '=';
+    const buf = Buffer.from(s, 'base64');
+    return Array.from(buf).map(b => b > 127 ? b - 256 : b);
+  },
+  newBlob: (bytes) => {
+    const buf = Buffer.from(bytes.map(b => (b < 0 ? b + 256 : b)));
+    return {
+      getDataAsString: () => buf.toString('utf8'),
+      getBytes: () => bytes
+    };
+  },
   getUuid: () => crypto.randomUUID(),
   computeRsaSha256Signature: (data, pem) => {
     return Array.from(crypto.createHash('sha256').update(data).digest());
@@ -274,13 +287,21 @@ const authPrivateRes = callPost({
 });
 assert(authPrivateRes.error_code !== 'UNAUTHORIZED', 'Authenticated action succeeds past security gate');
 
-// 5. Run smokeTestTrialProvisioning
+// 5. Run smokeTestTrialProvisioning & smokeTestIssueClientLicence
 console.log('\n--- Running smokeTestTrialProvisioning ---');
 try {
   const smokeRes = smokeTestTrialProvisioning();
   assert(smokeRes === 'OK', 'smokeTestTrialProvisioning returns OK');
 } catch (e) {
   assert(false, `smokeTestTrialProvisioning threw: ${e.message}`);
+}
+
+console.log('\n--- Running smokeTestIssueClientLicence ---');
+try {
+  const smokeLicRes = smokeTestIssueClientLicence();
+  assert(smokeLicRes === 'OK', 'smokeTestIssueClientLicence returns OK');
+} catch (e) {
+  assert(false, `smokeTestIssueClientLicence threw: ${e.message}`);
 }
 
 // 6. Test Version Stamp & Metadata

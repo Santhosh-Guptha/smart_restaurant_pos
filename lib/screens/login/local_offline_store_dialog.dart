@@ -17,6 +17,7 @@ import '../../services/client_license_service.dart';
 import '../../services/device_fingerprint_service.dart';
 import '../../services/local_restaurant_lan_server.dart';
 import '../../utils/ui_feedback.dart';
+import 'client_signup_screen.dart';
 
 enum LanDeviceRole { hostServer, satelliteClient }
 
@@ -64,7 +65,6 @@ class LocalOfflineStoreDialog extends ConsumerStatefulWidget {
 class _LocalOfflineStoreDialogState extends ConsumerState<LocalOfflineStoreDialog> {
   LanDeviceRole _deviceRole = LanDeviceRole.hostServer;
   late int _selectedTab;
-  final _formKey = GlobalKey<FormState>();
   final _satelliteFormKey = GlobalKey<FormState>();
 
   final _storeNameController = TextEditingController();
@@ -95,7 +95,6 @@ class _LocalOfflineStoreDialogState extends ConsumerState<LocalOfflineStoreDialo
   bool _diagStep4Passed = false;
   String? _detectedHostIp;
   String _hubPairingPin = '';
-  bool _enableLanInQuickSetup = false;
 
   // Satellite client state
   bool _isTestingSatelliteConn = false;
@@ -191,36 +190,17 @@ class _LocalOfflineStoreDialogState extends ConsumerState<LocalOfflineStoreDialo
     }
   }
 
-  Future<void> _handleCreateLocalStore() async {
-    if (!_formKey.currentState!.validate()) return;
-
-    setState(() => _isCreating = true);
-    try {
-      await ref.read(saasSessionProvider.notifier).provisionLocalOfflineStore(
-            storeName: _storeNameController.text.trim(),
-            businessCategory: _selectedCategory,
-            ownerName: _ownerNameController.text.trim(),
-          );
-
-      if (_enableLanInQuickSetup) {
-        try {
-          await LocalRestaurantLanServer.instance.startServer(port: 8080);
-        } catch (_) {}
-      }
-
-      if (!mounted) return;
-      Navigator.of(context).pop();
-      AppToast.showSuccess(
-        context,
-        "Local Till Created",
-        subtitle: "${_storeNameController.text.trim()} is ready for offline billing.",
-      );
-    } catch (e) {
-      if (mounted) {
-        setState(() => _isCreating = false);
-        AppToast.showError(context, "Failed to create local store: $e");
-      }
-    }
+  /// The free trial is created by the server (`START_TRIAL`, contract §6a:
+  /// the trade's Offline package, 14 days, one device / one store / one
+  /// user), never on the device: a store made up here had no platform
+  /// account and a nameless `org_local_*` id. The sign-up screen verifies
+  /// the e-mail and asks the server; without a network it says so, and the
+  /// owner can only continue with a licence key (tab 2) or by pairing as a
+  /// satellite.
+  void _startFreeTrial() {
+    final nav = Navigator.of(context);
+    nav.pop();
+    nav.push(MaterialPageRoute(builder: (_) => const ClientSignUpScreen()));
   }
 
   void _onLicenseTokenChanged(String value) async {
@@ -385,7 +365,12 @@ class _LocalOfflineStoreDialogState extends ConsumerState<LocalOfflineStoreDialo
         }
       }
     } else {
-      await _handleCreateLocalStore();
+      AppToast.showError(
+        context,
+        "Paste the licence key the platform admin issued for your store (Tenants → Access & licence → Client Local Host Licence), "
+        "or start the free trial online.",
+        title: "No licence key",
+      );
     }
   }
 
@@ -709,7 +694,7 @@ class _LocalOfflineStoreDialogState extends ConsumerState<LocalOfflineStoreDialo
                     ),
                     child: Center(
                       child: Text(
-                        "Quick Store Setup",
+                        "Free 14-day trial",
                         style: TextStyle(
                           fontWeight: FontWeight.bold,
                           fontSize: 12,
@@ -814,7 +799,7 @@ class _LocalOfflineStoreDialogState extends ConsumerState<LocalOfflineStoreDialo
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 10),
                   child: Text(
-                    "OR SETUP NEW STORE",
+                    "OR START A NEW STORE",
                     style: TextStyle(fontSize: DS.fontMicro, fontWeight: FontWeight.bold, color: context.textSecondary),
                   ),
                 ),
@@ -824,111 +809,40 @@ class _LocalOfflineStoreDialogState extends ConsumerState<LocalOfflineStoreDialo
             const SizedBox(height: DS.space3),
           ],
 
-          Form(
-            key: _formKey,
+          // The trial is created by the server (contract §6a); this device
+          // never makes up a store. Online: sign up (e-mail code, then
+          // START_TRIAL). Offline: a licence key from the platform admin.
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(DS.space3),
+            decoration: BoxDecoration(
+              color: ClassicTheme.successEmerald.withValues(alpha: 0.06),
+              borderRadius: BorderRadius.circular(DS.radiusMd),
+              border: Border.all(color: ClassicTheme.successEmerald.withValues(alpha: 0.3)),
+            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text("Store / Business Name", style: TextStyle(fontSize: DS.fontCaption, fontWeight: FontWeight.w600, color: context.textPrimary)),
-                const SizedBox(height: 6),
-                TextFormField(
-                  controller: _storeNameController,
-                  decoration: InputDecoration(
-                    hintText: "e.g. Royal Cafe / Metro Foods / City Pharmacy",
-                    filled: true,
-                    fillColor: context.sunkenSurface,
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(DS.radiusMd), borderSide: BorderSide(color: context.borderColor)),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                  ),
-                  validator: (v) => (v == null || v.trim().isEmpty) ? "Enter store name" : null,
-                ),
-                const SizedBox(height: DS.space3),
-
-                Text("Business Trade / Category", style: TextStyle(fontSize: DS.fontCaption, fontWeight: FontWeight.w600, color: context.textPrimary)),
-                const SizedBox(height: 6),
-                DropdownButtonFormField<String>(
-                  initialValue: _selectedCategory,
-                  dropdownColor: context.surfaceColor,
-                  decoration: InputDecoration(
-                    filled: true,
-                    fillColor: context.sunkenSurface,
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(DS.radiusMd), borderSide: BorderSide(color: context.borderColor)),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                  ),
-                  items: _lanCategories.map((c) {
-                    return DropdownMenuItem<String>(
-                      value: c,
-                      child: Text(c, style: TextStyle(color: context.textPrimary, fontSize: 13)),
-                    );
-                  }).toList(),
-                  onChanged: (val) {
-                    if (val != null) setState(() => _selectedCategory = val);
-                  },
-                ),
-                const SizedBox(height: DS.space3),
-
-                Text("Owner Name (Optional)", style: TextStyle(fontSize: DS.fontCaption, fontWeight: FontWeight.w600, color: context.textPrimary)),
-                const SizedBox(height: 6),
-                TextFormField(
-                  controller: _ownerNameController,
-                  decoration: InputDecoration(
-                    hintText: "e.g. Store Owner",
-                    filled: true,
-                    fillColor: context.sunkenSurface,
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(DS.radiusMd), borderSide: BorderSide(color: context.borderColor)),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                  ),
-                ),
-                const SizedBox(height: DS.space3),
-
-                // Toggle LAN Hub for Quick Setup
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: context.sunkenSurface,
-                    borderRadius: BorderRadius.circular(DS.radiusMd),
-                    border: Border.all(color: context.borderColor),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(Icons.router_rounded, size: 20, color: ClassicTheme.primaryAccent),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              "Host PC LAN Hub (Port 8080)",
-                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: context.textPrimary),
-                            ),
-                            Text(
-                              "Enable multi-device Wi-Fi sync for Waiter Pad & KDS across all trades",
-                              style: TextStyle(fontSize: DS.fontMicro, color: context.textSecondary),
-                            ),
-                          ],
-                        ),
+                Row(
+                  children: [
+                    const Icon(Icons.hourglass_top_rounded, size: 18, color: ClassicTheme.successEmerald),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        "14-day free trial — the Offline package",
+                        style: TextStyle(fontWeight: FontWeight.w700, fontSize: DS.fontBodyLg, color: context.textPrimary),
                       ),
-                      Switch.adaptive(
-                        value: _enableLanInQuickSetup,
-                        activeTrackColor: ClassicTheme.primaryAccent,
-                        onChanged: (val) {
-                          setState(() {
-                            _enableLanInQuickSetup = val;
-                            if (val) _isLanExpanded = true;
-                          });
-                        },
-                      ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
-
-                if (_enableLanInQuickSetup) ...[
-                  const SizedBox(height: DS.space3),
-                  _buildLanDiagnosticsPanel(context),
-                ],
-
-                const SizedBox(height: DS.space4),
-
+                const SizedBox(height: 8),
+                Text(
+                  "One device, one store, one user (the owner); your data stays on this device. No card. "
+                  "You choose only your business category; the trial is created by the SmartBizz server after it verifies your e-mail, "
+                  "so this step needs an internet connection once. After the trial, request Basic or higher from Settings in the app.",
+                  style: TextStyle(fontSize: DS.fontCaption, color: context.textSecondary, height: 1.4),
+                ),
+                const SizedBox(height: DS.space3),
                 SizedBox(
                   width: double.infinity,
                   height: 48,
@@ -938,15 +852,45 @@ class _LocalOfflineStoreDialogState extends ConsumerState<LocalOfflineStoreDialo
                       foregroundColor: Colors.white,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(DS.radiusMd)),
                     ),
-                    onPressed: _isCreating ? null : _handleCreateLocalStore,
-                    icon: _isCreating
-                        ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                        : const Icon(Icons.rocket_launch_rounded, size: 18),
-                    label: Text(
-                      _isCreating ? "Setting Up Till..." : "Open Local Till 🚀",
-                      style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+                    onPressed: _isCreating ? null : _startFreeTrial,
+                    icon: const Icon(Icons.rocket_launch_rounded, size: 18),
+                    label: const Text(
+                      "Start the free trial (sign up online)",
+                      style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
                     ),
                   ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: DS.space3),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(DS.space3),
+            decoration: BoxDecoration(
+              color: context.sunkenSurface,
+              borderRadius: BorderRadius.circular(DS.radiusMd),
+              border: Border.all(color: context.borderColor),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  "No internet on this PC?",
+                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: DS.fontBody, color: context.textPrimary),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  "A paid store on a host PC is activated with the signed licence key the platform admin issues for it "
+                  "(pasted here, or the 1-click .bat file). A second device on the store Wi-Fi joins the host as a satellite — no key needed.",
+                  style: TextStyle(fontSize: DS.fontCaption, color: context.textSecondary, height: 1.4),
+                ),
+                const SizedBox(height: 8),
+                TextButton.icon(
+                  style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+                  onPressed: () => setState(() => _selectedTab = 1),
+                  icon: const Icon(Icons.key_rounded, size: 16),
+                  label: const Text("I have a licence key", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                 ),
               ],
             ),

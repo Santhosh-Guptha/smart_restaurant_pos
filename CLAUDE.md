@@ -66,6 +66,26 @@ Deeper docs: `ARCHITECTURE.md` (§9 current model, §10 platform structure), `FL
 - No secrets in code. No plain PINs/passwords in Firestore — hashes only. Never share a sheet as
   "anyone with the link" (the old `makeSpreadsheetEditableByLink` was removed).
 
+## Status (28 Oct 2026) — onboarding end to end
+- **Onboarding fixed in the working tree (not committed, not yet run):** `docs/10_ONBOARDING.md` defines the six
+  paths (self sign-up → `START_TRIAL`; lead → admin dialog; admin direct; licence key; LAN satellite; the
+  device-made "local store" removed per contract §6a) and the login matrix.
+- "Key not issued": `AppsScriptBackendService.issueClientLicence` now returns `(token, errorCode, errorMessage)`;
+  the Access & licence dialog shows the server's reason and, on `SIGN_IN_REQUIRED` (no Firebase bridge), asks for
+  the platform admin password once — Code.gs `ISSUE_CLIENT_LICENCE` accepts `adminUsername`/`adminPassword`
+  (`clientLicenceAdmin_`, bcrypt + same lockout as `ISSUE_AUTH_TOKEN`), refuses `NO_ORG` for a tenant without
+  `organizations/{orgId}`, and signs `ownerEmail`/`ownerName`/`ownerUsername`/`ownerUserId` into the key.
+  `smokeTestIssueClientLicence` sits next to `smokeTestTrialProvisioning`.
+- `org_local_*`: `LocalOfflineStoreDialog` no longer creates a store (tab = "Free 14-day trial" → sign-up);
+  `activateWithClientLicense` throws without the key's org id and builds the owner user from the key
+  (`mustChangePassword` → `FirstLoginPasswordScreen` stores the hash on the device, mirrors the platform only
+  through `CloudGate.run`); `login()` checks a keyed store's local hash first and resolves usernames before the
+  "different tenant" cache purge; the package editor's fake-org download buttons are gone; tenants list reads
+  `name`/`appName`/… instead of "Unnamed". Admin onboarding passes `mustChangePassword: true` and shows the
+  credentials (`showOwnerCredentialsDialog`). New test `test/onboarding_flows_test.dart`.
+- To run: `claude_run.ps1 -NoDeploy` (analyze + tests), then paste Code.gs + run both smoke tests
+  (`google_apps_script/DEPLOY.md` 2026-10-28), then delete the stray `org_local_*` documents by hand.
+
 ## Status (27 Oct 2026)
 - Folder renamed `smart_kirana_shop` → `smart_restaurant_pos`; older logs and `findings.md` still show the old path.
 - October commits: 5790ca4 OrderRestro parity + client LAN hub + licence-key onboarding · 63c393e e2e scripts ·
@@ -126,6 +146,10 @@ sharing reconciler, tenant metrics, admin Business Analytics.
 - Hosting currently serves an older build; redeploy after the rerun passes.
 
 ## Next steps, in order
+-1. Onboarding round (28 Oct): run `claude_run.ps1 -NoDeploy`; fix what analyze reports in the files listed in
+   the hand-off; paste Code.gs, set `LEASE_SIGNING_KEY` (+ `FIREBASE_WEB_API_KEY`, SA key when ready), run
+   `smokeTestIssueClientLicence`; issue a key for a real tenant from Access & licence; activate it on a host PC;
+   remove `organizations/org_local_*` and `licenses/org_local_*` from Firestore (owner's call).
 0. Platform structure release: `claude_run.ps1` deploy → Code.gs new version + `smokeTestTrialProvisioning` →
    Migrations "Align business types" then "Move tenants to category packages" (dry run first) → check Packages
    per trade → ask existing tenants to Reset receipt slips. (Items below are from 25 Sep; some are done.)

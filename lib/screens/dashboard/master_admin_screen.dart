@@ -1997,6 +1997,76 @@ class OrganizationsTab extends ConsumerStatefulWidget {
     }
   }
 
+  /// What the owner needs to sign in the first time, shown to the admin
+  /// right after onboarding (the welcome e-mail carries the same). The
+  /// password is temporary: first login opens FirstLoginPasswordScreen.
+  static void showOwnerCredentialsDialog(
+    BuildContext context, {
+    required String orgName,
+    required String orgId,
+    required String email,
+    required String username,
+    required String temporaryPassword,
+    required String planName,
+    required String storageMode,
+  }) {
+    final offline = StorageModes.isOffline(storageMode);
+    final lan = StorageModes.isLocalNetwork(storageMode);
+    final firstStep = offline
+        ? 'Offline package: the first sign-in must be online once (the server checks the password and the device caches it); after that the till runs without a network.'
+        : lan
+            ? 'Local network hub: sign in online once on the host PC, or issue a signed licence key from Access & licence and activate the host with it (no internet needed at the store).'
+            : 'Sign in online; the owner then connects their Google account and the store sheet is created in their Drive.';
+    final text = 'Store: $orgName ($orgId)\n'
+        'Sign-in e-mail: $email\n'
+        'Username: $username\n'
+        'Temporary password: $temporaryPassword\n'
+        'Plan: $planName';
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: ctx.surfaceColor,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        title: Text('Owner sign-in details', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: ctx.textPrimary)),
+        content: SizedBox(
+          width: 460,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: ctx.sunkenSurface,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: ctx.borderColor),
+                ),
+                child: SelectableText(text, style: TextStyle(fontFamily: 'monospace', fontSize: 12, color: ctx.textPrimary, height: 1.5)),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                'These were e-mailed to $email. The owner must change the password at first login. $firstStep',
+                style: TextStyle(fontSize: 12, color: ctx.textSecondary, height: 1.4),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton.icon(
+            onPressed: () async {
+              await Clipboard.setData(ClipboardData(text: text));
+              if (ctx.mounted) AppToast.showSuccess(ctx, 'Copied');
+            },
+            icon: const Icon(Icons.copy_rounded, size: 16),
+            label: const Text('Copy'),
+          ),
+          ElevatedButton(onPressed: () => Navigator.pop(ctx), child: const Text('Done')),
+        ],
+      ),
+    );
+  }
+
   static void showOnboardOrganizationDialog(
     BuildContext context, {
     String? initialName,
@@ -2081,6 +2151,9 @@ class OrganizationsTab extends ConsumerStatefulWidget {
     // Feature Toggles: populated dynamically from the selected plan
     bool isCreating = false;
     bool obscurePassword = true;
+    // The console's own context: the credentials dialog opens on it after
+    // this dialog has been popped (the builder's `context` dies with it).
+    final hostContext = context;
 
     showDialog(
       context: context,
@@ -2552,6 +2625,10 @@ class OrganizationsTab extends ConsumerStatefulWidget {
                               adminOverride: selection.adminOverride && selection.limitsEditable,
                               tableCount: effectiveTableCount,
                               operatingMode: effectiveOperatingMode,
+                              // The password typed here is temporary: the owner
+                              // chooses their own on first login
+                              // (FirstLoginPasswordScreen; docs/10_ONBOARDING.md §2).
+                              mustChangePassword: true,
                             );
 
                             if (result['success'] != true) {
@@ -2564,6 +2641,19 @@ class OrganizationsTab extends ConsumerStatefulWidget {
                                 context,
                                 "$currentEntityLabel Onboarded Successfully",
                                 subtitle: "$orgName ($orgId) onboarded with ${finalPlan.name}.",
+                              );
+                              // The e-mail (SEND_EMAIL) may not arrive; the
+                              // admin always sees the credentials here too.
+                              if (!hostContext.mounted) return;
+                              showOwnerCredentialsDialog(
+                                hostContext,
+                                orgName: orgName,
+                                orgId: orgId,
+                                email: email,
+                                username: (result['username'] ?? '').toString(),
+                                temporaryPassword: rawPassword,
+                                planName: finalPlan.name,
+                                storageMode: selection.storageMode,
                               );
                             }
                           } catch (e) {
@@ -2602,6 +2692,16 @@ class OrganizationsTab extends ConsumerStatefulWidget {
 class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
   final _firestore = FirebaseFirestore.instance;
   final _searchCtrl = TextEditingController();
+
+  /// The tenant's name as the onboarding writers store it (`name`, mirrored
+  /// in `appName`), with the older/partial fields as fallbacks.
+  static String _displayName(Map<String, dynamic> data, String docId) {
+    for (final k in const ['name', 'appName', 'businessName', 'shopName', 'clientName']) {
+      final v = (data[k] ?? '').toString().trim();
+      if (v.isNotEmpty) return v;
+    }
+    return '(no name) $docId';
+  }
 
   @override
   void dispose() {
@@ -4094,7 +4194,7 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                       // Search query filter
                       if (filter.searchQuery.isNotEmpty) {
                         final q = filter.searchQuery.toLowerCase();
-                        final name = (data['name'] ?? '').toString().toLowerCase();
+                        final name = _displayName(data, docId).toLowerCase();
                         final owner = (data['ownerName'] ?? '').toString().toLowerCase();
                         final phone = (data['mobile'] ?? data['phone'] ?? '').toString().toLowerCase();
                         final cat = (data['businessCategory'] ?? data['category'] ?? '').toString().toLowerCase();
@@ -4289,8 +4389,12 @@ class _OrganizationsTabState extends ConsumerState<OrganizationsTab> {
                                   itemBuilder: (context, index) {
                                     final data = filteredDocs[index].data() as Map<String, dynamic>;
                                     final docId = filteredDocs[index].id;
-                    final name = data['name'] ?? 'Unnamed';
-                    final ownerName = data['ownerName'] ?? '';
+                    // Every writer of organizations/{orgId} sets `name` and
+                    // `appName` (TenantProvisioningService, START_TRIAL); a
+                    // document that has neither was written by a partial
+                    // merge, so say so with its id instead of "Unnamed".
+                    final name = _displayName(data, docId);
+                    final ownerName = data['ownerName'] ?? data['clientName'] ?? '';
                     final phone = data['mobile'] ?? data['phone'] ?? '';
                     final category = data['businessCategory'] ?? 'General';
                     final storageMode = data['storageMode'] ?? 'CLOUD_SYNC';

@@ -171,3 +171,54 @@ This supersedes "START_TRIAL picks the tier from the request" above.
 `smokeTestTrialProvisioning` once, then **Deploy → Manage deployments → edit
 the existing deployment → New version → Deploy** (same deployment id, same
 `/exec` URL).
+
+## 2026-10-28 — ISSUE_CLIENT_LICENCE: admin-password fallback, owner in the key, NO_ORG
+
+Why: the console showed "Key not issued" for every tenant. It had no Firebase
+ID token (the custom-token bridge was never configured), Code.gs answered
+`SIGN_IN_REQUIRED`, and the app threw the reason away. Full path:
+`docs/10_ONBOARDING.md` §4.
+
+- **`ISSUE_CLIENT_LICENCE` accepts two proofs of the platform admin.** Either
+  `idToken` (as before; needs `FIREBASE_SA_EMAIL` / `FIREBASE_SA_PRIVATE_KEY`
+  for the console to hold one and `FIREBASE_WEB_API_KEY` for the server to
+  check it), **or `adminUsername` + `adminPassword`**, re-entered by the admin
+  in the console when the server answers `SIGN_IN_REQUIRED`. The password is
+  checked with `bcryptCheck_` against the MASTER_ADMIN user exactly as
+  `ISSUE_AUTH_TOKEN` does, with the same `authfail_` lockout (8 wrong in 10
+  minutes → `RATE_LIMITED`), and is never logged or stored
+  (`clientLicenceAdmin_`).
+- **The tenant must exist.** `issueClientLicenceFor_` reads
+  `organizations/{orgId}` and refuses with `NO_ORG` ("Onboard the tenant
+  first") when it is missing. The store name comes from the organisation.
+- **The signed payload now carries the owner**: `ownerEmail`, `ownerName`,
+  `ownerUsername`, `ownerUserId` (`orgOwner_`: `organizations.ownerUserId`,
+  else the org's OWNER user, else the org's `ownerEmail`). The till creates
+  the owner's local account from them at activation.
+- Reply shapes: `{ success: true, token, payload, via: "ID_TOKEN" |
+  "ADMIN_PASSWORD" }`, or `{ success: false, error_code, error }` with
+  `error_code` ∈ `NOT_CONFIGURED`, `SIGN_IN_REQUIRED`, `INVALID`,
+  `RATE_LIMITED`, `FORBIDDEN`, `NO_ORG`, `BAD_REQUEST`. The audit row
+  (`CLIENT_LICENCE_ISSUED`) says which proof verified the caller.
+- New editor function **`smokeTestIssueClientLicence`**: checks
+  `LEASE_SIGNING_KEY`, signs a fixture payload, parses the token back and
+  compares the fields (writes nothing). With Script property `SMOKE_ORG_ID`
+  set to a real org id it also issues a real key for that tenant and checks
+  `licenses/{orgId}` was written.
+
+**Script properties** (Project settings → Script properties):
+
+| Property | Needed for | Without it |
+|---|---|---|
+| `LEASE_SIGNING_KEY` | signing keys and leases (`secrets/lease_signing_key.pem`, whole file) | `NOT_CONFIGURED` — nothing can be issued |
+| `FIREBASE_SA_EMAIL`, `FIREBASE_SA_PRIVATE_KEY` | `ISSUE_AUTH_TOKEN` custom tokens (console Firebase sign-in) | login still works; the console has no ID token, so keys use the admin-password prompt |
+| `FIREBASE_WEB_API_KEY` | checking an ID token (`mailCallerUid_`) | ID-token path always falls back to `SIGN_IN_REQUIRED` → admin password |
+| `SMOKE_ORG_ID` (optional) | `smokeTestIssueClientLicence` real-key check | the smoke test only signs and parses |
+
+**To deploy:** paste the new `Code.gs` (`firestore.gs` and `bcrypt.gs`
+unchanged), save, run `smokeTestTrialProvisioning` and
+`smokeTestIssueClientLicence` once from the editor, then **Deploy → Manage
+deployments → edit the existing deployment → New version → Deploy**. Then in
+the console open a real tenant → Access & licence → Client Local Host Licence
+→ Issue signed key: the prompt asks for the admin password once and the key
+appears, with the owner's e-mail under it.

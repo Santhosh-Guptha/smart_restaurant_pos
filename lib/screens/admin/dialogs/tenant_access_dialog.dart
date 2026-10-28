@@ -11,6 +11,7 @@ import '../../../services/client_setup_package_generator.dart';
 import '../../../core/design_tokens.dart';
 import '../../../core/entitlements.dart';
 import '../../../core/package_model.dart';
+import '../../../providers/saas_session_provider.dart';
 import '../../../services/package_service.dart';
 import '../../../services/smtp_email_service.dart';
 import '../../../services/subscription_plan_service.dart';
@@ -70,6 +71,10 @@ class _TenantAccessDialogState extends ConsumerState<TenantAccessDialog> {
   DateTime? _purgeAfter;
   Map<String, dynamic> _licenceRaw = const {};
   String _ownerEmail = '';
+
+  /// Whether `organizations/{orgId}` exists. A licence key is only ever
+  /// issued for an onboarded tenant (the server refuses with NO_ORG too).
+  bool _orgExists = false;
 
   /// The tenant's trade, read off the organisation the way the app reads it.
   /// Decides which packages are offered, the roles the licence carries and
@@ -141,6 +146,7 @@ class _TenantAccessDialogState extends ConsumerState<TenantAccessDialog> {
       final r = ren.data();
       if (!mounted) return;
       setState(() {
+        _orgExists = org.exists;
         _ownerEmail = (o['ownerEmail'] ?? o['email'] ?? '').toString();
         _vertical = Verticals.resolve(
           vertical: o['vertical']?.toString(),
@@ -1062,6 +1068,86 @@ class _TenantAccessDialogState extends ConsumerState<TenantAccessDialog> {
         ),
       );
 
+  /// Asks Code.gs for a signed key for this tenant (`ISSUE_CLIENT_LICENCE`).
+  /// When the console holds no Firebase sign-in (custom-token bridge not
+  /// configured) the server answers SIGN_IN_REQUIRED; the admin is then asked
+  /// for their platform password once and the request is repeated with it.
+  /// Returns the token, or null after telling the admin why.
+  Future<String?> _issueSignedKey(BuildContext ctx, ClientLicensePayload payload) async {
+    if (!_orgExists) {
+      AppToast.showError(ctx, 'Onboard the tenant first: there is no organisation document for ${widget.orgId}, so no key can be issued for it.', title: 'Key not issued');
+      return null;
+    }
+    var res = await ClientLicenseService.issueKey(payload);
+    if (res.token == null && res.errorCode == 'SIGN_IN_REQUIRED') {
+      if (!ctx.mounted) return null;
+      final creds = await _promptAdminCredentials(ctx);
+      if (creds == null) return null;
+      res = await ClientLicenseService.issueKey(payload, adminUsername: creds.$1, adminPassword: creds.$2);
+    }
+    if (res.token != null) return res.token;
+    if (ctx.mounted) {
+      AppToast.showError(ctx, ClientLicenseService.issueErrorMessage(res.errorCode, res.errorMessage), title: 'Key not issued');
+    }
+    return null;
+  }
+
+  /// The platform admin's username and password for one signing request.
+  /// Shown only after the server answered SIGN_IN_REQUIRED. The password is
+  /// sent to Code.gs once and kept nowhere.
+  Future<(String, String)?> _promptAdminCredentials(BuildContext ctx) async {
+    final admin = ref.read(saasSessionProvider).currentUser;
+    final userCtrl = TextEditingController(text: (admin?.username ?? admin?.email ?? '').trim());
+    final pwCtrl = TextEditingController();
+    try {
+      return await showDialog<(String, String)>(
+        context: ctx,
+        builder: (dCtx) => AlertDialog(
+          backgroundColor: dCtx.surfaceColor,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(DS.radiusXl)),
+          title: Text('Confirm platform admin', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: dCtx.textPrimary)),
+          content: SizedBox(
+            width: 380,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'This console is not signed in to Firebase (the custom-token bridge is not configured), '
+                  'so the server needs your platform admin password to sign the key. It is checked by the server and not stored.',
+                  style: TextStyle(fontSize: 12, color: dCtx.textSecondary, height: 1.4),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: userCtrl,
+                  decoration: const InputDecoration(isDense: true, labelText: 'Admin username or e-mail'),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: pwCtrl,
+                  obscureText: true,
+                  autofocus: true,
+                  decoration: const InputDecoration(isDense: true, labelText: 'Admin password'),
+                  onSubmitted: (_) => Navigator.pop(dCtx, (userCtrl.text.trim(), pwCtrl.text)),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(dCtx), child: const Text('Cancel')),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(dCtx, (userCtrl.text.trim(), pwCtrl.text)),
+              child: const Text('Sign key'),
+            ),
+          ],
+        ),
+      );
+    } finally {
+      pwCtrl.dispose();
+      userCtrl.dispose();
+    }
+  }
+
   Future<void> _downloadClientSetupPackage() async {
     final rawFeatures = _licenceRaw['features'];
     final Map<String, bool> featMap = {};
@@ -1104,12 +1190,13 @@ class _TenantAccessDialogState extends ConsumerState<TenantAccessDialog> {
       validUntil: _endDate?.toUtc() ?? DateTime.now().toUtc().add(const Duration(days: 365)),
     );
 
-    final err = await ClientSetupPackageGenerator.issueAndDownloadSetupBatch(payload);
+    final token = await _issueSignedKey(context, payload);
+    if (!mounted || token == null) return;
+    // The file carries what the server signed (store name, owner), not the
+    // console's draft of it.
+    final signed = ClientLicenseService.verifyAndDecode(token) ?? payload;
+    await ClientSetupPackageGenerator.downloadSetupBatchFile(signed, token);
     if (!mounted) return;
-    if (err != null) {
-      AppToast.showError(context, err, title: 'Key not issued');
-      return;
-    }
     AppToast.showSuccess(
       context,
       '1-Click Setup File Downloaded!',
@@ -1181,17 +1268,17 @@ class _TenantAccessDialogState extends ConsumerState<TenantAccessDialog> {
 
           Future<void> issueNow() async {
             setDlgState(() => issuing = true);
-            final t = await ClientLicenseService.issueToken(buildPayload(currentMId));
+            final t = await _issueSignedKey(ctx, buildPayload(currentMId));
             if (!ctx.mounted) return;
             setDlgState(() {
               issuing = false;
               issuedToken = t;
               issuedForMachine = currentMId;
             });
-            if (t == null && ctx.mounted) {
-              AppToast.showError(ctx, ClientSetupPackageGenerator.issueFailedMessage, title: 'Key not issued');
-            }
           }
+
+          // The signed payload: what the owner's till will read from the key.
+          final signedPayload = token == null ? null : ClientLicenseService.verifyAndDecode(token);
 
           return AlertDialog(
             backgroundColor: context.surfaceColor,
@@ -1311,6 +1398,17 @@ class _TenantAccessDialogState extends ConsumerState<TenantAccessDialog> {
                         style: const TextStyle(fontFamily: 'monospace', fontSize: 10),
                       ),
                     ),
+                    if (signedPayload != null) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        signedPayload.ownerEmail.isNotEmpty
+                            ? 'Owner account in this key: ${signedPayload.ownerEmail}'
+                                '${signedPayload.ownerUsername.isNotEmpty ? ' (username ${signedPayload.ownerUsername})' : ''}. '
+                                'The owner sets their password on the till at first launch.'
+                            : 'This tenant has no owner e-mail on record; the till will create a local owner account (owner@localhost).',
+                        style: TextStyle(fontSize: 10, color: context.textSecondary, height: 1.4),
+                      ),
+                    ],
                     const SizedBox(height: 12),
                     Text(
                       'Instructions for Client:',
@@ -1333,15 +1431,13 @@ class _TenantAccessDialogState extends ConsumerState<TenantAccessDialog> {
                 child: const Text('Close'),
               ),
               OutlinedButton.icon(
-                onPressed: issuing
+                onPressed: issuing || token == null
                     ? null
                     : () async {
-                        final err = await ClientSetupPackageGenerator.issueAndDownloadLicenseJson(buildPayload(currentMId));
+                        final t = issuedToken;
+                        if (t == null) return;
+                        await ClientSetupPackageGenerator.downloadLicenseJson(signedPayload ?? buildPayload(currentMId), t);
                         if (!mounted) return;
-                        if (err != null) {
-                          AppToast.showError(context, err, title: 'Key not issued');
-                          return;
-                        }
                         if (ctx.mounted) Navigator.pop(ctx);
                         AppToast.showSuccess(context, 'Licence JSON Downloaded!');
                       },
@@ -1365,15 +1461,13 @@ class _TenantAccessDialogState extends ConsumerState<TenantAccessDialog> {
                   backgroundColor: ClassicTheme.successEmerald,
                   foregroundColor: Colors.white,
                 ),
-                onPressed: issuing
+                onPressed: issuing || token == null
                     ? null
                     : () async {
-                  final err = await ClientSetupPackageGenerator.issueAndDownloadSetupBatch(buildPayload(currentMId));
+                  final t = issuedToken;
+                  if (t == null) return;
+                  await ClientSetupPackageGenerator.downloadSetupBatchFile(signedPayload ?? buildPayload(currentMId), t);
                   if (!mounted) return;
-                  if (err != null) {
-                    AppToast.showError(context, err, title: 'Key not issued');
-                    return;
-                  }
                   if (ctx.mounted) Navigator.pop(ctx);
                   AppToast.showSuccess(
                     context,

@@ -534,10 +534,26 @@ class SaasSessionNotifier extends StateNotifier<SaasSessionState> {
     try {
       final box = Hive.box('configBox');
       final input = usernameOrEmail.trim().toLowerCase();
+      // A username typed for the account that last signed in is the same
+      // tenant, not a different one: compare e-mails, never wipe the till's
+      // data because the owner typed their username this time.
+      final inputEmail = (box.get('saas_username_to_email_$input') as String?) ?? input;
       final lastEmail = box.get('saas_last_email') as String?;
-      if (lastEmail != null && lastEmail.isNotEmpty && lastEmail != input) {
+      if (lastEmail != null && lastEmail.isNotEmpty && lastEmail != input && lastEmail != inputEmail) {
         debugPrint("Different tenant login detected ($lastEmail -> $input). Purging previous tenant caches...");
         await _clearTenantDataBoxes();
+      }
+
+      // A store activated with a licence key keeps its owner's account on
+      // this device (docs/10_ONBOARDING.md, login matrix): the password set
+      // on first launch is checked here, so signing in needs no network and
+      // no platform account on the server. When it does not match, the
+      // server is asked as for any tenant (a password changed online).
+      if (box.get('saas_is_client_license', defaultValue: false) == true) {
+        final localHash = box.get('saas_password_hash_$inputEmail') as String?;
+        if (localHash != null && localHash.isNotEmpty && BCrypt.checkpw(password, localHash)) {
+          return await _attemptOfflineLogin(usernameOrEmail, password, rememberMe);
+        }
       }
 
       // 1. Search in /users collection in Master Firebase Control Plane (with 5s timeout for offline fallback)
@@ -1018,6 +1034,7 @@ class SaasSessionNotifier extends StateNotifier<SaasSessionState> {
       final errStr = e.toString().toLowerCase();
       final isNetwork = e is TimeoutException ||
                         e is SocketException ||
+                        e is CloudOfflineException ||
                         errStr.contains('network') ||
                         errStr.contains('unavailable') ||
                         errStr.contains('failed-precondition') ||
@@ -1214,9 +1231,13 @@ class SaasSessionNotifier extends StateNotifier<SaasSessionState> {
     return false;
   }
 
-  /// Provisions and launches an instant local offline store (free edition).
-  /// Runs 100% locally with Hive storage, requires 0 network calls, 0 domain dependencies,
-  /// and is fully immune to domain expirations or remote cloud server downtime.
+  /// A device-only store with a made-up `org_local_<ts>` id and no platform
+  /// account. No screen calls this any more: the free trial is created by the
+  /// server (`START_TRIAL`, contract §6a) and a keyed store takes its org id
+  /// from the licence key ([activateWithClientLicense]). Kept for the
+  /// session-persistence tests only; stores created by older builds still
+  /// resume through [restoreLocalSession].
+  @visibleForTesting
   Future<void> provisionLocalOfflineStore({
     required String storeName,
     required String businessCategory,
@@ -1330,13 +1351,29 @@ class SaasSessionNotifier extends StateNotifier<SaasSessionState> {
   }) async {
     final cleanCategory = payload.vertical == Verticals.restaurant ? 'Restaurant' : payload.vertical;
     final resolvedVertical = Verticals.resolve(businessCategory: cleanCategory, vertical: payload.vertical);
-    final orgId = payload.orgId.trim().isNotEmpty
-        ? payload.orgId.trim()
-        : 'org_local_${DateTime.now().millisecondsSinceEpoch.toRadixString(36)}';
+    // The key's org id is the tenant's real id (Code.gs signs only for an
+    // existing organisation). A keyed store never gets a device-minted id:
+    // that is how nameless `org_local_*` tenants reached the platform.
+    if (!payload.hasTenantOrgId) {
+      throw StateError('Licence key names no tenant organisation (orgId "${payload.orgId}").');
+    }
+    final orgId = payload.orgId.trim();
     final resolvedOwnerName = (ownerName != null && ownerName.trim().isNotEmpty)
         ? ownerName.trim()
-        : 'Store Owner';
+        : (payload.ownerName.isNotEmpty ? payload.ownerName : 'Store Owner');
     final storeLabel = payload.storeName.trim().isNotEmpty ? payload.storeName.trim() : 'Local Store';
+    // The owner's account comes from the key (ownerEmail / ownerUsername /
+    // ownerUserId, read by the server from the tenant's documents). The
+    // password is not in the key: on first launch the owner sets one on
+    // FirstLoginPasswordScreen and it is kept as a bcrypt hash on this
+    // device, so later sign-ins work with no network (login matrix,
+    // docs/10_ONBOARDING.md). A device that already holds a hash for this
+    // owner (re-activation) keeps it.
+    final ownerEmail = payload.ownerEmail.isNotEmpty ? payload.ownerEmail : 'owner@localhost';
+    final ownerUsername = payload.ownerUsername.isNotEmpty
+        ? payload.ownerUsername
+        : (ownerEmail.contains('@') ? ownerEmail.split('@').first : 'owner');
+    final ownerUserId = payload.ownerUserId.isNotEmpty ? payload.ownerUserId : 'usr_local_owner';
 
     // 2. Build local organization. The storage mode is the key's
     // (PURE_OFFLINE / CLIENTS_OWN_SHEETS / LOCAL_NETWORK) when the tier's
@@ -1387,18 +1424,20 @@ class SaasSessionNotifier extends StateNotifier<SaasSessionState> {
     );
 
     // 3. Build local owner user
+    final box = Hive.box('configBox');
+    final hasLocalPassword = (box.get('saas_password_hash_$ownerEmail') as String?)?.isNotEmpty == true;
     final user = SaasUser(
-      id: 'usr_local_owner',
-      email: 'owner@localhost',
-      username: 'owner',
+      id: ownerUserId,
+      email: ownerEmail,
+      username: ownerUsername,
       fullName: resolvedOwnerName,
       role: 'OWNER',
       organizationId: orgId,
-      mustChangePassword: false,
+      businessCategory: cleanCategory,
+      mustChangePassword: !hasLocalPassword,
     );
 
     // 4. Save to local Hive
-    final box = Hive.box('configBox');
     await box.put('saas_org', jsonEncode(organization.toJson()));
     await box.put('saas_user', jsonEncode(user.toJson()));
     await box.put('saas_license', jsonEncode(license.toJson()));
@@ -1409,6 +1448,14 @@ class SaasSessionNotifier extends StateNotifier<SaasSessionState> {
     await box.put('saas_login_timestamp', DateTime.now().toIso8601String());
     await box.put('saas_client_license_org_id', orgId);
     await box.put('saas_last_email', user.email);
+    // The offline credential cache (_attemptOfflineLogin reads these), so the
+    // owner can sign out and back in on this device with no network once a
+    // password is set.
+    await box.put('saas_user_$ownerEmail', jsonEncode(user.toJson()));
+    await box.put('saas_org_$ownerEmail', jsonEncode(organization.toJson()));
+    await box.put('saas_license_$ownerEmail', jsonEncode(license.toJson()));
+    await box.put('saas_username_to_email_$ownerUsername', ownerEmail);
+    await box.put('saas_username_to_email_$ownerEmail', ownerEmail);
     await box.put('current_org_id', orgId);
     await box.put('default_org_id', orgId);
     await box.put('pure_offline_mode', effectiveStorageMode == StorageModes.pureOffline);
@@ -2034,6 +2081,24 @@ class SaasSessionNotifier extends StateNotifier<SaasSessionState> {
       state = state.copyWith(currentOrganization: updatedOrg);
       final box = Hive.box('configBox');
       box.put('saas_org', jsonEncode(updatedOrg.toJson()));
+    }
+  }
+
+  /// The owner chose a password on FirstLoginPasswordScreen: clear
+  /// `mustChangePassword` in the session and in every local copy of the
+  /// user, so a keyed or offline store (where Firestore is not consulted)
+  /// opens the till on the next build and on the next start.
+  Future<void> markPasswordChangedLocally() async {
+    final current = state.currentUser;
+    if (current == null) return;
+    final updated = current.copyWith(mustChangePassword: false);
+    state = state.copyWith(currentUser: updated);
+    final box = Hive.box('configBox');
+    final json = jsonEncode(updated.toJson());
+    await box.put('saas_user', json);
+    final emailKey = updated.email.trim().toLowerCase();
+    if (emailKey.isNotEmpty && box.containsKey('saas_user_$emailKey')) {
+      await box.put('saas_user_$emailKey', json);
     }
   }
 
