@@ -107,19 +107,22 @@ class ClientSetupPackageGenerator {
       buffer.writeln('echo [*] Configuring Local LAN Hub & Windows Defender Firewall...');
       buffer.writeln('netsh advfirewall firewall delete rule name="SmartBizz POS Hub (Port 8080)" >nul 2>&1');
       buffer.writeln('netsh advfirewall firewall add rule name="SmartBizz POS Hub (Port 8080)" dir=in action=allow protocol=TCP localport=8080 profile=private,domain >nul 2>&1');
-      buffer.writeln('echo [OK] Firewall port 8080 opened for paired satellite devices (SmartBizz app on the store Wi-Fi).');
+      buffer.writeln('netsh advfirewall firewall delete rule name="SmartBizz POS Hub (Port 8085)" >nul 2>&1');
+      buffer.writeln('netsh advfirewall firewall add rule name="SmartBizz POS Hub (Port 8085)" dir=in action=allow protocol=TCP localport=8085 profile=private,domain >nul 2>&1');
+      buffer.writeln('echo [OK] Firewall ports 8080 and 8085 opened for paired satellite devices (SmartBizz app on the store Wi-Fi).');
       buffer.writeln();
       buffer.writeln(':: Detect Local IPv4');
+      buffer.writeln('set "HOST_IP="');
       buffer.writeln('for /f "tokens=4" %%a in (\'route print 0.0.0.0 ^| findstr 0.0.0.0\') do (');
       buffer.writeln('    if not defined HOST_IP set "HOST_IP=%%a"');
       buffer.writeln(')');
-      buffer.writeln('if defined HOST_IP (');
-      buffer.writeln('    echo [OK] Host Machine Local IP detected: !HOST_IP!');
-      buffer.writeln('    echo {"hostIp":"!HOST_IP!","port":8080,"orgId":"$orgId","mode":"LOCAL_NETWORK"} > "%APP_DATA_DIR%\\lan_hub_config.json"');
-      buffer.writeln(')');
+      buffer.writeln('if not defined HOST_IP set "HOST_IP=127.0.0.1"');
+      buffer.writeln('echo [OK] Host Machine Local IP detected: !HOST_IP!');
+      buffer.writeln('echo {"hostIp":"!HOST_IP!","port":8085,"orgId":"$orgId","mode":"LOCAL_NETWORK"} > "%APP_DATA_DIR%\\lan_hub_config.json"');
       buffer.writeln();
     } else {
       buffer.writeln('echo [OK] Storage mode configured: $storageLabel.');
+      buffer.writeln('set "HOST_IP=127.0.0.1"');
       buffer.writeln();
     }
 
@@ -127,7 +130,7 @@ class ClientSetupPackageGenerator {
     buffer.writeln('echo [*] Creating Desktop Shortcut...');
     buffer.writeln('set "DESKTOP_DIR=%USERPROFILE%\\Desktop"');
     buffer.writeln('set "SHORTCUT_PATH=%DESKTOP_DIR%\\SmartBizz POS.lnk"');
-    buffer.writeln('powershell -NoProfile -ExecutionPolicy Bypass -Command "\$ws = New-Object -ComObject WScript.Shell; \$s = \$ws.CreateShortcut(\'%SHORTCUT_PATH%\'); \$s.TargetPath = \'%~dp0smart_kirana_shop.exe\'; if (-not (Test-Path \'%~dp0smart_kirana_shop.exe\')) { \$s.TargetPath = \'msedge.exe\'; \$s.Arguments = \'--app=${kWebPosUrl}?license=$token\'; }; \$s.Description = \'SmartBizz POS - $storeName\'; \$s.Save()" >nul 2>&1');
+    buffer.writeln('powershell -NoProfile -ExecutionPolicy Bypass -Command "\$ws = New-Object -ComObject WScript.Shell; \$s = \$ws.CreateShortcut(\'%SHORTCUT_PATH%\'); \$s.TargetPath = \'%~dp0smart_kirana_shop.exe\'; if (-not (Test-Path \'%~dp0smart_kirana_shop.exe\')) { \$s.TargetPath = \'msedge.exe\'; \$s.Arguments = \'--app=$kWebPosUrl?license=$token&host_ip=!HOST_IP!&port=8085\'; }; \$s.Description = \'SmartBizz POS - $storeName\'; \$s.Save()" >nul 2>&1');
     buffer.writeln('echo [OK] Desktop shortcut created.');
     buffer.writeln();
 
@@ -158,7 +161,7 @@ class ClientSetupPackageGenerator {
     buffer.writeln(')');
     buffer.writeln();
     buffer.writeln(':: Priority 2: Dedicated Edge/Chrome Application Window');
-    buffer.writeln('start msedge --app="${kWebPosUrl}?license=$token" 2>nul || start chrome --app="${kWebPosUrl}?license=$token" 2>nul || start ${kWebPosUrl}?license=$token');
+    buffer.writeln('start msedge --app="$kWebPosUrl?license=$token&host_ip=!HOST_IP!&port=8085" 2>nul || start chrome --app="$kWebPosUrl?license=$token&host_ip=!HOST_IP!&port=8085" 2>nul || start "" "$kWebPosUrl?license=$token&host_ip=!HOST_IP!&port=8085"');
     buffer.writeln();
     buffer.writeln('exit /b 0');
 

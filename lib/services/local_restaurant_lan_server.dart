@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:http/http.dart' as http;
 import '../core/constants.dart';
 import '../core/package_model.dart';
 import '../core/restaurant_models.dart';
@@ -30,15 +31,19 @@ class PairOutcome {
 /// to exchange orders, table states, and ticket updates on the store network,
 /// without depending on an internet connection.
 class LocalRestaurantLanServer {
-  LocalRestaurantLanServer._();
+  LocalRestaurantLanServer._() {
+    _loadNetworkConfig();
+  }
   static final LocalRestaurantLanServer instance = LocalRestaurantLanServer._();
 
   HttpServer? _server;
   bool _isRunning = false;
   int _port = 8080;
   String? _localIpAddress;
+  String? _customIpAddress;
 
   static const String _portKey = '_sbz_lan_port';
+  static const String _customIpKey = '_sbz_custom_lan_host_ip';
   static final StreamController<int> _portBroadcastController = StreamController<int>.broadcast();
 
   /// Stream of active bound ports for clients and UI subscribers.
@@ -48,9 +53,123 @@ class LocalRestaurantLanServer {
   static void Function(int port)? onPortBound;
 
   bool get isRunning => _isRunning;
-  int get port => _port;
+
+  /// The active or configured port for the LAN server.
+  int get port => effectivePort;
+
+  /// The effective port loaded from persistent configuration or current runtime.
+  int get effectivePort {
+    _loadNetworkConfig();
+    return _port;
+  }
+
   String? get localIpAddress => _localIpAddress;
-  String get serverUrl => 'http://${_localIpAddress ?? "localhost"}:$_port';
+
+  /// The custom configured host IP if set, or the detected local LAN IP, or 'localhost'.
+  String get effectiveIpAddress {
+    _loadNetworkConfig();
+    if (_customIpAddress != null && _customIpAddress!.trim().isNotEmpty) {
+      return _customIpAddress!.trim();
+    }
+    return _localIpAddress ?? 'localhost';
+  }
+
+  /// Master server endpoint URL (e.g. http://192.168.1.50:8085).
+  String get serverUrl => 'http://$effectiveIpAddress:$effectivePort';
+
+  void _loadNetworkConfig() {
+    try {
+      if (Hive.isBoxOpen('configBox')) {
+        final box = Hive.box('configBox');
+        final savedPort = box.get(_portKey);
+        if (savedPort is int && savedPort > 0 && savedPort <= 65535) {
+          _port = savedPort;
+        }
+        final savedIp = box.get(_customIpKey);
+        if (savedIp is String && savedIp.trim().isNotEmpty) {
+          _customIpAddress = savedIp.trim();
+        } else if (box.containsKey(_customIpKey)) {
+          _customIpAddress = null;
+        }
+      }
+    } catch (_) {}
+  }
+
+  /// Dynamically updates the network configuration for the LAN server.
+  /// Persists [ip] and [port] to Hive `configBox` so they survive restarts.
+  /// If the server is currently running, stops and restarts it with the new configuration.
+  Future<void> updateNetworkConfiguration({String? ip, int? port}) async {
+    _loadNetworkConfig();
+    final box = _configBox;
+    if (ip != null) {
+      final clean = ip.trim();
+      if (clean.isEmpty) {
+        _customIpAddress = null;
+        try {
+          await box?.delete(_customIpKey);
+        } catch (_) {}
+      } else {
+        _customIpAddress = clean;
+        try {
+          await box?.put(_customIpKey, clean);
+        } catch (_) {}
+      }
+    }
+    if (port != null && port > 0 && port <= 65535) {
+      _port = port;
+      try {
+        await box?.put(_portKey, port);
+      } catch (_) {}
+      _portBroadcastController.add(_port);
+      onPortBound?.call(_port);
+    }
+
+    if (_isRunning) {
+      await stopServer();
+      await startServer(port: _port);
+    }
+  }
+
+  /// Probes an HTTP endpoint at `[$url/api/v1/ping]` with a 3-second timeout.
+  /// Returns whether it answered HTTP 200 OK along with latency in milliseconds.
+  static Future<({bool success, String message, int latencyMs})> testProbe(String url) async {
+    var base = url.trim().replaceAll(RegExp(r'/+$'), '');
+    if (base.isEmpty) {
+      return (success: false, message: 'Endpoint URL is empty', latencyMs: 0);
+    }
+    if (!base.startsWith('http://') && !base.startsWith('https://')) {
+      base = 'http://$base';
+    }
+    final targetUri = Uri.tryParse('$base/api/v1/ping');
+    if (targetUri == null || !targetUri.hasScheme || targetUri.host.isEmpty) {
+      return (success: false, message: 'Invalid URL format: $url', latencyMs: 0);
+    }
+
+    final sw = Stopwatch()..start();
+    try {
+      final response = await http.get(targetUri).timeout(const Duration(seconds: 3));
+      sw.stop();
+      final ms = sw.elapsedMilliseconds;
+      if (response.statusCode == 200) {
+        return (success: true, message: 'HTTP 200 OK (${ms}ms)', latencyMs: ms);
+      } else {
+        return (
+          success: false,
+          message: 'HTTP ${response.statusCode} ${response.reasonPhrase ?? ""}'.trim(),
+          latencyMs: ms,
+        );
+      }
+    } on TimeoutException {
+      sw.stop();
+      return (success: false, message: 'Connection timed out (3s)', latencyMs: sw.elapsedMilliseconds);
+    } on SocketException catch (e) {
+      sw.stop();
+      return (success: false, message: 'Connection failed: ${e.message}', latencyMs: sw.elapsedMilliseconds);
+    } catch (e) {
+      sw.stop();
+      return (success: false, message: 'Probe error: $e', latencyMs: sw.elapsedMilliseconds);
+    }
+  }
 
   /// Called with `true` when the hub starts and `false` when it stops
   /// (LanHostSync re-evaluates the optional Sheet sync). Set in main.dart.
@@ -137,12 +256,15 @@ class LocalRestaurantLanServer {
 
   /// Starts the embedded local LAN server on the master till, for the
   /// outlet the host is on right now.
-  Future<bool> startServer({int port = 8080}) async {
+  Future<bool> startServer({int? port}) async {
     if (_isRunning) return true;
-    _port = port;
+    _loadNetworkConfig();
+    if (port != null && port > 0 && port <= 65535) {
+      _port = port;
+    }
 
     if (kIsWeb) {
-      _localIpAddress = 'localhost';
+      _localIpAddress = _customIpAddress ?? 'localhost';
       _isRunning = true;
       LanHostFlag.hosting = true;
       _bindToCurrentOutlet();
@@ -157,12 +279,12 @@ class LocalRestaurantLanServer {
       // Issue 102: Port collision fallback
       // If binding to default port 8080 fails with SocketException (port in use),
       // automatically try ports 8081, 8082, up to 8089.
-      final portsToTry = (port == 8080)
-          ? List<int>.generate(10, (i) => 8080 + i)
-          : [port];
+      final portsToTry = (port == null || port == 8080)
+          ? List<int>.generate(10, (i) => _port + i)
+          : [_port];
 
       HttpServer? boundServer;
-      int boundPort = port;
+      int boundPort = _port;
 
       for (final candidatePort in portsToTry) {
         try {
@@ -208,6 +330,10 @@ class LocalRestaurantLanServer {
 
   /// Public accessor to detect the host LAN IPv4 address (e.g. 192.168.x.x)
   Future<String> detectLocalIp() async {
+    _loadNetworkConfig();
+    if (_customIpAddress != null && _customIpAddress!.trim().isNotEmpty) {
+      return _customIpAddress!.trim();
+    }
     if (_localIpAddress != null &&
         _localIpAddress!.isNotEmpty &&
         _localIpAddress != '127.0.0.1' &&
@@ -472,7 +598,7 @@ class LocalRestaurantLanServer {
     final origin = request.headers.value('origin');
     if (origin != null) {
       final o = Uri.tryParse(origin);
-      final ownHosts = {'localhost', '127.0.0.1', _localIpAddress ?? ''};
+      final ownHosts = {'localhost', '127.0.0.1', _localIpAddress ?? '', effectiveIpAddress};
       if (o != null && ownHosts.contains(o.host)) {
         request.response.headers.add('Access-Control-Allow-Origin', origin);
         request.response.headers.add('Vary', 'Origin');
@@ -575,8 +701,8 @@ class LocalRestaurantLanServer {
           'status': 'ok',
           'server': 'SmartBizz Local LAN Hub',
           'version': '1.3.1',
-          'ip': _localIpAddress,
-          'port': _port,
+          'ip': effectiveIpAddress,
+          'port': effectivePort,
           // The trade only, so a satellite can ask for a role this store
           // has (a shop has no WAITER/KITCHEN) before it spends a PIN try.
           'vertical': _hostVertical,

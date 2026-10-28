@@ -52,6 +52,9 @@ void main() {
       // Check firewall configuration for Local LAN mode
       expect(script, contains('netsh advfirewall firewall add rule name="SmartBizz POS Hub (Port 8080)"'));
       expect(script, contains('localport=8080'));
+      expect(script, contains('netsh advfirewall firewall add rule name="SmartBizz POS Hub (Port 8085)"'));
+      expect(script, contains('localport=8085'));
+      expect(script, contains('&host_ip=!HOST_IP!&port=8085'));
 
       // Check desktop shortcut & auto launcher
       expect(script, contains('SmartBizz POS.lnk'));

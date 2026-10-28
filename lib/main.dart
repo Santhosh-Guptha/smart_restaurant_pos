@@ -30,6 +30,11 @@ import 'services/firebase_connection_service.dart';
 import 'services/database_cleanup_service.dart';
 import 'services/subscription_plan_service.dart';
 import 'screens/dashboard/restaurant_home_screen.dart';
+import 'screens/waiter/waiter_table_picker_screen.dart';
+import 'screens/kitchen/kitchen_display_screen.dart';
+import 'screens/counter_billing/fast_qsr_billing_screen.dart';
+import 'services/client_bootstrap_reader_io.dart'
+    if (dart.library.js_interop) 'services/client_bootstrap_reader_web.dart';
 import 'screens/migration/storage_migration_gate_screen.dart';
 import 'screens/login/tenant_locked_screen.dart';
 import 'screens/login/saas_login_screen.dart';
@@ -78,6 +83,7 @@ void main() async {
   await Hive.initFlutter();
 
   await Hive.openBox('configBox');
+  ClientBootstrapReader.syncNetworkBootstrap();
   // Every server-confirmed licence read also fetches a signed offline lease.
   LicenseLease.onValidated = LicenseLeaseService.refresh;
   await Hive.openBox('deviceBox');
@@ -284,7 +290,16 @@ class SmartBizzApp extends ConsumerWidget {
         // still bill from this screen.
         homeScreen = const StorageMigrationGateScreen();
       } else {
-        homeScreen = const RestaurantHomeScreen();
+        final role = (saasSession.currentUser?.role ?? '').toUpperCase();
+        if (role == 'WAITER') {
+          homeScreen = const WaiterTablePickerScreen();
+        } else if (role == 'KITCHEN') {
+          homeScreen = const KitchenDisplayScreen();
+        } else if (role == 'BILLING' || role == 'CASHIER') {
+          homeScreen = const FastQsrBillingScreen();
+        } else {
+          homeScreen = const RestaurantHomeScreen();
+        }
       }
     } else {
       homeScreen = const SaaSLoginScreen();

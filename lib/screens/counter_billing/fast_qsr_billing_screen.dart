@@ -20,6 +20,7 @@ import '../../core/restaurant_models.dart';
 import '../../providers/daily_token_provider.dart';
 import '../../providers/restaurant_auth_provider.dart';
 import '../../providers/saas_session_provider.dart';
+import '../../providers/auth_provider.dart';
 import '../../services/apps_script_backend_service.dart';
 import '../../widgets/digital_pos_bill_dialog.dart';
 import '../../core/order_calculation_engine.dart';
@@ -5318,6 +5319,52 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
   //  BUILD METHOD (Clean Light Theme & Clean Top Bar)
   // =========================================================================
 
+    Future<void> _confirmSignOut(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: context.surfaceColor,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(color: context.borderColor),
+        ),
+        title: Row(
+          children: [
+            const Icon(Icons.logout_rounded, color: ClassicTheme.dangerRed, size: 22),
+            const SizedBox(width: 10),
+            Text(
+              'Switch User / Sign Out',
+              style: TextStyle(color: context.textPrimary, fontWeight: FontWeight.bold),
+            ),
+          ],
+        ),
+        content: Text(
+          'Do you want to sign out or switch to another staff station?',
+          style: TextStyle(color: context.textSecondary, fontSize: 13),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Cancel', style: TextStyle(color: context.textSecondary)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: ClassicTheme.dangerRed,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Sign Out', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && context.mounted) {
+      await ref.read(restaurantAuthProvider.notifier).signOutGoogle();
+      await ref.read(authProvider.notifier).signOut();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final activeStaff = ref.watch(restaurantAuthProvider).activeStaff;
@@ -5358,11 +5405,13 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
             backgroundColor: context.surfaceColor,
             foregroundColor: context.textPrimary,
             elevation: 0,
-            leading: IconButton(
-              icon: Icon(Icons.arrow_back_ios_new_rounded, color: context.textPrimary, size: 20),
-              tooltip: 'Back to Home',
-              onPressed: () => Navigator.pop(context),
-            ),
+            leading: Navigator.canPop(context)
+                ? IconButton(
+                    icon: Icon(Icons.arrow_back_ios_new_rounded, color: context.textPrimary, size: 20),
+                    tooltip: 'Back to Home',
+                    onPressed: () => Navigator.pop(context),
+                  )
+                : null,
             title: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
@@ -5440,6 +5489,11 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
                   onPressed: () => setState(() {}),
                 ),
               ],
+              IconButton(
+                tooltip: 'Switch User / Sign Out',
+                icon: const Icon(Icons.logout_rounded, color: ClassicTheme.dangerRed),
+                onPressed: () => _confirmSignOut(context),
+              ),
             ],
             bottom: TabBar(
               controller: _tabController,

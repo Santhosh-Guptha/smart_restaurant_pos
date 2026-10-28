@@ -11,6 +11,8 @@ import '../../core/feature_route_guard.dart';
 import '../../core/responsive.dart';
 import '../../core/restaurant_models.dart';
 import '../../providers/saas_session_provider.dart';
+import '../../providers/auth_provider.dart';
+import '../../providers/restaurant_auth_provider.dart';
 import 'waiter_order_taking_screen.dart';
 
 /// The waiter's front door: pick a table, start the order.
@@ -177,6 +179,52 @@ class _WaiterTablePickerScreenState extends ConsumerState<WaiterTablePickerScree
     }
   }
 
+    Future<void> _confirmSignOut(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: context.surfaceColor,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(color: context.borderColor),
+        ),
+        title: Row(
+          children: [
+            const Icon(Icons.logout_rounded, color: ClassicTheme.dangerRed, size: 22),
+            const SizedBox(width: 10),
+            Text(
+              'Switch User / Sign Out',
+              style: TextStyle(color: context.textPrimary, fontWeight: FontWeight.bold),
+            ),
+          ],
+        ),
+        content: Text(
+          'Do you want to sign out or switch to another staff station?',
+          style: TextStyle(color: context.textSecondary, fontSize: 13),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Cancel', style: TextStyle(color: context.textSecondary)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: ClassicTheme.dangerRed,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Sign Out', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && context.mounted) {
+      await ref.read(restaurantAuthProvider.notifier).signOutGoogle();
+      await ref.read(authProvider.notifier).signOut();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final sections = <String>{'All', ..._tables.map((t) => t.section).where((s) => s.isNotEmpty)}.toList();
@@ -187,6 +235,13 @@ class _WaiterTablePickerScreenState extends ConsumerState<WaiterTablePickerScree
     return Scaffold(
       backgroundColor: context.canvasColor,
       appBar: AppBar(
+        leading: Navigator.canPop(context)
+            ? IconButton(
+                icon: Icon(Icons.arrow_back_ios_new_rounded, color: context.textPrimary, size: 18),
+                tooltip: 'Back to Home',
+                onPressed: () => Navigator.pop(context),
+              )
+            : null,
         backgroundColor: context.surfaceColor,
         foregroundColor: context.textPrimary,
         elevation: 0,
@@ -202,6 +257,11 @@ class _WaiterTablePickerScreenState extends ConsumerState<WaiterTablePickerScree
         ),
         actions: [
           IconButton(tooltip: 'Reload tables', onPressed: _load, icon: const Icon(Icons.refresh_rounded)),
+          IconButton(
+            tooltip: 'Switch User / Sign Out',
+            icon: const Icon(Icons.logout_rounded, color: ClassicTheme.dangerRed),
+            onPressed: () => _confirmSignOut(context),
+          ),
         ],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(1),

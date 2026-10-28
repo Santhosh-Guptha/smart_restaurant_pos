@@ -445,5 +445,54 @@ void main() {
       await s.stopServer();
       await blocker?.close();
     });
+
+    test('updateNetworkConfiguration persists custom IP and Port and updates effective getters & serverUrl', () async {
+      final s = LocalRestaurantLanServer.instance;
+      final box = Hive.box('configBox');
+
+      await s.updateNetworkConfiguration(ip: '192.168.1.188', port: 8085);
+      expect(s.effectiveIpAddress, '192.168.1.188');
+      expect(s.effectivePort, 8085);
+      expect(s.serverUrl, 'http://192.168.1.188:8085');
+      expect(box.get('_sbz_custom_lan_host_ip'), '192.168.1.188');
+      expect(box.get('_sbz_lan_port'), 8085);
+
+      // Clearing custom IP reverts to auto-detected local IP or localhost
+      await s.updateNetworkConfiguration(ip: '');
+      expect(box.get('_sbz_custom_lan_host_ip'), isNull);
+      expect(s.effectiveIpAddress, isNot('192.168.1.188'));
+    });
+
+    test('testProbe reaches running server and reports failure on unreachable endpoint', () async {
+      final s = LocalRestaurantLanServer.instance;
+      await s.startServer(port: 8880);
+      expect(s.isRunning, true);
+
+      final probeSuccess = await LocalRestaurantLanServer.testProbe('http://127.0.0.1:8880');
+      expect(probeSuccess.success, true);
+      expect(probeSuccess.message.contains('200 OK'), true);
+      expect(probeSuccess.latencyMs, greaterThanOrEqualTo(0));
+
+      final probeFail = await LocalRestaurantLanServer.testProbe('http://127.0.0.1:59999');
+      expect(probeFail.success, false);
+
+      await s.stopServer();
+    });
+
+    test('updateNetworkConfiguration dynamically restarts running server on updated port', () async {
+      final s = LocalRestaurantLanServer.instance;
+      await s.startServer(port: 8881);
+      expect(s.isRunning, true);
+      expect(s.port, 8881);
+
+      await s.updateNetworkConfiguration(port: 8882);
+      expect(s.isRunning, true);
+      expect(s.effectivePort, 8882);
+
+      final probe = await LocalRestaurantLanServer.testProbe('http://127.0.0.1:8882');
+      expect(probe.success, true);
+
+      await s.stopServer();
+    });
   });
 }

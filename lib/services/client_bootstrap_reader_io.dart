@@ -1,12 +1,74 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:hive_flutter/hive_flutter.dart';
+import 'local_restaurant_lan_server.dart';
 
 /// IO implementation for reading bootstrap license files from disk or environment.
 class ClientBootstrapReader {
   ClientBootstrapReader._();
 
+  /// Parses `host_ip` and `port` from URI query parameters, environment, or
+  /// `%APPDATA%\SmartBizz\lan_hub_config.json`, persisting them to Hive and
+  /// configuring [LocalRestaurantLanServer].
+  static void syncNetworkBootstrap() {
+    try {
+      final uri = Uri.base;
+      String? hostIp = uri.queryParameters['host_ip']?.trim();
+      String? portStr = uri.queryParameters['port']?.trim();
+
+      // Check environment variables if not present in URI
+      hostIp ??= Platform.environment['SMARTBIZZ_HOST_IP'] ?? Platform.environment['HOST_IP'];
+      portStr ??= Platform.environment['SMARTBIZZ_LAN_PORT'] ?? Platform.environment['LAN_PORT'];
+
+      // Also check %APPDATA%\SmartBizz\lan_hub_config.json
+      if (hostIp == null || hostIp.isEmpty || portStr == null || portStr.isEmpty) {
+        final appData = Platform.environment['APPDATA'];
+        if (appData != null && appData.isNotEmpty) {
+          final fHub = File('$appData${Platform.pathSeparator}SmartBizz${Platform.pathSeparator}lan_hub_config.json');
+          if (fHub.existsSync()) {
+            try {
+              final jsonMap = jsonDecode(fHub.readAsStringSync());
+              if (jsonMap is Map) {
+                hostIp ??= jsonMap['hostIp']?.toString();
+                portStr ??= jsonMap['port']?.toString();
+              }
+            } catch (_) {}
+          }
+        }
+      }
+
+      final port = int.tryParse(portStr ?? '');
+
+      if (Hive.isBoxOpen('configBox')) {
+        final box = Hive.box('configBox');
+        if (hostIp != null && hostIp.isNotEmpty) {
+          box.put('_sbz_custom_lan_host_ip', hostIp);
+        }
+        if (port != null && port > 0 && port <= 65535) {
+          box.put('_sbz_lan_port', port);
+        }
+      }
+
+      if ((hostIp != null && hostIp.isNotEmpty) || (port != null && port > 0)) {
+        try {
+          LocalRestaurantLanServer.instance.updateNetworkConfiguration(
+            ip: hostIp,
+            port: port,
+          );
+        } catch (e) {
+          debugPrint('ClientBootstrapReader: io updateNetworkConfiguration note: $e');
+        }
+      }
+    } catch (e) {
+      debugPrint('ClientBootstrapReader: io network bootstrap error: $e');
+    }
+  }
+
   static String? readBootstrapSource() {
+    syncNetworkBootstrap();
+
     try {
       // 1. Environment variables
       final envFile = Platform.environment['SMARTBIZZ_LICENSE_FILE'] ??

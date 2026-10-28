@@ -1624,47 +1624,115 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
             ],
           ),
         ],
-        if (isRunning) ...[
-          const SizedBox(height: 14),
-          Divider(color: context.borderColor),
-          const SizedBox(height: 10),
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: context.sunkenSurface,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: context.borderColor),
-            ),
-            child: Row(
-              children: [
-                Icon(Icons.wifi_tethering_rounded, color: ClassicTheme.primaryAccent, size: 20),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+        if (isLicensed && !isRunning) ...[
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: context.sunkenSurface,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: context.borderColor),
+                  ),
+                  child: Row(
                     children: [
-                      Text('Master Server Endpoint:', style: TextStyle(fontSize: 11, color: context.textSecondary)),
-                      const SizedBox(height: 2),
-                      SelectableText(
-                        url,
-                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: ClassicTheme.primaryAccent),
+                      Icon(Icons.wifi_tethering_off_rounded, color: context.textSecondary, size: 20),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Configured Hub Endpoint (Offline):', style: TextStyle(fontSize: 11, color: context.textSecondary)),
+                            const SizedBox(height: 2),
+                            SelectableText(
+                              url,
+                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: context.textPrimary),
+                            ),
+                          ],
+                        ),
                       ),
                     ],
                   ),
                 ),
-                IconButton(
-                  icon: const Icon(Icons.copy_rounded, size: 18),
-                  tooltip: 'Copy Local Server URL',
-                  onPressed: () {
-                    Clipboard.setData(ClipboardData(text: url));
-                    AppToast.showInfo(context, 'Server URL copied to clipboard!');
-                  },
+              ),
+              const SizedBox(width: 8),
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: ClassicTheme.primaryAccent,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                 ),
-              ],
-            ),
+                icon: const Icon(Icons.tune_rounded, size: 18),
+                label: const Text('Configure IP & Port', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                onPressed: () => _showConfigureLanEndpointDialog(context),
+              ),
+            ],
           ),
+        ],
+        if (isRunning) ...[
+          const SizedBox(height: 14),
+          Divider(color: context.borderColor),
           const SizedBox(height: 10),
           Row(
+            children: [
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: context.sunkenSurface,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: context.borderColor),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.wifi_tethering_rounded, color: ClassicTheme.primaryAccent, size: 20),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Master Server Endpoint:', style: TextStyle(fontSize: 11, color: context.textSecondary)),
+                            const SizedBox(height: 2),
+                            SelectableText(
+                              url,
+                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: ClassicTheme.primaryAccent),
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.copy_rounded, size: 18),
+                        tooltip: 'Copy Local Server URL',
+                        onPressed: () {
+                          Clipboard.setData(ClipboardData(text: url));
+                          AppToast.showInfo(context, 'Server URL copied to clipboard!');
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: ClassicTheme.primaryAccent,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                ),
+                icon: const Icon(Icons.tune_rounded, size: 18),
+                label: const Text('Configure IP & Port', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                onPressed: () => _showConfigureLanEndpointDialog(context),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 10,
+            runSpacing: 8,
             children: [
               ElevatedButton.icon(
                 style: ElevatedButton.styleFrom(
@@ -1677,7 +1745,6 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
                 label: const Text('Show Satellite Pairing QR', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                 onPressed: () => _showSatellitePairingDialog(context, url, lanServer.getPairingPin()),
               ),
-              const SizedBox(width: 10),
               OutlinedButton.icon(
                 style: OutlinedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -1764,7 +1831,8 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
     final maxDevices = lanServer.licensedMaxDevices;
     final count = devices.length + 1;
     final full = count >= maxDevices;
-    final ip = lanServer.localIpAddress ?? 'localhost';
+    final ip = lanServer.effectiveIpAddress;
+    final port = lanServer.effectivePort;
 
     return Container(
       padding: const EdgeInsets.all(14),
@@ -1790,7 +1858,7 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
                       style: TextStyle(fontSize: 36, fontWeight: FontWeight.w800, letterSpacing: 8, color: ClassicTheme.primaryAccent, fontFeatures: const [FontFeature.tabularFigures()]),
                     ),
                     const SizedBox(height: 2),
-                    Text('Host: $ip:${lanServer.port}', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: context.textPrimary)),
+                    Text('Host: $ip:$port', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: context.textPrimary)),
                     // One hub, one outlet (contract §6b): devices that pair
                     // with this PIN join this outlet and no other.
                     Text(
@@ -2301,12 +2369,297 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
     );
   }
 
+  void _showConfigureLanEndpointDialog(BuildContext context) {
+    final lanServer = LocalRestaurantLanServer.instance;
+    final ipCtrl = TextEditingController(text: lanServer.effectiveIpAddress);
+    final portCtrl = TextEditingController(text: lanServer.effectivePort.toString());
+
+    bool isDetectingIp = false;
+    bool isProbing = false;
+    ({bool success, String message, int latencyMs})? probeResult;
+
+    showDialog(
+      context: context,
+      builder: (dialogCtx) => StatefulBuilder(
+        builder: (dialogCtx, setDialogState) {
+          return AlertDialog(
+            backgroundColor: context.surfaceColor,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: BorderSide(color: context.borderColor),
+            ),
+            title: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: ClassicTheme.primaryAccent.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(Icons.tune_rounded, color: ClassicTheme.primaryAccent, size: 22),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Local LAN Hub Endpoint Configuration',
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Set the local IP and Port your tablets & satellite devices will use to connect to this till over Wi-Fi.',
+                        style: TextStyle(fontSize: 11, color: context.textSecondary, fontWeight: FontWeight.normal),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            content: SizedBox(
+              width: 440,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'HOST IP ADDRESS',
+                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: context.textSecondary, letterSpacing: 1.1),
+                    ),
+                    const SizedBox(height: 6),
+                    TextField(
+                      controller: ipCtrl,
+                      decoration: InputDecoration(
+                        hintText: 'e.g. 192.168.1.100 or localhost',
+                        prefixIcon: const Icon(Icons.router_rounded, size: 18),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                      ),
+                      onChanged: (_) {
+                        if (probeResult != null) {
+                          setDialogState(() => probeResult = null);
+                        }
+                      },
+                    ),
+                    const SizedBox(height: 6),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 6,
+                      children: [
+                        ActionChip(
+                          avatar: const Icon(Icons.computer_rounded, size: 14),
+                          label: const Text('Set Localhost', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
+                          onPressed: () {
+                            ipCtrl.text = 'localhost';
+                            setDialogState(() => probeResult = null);
+                          },
+                        ),
+                        ActionChip(
+                          avatar: isDetectingIp
+                              ? const SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 2))
+                              : const Icon(Icons.wifi_find_rounded, size: 14),
+                          label: const Text('Auto-Detect LAN IP', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
+                          onPressed: isDetectingIp
+                              ? null
+                              : () async {
+                                  setDialogState(() => isDetectingIp = true);
+                                  try {
+                                    final detected = await lanServer.detectLocalIp();
+                                    ipCtrl.text = detected;
+                                    setDialogState(() => probeResult = null);
+                                    if (dialogCtx.mounted) {
+                                      AppToast.showInfo(dialogCtx, 'Detected LAN IP: $detected');
+                                    }
+                                  } catch (e) {
+                                    if (dialogCtx.mounted) {
+                                      AppToast.showError(dialogCtx, 'Detection failed: $e');
+                                    }
+                                  } finally {
+                                    setDialogState(() => isDetectingIp = false);
+                                  }
+                                },
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'PORT',
+                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: context.textSecondary, letterSpacing: 1.1),
+                    ),
+                    const SizedBox(height: 6),
+                    TextField(
+                      controller: portCtrl,
+                      keyboardType: TextInputType.number,
+                      decoration: InputDecoration(
+                        hintText: 'e.g. 8085 (avoid conflicting ports)',
+                        prefixIcon: const Icon(Icons.numbers_rounded, size: 18),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                      ),
+                      onChanged: (_) {
+                        if (probeResult != null) {
+                          setDialogState(() => probeResult = null);
+                        }
+                      },
+                    ),
+                    const SizedBox(height: 6),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 6,
+                      children: [8080, 8081, 8085, 8090].map((preset) {
+                        final isSelected = int.tryParse(portCtrl.text.trim()) == preset;
+                        return ChoiceChip(
+                          label: Text(preset.toString(), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
+                          selected: isSelected,
+                          selectedColor: ClassicTheme.primaryAccent.withValues(alpha: 0.2),
+                          onSelected: (_) {
+                            portCtrl.text = preset.toString();
+                            setDialogState(() => probeResult = null);
+                          },
+                        );
+                      }).toList(),
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: ClassicTheme.primaryAccent,
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          ),
+                          icon: isProbing
+                              ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
+                              : const Icon(Icons.network_check_rounded, size: 16),
+                          label: Text(
+                            isProbing ? 'Testing...' : 'Test Reachability',
+                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                          ),
+                          onPressed: isProbing
+                              ? null
+                              : () async {
+                                  final ip = ipCtrl.text.trim();
+                                  final port = int.tryParse(portCtrl.text.trim());
+                                  if (ip.isEmpty) {
+                                    AppToast.showError(dialogCtx, 'Please enter a valid Host IP');
+                                    return;
+                                  }
+                                  if (port == null || port <= 0 || port > 65535) {
+                                    AppToast.showError(dialogCtx, 'Please enter a valid Port (1 - 65535)');
+                                    return;
+                                  }
+                                  setDialogState(() => isProbing = true);
+                                  final res = await LocalRestaurantLanServer.testProbe('http://$ip:$port');
+                                  setDialogState(() {
+                                    isProbing = false;
+                                    probeResult = res;
+                                  });
+                                  if (dialogCtx.mounted) {
+                                    if (res.success) {
+                                      AppToast.showSuccess(dialogCtx, 'Reachability OK: ${res.message}');
+                                    } else {
+                                      AppToast.showError(dialogCtx, 'Reachability Probe: ${res.message}');
+                                    }
+                                  }
+                                },
+                        ),
+                      ],
+                    ),
+                    if (probeResult != null) ...[
+                      const SizedBox(height: 10),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: probeResult!.success ? ClassicTheme.tintSuccess : ClassicTheme.tintDanger,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: probeResult!.success ? ClassicTheme.successEmerald : ClassicTheme.dangerRed,
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              probeResult!.success ? Icons.check_circle_rounded : Icons.error_outline_rounded,
+                              size: 16,
+                              color: probeResult!.success ? ClassicTheme.successEmerald : ClassicTheme.dangerRed,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                probeResult!.success
+                                    ? 'Reachable: ${probeResult!.message}'
+                                    : 'Unreachable: ${probeResult!.message}',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                  color: probeResult!.success ? ClassicTheme.successEmerald : ClassicTheme.dangerRed,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogCtx),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: ClassicTheme.successEmerald,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+                onPressed: () async {
+                  final ip = ipCtrl.text.trim();
+                  final port = int.tryParse(portCtrl.text.trim());
+                  if (ip.isEmpty) {
+                    AppToast.showError(dialogCtx, 'Please enter a valid Host IP Address');
+                    return;
+                  }
+                  if (port == null || port <= 0 || port > 65535) {
+                    AppToast.showError(dialogCtx, 'Please enter a valid Port (1 - 65535)');
+                    return;
+                  }
+                  final wasRunning = lanServer.isRunning;
+                  await lanServer.updateNetworkConfiguration(ip: ip, port: port);
+                  if (wasRunning) {
+                    await lanServer.stopServer();
+                    await lanServer.startServer(port: port);
+                  }
+                  if (dialogCtx.mounted) {
+                    Navigator.pop(dialogCtx);
+                  }
+                  if (mounted) {
+                    setState(() {});
+                    AppToast.showSuccess(this.context, 'LAN Hub configured: http://$ip:$port');
+                  }
+                },
+                child: const Text('Save & Apply', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
   void _showSatellitePairingDialog(BuildContext context, String url, String pairingPin) {
+    final effectiveUrl = url.trim().isNotEmpty ? url.trim() : LocalRestaurantLanServer.instance.serverUrl;
+    final effectivePin = pairingPin.trim().isNotEmpty ? pairingPin.trim() : LocalRestaurantLanServer.instance.getPairingPin();
     final session = ref.read(saasSessionProvider);
     final storeName = session.currentOrganization?.name ?? 'SmartBizz Store';
     final qrPayload = jsonEncode({
-      'hub': url,
-      'pin': pairingPin,
+      'hub': effectiveUrl,
+      'pin': effectivePin,
       'store': storeName,
     });
 
@@ -2385,7 +2738,7 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
                   children: [
                     Expanded(
                       child: SelectableText(
-                        url,
+                        effectiveUrl,
                         style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: ClassicTheme.primaryAccent),
                       ),
                     ),
@@ -2393,7 +2746,7 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
                       icon: const Icon(Icons.copy_rounded, size: 16),
                       tooltip: 'Copy URL',
                       onPressed: () {
-                        Clipboard.setData(ClipboardData(text: url));
+                        Clipboard.setData(ClipboardData(text: effectiveUrl));
                         AppToast.showInfo(ctx, 'Endpoint copied to clipboard');
                       },
                     ),
