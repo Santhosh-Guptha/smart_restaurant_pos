@@ -1,193 +1,181 @@
 rules_version = '2';
+// ─────────────────────────────────────────────────────────────────────────
+//  DRAFT — NOT DEPLOYED. The target rules once every client signs in with a
+//  Firebase custom token (lib/services/firebase_auth_bridge.dart, issued by
+//  ISSUE_AUTH_TOKEN in google_apps_script/Code.gs). See SECURITY_NOTES.md for
+//  the order of the switch-over; deploying this before step 3 there locks
+//  every user out, because today's login reads /users before it has a token.
+//
+//  Token claims: orgId, role (OWNER|MANAGER|BILLING|KITCHEN|WAITER|MASTER_ADMIN),
+//  franchiseId.
+// ─────────────────────────────────────────────────────────────────────────
 service cloud.firestore {
   match /databases/{database}/documents {
-    // 1. Sanitized public store profile: readable by public diners & editable by store/platform admin
+
+    function signedIn()        { return request.auth != null; }
+    function claim(k)          { return signedIn() ? request.auth.token[k] : null; }
+    // adminVerified is only put on a token after the e-mailed second step
+    // passed on the server (checkAdminSecondStep_ in Code.gs).
+    function isAdmin()         { return claim('role') == 'MASTER_ADMIN' && claim('adminVerified') == true; }
+    function inOrg(orgId)      { return signedIn() && claim('orgId') == orgId; }
+    function isManager(orgId)  { return inOrg(orgId) && claim('role') in ['OWNER', 'CLIENT', 'STORE_ADMIN', 'MANAGER']; }
+    function docOrg()          { return resource.data.organizationId; }
+    function newOrg()          { return request.resource.data.organizationId; }
+    function onlyChanges(keys) { return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys); }
+    // A store owner / store staff carry their outlet in the token; the tenant
+    // owner carries none. Store-scoped users act only inside their outlet.
+    function tenantWide()      { return claim('franchiseId') == null || claim('franchiseId') == ''; }
+    function inScope(fid)      { return tenantWide() || claim('franchiseId') == fid; }
+
+    // ── Public: the guest QR menu, the website, the signup screen ──────────
     match /public_stores/{orgId} {
-      allow read, write: if true;
-      match /{allChildren=**} {
-        allow read, write: if true;
+      allow read: if true;
+      allow write: if isAdmin() || isManager(orgId);
+      match /{child=**} {
+        allow read: if true;
+        allow write: if isAdmin() || isManager(orgId);
       }
     }
-
-    // 2. App versions for client update checks
-    match /app_versions/{versionId} {
-      allow read, write: if true;
+    match /app_versions/{id}        { allow read: if true; allow write: if isAdmin(); }
+    match /subscription_plans/{id}  { allow read: if true; allow write: if isAdmin(); }
+    match /packages/{id}            { allow read: if true; allow write: if isAdmin(); }
+    match /branding/{orgId} {
+      allow read: if true;
+      allow write: if isAdmin() || isManager(orgId);
+      match /{child=**} { allow read: if true; allow write: if isAdmin() || isManager(orgId); }
     }
-    
-    // 3. SaaS Tenant Metadata & Auth (Organizations, Licenses, Features, Limits, Users, Configs, Devices):
-    // Used exclusively for multi-tenant SaaS licensing & staff account management
-    match /users/{userId} {
-      allow read, write: if true;
-      match /{allChildren=**} {
-        allow read, write: if true;
-      }
+    // Read before sign-in (the 2FA switch); written by the console only.
+    match /platform_settings/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+      match /{child=**} { allow read: if true; allow write: if isAdmin(); }
     }
 
+    // The website files leads with no account. It may create one, and may
+    // only hand its own lead back to PENDING afterwards (site.js).
+    match /registration_requests/{id} {
+      allow create: if true;
+      allow update: if isAdmin() ||
+        (onlyChanges(['status', 'provisionError', 'updatedAt']) && request.resource.data.status == 'PENDING');
+      allow read, delete: if isAdmin();
+    }
+    match /business_inquiries/{id} {
+      allow create: if true;
+      allow read, update, delete: if isAdmin();
+    }
+
+    // ── Tenant control plane ──────────────────────────────────────────────
     match /organizations/{orgId} {
-      allow read, write: if true;
-      match /{allChildren=**} {
-        allow read, write: if true;
+      allow read: if isAdmin() || inOrg(orgId);
+      allow create, delete: if isAdmin();
+      // Owners run their own storage migration; only the console suspends.
+      allow update: if isAdmin() ||
+        (isManager(orgId) && !request.resource.data.diff(resource.data).affectedKeys()
+            .hasAny(['status', 'statusReason', 'vertical', 'businessCategory', 'ownerUserId']));
+      match /{child=**} {
+        allow read: if isAdmin() || inOrg(orgId);
+        allow write: if isAdmin() || isManager(orgId);
       }
     }
+    match /licenses/{orgId} {
+      allow read: if isAdmin() || inOrg(orgId);
+      allow write: if isAdmin();
+      match /{child=**} { allow read: if isAdmin() || inOrg(orgId); allow write: if isAdmin(); }
+    }
+    match /features/{orgId} { allow read: if isAdmin() || inOrg(orgId); allow write: if isAdmin(); }
+    match /limits/{orgId}   { allow read: if isAdmin() || inOrg(orgId); allow write: if isAdmin(); }
+    match /renewal_requests/{orgId} {
+      allow read: if isAdmin() || inOrg(orgId);
+      allow create, update: if isAdmin() || isManager(orgId);
+      allow delete: if isAdmin();
+    }
+    match /firebase_configs/{orgId} { allow read, write: if isAdmin() || isManager(orgId); }
+    match /excel_configs/{orgId}    { allow read, write: if isAdmin() || isManager(orgId); }
 
-    match /licenses/{licenseId} {
-      allow read, write: if true;
-      match /{allChildren=**} {
-        allow read, write: if true;
-      }
+    // ── People ────────────────────────────────────────────────────────────
+    // Nobody but the console creates a platform admin, and a tenant can only
+    // manage accounts inside itself.
+    match /users/{uid} {
+      allow read: if isAdmin() || (signedIn() && request.auth.uid == uid) || inOrg(docOrg());
+      allow create: if isAdmin() ||
+        (isManager(newOrg()) && request.resource.data.role != 'MASTER_ADMIN' && inScope(request.resource.data.get('franchiseId', '')));
+      allow update: if isAdmin() ||
+        (isManager(docOrg()) && newOrg() == docOrg() && request.resource.data.role != 'MASTER_ADMIN'
+          && inScope(resource.data.get('franchiseId', '')) && inScope(request.resource.data.get('franchiseId', ''))) ||
+        (signedIn() && request.auth.uid == uid && onlyChanges(['passwordHash', 'mustChangePassword', 'updatedAt']));
+      allow delete: if isAdmin() || (isManager(docOrg()) && inScope(resource.data.get('franchiseId', '')));
+    }
+    match /staff_users/{id} {
+      allow read: if isAdmin() || inOrg(docOrg());
+      allow create: if isAdmin() || (isManager(newOrg()) && inScope(request.resource.data.get('franchiseId', '')));
+      allow update, delete: if isAdmin() || (isManager(docOrg()) && inScope(resource.data.get('franchiseId', '')));
     }
 
-    match /limits/{limitId} {
-      allow read, write: if true;
+    // ── Branches and per-tenant data ──────────────────────────────────────
+    match /outlets/{id} {
+      allow read: if isAdmin() || inOrg(docOrg());
+      // Only the tenant owner opens or closes outlets; a store owner may edit its own.
+      allow create, delete: if isAdmin() || (isManager(newOrg()) && tenantWide());
+      allow update: if isAdmin() || (isManager(docOrg()) && inScope(id));
+      match /{child=**} { allow read, write: if isAdmin() || inOrg(get(/databases/$(database)/documents/outlets/$(id)).data.organizationId); }
+    }
+    match /franchises/{id} {
+      allow read: if isAdmin() || inOrg(docOrg());
+      allow create: if isAdmin() || isManager(newOrg());
+      allow update, delete: if isAdmin() || isManager(docOrg());
+      match /{child=**} { allow read, write: if isAdmin() || inOrg(get(/databases/$(database)/documents/franchises/$(id)).data.organizationId); }
+    }
+    match /products/{id} {
+      allow read: if isAdmin() || inOrg(docOrg());
+      allow create: if isAdmin() || inOrg(newOrg());
+      allow update, delete: if isAdmin() || inOrg(docOrg());
+    }
+    match /expenses/{id} {
+      allow read: if isAdmin() || inOrg(docOrg());
+      allow create: if isAdmin() || inOrg(newOrg());
+      allow update, delete: if isAdmin() || isManager(docOrg());
+    }
+    match /device_registry/{id} {
+      allow read, update, delete: if isAdmin() || inOrg(docOrg());
+      allow create: if isAdmin() || inOrg(newOrg());
     }
 
-    match /features/{featureId} {
-      allow read, write: if true;
-    }
-
-    match /subscription_plans/{planId} {
-      allow read, write: if true;
-    }
-
-    // Packages: what a tenant can do. Read by every till (the package picker
-    // in the upgrade sheet) and written by the platform console and the
-    // Apps Script trial handler. Same open rule as subscription_plans.
-    match /packages/{packageId} {
-      allow read, write: if true;
-    }
-
-    match /device_registry/{deviceId} {
-      allow read, write: if true;
-    }
-
-    match /firebase_configs/{configId} {
-      allow read, write: if true;
-    }
-
-    match /excel_configs/{configId} {
-      allow read, write: if true;
-    }
-
-    match /franchises/{franchiseId} {
-      allow read, write: if true;
-      match /{allChildren=**} {
-        allow read, write: if true;
-      }
-    }
-
-    match /branding/{brandingId} {
-      allow read, write: if true;
-      match /{allChildren=**} {
-        allow read, write: if true;
-      }
-    }
-
-    // Daily per-store aggregates for platform analytics (TenantMetricsService).
-    // Open like the rest of this file today; firestore.rules.next locks it to
-    // the tenant (write) and the platform admin (read).
+    // ── Platform ──────────────────────────────────────────────────────────
+    // Aggregates only: a tenant writes its own stores' days; the platform reads all.
     match /tenant_metrics/{metricId} {
-      allow read, write: if true;
+      allow create, update: if inOrg(request.resource.data.orgId)
+                            && metricId.matches(request.resource.data.orgId + '__.*');
+      allow read: if isAdmin() || inOrg(resource.data.orgId);
+      allow delete: if isAdmin();
+    }
+    match /audit_logs/{id}     { allow create: if signedIn(); allow read, update, delete: if isAdmin(); }
+    // system_config/smtp holds the platform mail password: admin only.
+    // (Tenant devices send through Apps Script; SmtpEmailService.allowPlatformSmtp.)
+    match /system_config/{id}  {
+      allow read: if (signedIn() && id != 'smtp') || isAdmin();
+      allow write: if isAdmin();
+      match /{child=**} { allow read: if signedIn(); allow write: if isAdmin(); }
+    }
+    match /_conn_test/{id}     { allow read, write: if signedIn(); }
+
+    // Password reset tokens created on forgot-password and verified during reset
+    match /password_resets/{id} {
+      allow create, read, update: if true;
     }
 
-    match /audit_logs/{logId} {
-      allow read, write: if true;
-    }
+    // Sign-up and admin codes are checked by Code.gs now. This collection is
+    // only the old fallback path of builds before that; closed here.
+    match /email_otps/{email}  { allow read, write: if false; }
 
-    match /_conn_test/{docId} {
-      allow read, write: if true;
-    }
+    // ── Operational data lives in Sheets + Hive, never here ───────────────
+    match /orders/{id}            { allow read, write: if false; }
+    match /restaurant_tables/{id} { allow read, write: if false; }
+    match /kitchen_kots/{id}      { allow read, write: if false; }
+    match /bills/{id}             { allow read, write: if false; }
+    match /customers/{id}         { allow read, write: if false; }
+    match /suppliers/{id}         { allow read, write: if false; }
+    match /purchase_orders/{id}   { allow read, write: if false; }
 
-    match /staff_users/{userId} {
-      allow read, write: if true;
-    }
-
-    match /email_otps/{email} {
-      allow read, write: if true;
-    }
-
-    match /password_resets/{tokenId} {
-      allow read, write: if true;
-      match /{allChildren=**} {
-        allow read, write: if true;
-      }
-    }
-
-    match /registration_requests/{requestId} {
-      allow read, write: if true;
-    }
-
-    match /business_inquiries/{inquiryId} {
-      allow read, write: if true;
-    }
-
-    match /renewal_requests/{requestId} {
-      allow read, write: if true;
-    }
-
-    match /outlets/{outletId} {
-      allow read, write: if true;
-      match /{allChildren=**} {
-        allow read, write: if true;
-      }
-    }
-
-    match /expenses/{expenseId} {
-      allow read, write: if true;
-      match /{allChildren=**} {
-        allow read, write: if true;
-      }
-    }
-
-    match /system_config/{configId} {
-      allow read, write: if true;
-      match /{allChildren=**} {
-        allow read, write: if true;
-      }
-    }
-
-    match /platform_settings/{settingId} {
-      allow read, write: if true;
-      match /{allChildren=**} {
-        allow read, write: if true;
-      }
-    }
-
-    match /products/{productId} {
-      allow read, write: if true;
-      match /{allChildren=**} {
-        allow read, write: if true;
-      }
-    }
-
-    // 4. STRICT ZERO-FIREBASE ENFORCEMENT:
-    // Operational collections are 100% on Google Sheets + Hive.
-    // Any attempt to read or write operational data in Firestore is completely blocked.
-    match /orders/{orderId} {
-      allow read, write: if false;
-    }
-    match /restaurant_tables/{tableId} {
-      allow read, write: if false;
-    }
-    match /kitchen_kots/{kotId} {
-      allow read, write: if false;
-    }
-    match /bills/{billId} {
-      allow read, write: if false;
-    }
-    match /customers/{customerId} {
-      allow read, write: if false;
-    }
-    match /suppliers/{supplierId} {
-      allow read, write: if false;
-    }
-    match /purchase_orders/{poId} {
-      allow read, write: if false;
-    }
-
-    // 5. Deny all other arbitrary collections
-    match /{document=**} {
-      allow read, write: if false;
-    }
+    match /{document=**} { allow read, write: if false; }
   }
 }
-
