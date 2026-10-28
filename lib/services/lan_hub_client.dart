@@ -16,6 +16,13 @@ class LanHubPairing {
   final int maxDevices;
   final List<String> allowedRoles;
 
+  /// The one outlet the hub serves (contract §6b): the host's org id, its
+  /// active franchise id ('' when the organisation has a single outlet) and
+  /// the outlet's name. Empty on a hub older than this field.
+  final String outletId;
+  final String franchiseId;
+  final String outletName;
+
   const LanHubPairing({
     required this.token,
     required this.storeName,
@@ -25,6 +32,9 @@ class LanHubPairing {
     required this.features,
     required this.maxDevices,
     required this.allowedRoles,
+    this.outletId = '',
+    this.franchiseId = '',
+    this.outletName = '',
   });
 
   factory LanHubPairing.fromJson(Map<String, dynamic> j) {
@@ -43,6 +53,9 @@ class LanHubPairing {
       allowedRoles: j['allowedRoles'] is List
           ? (j['allowedRoles'] as List).map((e) => e.toString()).toList()
           : const ['OWNER'],
+      outletId: (j['outletId'] ?? j['orgId'] ?? '').toString().trim(),
+      franchiseId: (j['franchiseId'] ?? '').toString().trim(),
+      outletName: (j['outletName'] ?? '').toString().trim(),
     );
   }
 }

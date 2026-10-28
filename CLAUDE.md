@@ -21,7 +21,10 @@ Deeper docs: `ARCHITECTURE.md` (§9 current model, §10 platform structure), `FL
 - Deploy (test URL https://smartdine-pos.web.app): `firebase deploy --only hosting`.
   Production later: smartbizz.devmonks.space (guest QR base = `kRestaurantWebOrderingBaseUrl` in `lib/core/constants.dart`).
 - Rules: `firebase deploy --only firestore:rules` (deploys `firestore.rules`; `firestore.rules.next` is the locked-down draft).
-- Marketing site is generated: edit `tools/site/site_data.py` / `screens.py`, run `python tools/site/build_site.py`.
+- Marketing site (v2) is generated: edit `tools/site_v2/trade_data.py` / `partials/*`, run
+  `python tools/site_v2/build_site.py --live` (writes `hosting_public_v2/` and copies the site over `hosting_public/`,
+  never `pos/` or `r/`; every build runs the wording/link checks), then `firebase deploy --only hosting`.
+  Legacy v1 generator: `python tools/site/build_site.py` (`tools/site/site_data.py`); do not run it over v2 output.
 - Git: branch `fix/category-alignment`. Files are CRLF; keep `core.autocrlf true`. Don't commit
   `hosting_public/pos/*` together with source changes — commit a build only when deploying it.
 
@@ -65,6 +68,17 @@ Deeper docs: `ARCHITECTURE.md` (§9 current model, §10 platform structure), `FL
 - No mock/demo sessions: the app runs only on real accounts. The admin opens a tenant's POS from Tenants → ▶ (support view).
 - No secrets in code. No plain PINs/passwords in Firestore — hashes only. Never share a sheet as
   "anyone with the link" (the old `makeSpreadsheetEditableByLink` was removed).
+
+## Status (28 Oct 2026, later) — docs and site brought up to date
+- Docs now describe what is in the working tree: `02` §3.7 local network mode (hub, PIN pairing, bearer tokens,
+  change feed, write queue, host wins) and §3.8 licence keys + key-tenant lease; `03` §2.4 key payload, LAN/key
+  Hive keys, `licenceKeyIssuedAt`/`licenceKeyMachineId`; `04` rows for the LAN/licence services and tests;
+  `01`, `GLOSSARY`, `CUSTOMER_PLAYBOOK` (LAN, second counter, key for a PC without internet), `README` (10, LAN guide).
+- Site v2 (`tools/site_v2`): legal/support pages say SmartBizz (data identifiers and the Play listing name stay
+  SmartDine on purpose), the build's forbidden-phrase check now also covers those static pages, LAN block and
+  packages follow §6b (Basic+, device limit per tier, kirana single device). Rebuilt with `--live`; **not deployed**.
+- **Built but not yet run on a device:** everything in the 27–28 Oct statuses below (LAN batches 1–4, onboarding
+  round, Code.gs `ISSUE_CLIENT_LICENCE`). Nothing is committed.
 
 ## Status (28 Oct 2026) — onboarding end to end
 - **Onboarding fixed in the working tree (not committed, not yet run):** `docs/10_ONBOARDING.md` defines the six
@@ -119,7 +133,7 @@ Deeper docs: `ARCHITECTURE.md` (§9 current model, §10 platform structure), `FL
   online (own Sheets) · offline single device · desktop host + LAN satellites (pair, device limit, role 400/409) ·
   waiter ordering and KDS on a satellite (write, mirror, stage change) · host outage → queue → restart → replay once ·
   host wins a stale kitchen stage · token revoked → pairing screen · unpair frees the seat · every trade × tier ×
-  storage mode: modes, limits, roles, features, 30-day lease, `sendsToKitchen` false on shops, §7 wording.
+  storage mode: modes, limits, roles, features, key-as-lease / 30-day lease, `sendsToKitchen` false on shops, §7 wording.
   Not verified on a device yet: run `claude_run.ps1 -NoDeploy` (analyze + tests) first; see the report's analyze list.
 
 ## Commits on this branch
@@ -145,21 +159,24 @@ sharing reconciler, tenant metrics, admin Business Analytics.
 - Next commit adds the per-trade app icons + `test/app_icon_service_test.dart` — rerun the script once.
 - Hosting currently serves an older build; redeploy after the rerun passes.
 
-## Next steps, in order
--1. Onboarding round (28 Oct): run `claude_run.ps1 -NoDeploy`; fix what analyze reports in the files listed in
-   the hand-off; paste Code.gs, set `LEASE_SIGNING_KEY` (+ `FIREBASE_WEB_API_KEY`, SA key when ready), run
-   `smokeTestIssueClientLicence`; issue a key for a real tenant from Access & licence; activate it on a host PC;
-   remove `organizations/org_local_*` and `licenses/org_local_*` from Firestore (owner's call).
-0. Platform structure release: `claude_run.ps1` deploy → Code.gs new version + `smokeTestTrialProvisioning` →
-   Migrations "Align business types" then "Move tenants to category packages" (dry run first) → check Packages
-   per trade → ask existing tenants to Reset receipt slips. (Items below are from 25 Sep; some are done.)
-1. Rerun `claude_run.ps1 -NoDeploy` on 0e036ce; fix anything it reports; then run it without `-NoDeploy`.
-2. `firebase deploy --only firestore:rules` (adds `tenant_metrics`; everything else unchanged).
-3. Paste `google_apps_script/Code.gs` into Apps Script and redeploy; add Script properties
-   `FIREBASE_SA_EMAIL` / `FIREBASE_SA_PRIVATE_KEY`; enable Firebase Authentication.
-4. Change the master-admin password (it was public in an old bundle). Console → Migrations → "Align business types".
-5. Live test with "ZZ Test – <trade>" tenants: offline tenant, own-Sheets tenant with 2 stores, store owners,
-   staff add/remove → sheet sharing follows; Business Analytics fills after a day of bills.
-6. Check the icon switch on a real Android phone and an iPhone (log in as a kirana tenant → launcher icon changes).
-7. Open: sign-up e-mail check server-side, then deploy `firestore.rules.next` (admin 2FA is server-side now — needs the new Code.gs);
-   signed licence lease; responsive polish on phone/large screens.
+## Next steps, in order (operations — nothing here is code)
+1. `claude_run.ps1 -NoDeploy` (analyze + tests) on the working tree; fix what it reports; then commit the batch.
+2. Firestore: `firestore.gs` has `FS_USE_OAUTH = true` — bind the Apps Script project to the Firebase GCP project
+   and add the `https://www.googleapis.com/auth/datastore` scope in `appsscript.json`, or the server's Firestore
+   calls fail once rules are tightened. Then promote `firestore.rules.next` to `firestore.rules` and
+   `firebase deploy --only firestore:rules` (locked-down rules; needs the custom-token bridge and the new Code.gs).
+3. Apps Script: paste `Code.gs` + `firestore.gs` + `bcrypt.gs` (`google_apps_script/DEPLOY.md`), set Script
+   properties `LEASE_SIGNING_KEY`, `FIREBASE_WEB_API_KEY`, `FIREBASE_SA_EMAIL` / `FIREBASE_SA_PRIVATE_KEY`
+   (optional `SMOKE_ORG_ID`), run `smokeTestTrialProvisioning` and `smokeTestIssueClientLicence`, redeploy the
+   existing deployment.
+4. Change the master-admin password (it was public in an old bundle); enable Firebase Authentication.
+5. Console → Migrations: "Align business types", then "Move tenants to category packages" (dry run first); check
+   Packages per trade; ask existing tenants to Reset receipt slips.
+6. Production URL: point `smartbizz.devmonks.space` at hosting; set `kRestaurantWebOrderingBaseUrl`
+   (`lib/core/constants.dart`) and `SITE` in `tools/site_v2/trade_data.py`; `claude_run.ps1` (deploy) →
+   `firebase deploy --only hosting`.
+7. Delete the stray `organizations/org_local_*` and `licenses/org_local_*` documents by hand (owner's call;
+   `docs/09_AGENT_GUIDE.md` §3).
+8. Two-device LAN test on real hardware (`docs/CLIENT_LOCAL_LAN_SETUP_GUIDE.md`): host PC with a licence key →
+   hub on → tablet pairs with the PIN → waiter order appears on the host KDS → host off → order queued → host on →
+   replayed once → Remove on the host → "Pair again". Then the icon switch on a real Android phone and an iPhone.

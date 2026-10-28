@@ -26,6 +26,11 @@ import '../../services/backup_service.dart';
 import '../../services/offline_backup_service.dart';
 import 'backup_restore_screen.dart';
 import '../admin/widgets/tier_visuals.dart';
+import '../../core/license_lease.dart';
+import '../../services/client_key_renewal_service.dart';
+import '../../services/restaurant_ledger.dart';
+import '../../services/satellite_print_prefs.dart';
+import '../../widgets/client_key_renewal_dialog.dart';
 
 class SettingsSidebarDialog extends ConsumerStatefulWidget {
   final int initialTab;
@@ -480,6 +485,11 @@ class _SettingsSidebarDialogState extends ConsumerState<SettingsSidebarDialog> {
                       ],
                     ),
                   ],
+                  // Licence key (host PC activated with a signed key): the key
+                  // is the lease, so renewal happens here with a new key from
+                  // the platform admin, before or after it runs out.
+                  if (ClientKeyRenewalService.isKeyTenant() && effectiveRole == StaffRole.owner)
+                    _buildLicenceKeyRenewal(context, org.id, org.storageMode),
                 ],
               ),
             ),
@@ -549,7 +559,12 @@ class _SettingsSidebarDialogState extends ConsumerState<SettingsSidebarDialog> {
           ],
 
           // ── Backup & restore (owner only; PLATFORM_STRUCTURE §6) ──
-          if ((effectiveRole == StaffRole.owner || userRole == 'OFFLINE OWNER') &&
+          // On a LAN satellite the ledger is the host's: backups are taken
+          // on the host PC, never from a paired device.
+          if (isSatelliteSession()) ...[
+            _buildSatelliteBackupNote(context),
+            const SizedBox(height: 20),
+          ] else if ((effectiveRole == StaffRole.owner || userRole == 'OFFLINE OWNER') &&
               ref.watch(entitlementsProvider).isEnabled(FeatureKeys.backupRestore)) ...[
             _buildBackupSection(context),
             const SizedBox(height: 20),
@@ -614,6 +629,10 @@ class _SettingsSidebarDialogState extends ConsumerState<SettingsSidebarDialog> {
             'Connect and configure the Bluetooth or USB thermal receipt printer attached to this specific workstation.',
           ),
           const SizedBox(height: 16),
+          if (isSatelliteSession()) ...[
+            _buildSatellitePrintSwitches(context),
+            const SizedBox(height: 16),
+          ],
 
           // Connection Status Card
           Container(
@@ -841,6 +860,75 @@ class _SettingsSidebarDialogState extends ConsumerState<SettingsSidebarDialog> {
     );
   }
 
+  // ── Licence key renewal (Settings → Licence) ──────────────────────────────
+
+  /// The 7-day warning and "Renew with a new key" for a key tenant. Reads the
+  /// same [LicenseLease.check] main.dart uses, so the banner and the block
+  /// screen agree on the day count.
+  Widget _buildLicenceKeyRenewal(BuildContext context, String orgId, String? storageMode) {
+    final lease = LicenseLease.check(orgId: orgId, storageMode: storageMode);
+    final blocked = lease.blocked;
+    final soon = !blocked && (lease.state == LeaseState.expiringSoon || lease.daysLeft <= 7);
+    final accent = blocked ? ClassicTheme.dangerRed : ClassicTheme.warningAmber;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Divider(height: 16),
+        if (blocked || soon) ...[
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: accent.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: accent.withValues(alpha: 0.5)),
+            ),
+            child: Row(
+              children: [
+                Icon(blocked ? Icons.error_outline_rounded : Icons.schedule_rounded, size: 18, color: accent),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    blocked
+                        ? 'The licence key on this PC has run out. Enter a new key to keep billing.'
+                        : 'The licence key on this PC ends in ${lease.daysLeft} day${lease.daysLeft == 1 ? '' : 's'}. '
+                            'Ask the platform admin for a new key and enter it here before then.',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: context.textPrimary),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+        ],
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                'Licence key: this store runs on a signed key checked on this PC.',
+                style: TextStyle(fontSize: 12, color: context.textSecondary),
+              ),
+            ),
+            OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+              icon: const Icon(Icons.vpn_key_rounded, size: 16),
+              label: const Text('Renew with a new key', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+              onPressed: () async {
+                final ok = await ClientKeyRenewalDialog.show(context);
+                if (!ok || !mounted) return;
+                setState(() {});
+                AppToast.showSuccess(this.context, 'Licence renewed', subtitle: 'The new key is now the licence on this PC.');
+              },
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
   // ── Backup & Restore ───────────────────────────────────────────────────────
   //
   // The full screen (export with passphrase + confirm, restore with summary)
@@ -849,6 +937,87 @@ class _SettingsSidebarDialogState extends ConsumerState<SettingsSidebarDialog> {
   // a file made by a previous version can still be opened.
 
   bool _backupBusy = false;
+
+  /// On a paired satellite: what its own printer prints (SatellitePrintPrefs).
+  Widget _buildSatellitePrintSwitches(BuildContext context) {
+    final role = (ref.watch(saasSessionProvider).currentUser?.role ?? '').toUpperCase();
+    final bills = role == 'BILLING' || role == 'MANAGER' || role == 'OWNER';
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: context.canvasColor,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: context.borderColor),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Printing on this paired device', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: context.textPrimary)),
+          const SizedBox(height: 4),
+          Text(
+            'The host keeps every KOT and bill. These switches only decide what the printer attached to this device prints.',
+            style: TextStyle(fontSize: 12, color: context.textSecondary),
+          ),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            dense: true,
+            title: Text('Print KOT on this device', style: TextStyle(fontSize: 13, color: context.textPrimary)),
+            subtitle: Text('A KOT sent from here also prints on this device\'s printer.', style: TextStyle(fontSize: 11, color: context.textSecondary)),
+            value: SatellitePrintPrefs.printKotOnThisDevice,
+            activeThumbColor: ClassicTheme.successEmerald,
+            onChanged: (v) async {
+              await SatellitePrintPrefs.setPrintKot(v);
+              if (mounted) setState(() {});
+            },
+          ),
+          if (bills)
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+              title: Text('Print receipts on this device', style: TextStyle(fontSize: 13, color: context.textPrimary)),
+              subtitle: Text('A bill settled here prints its receipt on this device\'s printer.', style: TextStyle(fontSize: 11, color: context.textSecondary)),
+              value: SatellitePrintPrefs.printReceiptOnThisDevice,
+              activeThumbColor: ClassicTheme.successEmerald,
+              onChanged: (v) async {
+                await SatellitePrintPrefs.setPrintReceipt(v);
+                if (mounted) setState(() {});
+              },
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// Shown instead of Backup & restore on a paired satellite.
+  Widget _buildSatelliteBackupNote(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: context.canvasColor,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: context.borderColor),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.shield_outlined, size: 20, color: context.textSecondary),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Backup & restore', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: context.textPrimary)),
+                const SizedBox(height: 4),
+                Text(
+                  'Backups are taken on the host PC. This device reads and writes the host\'s ledger over the store Wi-Fi and holds no data of its own to back up.',
+                  style: TextStyle(fontSize: 12, color: context.textSecondary),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   Widget _buildBackupSection(BuildContext context) {
     return Container(

@@ -202,12 +202,13 @@ def tier_cards(t):
                 labels = [D.per_trade(f["label"], trade) for f in fs if f["group"] == gid and D.start_for(f, trade) == "offline"]
                 if labels:
                     items.append(", ".join(labels))
+            items.append("One device; local network mode starts at Basic" if not kirana else "One device at every tier")
         else:
             items.append(("all", "All of %s" % D.TIER_NAME[D.TIERS[i - 1]]))
             new = [D.per_trade(f["label"], trade) for f in fs if D.start_for(f, trade) == tier]
             items += new
             if tier == "basic" and not kirana:
-                items.append("Local network mode: hub, customer display")
+                items.append("Local network mode: host PC hub, paired devices up to your limit, customer display")
             if tier == "enterprise":
                 items += ["Devices, %ss and users set per client" % unit, "Set up with our team"]
             elif not new:
@@ -350,13 +351,37 @@ def check_text():
 
 
 def check_html(path, roots):
-    from html.parser import HTMLParser
     s = open(path, encoding="utf-8").read()
     text = re.sub(r"<style>.*?</style>|<script>.*?</script>", " ", s, flags=re.S)
     text = re.sub(r"<[^>]+>", " ", text)
     m = FORBIDDEN.search(text)
     assert not m, "%s: forbidden phrase %r" % (path, m.group(0))
     assert len(re.findall(r"<h1[\s>]", s)) == 1, "%s: one h1" % path
+    return check_links(s, path, roots)
+
+
+# Hand-written pages copied with --live. Brand text must say SmartBizz; the identifiers below keep the old
+# name on purpose (CLAUDE.md: Firebase project, admin e-mail, hosting site) as does the one sentence that
+# explains the Play listing still carries the earlier name.
+STATIC_PAGES = ["support.html", "privacy.html", "terms.html", "deletion.html", "register/index.html",
+                "smartbizz/support.html", "smartbizz/privacy.html", "smartbizz/terms.html", "smartbizz/deletion.html"]
+ALLOWED_OLD_NAME = re.compile(r"smartdine\.platform@gmail\.com|smartdine-restaurant-pos|smartdine-pos\.web\.app"
+                              r"|Play listing and package id still carry its earlier name,\s+SmartDine", re.I)
+
+
+def check_static(path, roots):
+    """Static pages: no SmartDine in visible text (apart from the allowed identifiers) and no broken local link."""
+    s = open(path, encoding="utf-8").read()
+    text = re.sub(r"<style>.*?</style>|<script>.*?</script>", " ", s, flags=re.S)
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = ALLOWED_OLD_NAME.sub(" ", text)
+    m = re.search(r"SmartDine", text)
+    assert not m, "%s: old brand name in page text near %r" % (path, text[max(0, m.start() - 40):m.end() + 40])
+    return check_links(s, path, roots)
+
+
+def check_links(s, path, roots):
+    from html.parser import HTMLParser
     refs = []
 
     class P(HTMLParser):
@@ -366,7 +391,7 @@ def check_html(path, roots):
                     refs.append(html.unescape(v))
     P().feed(s)
     for r in refs:
-        if r.startswith(("#", "http://", "https://", "mailto:", "data:")):
+        if r.startswith(("#", "http://", "https://", "mailto:", "data:", "tel:", "whatsapp:")):
             continue
         p = r.split("#")[0].split("?")[0]
         assert p.startswith("/"), "%s: relative ref %r" % (path, r)
@@ -381,6 +406,10 @@ def check(roots=(OUT, LIVE)):
         p = os.path.join(OUT, slug, "index.html") if slug else os.path.join(OUT, "index.html")
         n = check_html(p, roots)
         print("checked", os.path.relpath(p, ROOT), "(%d refs)" % n)
+    for rel in STATIC_PAGES:
+        p = os.path.join(OUT, rel)
+        n = check_static(p, roots)
+        print("checked", os.path.relpath(p, ROOT), "(%d refs, static)" % n)
 
 
 # ───────────────────────────────────────────── main

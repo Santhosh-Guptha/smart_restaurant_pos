@@ -100,7 +100,7 @@ in Code.gs. Pinned by `test/contract_consistency_test.dart` (`_licenceKeys`, and
 | `planTier` | string | the plan's `billingCycle` (legacy name; `SaasLicense.planTier`, default `TRIAL`) | composer |
 | `planProfile` | string | `package.nearestProfile.id` — legacy `PlanProfile` id (`OFFLINE_SINGLE`, `OFFLINE_RETAIL`, `OFFLINE_DINE_IN`, `CONNECTED`, `OMNICHANNEL`), the resolver's baseline | composer |
 | `status` | string | `ACTIVE`, `EXPIRED`, `PAST_DUE`, `INACTIVE`…; `SaasLicense.isActive = status == 'ACTIVE' && !isExpired` | composer / admin |
-| `storageMode` | string | copy of the org's mode (the org document is authoritative for the app) | composer |
+| `storageMode` | string | copy of the org's mode (the org document is authoritative for the app): `PURE_OFFLINE`, `CLIENTS_OWN_SHEETS`, `LOCAL_NETWORK` (Basic+, contract §6b) or legacy `CLOUD_SYNC` | composer |
 | `startDate`, `endDate` | Timestamp / Date | term; `endDate = start + plan.validityDays` | composer |
 | `maxFranchises` | int | outlets limit (never `maxOutlets` on a licence) | composer |
 | `maxUsers` | int | active users incl. owner | composer |
@@ -116,6 +116,8 @@ in Code.gs. Pinned by `test/contract_consistency_test.dart` (`_licenceKeys`, and
 | `expiryWarningDays` | int | 3 | composer |
 | `createdAt`, `updatedAt` | Timestamp | stamped by writers | writers |
 | `maxTables` / `tableCount` | int | read by `SaasLicense.fromFirestore` (default 15) | legacy |
+| `licenceKeyIssuedAt` | Timestamp | when a licence key was last issued for this tenant | Code.gs `ISSUE_CLIENT_LICENCE` (§2.4) |
+| `licenceKeyMachineId` | string | the `machineId` the last key was locked to (`ANY` or `SBZ-MCH-…`) | Code.gs `ISSUE_CLIENT_LICENCE` |
 
 `LicenceEdits.licenceFields(s, keepTerm: false)` omits the term keys `status, startDate, endDate, planId,
 planName, planTier, expiryWarningDays` so an editor keeps the stored dates.
@@ -130,6 +132,31 @@ planName, planTier, expiryWarningDays` so an editor keeps the stored dates.
   (devices/outlets/users).
 * Plans: `SubscriptionPlan.validityOnly(id, name, validityDays)`; defaults trial 14, monthly 30,
   quarterly 90, half-yearly 180, yearly 365 (`SubscriptionPlanService`).
+
+### 2.4 Licence key (`SBZ-LIC-…`) payload
+
+Issued only by Code.gs `ISSUE_CLIENT_LICENCE` (`clientLicencePayload_` → `signClientLicence_`, RSA-SHA256 with
+`LEASE_SIGNING_KEY`); decoded by `ClientLicensePayload` (`lib/services/client_license_service.dart`) and
+`LicenseLease.clientKeyPayload`. Token form: `SBZ-LIC-<base64url JSON>.<base64url signature>` (the signature covers
+the base64url text). Flow: `02_SYSTEM_ARCHITECTURE.md` §3.8; onboarding: `10_ONBOARDING.md` §4.
+
+| Field | Meaning |
+|---|---|
+| `v` | payload version (1) |
+| `orgId` | the tenant's platform org id — the host activates **as this tenant**; a key without one is refused |
+| `storeName` | from `organizations/{orgId}` (`name` / `appName` / `businessName`) |
+| `vertical`, `tier`, `packageId` | trade, tier and `<trade>_<tier>` (or the custom package id) |
+| `planName` | display only |
+| `storageMode` | `PURE_OFFLINE` for the offline tier; else `CLIENTS_OWN_SHEETS` or `LOCAL_NETWORK` (contract §6b; anything else becomes own Sheets) |
+| `features` | the resolved feature map |
+| `maxDevices`, `maxOutlets`, `maxUsers`, `allowedRoles` | limits and roles; offline is forced to 1/1/1 and `['OWNER']` |
+| `machineId` | `SBZ-MCH-…` to lock the key to one PC, or `ANY` (locks to the first machine that activates; `DeviceFingerprintService.validateBinding`) |
+| `issuedAt`, `validUntil` | ISO-8601; default validity 365 days; `validUntil` must be in the future |
+| `issuedBy` | the admin's uid |
+| `ownerEmail`, `ownerName`, `ownerUsername`, `ownerUserId` | the tenant owner (`orgOwner_`: `ownerUserId`, else the org's OWNER user, else `ownerEmail`), so the host creates the owner's local account from the key; keys issued before these fields existed decode with empty owner fields and fall back to `usr_local_owner` / `owner@localhost` / `owner` |
+
+The server also merges `licenses/{orgId}` from the same payload (same field set as the composer plus
+`licenceKeyIssuedAt`, `licenceKeyMachineId`) and writes an `audit_logs` row `CLIENT_LICENCE_ISSUED`.
 
 ---
 
@@ -169,9 +196,18 @@ switch/sign-out.
 | `saas_firebase_config`, `saas_firebase_config_iv` | encrypted legacy customer Firebase config |
 | `pure_offline_mode` | cached `storageMode == 'PURE_OFFLINE'` |
 | `lic_validated_at_<org>`, `lic_max_seen_<org>`, `lic_signed_lease_<org>` `{payload, sig}`, `lic_signed_required_<org>` | `LicenseLease` |
-| `kot_orders_<orgId>` | list of order/bill maps (every till; §5) |
+| `lic_client_key_<org>` | the `SBZ-LIC-…` key a tenant was activated with (`LicenseLease.storeClientKey`); re-verified on every start by `_checkClientKey` — the key is the lease (§2.4) |
+| `saas_is_client_license`, `saas_client_license_org_id` | this device was activated with a licence key, and for which tenant (`activateWithClientLicense`); `login()` checks the local hash first on such a device |
+| `_sbz_active_machine_id`, `_sbz_bound_lic_<org>` | `DeviceFingerprintService` machine id and the machine a key was activated on |
+| `saas_is_satellite_client` | the session was started with "Connect to host" (`connectSatelliteTerminal`); with a hub token present the device is a LAN satellite (`isLanSatellite`) |
+| `saas_master_hub_url`, `saas_master_hub_token` | `LanHubClient`: the host's base URL (`http://<ip>:8080`) and the bearer token `POST /api/v1/pair` returned; the token is dropped on a 401 ("Pair again") |
+| `_sbz_lan_pairing_pin` | host only: the 6-digit pairing PIN (`getPairingPin` / `rotatePairingPin`); shown on the hub card, never sent to a device |
+| `_sbz_lan_tokens` | host only: issued bearer tokens → `{role, deviceName, pairedAt…}`; **Remove** on the hub card deletes one |
+| `_sbz_lan_rev` | host only: `LanRevision` — monotonic change counter the change feed (`?since=`) is keyed on; persisted so a restarted host never answers with a lower revision |
+| `_sbz_lan_pending_writes` | satellite only: `LanWriteQueue` — writes the host could not be reached for, replayed in order (idempotent) |
+| `kot_orders_<orgId>` | list of order/bill maps (every till; §5). In `LOCAL_NETWORK` the host's copy is the ledger; a satellite's copy is a mirror filled by `LanHubFeed` and written only through `LanHubLedger` |
 | `bills_<outletId>` | older bill list read by analytics / order history |
-| `restaurant_tables_<orgId>` | table list |
+| `restaurant_tables_<orgId>` | table list (same host/satellite rule as `kot_orders_`) |
 | `customer_khata_<orgId>` | list of `CustomerKhata.toMap` |
 | `restaurant_outlets_<orgId>` | cached outlet list |
 | `waiter_tray_draft_<…>` | unsent waiter tray |

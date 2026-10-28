@@ -43,7 +43,91 @@ class LocalRestaurantLanServer {
   String? get localIpAddress => _localIpAddress;
   String get serverUrl => 'http://${_localIpAddress ?? "localhost"}:$_port';
 
-  /// Starts the embedded local LAN server on the master till.
+  /// Called with `true` when the hub starts and `false` when it stops
+  /// (LanHostSync re-evaluates the optional Sheet sync). Set in main.dart.
+  static void Function(bool hosting)? onHostingChanged;
+
+  /// Called with every order a paired device wrote through the hub, after
+  /// it is in the ledger, with the host's org id (LanHostSync forwards it to
+  /// the store Sheet when the owner opted in). Fire-and-forget: the reply to
+  /// the satellite never waits for it.
+  static Future<void> Function(Map<String, dynamic> order, String orgId)? onHostLedgerWrite;
+
+  // ---------------------------------------------------------------------------
+  // One hub, one outlet (contract §6b)
+  //
+  // The hub serves the outlet the host was on when it started: its org id
+  // and, for a Premium tenant with several outlets, its active franchise.
+  // Both are recorded here, told to satellites at pairing (`outletId`,
+  // `franchiseId`) and re-checked on every call, so a host that switches
+  // outlet while the hub runs cannot hand another outlet's ledger to devices
+  // paired for the first one. SaasSessionNotifier stops the hub on an
+  // outlet switch; a Premium tenant runs one host per outlet.
+  // ---------------------------------------------------------------------------
+  String _servingOutletId = '';
+  String _servingFranchiseId = '';
+  String _servingOutletName = '';
+
+  /// The org id the running hub serves ('' when stopped).
+  String get servingOutletId => _servingOutletId;
+
+  /// The active franchise (outlet) id the running hub serves ('' = the
+  /// organisation's only outlet).
+  String get servingFranchiseId => _servingFranchiseId;
+
+  /// The outlet's name for the PIN panel: the franchise name when one is
+  /// active, else the store name.
+  String get servingOutletName => _servingOutletName;
+
+  /// The host's active franchise id as the session stores it.
+  String currentFranchiseId() {
+    try {
+      final v = _configBox?.get('saas_active_franchise_id');
+      return v == null ? '' : v.toString().trim();
+    } catch (_) {
+      return '';
+    }
+  }
+
+  /// The current outlet's name, resolved like the session does.
+  String currentOutletName() {
+    final fId = currentFranchiseId();
+    if (fId.isNotEmpty) {
+      try {
+        if (Hive.isBoxOpen(kFranchisesBoxName)) {
+          final raw = Hive.box(kFranchisesBoxName).get(fId);
+          if (raw is Map && (raw['name'] ?? '').toString().trim().isNotEmpty) return raw['name'].toString().trim();
+        }
+      } catch (_) {}
+    }
+    try {
+      final rawOrg = _configBox?.get('saas_org');
+      final orgMap = rawOrg is String ? jsonDecode(rawOrg) : null;
+      if (orgMap is Map && (orgMap['name'] ?? '').toString().trim().isNotEmpty) return orgMap['name'].toString().trim();
+    } catch (_) {}
+    return 'This store';
+  }
+
+  /// True while the host is still on the outlet the hub was started for.
+  bool get servesCurrentOutlet =>
+      !_isRunning || (hostOrgId() == _servingOutletId && currentFranchiseId() == _servingFranchiseId);
+
+  void _bindToCurrentOutlet() {
+    _servingOutletId = hostOrgId();
+    _servingFranchiseId = currentFranchiseId();
+    _servingOutletName = currentOutletName();
+  }
+
+  void _notifyHosting(bool hosting) {
+    try {
+      onHostingChanged?.call(hosting);
+    } catch (e) {
+      debugPrint('LocalRestaurantLanServer onHostingChanged: $e');
+    }
+  }
+
+  /// Starts the embedded local LAN server on the master till, for the
+  /// outlet the host is on right now.
   Future<bool> startServer({int port = 8080}) async {
     if (_isRunning) return true;
     _port = port;
@@ -52,6 +136,8 @@ class LocalRestaurantLanServer {
       _localIpAddress = 'localhost';
       _isRunning = true;
       LanHostFlag.hosting = true;
+      _bindToCurrentOutlet();
+      _notifyHosting(true);
       debugPrint('LocalRestaurantLanServer running in web mode at $serverUrl');
       return true;
     }
@@ -68,12 +154,14 @@ class LocalRestaurantLanServer {
 
       _isRunning = true;
       LanHostFlag.hosting = true;
+      _bindToCurrentOutlet();
       _server!.listen(_handleRequest, onError: (e) {
         debugPrint('LocalRestaurantLanServer error: $e');
       });
       _watchHostLedger();
+      _notifyHosting(true);
 
-      debugPrint('LocalRestaurantLanServer running at $serverUrl');
+      debugPrint('LocalRestaurantLanServer running at $serverUrl for outlet $_servingOutletName ($_servingOutletId${_servingFranchiseId.isEmpty ? '' : '/$_servingFranchiseId'})');
       return true;
     } catch (e) {
       debugPrint('LocalRestaurantLanServer failed to start: $e');
@@ -275,6 +363,12 @@ class LocalRestaurantLanServer {
       'maxDevices': licMap['maxDevices'] ?? 1,
       'allowedRoles': licMap['allowedRoles'] ?? const ['OWNER'],
       'endDate': licMap['endDate'],
+      // The one outlet this hub serves (contract §6b): a satellite stores
+      // these and runs in that outlet's context.
+      'orgId': hostOrgId(),
+      'outletId': _isRunning ? _servingOutletId : hostOrgId(),
+      'franchiseId': _isRunning ? _servingFranchiseId : currentFranchiseId(),
+      'outletName': _isRunning ? _servingOutletName : currentOutletName(),
     };
   }
 
@@ -288,8 +382,12 @@ class LocalRestaurantLanServer {
     _server = null;
     _isRunning = false;
     LanHostFlag.hosting = false;
+    _servingOutletId = '';
+    _servingFranchiseId = '';
+    _servingOutletName = '';
     await _ledgerWatch?.cancel();
     _ledgerWatch = null;
+    _notifyHosting(false);
     debugPrint('LocalRestaurantLanServer stopped.');
   }
 
@@ -397,6 +495,18 @@ class LocalRestaurantLanServer {
         request.response.statusCode = HttpStatus.unauthorized;
         request.response.headers.add(HttpHeaders.wwwAuthenticateHeader, 'Bearer realm="SmartBizz LAN Hub"');
         await _respondJson(request, {'error': 'Pair this device with the host first'});
+        return;
+      }
+
+      // The hub serves one outlet. If the host moved to another outlet while
+      // the hub ran, nothing is served until it is restarted for that outlet.
+      if (path != '/api/v1/ping' && !servesCurrentOutlet) {
+        request.response.statusCode = HttpStatus.serviceUnavailable;
+        await _respondJson(request, {
+          'error': 'The hub was started for another outlet. Restart the Local LAN Hub on the host for this outlet.',
+          'outletId': _servingOutletId,
+          'franchiseId': _servingFranchiseId,
+        });
         return;
       }
 
@@ -740,6 +850,13 @@ class LocalRestaurantLanServer {
         list.add(incoming);
       }
       await _configBox?.put(_ordersKey, list);
+      // Optional store-Sheet sync on the host (LanHostSync): queued in the
+      // background, the satellite's reply never waits for it.
+      final hook = onHostLedgerWrite;
+      if (hook != null) {
+        final stored = idx >= 0 ? list[idx] : incoming;
+        unawaited(hook(Map<String, dynamic>.from(stored), hostOrgId()).catchError((_) {}));
+      }
     } catch (e) {
       debugPrint('Error persisting KOT order: $e');
     }

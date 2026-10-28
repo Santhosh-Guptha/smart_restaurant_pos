@@ -213,8 +213,10 @@ class Outbox {
   /// Drains the pending outbox operations sequentially with per-op exponential backoff (S-6, S-7, S-10)
   static Future<void> drain({String? spreadsheetId}) async {
     // Nothing leaves an offline till. Items stay queued; if the store is
-    // later moved online they are sent then, in order.
-    if (CloudGate.offline) return;
+    // later moved online they are sent then, in order. A LAN host that opted
+    // in to its own Sheet (CloudGate.allowHostSync) drains like an own-Sheets
+    // tenant: when connected, in the background, never on the hub's path.
+    if (!CloudGate.sheetsAllowed) return;
     if (_isDraining) return;
     _isDraining = true;
 

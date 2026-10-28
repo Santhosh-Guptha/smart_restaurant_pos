@@ -212,6 +212,15 @@ Terms: [`GLOSSARY.md`](GLOSSARY.md).
 | `backup_service.dart` | 525 | Legacy `BackupService` (`.sbk`: `exportBackup`, `importBackup`, `exportCsvTables`). |
 | `category_alignment_service.dart` | 210 | `CategoryAlignmentService` (`plan`, `apply`), `CategoryFix`, `CategoryAlignmentReport` — repair `businessCategory`/`vertical` across org, licence, owner user. |
 | `client_ledger_cloud_router_service.dart` | 610 | `ClientLedgerCloudRouterService` — owner Google sign-in (`authorizeGoogleAccount`, `getAuthenticatedClientIfAvailable`, `signOut`), `provisionStoreLedgerSheet`, `linkGoogleLedgerToStore`, `createAndConnectClientGoogleSheet`; `postBillToRouter`/`postKhataToRouter`/`postProductToRouter`/`syncAllProductsToRouter` (no callers today); `GoogleAuthClient`. |
+| `client_bootstrap_reader_io.dart` / `client_bootstrap_reader_web.dart` | 84 / 33 | `ClientBootstrapReader` (conditional import): finds a bootstrap licence on disk (`%APPDATA%\SmartBizz`), in an environment variable, or in the web URL `?license=`. |
+| `client_license_bootstrap_service.dart` | 72 | `ClientLicenseBootstrapService.checkAndAutoActivateBootstrapLicense(ref)` — at start-up: read a bootstrap key (`.json` / `.bat` → `?license=`), `verifyAndDecode`, activate into the session with no prompt (onboarding §4). |
+| `client_key_renewal_service.dart` | — | `ClientKeyRenewalService` — in-app renewal for key tenants: verify a new key (same org, later `validUntil`), `LicenseLease.storeClientKey`, rewrite `saas_license`. |
+| `client_key_file_io.dart` / `client_key_file_web.dart` | — | Read a pasted key / `.json` bundle / file path for renewal (conditional import). |
+| `lan_host_sync.dart` | — | `LanHostSync` — host-only forwarding of hub ledger writes to the tenant's Sheet via `Outbox` when `CloudGate.allowHostSync` is on. |
+| `satellite_print_prefs.dart` | — | Per-device switches: print KOT on this satellite, print receipts on a BILLING satellite. |
+| `client_license_service.dart` | 347 | `ClientLicensePayload` (every field Code.gs signs, incl. `ownerEmail/ownerName/ownerUsername/ownerUserId`, `hasTenantOrgId`), `ClientLicenseService.issueKey` → Code.gs `ISSUE_CLIENT_LICENCE` (`ClientLicenceIssueResult` token / `errorCode`), `issueErrorMessage`, `verifyAndDecode` (RSA against `lease_public_key.dart`, expiry), `activateLicense` → `SaasSessionNotifier.activateWithClientLicense`. The app never mints a key. |
+| `client_setup_package_generator.dart` | 225 | `ClientSetupPackageGenerator`: `generateBatchScript` (1-click `.bat`: firewall rule for LAN keys, launches the app with `?license=`), `generateBootstrapJson` (`{version, token, payload}`), `issueAndDownload*` / `download*` used by Access & licence. |
+| `device_fingerprint_service.dart` | 207 | `DeviceFingerprintService`: `getMachineId` (`SBZ-MCH-…`), `validateBinding(payload)` (`machineId` `ANY` locks to the first machine; fails closed), `recordActivationBinding` (`_sbz_active_machine_id`, `_sbz_bound_lic_<org>`), `isCurrentMachineAuthorized`. |
 | `customer_bill_formatter.dart` | 254 | Legacy `CustomerBillFormatter.formatTaxInvoice` (no longer used for printing; golden reference). |
 | `database_cleanup_service.dart` | 193 | `DatabaseCleanupService.ensureMasterAdminUserExists` (identity fields only) and dev cleanup. |
 | `firebase_auth_bridge.dart` | 150 | `FirebaseAuthBridge` (`signInForLogin`, `signIn`, `signOut`), `ServerLogin`, `ServerLoginStatus`. |
@@ -288,18 +297,25 @@ Run: `flutter test` (or `claude_run.ps1 -NoDeploy`).
 | `admin_tier_summary_test.dart` | `TierSummary` wording: limits, storage (§7 wording), heading, trade-only features/add-ons, `newAt`. |
 | `app_icon_service_test.dart` | every trade has an icon, Android alias and iOS set. |
 | `category_alignment_test.dart` | `Verticals.resolve` / `forCategory` rules. |
+| `client_license_service_test.dart` | a key signed by the platform key decodes; a home-made HMAC, an edited payload, another key pair and an expired key are refused; padded/unpadded base64url. |
+| `client_setup_package_generator_test.dart` | `.bat` is self-contained and only adds a firewall rule for LAN keys; `.json` carries token + payload. |
 | `cloud_gate_test.dart` | `CloudGate` open/closed/`run`/migration window. |
 | `contract_consistency_test.dart` | PLATFORM_STRUCTURE across writers: starters per trade, headings, add-ons, offline 1/1/1, licence key set `_licenceKeys` (`toLicenseFields`, `LicenceEdits.licenceFields`, category migration, Code.gs twin read as text). |
 | `dashboard_layout_test.dart` | one Billing card for shops, default layouts, migration of the old `barcode_billing` card. |
+| `device_fingerprint_service_test.dart` | stable machine id; `ANY` and exact-match binding; a key locked to another machine is refused; activation binding sticks. |
 | `dynamic_upi_qr_test.dart` | `UpiPayment.buildUri`. |
 | `entitlements_test.dart` | catalogue integrity (deps, cycles), profiles, `reasonFor` rules. |
 | `feature_usage_test.dart` | every catalogue key has a `FeatureUsage` entry and the named code exists in `lib/`. |
 | `item_model_contract_test.dart` | `ItemContract` weighed units, PLU, variants, barcode lookup. |
 | `item_modifiers_test.dart` | `ItemModifierGroup`/`KotItem` modifier maths and serialisation. |
 | `kds_voice_announcer_test.dart` | spoken order text. |
+| `lan_hub_ledger_test.dart` | ledger switch (`isLanSatellite` needs flag + token; 401 → `needsPairing`), `LocalHiveLedger` bumps `LanRevision`, `LanHubLedger` sends only changed orders/tables, the feed mirrors full and incremental pages, long-polls with the bearer token, typed calls hit the documented paths. |
+| `client_key_renewal_test.dart` | key renewal: same org required, later `validUntil` required, forged/expired keys refused, stored key and `saas_license` updated. |
 | `lan_resilience_test.dart` | hub + `LanHubClient` on a real socket: pair, write, host down → queue, restart → replay once (no duplicate), host wins a stale stage, revoke → `needsPairing`, `/unpair`, ping names the trade. |
 | `license_lease_signed_test.dart` | a lease signed with the real key verifies; edits/garbage are rejected. |
+| `local_restaurant_lan_server_test.dart` | hub on a free port: `/api/v1/ping`, 404/405, `/store`, `/orders` GET/POST validation, concurrency, `detectLocalIp`, six-digit random PIN. |
 | `offline_backup_service_test.dart` | `.sbzbak` round trip, tamper detection, wrong passphrase, secret filtering. |
+| `onboarding_flows_test.dart` | `10_ONBOARDING.md` §4: the server payload round-trips through `ClientLicensePayload` (owner fields included, old keys decode with empty owner), Code.gs signs the owner read from the tenant's documents, activation uses the key's org id and refuses a device-minted one. |
 | `package_alignment_test.dart` | starter follows the trade (`alignStarterToVertical`), unstamped legacy maps. |
 | `platform_structure_test.dart` | 25 starters, legacy flags, storage per tier, limits, Enterprise custom limits, roles. |
 | `scenario_matrix_test.dart` | every trade × tier × allowed storage mode: modes (§6b), limits, roles, resolver features (`localLanServer`/`customerDisplay` only on LOCAL_NETWORK, never kirana), 30-day lease for offline/LAN, `sendsToKitchen` false on shops, satellite licences against the hub, wording (§7). |
@@ -310,6 +326,7 @@ Run: `flutter test` (or `claude_run.ps1 -NoDeploy`).
 | `receipt_print_test.dart` | `PrinterLayoutMigration` behaviour. |
 | `receipt_store_test.dart` | seeding, never overwriting edits, per-org boxes, `resolve`. |
 | `regression_audit_test.dart` | `BillCalculator` invariants and other audit findings. |
+| `satellite_entitlement_test.dart` | `buildSatelliteLicense` carries the host's tier/trade/features/cap/roles with `LOCAL_NETWORK`; role must be in the hub's `allowedRoles`; kirana and Offline hosts refused; blank tier reads as Basic. |
 | `sheet_layout_test.dart` | restaurant layout byte-for-byte legacy; shop/pharmacy layouts; legacy tab resolution. |
 | `stock_service_test.dart` | tracking, FEFO batches, expired refusal, stock count. |
 | `storage_change_test.dart` | `pendingStorageChange` routing, `StorageModes` labels. |
@@ -321,6 +338,7 @@ Run: `flutter test` (or `claude_run.ps1 -NoDeploy`).
 | `weighed_variant_billing_test.dart` | `ScaleBarcode`, weighed quantities, variant lines. |
 | `whatsapp_notification_service_test.dart` | message formatting. |
 | `widget_test.dart` | app smoke test. |
+| `support/test_licence_signer.dart` | `TestLicenceSigner`: a throw-away RSA pair installed over the platform public key (`install` / `uninstall`) so tests can `sign` / `signJson` real `SBZ-LIC-` keys. |
 
 ---
 

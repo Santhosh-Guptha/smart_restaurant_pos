@@ -79,7 +79,7 @@ Only the actions in `isPublicAction` run without the secret: `START_TRIAL`/`REGI
 | Group | Actions → handler |
 |---|---|
 | Tenancy / provisioning | `ONBOARD_ORGANIZATION` → `handleOnboardOrganization`; `CREATE_OUTLET` → `handleCreateOutlet`; `REGISTER_TENANT` → `handleRegisterTenant` (Script property `org_<orgId>` → spreadsheet id); `START_TRIAL`/`REGISTER_TRIAL` → `handleStartTrial` (uses `trialPlan_`, `composeLicence_`) |
-| Identity | `ISSUE_AUTH_TOKEN` → `handleIssueAuthToken_` (bcrypt check, admin 2nd step `checkAdminSecondStep_`, `mintFirebaseCustomToken_`); `LICENSE_LEASE` → `handleLicenseLease_` (RSA-signed lease); `SIGNUP_SEND_CODE` / `SIGNUP_VERIFY_CODE` → `handleSignupSendCode_` / `handleSignupVerifyCode_` (returns a signed `proof`, sent back as `email_proof` on `START_TRIAL`) |
+| Identity | `ISSUE_AUTH_TOKEN` → `handleIssueAuthToken_` (bcrypt check, admin 2nd step `checkAdminSecondStep_`, `mintFirebaseCustomToken_`); `LICENSE_LEASE` → `handleLicenseLease_` (RSA-signed lease); `ISSUE_CLIENT_LICENCE` → `handleIssueClientLicence_` (platform admin only, ID token or admin password; signs a client licence key, §3.8); `SIGNUP_SEND_CODE` / `SIGNUP_VERIFY_CODE` → `handleSignupSendCode_` / `handleSignupVerifyCode_` (returns a signed `proof`, sent back as `email_proof` on `START_TRIAL`) |
 | Mail | `SEND_OTP_EMAIL` → `handleSendOtpEmail`; `SEND_EMAIL`, `SEND_REGISTRATION_EMAIL`, `SEND_APPROVAL_EMAIL`, `SEND_REJECTION_EMAIL` → `handleSendEmail` (rate caps `mailRateLimited_`, optional sign-in `mailCallerRefused_`) |
 | Orders & bills | `SAVE_BILL`/`UPDATE_ORDER_STATUS`/`UPDATE_STATUS` → `handleSaveBill`; `VOID_ORDER`/`CANCEL_ORDER` → `handleVoidOrder`; `VOID_LINE`/`CANCEL_LINE` → `handleVoidLine`; `RECORD_PAYMENT` → `handleRecordPayment`; `REFUND_PAYMENT` → `handleRefundPayment`; `CLOSE_DAY` → `handleCloseDay`; `CLOSE_SESSION` → `handleCloseSession`; `GET_DELTA`/`FETCH_DELTA` → `handleGetDelta`; `MIGRATE_V2_DATA` → `migrateDiningBillsToV2`; `PURGE_TEST_ORDERS` |
 | Tables | `SET_TABLE_STATUS`, `RESERVE_TABLE`, `CANCEL_RESERVATION`, `SEAT_RESERVATION`, `MOVE_TABLE`, `MERGE_TABLES`, `CLEAR_TABLE`/`RESET_TABLE` |
@@ -238,7 +238,7 @@ sequenceDiagram
   end
 ```
 
-Grace: `LicenseLease.offlineGraceDays = 30` for `PURE_OFFLINE`, `cloudGraceDays = 7` otherwise; warning
+Grace: `LicenseLease.offlineGraceDays = 30` for `PURE_OFFLINE` and `LOCAL_NETWORK`, `cloudGraceDays = 7` otherwise; warning
 `LeaseCheck.warnDays = 5`. Once a device holds a signed lease (`lic_signed_required_<orgId>`), only a valid
 signed lease counts. A connectivity listener (`_leaseConnSub` in `_setupRealtimeListeners`) calls
 `refreshSessionFromFirestore()` when the device comes online.
@@ -340,6 +340,125 @@ sequenceDiagram
 
 Format and exclusions: `03_DATA_MODEL.md` §6.
 
+### 3.7 Local network mode (`LOCAL_NETWORK`, contract §6b)
+
+The third storage mode. The till that holds the licence (the **host**) runs the Local LAN Hub
+(`LocalRestaurantLanServer`, HTTP on port 8080, LAN only) and is the only ledger: `configBox['kot_orders_<org>']`
+and `configBox['restaurant_tables_<org>']` on the host. Every other device in the store (a **satellite**:
+waiter pad, kitchen screen, second till, customer display) runs the same app, pairs once with a 6-digit PIN and
+reads and writes through the hub. No cloud is involved; the hub listens only on the store network.
+
+```mermaid
+flowchart LR
+  subgraph Store Wi-Fi
+    H["Host till (OWNER)<br/>LocalRestaurantLanServer :8080<br/>ledger: kot_orders_&lt;org&gt;, restaurant_tables_&lt;org&gt;<br/>LanRevision (_sbz_lan_rev)"]
+    W["Waiter pad (WAITER)<br/>LanHubLedger + LanHubFeed"]
+    K["Kitchen screen (KITCHEN)<br/>LanHubLedger + LanHubFeed"]
+    B["Second till (BILLING / MANAGER)<br/>LanHubLedger + LanHubFeed"]
+    C["Customer display<br/>GET /api/v1/cfd"]
+  end
+  W -- "POST /pair (PIN) → bearer token<br/>POST /orders · GET /orders?since=&amp;wait=" --> H
+  K -- "POST /kds/status · GET /orders?since=&amp;wait=" --> H
+  B -- "POST /tables/status · GET /tables?since=&amp;wait=" --> H
+  C -- "GET /cfd" --> H
+```
+
+**Pairing and tokens.** The PIN (`_sbz_lan_pairing_pin`, six random digits) lives on the host and is shown only on the
+host's hub card (and as a QR); no endpoint returns it. A satellite sends it once, `POST /api/v1/pair {pin, role,
+deviceName}`, and gets a **bearer token** that every later call carries (`Authorization: Bearer …`); the host keeps
+the issued tokens in `_sbz_lan_tokens` with the device's role and name. `/api/v1/ping` is the only unauthenticated
+endpoint. Five wrong PINs within a minute lock pairing for a minute. The host refuses with 409 `Device limit reached`
+when host + paired devices would exceed the licence's `maxDevices`, and with 400 when the role is not in the hub's
+`allowedRoles` (a shop hub hands out only BILLING / MANAGER; a kirana or Offline host has no hub at all). **Remove**
+on the host card revokes a token: the satellite's next call gets 401, `LanHubClient` drops the token and the feed
+reports `needsPairing` ("Pair again"). `POST /api/v1/unpair` hands a token back and frees the seat. **Rotate PIN**
+changes the PIN only; paired devices keep their tokens. The satellite's licence is built from the pairing reply
+(`SatelliteEntitlement.buildSatelliteLicense`: tier, trade, features, `maxDevices`, `allowedRoles`, store name,
+`storageMode: LOCAL_NETWORK`); its org id `org_satellite_<hash>` is local only and exempt from the lease.
+
+**Endpoints** (`local_restaurant_lan_server.dart`, all JSON, bearer unless noted):
+
+| Method · path | Purpose |
+|---|---|
+| `GET /api/v1/ping` (no token) | liveness; names the trade and store |
+| `POST /api/v1/pair` (PIN) | PIN → `{token, …store info}` |
+| `POST /api/v1/unpair` | revoke own token |
+| `GET /api/v1/store` | store name, trade, tier, features, limits, roles |
+| `GET /api/v1/orders?since=<rev>&wait=<ms>` (alias `/kot`, `/kds/orders`) | change feed of KOTs |
+| `POST /api/v1/orders` (alias `/kot`) | upsert one KOT by its client id |
+| `POST /api/v1/kds/status {orderId, kitchenStatus}` | set one ticket's kitchen stage |
+| `GET /api/v1/tables?since=<rev>&wait=<ms>` | change feed of tables |
+| `POST /api/v1/tables/status {table\|id, status, …}` | upsert one table |
+| `GET /api/v1/cfd` | customer-display snapshot |
+
+**Change feed.** Every ledger write on the host bumps `LanRevision` (persisted in `configBox['_sbz_lan_rev']` so a
+restarted host never hands out a lower revision than a satellite holds; host screens that still `box.put` directly
+are watched and bump it too). A satellite's `LanHubFeed` long-polls `GET /api/v1/orders?since=<rev>&wait=<ms>` and
+`GET /api/v1/tables?since=<rev>&wait=<ms>` (the host caps `wait` at 25 s, the client asks for 20 s): the host
+answers at once with the entries newer than `since` (`{rev, full, entries}`; `since=0` returns everything, `full:
+true`), or waits until something changes or `wait` elapses. The feed mirrors the page into the satellite's own
+`kot_orders_<org>` / `restaurant_tables_<org>` keys, so every screen that watches those keys repaints within about
+a second. A `rev` lower than the one held means the host restarted or was restored: the feed re-syncs from zero.
+Retries back off from 1 s to 15 s; the feed never runs on the host itself (`LanHostFlag.hosting`).
+
+**Writes, queue and replay.** On a satellite every ledger write goes through `LanHubLedger` (selected by
+`restaurantLedgerProvider`; the host and every other device use `LocalHiveLedger`). A write the host cannot be
+reached for is appended to `LanWriteQueue` (`configBox['_sbz_lan_pending_writes']`, survives a restart); while
+anything is queued, new writes queue behind it so the host sees them in order, and a newer write for the same kind
+and id replaces the older one in place. The feed replays the queue in order as soon as the host answers again. Every
+entry is **idempotent on the host** (a KOT is upserted by its client-generated id, a kitchen stage is set exactly, a
+table is upserted by id) and is removed only after a 2xx, so a lost reply causes a harmless repeat, never a loss; a
+4xx entry is dropped and logged. `LanHubStatusBanner` shows "Host unreachable (n changes waiting)" on the KDS, floor
+plan and waiter pad.
+
+**Host wins.** When two devices change the same thing the host's copy stands: `POST /api/v1/orders` merges a stale
+satellite copy but never moves a ticket's kitchen stage backwards (`_kitchenRank`; explicit stage changes go
+through `/kds/status`), and the satellite replaces its mirror with whatever the feed returns. Clocks play no part.
+
+Operations guide for customers: [`CLIENT_LOCAL_LAN_SETUP_GUIDE.md`](CLIENT_LOCAL_LAN_SETUP_GUIDE.md); every
+onboarding path including satellites: [`10_ONBOARDING.md`](10_ONBOARDING.md) §5.
+
+### 3.8 Licence-key issuance and the key-tenant lease
+
+A **licence key** is a server-signed copy of a tenant's licence that a host PC can verify without the cloud
+(`SBZ-LIC-<base64url payload>.<base64url RSA-SHA256 signature>`; public half in `lib/core/lease_public_key.dart`).
+Nothing in the app can mint one (`test/client_license_service_test.dart` pins this).
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant A as Console (TenantAccessDialog)
+  participant CLS as ClientLicenseService
+  participant GAS as Code.gs ISSUE_CLIENT_LICENCE
+  participant FS as Firestore
+  participant H as Host PC (SaasSessionNotifier)
+  A->>CLS: issueKey(payload, machineId)
+  CLS->>GAS: {secret, idToken? | adminUsername+adminPassword?, payload}
+  GAS->>GAS: clientLicenceAdmin_: ID token (mailCallerUid_) or bcryptCheck_ vs MASTER_ADMIN (authfail_ lockout)
+  GAS->>FS: organizations/{orgId} (NO_ORG if missing), owner via orgOwner_
+  GAS->>GAS: clientLicencePayload_ (+ownerEmail/Name/Username/UserId) → signClientLicence_ (LEASE_SIGNING_KEY)
+  GAS->>FS: merge licenses/{orgId} (+licenceKeyIssuedAt, licenceKeyMachineId); audit_logs CLIENT_LICENCE_ISSUED
+  GAS-->>CLS: {token, payload, via} | {error_code}
+  CLS-->>A: Copy token · Download .json · Download 1-click .bat
+  A-->>H: token (paste / .json / .bat → ?license=)
+  H->>H: verifyAndDecode (RSA, expiry) → validateBinding (machine id) → activateWithClientLicense
+  H->>H: org id = key's orgId; owner user from the key; LicenseLease.storeClientKey → lic_client_key_<org>
+```
+
+Proof of the caller: the console's Firebase ID token when the custom-token bridge is configured
+(`FIREBASE_WEB_API_KEY`), otherwise the platform admin's username and password re-entered once
+(`SIGN_IN_REQUIRED` → prompt → retry). Refusals: `NOT_CONFIGURED` (no `LEASE_SIGNING_KEY`), `INVALID` /
+`RATE_LIMITED` (8 wrong passwords in 10 min), `FORBIDDEN`, `NO_ORG`, `BAD_REQUEST`. Payload fields: `03_DATA_MODEL.md`
+§2.4. Keys are issued only from Access & licence; the tenant must exist first.
+
+**Key-tenant lease.** A tenant activated with a key (`saas_is_client_license`) has no server account to lease from,
+so **the key is the lease**: `LicenseLease.check` branches to `_checkClientKey`, which on every start re-verifies the
+stored key (`lic_client_key_<org>`) against the platform public key, requires its `orgId` to match the session,
+refuses an expired `validUntil` (`mustRevalidate`), and blocks on a clock rolled back before `issuedAt` or before
+the last time seen (`clockRolledBack`); `expiringSoon` inside `warnDays`. The grace used for messages is the
+30-day offline/LAN grace. An edited key, a wiped key or a rolled-back clock therefore blocks the till. Satellites
+(`org_satellite_*`) are exempt: the host enforces its own lease.
+
 ---
 
 ## 4. State management (Riverpod 3, `flutter_riverpod`)
@@ -370,7 +489,7 @@ for screens reached by a stale route.
 
 ## 5. Storage modes and CloudGate
 
-`StorageModes` (`lib/core/entitlements.dart`): `PURE_OFFLINE`, `CLIENTS_OWN_SHEETS`, `CLOUD_SYNC`. The mode is
+`StorageModes` (`lib/core/entitlements.dart`): `PURE_OFFLINE`, `CLIENTS_OWN_SHEETS`, `LOCAL_NETWORK`, `CLOUD_SYNC`. The mode is
 a property of the **organisation** (`organizations/{orgId}.storageMode`); the licence carries a copy.
 `StorageModes.isOffline(mode)` is the only offline test; the legacy feature key `pureOfflineMode` is read as an
 alias by `Entitlements.fromLicense`.
@@ -379,6 +498,7 @@ alias by `Entitlements.fromLicense`.
 |---|---|---|---|
 | `PURE_OFFLINE` | yes (tier `offline`) | device Hive | only licence traffic (`licenceTraffic: true`: `ISSUE_AUTH_TOKEN`, `LICENSE_LEASE`) and the Firestore reads the session makes; CloudGate closes the webhook for everything else |
 | `CLIENTS_OWN_SHEETS` | yes (default for every non-offline tier, `PackageTier.defaultStorageMode`) | device + one Sheet per store in the owner's Drive | Sheets/Drive + Firestore + Code.gs |
+| `LOCAL_NETWORK` | yes (Basic and above; never Offline, never kirana — contract §6b) | host PC Hive (`kot_orders_<org>`, `restaurant_tables_<org>`); satellites mirror it through the hub (§3.7) | store LAN only; `CloudGate` closed as for offline (licence traffic + key lease) |
 | `CLOUD_SYNC` | no — legacy tenants only | device + Sheets via Code.gs | full |
 
 `CloudGate` (`lib/core/cloud_gate.dart`): `setOffline(bool)` is called only by `entitlementsProvider`
@@ -473,7 +593,10 @@ Full detail and the to-do list: [`../SECURITY_NOTES.md`](../SECURITY_NOTES.md).
   collections `orders`, `restaurant_tables`, `kitchen_kots`, `bills`, `customers`, `suppliers`,
   `purchase_orders` and the catch-all are `false`). `firestore.rules.next` keys on the token claims.
 * Offline licence: RSA-signed lease (`LICENSE_LEASE`, public key `lib/core/lease_public_key.dart`), clock
-  roll-back detection.
+  roll-back detection. Licence keys are signed only by Code.gs (`ISSUE_CLIENT_LICENCE`, same key pair) and re-verified
+  on every start of a keyed tenant (§3.8).
+* LAN hub: random 6-digit PIN shown only on the host, bearer token per paired device, lockout after five wrong
+  PINs, restricted CORS, LAN-only listener; the host enforces `maxDevices` and roles (§3.7).
 * Offline backup: AES-256-GCM + PBKDF2, secrets excluded.
 * Platform SMTP (`system_config/smtp`) is used only while the admin is signed in
   (`SmtpEmailService.allowPlatformSmtp`); tills send through Code.gs `SEND_EMAIL`.

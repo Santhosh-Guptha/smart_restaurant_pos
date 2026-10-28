@@ -1575,6 +1575,9 @@ class SaasSessionNotifier extends StateNotifier<SaasSessionState> {
         ? pairing.storeName.trim()
         : (storeName?.trim().isNotEmpty == true ? storeName!.trim() : 'Local LAN Satellite');
 
+    // The one outlet the hub serves (contract §6b): the satellite runs in
+    // that outlet's context, so its franchise id is the host's.
+    final hostFranchiseId = pairing.franchiseId.trim();
     final user = SaasUser(
       id: 'usr_lan_${effectiveTerminalRole.toLowerCase()}_${DateTime.now().millisecondsSinceEpoch.toRadixString(36)}',
       email: '${effectiveTerminalRole.toLowerCase()}@localhub',
@@ -1582,6 +1585,7 @@ class SaasSessionNotifier extends StateNotifier<SaasSessionState> {
       fullName: 'Satellite Terminal ($effectiveTerminalRole)',
       role: effectiveTerminalRole,
       organizationId: orgId,
+      franchiseId: hostFranchiseId.isEmpty ? null : hostFranchiseId,
       mustChangePassword: false,
     );
 
@@ -1605,6 +1609,14 @@ class SaasSessionNotifier extends StateNotifier<SaasSessionState> {
     await box.put('saas_license', jsonEncode(license.toJson()));
     await box.put('saas_master_hub_url', cleanHub);
     await box.put('saas_is_satellite_client', true);
+    await box.put('saas_satellite_host_outlet_id', pairing.outletId);
+    await box.put('saas_satellite_host_franchise_id', hostFranchiseId);
+    await box.put('saas_satellite_host_outlet_name', pairing.outletName);
+    if (hostFranchiseId.isNotEmpty) {
+      await box.put('saas_active_franchise_id', hostFranchiseId);
+    } else {
+      await box.delete('saas_active_franchise_id');
+    }
     await box.put('saas_is_client_license', true);
     await box.put('saas_logged_in', true);
     await box.put('session_active', true);
@@ -1638,11 +1650,12 @@ class SaasSessionNotifier extends StateNotifier<SaasSessionState> {
       currentUser: user,
       currentOrganization: org,
       currentLicense: license,
+      activeFranchiseId: hostFranchiseId.isEmpty ? null : hostFranchiseId,
       isMockMode: false,
       isInitializing: false,
     );
 
-    debugPrint("[Satellite Client] Connected to Master Hub: $cleanHub as $effectiveTerminalRole (${license.tier}, $resolvedVertical)");
+    debugPrint("[Satellite Client] Connected to Master Hub: $cleanHub as $effectiveTerminalRole (${license.tier}, $resolvedVertical, outlet ${pairing.outletName.isEmpty ? pairing.outletId : pairing.outletName})");
   }
 
   /// Switch active store context to manage or operate a specific organization & outlet.
@@ -1914,6 +1927,7 @@ class SaasSessionNotifier extends StateNotifier<SaasSessionState> {
   Future<void> setActiveFranchise(String franchiseId) async {
     final role = state.currentUser?.role;
     if (role == 'OWNER' || role == 'CLIENT' || role == 'MASTER_ADMIN') {
+      await _stopHubOnOutletChange(franchiseId);
       state = state.copyWith(activeFranchiseId: franchiseId);
       final box = Hive.box('configBox');
       await box.put('saas_active_franchise_id', franchiseId);
@@ -2306,6 +2320,11 @@ class SaasSessionNotifier extends StateNotifier<SaasSessionState> {
       } catch (_) {}
     }
     await box.delete('saas_is_satellite_client');
+    await box.delete('saas_satellite_host_outlet_id');
+    await box.delete('saas_satellite_host_franchise_id');
+    await box.delete('saas_satellite_host_outlet_name');
+    // The optional host→Sheet sync is scoped to the host session.
+    CloudGate.setAllowHostSync(false);
 
     final keysToRemove = box.keys
         .where((k) =>
@@ -2734,9 +2753,38 @@ class SaasSessionNotifier extends StateNotifier<SaasSessionState> {
 
   /// Switches active restaurant branch / outlet context
   Future<void> switchOutlet(String? outletId) async {
+    await _stopHubOnOutletChange(outletId);
     state = state.copyWith(activeFranchiseId: outletId);
     final box = Hive.box('configBox');
     await box.put('saas_active_franchise_id', outletId);
+  }
+
+  /// The Local LAN Hub serves exactly one outlet (contract §6b). When the
+  /// host moves to another outlet the hub stops; the owner starts it again
+  /// on that outlet (a Premium tenant runs one host PC per outlet).
+  Future<void> _stopHubOnOutletChange(String? newFranchiseId) async {
+    final hub = LocalRestaurantLanServer.instance;
+    if (!hub.isRunning) return;
+    if ((newFranchiseId ?? '').trim() == hub.servingFranchiseId) return;
+    debugPrint('[LAN Hub] outlet changed; stopping the hub started for ${hub.servingOutletName}');
+    try {
+      await hub.stopServer();
+    } catch (_) {}
+  }
+
+  /// Re-reads `saas_license` from the device after it was changed outside
+  /// the session (a renewed client key, ClientKeyRenewalService) so every
+  /// gate follows at once.
+  Future<void> reloadLicenseFromDevice() async {
+    try {
+      final box = Hive.box('configBox');
+      final raw = box.get('saas_license');
+      if (raw is! String || raw.isEmpty) return;
+      final lic = SaasLicense.fromJson(Map<String, dynamic>.from(jsonDecode(raw) as Map));
+      state = state.copyWith(currentLicense: lic);
+    } catch (e) {
+      debugPrint('reloadLicenseFromDevice: $e');
+    }
   }
 
   @override

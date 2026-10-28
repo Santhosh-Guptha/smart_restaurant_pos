@@ -256,10 +256,18 @@ void main() {
         'session_active',
         'apps_script_webhook_url',
         'current_user_email',
+        // Local LAN Hub pairing state and a satellite's queue stay on the device.
+        '_sbz_lan_tokens',
+        '_sbz_lan_pairing_pin',
+        '_sbz_lan_pending_writes',
+        'saas_master_hub_token',
+        '_sbz_bound_lic_ORG',
+        '_sbz_active_machine_id',
       ]) {
         expect(OfflineBackupService.isSecretKey(k), isTrue, reason: k);
       }
-      for (final k in ['restaurant_menu_ORG', 'kot_orders_ORG', 'printer_custom_footer_x', 'cfg_ORG', 'seq_ORG_main']) {
+      // The hub's ledger and its change counter are business data.
+      for (final k in ['restaurant_menu_ORG', 'kot_orders_ORG', 'restaurant_tables_ORG', '_sbz_lan_rev', 'printer_custom_footer_x', 'cfg_ORG', 'seq_ORG_main']) {
         expect(OfflineBackupService.isSecretKey(k), isFalse, reason: k);
       }
     });

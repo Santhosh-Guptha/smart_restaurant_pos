@@ -214,13 +214,13 @@ HOW = [
 
 LAN = dict(
     title="One store, several devices, your own network.",
-    lede="Local network mode, Basic and above.",
+    lede="Local network mode, on Basic and above. Offline is one device; Kirana stays one device at every tier.",
     steps=[
-        ("Host PC", "The Windows PC runs the hub and keeps the ledger."),
-        ("Pair tablets", "Each tablet joins the store Wi-Fi and enters the hub's 6-digit PIN."),
-        ("Device limit", "Host plus tablets count against your tier: 2, 5, 10 or 20+."),
+        ("Host PC", "The Windows PC with the licence runs the hub and keeps the ledger. It is device 1."),
+        ("Pair devices", "Each tablet, phone or second till joins the store Wi-Fi and enters the hub's 6-digit PIN once."),
+        ("Device limit", "Host plus paired devices count against your tier: Basic 2, Standard 5, Premium 10, Enterprise 20 or as agreed."),
     ],
-    note="Works on the store network without depending on the internet. Not for Kirana, which is one device.",
+    note="Works on the store network without depending on the internet. If two devices disagree, the host's copy stands. Not for Kirana, which is one device.",
 )
 
 FAQ = [
@@ -231,7 +231,7 @@ FAQ = [
     ("Where is my data?",
      "Offline: " + DATA_OFFLINE + " Basic and above: " + DATA_CLOUD),
     ("Can several tablets share one store without the cloud?",
-     "Yes, on Basic and above in local network mode. A Windows PC runs the hub; tablets pair with a PIN on the store Wi-Fi."),
+     "Yes, on Basic and above in local network mode. A Windows PC runs the hub; tablets pair with a PIN on the store Wi-Fi and count against the tier's device limit, host included. Not on Offline, and not for Kirana."),
     ("Do you take a cut of UPI payments?",
      "No. SmartBizz is not a payment gateway. The till shows a QR for your own UPI ID; cash and your card machine work as before."),
     ("Can I keep my printer?",

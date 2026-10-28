@@ -291,6 +291,15 @@ class OfflineBackupService {
     'registry_verified',
     'profile_completed',
     'app_accent_v1_',
+    // Local LAN Hub: the pairing PIN, the paired devices' bearer tokens and
+    // a satellite's unsent queue belong to this device, never to a backup.
+    // The hub's ledger keys (`kot_orders_<org>`, `restaurant_tables_<org>`)
+    // and its change counter (`_sbz_lan_rev`) are business data and stay in.
+    '_sbz_lan_tokens',
+    '_sbz_lan_pairing_pin',
+    '_sbz_lan_pending_writes',
+    '_sbz_bound_lic_',
+    '_sbz_active_machine_id',
   ];
 
   /// Fields removed from every staff record.

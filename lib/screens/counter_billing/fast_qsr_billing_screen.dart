@@ -38,6 +38,7 @@ import '../../core/receipt/receipt_print_service.dart';
 import '../../core/receipt/receipt_store.dart';
 import '../../core/receipt/receipt_template.dart';
 import '../../services/thermal_printer_service.dart';
+import '../../services/satellite_print_prefs.dart';
 import '../../services/whatsapp_notification_service.dart';
 import '../billing/widgets/item_modifier_dialog.dart';
 
@@ -3081,7 +3082,9 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
       // The bill, plus a token slip and a restaurant copy only where the owner
       // mapped one. `bill_copies` and `auto_print_bill` are honoured here for
       // the first time — they were saved in store settings and never read.
-      if (isPaid && _autoPrint('auto_print_bill')) {
+      // On a BILLING satellite the owner may turn the local receipt off
+      // (SatellitePrintPrefs); everywhere else this is the store setting.
+      if (isPaid && _autoPrint('auto_print_bill') && SatellitePrintPrefs.shouldPrintReceiptHere) {
         _reportPrint(await _printSlips(
           context: saleSlip,
           kinds: await _kindsFor(_orderType),

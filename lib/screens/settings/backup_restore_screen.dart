@@ -8,6 +8,7 @@ import '../../providers/entitlements_provider.dart';
 import '../../providers/restaurant_auth_provider.dart';
 import '../../providers/saas_session_provider.dart';
 import '../../services/offline_backup_service.dart';
+import '../../services/restaurant_ledger.dart';
 
 /// Settings -> Backup & restore (PLATFORM_STRUCTURE §6).
 ///
@@ -352,7 +353,21 @@ class _BackupRestoreScreenState extends ConsumerState<BackupRestoreScreen> {
               children: [
                 _infoCard(context, isOffline: isOffline, orgName: orgName),
                 const SizedBox(height: 16),
-                if (!isOwner)
+                // A paired satellite holds only a mirror of the host's ledger:
+                // backups are taken on the host PC (contract §6b).
+                if (isSatelliteSession())
+                  _card(
+                    context,
+                    icon: Icons.router_rounded,
+                    title: 'Backups are taken on the host PC',
+                    children: [
+                      Text(
+                        'This device is paired to a Local LAN Hub. The host PC keeps the ledger; open Settings → Backup & restore on the host to export or restore it.',
+                        style: TextStyle(color: context.textSecondary, fontSize: 13),
+                      ),
+                    ],
+                  )
+                else if (!isOwner)
                   _card(
                     context,
                     icon: Icons.lock_outline_rounded,

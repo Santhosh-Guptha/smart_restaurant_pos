@@ -37,6 +37,12 @@ What runs where:
 | Customer display | Customer-facing screen | host | — |
 | Second till (BILLING / MANAGER) | Counter billing | host (tables, orders) | host |
 
+### Data: where it lives, and the optional sync to your Google Sheet
+
+- The hub serves **one outlet**. The PIN panel names it ("Outlet: …"); devices that pair with that PIN join that outlet. A store with several outlets runs one host PC per outlet, and the hub stops if the host switches outlet while it runs (start it again on the new outlet).
+- **Sync to your own Google Sheet (optional, host only).** If the licence also has the cloud ledger (your store sheet in your own Google Drive) and the sheet is registered, the Local LAN Hub panel on the host shows **"Also sync to my Google Sheet when online"** (off by default). When it is on, every KOT and bill that reaches the hub — from the host or from any paired device — is also written to your store sheet whenever the host PC has a connection, through the same queue an own-Drive store uses. The hub never waits for it: a write that cannot go out is queued and sent later, in order. Paired devices never sync on their own; they only talk to the host.
+- What the switch does **not** do: it does not fetch anything from the cloud (menu, settings and staff still come from the host), it writes a KOT when it first reaches the hub and again when it is settled (kitchen stage changes in between are not written), and it needs the host to be online at some point — a host that is never connected keeps the queue on disk. Your business data stays in your own Google Drive; only limited usage analytics such as bill counts are collected.
+
 ---
 
 ## 2. Hardware and network
@@ -90,7 +96,7 @@ Keep the host running during service. When the host app is closed, paired device
 
 On the tablet, phone or second till:
 
-1. Install SmartBizz and open it. On the start screen choose the **local / offline store** option, then **Connect to host** (satellite).
+1. Install SmartBizz and open it. On the start screen choose **Free trial / satellite**, then the device role **Satellite** and **Connect to host**.
 2. Enter the **host address** exactly as shown on the host card (for example `192.168.1.150:8080`), or scan the QR code from the host.
 3. Pick the **role** for this device: WAITER, KITCHEN, BILLING or MANAGER (restaurants) — BILLING or MANAGER (shops). See section 5.
 4. Type the **6-digit PIN** from the host screen and press **Connect**.
@@ -180,7 +186,7 @@ Look for the `Physical Address` of your active Wi-Fi or Ethernet adapter (e.g., 
 
 ### The tablet says "Could not reach the host"
 1. **Same network?** The tablet must be on the store Wi-Fi, not mobile data and not a guest network with client isolation. Check the Wi-Fi name on the tablet.
-2. **Host address.** Compare the address on the host card with what was typed. If the host's IP changed (router restart without a reservation), the host card shows the new one; re-enter it on the tablet (**Connect to host** again with the current PIN).
+2. **Host address.** Compare the address on the host card with what was typed. If the host's IP changed (router restart without a reservation), the host card shows the new one; re-enter it on the tablet (**Satellite → Connect to host** again with the current PIN).
 3. **Hub switched on?** The host card must show the hub as active; it does not start by itself if the app was closed and reopened with the switch off.
 4. **Firewall.** Section 3, steps 3–4. The quickest check is on the host itself: **Test LAN Ping**.
 5. **Port in use.** If the hub fails to start, another program (XAMPP, Tomcat, IIS, a proxy) may be on port 8080. Find it with `netstat -ano | findstr :8080` in PowerShell and stop that program, or run the hub on another port and pair the devices with that port.
@@ -201,7 +207,7 @@ The host's version wins. Pull-to-refresh on the device, or wait a few seconds; i
 
 ## 8. Backups
 
-All store data lives on the host till. Paired devices hold only a working copy that is replaced by the host's data whenever they reconnect, so back up the **host**:
+All store data lives on the host till. Paired devices hold only a working copy that is replaced by the host's data whenever they reconnect, so back up the **host** (a paired device shows "Backups are taken on the host PC" instead of Backup & restore). The backup includes the hub's tables and orders but never the pairing PIN or the paired devices' tokens, so after a restore on another PC the devices pair again:
 
 1. **End of day:** on the host, **Settings → Data & Backup → Generate Local Snapshot**.
 2. **Weekly:** copy the backup folder to a USB drive kept away from the till.

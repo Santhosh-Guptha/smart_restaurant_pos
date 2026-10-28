@@ -41,6 +41,29 @@ class CloudGate {
 
   static bool get canReachCloud => !offline;
 
+  // ── Local LAN Hub host: optional sync to the owner's own Sheet ───────────
+  //
+  // The gate is global, so a LAN host that opts in ("Also sync to my Google
+  // Sheet when online", LanHostSync) cannot simply open it: that would also
+  // open Firestore reads, menu pulls and every other cloud path for a store
+  // whose ledger is the hub. Instead this one flag opens only the Apps
+  // Script (Sheets) path — `AppsScriptBackendService` and the `Outbox` — and
+  // nothing else. It is set by LanHostSync.apply() while this process hosts
+  // the hub, cleared when the hub stops or the session ends, and never set
+  // on a satellite (its ledger is the host's; it has no sheet of its own).
+  static bool _hostSync = false;
+
+  /// True while a LAN host has opted in to forward its ledger to its own
+  /// Sheet. Scoped to the host session; see [sheetsAllowed].
+  static bool get allowHostSync => _hostSync;
+
+  static void setAllowHostSync(bool value) => _hostSync = value;
+
+  /// May the Apps Script (Sheets) path make a request right now? Open for
+  /// every connected tenant, and for a LAN host that opted in. Firestore and
+  /// every other cloud read still follow [offline] alone.
+  static bool get sheetsAllowed => !offline || _hostSync;
+
   /// Runs [op] only when the cloud is allowed. Returns `null` when the gate is
   /// closed, and `null` on any exception so a Firestore hiccup on a connected
   /// tenant never reaches the screen either. Callers treat `null` as "no

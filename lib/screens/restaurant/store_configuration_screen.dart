@@ -12,6 +12,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../../billing/scale_barcode.dart';
 import '../../services/local_restaurant_lan_server.dart';
+import '../../services/lan_host_sync.dart';
 import '../../core/classic_theme.dart';
 import '../../core/design_tokens.dart';
 import '../../core/cloud_gate.dart';
@@ -1703,8 +1704,56 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
           ),
           const SizedBox(height: 12),
           _buildLanPairingPanel(lanServer),
+          const SizedBox(height: 12),
+          _buildLanHostSyncSwitch(lanServer),
         ],
       ],
+    );
+  }
+
+  /// Host-only: "Also sync to my Google Sheet when online" (LanHostSync).
+  /// Offered only while the hub runs, to a licence with the cloud ledger
+  /// and a registered sheet; default off. Satellites never see it.
+  Widget _buildLanHostSyncSwitch(LocalRestaurantLanServer lanServer) {
+    final orgId = lanServer.hostOrgId();
+    final reason = LanHostSync.ineligibleReason(orgId);
+    final on = reason == null && LanHostSync.enabled(orgId);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+      decoration: BoxDecoration(
+        color: context.sunkenSurface,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: context.borderColor),
+      ),
+      child: SwitchListTile(
+        contentPadding: EdgeInsets.zero,
+        dense: true,
+        title: Text(
+          'Also sync to my Google Sheet when online',
+          style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: context.textPrimary),
+        ),
+        subtitle: Text(
+          reason ??
+              (on
+                  ? 'KOTs and bills from every paired device are written to your store sheet in your own Google Drive whenever this PC is online. The hub never waits for it; paired devices never sync on their own.'
+                  : 'Off: the ledger stays on this PC only. Switch on to also write KOTs and bills to your store sheet in your own Google Drive when this PC is online.'),
+          style: TextStyle(fontSize: 11, color: context.textSecondary),
+        ),
+        value: on,
+        activeThumbColor: ClassicTheme.successEmerald,
+        onChanged: reason != null
+            ? null
+            : (v) async {
+                await LanHostSync.setEnabled(orgId, v);
+                if (mounted) setState(() {});
+                if (mounted) {
+                  AppToast.showInfo(
+                    context,
+                    v ? 'Sheet sync on: writes go to your Google Sheet when this PC is online.' : 'Sheet sync off: the ledger stays on this PC.',
+                  );
+                }
+              },
+      ),
     );
   }
 
@@ -1742,6 +1791,12 @@ class _StoreConfigurationScreenState extends ConsumerState<StoreConfigurationScr
                     ),
                     const SizedBox(height: 2),
                     Text('Host: $ip:${lanServer.port}', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: context.textPrimary)),
+                    // One hub, one outlet (contract §6b): devices that pair
+                    // with this PIN join this outlet and no other.
+                    Text(
+                      'Outlet: ${lanServer.servingOutletName.isEmpty ? lanServer.currentOutletName() : lanServer.servingOutletName}',
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: ClassicTheme.primaryAccent),
+                    ),
                     Text(
                       'Open SmartBizz on the other device, choose "Connect to host", enter this address and PIN.',
                       style: TextStyle(fontSize: 11, color: context.textSecondary),

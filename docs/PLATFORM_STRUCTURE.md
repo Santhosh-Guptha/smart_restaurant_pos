@@ -85,8 +85,9 @@ and restore it on another device after signing in (Settings → Backup & restore
 ## 6b. Local network mode
 - `LOCAL_NETWORK` is the third storage mode (`StorageModes.localNetwork`): the ledger
   lives on the host PC's hub; paired devices on the store Wi-Fi read and write
-  through it; no cloud dependency. Licence by signed client key + 30-day lease, like
-  offline.
+  through it; no cloud dependency. Licence by signed client key: the key is the
+  lease (valid until the key's `validUntil`, clock rollback blocks, renew by a new
+  key); a tenant with a server account keeps the ordinary 30-day offline lease.
 - Allowed per tier: Offline → `PURE_OFFLINE` only (1 device, never editable).
   Basic/Standard/Premium/Enterprise → `CLIENTS_OWN_SHEETS` or `LOCAL_NETWORK`
   (`CLOUD_SYNC` only for tenants already on it). The free trial stays Offline.

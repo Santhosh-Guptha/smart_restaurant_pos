@@ -1,5 +1,7 @@
 # Admin Console Navigation, Deep Linking & UI Refactor Findings
 
+> Paths below refer to the repository folder as it is now named, `smart_restaurant_pos` (renamed from `smart_kirana_shop` on 27 Oct 2026).
+
 ## 1. Executive Summary
 This document summarizes the architectural improvements, navigation refactoring, and bug fixes applied to the **SmartBizz Admin Console** (`MasterAdminScreen` and `AdminDashboardView`). 
 
@@ -17,7 +19,7 @@ Key accomplishments:
 ### Issue 1: Top Bar Clutter & Misplaced Action Buttons
 - **Problem**: The top app bar contained 5 administrative action buttons (Cloud Webhook, Platform SMTP, Platform 2FA, Change Password, Clean Database) alongside an "Onboard Tenant" button. This cluttered the header, squeezed screen real estate on tablet/desktop displays, and caused button overflow into an obscure dropdown on narrower viewports. "Onboard Tenant" was also redundant since tenant onboarding is already accessible from the Tenants tab and Quick Administration.
 - **Resolution**:
-  - Removed "Onboard Tenant" and the 5 action buttons from `_buildTopBar()` in [master_admin_screen.dart](file:///c:/Users/santhosh/Downloads/smart_kirana_shop/lib/screens/dashboard/master_admin_screen.dart).
+  - Removed "Onboard Tenant" and the 5 action buttons from `_buildTopBar()` in [master_admin_screen.dart](file:///c:/Users/santhosh/Downloads/smart_restaurant_pos/lib/screens/dashboard/master_admin_screen.dart).
   - Added a clean **SYSTEM TOOLS** section to the bottom of the left navigation sidebar in `_buildSidebarContent()`.
   - Implemented `_buildActionItem` supporting both expanded (icon + label) and collapsed (tooltip icon) sidebar states for:
     1. **Cloud Webhook** (`_showWebhookSettingsDialog`)
@@ -29,7 +31,7 @@ Key accomplishments:
 ### Issue 2: Inert "Feature Matrix" Tile in Quick Administration
 - **Problem**: Clicking the "Feature Matrix" card under Quick Administration did not redirect to the Feature Matrix view (nav index 3).
 - **Resolution**:
-  - Added `onNavigateToFeatures` callback to `AdminDashboardView` in [admin_dashboard_view.dart](file:///c:/Users/santhosh/Downloads/smart_kirana_shop/lib/screens/admin/views/admin_dashboard_view.dart).
+  - Added `onNavigateToFeatures` callback to `AdminDashboardView` in [admin_dashboard_view.dart](file:///c:/Users/santhosh/Downloads/smart_restaurant_pos/lib/screens/admin/views/admin_dashboard_view.dart).
   - Wired the Feature Matrix card's `onTap` to `onNavigateToFeatures`.
   - In `MasterAdminScreen`, passed `onNavigateToFeatures: () => _goToNav(3)`.
 
@@ -38,7 +40,7 @@ Key accomplishments:
   - Clicking certain KPI cards navigated to the Tenants tab without applying any filter (showing all stores regardless of what was clicked).
   - Distribution bars (Paid Subscriptions, 14-Day Free Trials, By Tier, By Trade) were static visualizations with no click or hover feedback.
 - **Resolution**:
-  - Designed `TenantFilterState` in [admin_navigation_state.dart](file:///c:/Users/santhosh/Downloads/smart_kirana_shop/lib/screens/admin/admin_navigation_state.dart):
+  - Designed `TenantFilterState` in [admin_navigation_state.dart](file:///c:/Users/santhosh/Downloads/smart_restaurant_pos/lib/screens/admin/admin_navigation_state.dart):
     - `status`: `'ALL'`, `'ACTIVE'`, `'EXPIRING'`, `'PAID'`, `'TRIAL'`
     - `tier`: Filter by package tier (`OFFLINE`, `BASIC`, `STANDARD`, `PREMIUM`, `ENTERPRISE`)
     - `trade`: Filter by business category / trade (`RESTAURANT`, `GROCERY_SUPERMARKET`, etc.)

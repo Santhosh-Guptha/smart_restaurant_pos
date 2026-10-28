@@ -23,6 +23,8 @@ import 'providers/theme_provider.dart';
 import 'sync/outbox.dart';
 import 'services/app_icon_service.dart';
 import 'services/license_lease_service.dart';
+import 'services/client_key_renewal_service.dart';
+import 'services/lan_host_sync.dart';
 import 'services/smtp_email_service.dart';
 import 'services/firebase_connection_service.dart';
 import 'services/database_cleanup_service.dart';
@@ -89,6 +91,8 @@ void main() async {
   // screen can enqueue.
   try {
     await Outbox.startAutoDrain();
+    // Local LAN Hub host: optional sync of the hub's ledger to the store Sheet.
+    LanHostSync.install();
   } catch (e) {
     debugPrint('Outbox auto-drain failed to start: $e');
   }
@@ -252,10 +256,19 @@ class SmartBizzApp extends ConsumerWidget {
               storageMode: saasSession.currentOrganization?.storageMode,
             );
 
-      if (isLicenseExpired) {
+      // A key tenant's licence is its signed key: when it runs out the owner
+      // renews it with a new key on this PC (LicenseRevalidateScreen,
+      // "Enter a new licence key"), not through the online expiry screen.
+      final keyTenantExpired = isLicenseExpired && ClientKeyRenewalService.isKeyTenant();
+
+      if (isLicenseExpired && !keyTenantExpired) {
         homeScreen = const SaaSExpiredScreen();
-      } else if (lease != null && lease.blocked) {
-        homeScreen = LicenseRevalidateScreen(lease: lease);
+      } else if (keyTenantExpired || (lease != null && lease.blocked)) {
+        homeScreen = LicenseRevalidateScreen(
+          lease: (lease != null && lease.blocked)
+              ? lease
+              : LeaseCheck(LeaseState.mustRevalidate, graceDays: lease?.graceDays ?? LicenseLease.offlineGraceDays),
+        );
       } else if (user.role == 'MASTER_ADMIN') {
         homeScreen = const MasterAdminScreen();
       } else if (user.mustChangePassword) {

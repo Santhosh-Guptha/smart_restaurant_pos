@@ -1,9 +1,9 @@
-# SmartDine customer playbook
+# SmartBizz customer playbook
 
 Who asks for what, what we can actually give them today, and what to do when
 the answer is no. Written for whoever picks up the WhatsApp message.
 
-Last updated 28 Sep 2026 (packages per `docs/PLATFORM_STRUCTURE.md`). If you change what the product does, change this too
+Last updated 28 Oct 2026 (packages per `docs/PLATFORM_STRUCTURE.md`; local network mode and licence keys per §6b and `docs/10_ONBOARDING.md`). If you change what the product does, change this too
 — a playbook that promises something the build does not do is worse than no
 playbook.
 
@@ -17,7 +17,10 @@ second device or a network, or not?**
 - **Neither** → it works on the Offline tier (and the Offline trial). Say yes.
 - **A second device** (kitchen screen, waiter's phone, a second till) → the
   Offline tier cannot do it. It needs Basic or above (restaurant waiter and
-  kitchen roles: Standard or above).
+  kitchen roles: Standard or above). On Basic and above the devices can share
+  the store either through the client's own Google Drive or, with no internet
+  at all, through a host PC on the store Wi-Fi (local network mode). Kirana
+  stays one device at every tier.
 - **A network** (other outlets, guest phones, e-mail) → the Offline tier cannot
   do it. It needs the matching tier on the client's own Google Drive.
 
@@ -88,6 +91,68 @@ is broken.
 printing** is in the trial: the pass gets a printed slip per station, which is
 what most kitchens actually want. Offer that first. The screen is worth selling
 only to a kitchen that is already drowning in paper.
+
+### "I want everything on my own network, not on the internet" / "Can I run it without the cloud?"
+
+**Needs:** local network mode (`LOCAL_NETWORK`) → Basic or above, one Windows PC
+as the host.
+
+**Answer:** yes, on Basic and above. One Windows PC (the **host**) runs the
+Local LAN Hub inside the app and keeps the store's ledger; tablets, phones and
+other tills (**satellites**) join the store Wi-Fi, enter the 6-digit PIN shown
+on the host's screen once, and from then on read and write through the host.
+The internet is not needed for service. Say "on your own network", not "100%
+local" — the licence still has to be issued and checked by us.
+
+**Tell them up front:** the host counts as device 1 and every paired device
+counts against the tier (Basic 2, Standard 5, Premium 10, Enterprise as agreed).
+The host must stay on during service; when it is off the satellites show "host
+offline" and cannot take orders. Back up the host (Settings → Data & Backup),
+not the tablets. Kirana is one device at every tier and cannot have a hub —
+a kirana that wants a second counter moves to Supermarket.
+
+**Not on the trial.** The Offline trial is one device and has no hub. Onboard
+them on Basic (or the tier their device count needs) and either let them sign
+in on the host or issue a licence key (below). Then send
+`docs/CLIENT_LOCAL_LAN_SETUP_GUIDE.md` (router static IP, firewall, pairing).
+
+### "I need a second counter / a second till"
+
+**Needs:** a second device → Basic or above; on the shop side the second
+counter pairs as BILLING or MANAGER.
+
+**Answer:** two choices, both Basic or above:
+- **Own Google Drive** (`CLIENTS_OWN_SHEETS`): each till signs in with its own
+  user; bills meet in the store's sheet. Needs the internet at both tills.
+- **Local network mode**: the main till is the host, the second counter pairs
+  with the PIN. Works on the store Wi-Fi without the internet.
+
+Restaurants: the waiter pad and kitchen screen are Standard and above
+(WAITER / KITCHEN roles); a plain second billing till is Basic. Kirana: no —
+one counter at every tier; suggest Supermarket.
+
+### "The PC in my shop has no internet. How do I activate it?"
+
+**Needs:** a licence key → the tenant must already be onboarded (Basic or above
+for a host PC with other devices; Offline is fine for a single PC).
+
+**Answer:** we issue a **licence key** from the admin console (Tenants → the
+tenant → Access & licence → Client Local Host Licence). You get a token
+(`SBZ-LIC-…`), a `.json` and a 1-click `.bat`; send any of them over WhatsApp
+or a USB stick. On the PC the owner opens SmartBizz → Activate Licence → pastes
+the key (or runs the `.bat`). The PC becomes that store, with the owner's
+account already on it; the first launch asks the owner to choose a password.
+No sign-in and no internet are needed on the PC. For local network mode the
+same key starts the hub.
+
+**Tell them:** the key is locked to that PC (or to the first PC it is used
+on); for a replacement PC ask us for a new key. The key has an expiry like the
+licence — renew before it runs out, because an expired key blocks the till on
+the next start. Keep the `.json` somewhere safe; it is not a password.
+
+**On our side:** the tenant must exist in the console first ("Onboard the
+tenant first" means exactly that). If the console asks for the admin password
+when issuing, that is expected — type it once.
 
 ### "Can guests scan a QR and order themselves?"
 
@@ -253,5 +318,7 @@ roughly when it happened. Then hand it over.
 - Do not promise a date for an unbuilt feature.
 - Do not say the trial "is the full product with a time limit". It is the
   trade's Offline package, and only that; Basic and above are not trialled.
-- Do not suggest a second device on the Offline tier.
+- Do not suggest a second device on the Offline tier, or a hub on kirana.
+- Do not say local network mode "needs no licence" or "needs nothing from us":
+  the host still needs a licence (sign-in or a key) and the key expires.
 - Do not say "100% local", "fully offline" or give absolute guarantees.

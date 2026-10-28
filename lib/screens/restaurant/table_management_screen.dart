@@ -28,6 +28,7 @@ import '../../core/receipt/receipt_context_builder.dart';
 import '../../core/receipt/receipt_print_service.dart';
 import '../../core/receipt/receipt_template.dart';
 import '../../services/thermal_printer_service.dart';
+import '../../services/satellite_print_prefs.dart';
 import '../../services/restaurant_sheets_service.dart';
 import '../../services/sheet_layout.dart';
 import '../../services/client_ledger_cloud_router_service.dart';
@@ -992,6 +993,9 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen>
     required String customerPhone,
     dynamic org,
   }) async {
+    // A BILLING satellite prints the receipt of a bill it settled on its
+    // own printer unless its owner turned that off (SatellitePrintPrefs).
+    if (!SatellitePrintPrefs.shouldPrintReceiptHere) return;
     try {
       final printer = ref.read(thermalPrinterProvider);
       final ent = ref.read(entitlementsProvider);

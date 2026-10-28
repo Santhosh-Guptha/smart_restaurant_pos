@@ -14,7 +14,7 @@ Levels: **high** = what and why; **mid** = how it fits and how to operate it; **
 | New developer | [01 Product overview](01_PRODUCT_OVERVIEW.md) → [PLATFORM_STRUCTURE](PLATFORM_STRUCTURE.md) → [02 System architecture](02_SYSTEM_ARCHITECTURE.md) → [04 Code map](04_CODE_MAP.md) → [03 Data model](03_DATA_MODEL.md) → [07 Testing & release](07_TESTING_AND_RELEASE.md) → [06 How to](06_HOW_TO.md) when you start a change. [GLOSSARY](GLOSSARY.md) for terms. |
 | AI / automation agent | [09 Agent guide](09_AGENT_GUIDE.md) → [PLATFORM_STRUCTURE](PLATFORM_STRUCTURE.md) → [04 Code map](04_CODE_MAP.md) → the section you need ([05](05_FEATURE_REFERENCE.md), [06](06_HOW_TO.md), [08](08_DEBUGGING_PLAYBOOK.md)) → root `CLAUDE.md` / `AGENTS.md` for current status. |
 | Support / ops | [08 Debugging playbook](08_DEBUGGING_PLAYBOOK.md) → [`TROUBLESHOOTING.md`](../TROUBLESHOOTING.md) → [CUSTOMER_PLAYBOOK](CUSTOMER_PLAYBOOK.md) → [07 Testing & release](07_TESTING_AND_RELEASE.md) (deploy/rollback) → [`DEPLOYMENT_RUNBOOK.md`](../DEPLOYMENT_RUNBOOK.md). |
-| Product / business | [01 Product overview](01_PRODUCT_OVERVIEW.md) → [PLATFORM_STRUCTURE](PLATFORM_STRUCTURE.md) → [05 Feature reference](05_FEATURE_REFERENCE.md) (what each tier includes) → [CUSTOMER_PLAYBOOK](CUSTOMER_PLAYBOOK.md). |
+| Product / business | [01 Product overview](01_PRODUCT_OVERVIEW.md) → [PLATFORM_STRUCTURE](PLATFORM_STRUCTURE.md) → [05 Feature reference](05_FEATURE_REFERENCE.md) (what each tier includes) → [10 Onboarding](10_ONBOARDING.md) → [CUSTOMER_PLAYBOOK](CUSTOMER_PLAYBOOK.md). |
 | Investor / partner | Pitch deck & Product brief (shared separately) → [01 Product overview](01_PRODUCT_OVERVIEW.md). |
 
 ## Documents in `docs/`
@@ -22,7 +22,7 @@ Levels: **high** = what and why; **mid** = how it fits and how to operate it; **
 | File | Purpose | Level |
 |---|---|---|
 | [README.md](README.md) | This index. | high |
-| [PLATFORM_STRUCTURE.md](PLATFORM_STRUCTURE.md) | **The contract**: trades, validity-only plans, trade × tier packages, add-ons, licence, roles, offline tier, wording. | high |
+| [PLATFORM_STRUCTURE.md](PLATFORM_STRUCTURE.md) | **The contract**: trades, validity-only plans, trade × tier packages, add-ons, licence, roles, offline tier, free trial (§6a), local network mode (§6b), wording. | high |
 | [01_PRODUCT_OVERVIEW.md](01_PRODUCT_OVERVIEW.md) | What the product is, users and roles, the five trades, tiers and limits, screens per role, admin console sections. | high |
 | [02_SYSTEM_ARCHITECTURE.md](02_SYSTEM_ARCHITECTURE.md) | Components and how they talk (app, Firebase, Apps Script, Sheets, web). Written by another agent. | mid |
 | [03_DATA_MODEL.md](03_DATA_MODEL.md) | Firestore collections, licence document, Hive boxes, Sheet tabs. Written by another agent. | low |
@@ -32,11 +32,13 @@ Levels: **high** = what and why; **mid** = how it fits and how to operate it; **
 | [07_TESTING_AND_RELEASE.md](07_TESTING_AND_RELEASE.md) | `claude_run.ps1`, running tests, test inventory, analyzer pitfalls, web build, Firebase and Apps Script deploy, release checklist, rollback. | mid |
 | [08_DEBUGGING_PLAYBOOK.md](08_DEBUGGING_PLAYBOOK.md) | Symptom → cause → where to look → fix. | mid |
 | [09_AGENT_GUIDE.md](09_AGENT_GUIDE.md) | Rules for AI agents: read order, invariants, editing conventions, environment, checklist, commits, never-do list. | mid |
+| [10_ONBOARDING.md](10_ONBOARDING.md) | Tenant onboarding end to end: self sign-up (`START_TRIAL`), lead → admin onboarding, admin direct, licence key (`ISSUE_CLIENT_LICENCE`, host PC with or without internet), LAN satellite; the login matrix; Apps Script properties the owner must set. | mid |
+| [CLIENT_LOCAL_LAN_SETUP_GUIDE.md](CLIENT_LOCAL_LAN_SETUP_GUIDE.md) | Customer-facing guide to local network mode: host till, pairing PIN, device limit and roles, router static IP, troubleshooting, backups. | mid |
 | [GLOSSARY.md](GLOSSARY.md) | Terms (trade, tier, package, plan, licence, add-on, lease, store owner…). Written by another agent. | high |
 | [CUSTOMER_PLAYBOOK.md](CUSTOMER_PLAYBOOK.md) | What to tell customers who ask for something; what we can and cannot give today. | mid |
 | [PACKAGES_ONBOARDING_PRINTING_PLAN.md](PACKAGES_ONBOARDING_PRINTING_PLAN.md) | Plan (16 Sep) for packages, onboarding, encyclopedia, tokens, expiry alerts. Superseded by the contract where they differ. | mid |
 | [RECEIPT_TEMPLATE_ENGINE_PLAN.md](RECEIPT_TEMPLATE_ENGINE_PLAN.md) | Design of the receipt/token template engine (placeholders, conditions, feature-owned fields). | low |
-| [CLIENT_NETWORK_DATABASE_PLAN.md](CLIENT_NETWORK_DATABASE_PLAN.md) | Proposal (not built) for a client network database. | mid |
+| [CLIENT_NETWORK_DATABASE_PLAN.md](CLIENT_NETWORK_DATABASE_PLAN.md) | Earlier proposal for a client network database; superseded by local network mode (contract §6b, `02` §3.7). | mid |
 
 ## Documents in the repo root and elsewhere
 

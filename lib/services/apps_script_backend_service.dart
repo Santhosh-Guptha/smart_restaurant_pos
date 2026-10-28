@@ -92,7 +92,9 @@ class AppsScriptBackendService {
     // Callers already treat a thrown error as a failed request.
     // [licenceTraffic]: sign-in and the licence lease — the only requests an
     // offline store makes, and only when a connection happens to be there.
-    if (CloudGate.offline && !licenceTraffic) throw const CloudOfflineException();
+    // A LAN host that opted in to sync its own Sheet passes here too
+    // (CloudGate.sheetsAllowed); nothing else opens for it.
+    if (!CloudGate.sheetsAllowed && !licenceTraffic) throw const CloudOfflineException();
     final httpClient = client ?? http.Client();
     final shouldClose = client == null;
     try {
@@ -1515,8 +1517,9 @@ class AppsScriptBackendService {
 
   static Future<Map<String, dynamic>?> _postToWebhook(Map<String, dynamic> payload) async {
     // An offline tenant makes no requests at all. Same shape as a failed
-    // call, so every existing caller handles it without change.
-    if (CloudGate.offline) return CloudGate.offlineResponse();
+    // call, so every existing caller handles it without change. A LAN host
+    // that opted in to its own Sheet (CloudGate.allowHostSync) passes.
+    if (!CloudGate.sheetsAllowed) return CloudGate.offlineResponse();
     try {
       final url = getWebhookUrl();
       if (!_isValidUrl(url)) return null;

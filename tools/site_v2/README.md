@@ -35,3 +35,7 @@ Python 3 standard library only. Never edit the output: edit the data or partials
 Hero ≤ 25 words, feature lines and taglines ≤ 12 words, exactly one `<h1>`, no "100% local" / "fully offline" / "no internet" /
 "never" / "guarantee" / "SmartDine" in page text, and every local `href`/`src` resolves to a file in `hosting_public_v2` or
 `hosting_public` (`/pos/` and `/r/` only exist in the live folder).
+
+The hand-written pages (`support`, `privacy`, `terms`, `deletion`, `register/`, `smartbizz/*`; `STATIC_PAGES`) are checked too:
+no "SmartDine" in visible text except the identifiers that keep the old name on purpose (`ALLOWED_OLD_NAME`: admin e-mail,
+Firebase project id, `smartdine-pos.web.app`, and the one sentence about the Play listing), and every local link resolves.

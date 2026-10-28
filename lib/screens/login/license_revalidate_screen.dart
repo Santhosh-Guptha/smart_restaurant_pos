@@ -10,6 +10,8 @@ import '../../providers/saas_session_provider.dart';
 import '../counter_billing/fast_qsr_billing_screen.dart';
 import '../dashboard/restaurant_home_screen.dart';
 import '../../services/license_lease_service.dart';
+import '../../services/client_key_renewal_service.dart';
+import '../../widgets/client_key_renewal_dialog.dart';
 
 /// Shown when this device has gone too long without checking its licence
 /// online, or its clock has been moved back (see [LicenseLease]).
@@ -27,6 +29,30 @@ class LicenseRevalidateScreen extends ConsumerStatefulWidget {
 class _LicenseRevalidateScreenState extends ConsumerState<LicenseRevalidateScreen> {
   bool _busy = false;
   String? _result;
+
+  /// A tenant activated with a signed client key (not a LAN satellite): its
+  /// key is its lease, so the way out is a new key from the platform admin,
+  /// not an online check.
+  bool get _isKeyTenant => ClientKeyRenewalService.isKeyTenant();
+
+  Future<void> _renewWithKey() async {
+    final ok = await ClientKeyRenewalDialog.show(context);
+    if (!ok || !mounted) return;
+    final org = ref.read(saasSessionProvider).currentOrganization;
+    final now = LicenseLease.check(orgId: org?.id ?? '', storageMode: org?.storageMode);
+    final lic = ref.read(saasSessionProvider).currentLicense;
+    if (!now.blocked && (lic == null || lic.isActive)) {
+      if (Navigator.of(context).canPop()) {
+        Navigator.of(context).pop();
+      } else {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (_) => const RestaurantHomeScreen()),
+        );
+      }
+      return;
+    }
+    setState(() => _result = 'The key was accepted but the licence is still not valid for today. Check the date and time on this PC.');
+  }
 
   Future<void> _check() async {
     setState(() {
@@ -62,6 +88,7 @@ class _LicenseRevalidateScreenState extends ConsumerState<LicenseRevalidateScree
   @override
   Widget build(BuildContext context) {
     final rolledBack = widget.lease.state == LeaseState.clockRolledBack;
+    final keyTenant = _isKeyTenant;
     final gutter = Responsive.gutter(context);
     final accent = rolledBack ? ClassicTheme.dangerRed : ClassicTheme.warningAmber;
     final last = widget.lease.validatedAt?.toLocal();
@@ -100,17 +127,23 @@ class _LicenseRevalidateScreenState extends ConsumerState<LicenseRevalidateScree
                       ),
                       const SizedBox(height: DS.space4),
                       Text(
-                        rolledBack ? 'Check the date and time' : 'Connect once to continue',
+                        rolledBack
+                            ? 'Check the date and time'
+                            : (keyTenant ? 'Enter a new licence key' : 'Connect once to continue'),
                         style: TextStyle(fontSize: DS.fontHeadline, fontWeight: FontWeight.w800, color: context.textPrimary),
                       ),
                       const SizedBox(height: DS.space2),
                       Text(
                         rolledBack
                             ? 'This device\'s clock is earlier than a time it has already recorded. '
-                                'Set the correct date and time, then connect to the internet once so the licence can be checked.'
-                            : 'SmartBizz keeps billing on this device when the connection drops, but the licence has to be confirmed online at least '
-                                'once every ${widget.lease.graceDays} days.$lastText Connect to Wi-Fi or a phone hotspot '
-                                'for a few seconds and tap Check now. Your bills stay on this device.',
+                                'Set the correct date and time, then ${keyTenant ? 'enter the licence key again' : 'connect to the internet once so the licence can be checked'}.'
+                            : keyTenant
+                                ? 'The licence key on this PC has run out or is missing.$lastText Ask the platform admin for a '
+                                    'new key for this store and enter it below — paste the key, the contents of the .json file, '
+                                    'or the path of that file. This works without connecting to the cloud. Your bills stay on this device.'
+                                : 'SmartBizz keeps billing on this device when the connection drops, but the licence has to be confirmed online at least '
+                                    'once every ${widget.lease.graceDays} days.$lastText Connect to Wi-Fi or a phone hotspot '
+                                    'for a few seconds and tap Check now. Your bills stay on this device.',
                         style: TextStyle(fontSize: DS.fontBody, height: 1.55, color: context.textSecondary),
                       ),
                       if (_result != null) ...[
@@ -118,10 +151,40 @@ class _LicenseRevalidateScreenState extends ConsumerState<LicenseRevalidateScree
                         Text(_result!, style: const TextStyle(fontSize: DS.fontCaption, color: ClassicTheme.dangerRed)),
                       ],
                       const SizedBox(height: DS.space5),
+                      if (keyTenant) ...[
+                        SizedBox(
+                          height: DS.tapTargetComfortable,
+                          width: double.infinity,
+                          child: ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: ClassicTheme.primaryAccent,
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(DS.radiusMd)),
+                            ),
+                            onPressed: _busy ? null : _renewWithKey,
+                            icon: const Icon(Icons.vpn_key_rounded),
+                            label: const Text('Enter a new licence key', style: TextStyle(fontWeight: FontWeight.w700)),
+                          ),
+                        ),
+                        const SizedBox(height: DS.space3),
+                      ],
                       SizedBox(
                         height: DS.tapTargetComfortable,
                         width: double.infinity,
-                        child: ElevatedButton.icon(
+                        child: keyTenant
+                            ? OutlinedButton.icon(
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: context.textPrimary,
+                                  side: BorderSide(color: context.borderColor),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(DS.radiusMd)),
+                                ),
+                                onPressed: _busy ? null : _check,
+                                icon: _busy
+                                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                                    : const Icon(Icons.refresh_rounded),
+                                label: const Text('Check online instead', style: TextStyle(fontWeight: FontWeight.w700)),
+                              )
+                            : ElevatedButton.icon(
                           style: ElevatedButton.styleFrom(
                             backgroundColor: ClassicTheme.primaryAccent,
                             foregroundColor: Colors.white,

@@ -73,10 +73,13 @@ Limits: `TierLimits` in `lib/core/entitlements.dart` (Code.gs twin `TIER_LIMITS`
 | Tier (`PackageTier`) | Storage | Devices | Outlets | Users | Editable |
 |---|---|---|---|---|---|
 | Offline (`offline`) | This device only (`PURE_OFFLINE`) | 1 | 1 | 1 (owner) | Never |
-| Basic (`basic`) | Client's own Google Drive (`CLIENTS_OWN_SHEETS`) | 2 | 1 | 3 | Admin override only |
-| Standard (`standard`) | Own Drive | 5 | 1 | 10 | Admin override only |
-| Premium (`premium`) | Own Drive | 10 | 3 | 25 | Admin override only |
-| Enterprise (`enterprise`) | Own Drive | 20 (default) | 10 | 50 | Per client (`allowsCustomLimits`) |
+| Basic (`basic`) | Client's own Google Drive (`CLIENTS_OWN_SHEETS`) or local network hub (`LOCAL_NETWORK`) | 2 | 1 | 3 | Admin override only |
+| Standard (`standard`) | Own Drive or local network hub | 5 | 1 | 10 | Admin override only |
+| Premium (`premium`) | Own Drive or local network hub | 10 | 3 | 25 | Admin override only |
+| Enterprise (`enterprise`) | Own Drive or local network hub | 20 (default) | 10 | 50 | Per client (`allowsCustomLimits`) |
+
+Kirana is 1 device / 1 store / 1 user at every tier and never runs a local network hub (contract §3, §6b). In
+`LOCAL_NETWORK` the host PC is device 1 and every paired satellite counts against `maxDevices`.
 
 Features per tier (from `PackageCatalog.featuresFor`; full per-key table in `docs/05_FEATURE_REFERENCE.md`):
 
@@ -96,9 +99,22 @@ licence.
 allow (`PackageCatalog.addOnsFor`). Switched per client in the Feature Matrix and stored on the licence
 (`addOns`, `featuresOff`).
 
-Storage modes offered at onboarding: `PURE_OFFLINE` and `CLIENTS_OWN_SHEETS` only. `CLOUD_SYNC` is legacy.
-Offline stores validate once online, then run 30 days offline on a signed lease (7 days for cloud modes;
-`LicenseLease.offlineGraceDays` / `cloudGraceDays` in `lib/core/license_lease.dart`).
+Storage modes offered at onboarding (contract §6b): Offline → `PURE_OFFLINE` only; Basic and above →
+`CLIENTS_OWN_SHEETS` (default) or `LOCAL_NETWORK`. `CLOUD_SYNC` is legacy. Offline stores validate once online,
+then run 30 days offline on a signed lease (7 days for cloud modes; `LicenseLease.offlineGraceDays` /
+`cloudGraceDays` in `lib/core/license_lease.dart`).
+
+**Local network mode** (`LOCAL_NETWORK`): the till that holds the licence (the **host**, a Windows PC) runs the
+Local LAN Hub and keeps the only ledger; waiter pads, kitchen screens, second tills and customer displays
+(**satellites**) pair once with a 6-digit **pairing PIN** over the store Wi-Fi and read and write through the host.
+No cloud is involved; the host's version wins when two devices disagree. Shops pair BILLING / MANAGER terminals,
+restaurants add WAITER / KITCHEN. Details: `02_SYSTEM_ARCHITECTURE.md` §3.7, customer guide
+`CLIENT_LOCAL_LAN_SETUP_GUIDE.md`.
+
+**Licence key**: for a host PC that is set up without the internet (or whose owner prefers it), the platform admin
+issues a server-signed key (`SBZ-LIC-…`) from the console's Access & licence dialog; the owner pastes it (or runs
+the 1-click `.bat`) and the PC becomes that tenant, owner account included, with no sign-in. The key is
+re-verified on every start and is the tenant's lease. Every onboarding path: `10_ONBOARDING.md`.
 
 Wording rule (contract §7): never "100% local", "fully offline" or absolute guarantees. Approved sentences:
 `PackageCatalog.driveNotice` and `PackageCatalog.offlineNotice`.
@@ -161,5 +177,6 @@ Shared admin widgets: `lib/screens/admin/widgets/` (`tenant_package_editor.dart`
 ## 7. Where next
 
 - Rules: `docs/PLATFORM_STRUCTURE.md`. Every feature key: `docs/05_FEATURE_REFERENCE.md`.
+- How a store starts (sign-up, admin onboarding, licence key, LAN satellite): `docs/10_ONBOARDING.md`.
 - Recipes: `docs/06_HOW_TO.md`. Tests and release: `docs/07_TESTING_AND_RELEASE.md`.
 - Something broken: `docs/08_DEBUGGING_PLAYBOOK.md`. Index of all docs: `docs/README.md`.

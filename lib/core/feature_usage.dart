@@ -366,15 +366,29 @@ const Map<String, FeatureUsage> kFeatureUsage = {
   ),
   FeatureKeys.localLanServer: FeatureUsage(
     note:
-        'Embedded HTTP hub on the host till (port 8080): tables, KOTs, kitchen '
-        'status and the customer display, read and written by paired devices on '
-        'the store Wi-Fi. Devices pair with a PIN shown on the host and send a '
-        'token on every call. Today the hub serves the API; the satellite '
-        'screens that read from it are the next piece.',
+        'Embedded HTTP hub on the host PC (port 8080) that holds the store ledger: '
+        'tables, KOTs and kitchen status, read and written by paired devices on '
+        'the store Wi-Fi without depending on the cloud. The host shows a six-digit '
+        'pairing PIN; a satellite (waiter pad, kitchen display, billing or manager '
+        'terminal) exchanges it once for a device token and then follows the hub\'s '
+        'change feed, queueing its writes while the host is away. The host counts '
+        'satellites against the licence\'s device limit, lists and removes paired '
+        'devices, and serves exactly one outlet. Optional on the host: also write '
+        'the ledger to the store\'s own Google Sheet when online (licences with the '
+        'cloud ledger); satellites print on their own printer only when switched on.',
     whenOff:
-        'The Local LAN Hub cannot be started and no device can pair.',
-    screens: ['Store settings: Local LAN Hub'],
-    controls: ['Start/Stop Local LAN Hub', 'Pairing PIN', 'Paired devices', 'LAN IP endpoint'],
+        'The Local LAN Hub cannot be started and no device can pair; every device '
+        'keeps its own ledger.',
+    screens: ['Store settings: Local LAN Hub', 'Connect to host (satellite pairing)'],
+    controls: [
+      'Start/Stop Local LAN Hub',
+      'Pairing PIN and Rotate PIN',
+      'Paired devices (count against the device limit, Remove)',
+      'Outlet served by this hub',
+      'Change feed for satellites (orders, tables, kitchen status)',
+      'Also sync to my Google Sheet when online (host only)',
+      'Print KOT / receipts on this device (satellite)',
+    ],
     implemented: true,
   ),
 };

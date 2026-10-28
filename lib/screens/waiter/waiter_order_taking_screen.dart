@@ -27,6 +27,7 @@ import '../../core/receipt/receipt_print_service.dart';
 import '../../core/receipt/receipt_template.dart';
 import '../../providers/entitlements_provider.dart';
 import '../../services/thermal_printer_service.dart';
+import '../../services/satellite_print_prefs.dart';
 
 class WaiterOrderTakingScreen extends ConsumerStatefulWidget {
   final RestaurantTable table;
@@ -903,6 +904,17 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
         updatedList.insert(0, orderMap);
         await ref.read(restaurantLedgerProvider).writeOrders('kot_orders_$orgId', updatedList);
 
+        // A paired satellite with its own printer may print the KOT it just
+        // submitted ("Print KOT on this device", default off). The host's
+        // kitchen printing is untouched; never blocks the hub write above.
+        if (SatellitePrintPrefs.shouldPrintKotHere) {
+          try {
+            unawaited(_printKotLocally(KotOrder.fromMap(Map<String, dynamic>.from(orderMap), billNumber)));
+          } catch (e) {
+            debugPrint('Satellite KOT print skipped: $e');
+          }
+        }
+
         // 2. Mark Table Occupied in Hive with customer details & running bill amount
         final rawTables = box.get('restaurant_tables_$orgId') as List? ?? [];
         final cleanWTable = cleanTableId(widget.table.tableNumber);
@@ -1423,6 +1435,45 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
           ),
         );
       }
+    }
+  }
+
+  /// First print of a KOT on this device's printer (satellite switch,
+  /// SatellitePrintPrefs). Same slip as [_reprintKot] without the reprint
+  /// marker; a failure is logged, never shown as an error on the pad.
+  Future<void> _printKotLocally(KotOrder ord) async {
+    try {
+      final kitchenItems = ord.items.where((i) => i.sendsToKitchen).toList();
+      if (kitchenItems.isEmpty) return;
+      final ent = ref.read(entitlementsProvider);
+      final printer = ref.read(thermalPrinterProvider);
+      final slip = ReceiptContextBuilder.forKotOrder(
+        ord,
+        items: kitchenItems,
+        isReprint: false,
+        reprintCount: 0,
+        enabledFeatures: {
+          for (final def in FeatureCatalog.all)
+            if (ent.isEnabled(def.key)) def.key,
+        },
+      )..values.addAll(ReceiptContextBuilder.printerOverrides(
+          customName: printer.customName,
+          customPhone: printer.customPhone,
+          customAddress: printer.customAddress,
+          customGstin: printer.customGstin,
+          customFooter: printer.customFooter,
+        ));
+      final result = await ReceiptPrintService.printOne(
+        orgId: _getEffectiveOrgId(),
+        kind: ReceiptKind.kot,
+        context: slip,
+        channel: ord.orderType ?? 'Dine-In',
+        paperSize: printer.paperSize,
+        send: ref.read(thermalPrinterProvider.notifier).printBytes,
+      );
+      if (!result.ok) debugPrint('Satellite KOT print: ${result.error}');
+    } catch (e) {
+      debugPrint('Satellite KOT print failed: $e');
     }
   }
 
