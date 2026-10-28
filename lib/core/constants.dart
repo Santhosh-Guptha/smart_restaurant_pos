@@ -11,8 +11,16 @@ final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 const String kDefaultMerchantVpa = ""; // Configured per-outlet by merchant in Store Settings
 
-const String kRestaurantWebOrderingBaseUrl =
-    'https://smartdine-pos.web.app/r/';
+/// Public production origin for every link the app hands out (guest QR
+/// ordering, password reset, welcome messages, Windows setup). The Firebase
+/// host smartdine-pos.web.app serves the same site and stays accepted for
+/// QR codes printed before the switch (restaurant_models.dart).
+const String kPublicBaseUrl = 'https://smartbizz.devmonks.space';
+
+const String kRestaurantWebOrderingBaseUrl = '$kPublicBaseUrl/r/';
+
+/// Web till; installable from the browser (there is no public APK download).
+const String kWebPosUrl = '$kPublicBaseUrl/pos/';
 
 const String kGoogleClientId =
     '486476143616-1e1pmj004p87b0h2pk09b00ejeepsfi8.apps.googleusercontent.com';

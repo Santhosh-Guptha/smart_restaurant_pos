@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 
 import '../core/entitlements.dart';
 import '../core/package_model.dart';
+import '../core/constants.dart';
 import 'client_license_service.dart';
 import 'offline_backup_file_io.dart'
     if (dart.library.js_interop) 'offline_backup_file_web.dart' as backup_file;
@@ -126,7 +127,7 @@ class ClientSetupPackageGenerator {
     buffer.writeln('echo [*] Creating Desktop Shortcut...');
     buffer.writeln('set "DESKTOP_DIR=%USERPROFILE%\\Desktop"');
     buffer.writeln('set "SHORTCUT_PATH=%DESKTOP_DIR%\\SmartBizz POS.lnk"');
-    buffer.writeln('powershell -NoProfile -ExecutionPolicy Bypass -Command "\$ws = New-Object -ComObject WScript.Shell; \$s = \$ws.CreateShortcut(\'%SHORTCUT_PATH%\'); \$s.TargetPath = \'%~dp0smart_kirana_shop.exe\'; if (-not (Test-Path \'%~dp0smart_kirana_shop.exe\')) { \$s.TargetPath = \'msedge.exe\'; \$s.Arguments = \'--app=https://smartdine-pos.web.app/pos/?license=$token\'; }; \$s.Description = \'SmartBizz POS - $storeName\'; \$s.Save()" >nul 2>&1');
+    buffer.writeln('powershell -NoProfile -ExecutionPolicy Bypass -Command "\$ws = New-Object -ComObject WScript.Shell; \$s = \$ws.CreateShortcut(\'%SHORTCUT_PATH%\'); \$s.TargetPath = \'%~dp0smart_kirana_shop.exe\'; if (-not (Test-Path \'%~dp0smart_kirana_shop.exe\')) { \$s.TargetPath = \'msedge.exe\'; \$s.Arguments = \'--app=${kWebPosUrl}?license=$token\'; }; \$s.Description = \'SmartBizz POS - $storeName\'; \$s.Save()" >nul 2>&1');
     buffer.writeln('echo [OK] Desktop shortcut created.');
     buffer.writeln();
 
@@ -157,7 +158,7 @@ class ClientSetupPackageGenerator {
     buffer.writeln(')');
     buffer.writeln();
     buffer.writeln(':: Priority 2: Dedicated Edge/Chrome Application Window');
-    buffer.writeln('start msedge --app="https://smartdine-pos.web.app/pos/?license=$token" 2>nul || start chrome --app="https://smartdine-pos.web.app/pos/?license=$token" 2>nul || start https://smartdine-pos.web.app/pos/?license=$token');
+    buffer.writeln('start msedge --app="${kWebPosUrl}?license=$token" 2>nul || start chrome --app="${kWebPosUrl}?license=$token" 2>nul || start ${kWebPosUrl}?license=$token');
     buffer.writeln();
     buffer.writeln('exit /b 0');
 

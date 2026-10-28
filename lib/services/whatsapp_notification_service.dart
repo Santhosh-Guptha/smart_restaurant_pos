@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../core/constants.dart';
 import '../core/package_model.dart';
 import 'apps_script_backend_service.dart';
 
@@ -14,8 +15,9 @@ class WhatsAppNotificationService {
   static final WhatsAppNotificationService instance = WhatsAppNotificationService._();
 
   /// Default Web Portal and APK download URLs
-  static const String defaultPortalUrl = 'https://smartdine-pos.web.app';
-  static const String defaultDownloadUrl = 'https://smartdine-pos.web.app/download/smartdine-pos.apk';
+  static const String defaultPortalUrl = kPublicBaseUrl;
+  // No APK is hosted; the web till installs from the browser.
+  static const String defaultDownloadUrl = kWebPosUrl;
 
   /// Sanitizes Indian or international phone numbers to standard format (e.g. 919876543210)
   static String sanitizePhone(String phone) {

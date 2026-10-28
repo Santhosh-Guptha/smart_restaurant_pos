@@ -3,6 +3,7 @@ import 'package:bcrypt/bcrypt.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import '../core/constants.dart';
 import 'smtp_email_service.dart';
 
 class PasswordResetResult {
@@ -99,7 +100,7 @@ class PasswordResetService {
       });
 
       // 4. Construct Web / Deep-link reset URL
-      String baseUrl = 'https://smartdine-pos.web.app/pos/';
+      String baseUrl = kWebPosUrl;
       if (kIsWeb) {
         try {
           final origin = Uri.base.origin;

@@ -11,7 +11,7 @@ class OrderingPlatformConfigService {
   static const String _hiveKey = 'platform_menu_ordering_url';
 
   /// Returns the configured menu ordering base URL.
-  /// Defaults to [kRestaurantWebOrderingBaseUrl] (https://smartdine-pos.web.app/r/).
+  /// Defaults to [kRestaurantWebOrderingBaseUrl] (https://smartbizz.devmonks.space/r/).
   static String getOrderingBaseUrl() {
     try {
       if (Hive.isBoxOpen('configBox')) {

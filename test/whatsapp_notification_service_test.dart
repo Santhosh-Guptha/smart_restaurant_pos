@@ -25,7 +25,7 @@ void main() {
       expect(msg, contains('ORG26012'));
       expect(msg, contains('rajesh_spice'));
       expect(msg, contains('TempPassword123'));
-      expect(msg, contains('https://smartdine-pos.web.app'));
+      expect(msg, contains('https://smartbizz.devmonks.space'));
       expect(msg, contains('your restaurant account'));
     });
 
