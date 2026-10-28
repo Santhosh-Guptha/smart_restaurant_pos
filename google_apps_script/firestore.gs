@@ -27,21 +27,54 @@ var FS_PROJECT = (function() {
   } catch (e) {}
   return "smartdine-restaurant-pos";
 })();
-var FS_USE_OAUTH = true;
+var FS_USE_OAUTH = (function() {
+  try {
+    var v = PropertiesService.getScriptProperties().getProperty("FS_USE_OAUTH");
+    return v === "true";
+  } catch (e) {
+    return false;
+  }
+})();
 var FS_BASE = "https://firestore.googleapis.com/v1/projects/" + FS_PROJECT + "/databases/(default)/documents";
 
-function fsHeaders_() {
+function fsHeaders_(useAuth) {
   var h = { "Content-Type": "application/json" };
-  if (FS_USE_OAUTH) h["Authorization"] = "Bearer " + ScriptApp.getOAuthToken();
+  var sendAuth = (useAuth !== undefined) ? !!useAuth : FS_USE_OAUTH;
+  if (sendAuth) {
+    try {
+      h["Authorization"] = "Bearer " + ScriptApp.getOAuthToken();
+    } catch (e) {
+      Logger.log("fsHeaders_ getOAuthToken error: " + e);
+    }
+  }
   return h;
 }
 
 function fsRequest_(method, url, body) {
-  var opts = { method: method, headers: fsHeaders_(), muteHttpExceptions: true };
+  var headers = fsHeaders_();
+  var attemptedOAuth = Boolean(headers && headers["Authorization"]);
+  var opts = { method: method, headers: headers, muteHttpExceptions: true };
   if (body !== undefined) opts.payload = JSON.stringify(body);
   var res = UrlFetchApp.fetch(url, opts);
   var code = res.getResponseCode();
   var text = res.getContentText();
+
+  // If OAuth was attempted and rejected due to insufficient scope or unauthenticated status,
+  // retry once without Authorization header to let Firestore evaluate security rules directly.
+  if (attemptedOAuth && (code === 403 || code === 401)) {
+    var isAuthScopeErr = text.indexOf("ACCESS_TOKEN_SCOPE_INSUFFICIENT") !== -1 ||
+                         text.indexOf("UNAUTHENTICATED") !== -1 ||
+                         text.indexOf("insufficient authentication scopes") !== -1;
+    if (isAuthScopeErr) {
+      Logger.log("Firestore OAuth failed (HTTP " + code + "), retrying without Authorization header: " + text.slice(0, 200));
+      var retryOpts = { method: method, headers: fsHeaders_(false), muteHttpExceptions: true };
+      if (body !== undefined) retryOpts.payload = JSON.stringify(body);
+      res = UrlFetchApp.fetch(url, retryOpts);
+      code = res.getResponseCode();
+      text = res.getContentText();
+    }
+  }
+
   if (code === 404 && method === "get") return null;
   if (code < 200 || code >= 300) {
     throw new Error("Firestore " + method.toUpperCase() + " " + url.replace(FS_BASE, "") + " -> HTTP " + code + ": " + text.slice(0, 300));

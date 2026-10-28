@@ -319,6 +319,30 @@ const probeJson = JSON.parse(probeRes.text || (typeof probeRes.getContent === 'f
 assert(probeJson.status === 'ONLINE', 'doGet returns ONLINE status');
 assert(typeof probeJson.message === 'string' && probeJson.message.includes('SmartBizz'), 'doGet returns valid webhook message');
 
+// 8. Test Firestore OAuth fallback & orgOwner_ Error Handling
+console.log('\n--- Testing Firestore OAuth & orgOwner_ Error Handling ---');
+assert(FS_USE_OAUTH === false, 'FS_USE_OAUTH defaults to false');
+assert(fsHeaders_().Authorization === undefined, 'fsHeaders_ sends no Authorization by default');
+
+// Test orgOwner_ error resilience
+const brokenOrg = {
+  name: "Fallback Store",
+  ownerUserId: "usr_broken",
+  ownerEmail: "owner@fallback.com",
+  clientName: "Fallback Client",
+  ownerUsername: "fb_user"
+};
+const origFsGet = global.fsGet_;
+const origFsQuery = global.fsQueryEq_;
+global.fsGet_ = () => { throw new Error("Firestore GET -> HTTP 403: ACCESS_TOKEN_SCOPE_INSUFFICIENT"); };
+global.fsQueryEq_ = () => { throw new Error("Firestore POST -> HTTP 403: ACCESS_TOKEN_SCOPE_INSUFFICIENT"); };
+const fallbackOwner = orgOwner_("ORG_FALLBACK", brokenOrg);
+assert(fallbackOwner.email === "owner@fallback.com", 'orgOwner_ gracefully recovers email on Firestore error');
+assert(fallbackOwner.name === "Fallback Client", 'orgOwner_ gracefully recovers client name on Firestore error');
+assert(fallbackOwner.username === "fb_user", 'orgOwner_ gracefully recovers username on Firestore error');
+global.fsGet_ = origFsGet;
+global.fsQueryEq_ = origFsQuery;
+
 console.log(`\n========================================`);
 console.log(`Results: ${passedTests} / ${totalTests} assertions passed (${Math.round((passedTests / totalTests) * 100)}%)`);
 console.log(`========================================\n`);

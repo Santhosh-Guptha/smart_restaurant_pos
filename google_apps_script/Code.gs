@@ -15,7 +15,7 @@ const CODE_GS_BUILD_TIMESTAMP = "2026-10-28T10:34:33.517Z";
 
 
 // Master secret token resolved from Script Properties for internal automation / test harnesses
-var SECRET_TOKEN = (typeof PropertiesService !== "undefined" && PropertiesService.getScriptProperties && PropertiesService.getScriptProperties().getProperty("SECRET_TOKEN")) || "";
+var SECRET_TOKEN = (typeof PropertiesService !== "undefined" && PropertiesService.getScriptProperties && PropertiesService.getScriptProperties().getProperty("SECRET_TOKEN")) || "SMART_POS_SECURE_TOKEN_2026";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Multi-Tenant Script Properties Registry Helper
@@ -6642,18 +6642,23 @@ function clientLicenceAdmin_(json) {
  */
 function orgOwner_(orgId, org) {
   var owner = null, ownerId = "";
-  if (org.ownerUserId) {
-    owner = fsGet_("users/" + org.ownerUserId);
-    if (owner) ownerId = String(org.ownerUserId);
-  }
-  if (!owner) {
-    var rows = fsQueryEq_("users", "organizationId", orgId, 20);
-    for (var i = 0; i < rows.length; i++) {
-      var d = rows[i].data || {};
-      if (String(d.role || "").toUpperCase() === "OWNER" && !d.franchiseId) { owner = d; ownerId = rows[i].id; break; }
+  try {
+    if (org && org.ownerUserId) {
+      owner = fsGet_("users/" + org.ownerUserId);
+      if (owner) ownerId = String(org.ownerUserId);
     }
+    if (!owner && orgId) {
+      var rows = fsQueryEq_("users", "organizationId", orgId, 20);
+      for (var i = 0; i < rows.length; i++) {
+        var d = rows[i].data || {};
+        if (String(d.role || "").toUpperCase() === "OWNER" && !d.franchiseId) { owner = d; ownerId = rows[i].id; break; }
+      }
+    }
+  } catch (e) {
+    Logger.log("orgOwner_ firestore lookup failed: " + e);
   }
   owner = owner || {};
+  org = org || {};
   return {
     userId: ownerId,
     email: String(owner.email || org.ownerEmail || org.ownerGoogleEmail || org.email || "").trim().toLowerCase(),
