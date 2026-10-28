@@ -3,14 +3,14 @@
  * SMARTBIZZ POS CLOUD BACKEND (Google Apps Script)
  * Automatically creates & manages Google Spreadsheets in your Google Drive.
  * 100% Zero-Server & Zero-Firebase Architecture.
- * Release: v2.4.2 [prod-2026-10-27] (Timestamp: 2026-10-28T06:59:49.543Z)
+ * Release: v2.4.2 [prod-2026-10-27] (Timestamp: 2026-10-28T10:34:33.517Z)
  * =========================================================================
  */
 
 // ── VERSION & RELEASE TRACKING (Automated by deploy_code_gs) ───────────────
 const CODE_GS_VERSION = "2.4.2";
 const CODE_GS_RELEASE_TAG = "prod-2026-10-27";
-const CODE_GS_BUILD_TIMESTAMP = "2026-10-28T06:59:49.543Z";
+const CODE_GS_BUILD_TIMESTAMP = "2026-10-28T10:34:33.517Z";
 // ─────────────────────────────────────────────────────────────────────────────
 
 

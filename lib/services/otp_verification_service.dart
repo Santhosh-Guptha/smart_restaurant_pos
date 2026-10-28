@@ -25,6 +25,7 @@ class OtpVerificationService {
         headers: const {'Content-Type': 'text/plain;charset=utf-8'},
         body: jsonEncode({'action': action, ...payload}),
         timeout: const Duration(seconds: 15),
+        licenceTraffic: true,
       );
       final data = jsonDecode(res.body);
       if (data is! Map) return null;
@@ -48,24 +49,22 @@ class OtpVerificationService {
       return {'success': false, 'message': 'Invalid email address.'};
     }
 
-    if (!isMfa) {
-      final r = await _server('SIGNUP_SEND_CODE', {'email': cleanEmail, 'name': clientName.trim()});
-      if (r != null) {
-        if (r['success'] == true) {
-          _serverEmails.add(cleanEmail);
-          return {
-            'success': true,
-            'message': 'A 6-digit verification code has been sent to $cleanEmail. Please check your inbox and spam folder.',
-          };
-        }
-        switch (r['error_code']) {
-          case 'WAIT':
-            return {'success': false, 'message': 'Please wait 30 seconds before requesting a new code.'};
-          case 'RATE_LIMITED':
-            return {'success': false, 'message': 'Too many codes requested. Please try again after 10 minutes.'};
-          case 'BAD_EMAIL':
-            return {'success': false, 'message': 'Invalid email address.'};
-        }
+    final r = await _server('SIGNUP_SEND_CODE', {'email': cleanEmail, 'name': clientName.trim()});
+    if (r != null) {
+      if (r['success'] == true) {
+        _serverEmails.add(cleanEmail);
+        return {
+          'success': true,
+          'message': 'A 6-digit verification code has been sent to $cleanEmail. Please check your inbox and spam folder.',
+        };
+      }
+      switch (r['error_code']) {
+        case 'WAIT':
+          return {'success': false, 'message': 'Please wait 30 seconds before requesting a new code.'};
+        case 'RATE_LIMITED':
+          return {'success': false, 'message': 'Too many codes requested. Please try again after 10 minutes.'};
+        case 'BAD_EMAIL':
+          return {'success': false, 'message': 'Invalid email address.'};
       }
     }
 
@@ -179,11 +178,8 @@ class OtpVerificationService {
       return {'success': false, 'message': 'Please enter a valid 6-digit OTP.'};
     }
 
-    if (_serverEmails.contains(cleanEmail)) {
-      final r = await _server('SIGNUP_VERIFY_CODE', {'email': cleanEmail, 'code': cleanOtp});
-      if (r == null) {
-        return {'success': false, 'message': 'Could not reach the server. Check your connection and try again.'};
-      }
+    final r = await _server('SIGNUP_VERIFY_CODE', {'email': cleanEmail, 'code': cleanOtp});
+    if (r != null) {
       if (r['success'] == true) {
         final proof = r['proof']?.toString();
         if (proof != null && proof.isNotEmpty) _proofs[cleanEmail] = proof;

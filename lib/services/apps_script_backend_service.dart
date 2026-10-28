@@ -523,6 +523,7 @@ class AppsScriptBackendService {
           'otp_code': otpCode,
         }),
         timeout: const Duration(seconds: 15),
+        licenceTraffic: true,
       );
 
       if (res.statusCode >= 200 && res.statusCode < 300) {
@@ -566,6 +567,7 @@ class AppsScriptBackendService {
           'from_name': fromName ?? 'SmartBizz',
         }),
         timeout: const Duration(seconds: 15),
+        licenceTraffic: true,
       );
 
       if (res.statusCode >= 200 && res.statusCode < 300) {
