@@ -230,14 +230,28 @@ class ClientSetupPackageGenerator {
       buffer.writeln('powershell -NoProfile -ExecutionPolicy Bypass -Command "[System.IO.File]::WriteAllText(\'%APP_DATA_DIR%\\lan_hub_listener.ps1\', [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String(\'%B64_LISTENER%\')))" >nul 2>&1');
       buffer.writeln(':: Stop any previous listener on port 8085 so it does not duplicate');
       buffer.writeln('for /f "tokens=5" %%p in (\'netstat -aon ^| findstr :8085 ^| findstr LISTENING\') do taskkill /F /PID %%p >nul 2>&1');
+      buffer.writeln('timeout /t 1 /nobreak >nul 2>&1');
+      buffer.writeln();
+      buffer.writeln(':: Deploy dedicated VBScript background launcher (ensures process survives CMD window close)');
+      buffer.writeln('(');
+      buffer.writeln('    echo Set WshShell = CreateObject("WScript.Shell"^)');
+      buffer.writeln('    echo appData = WshShell.ExpandEnvironmentStrings("%%APPDATA%%"^)');
+      buffer.writeln('    echo ps1Path = appData ^& "\\SmartBizz\\lan_hub_listener.ps1"');
+      buffer.writeln('    echo cmd = "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File """ ^& ps1Path ^& """"');
+      buffer.writeln('    echo WshShell.Run cmd, 0, False');
+      buffer.writeln(') > "%APP_DATA_DIR%\\run_lan_hub.vbs"');
+      buffer.writeln();
+      buffer.writeln(':: Launch detached background daemon via WScript & fallback trigger');
+      buffer.writeln('wscript.exe "%APP_DATA_DIR%\\run_lan_hub.vbs"');
       buffer.writeln('start "" /B powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "%APP_DATA_DIR%\\lan_hub_listener.ps1"');
-      buffer.writeln(':: Ensure permanent background operation and auto-start on boot');
-      buffer.writeln('powershell -NoProfile -ExecutionPolicy Bypass -Command "if (-not (Get-NetTCPConnection -LocalPort 8085 -State Listen -ErrorAction SilentlyContinue)) { Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = \'powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File \"\"%APP_DATA_DIR%\\lan_hub_listener.ps1\"\"\' } }" >nul 2>&1');
+      buffer.writeln();
+      buffer.writeln(':: Ensure permanent background operation and auto-start on boot (HKCU Run & Startup)');
+      buffer.writeln('reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run" /v "SmartBizz_LAN_Hub" /t REG_SZ /d "wscript.exe \\"%APP_DATA_DIR%\\run_lan_hub.vbs\\"" /f >nul 2>&1');
       buffer.writeln('set "STARTUP_DIR=%APPDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Startup"');
       buffer.writeln('if exist "%STARTUP_DIR%" (');
-      buffer.writeln('    powershell -NoProfile -ExecutionPolicy Bypass -Command "\$ws = New-Object -ComObject WScript.Shell; \$s = \$ws.CreateShortcut(\'%STARTUP_DIR%\\SmartBizz_LAN_Hub.lnk\'); \$s.TargetPath = \'powershell.exe\'; \$s.Arguments = \'-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File \"\"%APP_DATA_DIR%\\lan_hub_listener.ps1\"\"\'; \$s.WindowStyle = 7; \$s.Save()" >nul 2>&1');
+      buffer.writeln('    powershell -NoProfile -ExecutionPolicy Bypass -Command "\$ws = New-Object -ComObject WScript.Shell; \$s = \$ws.CreateShortcut(\'%STARTUP_DIR%\\SmartBizz_LAN_Hub.lnk\'); \$s.TargetPath = \'wscript.exe\'; \$s.Arguments = \'\"%APP_DATA_DIR%\\run_lan_hub.vbs\"\'; \$s.WindowStyle = 7; \$s.Save()" >nul 2>&1');
       buffer.writeln(')');
-      buffer.writeln('echo [OK] Local LAN Hub listener active on port 8085.');
+      buffer.writeln('echo [OK] Local LAN Hub listener active on port 8085 (Background Daemon).');
       buffer.writeln();
     } else {
       buffer.writeln('echo [OK] Storage mode configured: $storageLabel.');
@@ -245,12 +259,51 @@ class ClientSetupPackageGenerator {
       buffer.writeln();
     }
 
-    // Step 5: Desktop Shortcut
+    // Step 5: Desktop Shortcut & Self-Healing Launcher
     final appUrl = isLocalNetwork ? 'http://!HOST_IP!:8085/?host_ip=!HOST_IP!&port=8085' : '$kWebPosUrl?host_ip=!HOST_IP!&port=8085';
     buffer.writeln('echo [*] Creating Desktop Shortcut...');
+    if (isLocalNetwork) {
+      buffer.writeln(':: Deploy self-healing desktop launcher');
+      buffer.writeln('(');
+      buffer.writeln('    echo Set WshShell = CreateObject("WScript.Shell"^)');
+      buffer.writeln('    echo Set fso = CreateObject("Scripting.FileSystemObject"^)');
+      buffer.writeln('    echo appData = WshShell.ExpandEnvironmentStrings("%%APPDATA%%"^)');
+      buffer.writeln('    echo runVbs = appData ^& "\\SmartBizz\\run_lan_hub.vbs"');
+      buffer.writeln('    echo ret = WshShell.Run("powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ""if (-not (Get-NetTCPConnection -LocalPort 8085 -State Listen -ErrorAction SilentlyContinue)) { exit 1 }""", 0, True^)');
+      buffer.writeln('    echo If ret ^<^> 0 Then');
+      buffer.writeln('    echo     WshShell.Run "wscript.exe """ ^& runVbs ^& """", 0, False');
+      buffer.writeln('    echo     WScript.Sleep 1000');
+      buffer.writeln('    echo End If');
+      buffer.writeln('    echo hostIp = "!HOST_IP!"');
+      buffer.writeln('    echo cfgPath = appData ^& "\\SmartBizz\\lan_hub_config.json"');
+      buffer.writeln('    echo If fso.FileExists(cfgPath) Then');
+      buffer.writeln('    echo     Set f = fso.OpenTextFile(cfgPath, 1^)');
+      buffer.writeln('    echo     content = f.ReadAll(^)');
+      buffer.writeln('    echo     f.Close(^)');
+      buffer.writeln('    echo     pos = InStr(content, """hostIp"":"""^)');
+      buffer.writeln('    echo     If pos ^> 0 Then');
+      buffer.writeln('    echo         pos2 = InStr(pos + 10, content, """"^)');
+      buffer.writeln('    echo         If pos2 ^> 0 Then hostIp = Mid(content, pos + 10, pos2 - (pos + 10)^)');
+      buffer.writeln('    echo     End If');
+      buffer.writeln('    echo End If');
+      buffer.writeln('    echo posUrl = "http://" ^& hostIp ^& ":8085/?host_ip=" ^& hostIp ^& "^&port=8085"');
+      buffer.writeln('    echo On Error Resume Next');
+      buffer.writeln('    echo errCode = WshShell.Run("msedge.exe --app=""" ^& posUrl ^& """", 1, False^)');
+      buffer.writeln('    echo If errCode ^<^> 0 Then');
+      buffer.writeln('    echo     errCode = WshShell.Run("chrome.exe --app=""" ^& posUrl ^& """", 1, False^)');
+      buffer.writeln('    echo     If errCode ^<^> 0 Then');
+      buffer.writeln('    echo         WshShell.Run posUrl, 1, False');
+      buffer.writeln('    echo     End If');
+      buffer.writeln('    echo End If');
+      buffer.writeln(') > "%APP_DATA_DIR%\\launch_smartbizz.vbs"');
+    }
     buffer.writeln('set "DESKTOP_DIR=%USERPROFILE%\\Desktop"');
     buffer.writeln('set "SHORTCUT_PATH=%DESKTOP_DIR%\\SmartBizz POS.lnk"');
-    buffer.writeln('powershell -NoProfile -ExecutionPolicy Bypass -Command "\$ws = New-Object -ComObject WScript.Shell; \$s = \$ws.CreateShortcut(\'%SHORTCUT_PATH%\'); \$s.TargetPath = \'%~dp0smart_kirana_shop.exe\'; if (-not (Test-Path \'%~dp0smart_kirana_shop.exe\')) { \$s.TargetPath = \'msedge.exe\'; \$s.Arguments = \'--app=$appUrl\'; }; \$s.Description = \'SmartBizz POS - $storeName\'; \$s.Save()" >nul 2>&1');
+    if (isLocalNetwork) {
+      buffer.writeln('powershell -NoProfile -ExecutionPolicy Bypass -Command "\$ws = New-Object -ComObject WScript.Shell; \$s = \$ws.CreateShortcut(\'%SHORTCUT_PATH%\'); \$s.TargetPath = \'%~dp0smart_kirana_shop.exe\'; if (-not (Test-Path \'%~dp0smart_kirana_shop.exe\')) { \$s.TargetPath = \'wscript.exe\'; \$s.Arguments = \'\"%APP_DATA_DIR%\\launch_smartbizz.vbs\"\'; \$s.IconLocation = \'msedge.exe,0\'; }; \$s.Description = \'SmartBizz POS - $storeName\'; \$s.Save()" >nul 2>&1');
+    } else {
+      buffer.writeln('powershell -NoProfile -ExecutionPolicy Bypass -Command "\$ws = New-Object -ComObject WScript.Shell; \$s = \$ws.CreateShortcut(\'%SHORTCUT_PATH%\'); \$s.TargetPath = \'%~dp0smart_kirana_shop.exe\'; if (-not (Test-Path \'%~dp0smart_kirana_shop.exe\')) { \$s.TargetPath = \'msedge.exe\'; \$s.Arguments = \'--app=$appUrl\'; }; \$s.Description = \'SmartBizz POS - $storeName\'; \$s.Save()" >nul 2>&1');
+    }
     buffer.writeln('echo [OK] Desktop shortcut created.');
     buffer.writeln();
 
@@ -378,10 +431,31 @@ class ClientSetupPackageGenerator {
     buffer.writeln('    } catch {}');
     buffer.writeln('}');
     buffer.writeln();
-    buffer.writeln('try {');
-    buffer.writeln('    \$listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Any, \$Port)');
-    buffer.writeln('    \$listener.Start()');
-    buffer.writeln('} catch {');
+    buffer.writeln('\$logFile = Join-Path \$appData "lan_hub.log"');
+    buffer.writeln('function Log-Msg(\$msg) {');
+    buffer.writeln('    try {');
+    buffer.writeln('        \$ts = [DateTime]::Now.ToString("yyyy-MM-dd HH:mm:ss")');
+    buffer.writeln('        "[\$ts] \$msg" | Out-File -FilePath \$logFile -Append -Encoding UTF8 -ErrorAction SilentlyContinue');
+    buffer.writeln('    } catch {}');
+    buffer.writeln('}');
+    buffer.writeln();
+    buffer.writeln('Log-Msg "Local LAN Hub starting on port \$Port (Host: \$HostIp)..."');
+    buffer.writeln('\$started = \$false');
+    buffer.writeln('for (\$attempt = 1; \$attempt -le 20; \$attempt++) {');
+    buffer.writeln('    try {');
+    buffer.writeln('        \$listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Any, \$Port)');
+    buffer.writeln('        \$listener.Server.SetSocketOption([System.Net.Sockets.SocketOptionLevel]::Socket, [System.Net.Sockets.SocketOptionName]::ReuseAddress, \$true)');
+    buffer.writeln('        \$listener.Start()');
+    buffer.writeln('        \$started = \$true');
+    buffer.writeln('        Log-Msg "Local LAN Hub listening on port \$Port successfully (PID \$PID)"');
+    buffer.writeln('        break');
+    buffer.writeln('    } catch {');
+    buffer.writeln('        Log-Msg "Port \$Port busy or in TIME_WAIT (attempt \$attempt/20), retrying in 800ms..."');
+    buffer.writeln('        Start-Sleep -Milliseconds 800');
+    buffer.writeln('    }');
+    buffer.writeln('}');
+    buffer.writeln('if (-not \$started) {');
+    buffer.writeln('    Log-Msg "FATAL: Could not bind port \$Port after 20 attempts. Exiting."');
     buffer.writeln('    exit 1');
     buffer.writeln('}');
     buffer.writeln();
@@ -842,6 +916,8 @@ class ClientSetupPackageGenerator {
     buffer.writeln('        \$stream.Flush()');
     buffer.writeln('        \$client.Close()');
     buffer.writeln('    } catch {');
+    buffer.writeln('        try { if (\$stream) { \$stream.Dispose() } } catch {}');
+    buffer.writeln('        try { if (\$client) { \$client.Close() } } catch {}');
     buffer.writeln('        Start-Sleep -Milliseconds 50');
     buffer.writeln('    }');
     buffer.writeln('}');
