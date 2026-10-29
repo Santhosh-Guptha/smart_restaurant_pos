@@ -314,6 +314,10 @@ class StaffMember {
   bool get canForceVacateTable =>
       hasRole(StaffRole.owner) || hasRole(StaffRole.manager);
 
+  /// Can create, edit layout, rename, or delete restaurant tables
+  bool get canManageTables =>
+      hasRole(StaffRole.owner) || hasRole(StaffRole.manager);
+
   /// Can access billing counter, accept cash/UPI, and print tax bills
   bool get canPerformBilling =>
       hasRole(StaffRole.owner) ||

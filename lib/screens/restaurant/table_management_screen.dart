@@ -63,6 +63,13 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen>
   bool _isVisualFloorView = false;
   bool _isDesignerMode = false;
 
+  /// Strict RBAC: Only Owner and Manager can create, edit layout, or delete tables.
+  bool get _canManageTables {
+    final activeStaff = ref.watch(restaurantAuthProvider).activeStaff;
+    if (activeStaff == null) return true; // Default fallback for unassigned owner/admin
+    return activeStaff.canManageTables;
+  }
+
   String _generateSessionId(String orgId, String tableNumber) {
     final now = DateTime.now();
     final ymd = '${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}';
@@ -1577,7 +1584,7 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen>
             icon: Icon(_isVisualFloorView ? Icons.grid_view_rounded : Icons.map_rounded, color: Colors.white, size: 22),
             onPressed: () => setState(() => _isVisualFloorView = !_isVisualFloorView),
           ),
-          if (_isVisualFloorView)
+          if (_isVisualFloorView && _canManageTables)
             IconButton(
               tooltip: _isDesignerMode ? 'Lock Table Positions' : 'Designer Mode (Drag & Arrange)',
               icon: Icon(_isDesignerMode ? Icons.check_circle_outline : Icons.edit_location_alt_outlined, color: _isDesignerMode ? Colors.amberAccent : Colors.white, size: 22),
@@ -1588,11 +1595,12 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen>
             icon: const Icon(Icons.restaurant_menu_rounded, color: Colors.white, size: 22),
             onPressed: () => _showDishAvailabilityDialog(context),
           ),
-          IconButton(
-            tooltip: 'Create New Table',
-            icon: const Icon(Icons.add_circle_outline, color: Colors.white, size: 24),
-            onPressed: () => _showAddTableDialog(orgId, shopName),
-          ),
+          if (_canManageTables)
+            IconButton(
+              tooltip: 'Create New Table',
+              icon: const Icon(Icons.add_circle_outline, color: Colors.white, size: 24),
+              onPressed: () => _showAddTableDialog(orgId, shopName),
+            ),
           const SizedBox(width: 8),
         ],
       ),
@@ -1670,13 +1678,15 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen>
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        backgroundColor: ClassicTheme.primaryAccent,
-        foregroundColor: Colors.white,
-        icon: const Icon(Icons.add),
-        label: const Text('New Table', style: TextStyle(fontWeight: FontWeight.bold)),
-        onPressed: () => _showAddTableDialog(orgId, shopName),
-      ),
+      floatingActionButton: _canManageTables
+          ? FloatingActionButton.extended(
+              backgroundColor: ClassicTheme.primaryAccent,
+              foregroundColor: Colors.white,
+              icon: const Icon(Icons.add),
+              label: const Text('New Table', style: TextStyle(fontWeight: FontWeight.bold)),
+              onPressed: () => _showAddTableDialog(orgId, shopName),
+            )
+          : null,
     );
   }
 
@@ -1757,13 +1767,15 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen>
                       textAlign: TextAlign.center,
                       style: TextStyle(fontSize: 13, color: context.textSecondary),
                     ),
-                    const SizedBox(height: 20),
-                    ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(backgroundColor: ClassicTheme.primaryAccent, foregroundColor: Colors.white),
-                      icon: const Icon(Icons.add),
-                      label: const Text('Create First Table'),
-                      onPressed: () => _showAddTableDialog(orgId, shopName),
-                    ),
+                    if (_canManageTables) ...[
+                      const SizedBox(height: 20),
+                      ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(backgroundColor: ClassicTheme.primaryAccent, foregroundColor: Colors.white),
+                        icon: const Icon(Icons.add),
+                        label: const Text('Create First Table'),
+                        onPressed: () => _showAddTableDialog(orgId, shopName),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -2928,17 +2940,18 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen>
                 },
               ),
             ],
-            ListTile(
-              leading: CircleAvatar(backgroundColor: ClassicTheme.tintDanger, child: Icon(Icons.delete_outline, color: ClassicTheme.dangerRed, size: 20)),
-              title: Text('Delete Table', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: ClassicTheme.dangerRed)),
-              onTap: () async {
-                setState(() {
-                  _tables.removeWhere((t) => t.id == table.id);
-                });
-                await _saveTablesToHive(orgId);
-                if (ctx.mounted) Navigator.pop(ctx);
-              },
-            ),
+            if (_canManageTables)
+              ListTile(
+                leading: CircleAvatar(backgroundColor: ClassicTheme.tintDanger, child: Icon(Icons.delete_outline, color: ClassicTheme.dangerRed, size: 20)),
+                title: Text('Delete Table', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: ClassicTheme.dangerRed)),
+                onTap: () async {
+                  setState(() {
+                    _tables.removeWhere((t) => t.id == table.id);
+                  });
+                  await _saveTablesToHive(orgId);
+                  if (ctx.mounted) Navigator.pop(ctx);
+                },
+              ),
           ],
         ),
       ),
@@ -2947,6 +2960,15 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen>
 
   // --- ADD / CREATE TABLE MODAL ---
   void _showAddTableDialog(String orgId, String shopName) {
+    if (!_canManageTables) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Access Denied: Only Owner or Manager can create tables.'),
+          backgroundColor: ClassicTheme.dangerRed,
+        ),
+      );
+      return;
+    }
     final numCtrl = TextEditingController();
     final nameCtrl = TextEditingController();
     final secCtrl = TextEditingController(text: 'Main Dining');

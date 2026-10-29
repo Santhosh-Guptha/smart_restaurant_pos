@@ -246,6 +246,8 @@ class ClientSetupPackageGenerator {
     buffer.writeln('if not exist "%APP_DATA_DIR%\\database\\orders.json" (');
     buffer.writeln('    powershell -NoProfile -ExecutionPolicy Bypass -Command "[System.IO.File]::WriteAllText(\'%APP_DATA_DIR%\\database\\orders.json\', \'{"rev":1,"orders":[]}\')" >nul 2>&1');
     buffer.writeln(')');
+    buffer.writeln(':: Hardening: Lockdown SmartBizz directory permissions');
+    buffer.writeln('icacls "%APP_DATA_DIR%" /inheritance:e /grant:r "Administrators:(OI)(CI)F" "SYSTEM:(OI)(CI)F" >nul 2>&1');
     buffer.writeln();
 
     // Step 3: Write License Files (Base64 decoded via PowerShell so quoting never breaks)
@@ -488,6 +490,17 @@ class ClientSetupPackageGenerator {
     buffer.writeln('    if (Test-Path \$path) {');
     buffer.writeln('        try {');
     buffer.writeln('            \$content = [System.IO.File]::ReadAllText(\$path, [System.Text.Encoding]::UTF8)');
+    buffer.writeln('            \$sigPath = \$path + ".sig"');
+    buffer.writeln('            if (Test-Path \$sigPath) {');
+    buffer.writeln('                try {');
+    buffer.writeln('                    \$expectedSig = ([System.IO.File]::ReadAllText(\$sigPath, [System.Text.Encoding]::UTF8)).Trim()');
+    buffer.writeln('                    \$sha = [System.Security.Cryptography.SHA256]::Create()');
+    buffer.writeln('                    \$actualSig = [System.BitConverter]::ToString(\$sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes(\$content))) -replace \'-\', \'\'');
+    buffer.writeln('                    if (\$expectedSig -ne \$actualSig) {');
+    buffer.writeln('                        return \$fallback');
+    buffer.writeln('                    }');
+    buffer.writeln('                } catch {}');
+    buffer.writeln('            }');
     buffer.writeln('            return (\$content | ConvertFrom-Json)');
     buffer.writeln('        } catch {}');
     buffer.writeln('    }');
@@ -498,6 +511,11 @@ class ClientSetupPackageGenerator {
     buffer.writeln('    try {');
     buffer.writeln('        \$json = \$obj | ConvertTo-Json -Depth 10 -Compress');
     buffer.writeln('        [System.IO.File]::WriteAllText(\$path, \$json, [System.Text.Encoding]::UTF8)');
+    buffer.writeln('        try {');
+    buffer.writeln('            \$sha = [System.Security.Cryptography.SHA256]::Create()');
+    buffer.writeln('            \$sig = [System.BitConverter]::ToString(\$sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes(\$json))) -replace \'-\', \'\'');
+    buffer.writeln('            [System.IO.File]::WriteAllText(\$path + ".sig", \$sig, [System.Text.Encoding]::UTF8)');
+    buffer.writeln('        } catch {}');
     buffer.writeln('    } catch {}');
     buffer.writeln('}');
     buffer.writeln();

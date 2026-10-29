@@ -29,6 +29,7 @@ import '../../core/license_lease.dart';
 
 import '../counter_billing/fast_qsr_billing_screen.dart';
 import '../restaurant/table_management_screen.dart';
+import '../restaurant/restaurant_owner_executive_dashboard_screen.dart';
 import '../kitchen/kitchen_display_screen.dart';
 import '../restaurant/restaurant_menu_management_screen.dart';
 import '../restaurant/branch_management_screen.dart';
@@ -817,6 +818,32 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
           // about a licence, so telling them about it is noise on a busy screen.
           if (isOwner && !isMasterAdmin && _planNeedsAttention(saasSession.currentLicense))
             _planActionButton(context, saasSession.currentLicense!),
+          if (isOwner || isMasterAdmin)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+              child: ElevatedButton.icon(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const RestaurantOwnerExecutiveDashboardScreen(),
+                    ),
+                  );
+                },
+                icon: const Icon(Icons.analytics_rounded, size: 16),
+                label: const Text(
+                  'Executive Hub',
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: ClassicTheme.warningAmber,
+                  foregroundColor: Colors.black87,
+                  elevation: 0,
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+              ),
+            ),
           IconButton(
             tooltip: context.isDark ? 'Switch to Light Theme' : 'Switch to Dark Theme',
             icon: Icon(
