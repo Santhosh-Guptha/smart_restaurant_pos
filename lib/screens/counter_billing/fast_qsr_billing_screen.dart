@@ -1,4 +1,5 @@
 import '../../services/restaurant_ledger.dart';
+import '../../core/cloud_gate.dart';
 import '../../services/tenant_metrics_service.dart';
 import 'dart:async';
 import 'dart:convert';
@@ -3338,14 +3339,15 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
         'items': orderItemsList,
       };
 
-      // X-18 (counter path). This sync is fire-and-forget by design - the
-      // "zero POS freeze" refactor moved it off the tap - which makes it MORE
-      // important, not less, that a failure is caught: nothing is waiting on
-      // the result, so a dropped write here is invisible unless we make it
-      // visible. The bill and every payment go to the durable Outbox on
-      // failure with their original request ids, and the operator gets a
-      // floating notice once the background work settles.
-      if (!ref.read(entitlementsProvider).isEnabled(FeatureKeys.cloudSync)) return;
+      // X-18 (counter path). For on-premises Local LAN tenants, operational data is 100% isolated to the local PC/LAN.
+      // Zero bills or customer records ever leave the local network. Only TenantMetricsService uploads daily aggregates.
+      final saasSession = ref.read(saasSessionProvider);
+      final org = saasSession.currentOrganization;
+      final isLocalNetworkTenant = org?.storageMode == StorageModes.localNetwork ||
+          isSatelliteSession() ||
+          (Hive.isBoxOpen('configBox') && Hive.box('configBox').get('saas_is_satellite_client') == true) ||
+          CloudGate.offline;
+      if (isLocalNetworkTenant || !ref.read(entitlementsProvider).isEnabled(FeatureKeys.cloudSync)) return;
 
       int queued = 0;
       int lost = 0;

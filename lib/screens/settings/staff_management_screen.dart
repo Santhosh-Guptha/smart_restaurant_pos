@@ -18,6 +18,7 @@ import '../../services/restaurant_sheets_service.dart';
 import '../../core/vertical_labels.dart';
 import '../../core/package_model.dart';
 import '../../services/lan_hub_client.dart';
+import '../../services/restaurant_ledger.dart';
 import 'plan_request_sheet.dart';
 
 class StaffManagementScreen extends ConsumerStatefulWidget {
@@ -34,7 +35,11 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(restaurantAuthProvider.notifier).syncStaffFromCloud();
+      final mode = ref.read(saasSessionProvider).currentOrganization?.storageMode;
+      final isLocal = mode == StorageModes.localNetwork || isSatelliteSession();
+      if (!isLocal && !CloudGate.offline) {
+        ref.read(restaurantAuthProvider.notifier).syncStaffFromCloud();
+      }
     });
   }
 

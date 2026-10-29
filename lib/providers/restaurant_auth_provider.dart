@@ -8,6 +8,8 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:http/http.dart' as http;
 import '../core/rbac_permissions.dart';
 import '../core/constants.dart';
+import '../core/entitlements.dart';
+import '../services/restaurant_ledger.dart';
 import '../services/lan_hub_client.dart';
 import 'saas_session_provider.dart';
 
@@ -278,16 +280,26 @@ class RestaurantAuthNotifier extends StateNotifier<RestaurantAuthState> {
     );
 
     _syncStaffFromLanHub(box);
-    if (kIsWeb || !CloudGate.offline) syncStaffFromCloud();
+    final orgMode = _ref?.read(saasSessionProvider).currentOrganization?.storageMode;
+    final isLocalNetworkTenant = orgMode == StorageModes.localNetwork ||
+        isSatelliteSession() ||
+        (Hive.isBoxOpen('configBox') && Hive.box('configBox').get('saas_is_satellite_client') == true);
+    if (!isLocalNetworkTenant && !CloudGate.offline) syncStaffFromCloud();
   }
 
-  /// Pulls remote staff roster from Firestore when online, ensuring remote
-  /// user/role modifications by the owner sync down to this store PC.
+  /// Pulls remote staff roster from Firestore when online for cloud tenants.
+  /// Strictly skipped for on-premises Local LAN tenants where data remains in-network.
   Future<void> syncStaffFromCloud() async {
     try {
       if (_ref == null) return;
+      if (CloudGate.offline) return;
       final saasSession = _ref.read(saasSessionProvider);
-      final orgId = saasSession.currentOrganization?.id;
+      final org = saasSession.currentOrganization;
+      final isLocalNetworkTenant = org?.storageMode == StorageModes.localNetwork ||
+          isSatelliteSession() ||
+          (Hive.isBoxOpen('configBox') && Hive.box('configBox').get('saas_is_satellite_client') == true);
+      if (isLocalNetworkTenant) return;
+      final orgId = org?.id;
       if (orgId == null || orgId.isEmpty || orgId == 'default') return;
 
       final snap = await FirebaseFirestore.instance
