@@ -253,6 +253,42 @@ class StaffMember {
     );
   }
 
+  StaffMember copyWith({
+    String? id,
+    String? name,
+    String? username,
+    String? email,
+    StaffRole? role,
+    List<StaffRole>? roles,
+    String? pin,
+    String? pinHash,
+    String? phone,
+    String? password,
+    String? assignedOutletId,
+    String? assignedStation,
+    bool? isSheetAccessGranted,
+    bool? isActive,
+    DateTime? createdAt,
+  }) {
+    return StaffMember(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      username: username ?? this.username,
+      email: email ?? this.email,
+      role: role ?? this.role,
+      roles: roles ?? this.roles,
+      pin: pin ?? this.pin,
+      pinHash: pinHash ?? this.pinHash,
+      phone: phone ?? this.phone,
+      password: password ?? this.password,
+      assignedOutletId: assignedOutletId ?? this.assignedOutletId,
+      assignedStation: assignedStation ?? this.assignedStation,
+      isSheetAccessGranted: isSheetAccessGranted ?? this.isSheetAccessGranted,
+      isActive: isActive ?? this.isActive,
+      createdAt: createdAt ?? this.createdAt,
+    );
+  }
+
   // --- Permission Gates ---
 
   /// Can view full financials, Google Sheets link, and P&L reports

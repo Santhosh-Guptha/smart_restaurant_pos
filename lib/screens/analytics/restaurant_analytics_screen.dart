@@ -17,6 +17,8 @@ import '../../core/cloud_gate.dart';
 import '../../core/vertical_labels.dart';
 import '../../core/package_model.dart';
 
+import '../../services/lan_hub_client.dart';
+
 enum StoreScopeMode { all, individual, selected }
 
 class RestaurantAnalyticsScreen extends ConsumerStatefulWidget {
@@ -57,6 +59,12 @@ class _RestaurantAnalyticsScreenState
   // null when there is nothing recorded there to compare against.
   double? _previousPeriodRevenue;
   Map<String, double> _paymentSplit = {'UPI': 0.0, 'CASH': 0.0, 'CARD': 0.0};
+
+  // Staff Details Mapping & Category Wise Performance Breakdown
+  String _selectedStaffRole = 'ALL'; // 'ALL', 'WAITER', 'KITCHEN', 'CASHIER'
+  String _selectedStaffMemberId = 'ALL'; // 'ALL' or staff key
+  List<Map<String, dynamic>> _staffPerformanceList = [];
+  Map<String, Map<String, dynamic>> _categoryOverallMap = {};
 
   @override
   void initState() {
@@ -258,6 +266,23 @@ class _RestaurantAnalyticsScreenState
         final list = outletOrdersMap.values.toList();
         storeTransactions[oId] = list;
         allTransactions.addAll(list);
+      }
+
+      // Local LAN Hub Orders Ingestion: Load live orders directly from the LAN server
+      if (LanHubClient.instance.isActive) {
+        try {
+          final page = await LanHubClient.instance.fetchOrders();
+          if (page != null && page.items.isNotEmpty) {
+            for (final lo in page.items) {
+              final k = canonicalId(lo);
+              if (k.isNotEmpty && !allTransactions.any((t) => canonicalId(t) == k)) {
+                allTransactions.add(lo);
+              }
+            }
+          }
+        } catch (e) {
+          debugPrint('Local LAN analytics orders load note: $e');
+        }
       }
 
       // Remote Owner Fallback: When the owner views analytics remotely (not on the store PC),
@@ -641,6 +666,92 @@ class _RestaurantAnalyticsScreenState
         }
       }
 
+      // 9. Staff Details Mapping & Category Breakdown Calculation
+      final Map<String, Map<String, dynamic>> staffMap = {};
+      final Map<String, Map<String, dynamic>> overallCatMap = {};
+
+      for (final t in filtered) {
+        final amt = ((t['grandTotal'] ?? t['totalAmount'] ?? t['subtotal'] ?? 0.0) as num).toDouble();
+        final items = t['items'];
+        final List<Map<String, dynamic>> orderItems = [];
+        if (items is List) {
+          for (final it in items) {
+            if (it is Map) {
+              final cat = (it['category'] ?? (it['subcategory'] ?? 'General')).toString();
+              final q = ((it['quantity'] ?? it['qty'] ?? 1) as num).toInt();
+              final p = ((it['price'] ?? 0.0) as num).toDouble();
+              orderItems.add({'category': cat, 'name': (it['name'] ?? '').toString(), 'qty': q, 'price': p, 'total': q * p});
+
+              if (!overallCatMap.containsKey(cat)) {
+                overallCatMap[cat] = {'name': cat, 'qty': 0, 'sales': 0.0};
+              }
+              overallCatMap[cat]!['qty'] = (overallCatMap[cat]!['qty'] as int) + q;
+              overallCatMap[cat]!['sales'] = (overallCatMap[cat]!['sales'] as double) + (q * p);
+            }
+          }
+        }
+
+        void attributeStaff({
+          required String role,
+          required String id,
+          required String name,
+        }) {
+          if (id.isEmpty && name.isEmpty) return;
+          final key = '${role}_${id.isNotEmpty ? id : name.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '')}';
+          final sName = name.isNotEmpty ? name : '${role[0]}${role.substring(1).toLowerCase()} $id';
+
+          if (!staffMap.containsKey(key)) {
+            staffMap[key] = {
+              'key': key,
+              'id': id.isNotEmpty ? id : key,
+              'name': sName,
+              'role': role,
+              'orders': 0,
+              'sales': 0.0,
+              'categories': <String, double>{},
+              'categoryQty': <String, int>{},
+            };
+          }
+          final entry = staffMap[key]!;
+          entry['orders'] = (entry['orders'] as int) + 1;
+          entry['sales'] = (entry['sales'] as double) + amt;
+
+          final cats = entry['categories'] as Map<String, double>;
+          final qtys = entry['categoryQty'] as Map<String, int>;
+          for (final oi in orderItems) {
+            final c = oi['category'] as String;
+            final tot = oi['total'] as double;
+            final q = oi['qty'] as int;
+            cats[c] = (cats[c] ?? 0.0) + tot;
+            qtys[c] = (qtys[c] ?? 0) + q;
+          }
+        }
+
+        // Waiter attribution
+        final wName = (t['waiterName'] ?? t['staffName'] ?? t['waiter'] ?? t['serverName'] ?? '').toString().trim();
+        final wId = (t['waiterId'] ?? t['staffId'] ?? '').toString().trim();
+        if (wName.isNotEmpty || wId.isNotEmpty) {
+          attributeStaff(role: 'WAITER', id: wId, name: wName);
+        }
+
+        // Cook attribution
+        final cName = (t['cookName'] ?? t['chefName'] ?? '').toString().trim();
+        final cId = (t['cookId'] ?? '').toString().trim();
+        if (cName.isNotEmpty || cId.isNotEmpty) {
+          attributeStaff(role: 'KITCHEN', id: cId, name: cName);
+        }
+
+        // Cashier / Billing attribution
+        final bName = (t['cashierName'] ?? t['billedBy'] ?? '').toString().trim();
+        final bId = (t['cashierId'] ?? '').toString().trim();
+        if (bName.isNotEmpty || bId.isNotEmpty) {
+          attributeStaff(role: 'CASHIER', id: bId, name: bName);
+        }
+      }
+
+      final staffList = staffMap.values.toList()
+        ..sort((a, b) => (b['sales'] as double).compareTo(a['sales'] as double));
+
       if (mounted) {
         setState(() {
           _hourlyData = hourly;
@@ -651,6 +762,8 @@ class _RestaurantAnalyticsScreenState
           _paymentSplit = {'UPI': upiRev, 'CASH': cashRev, 'CARD': cardRev};
           _totalTransactionsCount = filtered.length;
           _previousPeriodRevenue = (prevCount > 0 && prevRevenue > 0) ? prevRevenue : null;
+          _staffPerformanceList = staffList;
+          _categoryOverallMap = overallCatMap;
         });
       }
     } catch (e) {
@@ -1271,11 +1384,488 @@ class _RestaurantAnalyticsScreenState
                 }
               },
             ),
+            const SizedBox(height: 20),
+
+            // ── STAFF DETAILS & CATEGORY BREAKDOWN SECTION ───────────────────
+            _buildStaffPerformanceSection(vl),
           ],
         ),
       ),
     )),
   );
+  }
+
+  Widget _buildStaffPerformanceSection(VerticalLabels vl) {
+    // Filter staff list by _selectedStaffRole
+    final filteredStaff = _staffPerformanceList.where((s) {
+      if (_selectedStaffRole == 'ALL') return true;
+      return s['role'] == _selectedStaffRole;
+    }).toList();
+
+    // Determine target category data (for selected staff member or all staff)
+    Map<String, double> targetCategories = {};
+    Map<String, int> targetQtys = {};
+    String selectedStaffName = 'All Staff';
+
+    if (_selectedStaffMemberId != 'ALL') {
+      final selectedStaff = _staffPerformanceList.firstWhere(
+        (s) => s['key'] == _selectedStaffMemberId,
+        orElse: () => {},
+      );
+      if (selectedStaff.isNotEmpty) {
+        selectedStaffName = selectedStaff['name'] ?? 'Staff';
+        targetCategories = Map<String, double>.from(selectedStaff['categories'] as Map? ?? {});
+        targetQtys = Map<String, int>.from(selectedStaff['categoryQty'] as Map? ?? {});
+      }
+    } else {
+      _categoryOverallMap.forEach((cat, data) {
+        targetCategories[cat] = (data['sales'] as num?)?.toDouble() ?? 0.0;
+        targetQtys[cat] = (data['qty'] as num?)?.toInt() ?? 0;
+      });
+    }
+
+    final sortedCats = targetCategories.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+
+    // Summary KPIs
+    final totalStaff = _staffPerformanceList.length;
+    final waiters = _staffPerformanceList.where((s) => s['role'] == 'WAITER').toList();
+    final cooks = _staffPerformanceList.where((s) => s['role'] == 'KITCHEN').toList();
+    final topWaiter = waiters.isNotEmpty ? waiters.first : null;
+    final topCook = cooks.isNotEmpty ? (List<Map<String, dynamic>>.from(cooks)..sort((a, b) => (b['orders'] as int).compareTo(a['orders'] as int))).first : null;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: context.surfaceColor,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: context.borderColor),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header Row
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: amberAccent.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.badge_outlined, color: amberAccent, size: 20),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      vl.isRestaurant ? 'Staff Details & Category Performance' : 'Staff Sales & Category Breakdown',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
+                        color: context.textPrimary,
+                      ),
+                    ),
+                    Text(
+                      'Individual waiter, kitchen chef, and cashier metrics with category-wise sales attribution',
+                      style: TextStyle(fontSize: 12, color: context.textSecondary),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+
+          // Role Filter Pills
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              _buildRoleFilterChip('ALL', 'All Staff (${_staffPerformanceList.length})'),
+              _buildRoleFilterChip('WAITER', 'Waiters (${waiters.length})'),
+              _buildRoleFilterChip('KITCHEN', 'Chefs / Kitchen (${cooks.length})'),
+              _buildRoleFilterChip('CASHIER', 'Billing / Cashiers (${_staffPerformanceList.where((s) => s['role'] == 'CASHIER').length})'),
+            ],
+          ),
+          const SizedBox(height: 14),
+
+          // Individual Staff Member Selector Chip Row
+          if (_staffPerformanceList.isNotEmpty) ...[
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: ChoiceChip(
+                      label: const Text('All Staff'),
+                      selected: _selectedStaffMemberId == 'ALL',
+                      onSelected: (sel) {
+                        if (sel) setState(() => _selectedStaffMemberId = 'ALL');
+                      },
+                      selectedColor: amberAccent,
+                      labelStyle: TextStyle(
+                        fontSize: 12,
+                        fontWeight: _selectedStaffMemberId == 'ALL' ? FontWeight.bold : FontWeight.normal,
+                        color: _selectedStaffMemberId == 'ALL' ? Colors.black : context.textPrimary,
+                      ),
+                    ),
+                  ),
+                  ..._staffPerformanceList.map((st) {
+                    final isSel = _selectedStaffMemberId == st['key'];
+                    final role = (st['role'] ?? '').toString();
+                    return Padding(
+                      padding: const EdgeInsets.only(right: 6),
+                      child: ChoiceChip(
+                        avatar: Icon(
+                          role == 'WAITER' ? Icons.room_service_outlined : (role == 'KITCHEN' ? Icons.soup_kitchen_outlined : Icons.point_of_sale_outlined),
+                          size: 14,
+                          color: isSel ? Colors.black : context.textSecondary,
+                        ),
+                        label: Text('${st['name']}'),
+                        selected: isSel,
+                        onSelected: (sel) {
+                          setState(() => _selectedStaffMemberId = sel ? st['key'] : 'ALL');
+                        },
+                        selectedColor: amberAccent,
+                        labelStyle: TextStyle(
+                          fontSize: 12,
+                          fontWeight: isSel ? FontWeight.bold : FontWeight.normal,
+                          color: isSel ? Colors.black : context.textPrimary,
+                        ),
+                      ),
+                    );
+                  }),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+          ],
+
+          // KPI Summary Cards Row
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final isNarrow = constraints.maxWidth < 700;
+              final kpis = [
+                _buildStaffSummaryKpi(
+                  title: 'ACTIVE STAFF',
+                  value: '$totalStaff',
+                  subtitle: '${waiters.length} Waiters • ${cooks.length} Chefs',
+                  icon: Icons.groups_outlined,
+                  color: amberAccent,
+                ),
+                _buildStaffSummaryKpi(
+                  title: 'TOP WAITER',
+                  value: topWaiter != null ? (topWaiter['name'] ?? '—') : '—',
+                  subtitle: topWaiter != null ? '₹${(topWaiter['sales'] as double).toStringAsFixed(0)} (${topWaiter['orders']} orders)' : 'No waiter orders yet',
+                  icon: Icons.emoji_events_outlined,
+                  color: ClassicTheme.secondaryAccent,
+                ),
+                _buildStaffSummaryKpi(
+                  title: 'TOP CHEF',
+                  value: topCook != null ? (topCook['name'] ?? '—') : '—',
+                  subtitle: topCook != null ? '${topCook['orders']} orders prepared' : 'No kitchen logs yet',
+                  icon: Icons.restaurant_outlined,
+                  color: coralAccent,
+                ),
+              ];
+
+              if (isNarrow) {
+                return Column(
+                  children: kpis.map((k) => Padding(padding: const EdgeInsets.only(bottom: 8), child: k)).toList(),
+                );
+              } else {
+                return Row(
+                  children: kpis.map((k) => Expanded(child: Padding(padding: const EdgeInsets.only(right: 8), child: k))).toList(),
+                );
+              }
+            },
+          ),
+          const SizedBox(height: 18),
+
+          // Category-wise Breakdown Card
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: context.canvasColor,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: context.borderColor),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Category Breakdown: $selectedStaffName',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                        color: context.textPrimary,
+                      ),
+                    ),
+                    Text(
+                      '${sortedCats.length} Categories Handled',
+                      style: TextStyle(fontSize: 11, color: context.textSecondary),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                if (sortedCats.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Text(
+                      'No categorized items recorded for $selectedStaffName in this period.',
+                      style: TextStyle(fontSize: 12, color: context.textSecondary),
+                    ),
+                  )
+                else
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: sortedCats.map((entry) {
+                      final catName = entry.key;
+                      final sales = entry.value;
+                      final qty = targetQtys[catName] ?? 0;
+                      return Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: context.surfaceColor,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: context.borderColor),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              width: 8,
+                              height: 8,
+                              decoration: const BoxDecoration(
+                                color: amberAccent,
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              catName,
+                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: context.textPrimary),
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              '₹${sales.toStringAsFixed(0)}',
+                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: ClassicTheme.successEmerald),
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              '($qty items)',
+                              style: TextStyle(fontSize: 11, color: context.textSecondary),
+                            ),
+                          ],
+                        ),
+                      );
+                    }).toList(),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // Detailed Staff Cards List
+          Text(
+            'Staff Performance Register',
+            style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: context.textPrimary),
+          ),
+          const SizedBox(height: 8),
+          if (filteredStaff.isEmpty)
+            Container(
+              padding: const EdgeInsets.all(16),
+              alignment: Alignment.center,
+              child: Text(
+                'No staff records match the selected role filter in this period.',
+                style: TextStyle(fontSize: 12, color: context.textSecondary),
+              ),
+            )
+          else
+            ...filteredStaff.map((staff) {
+              final role = (staff['role'] ?? 'STAFF').toString();
+              final roleColor = role == 'WAITER' ? amberAccent : (role == 'KITCHEN' ? coralAccent : emeraldAccent);
+              final roleLabel = role == 'WAITER' ? 'Waiter / Steward' : (role == 'KITCHEN' ? 'Kitchen Chef' : 'Cashier / Billing');
+              final cats = (staff['categories'] as Map<String, double>? ?? {});
+
+              return Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: context.canvasColor,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: context.borderColor),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        CircleAvatar(
+                          radius: 18,
+                          backgroundColor: roleColor.withValues(alpha: 0.15),
+                          child: Text(
+                            (staff['name'] ?? 'S')[0].toUpperCase(),
+                            style: TextStyle(color: roleColor, fontWeight: FontWeight.bold, fontSize: 14),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Text(
+                                    staff['name'] ?? 'Staff',
+                                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: context.textPrimary),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: roleColor.withValues(alpha: 0.15),
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: Text(
+                                      roleLabel,
+                                      style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: roleColor),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                'Staff ID: ${staff['id']}',
+                                style: TextStyle(fontSize: 11, color: context.textSecondary),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Text(
+                              '₹${(staff['sales'] as double).toStringAsFixed(0)}',
+                              style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: context.textPrimary),
+                            ),
+                            Text(
+                              '${staff['orders']} orders handled',
+                              style: TextStyle(fontSize: 11, color: context.textSecondary),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                    if (cats.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      const Divider(height: 1),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 4,
+                        children: cats.entries.take(4).map((ce) {
+                          return Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: context.surfaceColor,
+                              borderRadius: BorderRadius.circular(4),
+                              border: Border.all(color: context.borderColor),
+                            ),
+                            child: Text(
+                              '${ce.key}: ₹${ce.value.toStringAsFixed(0)}',
+                              style: TextStyle(fontSize: 11, color: context.textSecondary),
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ],
+                  ],
+                ),
+              );
+            }),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRoleFilterChip(String role, String label) {
+    final isSel = _selectedStaffRole == role;
+    return ChoiceChip(
+      label: Text(label),
+      selected: isSel,
+      onSelected: (sel) {
+        if (sel) setState(() => _selectedStaffRole = role);
+      },
+      selectedColor: amberAccent,
+      labelStyle: TextStyle(
+        fontSize: 12,
+        fontWeight: isSel ? FontWeight.bold : FontWeight.w500,
+        color: isSel ? Colors.black : context.textPrimary,
+      ),
+    );
+  }
+
+  Widget _buildStaffSummaryKpi({
+    required String title,
+    required String value,
+    required String subtitle,
+    required IconData icon,
+    required Color color,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: context.canvasColor,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: context.borderColor),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(icon, color: color, size: 18),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: context.textSecondary),
+                ),
+                Text(
+                  value,
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: context.textPrimary),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                Text(
+                  subtitle,
+                  style: TextStyle(fontSize: 11, color: context.textSecondary),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   /// True for the shop verticals, which count bills rather than orders.

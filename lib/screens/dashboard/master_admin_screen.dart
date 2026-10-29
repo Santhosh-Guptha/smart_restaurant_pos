@@ -1,7 +1,7 @@
 import 'dart:math';
 import 'dart:async';
 import 'package:flutter/material.dart';
-import '../../widgets/responsive_field_row.dart';
+import '../../widgets/responsive_field_row.dart';
 import '../../widgets/change_password_dialog.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -2104,6 +2104,12 @@ class OrganizationsTab extends ConsumerStatefulWidget {
     final nameController = TextEditingController(
       text: initialShopName ?? (initialName != null ? "$initialName $entityLabel" : ''),
     );
+    final initialDomainSlug = (initialShopName ?? initialName ?? 'restaurant')
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^a-z0-9]'), '');
+    final localDomainController = TextEditingController(
+      text: '${initialDomainSlug.isNotEmpty ? initialDomainSlug : 'restaurant'}.local',
+    );
     final mobileController = TextEditingController(text: initialMobile ?? '');
     final aadhaarController = TextEditingController(text: initialAadhaar ?? '');
     final panController = TextEditingController(text: initialPan ?? '');
@@ -2293,6 +2299,21 @@ class OrganizationsTab extends ConsumerStatefulWidget {
                                   LicenceEdits.tierPackage(allPackages, newVertical, selection.tier));
                             });
                           },
+                        ),
+                        const SizedBox(height: 10),
+                        TextFormField(
+                          controller: localDomainController,
+                          style: TextStyle(color: context.textPrimary),
+                          decoration: InputDecoration(
+                            labelText: "Local Network Domain (LAN Premises)",
+                            labelStyle: TextStyle(color: context.textSecondary, fontSize: 13),
+                            hintText: "e.g. shanmuk.local",
+                            helperText: "Domain used on store Wi-Fi (e.g. http://shanmuk.local:8085/)",
+                            helperStyle: TextStyle(color: context.textSecondary, fontSize: 11),
+                            prefixIcon: const Icon(Icons.dns_rounded, size: 18),
+                            enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: context.borderColor)),
+                            focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: primaryAccent, width: 2)),
+                          ),
                         ),
                         const SizedBox(height: 10),
                         ResponsiveFieldRow(
@@ -2625,6 +2646,7 @@ class OrganizationsTab extends ConsumerStatefulWidget {
                               adminOverride: selection.adminOverride && selection.limitsEditable,
                               tableCount: effectiveTableCount,
                               operatingMode: effectiveOperatingMode,
+                              localDomain: localDomainController.text.trim().toLowerCase(),
                               // The password typed here is temporary: the owner
                               // chooses their own on first login
                               // (FirstLoginPasswordScreen; docs/10_ONBOARDING.md §2).

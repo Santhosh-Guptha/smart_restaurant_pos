@@ -663,6 +663,7 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen>
         }
         if (parsed.isNotEmpty) {
           _mergeOrders(parsed, orgId);
+          changed = true;
         }
       }
 

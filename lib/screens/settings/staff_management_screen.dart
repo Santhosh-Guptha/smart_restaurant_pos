@@ -154,7 +154,7 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
     final saasSession = ref.read(saasSessionProvider);
     final license = saasSession.currentLicense;
     final allowedRoles = license?.allowedRoles ??
-        ['OWNER', 'MANAGER', 'BILLING', 'KITCHEN', 'WAITER'];
+        ['OWNER', 'MANAGER', 'BILLING', 'CASHIER', 'KITCHEN', 'WAITER'];
 
     // User limit (docs/PLATFORM_STRUCTURE.md §3, Issue 137):
     // Check current active staff count against tenant license quota (saas_license -> maxUsers).
@@ -179,23 +179,25 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
     bool obscurePassword = true;
     
     // Filter available roles according to license allowedRoles
-    //
-    // A shop has no kitchen and no tables: the kitchen and waiter roles open
-    // nothing on a shop's dashboard (every card they could reach is a
-    // restaurant card), so a shop staff member given one signed in to an
-    // empty screen. Offer only the roles that have work to do here.
-    //
-    // A store owner (an owner tied to one outlet) adds that outlet's staff but
-    // not more owners: owners are assigned per outlet by the tenant owner in
-    // Outlets → Store owners.
     final creatorIsStoreScoped = (saasSession.currentUser?.franchiseId ?? '').isNotEmpty;
     bool fitsTrade(StaffRole r) =>
         r != StaffRole.unassigned &&
         !(creatorIsStoreScoped && r == StaffRole.owner) &&
         (vl.isRestaurant || (r != StaffRole.kitchen && r != StaffRole.waiter));
     final filteredRoles = StaffRole.values.where((r) {
+      if (!fitsTrade(r)) return false;
+      // In a restaurant with multi-user capacity, all restaurant roles (Owner, Manager, Billing, Waiter, Kitchen)
+      // are always available to assign staff.
+      if (vl.isRestaurant && effectiveMaxUsers > 1) return true;
       final roleKey = r.name.toUpperCase();
-      return fitsTrade(r) && allowedRoles.any((a) => a.toUpperCase() == roleKey);
+      return allowedRoles.isEmpty ||
+          allowedRoles.any((a) {
+            final ak = a.toUpperCase();
+            return ak == roleKey ||
+                (roleKey == 'BILLING' && ak == 'CASHIER') ||
+                (roleKey == 'KITCHEN' && ak == 'CHEF') ||
+                (roleKey == 'WAITER' && ak == 'CAPTAIN');
+          });
     }).toList();
     final availableRoles = filteredRoles.isNotEmpty
         ? filteredRoles
@@ -906,31 +908,50 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
     );
   }
 
-  void _confirmDeleteStaff(StaffMember staff) {
+  void _confirmToggleStaffStatus(StaffMember staff) {
     if (staff.role == StaffRole.owner) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Cannot remove the primary Store Owner account.'),
+          content: Text('Cannot deactivate the primary Store Owner account.'),
           backgroundColor: ClassicTheme.warningAmber,
         ),
       );
       return;
     }
 
+    final willDeactivate = staff.isActive;
+    if (!willDeactivate) {
+      // Check quota before reactivating
+      final seatEnt = ref.read(entitlementsProvider);
+      final quotaMaxUsers = _resolveLicensedMaxUsers();
+      final effectiveMaxUsers = (seatEnt.isPureOffline || (seatEnt.vertical == Verticals.kirana)) ? 1 : quotaMaxUsers;
+      final allStaff = ref.read(restaurantAuthProvider).staffList;
+      final staffList = allStaff.where((s) => !_isExcludedStaff(s)).toList();
+      final usersInUse = _usersInUse(staffList);
+      final vertical = ref.read(currentVerticalProvider);
+      final vl = VerticalLabels.of(vertical);
+      if (usersInUse >= effectiveMaxUsers) {
+        _showUserLimitDialog(ownerOnly: false, maxUsers: effectiveMaxUsers, restaurant: vl.isRestaurant, vertical: vertical);
+        return;
+      }
+    }
+
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: context.surfaceColor,
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: BorderSide(color: context.borderColor)),
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16), side: BorderSide(color: context.borderColor)),
         title: Text(
-          'Remove ${staff.name}?',
+          willDeactivate ? 'Deactivate ${staff.name}?' : 'Reactivate ${staff.name}?',
           style: TextStyle(
               color: context.textPrimary, fontWeight: FontWeight.bold),
         ),
         content: Text(
-          'Are you sure you want to remove this staff member?\n\n'
-          'This will revoke their terminal PIN and automatically revoke their access to the store Google Sheet.',
+          willDeactivate
+              ? 'Deactivating this staff member temporarily revokes terminal access and frees up 1 user quota slot.\n\n'
+                'All historical order taking, kitchen prep, and billing records mapped to ${staff.name} remain permanently preserved for analytics.'
+              : 'Reactivating this staff member restores login and terminal access.',
           style: TextStyle(color: context.textSecondary, fontSize: 13),
         ),
         actions: [
@@ -941,62 +962,53 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
-              backgroundColor: ClassicTheme.dangerRed,
+              backgroundColor: willDeactivate ? ClassicTheme.warningAmber : ClassicTheme.successEmerald,
               foregroundColor: Colors.white,
             ),
             onPressed: () async {
               Navigator.pop(ctx);
-
-              final authNotifier =
-                  ref.read(restaurantAuthProvider.notifier);
-              final client = authNotifier.authenticatedHttpClient;
-              final sheetId = CloudGate.offline
-                  ? null
-                  : await RestaurantSheetsService.getSavedSpreadsheetId();
-
-              if (client != null && sheetId != null && sheetId.isNotEmpty) {
-                await RestaurantSheetsService.revokeStaffAccess(
-                  authenticatedClient: client,
-                  spreadsheetId: sheetId,
-                  staffEmail: staff.email,
-                );
-              }
+              final updated = staff.copyWith(isActive: !willDeactivate);
+              await ref.read(restaurantAuthProvider.notifier).saveStaffMember(updated);
 
               if (!CloudGate.offline) {
-              try {
-                await FirebaseFirestore.instance
-                    .collection('staff_users')
-                    .doc(staff.id)
-                    .delete();
-                await FirebaseFirestore.instance
-                    .collection('users')
-                    .doc(staff.id)
-                    .delete();
-                await FirebaseFirestore.instance
-                    .collection('users')
-                    .doc('usr_${staff.id}')
-                    .delete();
-              } catch (e) {
-                debugPrint('Firestore staff delete skipped: $e');
-              }
+                try {
+                  await FirebaseFirestore.instance
+                      .collection('staff_users')
+                      .doc(staff.id)
+                      .set({'isActive': !willDeactivate}, SetOptions(merge: true));
+                  await FirebaseFirestore.instance
+                      .collection('users')
+                      .doc(staff.id)
+                      .set({'isActive': !willDeactivate}, SetOptions(merge: true));
+                } catch (e) {
+                  debugPrint('Firestore staff soft-status sync note: $e');
+                }
               }
 
-              await ref
-                  .read(restaurantAuthProvider.notifier)
-                  .deleteStaffMember(staff.id);
+              try {
+                await LanHubClient.instance.saveUser({
+                  ...updated.toMap(),
+                  'isActive': !willDeactivate,
+                });
+              } catch (_) {}
 
               if (mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
                     content: Text(
-                        'Staff "${staff.name}" removed and Google Sheet access revoked.'),
-                    backgroundColor: ClassicTheme.dangerRed,
+                      willDeactivate
+                          ? 'Staff "${staff.name}" deactivated (historical mappings preserved).'
+                          : 'Staff "${staff.name}" reactivated successfully!',
+                    ),
+                    backgroundColor: willDeactivate ? ClassicTheme.warningAmber : ClassicTheme.successEmerald,
                   ),
                 );
               }
             },
-            child:
-                const Text('Remove', style: TextStyle(fontWeight: FontWeight.bold)),
+            child: Text(
+              willDeactivate ? 'Deactivate' : 'Reactivate',
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
           ),
         ],
       ),
@@ -1250,7 +1262,25 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
                                                ),
                                              ),
                                            );
-                                         }).toList(),
+                                         }).toList()..addAll([
+                                           if (!staff.isActive)
+                                             Container(
+                                               padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                               decoration: BoxDecoration(
+                                                 color: Colors.grey.withValues(alpha: 0.15),
+                                                 borderRadius: BorderRadius.circular(5),
+                                                 border: Border.all(color: Colors.grey.withValues(alpha: 0.4)),
+                                               ),
+                                               child: const Text(
+                                                 'INACTIVE',
+                                                 style: TextStyle(
+                                                   color: Colors.grey,
+                                                   fontSize: 11,
+                                                   fontWeight: FontWeight.bold,
+                                                 ),
+                                               ),
+                                             ),
+                                         ]),
                                        ),
                                      ],
                                    ),
@@ -1279,12 +1309,15 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
                             ),
                             if (!isOwner) ...[
                               IconButton(
-                                tooltip: 'Remove Staff',
+                                tooltip: staff.isActive ? 'Deactivate Staff (Soft Delete)' : 'Reactivate Staff',
                                 padding: EdgeInsets.zero,
                                 constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                                onPressed: () => _confirmDeleteStaff(staff),
-                                icon: const Icon(Icons.delete_outline_rounded,
-                                    color: ClassicTheme.dangerRed, size: 18),
+                                onPressed: () => _confirmToggleStaffStatus(staff),
+                                icon: Icon(
+                                  staff.isActive ? Icons.person_off_outlined : Icons.person_add_alt_1_rounded,
+                                  color: staff.isActive ? ClassicTheme.warningAmber : ClassicTheme.successEmerald,
+                                  size: 18,
+                                ),
                               ),
                             ],
                           ],

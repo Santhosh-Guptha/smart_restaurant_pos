@@ -142,6 +142,8 @@ class LanHubClient {
   }
   String? get token => _box?.get(tokenKey)?.toString();
   bool get isPaired => (hubUrl ?? '').isNotEmpty && (token ?? '').isNotEmpty;
+  bool get isConfigured => (hubUrl ?? '').isNotEmpty;
+  bool get isActive => (hubUrl ?? '').isNotEmpty;
 
   /// Reachability only; needs no token.
   Future<Map<String, dynamic>?> ping(String hub) async {
@@ -287,12 +289,16 @@ class LanHubClient {
     required String kitchenStatus,
     String? status,
     String? kotNumber,
+    String? cookId,
+    String? cookName,
   }) async {
     final d = await post('/api/v1/kds/status', {
       'orderId': orderId,
       'kitchenStatus': kitchenStatus,
       if (status != null) 'status': status,
       if (kotNumber != null) 'kotNumber': kotNumber,
+      if (cookId != null) 'cookId': cookId,
+      if (cookName != null) 'cookName': cookName,
     });
     return d is Map ? Map<String, dynamic>.from(d) : null;
   }

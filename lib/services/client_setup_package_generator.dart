@@ -45,6 +45,27 @@ class ClientSetupPackageGenerator {
     final isLocalNetwork = storageMode == StorageModes.localNetwork ||
         payload.features[FeatureKeys.localLanServer] == true;
 
+    final localDomain = payload.localDomain.trim().isNotEmpty
+        ? payload.localDomain.trim().toLowerCase()
+        : '${payload.storeName.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '')}.local';
+
+    final featuresList = <String>[];
+    if (payload.features[FeatureKeys.localLanServer] == true) featuresList.add('LAN Server');
+    if (payload.features[FeatureKeys.kdsEnabled] == true) featuresList.add('KDS & KOT');
+    if (payload.features[FeatureKeys.splitBilling] == true) featuresList.add('Split Billing');
+    if (payload.features[FeatureKeys.customerDisplay] == true) featuresList.add('CFD Display');
+    if (payload.features[FeatureKeys.inventoryEnabled] == true) featuresList.add('Inventory');
+    if (payload.features[FeatureKeys.analytics] == true) featuresList.add('Analytics');
+    if (payload.features[FeatureKeys.staffManagement] == true) featuresList.add('Staff & Roles');
+    if (payload.features[FeatureKeys.tableManagement] == true) featuresList.add('Visual Tables');
+    if (featuresList.isEmpty) featuresList.add('Core POS & Billing');
+    final featuresSummary = featuresList.join(', ');
+
+    final allowedRolesSummary = (payload.allowedRoles.isNotEmpty
+            ? payload.allowedRoles
+            : ['OWNER', 'MANAGER', 'BILLING', 'CASHIER', 'WAITER', 'KITCHEN'])
+        .join(', ');
+
     final buffer = StringBuffer();
     buffer.writeln('@echo off');
     buffer.writeln('setlocal EnableDelayedExpansion');
@@ -56,18 +77,43 @@ class ClientSetupPackageGenerator {
     buffer.writeln(':: Business Type: $vertical ($tier)');
     buffer.writeln(':: Selected Plan: $planName');
     buffer.writeln(':: Storage Mode : $storageLabel');
+    buffer.writeln(':: Local Domain : $localDomain');
     buffer.writeln(':: Valid Until  : $validUntil');
+    buffer.writeln(':: Max Users    : ${payload.maxUsers}');
+    buffer.writeln(':: Max Devices  : ${payload.maxDevices > 0 ? payload.maxDevices : 20}');
+    buffer.writeln(':: Allowed Roles: $allowedRolesSummary');
+    buffer.writeln(':: Licensed Feat: $featuresSummary');
     buffer.writeln(':: =======================================================================');
+    buffer.writeln();
+    buffer.writeln(':: Security & Anti-Tamper License Verification');
+    buffer.writeln('set "B64_CHECK=$b64Json"');
+    buffer.writeln('powershell -NoProfile -ExecutionPolicy Bypass -Command "\$b = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String(\'%B64_CHECK%\')); \$j = \$b | ConvertFrom-Json; if (-not \$j.token -or (\$j.token -notmatch \'(?i)sbz[-_]lic\') -or \$j.payload.orgId -ne \'$orgId\') { exit 1 }; \$validDate = [DateTime]::Parse(\$j.payload.validUntil); if ([DateTime]::UtcNow -gt \$validDate) { exit 2 }" >nul 2>&1');
+    buffer.writeln('if %errorLevel% neq 0 (');
+    buffer.writeln('    echo.');
+    buffer.writeln('    echo =======================================================================');
+    buffer.writeln('    echo  [SECURITY ERROR] License Verification Failed!');
+    buffer.writeln('    echo  This client setup package is unauthorized, corrupted, or has expired.');
+    buffer.writeln('    echo  Execution blocked. Please contact SmartBizz platform support for approval.');
+    buffer.writeln('    echo =======================================================================');
+    buffer.writeln('    echo.');
+    buffer.writeln('    pause');
+    buffer.writeln('    exit /b 1');
+    buffer.writeln(')');
     buffer.writeln();
     buffer.writeln('echo.');
     buffer.writeln('echo =======================================================================');
     buffer.writeln('echo            SmartBizz POS - 1-Click Client Setup');
     buffer.writeln('echo =======================================================================');
-    buffer.writeln('echo  Store Name   : $storeName');
+    buffer.writeln('echo  Store Name   : $storeName ($orgId)');
     buffer.writeln('echo  Business Type: $vertical ($tier)');
     buffer.writeln('echo  Selected Plan: $planName');
     buffer.writeln('echo  Storage Mode : $storageLabel');
+    buffer.writeln('echo  Local Domain : $localDomain');
     buffer.writeln('echo  Valid Until  : $validUntil');
+    buffer.writeln('echo  Allowed Users: ${payload.maxUsers} (Inactive users do not consume quota)');
+    buffer.writeln('echo  Max Devices  : ${payload.maxDevices > 0 ? payload.maxDevices : 20}');
+    buffer.writeln('echo  Allowed Roles: $allowedRolesSummary');
+    buffer.writeln('echo  Features     : $featuresSummary');
     buffer.writeln('echo =======================================================================');
     buffer.writeln('echo.');
 
@@ -85,7 +131,15 @@ class ClientSetupPackageGenerator {
 
     // Step 2: Directories & Isolated Database Hub Setup
     buffer.writeln('echo [*] Initializing local database storage directories...');
-    buffer.writeln('set "APP_DATA_DIR=%APPDATA%\\SmartBizz"');
+    buffer.writeln('set "DEFAULT_APP_DATA=%APPDATA%\\SmartBizz"');
+    buffer.writeln('echo  Default storage directory: !DEFAULT_APP_DATA!');
+    buffer.writeln('set "USER_DIR="');
+    buffer.writeln('set /p "USER_DIR=Press ENTER to accept default, or enter custom path: "');
+    buffer.writeln('if defined USER_DIR (');
+    buffer.writeln('    set "APP_DATA_DIR=!USER_DIR!"');
+    buffer.writeln(') else (');
+    buffer.writeln('    set "APP_DATA_DIR=!DEFAULT_APP_DATA!"');
+    buffer.writeln(')');
     buffer.writeln('set "LOCAL_DATA_DIR=%LOCALAPPDATA%\\SmartBizz"');
     buffer.writeln('if not exist "%APP_DATA_DIR%" mkdir "%APP_DATA_DIR%"');
     buffer.writeln('if not exist "%APP_DATA_DIR%\\database" mkdir "%APP_DATA_DIR%\\database"');
@@ -219,7 +273,13 @@ class ClientSetupPackageGenerator {
       buffer.writeln(')');
       buffer.writeln('if not defined HOST_IP set "HOST_IP=127.0.0.1"');
       buffer.writeln('echo [OK] Host Machine Local IP detected: !HOST_IP!');
-      buffer.writeln('echo {"hostIp":"!HOST_IP!","port":8085,"orgId":"$orgId","mode":"LOCAL_NETWORK"} > "%APP_DATA_DIR%\\lan_hub_config.json"');
+      buffer.writeln();
+      buffer.writeln(':: Map Local Domain in Windows hosts file');
+      buffer.writeln('set "LOCAL_DOMAIN=$localDomain"');
+      buffer.writeln('echo [*] Mapping local domain !LOCAL_DOMAIN! to !HOST_IP!...');
+      buffer.writeln('powershell -NoProfile -ExecutionPolicy Bypass -Command "\$h = \\\"\$env:SystemRoot\\System32\\drivers\\etc\\hosts\\\"; if (Test-Path \$h) { \$lines = @(Get-Content \$h -ErrorAction SilentlyContinue) | Where-Object { \$_ -notmatch \'$localDomain\' }; \$lines += \\\"!HOST_IP!\`t$localDomain\\\"; [System.IO.File]::WriteAllLines(\$h, \$lines) }" >nul 2>&1');
+      buffer.writeln('echo [OK] Local domain configured: http://!LOCAL_DOMAIN!:8085/');
+      buffer.writeln('echo {"hostIp":"!HOST_IP!","port":8085,"orgId":"$orgId","mode":"LOCAL_NETWORK","localDomain":"!LOCAL_DOMAIN!"} > "%APP_DATA_DIR%\\lan_hub_config.json"');
       buffer.writeln();
 
       final listenerPs1 = generateLanHubListenerScript(token: token, webPosUrl: kWebPosUrl, port: 8085);
@@ -260,7 +320,7 @@ class ClientSetupPackageGenerator {
     }
 
     // Step 5: Desktop Shortcut & Self-Healing Launcher
-    final appUrl = isLocalNetwork ? 'http://!HOST_IP!:8085/?host_ip=!HOST_IP!&port=8085' : '$kWebPosUrl?host_ip=!HOST_IP!&port=8085';
+    final appUrl = isLocalNetwork ? 'http://!LOCAL_DOMAIN!:8085/?host_ip=!HOST_IP!&port=8085&domain=!LOCAL_DOMAIN!' : '$kWebPosUrl?host_ip=!HOST_IP!&port=8085';
     buffer.writeln('echo [*] Creating Desktop Shortcut...');
     if (isLocalNetwork) {
       buffer.writeln(':: Deploy self-healing desktop launcher');
@@ -275,6 +335,7 @@ class ClientSetupPackageGenerator {
       buffer.writeln('    echo     WScript.Sleep 1000');
       buffer.writeln('    echo End If');
       buffer.writeln('    echo hostIp = "!HOST_IP!"');
+      buffer.writeln('    echo localDomain = "$localDomain"');
       buffer.writeln('    echo cfgPath = appData ^& "\\SmartBizz\\lan_hub_config.json"');
       buffer.writeln('    echo If fso.FileExists(cfgPath) Then');
       buffer.writeln('    echo     Set f = fso.OpenTextFile(cfgPath, 1^)');
@@ -285,8 +346,17 @@ class ClientSetupPackageGenerator {
       buffer.writeln('    echo         pos2 = InStr(pos + 10, content, """"^)');
       buffer.writeln('    echo         If pos2 ^> 0 Then hostIp = Mid(content, pos + 10, pos2 - (pos + 10)^)');
       buffer.writeln('    echo     End If');
+      buffer.writeln('    echo     posD = InStr(content, """localDomain"":"""^)');
+      buffer.writeln('    echo     If posD ^> 0 Then');
+      buffer.writeln('    echo         posD2 = InStr(posD + 15, content, """"^)');
+      buffer.writeln('    echo         If posD2 ^> 0 Then localDomain = Mid(content, posD + 15, posD2 - (posD + 15)^)');
+      buffer.writeln('    echo     End If');
       buffer.writeln('    echo End If');
-      buffer.writeln('    echo posUrl = "http://" ^& hostIp ^& ":8085/?host_ip=" ^& hostIp ^& "^&port=8085"');
+      buffer.writeln('    echo If Len(localDomain) ^> 0 Then');
+      buffer.writeln('    echo     posUrl = "http://" ^& localDomain ^& ":8085/?host_ip=" ^& hostIp ^& "^&port=8085&domain=" ^& localDomain');
+      buffer.writeln('    echo Else');
+      buffer.writeln('    echo     posUrl = "http://" ^& hostIp ^& ":8085/?host_ip=" ^& hostIp ^& "^&port=8085"');
+      buffer.writeln('    echo End If');
       buffer.writeln('    echo On Error Resume Next');
       buffer.writeln('    echo errCode = WshShell.Run("msedge.exe --app=""" ^& posUrl ^& """", 1, False^)');
       buffer.writeln('    echo If errCode ^<^> 0 Then');
@@ -504,6 +574,15 @@ class ClientSetupPackageGenerator {
     buffer.writeln('        \$method = if (\$tokens.Length -gt 0) { \$tokens[0].ToUpper() } else { "GET" }');
     buffer.writeln('        \$rawPath = if (\$tokens.Length -gt 1) { \$tokens[1] } else { "/" }');
     buffer.writeln('        \$cleanPath = (\$rawPath -split "\\?")[0]');
+    buffer.writeln('        \$queryMap = @{}');
+    buffer.writeln('        if (\$rawPath -match "\\?(.*)\$") {');
+    buffer.writeln('            \$qStr = \$matches[1]');
+    buffer.writeln('            foreach (\$pair in (\$qStr -split "&")) {');
+    buffer.writeln('                \$kv = \$pair -split "="');
+    buffer.writeln('                if (\$kv.Length -gt 1) { \$queryMap[\$kv[0]] = [System.Web.HttpUtility]::UrlDecode(\$kv[1]) }');
+    buffer.writeln('            }');
+    buffer.writeln('        }');
+    buffer.writeln('        \$querySince = if (\$queryMap.ContainsKey("since")) { try { [int]\$queryMap["since"] } catch { 0 } } else { 0 }');
     buffer.writeln();
     buffer.writeln('        \$bodyText = ""');
     buffer.writeln('        \$headerEndIdx = \$fullRequest.IndexOf("`r`n`r`n")');
@@ -521,7 +600,8 @@ class ClientSetupPackageGenerator {
     buffer.writeln('            \$statusCode = 204');
     buffer.writeln('            \$statusText = "No Content"');
     buffer.writeln('        } elseif (\$cleanPath -eq "/api/v1/ping") {');
-    buffer.writeln('            \$responseBody = \'{"status":"ok","server":"SmartBizz Local LAN Hub","version":"1.3.1","ip":"\' + \$HostIp + \'","port":\' + \$Port + \',"mode":"LOCAL_NETWORK","vertical":"restaurant"}\'');
+    buffer.writeln('            \$cfgDomain = if (Test-Path \$configFile) { try { (Get-Content \$configFile -Raw | ConvertFrom-Json).localDomain } catch { "" } } else { "" }');
+    buffer.writeln('            \$responseBody = \'{"status":"ok","server":"SmartBizz Local LAN Hub","version":"1.3.1","ip":"\' + \$HostIp + \'","port":\' + \$Port + \',"domain":"\' + \$cfgDomain + \'","mode":"LOCAL_NETWORK","vertical":"restaurant"}\'');
     buffer.writeln('        } elseif (\$cleanPath -eq "/api/v1/license" -or \$cleanPath -eq "/api/v1/bootstrap") {');
     buffer.writeln('            \$licFile = Join-Path \$appData \'smartbizz_bootstrap_license.json\'');
     buffer.writeln('            \$tokFile = Join-Path \$appData \'smartbizz_license.token\'');
@@ -566,30 +646,37 @@ class ClientSetupPackageGenerator {
     buffer.writeln('                }');
     buffer.writeln('            }');
     buffer.writeln('            if (\$matchedUser) {');
-    buffer.writeln('                \$role = if (\$matchedUser.role) { [string]\$matchedUser.role } else { "BILLING" }');
-    buffer.writeln('                \$userRoles = if (\$matchedUser.roles) { @(\$matchedUser.roles) } else { @(\$role) }');
-    buffer.writeln('                \$token = "sbz_tok_" + [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds() + "_" + (Get-Random -Minimum 1000 -Maximum 9999)');
-    buffer.writeln('                \$storeObj = Read-JsonFile \$storeFile @{');
-    buffer.writeln('                    orgId = "org_local"');
-    buffer.writeln('                    storeName = "SmartBizz Store"');
-    buffer.writeln('                    vertical = "restaurant"');
-    buffer.writeln('                    storageMode = "LOCAL_NETWORK"');
+    buffer.writeln('                if (\$matchedUser.isActive -eq \$false) {');
+    buffer.writeln('                    \$statusCode = 403');
+    buffer.writeln('                    \$statusText = "Forbidden"');
+    buffer.writeln('                    \$responseBody = \'{"error":"Account is inactive. Please contact store owner."}\'');
+    buffer.writeln('                } else {');
+    buffer.writeln('                    \$role = if (\$matchedUser.role) { [string]\$matchedUser.role } else { "BILLING" }');
+    buffer.writeln('                    \$userRoles = if (\$matchedUser.roles) { @(\$matchedUser.roles) } else { @(\$role) }');
+    buffer.writeln('                    \$token = "sbz_tok_" + [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds() + "_" + (Get-Random -Minimum 1000 -Maximum 9999)');
+    buffer.writeln('                    \$storeObj = Read-JsonFile \$storeFile @{');
+    buffer.writeln('                        orgId = "org_local"');
+    buffer.writeln('                        storeName = "SmartBizz Store"');
+    buffer.writeln('                        vertical = "restaurant"');
+    buffer.writeln('                        storageMode = "LOCAL_NETWORK"');
+    buffer.writeln('                    }');
+    buffer.writeln('                    \$safeUser = @{');
+    buffer.writeln('                        id = if (\$matchedUser.id) { \$matchedUser.id } else { "usr_" + (Get-Random) }');
+    buffer.writeln('                        username = if (\$matchedUser.username) { \$matchedUser.username } else { \$uName }');
+    buffer.writeln('                        name = if (\$matchedUser.name) { \$matchedUser.name } else { \$uName }');
+    buffer.writeln('                        email = if (\$matchedUser.email) { \$matchedUser.email } else { \$uName + "@local.store" }');
+    buffer.writeln('                        role = \$role');
+    buffer.writeln('                        roles = \$userRoles');
+    buffer.writeln('                        isActive = if (\$null -ne \$matchedUser.isActive) { \$matchedUser.isActive } else { \$true }');
+    buffer.writeln('                    }');
+    buffer.writeln('                    \$resObj = @{');
+    buffer.writeln('                        status = "ok"');
+    buffer.writeln('                        token = \$token');
+    buffer.writeln('                        user = \$safeUser');
+    buffer.writeln('                        store = \$storeObj');
+    buffer.writeln('                    }');
+    buffer.writeln('                    \$responseBody = \$resObj | ConvertTo-Json -Depth 10 -Compress');
     buffer.writeln('                }');
-    buffer.writeln('                \$safeUser = @{');
-    buffer.writeln('                    id = if (\$matchedUser.id) { \$matchedUser.id } else { "usr_" + (Get-Random) }');
-    buffer.writeln('                    username = if (\$matchedUser.username) { \$matchedUser.username } else { \$uName }');
-    buffer.writeln('                    name = if (\$matchedUser.name) { \$matchedUser.name } else { \$uName }');
-    buffer.writeln('                    email = if (\$matchedUser.email) { \$matchedUser.email } else { \$uName + "@local.store" }');
-    buffer.writeln('                    role = \$role');
-    buffer.writeln('                    roles = \$userRoles');
-    buffer.writeln('                }');
-    buffer.writeln('                \$resObj = @{');
-    buffer.writeln('                    status = "ok"');
-    buffer.writeln('                    token = \$token');
-    buffer.writeln('                    user = \$safeUser');
-    buffer.writeln('                    store = \$storeObj');
-    buffer.writeln('                }');
-    buffer.writeln('                \$responseBody = \$resObj | ConvertTo-Json -Depth 10 -Compress');
     buffer.writeln('            } else {');
     buffer.writeln('                \$statusCode = 401');
     buffer.writeln('                \$statusText = "Unauthorized"');
@@ -712,7 +799,11 @@ class ClientSetupPackageGenerator {
     buffer.writeln('                    @{ id = "T5"; name = "Table 5"; capacity = 4; status = "AVAILABLE" }');
     buffer.writeln('                )');
     buffer.writeln('            }');
-    buffer.writeln('            \$responseBody = \$tablesObj | ConvertTo-Json -Depth 10 -Compress');
+    buffer.writeln('            if (\$querySince -gt 0 -and [int]\$tablesObj.rev -le \$querySince) {');
+    buffer.writeln('                \$responseBody = @{ status = "ok"; rev = [int]\$tablesObj.rev; full = \$false; tables = @() } | ConvertTo-Json -Depth 10 -Compress');
+    buffer.writeln('            } else {');
+    buffer.writeln('                \$responseBody = @{ status = "ok"; rev = [int]\$tablesObj.rev; full = \$true; tables = @(\$tablesObj.tables) } | ConvertTo-Json -Depth 10 -Compress');
+    buffer.writeln('            }');
     buffer.writeln('        } elseif (\$cleanPath -eq "/api/v1/tables/status" -and \$method -eq "POST") {');
     buffer.writeln('            \$tStatusReq = try { \$bodyText | ConvertFrom-Json } catch { \$null }');
     buffer.writeln('            \$tableId = if (\$tStatusReq.table) { [string]\$tStatusReq.table } else { [string]\$tStatusReq.id }');
@@ -744,7 +835,11 @@ class ClientSetupPackageGenerator {
     buffer.writeln('        } elseif (\$cleanPath -eq "/api/v1/orders" -or \$cleanPath -eq "/api/v1/kot" -or \$cleanPath -eq "/api/v1/kds/orders") {');
     buffer.writeln('            if (\$method -eq "GET") {');
     buffer.writeln('                \$ordersObj = Read-JsonFile \$ordersFile @{ rev = 1; orders = @() }');
-    buffer.writeln('                \$responseBody = \$ordersObj | ConvertTo-Json -Depth 10 -Compress');
+    buffer.writeln('                if (\$querySince -gt 0 -and [int]\$ordersObj.rev -le \$querySince) {');
+    buffer.writeln('                    \$responseBody = @{ status = "ok"; rev = [int]\$ordersObj.rev; full = \$false; orders = @() } | ConvertTo-Json -Depth 10 -Compress');
+    buffer.writeln('                } else {');
+    buffer.writeln('                    \$responseBody = @{ status = "ok"; rev = [int]\$ordersObj.rev; full = \$true; orders = @(\$ordersObj.orders) } | ConvertTo-Json -Depth 10 -Compress');
+    buffer.writeln('                }');
     buffer.writeln('            } elseif (\$method -eq "POST") {');
     buffer.writeln('                \$orderReq = try { \$bodyText | ConvertFrom-Json } catch { \$null }');
     buffer.writeln('                \$ordersObj = Read-JsonFile \$ordersFile @{ rev = 1; orders = @() }');
@@ -782,6 +877,8 @@ class ClientSetupPackageGenerator {
     buffer.writeln('                if (\$o.id -eq \$orderId -or (\$o.kotNumber -and \$o.kotNumber -eq \$orderId)) {');
     buffer.writeln('                    \$o.kitchenStatus = \$kStatus');
     buffer.writeln('                    if (\$kdsReq.status) { \$o.status = [string]\$kdsReq.status }');
+    buffer.writeln('                    if (\$kdsReq.cookId) { \$o | Add-Member -MemberType NoteProperty -Name "cookId" -Value ([string]\$kdsReq.cookId) -Force }');
+    buffer.writeln('                    if (\$kdsReq.cookName) { \$o | Add-Member -MemberType NoteProperty -Name "cookName" -Value ([string]\$kdsReq.cookName) -Force }');
     buffer.writeln('                    break');
     buffer.writeln('                }');
     buffer.writeln('            }');

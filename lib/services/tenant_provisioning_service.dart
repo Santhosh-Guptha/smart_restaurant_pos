@@ -74,6 +74,7 @@ class TenantProvisioningService {
     /// with 15 tables, dine-in postpaid. Never read from the plan.
     int? tableCount,
     String? operatingMode,
+    String? localDomain,
   }) async {
     final cleanEmail = email.trim().toLowerCase();
     final cleanCategory = category?.trim().isNotEmpty == true ? category!.trim() : 'Restaurant & Cafe';
@@ -215,6 +216,7 @@ class TenantProvisioningService {
         'settlementUpiId': settlementUpiId?.trim() ?? '',
         'status': 'ACTIVE',
         'storageMode': storageMode,
+        'localDomain': localDomain?.trim().toLowerCase() ?? '',
         'backendType': StorageModes.isOffline(storageMode) ? 'LOCAL' : 'EXCEL',
         'createdAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
@@ -244,6 +246,7 @@ class TenantProvisioningService {
         // package; the plan's name and cycle; dates stamped here.
         ...composed.toLicenseFields(),
         if (planId != null && planId.isNotEmpty) 'planId': planId,
+        'localDomain': localDomain?.trim().toLowerCase() ?? '',
         'vertical': vertical,
         'startDate': FieldValue.serverTimestamp(),
         'endDate': Timestamp.fromDate(endDate),

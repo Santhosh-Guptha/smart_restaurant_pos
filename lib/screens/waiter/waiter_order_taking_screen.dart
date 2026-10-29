@@ -414,27 +414,31 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
       }
     }
 
-    // 2. Fetch remote orders via Webhook (keeps waiter synced with QR & Counter orders)
-    try {
-      // PERF-1: null means nothing has changed server-side since the last
-      // poll, so the list already assembled from local state stands.
-      final remoteList = await AppsScriptBackendService.pollOrders(
-        orgId: orgId,
-        table: widget.table.tableNumber,
-      );
-      for (final m in remoteList ?? const <Map<String, dynamic>>[]) {
-        final id = (m['id'] ?? m['orderId'] ?? m['kotNumber'] ?? '').toString();
-        if (id.isEmpty || id.toUpperCase().contains('TEST')) continue;
-        if (!matched.any((ex) => canonicalId(ex) == canonicalId(m))) {
-          final o = KotOrder.fromMap(m, id);
-          if (o.status != KotStatus.cancelled &&
-              o.status != KotStatus.paid &&
-              (o.paymentStatus ?? '').toUpperCase() != 'PAID') {
-            matched.add(o);
+    // 2. Fetch remote orders via Webhook (keeps waiter synced with QR & Counter orders on cloud deployments)
+    final saasSession = ref.read(saasSessionProvider);
+    final isLanActive = LanHubClient.instance.isActive ||
+        saasSession.currentOrganization?.storageMode == StorageModes.localNetwork;
+
+    if (!isLanActive && featureOn(FeatureKeys.cloudSync)) {
+      try {
+        final remoteList = await AppsScriptBackendService.pollOrders(
+          orgId: orgId,
+          table: widget.table.tableNumber,
+        );
+        for (final m in remoteList ?? const <Map<String, dynamic>>[]) {
+          final id = (m['id'] ?? m['orderId'] ?? m['kotNumber'] ?? '').toString();
+          if (id.isEmpty || id.toUpperCase().contains('TEST')) continue;
+          if (!matched.any((ex) => canonicalId(ex) == canonicalId(m))) {
+            final o = KotOrder.fromMap(m, id);
+            if (o.status != KotStatus.cancelled &&
+                o.status != KotStatus.paid &&
+                (o.paymentStatus ?? '').toUpperCase() != 'PAID') {
+              matched.add(o);
+            }
           }
         }
-      }
-    } catch (_) {}
+      } catch (_) {}
+    }
 
     // Fast LAN hub fetch: keeps waiter synced with table QR orders and kitchen status
     try {
@@ -916,8 +920,10 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
       'orderType': 'Dine-In',
       'customerName': guestName,
       'customerPhone': guestPhone,
-      'waiterName': activeStaff?.name ?? 'Floor Waiter',
-      'staffId': activeStaff?.id ?? '',
+      'waiterId': activeStaff?.id ?? ref.read(saasSessionProvider).currentUser?.id ?? '',
+      'waiterName': activeStaff?.name ?? ref.read(saasSessionProvider).currentUser?.fullName ?? 'Floor Waiter',
+      'staffId': activeStaff?.id ?? ref.read(saasSessionProvider).currentUser?.id ?? '',
+      'staffName': activeStaff?.name ?? ref.read(saasSessionProvider).currentUser?.fullName ?? 'Floor Waiter',
       'createdAt': DateTime.now().toIso8601String(),
       'firedAt': DateTime.now().toIso8601String(),
       'courseNo': currentCourse,
@@ -1089,23 +1095,27 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
         'timestamp': DateTime.now().toIso8601String(),
       };
 
-      unawaited(() async {
-        try {
-          final saveResult = await AppsScriptBackendService.saveBillDetailed(
-            outletId: orgId,
-            spreadsheetId: sheetId ?? '',
-            clientRequestId: clientRequestId,
-            billData: roundPayload,
-          );
+      final isLanActive = LanHubClient.instance.isActive ||
+          ref.read(saasSessionProvider).currentOrganization?.storageMode == StorageModes.localNetwork;
+      if (!isLanActive && featureOn(FeatureKeys.cloudSync)) {
+        unawaited(() async {
+          try {
+            final saveResult = await AppsScriptBackendService.saveBillDetailed(
+              outletId: orgId,
+              spreadsheetId: sheetId ?? '',
+              clientRequestId: clientRequestId,
+              billData: roundPayload,
+            );
 
-          if (saveResult['success'] != true && saveResult['ok'] != true) {
+            if (saveResult['success'] != true && saveResult['ok'] != true) {
+              await _queueSettlement(orgId, clientRequestId, roundPayload);
+            }
+          } catch (asErr) {
+            debugPrint('AppsScript saveBill async error: $asErr');
             await _queueSettlement(orgId, clientRequestId, roundPayload);
           }
-        } catch (asErr) {
-          debugPrint('AppsScript saveBill async error: $asErr');
-          await _queueSettlement(orgId, clientRequestId, roundPayload);
-        }
-      }());
+        }());
+      }
     } catch (e) {
       debugPrint('Error sending KOT: $e');
     } finally {

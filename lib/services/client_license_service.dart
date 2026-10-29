@@ -39,6 +39,7 @@ class ClientLicensePayload {
   final String ownerName;
   final String ownerUsername;
   final String ownerUserId;
+  final String localDomain;
 
   const ClientLicensePayload({
     required this.version,
@@ -61,6 +62,7 @@ class ClientLicensePayload {
     this.ownerName = '',
     this.ownerUsername = '',
     this.ownerUserId = '',
+    this.localDomain = '',
   });
 
   bool get isExpired => DateTime.now().toUtc().isAfter(validUntil.toUtc());
@@ -95,6 +97,7 @@ class ClientLicensePayload {
         'ownerName': ownerName,
         'ownerUsername': ownerUsername,
         'ownerUserId': ownerUserId,
+        'localDomain': localDomain,
       };
 
   factory ClientLicensePayload.fromJson(Map<String, dynamic> j) {
@@ -136,6 +139,7 @@ class ClientLicensePayload {
       ownerName: (j['ownerName'] ?? '').toString().trim(),
       ownerUsername: (j['ownerUsername'] ?? '').toString().trim(),
       ownerUserId: (j['ownerUserId'] ?? '').toString().trim(),
+      localDomain: (j['localDomain'] ?? j['domain'] ?? '').toString().trim(),
     );
   }
 }

@@ -92,32 +92,31 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen>
       _clockNotifier.value = DateTime.now();
     });
     // Live synchronization poll for incoming table & POS orders. Local Hive
-    // is watched above; the cloud poll only exists when the cloud does.
-    final cloudOn = featureOn(FeatureKeys.cloudSync);
-    _pollTimer = Timer.periodic(const Duration(seconds: 3), (_) {
-      if (mounted) {
-        _loadLiveOrders();
-        if (cloudOn) {
+    // is watched above; the cloud poll only exists when the cloud does and not in Local LAN mode.
+    final session = ref.read(saasSessionProvider);
+    final isLanActive = LanHubClient.instance.isActive ||
+        session.currentOrganization?.storageMode == StorageModes.localNetwork;
+    final cloudOn = !isLanActive && featureOn(FeatureKeys.cloudSync);
+
+    if (cloudOn) {
+      _pollTimer = Timer.periodic(const Duration(seconds: 3), (_) {
+        if (mounted) {
+          _loadLiveOrders();
           _pollWebhookOrders();
-        } else {
-          _pollFirestoreFallbackOrders();
         }
-      }
-    });
+      });
+      _pollWebhookOrders();
+    }
 
     // Sub-second real-time LAN hub poll: updates board instantly when waiters,
     // table QR customers, or cashiers place or change orders.
-    _pollLanHubOrders();
-    _lanPollTimer = Timer.periodic(const Duration(milliseconds: 1200), (_) {
-      if (mounted) {
-        _pollLanHubOrders();
-      }
-    });
-
-    if (cloudOn) {
-      _pollWebhookOrders();
-    } else {
-      _pollFirestoreFallbackOrders();
+    if (isLanActive) {
+      _pollLanHubOrders();
+      _lanPollTimer = Timer.periodic(const Duration(milliseconds: 1000), (_) {
+        if (mounted) {
+          _pollLanHubOrders();
+        }
+      });
     }
   }
 
@@ -144,11 +143,18 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen>
   Future<void> _handleManualRefresh() async {
     HapticFeedback.lightImpact();
     _loadLiveOrders();
-    final cloudOn = featureOn(FeatureKeys.cloudSync);
-    if (cloudOn) {
-      await _pollWebhookOrders();
+    final session = ref.read(saasSessionProvider);
+    final isLanActive = LanHubClient.instance.isActive ||
+        session.currentOrganization?.storageMode == StorageModes.localNetwork;
+    if (isLanActive) {
+      await _pollLanHubOrders();
     } else {
-      await _pollFirestoreFallbackOrders();
+      final cloudOn = featureOn(FeatureKeys.cloudSync);
+      if (cloudOn) {
+        await _pollWebhookOrders();
+      } else {
+        await _pollFirestoreFallbackOrders();
+      }
     }
     if (mounted) setState(() {});
   }
@@ -764,6 +770,11 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen>
         }
       });
 
+      final currentSession = ref.read(saasSessionProvider);
+      final activeStaff = ref.read(restaurantAuthProvider).activeStaff;
+      final cookId = activeStaff?.id ?? currentSession.currentUser?.id ?? 'kitchen';
+      final cookName = activeStaff?.name ?? currentSession.currentUser?.fullName ?? 'Chef';
+
       if (Hive.isBoxOpen('configBox')) {
         final box = Hive.box('configBox');
         final raw = box.get('kot_orders_$orgId');
@@ -773,6 +784,8 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen>
               final m = Map<String, dynamic>.from(item);
               final kStatus = isServedAction ? 'SERVED' : newStatus.name.toUpperCase();
               m['kitchenStatus'] = kStatus;
+              m['cookId'] = cookId;
+              m['cookName'] = cookName;
               if (isServedAction) {
                 if (m['paymentStatus'] != 'PAID') {
                   m['status'] = 'SERVED';
@@ -795,7 +808,9 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen>
         }
       }
 
-      // Sync status via Webhook
+      // Sync status via LAN Hub or Cloud Webhook
+      final isLanActive = LanHubClient.instance.isActive ||
+          currentSession.currentOrganization?.storageMode == StorageModes.localNetwork;
       bool syncOk = true;
       bool statusQueued = false;
       try {
@@ -805,38 +820,39 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen>
                 ? 'PREPARING'
                 : (newStatus == KotStatus.ready ? 'READY' : 'PENDING'));
 
-        try {
-          await LanHubClient.instance.setKdsStatus(
+        if (isLanActive) {
+          try {
+            await LanHubClient.instance.setKdsStatus(
+              orderId: order.id,
+              kitchenStatus: fsStatus,
+              status: fsStatus,
+              kotNumber: order.kotNumber,
+              cookId: cookId,
+              cookName: cookName,
+            );
+            syncOk = true;
+          } catch (lanErr) {
+            debugPrint('LanHub KDS status push note: $lanErr');
+            syncOk = false;
+          }
+        } else {
+          final statusReqId = const Uuid().v4();
+          syncOk = await AppsScriptBackendService.updateOrderStatus(
+            orgId: orgId,
             orderId: order.id,
-            kitchenStatus: fsStatus,
-            status: fsStatus,
             kotNumber: order.kotNumber,
+            newStatus: fsStatus,
+            tableName: order.tableName,
+            clientRequestId: statusReqId,
           );
-        } catch (lanErr) {
-          debugPrint('LanHub KDS status push note: $lanErr');
-        }
-        
-        final statusReqId = const Uuid().v4();
-        syncOk = await AppsScriptBackendService.updateOrderStatus(
-          orgId: orgId,
-          orderId: order.id,
-          kotNumber: order.kotNumber,
-          newStatus: fsStatus,
-          tableName: order.tableName,
-          clientRequestId: statusReqId,
-        );
-        if (!syncOk) {
-          // X-18 (KDS path): "sync pending" used to be a label with nothing
-          // behind it - the transition was never retried, so a READY tapped
-          // during a network blip stayed PENDING on the waiter's and cashier's
-          // screens until someone noticed. Hand it to the Outbox. The server's
-          // kitchen compare-and-set (X-17) makes a late-arriving retry safe: a
-          // stale rank is a no-op, never a regression.
-          statusQueued = await _queueStatusPush(orgId, order, fsStatus, statusReqId);
+          if (!syncOk) {
+            // X-18 (KDS path): "sync pending" outbox queue
+            statusQueued = await _queueStatusPush(orgId, order, fsStatus, statusReqId);
+          }
         }
       } catch (e) {
         syncOk = false;
-        debugPrint('Error updating KOT status via webhook: $e');
+        debugPrint('Error updating KOT status: $e');
       }
 
       if (mounted) {
