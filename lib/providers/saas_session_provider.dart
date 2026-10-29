@@ -1348,6 +1348,7 @@ class SaasSessionNotifier extends StateNotifier<SaasSessionState> {
   Future<void> activateWithClientLicense(
     ClientLicensePayload payload, {
     String? ownerName,
+    bool autoLogin = true,
   }) async {
     final cleanCategory = payload.vertical == Verticals.restaurant ? 'Restaurant' : payload.vertical;
     final resolvedVertical = Verticals.resolve(businessCategory: cleanCategory, vertical: payload.vertical);
@@ -1425,6 +1426,7 @@ class SaasSessionNotifier extends StateNotifier<SaasSessionState> {
 
     // 3. Build local owner user
     final box = Hive.box('configBox');
+    final isLanOrWeb = kIsWeb || effectiveStorageMode == StorageModes.localNetwork;
     final hasLocalPassword = (box.get('saas_password_hash_$ownerEmail') as String?)?.isNotEmpty == true;
     final user = SaasUser(
       id: ownerUserId,
@@ -1434,17 +1436,45 @@ class SaasSessionNotifier extends StateNotifier<SaasSessionState> {
       role: 'OWNER',
       organizationId: orgId,
       businessCategory: cleanCategory,
-      mustChangePassword: !hasLocalPassword,
+      mustChangePassword: isLanOrWeb ? false : !hasLocalPassword,
     );
 
     // 4. Save to local Hive
     await box.put('saas_org', jsonEncode(organization.toJson()));
-    await box.put('saas_user', jsonEncode(user.toJson()));
     await box.put('saas_license', jsonEncode(license.toJson()));
+    await box.put('saas_is_client_license', true);
+    await box.put('current_org_id', orgId);
+    await box.put('default_org_id', orgId);
+    await box.put('pure_offline_mode', effectiveStorageMode == StorageModes.pureOffline || effectiveStorageMode == StorageModes.localNetwork);
+    final machineId = await DeviceFingerprintService.getMachineId();
+    await box.put('_sbz_bound_lic_$orgId', machineId);
+    await box.put('_sbz_active_machine_id', machineId);
+    await box.put('is_activated', true);
+
+    // Record signed lease validity
+    await LicenseLease.recordValidated(orgId);
+
+    // Enforce CloudGate pure offline
+    CloudGate.setOffline(true);
+
+    if (!autoLogin) {
+      await box.put('saas_logged_in', false);
+      await box.put('session_active', false);
+      state = SaasSessionState(
+        currentUser: null,
+        currentOrganization: organization,
+        currentLicense: license,
+        isMockMode: false,
+        isInitializing: false,
+      );
+      debugPrint("[Client Licence] Configured local store: $storeLabel ($orgId, $resolvedVertical) without auto-login");
+      return;
+    }
+
+    await box.put('saas_user', jsonEncode(user.toJson()));
     await box.put('saas_logged_in', true);
     await box.put('session_active', true);
     await box.put('saas_remember_me', true);
-    await box.put('saas_is_client_license', true);
     await box.put('saas_login_timestamp', DateTime.now().toIso8601String());
     await box.put('saas_client_license_org_id', orgId);
     await box.put('saas_last_email', user.email);
@@ -1456,22 +1486,7 @@ class SaasSessionNotifier extends StateNotifier<SaasSessionState> {
     await box.put('saas_license_$ownerEmail', jsonEncode(license.toJson()));
     await box.put('saas_username_to_email_$ownerUsername', ownerEmail);
     await box.put('saas_username_to_email_$ownerEmail', ownerEmail);
-    await box.put('current_org_id', orgId);
-    await box.put('default_org_id', orgId);
-    await box.put('pure_offline_mode', effectiveStorageMode == StorageModes.pureOffline);
-    final machineId = await DeviceFingerprintService.getMachineId();
-    await box.put('_sbz_bound_lic_$orgId', machineId);
-    await box.put('_sbz_active_machine_id', machineId);
-    await box.put('is_activated', true);
     await box.put('local_username', resolvedOwnerName);
-
-    // Record signed lease validity
-
-    await LicenseLease.recordValidated(orgId);
-
-    // Enforce CloudGate pure offline
-
-    CloudGate.setOffline(true);
 
     // 5. Setup active staff in restaurantAuthProvider
     final primaryRole = StaffRole.owner;

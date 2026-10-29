@@ -56,6 +56,8 @@ class ClientLicenseBootstrapService {
         return false;
       }
 
+      final isSatelliteOrWeb = kIsWeb || LanHubClient.instance.hubUrl != null;
+
       final success = await ClientLicenseService.activateLicense(
         payload,
         ref: ref,
@@ -63,13 +65,16 @@ class ClientLicenseBootstrapService {
         // The owner's name comes from the key (ownerName); the store-name
         // fallback is for keys issued before the server added it.
         ownerName: payload.ownerName.isNotEmpty ? payload.ownerName : '${payload.storeName} Owner',
+        autoLogin: !isSatelliteOrWeb,
       );
 
       if (success) {
         ClientBootstrapReader.saveBootstrapSource(token);
         ClientBootstrapReader.markBootstrapCompleted();
         debugPrint('🚀 ClientLicenseBootstrapService: Inbuilt licence activated successfully for ${payload.storeName} (${payload.orgId}) on mode ${payload.storageMode}!');
-        return true;
+        // In web / satellite mode, we configure store metadata but do not auto-login as Owner,
+        // so returning false ensures the user lands cleanly on SaaSLoginScreen with the LAN hub banner.
+        return !isSatelliteOrWeb;
       }
     } catch (e) {
       debugPrint('ClientLicenseBootstrapService: bootstrap activation error: $e');

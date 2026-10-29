@@ -5,6 +5,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../services/stock_service.dart';
@@ -204,9 +205,10 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
     // 3. Periodic cloud background sync with concurrency guard. Pending bills
     //    are a running-tabs feature and the poll is a cloud call: neither the
     //    timer nor the initial fetch exists without both switched on.
-    if (ent.isEnabled(FeatureKeys.dineInBilling) &&
-        ent.isEnabled(FeatureKeys.cloudSync)) {
-      _pendingPollTimer = Timer.periodic(const Duration(seconds: 4), (_) {
+    if (ent.isEnabled(FeatureKeys.dineInBilling) ||
+        LanHubClient.instance.hubUrl != null ||
+        kIsWeb) {
+      _pendingPollTimer = Timer.periodic(const Duration(milliseconds: 1200), (_) {
         _fetchPendingOrders();
       });
       _fetchPendingOrders(); // Initial fetch
@@ -266,6 +268,64 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
 
     // Load from local Hive cache first (instant 0ms response)
     _loadPendingFromHive();
+
+    // Fast local LAN Hub polling: instant reflection of waiter & table QR orders!
+    final hasLanHub = LanHubClient.instance.hubUrl != null ||
+        (Hive.isBoxOpen('configBox') && Hive.box('configBox').get('saas_master_hub_url') != null) ||
+        kIsWeb;
+    if (hasLanHub) {
+      try {
+        final page = await LanHubClient.instance.fetchOrders();
+        if (page != null) {
+          final orgId = _getEffectiveOrgId();
+          final Map<String, Map<String, dynamic>> orderMap = {};
+          for (final o in _pendingOrders) {
+            final id = canonicalId(o);
+            if (id.isNotEmpty) orderMap[id] = o;
+          }
+          bool hadChanges = false;
+          for (final doc in page.items) {
+            try {
+              final d = Map<String, dynamic>.from(doc);
+              final id = canonicalId(d);
+              if (id.isNotEmpty) {
+                if (_isPendingOrder(d)) {
+                  orderMap[id] = d;
+                  hadChanges = true;
+                } else if (orderMap.containsKey(id)) {
+                  orderMap.remove(id);
+                  hadChanges = true;
+                }
+              }
+            } catch (_) {}
+          }
+          if (mounted && hadChanges) {
+            setState(() {
+              _pendingOrders = orderMap.values.toList();
+            });
+            if (Hive.isBoxOpen('configBox')) {
+              final box = Hive.box('configBox');
+              final raw = box.get('kot_orders_$orgId') as List? ?? [];
+              final Map<String, Map<String, dynamic>> localMap = {};
+              for (final it in raw) {
+                if (it is Map) {
+                  final m = Map<String, dynamic>.from(it);
+                  final k = canonicalId(m);
+                  if (k.isNotEmpty) localMap[k] = m;
+                }
+              }
+              for (final item in page.items) {
+                final k = canonicalId(item);
+                if (k.isNotEmpty) localMap[k] = item;
+              }
+              await box.put('kot_orders_$orgId', localMap.values.toList());
+            }
+          }
+        }
+      } catch (e) {
+        debugPrint('Billing LAN hub pending orders poll note: $e');
+      }
+    }
 
     if (!ref.read(entitlementsProvider).isEnabled(FeatureKeys.cloudSync)) {
       _isFetchingPendingOrders = false;
@@ -3012,8 +3072,10 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
           final targetMap = existingOrderToAppend != null ? updatedList[existingIndex] : updatedList.last;
           final kotOrder = KotOrder.fromMap(targetMap, targetBillId);
           await LocalStore.upsertOrder(orgId, kotOrder);
+          // Broadcast order to Local LAN Hub so KDS and other terminals see it immediately
+          await LanHubClient.instance.submitKot(targetMap);
         } catch (lsErr) {
-          debugPrint('LocalStore order upsert note: $lsErr');
+          debugPrint('LocalStore/LanHub order upsert note: $lsErr');
         }
 
         // Update table status in Hive to 'OCCUPIED' if Dine-In
@@ -3941,6 +4003,22 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
       // Decrement local stock for settled items
       final settledItems = (order['items'] as List?) ?? [];
       _decrementLocalStock(settledItems, billId: orderId);
+
+      // Broadcast settled status and free table on Local LAN Hub instantly
+      try {
+        await LanHubClient.instance.submitKot(updatedOrderData);
+        if (tNum.isNotEmpty && isDineIn) {
+          await LanHubClient.instance.setTableStatus({
+            'id': tNum,
+            'table': tNum,
+            'status': 'AVAILABLE',
+            'currentBillAmount': 0.0,
+            'currentCustomerName': '',
+          });
+        }
+      } catch (lanErr) {
+        debugPrint('Billing LAN settle broadcast note: $lanErr');
+      }
 
       // Remove from in-memory pending orders
       setState(() {

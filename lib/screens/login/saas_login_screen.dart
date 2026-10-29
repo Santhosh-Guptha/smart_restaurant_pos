@@ -159,9 +159,9 @@ class _SaaSLoginScreenState extends ConsumerState<SaaSLoginScreen> {
 
   Future<void> _handleLanLogin() async {
     final username = _emailController.text.trim();
-    final password = _passwordController.text;
+    final password = _passwordController.text.trim();
     if (username.isEmpty || password.isEmpty) {
-      setState(() => _errorMessage = 'Please enter username and password');
+      setState(() => _errorMessage = 'Please enter username and password/PIN');
       return;
     }
     setState(() {
@@ -194,6 +194,7 @@ class _SaaSLoginScreenState extends ConsumerState<SaaSLoginScreen> {
           role: role,
           organizationId: orgId,
           businessCategory: vertical,
+          mustChangePassword: false,
         );
 
         final saasOrg = SaasOrganization(
@@ -207,13 +208,13 @@ class _SaaSLoginScreenState extends ConsumerState<SaaSLoginScreen> {
         );
 
         final saasLicense = SaasLicense(
-          planTier: (storeMap['tier'] ?? 'PREMIUM').toString(),
+          planTier: (storeMap['tier'] ?? 'ENTERPRISE').toString(),
           status: 'ACTIVE',
           maxFranchises: 1,
           maxUsers: 20,
-          maxDevices: (storeMap['maxDevices'] is num) ? (storeMap['maxDevices'] as num).toInt() : 10,
+          maxDevices: (storeMap['maxDevices'] is num) ? (storeMap['maxDevices'] as num).toInt() : 20,
           allowedRoles: const ['OWNER', 'MANAGER', 'BILLING', 'CASHIER', 'WAITER', 'KITCHEN'],
-          features: const {'local_lan_server': true, 'customer_display': true},
+          features: const {'local_lan_server': true, 'customer_display': true, 'split_billing': true, 'visual_floor_plan': true},
           startDate: DateTime.now(),
           endDate: DateTime.now().add(const Duration(days: 3650)),
           vertical: vertical,
@@ -221,6 +222,7 @@ class _SaaSLoginScreenState extends ConsumerState<SaaSLoginScreen> {
 
         final box = Hive.box('configBox');
         await box.put('saas_logged_in', true);
+        await box.put('session_active', true);
         await box.put('saas_user', jsonEncode(saasUser.toJson()));
         await box.put('saas_org', jsonEncode(saasOrg.toJson()));
         await box.put('saas_license', jsonEncode(saasLicense.toJson()));
@@ -240,7 +242,7 @@ class _SaaSLoginScreenState extends ConsumerState<SaaSLoginScreen> {
       } else {
         setState(() {
           _isLoggingIn = false;
-          _errorMessage = 'Invalid username or password. Check credentials configured by store owner.';
+          _errorMessage = 'Invalid username or password/PIN. Check staff credentials configured by store owner.';
         });
       }
     } catch (e) {
@@ -611,14 +613,14 @@ class _SaaSLoginScreenState extends ConsumerState<SaaSLoginScreen> {
                                         style: TextStyle(color: context.textPrimary, fontSize: 14),
                                         decoration: ClassicTheme.inputDecorationFor(
                                           context,
-                                          hintText: "Enter username or email",
+                                          hintText: _isLanHubMode ? "Enter staff username or email" : "Enter username or email",
                                           prefixIcon: Icon(Icons.person_outline_rounded, color: context.textSecondary, size: 20),
                                         ),
                                         validator: (v) => v == null || v.trim().isEmpty ? "Username or email is required" : null,
                                       ),
                                       const SizedBox(height: 16),
                                       Text(
-                                        "Password",
+                                        _isLanHubMode ? "Password or PIN" : "Password",
                                         style: TextStyle(
                                           color: context.textSecondary,
                                           fontSize: 13,
@@ -632,7 +634,7 @@ class _SaaSLoginScreenState extends ConsumerState<SaaSLoginScreen> {
                                         style: TextStyle(color: context.textPrimary, fontSize: 14),
                                         decoration: ClassicTheme.inputDecorationFor(
                                           context,
-                                          hintText: "Enter your password",
+                                          hintText: _isLanHubMode ? "Enter password or PIN (e.g. 1234, 5566)" : "Enter your password",
                                           prefixIcon: Icon(Icons.lock_outline, color: context.textSecondary, size: 20),
                                           suffixIcon: IconButton(
                                             icon: Icon(

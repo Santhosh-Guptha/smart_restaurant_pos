@@ -26,6 +26,7 @@ import '../../core/receipt/receipt_template.dart';
 import '../../providers/entitlements_provider.dart';
 import '../../services/thermal_printer_service.dart';
 import '../../services/kds_voice_announcer.dart';
+import '../../services/lan_hub_client.dart';
 
 class KitchenDisplayScreen extends ConsumerStatefulWidget {
   const KitchenDisplayScreen({super.key});
@@ -43,6 +44,7 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen>
   late final PageController _pageController;
   Timer? _tickerTimer;
   Timer? _pollTimer;
+  Timer? _lanPollTimer;
   StreamSubscription? _hiveBoxSub;
   final ValueNotifier<DateTime> _clockNotifier = ValueNotifier<DateTime>(DateTime.now());
   Set<String> _terminalKeys = {};
@@ -103,6 +105,15 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen>
       }
     });
 
+    // Sub-second real-time LAN hub poll: updates board instantly when waiters,
+    // table QR customers, or cashiers place or change orders.
+    _pollLanHubOrders();
+    _lanPollTimer = Timer.periodic(const Duration(milliseconds: 1200), (_) {
+      if (mounted) {
+        _pollLanHubOrders();
+      }
+    });
+
     if (cloudOn) {
       _pollWebhookOrders();
     } else {
@@ -124,6 +135,7 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen>
     _hiveBoxSub?.cancel();
     _tickerTimer?.cancel();
     _pollTimer?.cancel();
+    _lanPollTimer?.cancel();
     _clockNotifier.dispose();
     _pageController.dispose();
     super.dispose();
@@ -139,6 +151,25 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen>
       await _pollFirestoreFallbackOrders();
     }
     if (mounted) setState(() {});
+  }
+
+  bool _isPollingLan = false;
+
+  /// Sub-second polling from the Local LAN Database Hub (`GET /api/v1/orders`).
+  /// Delivers zero cloud lag for table QR and mobile waiter tickets.
+  Future<void> _pollLanHubOrders() async {
+    if (_isPollingLan) return;
+    _isPollingLan = true;
+    try {
+      final page = await LanHubClient.instance.fetchOrders();
+      if (page != null && page.items.isNotEmpty) {
+        _ingestOrdersList(page.items, _getEffectiveOrgId());
+      }
+    } catch (e) {
+      debugPrint('KDS LAN hub orders poll note: $e');
+    } finally {
+      _isPollingLan = false;
+    }
   }
 
   Future<void> _pollWebhookOrders() async {
@@ -668,6 +699,17 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen>
         clientRequestId: const Uuid().v4(),
       );
 
+      try {
+        await LanHubClient.instance.setKdsStatus(
+          orderId: order.id,
+          kitchenStatus: 'READY',
+          status: 'READY',
+          kotNumber: order.kotNumber,
+        );
+      } catch (lanErr) {
+        debugPrint('LanHub recall status note: $lanErr');
+      }
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -762,6 +804,17 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen>
             : (newStatus == KotStatus.preparing
                 ? 'PREPARING'
                 : (newStatus == KotStatus.ready ? 'READY' : 'PENDING'));
+
+        try {
+          await LanHubClient.instance.setKdsStatus(
+            orderId: order.id,
+            kitchenStatus: fsStatus,
+            status: fsStatus,
+            kotNumber: order.kotNumber,
+          );
+        } catch (lanErr) {
+          debugPrint('LanHub KDS status push note: $lanErr');
+        }
         
         final statusReqId = const Uuid().v4();
         syncOk = await AppsScriptBackendService.updateOrderStatus(

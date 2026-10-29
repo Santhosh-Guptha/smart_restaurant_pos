@@ -3360,6 +3360,18 @@
               orderId = lanResData.id || ('ORD_' + Date.now());
               kotNumber = lanResData.kotNumber || ('KOT-' + Date.now().toString().slice(-4));
               state.lastKotNumber = kotNumber;
+              try {
+                await fetch('/api/v1/tables/status', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    table: state.tableNumber,
+                    status: 'OCCUPIED',
+                    currentCustomerName: guestName || ('Table ' + state.tableNumber),
+                    currentBillAmount: grandTotal
+                  })
+                });
+              } catch (_) {}
             }
           } catch (lanErr) {
             console.warn('[Order] Local LAN Hub direct dispatch notice:', lanErr);

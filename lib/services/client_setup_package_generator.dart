@@ -649,8 +649,14 @@ class ClientSetupPackageGenerator {
     buffer.writeln('            \$tablesList = @(\$tablesObj.tables)');
     buffer.writeln('            \$found = \$false');
     buffer.writeln('            for (\$i = 0; \$i -lt \$tablesList.Count; \$i++) {');
-    buffer.writeln('                if (\$tablesList[\$i].id -eq \$tableId) {');
+    buffer.writeln('                \$curId = [string]\$tablesList[\$i].id');
+    buffer.writeln('                \$curNum = if (\$tablesList[\$i].tableNumber) { [string]\$tablesList[\$i].tableNumber } else { \$curId }');
+    buffer.writeln('                \$cleanCur = \$curNum -replace \'[^0-9]\', \'\'');
+    buffer.writeln('                \$cleanTarget = \$tableId -replace \'[^0-9]\', \'\'');
+    buffer.writeln('                if (\$curId -eq \$tableId -or (\$cleanCur -and \$cleanCur -eq \$cleanTarget)) {');
     buffer.writeln('                    \$tablesList[\$i].status = \$newStatus');
+    buffer.writeln('                    if (\$tStatusReq.currentCustomerName -ne \$null) { \$tablesList[\$i].currentCustomerName = \$tStatusReq.currentCustomerName }');
+    buffer.writeln('                    if (\$tStatusReq.currentBillAmount -ne \$null) { \$tablesList[\$i].currentBillAmount = \$tStatusReq.currentBillAmount }');
     buffer.writeln('                    \$found = \$true');
     buffer.writeln('                    break');
     buffer.writeln('                }');
@@ -699,8 +705,9 @@ class ClientSetupPackageGenerator {
     buffer.writeln('            \$ordersObj.rev = \$rev');
     buffer.writeln('            \$ordersList = @(\$ordersObj.orders)');
     buffer.writeln('            foreach (\$o in \$ordersList) {');
-    buffer.writeln('                if (\$o.id -eq \$orderId) {');
+    buffer.writeln('                if (\$o.id -eq \$orderId -or (\$o.kotNumber -and \$o.kotNumber -eq \$orderId)) {');
     buffer.writeln('                    \$o.kitchenStatus = \$kStatus');
+    buffer.writeln('                    if (\$kdsReq.status) { \$o.status = [string]\$kdsReq.status }');
     buffer.writeln('                    break');
     buffer.writeln('                }');
     buffer.writeln('            }');

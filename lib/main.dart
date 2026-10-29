@@ -2,6 +2,7 @@ import 'screens/restaurant/customer_display_screen.dart';
 import 'core/receipt/receipt_context_builder.dart';
 import 'core/package_model.dart';
 import 'core/license_lease.dart';
+import 'core/entitlements.dart';
 import 'screens/login/license_revalidate_screen.dart';
 import 'dart:ui';
 import 'core/classic_theme.dart';
@@ -278,7 +279,21 @@ class SmartBizzApp extends ConsumerWidget {
       } else if (user.role == 'MASTER_ADMIN') {
         homeScreen = const MasterAdminScreen();
       } else if (user.mustChangePassword) {
-        homeScreen = const FirstLoginPasswordScreen();
+        final isLanOrWeb = kIsWeb || saasSession.currentOrganization?.storageMode == StorageModes.localNetwork;
+        if (isLanOrWeb) {
+          final role = (saasSession.currentUser?.role ?? '').toUpperCase();
+          if (role == 'WAITER') {
+            homeScreen = const WaiterTablePickerScreen();
+          } else if (role == 'KITCHEN') {
+            homeScreen = const KitchenDisplayScreen();
+          } else if (role == 'BILLING' || role == 'CASHIER') {
+            homeScreen = const FastQsrBillingScreen();
+          } else {
+            homeScreen = const RestaurantHomeScreen();
+          }
+        } else {
+          homeScreen = const FirstLoginPasswordScreen();
+        }
       } else if (saasSession.currentOrganization?.isLocked == true) {
         // Paused or closed by the platform admin. The organisation listener
         // pushes the status change to an open session, so this takes effect

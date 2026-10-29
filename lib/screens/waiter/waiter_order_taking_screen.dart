@@ -202,8 +202,8 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
     _loadTrayDraft();
     _loadTableActiveOrders();
 
-    // Poll every 4 seconds to catch kitchen status updates (e.g. Food Ready!)
-    _pollTimer = Timer.periodic(const Duration(seconds: 4), (_) {
+    // Poll every 1.5 seconds to catch kitchen status updates (e.g. Food Ready!)
+    _pollTimer = Timer.periodic(const Duration(milliseconds: 1500), (_) {
       if (mounted) _loadTableActiveOrders();
     });
     // On a satellite the hub feed rewrites the mirrored orders; reload on each change.
@@ -431,6 +431,36 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
               o.status != KotStatus.paid &&
               (o.paymentStatus ?? '').toUpperCase() != 'PAID') {
             matched.add(o);
+          }
+        }
+      }
+    } catch (_) {}
+
+    // Fast LAN hub fetch: keeps waiter synced with table QR orders and kitchen status
+    try {
+      final page = await LanHubClient.instance.fetchOrders();
+      if (page != null) {
+        for (final m in page.items) {
+          final id = (m['id'] ?? m['orderId'] ?? m['kotNumber'] ?? '').toString();
+          if (id.isEmpty || id.toUpperCase().contains('TEST')) continue;
+          final o = KotOrder.fromMap(m, id);
+          final cleanOTable = cleanTableId(o.tableName);
+          final cleanOId = cleanTableId(o.tableId);
+          final matches = (cleanWTable.isNotEmpty && (cleanWTable == cleanOTable || cleanWTable == cleanOId)) ||
+              (cleanWName.isNotEmpty && (cleanWName == cleanOTable || cleanWName == cleanOId)) ||
+              o.tableId == widget.table.id ||
+              o.tableName.toLowerCase() == widget.table.name.toLowerCase() ||
+              o.tableName.toLowerCase() == 'table ${widget.table.tableNumber.toLowerCase()}'.trim();
+          if (matches &&
+              o.status != KotStatus.cancelled &&
+              o.status != KotStatus.paid &&
+              (o.paymentStatus ?? '').toUpperCase() != 'PAID') {
+            final idx = matched.indexWhere((ex) => canonicalId(ex) == canonicalId(m));
+            if (idx >= 0) {
+              matched[idx] = o;
+            } else {
+              matched.add(o);
+            }
           }
         }
       }
@@ -869,6 +899,47 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
 
     final clientRequestId = const Uuid().v4();
 
+    final orderMap = <String, dynamic>{
+      'id': billNumber,
+      'kotNumber': token,
+      'clientRequestId': clientRequestId,
+      'organizationId': orgId,
+      'tableId': tNum,
+      'tableNumber': tNum,
+      'tableName': tableName,
+      'items': newRoundItemsList,
+      'status': 'PENDING',
+      'kitchenStatus': 'PENDING',
+      'paymentStatus': 'UNPAID',
+      'isPaid': false,
+      'orderSource': 'WAITER_APP',
+      'orderType': 'Dine-In',
+      'customerName': guestName,
+      'customerPhone': guestPhone,
+      'waiterName': activeStaff?.name ?? 'Floor Waiter',
+      'staffId': activeStaff?.id ?? '',
+      'createdAt': DateTime.now().toIso8601String(),
+      'firedAt': DateTime.now().toIso8601String(),
+      'courseNo': currentCourse,
+      'course_no': currentCourse,
+      'reprintCount': 0,
+      'subtotal': roundSubtotal,
+      'serviceCharge': roundServiceCharge,
+      'service_charge': roundServiceCharge,
+      'gst': roundGst,
+      'gst_rate': _storeGstRate,
+      'totalAmount': roundTotalAmount,
+      'total_amount': roundTotalAmount,
+      'subtotalP': roundSubtotalP,
+      'serviceChargeP': roundScP,
+      'taxableP': roundTaxableP,
+      'gstP': roundGstP,
+      'cgstP': roundCgstP,
+      'sgstP': roundSgstP,
+      'roundOffP': 0,
+      'grandTotalP': roundGrandTotalP,
+    };
+
     try {
       // 1. Save or update unified table order in local Hive orders
       if (Hive.isBoxOpen('configBox')) {
@@ -878,46 +949,6 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
             .map((e) => Map<String, dynamic>.from(e as Map))
             .toList();
 
-        final orderMap = {
-          'id': billNumber,
-          'kotNumber': token,
-          'clientRequestId': clientRequestId,
-          'organizationId': orgId,
-          'tableId': tNum,
-          'tableNumber': tNum,
-          'tableName': tableName,
-          'items': newRoundItemsList,
-          'status': 'PENDING',
-          'kitchenStatus': 'PENDING',
-          'paymentStatus': 'UNPAID',
-          'isPaid': false,
-          'orderSource': 'WAITER_APP',
-          'orderType': 'Dine-In',
-          'customerName': guestName,
-          'customerPhone': guestPhone,
-          'waiterName': activeStaff?.name ?? 'Floor Waiter',
-          'staffId': activeStaff?.id ?? '',
-          'createdAt': DateTime.now().toIso8601String(),
-          'firedAt': DateTime.now().toIso8601String(),
-          'courseNo': currentCourse,
-          'course_no': currentCourse,
-          'reprintCount': 0,
-          'subtotal': roundSubtotal,
-          'serviceCharge': roundServiceCharge,
-          'service_charge': roundServiceCharge,
-          'gst': roundGst,
-          'gst_rate': _storeGstRate,
-          'totalAmount': roundTotalAmount,
-          'total_amount': roundTotalAmount,
-          'subtotalP': roundSubtotalP,
-          'serviceChargeP': roundScP,
-          'taxableP': roundTaxableP,
-          'gstP': roundGstP,
-          'cgstP': roundCgstP,
-          'sgstP': roundSgstP,
-          'roundOffP': 0,
-          'grandTotalP': roundGrandTotalP,
-        };
         updatedList.insert(0, orderMap);
         await ref.read(restaurantLedgerProvider).writeOrders('kot_orders_$orgId', updatedList);
 
@@ -971,6 +1002,20 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
           return t;
         }).toList();
         await ref.read(restaurantLedgerProvider).writeTables('restaurant_tables_$orgId', updatedTables);
+      }
+
+      // Dispatch order to Local LAN Hub immediately (sub-second reflection on KDS & Billing)
+      try {
+        await LanHubClient.instance.submitKot(orderMap);
+        await LanHubClient.instance.setTableStatus({
+          'id': tNum.isNotEmpty ? tNum : tableName,
+          'table': tNum.isNotEmpty ? tNum : tableName,
+          'status': 'OCCUPIED',
+          'currentCustomerName': guestName,
+          'currentBillAmount': roundTotalAmount,
+        });
+      } catch (lanErr) {
+        debugPrint('Waiter LAN submitKot note: $lanErr');
       }
 
       // 3. Immediately update UI state for zero-latency (< 50ms) response

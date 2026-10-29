@@ -300,6 +300,7 @@ class ClientLicenseService {
     required dynamic ref,
     required String token,
     String? ownerName,
+    bool autoLogin = true,
   }) async {
     try {
       // Never activate from a payload alone: the key must verify here too.
@@ -320,7 +321,7 @@ class ClientLicenseService {
       }
 
       final notifier = ref.read(saasSessionProvider.notifier);
-      await notifier.activateWithClientLicense(verified, ownerName: ownerName);
+      await notifier.activateWithClientLicense(verified, ownerName: ownerName, autoLogin: autoLogin);
       await LicenseLease.storeClientKey(verified.orgId, token);
 
       // Lock binding on current machine

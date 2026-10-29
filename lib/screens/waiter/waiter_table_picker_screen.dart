@@ -13,6 +13,7 @@ import '../../core/restaurant_models.dart';
 import '../../providers/saas_session_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/restaurant_auth_provider.dart';
+import '../../services/lan_hub_client.dart';
 import 'waiter_order_taking_screen.dart';
 
 /// The waiter's front door: pick a table, start the order.
@@ -34,6 +35,7 @@ class _WaiterTablePickerScreenState extends ConsumerState<WaiterTablePickerScree
   List<RestaurantTable> _tables = [];
   String _section = 'All';
   StreamSubscription? _hiveTableSub;
+  Timer? _lanPollTimer;
 
   @override
   void initState() {
@@ -50,13 +52,56 @@ class _WaiterTablePickerScreenState extends ConsumerState<WaiterTablePickerScree
           });
         }
       } catch (_) {}
+
+      // Fast LAN polling: tables occupied/freed reflect within 1.2s
+      _pollLanTables();
+      _lanPollTimer = Timer.periodic(const Duration(milliseconds: 1200), (_) {
+        if (mounted) _pollLanTables();
+      });
     }
   }
 
   @override
   void dispose() {
     _hiveTableSub?.cancel();
+    _lanPollTimer?.cancel();
     super.dispose();
+  }
+
+  bool _isPollingLan = false;
+  Future<void> _pollLanTables() async {
+    if (_isPollingLan) return;
+    _isPollingLan = true;
+    try {
+      final page = await LanHubClient.instance.fetchTables();
+      if (page != null && page.items.isNotEmpty && _tables.isNotEmpty) {
+        bool changed = false;
+        for (final tm in page.items) {
+          final tId = (tm['id'] ?? tm['table'] ?? '').toString();
+          final tNum = (tm['tableNumber'] ?? tId).toString().replaceAll(RegExp(r'[^0-9]'), '');
+          final statusStr = (tm['status'] ?? '').toString().toUpperCase();
+          final isOccupied = statusStr == 'OCCUPIED' || statusStr == 'SEATED';
+
+          for (int i = 0; i < _tables.length; i++) {
+            final cur = _tables[i];
+            final curNum = cur.tableNumber.replaceAll(RegExp(r'[^0-9]'), '');
+            if (cur.id == tId || (tNum.isNotEmpty && curNum == tNum)) {
+              final newStatus = isOccupied ? TableStatus.occupied : TableStatus.vacant;
+              if (cur.status != newStatus) {
+                _tables[i] = cur.copyWith(status: newStatus);
+                changed = true;
+              }
+              break;
+            }
+          }
+        }
+        if (changed && mounted) {
+          setState(() {});
+        }
+      }
+    } catch (_) {} finally {
+      _isPollingLan = false;
+    }
   }
 
   String _orgId() {

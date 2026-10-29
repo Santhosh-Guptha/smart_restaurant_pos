@@ -34,6 +34,7 @@ import '../../services/restaurant_sheets_service.dart';
 import '../../services/sheet_layout.dart';
 import '../../services/client_ledger_cloud_router_service.dart';
 import '../../providers/restaurant_auth_provider.dart';
+import '../../services/lan_hub_client.dart';
 import '../../core/entitlements.dart';
 import '../../core/feature_route_guard.dart';
 import '../../core/cloud_gate.dart';
@@ -72,6 +73,7 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen>
   List<Map<String, dynamic>> _activeWaiterCalls = [];
   final List<Map<String, dynamic>> _settledBills = [];
   Timer? _pollingTimer;
+  Timer? _lanPollTimer;
   String _getEffectiveOrgId() {
     final saasSession = ref.read(saasSessionProvider);
     return resolveOutletId(
@@ -113,6 +115,7 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen>
   @override
   void dispose() {
     _pollingTimer?.cancel();
+    _lanPollTimer?.cancel();
     super.dispose();
   }
 
@@ -137,6 +140,15 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen>
 
     // 2. Load cached KOT orders from Hive
     _loadCachedOrdersFromHive(orgId);
+
+    // Fast sub-second Local LAN Hub polling for instant table occupancy and orders reflection
+    _syncOrdersFromLanHub(orgId);
+    _lanPollTimer?.cancel();
+    _lanPollTimer = Timer.periodic(const Duration(milliseconds: 1200), (_) {
+      if (mounted) {
+        _syncOrdersFromLanHub(orgId);
+      }
+    });
 
     // 3. Initial sync from Google Sheet — only when the cloud ledger is on.
     //    The floor still renders from local state without it.
@@ -604,6 +616,62 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen>
     if (idx < 0 || idx >= rowCells.length) return null;
     final cell = rowCells[idx];
     return (cell is Map) ? cell['v'] : null;
+  }
+
+  bool _isSyncingLan = false;
+
+  /// Sub-second polling from Local LAN Hub (`/api/v1/tables` & `/api/v1/orders`).
+  Future<void> _syncOrdersFromLanHub(String orgId) async {
+    if (_isSyncingLan) return;
+    _isSyncingLan = true;
+    try {
+      final tablesPage = await LanHubClient.instance.fetchTables();
+      final ordersPage = await LanHubClient.instance.fetchOrders();
+      bool changed = false;
+
+      if (tablesPage != null && tablesPage.items.isNotEmpty && _tables.isNotEmpty) {
+        for (final tm in tablesPage.items) {
+          final tId = (tm['id'] ?? tm['table'] ?? '').toString();
+          final tNum = (tm['tableNumber'] ?? tId).toString().replaceAll(RegExp(r'[^0-9]'), '');
+          final statusStr = (tm['status'] ?? '').toString().toUpperCase();
+          final isOccupied = statusStr == 'OCCUPIED' || statusStr == 'SEATED';
+
+          for (int i = 0; i < _tables.length; i++) {
+            final cur = _tables[i];
+            final curNum = cur.tableNumber.replaceAll(RegExp(r'[^0-9]'), '');
+            if (cur.id == tId || (tNum.isNotEmpty && curNum == tNum)) {
+              final newStatus = isOccupied ? TableStatus.occupied : TableStatus.vacant;
+              if (cur.status != newStatus) {
+                _tables[i] = cur.copyWith(status: newStatus);
+                changed = true;
+              }
+              break;
+            }
+          }
+        }
+      }
+
+      if (ordersPage != null && ordersPage.items.isNotEmpty) {
+        final List<KotOrder> parsed = [];
+        for (final m in ordersPage.items) {
+          final id = (m['id'] ?? m['kotNumber'] ?? '').toString();
+          if (id.isEmpty || id.toUpperCase().contains('TEST')) continue;
+          final o = KotOrder.fromMap(m, id);
+          if (o.status != KotStatus.cancelled && o.status != KotStatus.paid) {
+            parsed.add(o);
+          }
+        }
+        if (parsed.isNotEmpty) {
+          _mergeOrders(parsed, orgId);
+        }
+      }
+
+      if (changed && mounted) {
+        setState(() {});
+      }
+    } catch (_) {} finally {
+      _isSyncingLan = false;
+    }
   }
 
   Future<void> _syncOrdersFromGoogleSheet(String orgId) async {
