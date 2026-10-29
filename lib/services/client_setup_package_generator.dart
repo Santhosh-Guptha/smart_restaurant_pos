@@ -215,7 +215,7 @@ class ClientSetupPackageGenerator {
     buffer.writeln();
     buffer.writeln('if (-not \$HostIp) { \$HostIp = \'127.0.0.1\' }');
     buffer.writeln();
-    buffer.writeln('\$redirectUrl = "$webPosUrl?license=$token&host_ip=" + \$HostIp + "&port=" + \$Port');
+    buffer.writeln('\$redirectUrl = "$webPosUrl?host_ip=" + \$HostIp + "&port=" + \$Port');
     buffer.writeln();
     buffer.writeln('try {');
     buffer.writeln('    \$listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Any, \$Port)');

@@ -140,14 +140,14 @@ void main() {
   group('LAN Hub Reachability Probe & Background Listener Tests', () {
     test('testProbe recognizes running self host in web environment', () async {
       final s = LocalRestaurantLanServer.instance;
-      await s.startServer(port: 8085);
+      await s.startServer(port: 8889);
       expect(s.isRunning, isTrue);
 
-      await s.updateNetworkConfiguration(ip: '172.22.2.192', port: 8085);
+      await s.updateNetworkConfiguration(ip: '172.22.2.192', port: 8889);
 
       // Probe with isWebOverride = true targeting the configured IP
       final probeResult = await LocalRestaurantLanServer.testProbe(
-        'http://172.22.2.192:8085',
+        'http://172.22.2.192:8889',
         isWebOverride: true,
       );
 
@@ -157,7 +157,7 @@ void main() {
 
       // Also localhost / 127.0.0.1
       final localhostResult = await LocalRestaurantLanServer.testProbe(
-        'http://localhost:8085',
+        'http://localhost:8889',
         isWebOverride: true,
       );
       expect(localhostResult.success, isTrue);
@@ -177,7 +177,8 @@ void main() {
       expect(ps1, contains('HTTP/1.1 200 OK'));
       expect(ps1, contains('HTTP/1.1 302 Found'));
       expect(ps1, contains('Access-Control-Allow-Private-Network: true'));
-      expect(ps1, contains('TEST_TOKEN_123'));
+      expect(ps1, contains('host_ip='));
+      expect(ps1, isNot(contains('TEST_TOKEN_123')));
     });
 
     test('generateBatchScript bundles and launches lan_hub_listener.ps1', () {

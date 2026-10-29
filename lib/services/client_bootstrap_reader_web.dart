@@ -48,6 +48,7 @@ class ClientBootstrapReader {
       final uri = Uri.base;
       final queryLicense = uri.queryParameters['license'] ?? uri.queryParameters['bootstrap_token'];
       if (queryLicense != null && queryLicense.trim().isNotEmpty) {
+        _cleanAddressBar();
         return queryLicense.trim();
       }
 
@@ -66,5 +67,25 @@ class ClientBootstrapReader {
     try {
       web.window.localStorage.removeItem('smartbizz_bootstrap_license');
     } catch (_) {}
+    _cleanAddressBar();
+  }
+
+  /// Removes bulky cryptographic license tokens from the browser address bar
+  /// while preserving `host_ip` and `port` for satellite device connectivity.
+  static void _cleanAddressBar() {
+    try {
+      final uri = Uri.base;
+      if (uri.queryParameters.containsKey('license') || uri.queryParameters.containsKey('bootstrap_token')) {
+        final newParams = Map<String, String>.from(uri.queryParameters)
+          ..remove('license')
+          ..remove('bootstrap_token');
+        final cleanUri = uri.replace(
+          queryParameters: newParams.isEmpty ? null : newParams,
+        );
+        web.window.history.replaceState(null, '', cleanUri.toString());
+      }
+    } catch (e) {
+      debugPrint('ClientBootstrapReader: clean address bar note: $e');
+    }
   }
 }

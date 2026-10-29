@@ -81,7 +81,7 @@ void main() {
       expect(listener, contains('HTTP/1.1 302 Found'));
       expect(listener, contains('Access-Control-Allow-Private-Network: true'));
       expect(listener, contains('Access-Control-Allow-Origin: *'));
-      expect(listener, contains('https://smartdine-pos.web.app/pos/?license=TEST_TOKEN_123'));
+      expect(listener, contains('https://smartdine-pos.web.app/pos/?host_ip='));
     });
 
     test('generateBootstrapJson creates valid JSON containing token and payload', () {
