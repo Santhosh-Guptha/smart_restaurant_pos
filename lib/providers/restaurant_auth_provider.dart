@@ -6,6 +6,7 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:http/http.dart' as http;
 import '../core/rbac_permissions.dart';
 import '../core/constants.dart';
+import '../services/lan_hub_client.dart';
 import 'saas_session_provider.dart';
 
 class GoogleAuthClient extends http.BaseClient {
@@ -273,6 +274,48 @@ class RestaurantAuthNotifier extends StateNotifier<RestaurantAuthState> {
       activeStaff: null,
       isLocked: false,
     );
+
+    _syncStaffFromLanHub(box);
+  }
+
+  Future<void> _syncStaffFromLanHub(Box box) async {
+    try {
+      final remoteUsers = await LanHubClient.instance.fetchUsers();
+      if (remoteUsers != null && remoteUsers.isNotEmpty) {
+        final current = List<StaffMember>.from(state.staffList);
+        bool changed = false;
+        for (final u in remoteUsers) {
+          final id = u['id']?.toString() ?? '';
+          if (id.isEmpty) continue;
+          final existingIdx = current.indexWhere((s) => s.id == id || s.username == u['username']);
+          final member = StaffMember(
+            id: id,
+            name: u['name']?.toString() ?? u['username']?.toString() ?? 'Staff',
+            username: u['username']?.toString(),
+            email: u['email']?.toString() ?? '',
+            role: StaffRoleExtension.fromKey(u['role']?.toString() ?? 'BILLING'),
+            roles: (u['roles'] is List)
+                ? (u['roles'] as List).map((r) => StaffRoleExtension.fromKey(r.toString())).toList()
+                : [StaffRoleExtension.fromKey(u['role']?.toString() ?? 'BILLING')],
+            pin: u['pin']?.toString() ?? '1234',
+            phone: u['phone']?.toString(),
+            password: u['password']?.toString(),
+            isActive: u['isActive'] ?? true,
+            createdAt: DateTime.tryParse(u['createdAt']?.toString() ?? '') ?? DateTime.now(),
+          );
+          if (existingIdx >= 0) {
+            current[existingIdx] = member;
+          } else {
+            current.add(member);
+          }
+          changed = true;
+        }
+        if (changed) {
+          await box.put(keyStaffList, current.map((s) => s.toMap()).toList());
+          if (mounted) state = state.copyWith(staffList: current);
+        }
+      }
+    } catch (_) {}
   }
 
   /// Manually reload staff members and settings from Hive

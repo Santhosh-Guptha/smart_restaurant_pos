@@ -1,10 +1,15 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import '../../core/classic_theme.dart';
+import '../../core/entitlements.dart';
+import '../../core/saas_models.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/saas_session_provider.dart';
+import '../../services/lan_hub_client.dart';
 import '../../utils/ui_feedback.dart';
 import '../../providers/theme_provider.dart';
 import 'client_signup_screen.dart';
@@ -108,8 +113,132 @@ class _SaaSLoginScreenState extends ConsumerState<SaaSLoginScreen> {
     });
   }
 
+  bool get _isLanHubMode {
+    if (kIsWeb && Uri.base.queryParameters.containsKey('host_ip')) return true;
+    final box = Hive.isBoxOpen('configBox') ? Hive.box('configBox') : null;
+    if (box != null && (box.get('saas_master_hub_url') != null || box.get('_sbz_custom_lan_host_ip') != null)) {
+      return true;
+    }
+    return false;
+  }
+
+  String? get _lanHostIp {
+    if (kIsWeb && Uri.base.queryParameters.containsKey('host_ip')) {
+      return Uri.base.queryParameters['host_ip'];
+    }
+    final box = Hive.isBoxOpen('configBox') ? Hive.box('configBox') : null;
+    return box?.get('_sbz_custom_lan_host_ip')?.toString();
+  }
+
+  int get _lanPort {
+    if (kIsWeb && Uri.base.queryParameters.containsKey('port')) {
+      return int.tryParse(Uri.base.queryParameters['port'] ?? '') ?? 8085;
+    }
+    final box = Hive.isBoxOpen('configBox') ? Hive.box('configBox') : null;
+    return box?.get('_sbz_lan_port') is int ? box!.get('_sbz_lan_port') as int : 8085;
+  }
+
+  Future<void> _handleLanLogin() async {
+    final username = _emailController.text.trim();
+    final password = _passwordController.text;
+    if (username.isEmpty || password.isEmpty) {
+      setState(() => _errorMessage = 'Please enter username and password');
+      return;
+    }
+    setState(() {
+      _isLoggingIn = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final res = await LanHubClient.instance.loginWithHub(
+        username: username,
+        password: password,
+      );
+
+      if (res != null && res['status'] == 'ok' && res['user'] != null) {
+        final userMap = Map<String, dynamic>.from(res['user'] as Map);
+        final storeMap = (res['store'] is Map) ? Map<String, dynamic>.from(res['store'] as Map) : <String, dynamic>{};
+
+        final role = (userMap['role'] ?? 'BILLING').toString().toUpperCase();
+        final uName = (userMap['name'] ?? userMap['username'] ?? username).toString();
+        final uId = (userMap['id'] ?? 'usr_local').toString();
+        final orgId = (storeMap['orgId'] ?? 'org_local').toString();
+        final storeName = (storeMap['storeName'] ?? 'SmartBizz Store').toString();
+        final vertical = (storeMap['vertical'] ?? 'restaurant').toString();
+
+        final saasUser = SaasUser(
+          id: uId,
+          username: userMap['username']?.toString() ?? username,
+          fullName: uName,
+          email: userMap['email']?.toString() ?? '$username@local.store',
+          role: role,
+          organizationId: orgId,
+          businessCategory: vertical,
+        );
+
+        final saasOrg = SaasOrganization(
+          id: orgId,
+          name: storeName,
+          appName: storeName,
+          storageMode: StorageModes.localNetwork,
+          vertical: vertical,
+          businessCategory: vertical,
+          status: 'ACTIVE',
+        );
+
+        final saasLicense = SaasLicense(
+          planTier: (storeMap['tier'] ?? 'PREMIUM').toString(),
+          status: 'ACTIVE',
+          maxFranchises: 1,
+          maxUsers: 20,
+          maxDevices: (storeMap['maxDevices'] is num) ? (storeMap['maxDevices'] as num).toInt() : 10,
+          allowedRoles: const ['OWNER', 'MANAGER', 'BILLING', 'CASHIER', 'WAITER', 'KITCHEN'],
+          features: const {'local_lan_server': true, 'customer_display': true},
+          startDate: DateTime.now(),
+          endDate: DateTime.now().add(const Duration(days: 3650)),
+          vertical: vertical,
+        );
+
+        final box = Hive.box('configBox');
+        await box.put('saas_logged_in', true);
+        await box.put('saas_user', jsonEncode(saasUser.toJson()));
+        await box.put('saas_org', jsonEncode(saasOrg.toJson()));
+        await box.put('saas_license', jsonEncode(saasLicense.toJson()));
+        await box.put('pure_offline_mode', true);
+        await box.put('saas_is_satellite_client', true);
+        if (_rememberMe) {
+          await box.put('saas_remember_me', true);
+          await box.put('saas_last_email', username);
+        }
+
+        await ref.read(saasSessionProvider.notifier).initSession();
+
+        if (mounted) {
+          AppToast.showSuccess(context, 'Signed in as $uName ($role)');
+        }
+        return;
+      } else {
+        setState(() {
+          _isLoggingIn = false;
+          _errorMessage = 'Invalid username or password. Check credentials configured by store owner.';
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _isLoggingIn = false;
+        _errorMessage = 'Connection error: $e';
+      });
+    }
+  }
+
   Future<void> _handleLogin() async {
     if (!_formKey.currentState!.validate()) return;
+
+    if (_isLanHubMode) {
+      await _handleLanLogin();
+      return;
+    }
 
     setState(() {
       _isLoggingIn = true;
@@ -409,6 +538,45 @@ class _SaaSLoginScreenState extends ConsumerState<SaaSLoginScreen> {
                                   child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
+                                      if (_isLanHubMode) ...[
+                                        Container(
+                                          margin: const EdgeInsets.only(bottom: 16),
+                                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                                          decoration: BoxDecoration(
+                                            color: ClassicTheme.successEmerald.withValues(alpha: 0.12),
+                                            border: Border.all(color: ClassicTheme.successEmerald.withValues(alpha: 0.35)),
+                                            borderRadius: BorderRadius.circular(10),
+                                          ),
+                                          child: Row(
+                                            children: [
+                                              const Icon(Icons.wifi_tethering_rounded, color: ClassicTheme.successEmerald, size: 20),
+                                              const SizedBox(width: 10),
+                                              Expanded(
+                                                child: Column(
+                                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                                  children: [
+                                                    const Text(
+                                                      "Local LAN Hub Connected",
+                                                      style: TextStyle(
+                                                        color: ClassicTheme.successEmerald,
+                                                        fontSize: 13,
+                                                        fontWeight: FontWeight.bold,
+                                                      ),
+                                                    ),
+                                                    Text(
+                                                      "IP: ${_lanHostIp ?? '127.0.0.1'} • Port: $_lanPort",
+                                                      style: TextStyle(
+                                                        color: context.textSecondary,
+                                                        fontSize: 11.5,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
                                       Text(
                                         "Username or Email",
                                         style: TextStyle(

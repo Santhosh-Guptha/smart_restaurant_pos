@@ -29,6 +29,7 @@ import '../../core/receipt/receipt_template.dart';
 import '../../providers/entitlements_provider.dart';
 import '../../services/thermal_printer_service.dart';
 import '../../services/satellite_print_prefs.dart';
+import '../../services/lan_hub_client.dart';
 
 class WaiterOrderTakingScreen extends ConsumerStatefulWidget {
   final RestaurantTable table;
@@ -272,10 +273,30 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
       _isLoadingMenu = false;
     });
 
+    _fetchMenuFromLanHub();
+
     // 4. Background fallback if items is empty: fetch from cloud webhook
     if (items.isEmpty) {
       _fetchMenuFromCloud();
     }
+  }
+
+  Future<void> _fetchMenuFromLanHub() async {
+    try {
+      final menu = await LanHubClient.instance.fetchMenu();
+      if (menu != null && menu['dishes'] is List) {
+        final raw = (menu['dishes'] as List).whereType<Map>().map((m) => Map<String, dynamic>.from(m)).toList();
+        if (raw.isNotEmpty && mounted) {
+          setState(() {
+            _menuItems = raw;
+            _isLoadingMenu = false;
+          });
+          if (Hive.isBoxOpen('restaurant_config_box')) {
+            await Hive.box('restaurant_config_box').put('restaurant_menu_dishes', raw);
+          }
+        }
+      }
+    } catch (_) {}
   }
 
   Future<void> _fetchMenuFromCloud() async {

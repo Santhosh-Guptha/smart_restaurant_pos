@@ -12,6 +12,7 @@ import '../../providers/restaurant_auth_provider.dart';
 import '../../services/restaurant_sheets_service.dart';
 import '../../services/client_ledger_cloud_router_service.dart';
 import '../../services/apps_script_backend_service.dart';
+import '../../services/lan_hub_client.dart';
 import '../../core/classic_theme.dart';
 import '../../core/cloud_gate.dart';
 import '../../core/entitlements.dart';
@@ -177,6 +178,9 @@ class _RestaurantMenuManagementScreenState
       } else {
         _dishes = [];
       }
+      if (_dishes.isEmpty) {
+        _fetchDishesFromLanHub();
+      }
       // Populate any existing categories from dishes
       for (final d in _dishes) {
         final cat = d['category']?.toString();
@@ -214,9 +218,41 @@ class _RestaurantMenuManagementScreenState
       box?.put('restaurant_menu_dishes', _dishes);
       // Auto push to cloud in background (cloud-connected tenants only)
       if (_cloudOn) _syncDishesToCloud(silent: true);
+      // Synchronize with Local LAN Hub database so satellite devices and billing counter get it immediately
+      _syncDishesToLanHub();
     } catch (e) {
       debugPrint('Error saving dishes to Hive: $e');
     }
+  }
+
+  Future<void> _syncDishesToLanHub() async {
+    try {
+      final categories = _categoriesWithSubs.keys.toList();
+      final stations = _stations.map((s) => s.name).toList();
+      await LanHubClient.instance.saveMenu(
+        dishes: _dishes,
+        categories: categories,
+        stations: stations,
+      );
+    } catch (e) {
+      debugPrint('Error syncing dishes to LAN Hub: $e');
+    }
+  }
+
+  Future<void> _fetchDishesFromLanHub() async {
+    try {
+      final menu = await LanHubClient.instance.fetchMenu();
+      if (menu != null && menu['dishes'] is List) {
+        final list = (menu['dishes'] as List).whereType<Map>().map((m) => Map<String, dynamic>.from(m)).toList();
+        if (list.isNotEmpty && mounted) {
+          setState(() {
+            _dishes = list;
+          });
+          final box = Hive.isBoxOpen('restaurant_config_box') ? Hive.box('restaurant_config_box') : null;
+          box?.put('restaurant_menu_dishes', _dishes);
+        }
+      }
+    } catch (_) {}
   }
 
   /// Restores dishes from Firestore if local Hive is fresh

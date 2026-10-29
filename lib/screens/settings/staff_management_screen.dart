@@ -17,6 +17,7 @@ import '../../providers/saas_session_provider.dart';
 import '../../services/restaurant_sheets_service.dart';
 import '../../core/vertical_labels.dart';
 import '../../core/package_model.dart';
+import '../../services/lan_hub_client.dart';
 import 'plan_request_sheet.dart';
 
 class StaffManagementScreen extends ConsumerStatefulWidget {
@@ -786,6 +787,24 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
                 await ref
                     .read(restaurantAuthProvider.notifier)
                     .saveStaffMember(newMember);
+
+                // Synchronize with Local LAN Hub database
+                try {
+                  await LanHubClient.instance.saveUser({
+                    'id': newMember.id,
+                    'username': newMember.username ?? newMember.name,
+                    'name': newMember.name,
+                    'email': newMember.email,
+                    'password': newMember.password,
+                    'pin': newMember.pin,
+                    'role': newMember.role.name.toUpperCase(),
+                    'roles': newMember.roles.map((r) => r.name.toUpperCase()).toList(),
+                    'isActive': newMember.isActive,
+                    'createdAt': newMember.createdAt.toIso8601String(),
+                  });
+                } catch (e) {
+                  debugPrint('LAN hub staff sync error: $e');
+                }
 
                 // If editing self, also refresh session from firestore
                 final currentSaasUser = saasSession.currentUser;

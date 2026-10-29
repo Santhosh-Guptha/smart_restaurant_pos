@@ -118,7 +118,17 @@ class LanHubClient {
   }
 
   Box? get _box => Hive.isBoxOpen('configBox') ? Hive.box('configBox') : null;
-  String? get hubUrl => _box?.get(hubUrlKey)?.toString();
+  String? get hubUrl {
+    final configured = _box?.get(hubUrlKey)?.toString().trim();
+    if (configured != null && configured.isNotEmpty) return normaliseHub(configured);
+    final customIp = _box?.get('_sbz_custom_lan_host_ip')?.toString().trim();
+    final customPort = _box?.get('_sbz_lan_port');
+    if (customIp != null && customIp.isNotEmpty) {
+      final port = (customPort is int && customPort > 0) ? customPort : 8085;
+      return 'http://$customIp:$port';
+    }
+    return null;
+  }
   String? get token => _box?.get(tokenKey)?.toString();
   bool get isPaired => (hubUrl ?? '').isNotEmpty && (token ?? '').isNotEmpty;
 
@@ -286,6 +296,86 @@ class LanHubClient {
   /// The host's customer-facing display snapshot.
   Future<Map<String, dynamic>?> fetchCfd() async {
     final d = await get('/api/v1/cfd');
+    return d is Map ? Map<String, dynamic>.from(d) : null;
+  }
+
+  /// Authenticates username and password against the Local LAN Database Hub (`POST /api/v1/login`).
+  /// Saves the issued bearer token and hubUrl upon success.
+  Future<Map<String, dynamic>?> loginWithHub({
+    required String username,
+    required String password,
+    String? hub,
+  }) async {
+    final targetHub = hub != null && hub.isNotEmpty ? normaliseHub(hub) : hubUrl;
+    if (targetHub == null || targetHub.isEmpty) return null;
+    try {
+      final res = await _http
+          .post(
+            Uri.parse('$targetHub/api/v1/login'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({'username': username.trim(), 'password': password}),
+          )
+          .timeout(_timeout);
+      lastStatusCode = res.statusCode;
+      if (res.statusCode != 200) return null;
+      final d = jsonDecode(res.body);
+      if (d is Map && d['token'] != null) {
+        await _box?.put(hubUrlKey, targetHub);
+        await _box?.put(tokenKey, d['token'].toString());
+        return Map<String, dynamic>.from(d);
+      }
+      return null;
+    } catch (e) {
+      lastStatusCode = null;
+      debugPrint('LanHubClient loginWithHub error: $e');
+      return null;
+    }
+  }
+
+  /// Fetches the latest menu (dishes, categories, stations, rev) from the LAN Hub (`GET /api/v1/menu`).
+  Future<Map<String, dynamic>?> fetchMenu() async {
+    final d = await get('/api/v1/menu');
+    return d is Map ? Map<String, dynamic>.from(d) : null;
+  }
+
+  /// Saves a single dish item to the LAN Hub (`POST /api/v1/menu/items`).
+  Future<Map<String, dynamic>?> saveMenuItem(Map<String, dynamic> dish) async {
+    final d = await post('/api/v1/menu/items', {'dish': dish});
+    return d is Map ? Map<String, dynamic>.from(d) : null;
+  }
+
+  /// Replaces or syncs dishes and categories to the LAN Hub (`POST /api/v1/menu`).
+  Future<Map<String, dynamic>?> saveMenu({
+    List<Map<String, dynamic>>? dishes,
+    List<String>? categories,
+    List<String>? stations,
+  }) async {
+    final d = await post('/api/v1/menu', {
+      if (dishes != null) 'dishes': dishes,
+      if (categories != null) 'categories': categories,
+      if (stations != null) 'stations': stations,
+    });
+    return d is Map ? Map<String, dynamic>.from(d) : null;
+  }
+
+  /// Fetches the staff user list from the LAN Hub (`GET /api/v1/users`).
+  Future<List<Map<String, dynamic>>?> fetchUsers() async {
+    final d = await get('/api/v1/users');
+    if (d is Map && d['users'] is List) {
+      return (d['users'] as List).whereType<Map>().map((m) => Map<String, dynamic>.from(m)).toList();
+    }
+    return null;
+  }
+
+  /// Adds or updates a user on the LAN Hub (`POST /api/v1/users`).
+  Future<Map<String, dynamic>?> saveUser(Map<String, dynamic> user) async {
+    final d = await post('/api/v1/users', user);
+    return d is Map ? Map<String, dynamic>.from(d) : null;
+  }
+
+  /// Fetches the store metadata from the LAN Hub (`GET /api/v1/store`).
+  Future<Map<String, dynamic>?> fetchStore() async {
+    final d = await get('/api/v1/store');
     return d is Map ? Map<String, dynamic>.from(d) : null;
   }
 

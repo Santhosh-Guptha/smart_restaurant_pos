@@ -41,6 +41,7 @@ import '../../core/receipt/receipt_template.dart';
 import '../../services/thermal_printer_service.dart';
 import '../../services/satellite_print_prefs.dart';
 import '../../services/whatsapp_notification_service.dart';
+import '../../services/lan_hub_client.dart';
 import '../billing/widgets/item_modifier_dialog.dart';
 
 class FastQsrBillingScreen extends ConsumerStatefulWidget {
@@ -386,6 +387,8 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
         _menuItems = [];
       }
 
+      _fetchDishesFromLanHub();
+
       if (_menuItems.isEmpty) {
         _restoreDishesFromCloudIfNeeded();
       }
@@ -394,6 +397,22 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
     } catch (e) {
       debugPrint('Error loading dishes in QSR billing: $e');
     }
+  }
+
+  Future<void> _fetchDishesFromLanHub() async {
+    try {
+      final menu = await LanHubClient.instance.fetchMenu();
+      if (menu != null && menu['dishes'] is List) {
+        final raw = (menu['dishes'] as List).whereType<Map>().map((m) => Map<String, dynamic>.from(m)).toList();
+        if (raw.isNotEmpty && mounted) {
+          setState(() {
+            _menuItems = raw;
+          });
+          final box = Hive.isBoxOpen('restaurant_config_box') ? Hive.box('restaurant_config_box') : null;
+          await box?.put('restaurant_menu_dishes', raw);
+        }
+      }
+    } catch (_) {}
   }
 
   Future<void> _restoreDishesFromCloudIfNeeded() async {

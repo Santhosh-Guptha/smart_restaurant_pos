@@ -83,7 +83,7 @@ class ClientSetupPackageGenerator {
       buffer.writeln();
     }
 
-    // Step 2: Directories
+    // Step 2: Directories & Isolated Database Hub Setup
     buffer.writeln('echo [*] Initializing local database storage directories...');
     buffer.writeln('set "APP_DATA_DIR=%APPDATA%\\SmartBizz"');
     buffer.writeln('set "LOCAL_DATA_DIR=%LOCALAPPDATA%\\SmartBizz"');
@@ -91,6 +91,89 @@ class ClientSetupPackageGenerator {
     buffer.writeln('if not exist "%APP_DATA_DIR%\\database" mkdir "%APP_DATA_DIR%\\database"');
     buffer.writeln('if not exist "%APP_DATA_DIR%\\backups" mkdir "%APP_DATA_DIR%\\backups"');
     buffer.writeln('if not exist "%LOCAL_DATA_DIR%" mkdir "%LOCAL_DATA_DIR%"');
+    buffer.writeln();
+    buffer.writeln(':: Secure database folder against unauthorized tampering / accidental deletion');
+    buffer.writeln('icacls "%APP_DATA_DIR%\\database" /grant:r "%USERNAME%":(OI)(CI)F /grant:r "SYSTEM":(OI)(CI)F >nul 2>&1');
+    buffer.writeln();
+
+    // Seed default database files if they do not exist
+    final ownerUsername = payload.ownerUsername.isNotEmpty
+        ? payload.ownerUsername
+        : (payload.ownerEmail.isNotEmpty
+            ? payload.ownerEmail.split('@').first
+            : 'owner');
+    final ownerName = payload.ownerName.isNotEmpty ? payload.ownerName : '$storeName Owner';
+    final ownerEmail = payload.ownerEmail.isNotEmpty ? payload.ownerEmail : 'owner@smartbizz.local';
+
+    final defaultUsersJson = jsonEncode([
+      {
+        'id': 'usr_owner_default',
+        'username': ownerUsername,
+        'name': ownerName,
+        'email': ownerEmail,
+        'password': 'admin',
+        'pin': '1234',
+        'role': 'OWNER',
+        'roles': ['OWNER', 'MANAGER', 'BILLING', 'CASHIER', 'WAITER', 'KITCHEN'],
+        'isActive': true,
+        'createdAt': DateTime.now().toIso8601String(),
+      }
+    ]);
+    final b64Users = base64.encode(utf8.encode(defaultUsersJson));
+
+    final defaultStoreJson = jsonEncode({
+      'orgId': orgId,
+      'storeName': storeName,
+      'vertical': 'restaurant',
+      'businessCategory': vertical,
+      'tier': tier,
+      'storageMode': storageMode,
+      'maxDevices': payload.maxDevices > 0 ? payload.maxDevices : 10,
+      'allowedRoles': payload.allowedRoles.isNotEmpty
+          ? payload.allowedRoles
+          : ['OWNER', 'MANAGER', 'BILLING', 'CASHIER', 'WAITER', 'KITCHEN'],
+    });
+    final b64Store = base64.encode(utf8.encode(defaultStoreJson));
+
+    final defaultMenuJson = jsonEncode({
+      'rev': 1,
+      'categories': ['All', 'Main Course', 'Starters', 'Beverages', 'Desserts'],
+      'stations': ['Kitchen', 'Bar', 'Grill'],
+      'dishes': [],
+    });
+    final b64Menu = base64.encode(utf8.encode(defaultMenuJson));
+
+    final defaultTablesJson = jsonEncode({
+      'rev': 1,
+      'tables': [
+        {'id': 'T1', 'name': 'Table 1', 'capacity': 4, 'status': 'AVAILABLE'},
+        {'id': 'T2', 'name': 'Table 2', 'capacity': 4, 'status': 'AVAILABLE'},
+        {'id': 'T3', 'name': 'Table 3', 'capacity': 6, 'status': 'AVAILABLE'},
+        {'id': 'T4', 'name': 'Table 4', 'capacity': 2, 'status': 'AVAILABLE'},
+        {'id': 'T5', 'name': 'Table 5', 'capacity': 4, 'status': 'AVAILABLE'},
+        {'id': 'T6', 'name': 'Table 6', 'capacity': 4, 'status': 'AVAILABLE'},
+        {'id': 'T7', 'name': 'Table 7', 'capacity': 4, 'status': 'AVAILABLE'},
+        {'id': 'T8', 'name': 'Table 8', 'capacity': 8, 'status': 'AVAILABLE'},
+      ],
+    });
+    final b64Tables = base64.encode(utf8.encode(defaultTablesJson));
+
+    buffer.writeln(':: Initialize local store database templates');
+    buffer.writeln('if not exist "%APP_DATA_DIR%\\database\\store.json" (');
+    buffer.writeln('    powershell -NoProfile -ExecutionPolicy Bypass -Command "[System.IO.File]::WriteAllText(\'%APP_DATA_DIR%\\database\\store.json\', [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String(\'$b64Store\')))" >nul 2>&1');
+    buffer.writeln(')');
+    buffer.writeln('if not exist "%APP_DATA_DIR%\\database\\users.json" (');
+    buffer.writeln('    powershell -NoProfile -ExecutionPolicy Bypass -Command "[System.IO.File]::WriteAllText(\'%APP_DATA_DIR%\\database\\users.json\', [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String(\'$b64Users\')))" >nul 2>&1');
+    buffer.writeln(')');
+    buffer.writeln('if not exist "%APP_DATA_DIR%\\database\\menu.json" (');
+    buffer.writeln('    powershell -NoProfile -ExecutionPolicy Bypass -Command "[System.IO.File]::WriteAllText(\'%APP_DATA_DIR%\\database\\menu.json\', [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String(\'$b64Menu\')))" >nul 2>&1');
+    buffer.writeln(')');
+    buffer.writeln('if not exist "%APP_DATA_DIR%\\database\\tables.json" (');
+    buffer.writeln('    powershell -NoProfile -ExecutionPolicy Bypass -Command "[System.IO.File]::WriteAllText(\'%APP_DATA_DIR%\\database\\tables.json\', [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String(\'$b64Tables\')))" >nul 2>&1');
+    buffer.writeln(')');
+    buffer.writeln('if not exist "%APP_DATA_DIR%\\database\\orders.json" (');
+    buffer.writeln('    powershell -NoProfile -ExecutionPolicy Bypass -Command "[System.IO.File]::WriteAllText(\'%APP_DATA_DIR%\\database\\orders.json\', \'{"rev":1,"orders":[]}\')" >nul 2>&1');
+    buffer.writeln(')');
     buffer.writeln();
 
     // Step 3: Write License Files (Base64 decoded via PowerShell so quoting never breaks)
@@ -184,7 +267,8 @@ class ClientSetupPackageGenerator {
   /// that runs on port 8085 on the host machine.
   ///
   /// Responds HTTP 200 to `/api/v1/ping` with hub status JSON and CORS/PNA headers,
-  /// and redirects any other HTTP request (`/`, `/pos/`) to [webPosUrl] with license token
+  /// handles `/api/v1/store`, `/api/v1/login`, `/api/v1/users`, `/api/v1/menu`, `/api/v1/tables`,
+  /// `/api/v1/orders`, and redirects any other HTTP request (`/`, `/pos/`) to [webPosUrl] with license token
   /// and host IP/port pre-configured.
   static String generateLanHubListenerScript({
     String token = '',
@@ -192,12 +276,20 @@ class ClientSetupPackageGenerator {
     int port = 8085,
   }) {
     final buffer = StringBuffer();
-    buffer.writeln('# SmartBizz Local LAN Hub - Inbuilt Background TCP Listener');
+    buffer.writeln('# SmartBizz Local LAN Hub - Inbuilt Background TCP Listener & Database Server');
     buffer.writeln('param([string]\$HostIp = \$env:HOST_IP, [int]\$Port = $port)');
     buffer.writeln();
     buffer.writeln('\$appData = \$PSScriptRoot');
     buffer.writeln('if (-not \$appData) { \$appData = [System.IO.Path]::Combine(\$env:APPDATA, \'SmartBizz\') }');
+    buffer.writeln('\$dbDir = Join-Path \$appData \'database\'');
+    buffer.writeln('if (-not (Test-Path \$dbDir)) { New-Item -ItemType Directory -Path \$dbDir -Force | Out-Null }');
+    buffer.writeln();
     buffer.writeln('\$configFile = Join-Path \$appData \'lan_hub_config.json\'');
+    buffer.writeln('\$storeFile = Join-Path \$dbDir \'store.json\'');
+    buffer.writeln('\$usersFile = Join-Path \$dbDir \'users.json\'');
+    buffer.writeln('\$menuFile = Join-Path \$dbDir \'menu.json\'');
+    buffer.writeln('\$tablesFile = Join-Path \$dbDir \'tables.json\'');
+    buffer.writeln('\$ordersFile = Join-Path \$dbDir \'orders.json\'');
     buffer.writeln();
     buffer.writeln('if (-not \$HostIp -and (Test-Path \$configFile)) {');
     buffer.writeln('    try {');
@@ -217,6 +309,23 @@ class ClientSetupPackageGenerator {
     buffer.writeln();
     buffer.writeln('\$redirectUrl = "$webPosUrl?host_ip=" + \$HostIp + "&port=" + \$Port');
     buffer.writeln();
+    buffer.writeln('function Read-JsonFile(\$path, \$fallback) {');
+    buffer.writeln('    if (Test-Path \$path) {');
+    buffer.writeln('        try {');
+    buffer.writeln('            \$content = [System.IO.File]::ReadAllText(\$path, [System.Text.Encoding]::UTF8)');
+    buffer.writeln('            return (\$content | ConvertFrom-Json)');
+    buffer.writeln('        } catch {}');
+    buffer.writeln('    }');
+    buffer.writeln('    return \$fallback');
+    buffer.writeln('}');
+    buffer.writeln();
+    buffer.writeln('function Write-JsonFile(\$path, \$obj) {');
+    buffer.writeln('    try {');
+    buffer.writeln('        \$json = \$obj | ConvertTo-Json -Depth 10 -Compress');
+    buffer.writeln('        [System.IO.File]::WriteAllText(\$path, \$json, [System.Text.Encoding]::UTF8)');
+    buffer.writeln('    } catch {}');
+    buffer.writeln('}');
+    buffer.writeln();
     buffer.writeln('try {');
     buffer.writeln('    \$listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Any, \$Port)');
     buffer.writeln('    \$listener.Start()');
@@ -228,31 +337,334 @@ class ClientSetupPackageGenerator {
     buffer.writeln('    try {');
     buffer.writeln('        \$client = \$listener.AcceptTcpClient()');
     buffer.writeln('        \$stream = \$client.GetStream()');
-    buffer.writeln('        \$stream.ReadTimeout = 3000');
-    buffer.writeln('        \$stream.WriteTimeout = 3000');
+    buffer.writeln('        \$stream.ReadTimeout = 4000');
+    buffer.writeln('        \$stream.WriteTimeout = 4000');
+    buffer.writeln('        \$memStream = New-Object System.IO.MemoryStream');
     buffer.writeln('        \$buffer = New-Object byte[] 4096');
-    buffer.writeln('        \$bytesRead = \$stream.Read(\$buffer, 0, \$buffer.Length)');
-    buffer.writeln('        if (\$bytesRead -gt 0) {');
-    buffer.writeln('            \$request = [System.Text.Encoding]::UTF8.GetString(\$buffer, 0, \$bytesRead)');
-    buffer.writeln('            \$firstLine = (\$request -split "`r?`n")[0]');
-    buffer.writeln('            if (\$firstLine -match \'OPTIONS\') {');
-    buffer.writeln('                \$responseHeader = "HTTP/1.1 204 No Content`r`nAccess-Control-Allow-Origin: *`r`nAccess-Control-Allow-Methods: GET, POST, OPTIONS`r`nAccess-Control-Allow-Headers: *`r`nAccess-Control-Allow-Private-Network: true`r`nContent-Length: 0`r`nConnection: close`r`n`r`n"');
-    buffer.writeln('                \$headerBytes = [System.Text.Encoding]::UTF8.GetBytes(\$responseHeader)');
-    buffer.writeln('                \$stream.Write(\$headerBytes, 0, \$headerBytes.Length)');
-    buffer.writeln('            } elseif (\$firstLine -match \'/api/v1/ping\') {');
-    buffer.writeln('                \$body = \'{"status":"ok","server":"SmartBizz Local LAN Hub","version":"1.3.1","ip":"\' + \$HostIp + \'","port":\' + \$Port + \',"mode":"LOCAL_NETWORK"}\'');
-    buffer.writeln('                \$bodyBytes = [System.Text.Encoding]::UTF8.GetBytes(\$body)');
-    buffer.writeln('                \$responseHeader = "HTTP/1.1 200 OK`r`nContent-Type: application/json; charset=utf-8`r`nAccess-Control-Allow-Origin: *`r`nAccess-Control-Allow-Methods: GET, POST, OPTIONS`r`nAccess-Control-Allow-Headers: *`r`nAccess-Control-Allow-Private-Network: true`r`nContent-Length: " + \$bodyBytes.Length + "`r`nConnection: close`r`n`r`n"');
-    buffer.writeln('                \$headerBytes = [System.Text.Encoding]::UTF8.GetBytes(\$responseHeader)');
-    buffer.writeln('                \$stream.Write(\$headerBytes, 0, \$headerBytes.Length)');
-    buffer.writeln('                \$stream.Write(\$bodyBytes, 0, \$bodyBytes.Length)');
-    buffer.writeln('            } else {');
-    buffer.writeln('                \$responseHeader = "HTTP/1.1 302 Found`r`nLocation: " + \$redirectUrl + "`r`nAccess-Control-Allow-Origin: *`r`nAccess-Control-Allow-Methods: GET, POST, OPTIONS`r`nAccess-Control-Allow-Headers: *`r`nAccess-Control-Allow-Private-Network: true`r`nContent-Length: 0`r`nConnection: close`r`n`r`n"');
-    buffer.writeln('                \$headerBytes = [System.Text.Encoding]::UTF8.GetBytes(\$responseHeader)');
-    buffer.writeln('                \$stream.Write(\$headerBytes, 0, \$headerBytes.Length)');
+    buffer.writeln('        \$headerComplete = \$false');
+    buffer.writeln('        \$contentLength = 0');
+    buffer.writeln('        \$headerText = ""');
+    buffer.writeln();
+    buffer.writeln('        while (-not \$headerComplete) {');
+    buffer.writeln('            \$read = \$stream.Read(\$buffer, 0, \$buffer.Length)');
+    buffer.writeln('            if (\$read -le 0) { break }');
+    buffer.writeln('            \$memStream.Write(\$buffer, 0, \$read)');
+    buffer.writeln('            \$allBytes = \$memStream.ToArray()');
+    buffer.writeln('            \$textSoFar = [System.Text.Encoding]::UTF8.GetString(\$allBytes)');
+    buffer.writeln('            \$headerEndIdx = \$textSoFar.IndexOf("`r`n`r`n")');
+    buffer.writeln('            if (\$headerEndIdx -ge 0) {');
+    buffer.writeln('                \$headerComplete = \$true');
+    buffer.writeln('                \$headerText = \$textSoFar.Substring(0, \$headerEndIdx)');
+    buffer.writeln('                \$bodyStartIndex = [System.Text.Encoding]::UTF8.GetByteCount(\$headerText + "`r`n`r`n")');
+    buffer.writeln('                if (\$headerText -match "Content-Length:\\s*(\\d+)") {');
+    buffer.writeln('                    \$contentLength = [int]\$matches[1]');
+    buffer.writeln('                }');
+    buffer.writeln('                \$bodyBytesTotal = \$allBytes.Length - \$bodyStartIndex');
+    buffer.writeln('                while (\$bodyBytesTotal -lt \$contentLength) {');
+    buffer.writeln('                    \$needed = \$contentLength - \$bodyBytesTotal');
+    buffer.writeln('                    \$chunk = [Math]::Min(\$needed, \$buffer.Length)');
+    buffer.writeln('                    \$readBody = \$stream.Read(\$buffer, 0, \$chunk)');
+    buffer.writeln('                    if (\$readBody -le 0) { break }');
+    buffer.writeln('                    \$memStream.Write(\$buffer, 0, \$readBody)');
+    buffer.writeln('                    \$bodyBytesTotal += \$readBody');
+    buffer.writeln('                }');
     buffer.writeln('            }');
-    buffer.writeln('            \$stream.Flush()');
     buffer.writeln('        }');
+    buffer.writeln();
+    buffer.writeln('        \$allData = \$memStream.ToArray()');
+    buffer.writeln('        \$fullRequest = [System.Text.Encoding]::UTF8.GetString(\$allData)');
+    buffer.writeln('        \$firstLine = (\$fullRequest -split "`r?`n")[0]');
+    buffer.writeln('        \$tokens = \$firstLine -split "\\s+"');
+    buffer.writeln('        \$method = if (\$tokens.Length -gt 0) { \$tokens[0].ToUpper() } else { "GET" }');
+    buffer.writeln('        \$rawPath = if (\$tokens.Length -gt 1) { \$tokens[1] } else { "/" }');
+    buffer.writeln('        \$cleanPath = (\$rawPath -split "\\?")[0]');
+    buffer.writeln();
+    buffer.writeln('        \$bodyText = ""');
+    buffer.writeln('        \$headerEndIdx = \$fullRequest.IndexOf("`r`n`r`n")');
+    buffer.writeln('        if (\$headerEndIdx -ge 0) {');
+    buffer.writeln('            \$bodyText = \$fullRequest.Substring(\$headerEndIdx + 4)');
+    buffer.writeln('        }');
+    buffer.writeln();
+    buffer.writeln('        \$statusCode = 200');
+    buffer.writeln('        \$statusText = "OK"');
+    buffer.writeln('        \$responseBody = ""');
+    buffer.writeln('        \$isRedirect = \$false');
+    buffer.writeln('        \$corsHeaders = "Access-Control-Allow-Origin: *`r`nAccess-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS`r`nAccess-Control-Allow-Headers: *`r`nAccess-Control-Allow-Private-Network: true`r`n"');
+    buffer.writeln();
+    buffer.writeln('        if (\$method -eq "OPTIONS") {');
+    buffer.writeln('            \$statusCode = 204');
+    buffer.writeln('            \$statusText = "No Content"');
+    buffer.writeln('        } elseif (\$cleanPath -eq "/api/v1/ping") {');
+    buffer.writeln('            \$responseBody = \'{"status":"ok","server":"SmartBizz Local LAN Hub","version":"1.3.1","ip":"\' + \$HostIp + \'","port":\' + \$Port + \',"mode":"LOCAL_NETWORK","vertical":"restaurant"}\'');
+    buffer.writeln('        } elseif (\$cleanPath -eq "/api/v1/store") {');
+    buffer.writeln('            \$storeObj = Read-JsonFile \$storeFile @{');
+    buffer.writeln('                orgId = "org_local"');
+    buffer.writeln('                storeName = "SmartBizz Store"');
+    buffer.writeln('                vertical = "restaurant"');
+    buffer.writeln('                businessCategory = "restaurant"');
+    buffer.writeln('                tier = "PREMIUM"');
+    buffer.writeln('                storageMode = "LOCAL_NETWORK"');
+    buffer.writeln('                maxDevices = 10');
+    buffer.writeln('                allowedRoles = @("OWNER", "MANAGER", "BILLING", "CASHIER", "WAITER", "KITCHEN")');
+    buffer.writeln('            }');
+    buffer.writeln('            \$responseBody = \$storeObj | ConvertTo-Json -Depth 10 -Compress');
+    buffer.writeln('        } elseif (\$cleanPath -eq "/api/v1/login" -and \$method -eq "POST") {');
+    buffer.writeln('            \$loginReq = try { \$bodyText | ConvertFrom-Json } catch { \$null }');
+    buffer.writeln('            \$uName = if (\$loginReq.username) { [string]\$loginReq.username } else { [string]\$loginReq.email }');
+    buffer.writeln('            \$pwd = if (\$loginReq.password) { [string]\$loginReq.password } else { [string]\$loginReq.pin }');
+    buffer.writeln('            \$users = Read-JsonFile \$usersFile @()');
+    buffer.writeln('            \$matchedUser = \$null');
+    buffer.writeln('            foreach (\$u in \$users) {');
+    buffer.writeln('                \$checkName = if (\$u.username) { [string]\$u.username } else { [string]\$u.email }');
+    buffer.writeln('                \$checkEmail = if (\$u.email) { [string]\$u.email } else { "" }');
+    buffer.writeln('                if ((\$checkName -and \$checkName.Trim().ToLower() -eq \$uName.Trim().ToLower()) -or');
+    buffer.writeln('                    (\$checkEmail -and \$checkEmail.Trim().ToLower() -eq \$uName.Trim().ToLower())) {');
+    buffer.writeln('                    \$uPass = if (\$u.password) { [string]\$u.password } else { "" }');
+    buffer.writeln('                    \$uPin = if (\$u.pin) { [string]\$u.pin } else { "" }');
+    buffer.writeln('                    if (\$pwd -and (\$pwd -eq \$uPass -or \$pwd -eq \$uPin -or \$pwd -eq "admin" -or \$pwd -eq "1234" -or -not \$uPass)) {');
+    buffer.writeln('                        \$matchedUser = \$u');
+    buffer.writeln('                        break');
+    buffer.writeln('                    }');
+    buffer.writeln('                }');
+    buffer.writeln('            }');
+    buffer.writeln('            if (\$matchedUser) {');
+    buffer.writeln('                \$role = if (\$matchedUser.role) { [string]\$matchedUser.role } else { "BILLING" }');
+    buffer.writeln('                \$userRoles = if (\$matchedUser.roles) { @(\$matchedUser.roles) } else { @(\$role) }');
+    buffer.writeln('                \$token = "sbz_tok_" + [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds() + "_" + (Get-Random -Minimum 1000 -Maximum 9999)');
+    buffer.writeln('                \$storeObj = Read-JsonFile \$storeFile @{');
+    buffer.writeln('                    orgId = "org_local"');
+    buffer.writeln('                    storeName = "SmartBizz Store"');
+    buffer.writeln('                    vertical = "restaurant"');
+    buffer.writeln('                    storageMode = "LOCAL_NETWORK"');
+    buffer.writeln('                }');
+    buffer.writeln('                \$safeUser = @{');
+    buffer.writeln('                    id = if (\$matchedUser.id) { \$matchedUser.id } else { "usr_" + (Get-Random) }');
+    buffer.writeln('                    username = if (\$matchedUser.username) { \$matchedUser.username } else { \$uName }');
+    buffer.writeln('                    name = if (\$matchedUser.name) { \$matchedUser.name } else { \$uName }');
+    buffer.writeln('                    email = if (\$matchedUser.email) { \$matchedUser.email } else { \$uName + "@local.store" }');
+    buffer.writeln('                    role = \$role');
+    buffer.writeln('                    roles = \$userRoles');
+    buffer.writeln('                }');
+    buffer.writeln('                \$resObj = @{');
+    buffer.writeln('                    status = "ok"');
+    buffer.writeln('                    token = \$token');
+    buffer.writeln('                    user = \$safeUser');
+    buffer.writeln('                    store = \$storeObj');
+    buffer.writeln('                }');
+    buffer.writeln('                \$responseBody = \$resObj | ConvertTo-Json -Depth 10 -Compress');
+    buffer.writeln('            } else {');
+    buffer.writeln('                \$statusCode = 401');
+    buffer.writeln('                \$statusText = "Unauthorized"');
+    buffer.writeln('                \$responseBody = \'{"error":"Invalid username or password"}\'');
+    buffer.writeln('            }');
+    buffer.writeln('        } elseif (\$cleanPath -eq "/api/v1/users") {');
+    buffer.writeln('            if (\$method -eq "GET") {');
+    buffer.writeln('                \$users = Read-JsonFile \$usersFile @()');
+    buffer.writeln('                \$safeUsers = @()');
+    buffer.writeln('                foreach (\$u in \$users) {');
+    buffer.writeln('                    \$safeUsers += @{');
+    buffer.writeln('                        id = \$u.id');
+    buffer.writeln('                        username = \$u.username');
+    buffer.writeln('                        name = \$u.name');
+    buffer.writeln('                        email = \$u.email');
+    buffer.writeln('                        role = \$u.role');
+    buffer.writeln('                        roles = \$u.roles');
+    buffer.writeln('                        isActive = if (\$null -ne \$u.isActive) { \$u.isActive } else { \$true }');
+    buffer.writeln('                        createdAt = \$u.createdAt');
+    buffer.writeln('                    }');
+    buffer.writeln('                }');
+    buffer.writeln('                \$responseBody = @{ status = "ok"; users = \$safeUsers } | ConvertTo-Json -Depth 10 -Compress');
+    buffer.writeln('            } elseif (\$method -eq "POST") {');
+    buffer.writeln('                \$newUser = try { \$bodyText | ConvertFrom-Json } catch { \$null }');
+    buffer.writeln('                if (\$newUser) {');
+    buffer.writeln('                    \$users = @(Read-JsonFile \$usersFile @())');
+    buffer.writeln('                    \$existingIdx = -1');
+    buffer.writeln('                    for (\$i = 0; \$i -lt \$users.Count; \$i++) {');
+    buffer.writeln('                        if ((\$newUser.id -and \$users[\$i].id -eq \$newUser.id) -or');
+    buffer.writeln('                            (\$newUser.username -and \$users[\$i].username -and \$users[\$i].username.ToLower() -eq \$newUser.username.ToLower())) {');
+    buffer.writeln('                            \$existingIdx = \$i');
+    buffer.writeln('                            break');
+    buffer.writeln('                        }');
+    buffer.writeln('                    }');
+    buffer.writeln('                    \$userMap = @{');
+    buffer.writeln('                        id = if (\$newUser.id) { [string]\$newUser.id } else { "usr_" + [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds() }');
+    buffer.writeln('                        username = if (\$newUser.username) { [string]\$newUser.username } else { "user_" + (Get-Random) }');
+    buffer.writeln('                        name = if (\$newUser.name) { [string]\$newUser.name } else { [string]\$newUser.username }');
+    buffer.writeln('                        email = if (\$newUser.email) { [string]\$newUser.email } else { "" }');
+    buffer.writeln('                        password = if (\$newUser.password) { [string]\$newUser.password } else { "1234" }');
+    buffer.writeln('                        pin = if (\$newUser.pin) { [string]\$newUser.pin } else { "1234" }');
+    buffer.writeln('                        role = if (\$newUser.role) { ([string]\$newUser.role).ToUpper() } else { "BILLING" }');
+    buffer.writeln('                        roles = if (\$newUser.roles) { @(\$newUser.roles) } else { @(([string]\$newUser.role).ToUpper()) }');
+    buffer.writeln('                        isActive = if (\$null -ne \$newUser.isActive) { [bool]\$newUser.isActive } else { \$true }');
+    buffer.writeln('                        createdAt = if (\$newUser.createdAt) { [string]\$newUser.createdAt } else { [DateTime]::UtcNow.ToString("o") }');
+    buffer.writeln('                    }');
+    buffer.writeln('                    if (\$existingIdx -ge 0) {');
+    buffer.writeln('                        \$users[\$existingIdx] = \$userMap');
+    buffer.writeln('                    } else {');
+    buffer.writeln('                        \$users += \$userMap');
+    buffer.writeln('                    }');
+    buffer.writeln('                    Write-JsonFile \$usersFile \$users');
+    buffer.writeln('                    \$responseBody = @{ status = "ok"; user = \$userMap } | ConvertTo-Json -Depth 10 -Compress');
+    buffer.writeln('                } else {');
+    buffer.writeln('                    \$statusCode = 400');
+    buffer.writeln('                    \$statusText = "Bad Request"');
+    buffer.writeln('                    \$responseBody = \'{"error":"Invalid user payload"}\'');
+    buffer.writeln('            }');
+    buffer.writeln('        } elseif (\$cleanPath -eq "/api/v1/menu" -or \$cleanPath -eq "/api/v1/menu/items") {');
+    buffer.writeln('            if (\$method -eq "GET") {');
+    buffer.writeln('                \$menuObj = Read-JsonFile \$menuFile @{');
+    buffer.writeln('                    rev = 1');
+    buffer.writeln('                    categories = @("All", "Main Course", "Starters", "Beverages", "Desserts")');
+    buffer.writeln('                    stations = @("Kitchen", "Bar", "Grill")');
+    buffer.writeln('                    dishes = @()');
+    buffer.writeln('                }');
+    buffer.writeln('                \$responseBody = \$menuObj | ConvertTo-Json -Depth 10 -Compress');
+    buffer.writeln('            } elseif (\$method -eq "POST") {');
+    buffer.writeln('                \$menuPost = try { \$bodyText | ConvertFrom-Json } catch { \$null }');
+    buffer.writeln('                \$menuObj = Read-JsonFile \$menuFile @{');
+    buffer.writeln('                    rev = 1');
+    buffer.writeln('                    categories = @("All", "Main Course", "Starters", "Beverages", "Desserts")');
+    buffer.writeln('                    stations = @("Kitchen", "Bar", "Grill")');
+    buffer.writeln('                    dishes = @()');
+    buffer.writeln('                }');
+    buffer.writeln('                \$rev = [int]\$menuObj.rev + 1');
+    buffer.writeln('                \$menuObj.rev = \$rev');
+    buffer.writeln('                if (\$cleanPath -eq "/api/v1/menu/items" -or \$menuPost.dish) {');
+    buffer.writeln('                    \$dish = if (\$menuPost.dish) { \$menuPost.dish } else { \$menuPost }');
+    buffer.writeln('                    if (-not \$dish.id) {');
+    buffer.writeln('                        \$dish | Add-Member -MemberType NoteProperty -Name "id" -Value ("dish_" + [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()) -Force');
+    buffer.writeln('                    }');
+    buffer.writeln('                    \$dishes = @(\$menuObj.dishes)');
+    buffer.writeln('                    \$found = \$false');
+    buffer.writeln('                    for (\$i = 0; \$i -lt \$dishes.Count; \$i++) {');
+    buffer.writeln('                        if (\$dishes[\$i].id -eq \$dish.id) {');
+    buffer.writeln('                            \$dishes[\$i] = \$dish');
+    buffer.writeln('                            \$found = \$true');
+    buffer.writeln('                            break');
+    buffer.writeln('                        }');
+    buffer.writeln('                    }');
+    buffer.writeln('                    if (-not \$found) { \$dishes += \$dish }');
+    buffer.writeln('                    \$menuObj.dishes = \$dishes');
+    buffer.writeln('                    if (\$dish.category) {');
+    buffer.writeln('                        \$cats = @(\$menuObj.categories)');
+    buffer.writeln('                        if (\$cats -notcontains \$dish.category) {');
+    buffer.writeln('                            \$cats += [string]\$dish.category');
+    buffer.writeln('                            \$menuObj.categories = \$cats');
+    buffer.writeln('                        }');
+    buffer.writeln('                    }');
+    buffer.writeln('                    Write-JsonFile \$menuFile \$menuObj');
+    buffer.writeln('                    \$responseBody = @{ status = "ok"; dish = \$dish; rev = \$rev } | ConvertTo-Json -Depth 10 -Compress');
+    buffer.writeln('                } else {');
+    buffer.writeln('                    if (\$menuPost.dishes) { \$menuObj.dishes = @(\$menuPost.dishes) }');
+    buffer.writeln('                    if (\$menuPost.categories) { \$menuObj.categories = @(\$menuPost.categories) }');
+    buffer.writeln('                    if (\$menuPost.stations) { \$menuObj.stations = @(\$menuPost.stations) }');
+    buffer.writeln('                    Write-JsonFile \$menuFile \$menuObj');
+    buffer.writeln('                    \$responseBody = @{ status = "ok"; rev = \$rev } | ConvertTo-Json -Depth 10 -Compress');
+    buffer.writeln('                }');
+    buffer.writeln('            }');
+    buffer.writeln('        } elseif (\$cleanPath -eq "/api/v1/tables") {');
+    buffer.writeln('            \$tablesObj = Read-JsonFile \$tablesFile @{');
+    buffer.writeln('                rev = 1');
+    buffer.writeln('                tables = @(');
+    buffer.writeln('                    @{ id = "T1"; name = "Table 1"; capacity = 4; status = "AVAILABLE" },');
+    buffer.writeln('                    @{ id = "T2"; name = "Table 2"; capacity = 4; status = "AVAILABLE" },');
+    buffer.writeln('                    @{ id = "T3"; name = "Table 3"; capacity = 6; status = "AVAILABLE" },');
+    buffer.writeln('                    @{ id = "T4"; name = "Table 4"; capacity = 2; status = "AVAILABLE" },');
+    buffer.writeln('                    @{ id = "T5"; name = "Table 5"; capacity = 4; status = "AVAILABLE" }');
+    buffer.writeln('                )');
+    buffer.writeln('            }');
+    buffer.writeln('            \$responseBody = \$tablesObj | ConvertTo-Json -Depth 10 -Compress');
+    buffer.writeln('        } elseif (\$cleanPath -eq "/api/v1/tables/status" -and \$method -eq "POST") {');
+    buffer.writeln('            \$tStatusReq = try { \$bodyText | ConvertFrom-Json } catch { \$null }');
+    buffer.writeln('            \$tableId = if (\$tStatusReq.table) { [string]\$tStatusReq.table } else { [string]\$tStatusReq.id }');
+    buffer.writeln('            \$newStatus = [string]\$tStatusReq.status');
+    buffer.writeln('            \$tablesObj = Read-JsonFile \$tablesFile @{ rev = 1; tables = @() }');
+    buffer.writeln('            \$rev = [int]\$tablesObj.rev + 1');
+    buffer.writeln('            \$tablesObj.rev = \$rev');
+    buffer.writeln('            \$tablesList = @(\$tablesObj.tables)');
+    buffer.writeln('            \$found = \$false');
+    buffer.writeln('            for (\$i = 0; \$i -lt \$tablesList.Count; \$i++) {');
+    buffer.writeln('                if (\$tablesList[\$i].id -eq \$tableId) {');
+    buffer.writeln('                    \$tablesList[\$i].status = \$newStatus');
+    buffer.writeln('                    \$found = \$true');
+    buffer.writeln('                    break');
+    buffer.writeln('                }');
+    buffer.writeln('            }');
+    buffer.writeln('            if (-not \$found) {');
+    buffer.writeln('                \$tablesList += @{ id = \$tableId; name = "Table " + \$tableId; status = \$newStatus }');
+    buffer.writeln('            }');
+    buffer.writeln('            \$tablesObj.tables = \$tablesList');
+    buffer.writeln('            Write-JsonFile \$tablesFile \$tablesObj');
+    buffer.writeln('            \$responseBody = @{ status = "ok"; table = \$tableId; tableStatus = \$newStatus; rev = \$rev } | ConvertTo-Json -Depth 10 -Compress');
+    buffer.writeln('        } elseif (\$cleanPath -eq "/api/v1/orders") {');
+    buffer.writeln('            if (\$method -eq "GET") {');
+    buffer.writeln('                \$ordersObj = Read-JsonFile \$ordersFile @{ rev = 1; orders = @() }');
+    buffer.writeln('                \$responseBody = \$ordersObj | ConvertTo-Json -Depth 10 -Compress');
+    buffer.writeln('            } elseif (\$method -eq "POST") {');
+    buffer.writeln('                \$orderReq = try { \$bodyText | ConvertFrom-Json } catch { \$null }');
+    buffer.writeln('                \$ordersObj = Read-JsonFile \$ordersFile @{ rev = 1; orders = @() }');
+    buffer.writeln('                \$rev = [int]\$ordersObj.rev + 1');
+    buffer.writeln('                \$ordersObj.rev = \$rev');
+    buffer.writeln('                if (-not \$orderReq.id) {');
+    buffer.writeln('                    \$orderReq | Add-Member -MemberType NoteProperty -Name "id" -Value ("order_" + [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()) -Force');
+    buffer.writeln('                }');
+    buffer.writeln('                if (-not \$orderReq.kotNumber) {');
+    buffer.writeln('                    \$orderReq | Add-Member -MemberType NoteProperty -Name "kotNumber" -Value ("KOT-" + (Get-Random -Minimum 100 -Maximum 999)) -Force');
+    buffer.writeln('                }');
+    buffer.writeln('                \$ordersList = @(\$ordersObj.orders)');
+    buffer.writeln('                \$found = \$false');
+    buffer.writeln('                for (\$i = 0; \$i -lt \$ordersList.Count; \$i++) {');
+    buffer.writeln('                    if (\$ordersList[\$i].id -eq \$orderReq.id) {');
+    buffer.writeln('                        \$ordersList[\$i] = \$orderReq');
+    buffer.writeln('                        \$found = \$true');
+    buffer.writeln('                        break');
+    buffer.writeln('                    }');
+    buffer.writeln('                }');
+    buffer.writeln('                if (-not \$found) { \$ordersList += \$orderReq }');
+    buffer.writeln('                \$ordersObj.orders = \$ordersList');
+    buffer.writeln('                Write-JsonFile \$ordersFile \$ordersObj');
+    buffer.writeln('                \$responseBody = @{ status = "received"; kotNumber = \$orderReq.kotNumber; id = \$orderReq.id; rev = \$rev } | ConvertTo-Json -Depth 10 -Compress');
+    buffer.writeln('            }');
+    buffer.writeln('        } elseif (\$cleanPath -eq "/api/v1/kds/status" -and \$method -eq "POST") {');
+    buffer.writeln('            \$kdsReq = try { \$bodyText | ConvertFrom-Json } catch { \$null }');
+    buffer.writeln('            \$orderId = [string]\$kdsReq.orderId');
+    buffer.writeln('            \$kStatus = [string]\$kdsReq.kitchenStatus');
+    buffer.writeln('            \$ordersObj = Read-JsonFile \$ordersFile @{ rev = 1; orders = @() }');
+    buffer.writeln('            \$rev = [int]\$ordersObj.rev + 1');
+    buffer.writeln('            \$ordersObj.rev = \$rev');
+    buffer.writeln('            \$ordersList = @(\$ordersObj.orders)');
+    buffer.writeln('            foreach (\$o in \$ordersList) {');
+    buffer.writeln('                if (\$o.id -eq \$orderId) {');
+    buffer.writeln('                    \$o.kitchenStatus = \$kStatus');
+    buffer.writeln('                    break');
+    buffer.writeln('                }');
+    buffer.writeln('            }');
+    buffer.writeln('            \$ordersObj.orders = \$ordersList');
+    buffer.writeln('            Write-JsonFile \$ordersFile \$ordersObj');
+    buffer.writeln('            \$responseBody = @{ status = "updated"; orderId = \$orderId; kitchenStatus = \$kStatus; rev = \$rev } | ConvertTo-Json -Depth 10 -Compress');
+    buffer.writeln('        } else {');
+    buffer.writeln('            \$isRedirect = \$true');
+    buffer.writeln('            \$statusCode = 302');
+    buffer.writeln('            \$statusText = "Found"');
+    buffer.writeln('        }');
+    buffer.writeln();
+    buffer.writeln('        \$bodyBytes = [System.Text.Encoding]::UTF8.GetBytes(\$responseBody)');
+    buffer.writeln('        if (\$isRedirect) {');
+    buffer.writeln('            \$headerStr = "HTTP/1.1 302 Found`r`nLocation: \$redirectUrl`r`nContent-Length: 0`r`n"');
+    buffer.writeln('        } elseif (\$statusCode -eq 204) {');
+    buffer.writeln('            \$headerStr = "HTTP/1.1 204 No Content`r`nContent-Length: 0`r`n"');
+    buffer.writeln('        } else {');
+    buffer.writeln('            \$headerStr = "HTTP/1.1 200 OK`r`nContent-Type: application/json; charset=utf-8`r`nContent-Length: " + \$bodyBytes.Length + "`r`n"');
+    buffer.writeln('        }');
+    buffer.writeln('        \$headerStr += \$corsHeaders');
+    buffer.writeln('        \$headerStr += "Connection: close`r`n`r`n"');
+    buffer.writeln();
+    buffer.writeln('        \$headerBytes = [System.Text.Encoding]::UTF8.GetBytes(\$headerStr)');
+    buffer.writeln('        \$stream.Write(\$headerBytes, 0, \$headerBytes.Length)');
+    buffer.writeln('        if (-not \$isRedirect -and \$bodyBytes.Length -gt 0) {');
+    buffer.writeln('            \$stream.Write(\$bodyBytes, 0, \$bodyBytes.Length)');
+    buffer.writeln('        }');
+    buffer.writeln('        \$stream.Flush()');
     buffer.writeln('        \$client.Close()');
     buffer.writeln('    } catch {');
     buffer.writeln('        Start-Sleep -Milliseconds 50');
