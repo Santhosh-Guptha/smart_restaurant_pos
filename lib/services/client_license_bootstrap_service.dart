@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'client_bootstrap_reader_io.dart'
     if (dart.library.js_interop) 'client_bootstrap_reader_web.dart';
 import 'client_license_service.dart';
+import 'lan_hub_client.dart';
 
 /// Service that automatically detects, cryptographically validates, and activates
 /// inbuilt license files on desktop, web, and local host environments.
@@ -17,7 +18,12 @@ class ClientLicenseBootstrapService {
   /// into the session with zero human prompts required.
   static Future<bool> checkAndAutoActivateBootstrapLicense(Ref ref) async {
     try {
-      final raw = ClientBootstrapReader.readBootstrapSource();
+      var raw = ClientBootstrapReader.readBootstrapSource();
+      if (raw == null || raw.trim().isEmpty) {
+        try {
+          raw = await LanHubClient.instance.fetchLicense();
+        } catch (_) {}
+      }
       if (raw == null || raw.trim().isEmpty) return false;
 
       final content = raw.trim();
@@ -60,6 +66,7 @@ class ClientLicenseBootstrapService {
       );
 
       if (success) {
+        ClientBootstrapReader.saveBootstrapSource(token);
         ClientBootstrapReader.markBootstrapCompleted();
         debugPrint('🚀 ClientLicenseBootstrapService: Inbuilt licence activated successfully for ${payload.storeName} (${payload.orgId}) on mode ${payload.storageMode}!');
         return true;

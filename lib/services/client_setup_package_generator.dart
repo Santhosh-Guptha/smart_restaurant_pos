@@ -128,7 +128,8 @@ class ClientSetupPackageGenerator {
       'businessCategory': vertical,
       'tier': tier,
       'storageMode': storageMode,
-      'maxDevices': payload.maxDevices > 0 ? payload.maxDevices : 10,
+      'token': token,
+      'maxDevices': payload.maxDevices > 0 ? payload.maxDevices : 20,
       'allowedRoles': payload.allowedRoles.isNotEmpty
           ? payload.allowedRoles
           : ['OWNER', 'MANAGER', 'BILLING', 'CASHIER', 'WAITER', 'KITCHEN'],
@@ -225,7 +226,7 @@ class ClientSetupPackageGenerator {
     buffer.writeln('echo [*] Creating Desktop Shortcut...');
     buffer.writeln('set "DESKTOP_DIR=%USERPROFILE%\\Desktop"');
     buffer.writeln('set "SHORTCUT_PATH=%DESKTOP_DIR%\\SmartBizz POS.lnk"');
-    buffer.writeln('powershell -NoProfile -ExecutionPolicy Bypass -Command "\$ws = New-Object -ComObject WScript.Shell; \$s = \$ws.CreateShortcut(\'%SHORTCUT_PATH%\'); \$s.TargetPath = \'%~dp0smart_kirana_shop.exe\'; if (-not (Test-Path \'%~dp0smart_kirana_shop.exe\')) { \$s.TargetPath = \'msedge.exe\'; \$s.Arguments = \'--app=$kWebPosUrl?license=$token&host_ip=!HOST_IP!&port=8085\'; }; \$s.Description = \'SmartBizz POS - $storeName\'; \$s.Save()" >nul 2>&1');
+    buffer.writeln('powershell -NoProfile -ExecutionPolicy Bypass -Command "\$ws = New-Object -ComObject WScript.Shell; \$s = \$ws.CreateShortcut(\'%SHORTCUT_PATH%\'); \$s.TargetPath = \'%~dp0smart_kirana_shop.exe\'; if (-not (Test-Path \'%~dp0smart_kirana_shop.exe\')) { \$s.TargetPath = \'msedge.exe\'; \$s.Arguments = \'--app=$kWebPosUrl?host_ip=!HOST_IP!&port=8085\'; }; \$s.Description = \'SmartBizz POS - $storeName\'; \$s.Save()" >nul 2>&1');
     buffer.writeln('echo [OK] Desktop shortcut created.');
     buffer.writeln();
 
@@ -256,7 +257,7 @@ class ClientSetupPackageGenerator {
     buffer.writeln(')');
     buffer.writeln();
     buffer.writeln(':: Priority 2: Dedicated Edge/Chrome Application Window');
-    buffer.writeln('start msedge --app="$kWebPosUrl?license=$token&host_ip=!HOST_IP!&port=8085" 2>nul || start chrome --app="$kWebPosUrl?license=$token&host_ip=!HOST_IP!&port=8085" 2>nul || start "" "$kWebPosUrl?license=$token&host_ip=!HOST_IP!&port=8085"');
+    buffer.writeln('start msedge --app="$kWebPosUrl?host_ip=!HOST_IP!&port=8085" 2>nul || start chrome --app="$kWebPosUrl?host_ip=!HOST_IP!&port=8085" 2>nul || start "" "$kWebPosUrl?host_ip=!HOST_IP!&port=8085"');
     buffer.writeln();
     buffer.writeln('exit /b 0');
 
@@ -396,16 +397,29 @@ class ClientSetupPackageGenerator {
     buffer.writeln('            \$statusText = "No Content"');
     buffer.writeln('        } elseif (\$cleanPath -eq "/api/v1/ping") {');
     buffer.writeln('            \$responseBody = \'{"status":"ok","server":"SmartBizz Local LAN Hub","version":"1.3.1","ip":"\' + \$HostIp + \'","port":\' + \$Port + \',"mode":"LOCAL_NETWORK","vertical":"restaurant"}\'');
+    buffer.writeln('        } elseif (\$cleanPath -eq "/api/v1/license" -or \$cleanPath -eq "/api/v1/bootstrap") {');
+    buffer.writeln('            \$licFile = Join-Path \$appData \'smartbizz_bootstrap_license.json\'');
+    buffer.writeln('            \$tokFile = Join-Path \$appData \'smartbizz_license.token\'');
+    buffer.writeln('            \$tokContent = if (Test-Path \$tokFile) { ([System.IO.File]::ReadAllText(\$tokFile, [System.Text.Encoding]::UTF8)).Trim() } else { "" }');
+    buffer.writeln('            \$licContent = if (Test-Path \$licFile) { [System.IO.File]::ReadAllText(\$licFile, [System.Text.Encoding]::UTF8) } else { "" }');
+    buffer.writeln('            if (-not \$tokContent -and "$token") { \$tokContent = "$token" }');
+    buffer.writeln('            \$resLic = @{ status = "ok"; token = \$tokContent; license = \$licContent }');
+    buffer.writeln('            \$responseBody = \$resLic | ConvertTo-Json -Depth 10 -Compress');
     buffer.writeln('        } elseif (\$cleanPath -eq "/api/v1/store") {');
+    buffer.writeln('            \$tokFile = Join-Path \$appData \'smartbizz_license.token\'');
+    buffer.writeln('            \$tokContent = if (Test-Path \$tokFile) { ([System.IO.File]::ReadAllText(\$tokFile, [System.Text.Encoding]::UTF8)).Trim() } else { "$token" }');
     buffer.writeln('            \$storeObj = Read-JsonFile \$storeFile @{');
     buffer.writeln('                orgId = "org_local"');
     buffer.writeln('                storeName = "SmartBizz Store"');
     buffer.writeln('                vertical = "restaurant"');
     buffer.writeln('                businessCategory = "restaurant"');
-    buffer.writeln('                tier = "PREMIUM"');
+    buffer.writeln('                tier = "ENTERPRISE"');
     buffer.writeln('                storageMode = "LOCAL_NETWORK"');
-    buffer.writeln('                maxDevices = 10');
+    buffer.writeln('                maxDevices = 20');
     buffer.writeln('                allowedRoles = @("OWNER", "MANAGER", "BILLING", "CASHIER", "WAITER", "KITCHEN")');
+    buffer.writeln('            }');
+    buffer.writeln('            if (-not \$storeObj.token -and \$tokContent) {');
+    buffer.writeln('                \$storeObj | Add-Member -MemberType NoteProperty -Name "token" -Value \$tokContent -Force');
     buffer.writeln('            }');
     buffer.writeln('            \$responseBody = \$storeObj | ConvertTo-Json -Depth 10 -Compress');
     buffer.writeln('        } elseif (\$cleanPath -eq "/api/v1/login" -and \$method -eq "POST") {');

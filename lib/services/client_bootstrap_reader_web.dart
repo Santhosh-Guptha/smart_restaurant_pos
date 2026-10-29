@@ -67,10 +67,15 @@ class ClientBootstrapReader {
     return null;
   }
 
-  static void markBootstrapCompleted() {
+  static void saveBootstrapSource(String token) {
     try {
-      web.window.localStorage.removeItem('smartbizz_bootstrap_license');
-    } catch (_) {}
+      web.window.localStorage.setItem('smartbizz_bootstrap_license', token.trim());
+    } catch (e) {
+      debugPrint('ClientBootstrapReader: web save error: $e');
+    }
+  }
+
+  static void markBootstrapCompleted() {
     _cleanAddressBar();
   }
 

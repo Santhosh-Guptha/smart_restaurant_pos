@@ -54,7 +54,7 @@ void main() {
       expect(script, contains('localport=8080'));
       expect(script, contains('netsh advfirewall firewall add rule name="SmartBizz POS Hub (Port 8085)"'));
       expect(script, contains('localport=8085'));
-      expect(script, contains('&host_ip=!HOST_IP!&port=8085'));
+      expect(script, contains('?host_ip=!HOST_IP!&port=8085'));
 
       // Check background LAN Hub listener creation and start
       expect(script, contains('lan_hub_listener.ps1'));
@@ -76,6 +76,7 @@ void main() {
       expect(listener, contains('TcpListener]::new([System.Net.IPAddress]::Any, \$Port)'));
       expect(listener, contains('[int]\$Port = 8085'));
       expect(listener, contains('/api/v1/ping'));
+      expect(listener, contains('/api/v1/license'));
       expect(listener, contains('"status":"ok","server":"SmartBizz Local LAN Hub","version":"1.3.1"'));
       expect(listener, contains('HTTP/1.1 200 OK'));
       expect(listener, contains('HTTP/1.1 302 Found'));

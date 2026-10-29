@@ -114,6 +114,8 @@ class ClientBootstrapReader {
     return null;
   }
 
+  static void saveBootstrapSource(String token) {}
+
   static void markBootstrapCompleted() {
     try {
       final appData = Platform.environment['APPDATA'];

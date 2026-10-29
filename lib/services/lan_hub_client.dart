@@ -379,6 +379,29 @@ class LanHubClient {
     return d is Map ? Map<String, dynamic>.from(d) : null;
   }
 
+  /// Fetches the bootstrap license token from the LAN Hub (GET /api/v1/license).
+  Future<String?> fetchLicense({String? hub}) async {
+    final targetHub = hub != null && hub.isNotEmpty ? normaliseHub(hub) : hubUrl;
+    if (targetHub == null || targetHub.isEmpty) return null;
+    try {
+      final res = await _http.get(Uri.parse('$targetHub/api/v1/license')).timeout(_timeout);
+      if (res.statusCode != 200) return null;
+      final d = jsonDecode(res.body);
+      if (d is Map) {
+        if (d['token'] != null && d['token'].toString().trim().isNotEmpty) {
+          return d['token'].toString().trim();
+        }
+        if (d['license'] != null && d['license'].toString().trim().isNotEmpty) {
+          return d['license'].toString().trim();
+        }
+      }
+      return null;
+    } catch (e) {
+      debugPrint('LanHubClient fetchLicense note: $e');
+      return null;
+    }
+  }
+
   Future<void> forget() async {
     await _box?.delete(tokenKey);
     await _box?.delete(hubUrlKey);
