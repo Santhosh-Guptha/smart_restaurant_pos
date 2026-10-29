@@ -260,6 +260,65 @@ class _RestaurantAnalyticsScreenState
         allTransactions.addAll(list);
       }
 
+      // Remote Owner Fallback: When the owner views analytics remotely (not on the store PC),
+      // local Hive has no bills. Query tenant_metrics aggregates from Firestore.
+      if (allTransactions.isEmpty && !CloudGate.offline) {
+        try {
+          final metricsSnap = await FirebaseFirestore.instance
+              .collection('tenant_metrics')
+              .where('orgId', isEqualTo: orgId)
+              .get()
+              .timeout(const Duration(seconds: 5));
+
+          for (final doc in metricsSnap.docs) {
+            final data = doc.data();
+            final dayStr = (data['day'] ?? '').toString();
+            if (dayStr.length == 8) {
+              final y = int.tryParse(dayStr.substring(0, 4)) ?? 2026;
+              final m = int.tryParse(dayStr.substring(4, 6)) ?? 1;
+              final d = int.tryParse(dayStr.substring(6, 8)) ?? 1;
+              final dt = DateTime(y, m, d, 12, 0);
+              final grossPaise = (data['grossPaise'] as num?)?.toDouble() ?? 0.0;
+              final grossTotal = grossPaise / 100.0;
+              final payPaise = data['paymentPaise'] as Map? ?? {};
+
+              if (payPaise.isNotEmpty) {
+                payPaise.forEach((mode, valPaise) {
+                  final amt = ((valPaise as num?)?.toDouble() ?? 0.0) / 100.0;
+                  if (amt > 0) {
+                    allTransactions.add({
+                      'id': 'cloud_summary_${doc.id}_$mode',
+                      'createdAt': dt.toIso8601String(),
+                      'timestamp': dt.toIso8601String(),
+                      'status': 'PAID',
+                      'paymentStatus': 'PAID',
+                      'paymentMode': mode.toString(),
+                      'grandTotal': amt,
+                      'totalAmount': amt,
+                      'items': [],
+                    });
+                  }
+                });
+              } else if (grossTotal > 0) {
+                allTransactions.add({
+                  'id': 'cloud_summary_${doc.id}',
+                  'createdAt': dt.toIso8601String(),
+                  'timestamp': dt.toIso8601String(),
+                  'status': 'PAID',
+                  'paymentStatus': 'PAID',
+                  'paymentMode': 'OTHER',
+                  'grandTotal': grossTotal,
+                  'totalAmount': grossTotal,
+                  'items': [],
+                });
+              }
+            }
+          }
+        } catch (e) {
+          debugPrint('Remote analytics cloud fallback note: $e');
+        }
+      }
+
       // Helper to exclude voided, cancelled, and deleted transactions (Issues 43 & 48)
       bool isTxVoided(Map<String, dynamic> t) {
         final stUpper = (t['status'] ?? t['orderStatus'] ?? '').toString().toUpperCase();

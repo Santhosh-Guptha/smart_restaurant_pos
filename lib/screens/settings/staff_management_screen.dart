@@ -30,6 +30,14 @@ class StaffManagementScreen extends ConsumerStatefulWidget {
 }
 
 class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(restaurantAuthProvider.notifier).syncStaffFromCloud();
+    });
+  }
+
   bool _isExcludedStaff(StaffMember s) {
     if (isMasterAdminEmail(s.email)) return true;
     final email = s.email.toLowerCase().trim();

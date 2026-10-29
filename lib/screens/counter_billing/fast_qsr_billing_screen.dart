@@ -1,3 +1,5 @@
+import '../../services/restaurant_ledger.dart';
+import '../../services/tenant_metrics_service.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
@@ -3153,6 +3155,13 @@ class _FastQsrBillingScreenState extends ConsumerState<FastQsrBillingScreen> wit
             ? orderItemsList.map((m) => KotItem.fromMap(m)).toList()
             : List<KotItem>.from(_cart);
 
+        if (!isSatelliteSession()) {
+          TenantMetricsService.uploadIfDue(
+            orgId: orgId,
+            vertical: ref.read(saasSessionProvider).vertical,
+            storageMode: org?.storageMode ?? StorageModes.localNetwork,
+          );
+        }
         DigitalPosBillDialog.show(
           context,
           billNumber: targetBillId,

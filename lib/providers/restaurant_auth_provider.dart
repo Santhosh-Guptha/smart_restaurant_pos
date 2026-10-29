@@ -1,3 +1,5 @@
+import '../core/cloud_gate.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart';
@@ -276,6 +278,86 @@ class RestaurantAuthNotifier extends StateNotifier<RestaurantAuthState> {
     );
 
     _syncStaffFromLanHub(box);
+    if (kIsWeb || !CloudGate.offline) syncStaffFromCloud();
+  }
+
+  /// Pulls remote staff roster from Firestore when online, ensuring remote
+  /// user/role modifications by the owner sync down to this store PC.
+  Future<void> syncStaffFromCloud() async {
+    try {
+      if (_ref == null) return;
+      final saasSession = _ref.read(saasSessionProvider);
+      final orgId = saasSession.currentOrganization?.id;
+      if (orgId == null || orgId.isEmpty || orgId == 'default') return;
+
+      final snap = await FirebaseFirestore.instance
+          .collection('staff_users')
+          .where('organizationId', isEqualTo: orgId)
+          .get()
+          .timeout(const Duration(seconds: 6));
+
+      if (snap.docs.isEmpty) return;
+
+      final box = await Hive.openBox(boxName);
+      final current = List<StaffMember>.from(state.staffList);
+      bool changed = false;
+
+      for (final doc in snap.docs) {
+        final d = doc.data();
+        final id = doc.id;
+        final name = (d['name'] ?? d['fullName'] ?? d['username'] ?? 'Staff').toString();
+        final username = d['username']?.toString();
+        final roleKey = (d['role'] ?? 'BILLING').toString().toUpperCase();
+        final rolesList = (d['roles'] is List)
+            ? (d['roles'] as List).map((r) => StaffRoleExtension.fromKey(r.toString())).toList()
+            : [StaffRoleExtension.fromKey(roleKey)];
+
+        final member = StaffMember(
+          id: id,
+          name: name,
+          username: username,
+          email: d['email']?.toString() ?? '',
+          role: StaffRoleExtension.fromKey(roleKey),
+          roles: rolesList,
+          pin: d['pin']?.toString() ?? '1234',
+          pinHash: d['pinHash']?.toString(),
+          phone: d['phone']?.toString(),
+          password: d['password']?.toString(),
+          isActive: d['isActive'] ?? true,
+          assignedStation: d['assignedStation']?.toString() ?? 'Kitchen',
+          createdAt: DateTime.tryParse(d['createdAt']?.toString() ?? '') ?? DateTime.now(),
+        );
+
+        final idx = current.indexWhere((s) => s.id == id || (username != null && s.username == username));
+        if (idx >= 0) {
+          current[idx] = member;
+        } else {
+          current.add(member);
+        }
+        changed = true;
+
+        try {
+          await LanHubClient.instance.saveUser({
+            'id': member.id,
+            'username': member.username ?? member.name,
+            'name': member.name,
+            'email': member.email,
+            'role': member.role.key,
+            'roles': member.roles.map((r) => r.key).toList(),
+            'pin': member.pin,
+            'phone': member.phone,
+            'isActive': member.isActive,
+          });
+        } catch (_) {}
+      }
+
+      if (changed) {
+        await box.put(keyStaffList, current.map((s) => s.toMap()).toList());
+        if (mounted) state = state.copyWith(staffList: current);
+      }
+    } catch (e) {
+      debugPrint('syncStaffFromCloud note: $e');
+    }
   }
 
   Future<void> _syncStaffFromLanHub(Box box) async {
