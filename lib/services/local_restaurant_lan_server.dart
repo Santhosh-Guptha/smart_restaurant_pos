@@ -132,7 +132,10 @@ class LocalRestaurantLanServer {
 
   /// Probes an HTTP endpoint at `[$url/api/v1/ping]` with a 3-second timeout.
   /// Returns whether it answered HTTP 200 OK along with latency in milliseconds.
-  static Future<({bool success, String message, int latencyMs})> testProbe(String url) async {
+  static Future<({bool success, String message, int latencyMs})> testProbe(
+    String url, {
+    @visibleForTesting bool? isWebOverride,
+  }) async {
     var base = url.trim().replaceAll(RegExp(r'/+$'), '');
     if (base.isEmpty) {
       return (success: false, message: 'Endpoint URL is empty', latencyMs: 0);
@@ -143,6 +146,26 @@ class LocalRestaurantLanServer {
     final targetUri = Uri.tryParse('$base/api/v1/ping');
     if (targetUri == null || !targetUri.hasScheme || targetUri.host.isEmpty) {
       return (success: false, message: 'Invalid URL format: $url', latencyMs: 0);
+    }
+
+    final isWeb = isWebOverride ?? kIsWeb;
+    if (isWeb) {
+      final hub = LocalRestaurantLanServer.instance;
+      final targetHost = targetUri.host.toLowerCase();
+      final targetPort = targetUri.hasPort ? targetUri.port : (targetUri.scheme == 'https' ? 443 : 80);
+      final isSelfHost = targetHost == hub.effectiveIpAddress.toLowerCase() ||
+          targetHost == 'localhost' ||
+          targetHost == '127.0.0.1' ||
+          (hub.localIpAddress != null && targetHost == hub.localIpAddress!.toLowerCase());
+      final isSelfPort = targetPort == hub.effectivePort;
+
+      if (hub.isRunning && isSelfHost && isSelfPort) {
+        return (
+          success: true,
+          message: 'Local LAN Hub Active on this host (port ${hub.effectivePort})',
+          latencyMs: 0,
+        );
+      }
     }
 
     final sw = Stopwatch()..start();
@@ -167,6 +190,15 @@ class LocalRestaurantLanServer {
       return (success: false, message: 'Connection failed: ${e.message}', latencyMs: sw.elapsedMilliseconds);
     } catch (e) {
       sw.stop();
+      final errStr = e.toString();
+      if (isWeb && (errStr.contains('ClientException') || errStr.contains('Failed to fetch'))) {
+        return (
+          success: false,
+          message: 'Browser HTTPS restriction (Mixed Content / Private Network Access). '
+              'Direct devices on the Wi-Fi can connect via http://${targetUri.host}:${targetUri.port}',
+          latencyMs: sw.elapsedMilliseconds,
+        );
+      }
       return (success: false, message: 'Probe error: $e', latencyMs: sw.elapsedMilliseconds);
     }
   }

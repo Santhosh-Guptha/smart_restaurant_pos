@@ -56,9 +56,32 @@ void main() {
       expect(script, contains('localport=8085'));
       expect(script, contains('&host_ip=!HOST_IP!&port=8085'));
 
+      // Check background LAN Hub listener creation and start
+      expect(script, contains('lan_hub_listener.ps1'));
+      expect(script, contains('start "" /B powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "%APP_DATA_DIR%\\lan_hub_listener.ps1"'));
+      expect(script, contains('findstr :8085'));
+
       // Check desktop shortcut & auto launcher
       expect(script, contains('SmartBizz POS.lnk'));
       expect(script, contains('smart_kirana_shop.exe'));
+    });
+
+    test('generateLanHubListenerScript creates PowerShell TCP listener with ping and redirect handlers', () {
+      final listener = ClientSetupPackageGenerator.generateLanHubListenerScript(
+        token: 'TEST_TOKEN_123',
+        webPosUrl: 'https://smartdine-pos.web.app/pos/',
+        port: 8085,
+      );
+
+      expect(listener, contains('TcpListener]::new([System.Net.IPAddress]::Any, \$Port)'));
+      expect(listener, contains('[int]\$Port = 8085'));
+      expect(listener, contains('/api/v1/ping'));
+      expect(listener, contains('"status":"ok","server":"SmartBizz Local LAN Hub","version":"1.3.1"'));
+      expect(listener, contains('HTTP/1.1 200 OK'));
+      expect(listener, contains('HTTP/1.1 302 Found'));
+      expect(listener, contains('Access-Control-Allow-Private-Network: true'));
+      expect(listener, contains('Access-Control-Allow-Origin: *'));
+      expect(listener, contains('https://smartdine-pos.web.app/pos/?license=TEST_TOKEN_123'));
     });
 
     test('generateBootstrapJson creates valid JSON containing token and payload', () {

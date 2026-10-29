@@ -136,4 +136,78 @@ void main() {
       expect(resolveHomeScreenForRole(''), isA<RestaurantHomeScreen>());
     });
   });
+
+  group('LAN Hub Reachability Probe & Background Listener Tests', () {
+    test('testProbe recognizes running self host in web environment', () async {
+      final s = LocalRestaurantLanServer.instance;
+      await s.startServer(port: 8085);
+      expect(s.isRunning, isTrue);
+
+      await s.updateNetworkConfiguration(ip: '172.22.2.192', port: 8085);
+
+      // Probe with isWebOverride = true targeting the configured IP
+      final probeResult = await LocalRestaurantLanServer.testProbe(
+        'http://172.22.2.192:8085',
+        isWebOverride: true,
+      );
+
+      expect(probeResult.success, isTrue);
+      expect(probeResult.message, contains('Local LAN Hub Active on this host'));
+      expect(probeResult.latencyMs, equals(0));
+
+      // Also localhost / 127.0.0.1
+      final localhostResult = await LocalRestaurantLanServer.testProbe(
+        'http://localhost:8085',
+        isWebOverride: true,
+      );
+      expect(localhostResult.success, isTrue);
+
+      await s.stopServer();
+    });
+
+    test('generateLanHubListenerScript generates valid TCP listener PowerShell script', () {
+      final ps1 = ClientSetupPackageGenerator.generateLanHubListenerScript(
+        token: 'TEST_TOKEN_123',
+        port: 8085,
+      );
+
+      expect(ps1, contains('TcpListener]::new([System.Net.IPAddress]::Any, \$Port)'));
+      expect(ps1, contains('/api/v1/ping'));
+      expect(ps1, contains('SmartBizz Local LAN Hub'));
+      expect(ps1, contains('HTTP/1.1 200 OK'));
+      expect(ps1, contains('HTTP/1.1 302 Found'));
+      expect(ps1, contains('Access-Control-Allow-Private-Network: true'));
+      expect(ps1, contains('TEST_TOKEN_123'));
+    });
+
+    test('generateBatchScript bundles and launches lan_hub_listener.ps1', () {
+      final payload = ClientLicensePayload(
+        version: 1,
+        orgId: 'store_001',
+        storeName: 'Spice Hub',
+        vertical: Verticals.restaurant,
+        tier: 'standard',
+        packageId: 'restaurant_standard',
+        planName: '1 Year Plan',
+        storageMode: StorageModes.localNetwork,
+        features: {FeatureKeys.localLanServer: true},
+        maxDevices: 5,
+        maxOutlets: 1,
+        maxUsers: 5,
+        allowedRoles: ['OWNER'],
+        machineId: 'ANY',
+        issuedAt: DateTime.utc(2026, 10, 28),
+        validUntil: DateTime.utc(2027, 10, 28),
+      );
+      final script = ClientSetupPackageGenerator.generateBatchScript(
+        payload,
+        TestLicenceSigner.sign(payload),
+      );
+
+      expect(script, contains('lan_hub_listener.ps1'));
+      expect(script, contains('B64_LISTENER='));
+      expect(script, contains('taskkill /F /PID'));
+      expect(script, contains('start "" /B powershell'));
+    });
+  });
 }

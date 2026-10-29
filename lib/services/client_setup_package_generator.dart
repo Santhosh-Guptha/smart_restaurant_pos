@@ -120,6 +120,18 @@ class ClientSetupPackageGenerator {
       buffer.writeln('echo [OK] Host Machine Local IP detected: !HOST_IP!');
       buffer.writeln('echo {"hostIp":"!HOST_IP!","port":8085,"orgId":"$orgId","mode":"LOCAL_NETWORK"} > "%APP_DATA_DIR%\\lan_hub_config.json"');
       buffer.writeln();
+
+      final listenerPs1 = generateLanHubListenerScript(token: token, webPosUrl: kWebPosUrl, port: 8085);
+      final b64Listener = base64.encode(utf8.encode(listenerPs1));
+
+      buffer.writeln('echo [*] Deploying background Local LAN Hub TCP listener (port 8085)...');
+      buffer.writeln('set "B64_LISTENER=$b64Listener"');
+      buffer.writeln('powershell -NoProfile -ExecutionPolicy Bypass -Command "[System.IO.File]::WriteAllText(\'%APP_DATA_DIR%\\lan_hub_listener.ps1\', [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String(\'%B64_LISTENER%\')))" >nul 2>&1');
+      buffer.writeln(':: Stop any previous listener on port 8085 so it does not duplicate');
+      buffer.writeln('for /f "tokens=5" %%p in (\'netstat -aon ^| findstr :8085 ^| findstr LISTENING\') do taskkill /F /PID %%p >nul 2>&1');
+      buffer.writeln('start "" /B powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "%APP_DATA_DIR%\\lan_hub_listener.ps1"');
+      buffer.writeln('echo [OK] Local LAN Hub listener active on port 8085.');
+      buffer.writeln();
     } else {
       buffer.writeln('echo [OK] Storage mode configured: $storageLabel.');
       buffer.writeln('set "HOST_IP=127.0.0.1"');
@@ -168,6 +180,89 @@ class ClientSetupPackageGenerator {
     return buffer.toString();
   }
 
+  /// Generates the background TCP listener PowerShell script (lan_hub_listener.ps1)
+  /// that runs on port 8085 on the host machine.
+  ///
+  /// Responds HTTP 200 to `/api/v1/ping` with hub status JSON and CORS/PNA headers,
+  /// and redirects any other HTTP request (`/`, `/pos/`) to [webPosUrl] with license token
+  /// and host IP/port pre-configured.
+  static String generateLanHubListenerScript({
+    String token = '',
+    String webPosUrl = kWebPosUrl,
+    int port = 8085,
+  }) {
+    final buffer = StringBuffer();
+    buffer.writeln('# SmartBizz Local LAN Hub - Inbuilt Background TCP Listener');
+    buffer.writeln('param([string]\$HostIp = \$env:HOST_IP, [int]\$Port = $port)');
+    buffer.writeln();
+    buffer.writeln('\$appData = \$PSScriptRoot');
+    buffer.writeln('if (-not \$appData) { \$appData = [System.IO.Path]::Combine(\$env:APPDATA, \'SmartBizz\') }');
+    buffer.writeln('\$configFile = Join-Path \$appData \'lan_hub_config.json\'');
+    buffer.writeln();
+    buffer.writeln('if (-not \$HostIp -and (Test-Path \$configFile)) {');
+    buffer.writeln('    try {');
+    buffer.writeln('        \$cfg = Get-Content \$configFile -Raw | ConvertFrom-Json');
+    buffer.writeln('        if (\$cfg.hostIp) { \$HostIp = \$cfg.hostIp }');
+    buffer.writeln('    } catch {}');
+    buffer.writeln('}');
+    buffer.writeln();
+    buffer.writeln('if (-not \$HostIp) {');
+    buffer.writeln('    try {');
+    buffer.writeln('        \$detected = (Get-NetIPAddress -AddressFamily IPv4 | Where-Object { \$_.InterfaceAlias -notmatch \'Loopback\' -and \$_.IPAddress -notmatch \'^169\\.254\\.\' } | Select-Object -First 1).IPAddress');
+    buffer.writeln('        if (\$detected) { \$HostIp = \$detected }');
+    buffer.writeln('    } catch {}');
+    buffer.writeln('}');
+    buffer.writeln();
+    buffer.writeln('if (-not \$HostIp) { \$HostIp = \'127.0.0.1\' }');
+    buffer.writeln();
+    buffer.writeln('\$redirectUrl = "$webPosUrl?license=$token&host_ip=" + \$HostIp + "&port=" + \$Port');
+    buffer.writeln();
+    buffer.writeln('try {');
+    buffer.writeln('    \$listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Any, \$Port)');
+    buffer.writeln('    \$listener.Start()');
+    buffer.writeln('} catch {');
+    buffer.writeln('    exit 1');
+    buffer.writeln('}');
+    buffer.writeln();
+    buffer.writeln('while (\$true) {');
+    buffer.writeln('    try {');
+    buffer.writeln('        \$client = \$listener.AcceptTcpClient()');
+    buffer.writeln('        \$stream = \$client.GetStream()');
+    buffer.writeln('        \$stream.ReadTimeout = 3000');
+    buffer.writeln('        \$stream.WriteTimeout = 3000');
+    buffer.writeln('        \$buffer = New-Object byte[] 4096');
+    buffer.writeln('        \$bytesRead = \$stream.Read(\$buffer, 0, \$buffer.Length)');
+    buffer.writeln('        if (\$bytesRead -gt 0) {');
+    buffer.writeln('            \$request = [System.Text.Encoding]::UTF8.GetString(\$buffer, 0, \$bytesRead)');
+    buffer.writeln('            \$firstLine = (\$request -split "`r?`n")[0]');
+    buffer.writeln('            if (\$firstLine -match \'OPTIONS\') {');
+    buffer.writeln('                \$responseHeader = "HTTP/1.1 204 No Content`r`nAccess-Control-Allow-Origin: *`r`nAccess-Control-Allow-Methods: GET, POST, OPTIONS`r`nAccess-Control-Allow-Headers: *`r`nAccess-Control-Allow-Private-Network: true`r`nContent-Length: 0`r`nConnection: close`r`n`r`n"');
+    buffer.writeln('                \$headerBytes = [System.Text.Encoding]::UTF8.GetBytes(\$responseHeader)');
+    buffer.writeln('                \$stream.Write(\$headerBytes, 0, \$headerBytes.Length)');
+    buffer.writeln('            } elseif (\$firstLine -match \'/api/v1/ping\') {');
+    buffer.writeln('                \$body = \'{"status":"ok","server":"SmartBizz Local LAN Hub","version":"1.3.1","ip":"\' + \$HostIp + \'","port":\' + \$Port + \',"mode":"LOCAL_NETWORK"}\'');
+    buffer.writeln('                \$bodyBytes = [System.Text.Encoding]::UTF8.GetBytes(\$body)');
+    buffer.writeln('                \$responseHeader = "HTTP/1.1 200 OK`r`nContent-Type: application/json; charset=utf-8`r`nAccess-Control-Allow-Origin: *`r`nAccess-Control-Allow-Methods: GET, POST, OPTIONS`r`nAccess-Control-Allow-Headers: *`r`nAccess-Control-Allow-Private-Network: true`r`nContent-Length: " + \$bodyBytes.Length + "`r`nConnection: close`r`n`r`n"');
+    buffer.writeln('                \$headerBytes = [System.Text.Encoding]::UTF8.GetBytes(\$responseHeader)');
+    buffer.writeln('                \$stream.Write(\$headerBytes, 0, \$headerBytes.Length)');
+    buffer.writeln('                \$stream.Write(\$bodyBytes, 0, \$bodyBytes.Length)');
+    buffer.writeln('            } else {');
+    buffer.writeln('                \$responseHeader = "HTTP/1.1 302 Found`r`nLocation: " + \$redirectUrl + "`r`nAccess-Control-Allow-Origin: *`r`nAccess-Control-Allow-Methods: GET, POST, OPTIONS`r`nAccess-Control-Allow-Headers: *`r`nAccess-Control-Allow-Private-Network: true`r`nContent-Length: 0`r`nConnection: close`r`n`r`n"');
+    buffer.writeln('                \$headerBytes = [System.Text.Encoding]::UTF8.GetBytes(\$responseHeader)');
+    buffer.writeln('                \$stream.Write(\$headerBytes, 0, \$headerBytes.Length)');
+    buffer.writeln('            }');
+    buffer.writeln('            \$stream.Flush()');
+    buffer.writeln('        }');
+    buffer.writeln('        \$client.Close()');
+    buffer.writeln('    } catch {');
+    buffer.writeln('        Start-Sleep -Milliseconds 50');
+    buffer.writeln('    }');
+    buffer.writeln('}');
+    return buffer.toString();
+  }
+
+
+  
   /// Generates the standalone JSON payload file content.
   static String generateBootstrapJson(ClientLicensePayload payload, String token) {
     return const JsonEncoder.withIndent('  ').convert({
