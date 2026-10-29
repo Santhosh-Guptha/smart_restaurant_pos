@@ -120,6 +120,9 @@ class _SaaSLoginScreenState extends ConsumerState<SaaSLoginScreen> {
       if (host == 'localhost' ||
           host == '127.0.0.1' ||
           RegExp(r'^\d+\.\d+\.\d+\.\d+$').hasMatch(host) ||
+          host.contains('smartbizz') ||
+          host.endsWith('.local') ||
+          host.endsWith('.lan') ||
           Uri.base.port == 8085 ||
           Uri.base.port == 8080) {
         return true;

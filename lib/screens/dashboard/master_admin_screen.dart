@@ -2101,15 +2101,27 @@ class OrganizationsTab extends ConsumerStatefulWidget {
     // Client & Org Information Controllers
     final orgIdController = TextEditingController(text: generateUniqueOrgId());
     final ownerNameController = TextEditingController(text: initialName ?? '');
-    final nameController = TextEditingController(
-      text: initialShopName ?? (initialName != null ? "$initialName $entityLabel" : ''),
-    );
     final initialDomainSlug = (initialShopName ?? initialName ?? 'restaurant')
         .toLowerCase()
         .replaceAll(RegExp(r'[^a-z0-9]'), '');
     final localDomainController = TextEditingController(
-      text: '${initialDomainSlug.isNotEmpty ? initialDomainSlug : 'restaurant'}.local',
+      text: '${initialDomainSlug.isNotEmpty ? initialDomainSlug : 'restaurant'}.smartbizz.local',
     );
+    final nameController = TextEditingController(
+      text: initialShopName ?? (initialName != null ? "$initialName $entityLabel" : ''),
+    );
+    nameController.addListener(() {
+      final t = nameController.text.trim();
+      if (t.isNotEmpty) {
+        final slug = t.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+        if (slug.isNotEmpty) {
+          final cur = localDomainController.text.trim();
+          if (cur.isEmpty || cur.endsWith('.smartbizz.local') || cur.endsWith('.local')) {
+            localDomainController.text = '$slug.smartbizz.local';
+          }
+        }
+      }
+    });
     final mobileController = TextEditingController(text: initialMobile ?? '');
     final aadhaarController = TextEditingController(text: initialAadhaar ?? '');
     final panController = TextEditingController(text: initialPan ?? '');
@@ -2307,8 +2319,8 @@ class OrganizationsTab extends ConsumerStatefulWidget {
                           decoration: InputDecoration(
                             labelText: "Local Network Domain (LAN Premises)",
                             labelStyle: TextStyle(color: context.textSecondary, fontSize: 13),
-                            hintText: "e.g. shanmuk.local",
-                            helperText: "Domain used on store Wi-Fi (e.g. http://shanmuk.local:8085/)",
+                            hintText: "e.g. shanmuk.smartbizz.local",
+                            helperText: "Clean URL used on store Wi-Fi (e.g. http://shanmuk.smartbizz.local/)",
                             helperStyle: TextStyle(color: context.textSecondary, fontSize: 11),
                             prefixIcon: const Icon(Icons.dns_rounded, size: 18),
                             enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: context.borderColor)),

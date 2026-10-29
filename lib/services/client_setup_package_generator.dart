@@ -27,6 +27,29 @@ class ClientSetupPackageGenerator {
   ///
   /// [token] is the key Code.gs signed for this payload (`ISSUE_CLIENT_LICENCE`);
   /// the generator never signs anything itself.
+  /// Formats the local network domain for a restaurant according to SmartBizz LAN standards:
+  /// Pattern: `<slug>.smartbizz.local`
+  /// Multi-word restaurant names are combined into lowercase alphanumeric without spaces or symbols
+  /// (e.g. "Shanmuk Godavari Ruchulu" -> "shanmukgodavariruchulu.smartbizz.local").
+  static String formatRestaurantLocalDomain(String storeName, {String? explicitDomain, String tld = 'smartbizz.local'}) {
+    if (explicitDomain != null && explicitDomain.trim().isNotEmpty) {
+      var d = explicitDomain.trim().toLowerCase().replaceAll(' ', '');
+      if (d.contains('.smartbizz.')) return d;
+      if (d.endsWith('.local') && !d.contains('.smartbizz.')) {
+        d = d.replaceAll('.local', '');
+      }
+      if (d.contains('.')) return d;
+      final clean = d.replaceAll(RegExp(r'[^a-z0-9]'), '');
+      return clean.isNotEmpty ? '$clean.$tld' : 'restaurant.$tld';
+    }
+    final cleanSlug = storeName
+        .trim()
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^a-z0-9]'), '');
+    final slug = cleanSlug.isNotEmpty ? cleanSlug : 'restaurant';
+    return '$slug.$tld';
+  }
+
   static String generateBatchScript(ClientLicensePayload payload, String token) {
     final jsonStr = jsonEncode({
       'token': token,
@@ -45,9 +68,12 @@ class ClientSetupPackageGenerator {
     final isLocalNetwork = storageMode == StorageModes.localNetwork ||
         payload.features[FeatureKeys.localLanServer] == true;
 
-    final localDomain = payload.localDomain.trim().isNotEmpty
-        ? payload.localDomain.trim().toLowerCase()
-        : '${payload.storeName.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '')}.local';
+    final cleanSlug = payload.storeName
+        .trim()
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^a-z0-9]'), '');
+    final localDomain = formatRestaurantLocalDomain(payload.storeName, explicitDomain: payload.localDomain);
+    final localDomainLan = localDomain.replaceAll('.smartbizz.local', '.smartbizz.lan');
 
     final featuresList = <String>[];
     if (payload.features[FeatureKeys.localLanServer] == true) featuresList.add('LAN Server');
@@ -276,12 +302,21 @@ class ClientSetupPackageGenerator {
       buffer.writeln('if not defined HOST_IP set "HOST_IP=127.0.0.1"');
       buffer.writeln('echo [OK] Host Machine Local IP detected: !HOST_IP!');
       buffer.writeln();
-      buffer.writeln(':: Map Local Domain in Windows hosts file');
+      buffer.writeln(':: Map Local Domains in Windows hosts file');
       buffer.writeln('set "LOCAL_DOMAIN=$localDomain"');
-      buffer.writeln('echo [*] Mapping local domain !LOCAL_DOMAIN! to !HOST_IP!...');
-      buffer.writeln('powershell -NoProfile -ExecutionPolicy Bypass -Command "\$h = \\\"\$env:SystemRoot\\System32\\drivers\\etc\\hosts\\\"; if (Test-Path \$h) { \$lines = @(Get-Content \$h -ErrorAction SilentlyContinue) | Where-Object { \$_ -notmatch \'$localDomain\' }; \$lines += \\\"!HOST_IP!\`t$localDomain\\\"; [System.IO.File]::WriteAllLines(\$h, \$lines) }" >nul 2>&1');
-      buffer.writeln('echo [OK] Local domain configured: http://!LOCAL_DOMAIN!:8085/');
-      buffer.writeln('echo {"hostIp":"!HOST_IP!","port":8085,"orgId":"$orgId","mode":"LOCAL_NETWORK","localDomain":"!LOCAL_DOMAIN!"} > "%APP_DATA_DIR%\\lan_hub_config.json"');
+      buffer.writeln('set "LOCAL_DOMAIN_LAN=$localDomainLan"');
+      buffer.writeln('set "LOCAL_DOMAIN_SLUG=$cleanSlug"');
+      buffer.writeln('echo [*] Mapping clean local domain !LOCAL_DOMAIN! to !HOST_IP!...');
+      buffer.writeln('powershell -NoProfile -ExecutionPolicy Bypass -Command "\$h = \\"\$env:SystemRoot\\System32\\drivers\\etc\\hosts\\"; if (Test-Path \$h) { \$lines = @(Get-Content \$h -ErrorAction SilentlyContinue) | Where-Object { \$_ -notmatch \'$localDomain\' -and \$_ -notmatch \'$localDomainLan\' -and \$_ -notmatch \'$cleanSlug.local\' }; \$lines += \\"!HOST_IP!`t$localDomain\\"; \$lines += \\"!HOST_IP!`t$localDomainLan\\"; \$lines += \\"!HOST_IP!`t$cleanSlug.local\\"; [System.IO.File]::WriteAllLines(\$h, \$lines) }" >nul 2>&1');
+      buffer.writeln('echo [OK] Local domain configured: http://!LOCAL_DOMAIN!/ (Clean URL - No port needed)');
+      buffer.writeln();
+      buffer.writeln(':: Configure Clean HTTP Port 80 Forwarding (Hides port in browser URLs)');
+      buffer.writeln('netsh interface portproxy delete v4tov4 listenport=80 listenaddress=0.0.0.0 >nul 2>&1');
+      buffer.writeln('netsh interface portproxy delete v4tov4 listenport=80 listenaddress=!HOST_IP! >nul 2>&1');
+      buffer.writeln('netsh interface portproxy add v4tov4 listenport=80 listenaddress=0.0.0.0 connectport=8085 connectaddress=127.0.0.1 >nul 2>&1');
+      buffer.writeln('netsh interface portproxy add v4tov4 listenport=80 listenaddress=!HOST_IP! connectport=8085 connectaddress=127.0.0.1 >nul 2>&1');
+      buffer.writeln('netsh advfirewall firewall add rule name="SmartBizz Clean HTTP Port 80" dir=in action=allow protocol=TCP localport=80 >nul 2>&1');
+      buffer.writeln('echo {"hostIp":"!HOST_IP!","port":8085,"cleanPort":80,"orgId":"$orgId","mode":"LOCAL_NETWORK","localDomain":"!LOCAL_DOMAIN!"} > "%APP_DATA_DIR%\\lan_hub_config.json"');
       buffer.writeln();
 
       final listenerPs1 = generateLanHubListenerScript(token: token, webPosUrl: kWebPosUrl, port: 8085);
@@ -311,7 +346,7 @@ class ClientSetupPackageGenerator {
       buffer.writeln('reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run" /v "SmartBizz_LAN_Hub" /t REG_SZ /d "wscript.exe \\"%APP_DATA_DIR%\\run_lan_hub.vbs\\"" /f >nul 2>&1');
       buffer.writeln('set "STARTUP_DIR=%APPDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Startup"');
       buffer.writeln('if exist "%STARTUP_DIR%" (');
-      buffer.writeln('    powershell -NoProfile -ExecutionPolicy Bypass -Command "\$ws = New-Object -ComObject WScript.Shell; \$s = \$ws.CreateShortcut(\'%STARTUP_DIR%\\SmartBizz_LAN_Hub.lnk\'); \$s.TargetPath = \'wscript.exe\'; \$s.Arguments = \'\"%APP_DATA_DIR%\\run_lan_hub.vbs\"\'; \$s.WindowStyle = 7; \$s.Save()" >nul 2>&1');
+      buffer.writeln('    powershell -NoProfile -ExecutionPolicy Bypass -Command "\$ws = New-Object -ComObject WScript.Shell; \$s = \$ws.CreateShortcut(\'%STARTUP_DIR%\\SmartBizz_LAN_Hub.lnk\'); \$s.TargetPath = \'wscript.exe\'; \$s.Arguments = \'\\"%APP_DATA_DIR%\\run_lan_hub.vbs\\"\'; \$s.WindowStyle = 7; \$s.Save()" >nul 2>&1');
       buffer.writeln(')');
       buffer.writeln('echo [OK] Local LAN Hub listener active on port 8085 (Background Daemon).');
       buffer.writeln();
@@ -322,7 +357,7 @@ class ClientSetupPackageGenerator {
     }
 
     // Step 5: Desktop Shortcut & Self-Healing Launcher
-    final appUrl = isLocalNetwork ? 'http://!LOCAL_DOMAIN!:8085/?host_ip=!HOST_IP!&port=8085&domain=!LOCAL_DOMAIN!' : '$kWebPosUrl?host_ip=!HOST_IP!&port=8085';
+    final appUrl = isLocalNetwork ? 'http://!LOCAL_DOMAIN!/?host_ip=!HOST_IP!&domain=!LOCAL_DOMAIN!' : '$kWebPosUrl?host_ip=!HOST_IP!&port=8085';
     buffer.writeln('echo [*] Creating Desktop Shortcut...');
     if (isLocalNetwork) {
       buffer.writeln(':: Deploy self-healing desktop launcher');
@@ -355,7 +390,7 @@ class ClientSetupPackageGenerator {
       buffer.writeln('    echo     End If');
       buffer.writeln('    echo End If');
       buffer.writeln('    echo If Len(localDomain) ^> 0 Then');
-      buffer.writeln('    echo     posUrl = "http://" ^& localDomain ^& ":8085/?host_ip=" ^& hostIp ^& "^&port=8085&domain=" ^& localDomain');
+      buffer.writeln('    echo     posUrl = "http://" ^& localDomain ^& "/?host_ip=" ^& hostIp ^& "^&domain=" ^& localDomain');
       buffer.writeln('    echo Else');
       buffer.writeln('    echo     posUrl = "http://" ^& hostIp ^& ":8085/?host_ip=" ^& hostIp ^& "^&port=8085"');
       buffer.writeln('    echo End If');
@@ -372,7 +407,7 @@ class ClientSetupPackageGenerator {
     buffer.writeln('set "DESKTOP_DIR=%USERPROFILE%\\Desktop"');
     buffer.writeln('set "SHORTCUT_PATH=%DESKTOP_DIR%\\SmartBizz POS.lnk"');
     if (isLocalNetwork) {
-      buffer.writeln('powershell -NoProfile -ExecutionPolicy Bypass -Command "\$ws = New-Object -ComObject WScript.Shell; \$s = \$ws.CreateShortcut(\'%SHORTCUT_PATH%\'); \$s.TargetPath = \'%~dp0smart_kirana_shop.exe\'; if (-not (Test-Path \'%~dp0smart_kirana_shop.exe\')) { \$s.TargetPath = \'wscript.exe\'; \$s.Arguments = \'\"%APP_DATA_DIR%\\launch_smartbizz.vbs\"\'; \$s.IconLocation = \'msedge.exe,0\'; }; \$s.Description = \'SmartBizz POS - $storeName\'; \$s.Save()" >nul 2>&1');
+      buffer.writeln('powershell -NoProfile -ExecutionPolicy Bypass -Command "\$ws = New-Object -ComObject WScript.Shell; \$s = \$ws.CreateShortcut(\'%SHORTCUT_PATH%\'); \$s.TargetPath = \'%~dp0smart_kirana_shop.exe\'; if (-not (Test-Path \'%~dp0smart_kirana_shop.exe\')) { \$s.TargetPath = \'wscript.exe\'; \$s.Arguments = \'\\"%APP_DATA_DIR%\\launch_smartbizz.vbs\\"\'; \$s.IconLocation = \'msedge.exe,0\'; }; \$s.Description = \'SmartBizz POS - $storeName\'; \$s.Save()" >nul 2>&1');
     } else {
       buffer.writeln('powershell -NoProfile -ExecutionPolicy Bypass -Command "\$ws = New-Object -ComObject WScript.Shell; \$s = \$ws.CreateShortcut(\'%SHORTCUT_PATH%\'); \$s.TargetPath = \'%~dp0smart_kirana_shop.exe\'; if (-not (Test-Path \'%~dp0smart_kirana_shop.exe\')) { \$s.TargetPath = \'msedge.exe\'; \$s.Arguments = \'--app=$appUrl\'; }; \$s.Description = \'SmartBizz POS - $storeName\'; \$s.Save()" >nul 2>&1');
     }
@@ -547,9 +582,28 @@ class ClientSetupPackageGenerator {
     buffer.writeln('    exit 1');
     buffer.writeln('}');
     buffer.writeln();
+    buffer.writeln('# Clean HTTP Port 80 Listener (Allows clean URLs without port)');
+    buffer.writeln('\$p80Listener = \$null');
+    buffer.writeln('try {');
+    buffer.writeln('    \$p80Listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Any, 80)');
+    buffer.writeln('    \$p80Listener.Server.SetSocketOption([System.Net.Sockets.SocketOptionLevel]::Socket, [System.Net.Sockets.SocketOptionName]::ReuseAddress, \$true)');
+    buffer.writeln('    \$p80Listener.Start()');
+    buffer.writeln('    Log-Msg "Local LAN Hub clean HTTP listener active on port 80 (No port required in URLs)"');
+    buffer.writeln('} catch {');
+    buffer.writeln('    Log-Msg "Port 80 busy or non-elevated; portproxy and port \$Port active"');
+    buffer.writeln('}');
+    buffer.writeln();
     buffer.writeln('while (\$true) {');
     buffer.writeln('    try {');
-    buffer.writeln('        \$client = \$listener.AcceptTcpClient()');
+    buffer.writeln('        \$client = \$null');
+    buffer.writeln('        if (\$p80Listener -ne \$null -and \$p80Listener.Pending()) {');
+    buffer.writeln('            \$client = \$p80Listener.AcceptTcpClient()');
+    buffer.writeln('        } elseif (\$listener.Pending()) {');
+    buffer.writeln('            \$client = \$listener.AcceptTcpClient()');
+    buffer.writeln('        } else {');
+    buffer.writeln('            Start-Sleep -Milliseconds 15');
+    buffer.writeln('            continue');
+    buffer.writeln('        }');
     buffer.writeln('        \$stream = \$client.GetStream()');
     buffer.writeln('        \$stream.ReadTimeout = 4000');
     buffer.writeln('        \$stream.WriteTimeout = 4000');

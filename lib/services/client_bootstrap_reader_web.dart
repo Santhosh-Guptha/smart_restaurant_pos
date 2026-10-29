@@ -35,8 +35,10 @@ class ClientBootstrapReader {
         final box = Hive.box('configBox');
         if (hostIp != null && hostIp.isNotEmpty) {
           box.put('_sbz_custom_lan_host_ip', hostIp);
-          final effectivePort = (port != null && port > 0 && port <= 65535) ? port : 8085;
-          final hubUrl = 'http://$hostIp:$effectivePort';
+          final effectivePort = (port != null && port > 0 && port <= 65535) ? port : 80;
+          final hubUrl = (effectivePort == 80 || effectivePort == 443)
+              ? 'http://$hostIp'
+              : 'http://$hostIp:$effectivePort';
           box.put('saas_master_hub_url', hubUrl);
           box.put('saas_is_satellite_client', true);
         }

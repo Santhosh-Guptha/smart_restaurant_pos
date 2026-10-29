@@ -124,7 +124,8 @@ class LanHubClient {
     final customIp = _box?.get('_sbz_custom_lan_host_ip')?.toString().trim();
     final customPort = _box?.get('_sbz_lan_port');
     if (customIp != null && customIp.isNotEmpty) {
-      final port = (customPort is int && customPort > 0) ? customPort : 8085;
+      final port = (customPort is int && customPort > 0) ? customPort : 80;
+      if (port == 80 || port == 443) return 'http://$customIp';
       return 'http://$customIp:$port';
     }
     if (kIsWeb) {

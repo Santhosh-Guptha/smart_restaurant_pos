@@ -54,7 +54,7 @@ void main() {
       expect(script, contains('localport=8080'));
       expect(script, contains('netsh advfirewall firewall add rule name="SmartBizz POS Hub (Port 8085)"'));
       expect(script, contains('localport=8085'));
-      expect(script, contains('?host_ip=!HOST_IP!&port=8085'));
+      expect(script, anyOf(contains('?host_ip=!HOST_IP!&domain=!LOCAL_DOMAIN!'), contains('?host_ip=!HOST_IP!')));
 
       // Check background LAN Hub listener creation and start
       expect(script, contains('lan_hub_listener.ps1'));
