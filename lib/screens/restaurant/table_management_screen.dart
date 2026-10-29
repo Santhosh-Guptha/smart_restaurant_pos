@@ -425,6 +425,55 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen>
     }
   }
 
+  Future<void> _updateTableStatusRemotely({
+    required String orgId,
+    required RestaurantTable table,
+    required String status,
+    String? activeSessionId,
+    String? customerName,
+    double? billAmount,
+    bool force = false,
+    String? reason,
+    String? clientRequestId,
+  }) async {
+    // 1. If LAN Hub is active, notify local hub so all connected devices update instantly
+    if (LanHubClient.instance.isActive) {
+      try {
+        await LanHubClient.instance.setTableStatus({
+          'id': table.id,
+          'table': table.tableNumber,
+          'tableNumber': table.tableNumber,
+          'status': status.toUpperCase(),
+          if (activeSessionId != null) 'activeSessionId': activeSessionId,
+          if (customerName != null) 'currentCustomerName': customerName,
+          if (billAmount != null) 'currentBillAmount': billAmount,
+          if (reason != null) 'reason': reason,
+        });
+      } catch (e) {
+        debugPrint('LanHub setTableStatus notice: $e');
+      }
+    }
+
+    // 2. If Cloud sync is enabled and not offline, update cloud AppsScriptBackendService
+    if (featureOn(FeatureKeys.cloudSync) && !CloudGate.offline) {
+      try {
+        await AppsScriptBackendService.setTableStatus(
+          outletId: orgId,
+          tableId: table.tableNumber,
+          status: status,
+          activeSessionId: activeSessionId,
+          force: force,
+          reason: reason,
+          clientRequestId: clientRequestId,
+        );
+      } catch (e) {
+        debugPrint('Cloud setTableStatus notice: $e');
+      }
+    }
+  }
+
+
+
   void _loadCachedOrdersFromHive(String orgId) {
     final box = Hive.box('configBox');
     final raw = box.get('kot_orders_$orgId');
@@ -634,18 +683,43 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen>
           final tId = (tm['id'] ?? tm['table'] ?? '').toString();
           final tNum = (tm['tableNumber'] ?? tId).toString().replaceAll(RegExp(r'[^0-9]'), '');
           final statusStr = (tm['status'] ?? '').toString().toUpperCase();
-          final isOccupied = statusStr == 'OCCUPIED' || statusStr == 'SEATED';
 
-          for (int i = 0; i < _tables.length; i++) {
-            final cur = _tables[i];
-            final curNum = cur.tableNumber.replaceAll(RegExp(r'[^0-9]'), '');
-            if (cur.id == tId || (tNum.isNotEmpty && curNum == tNum)) {
-              final newStatus = isOccupied ? TableStatus.occupied : TableStatus.vacant;
-              if (cur.status != newStatus) {
-                _tables[i] = cur.copyWith(status: newStatus);
-                changed = true;
+          TableStatus? resolvedStatus;
+          if (statusStr == 'OCCUPIED') {
+            resolvedStatus = TableStatus.occupied;
+          } else if (statusStr == 'SEATED') {
+            resolvedStatus = TableStatus.seated;
+          } else if (statusStr == 'BILLED') {
+            resolvedStatus = TableStatus.billed;
+          } else if (statusStr == 'CLEANING') {
+            resolvedStatus = TableStatus.cleaning;
+          } else if (statusStr == 'BLOCKED') {
+            resolvedStatus = TableStatus.blocked;
+          } else if (statusStr == 'RESERVED') {
+            resolvedStatus = TableStatus.reserved;
+          } else if (statusStr == 'VACANT') {
+            resolvedStatus = TableStatus.vacant;
+          }
+
+          if (resolvedStatus != null) {
+            for (int i = 0; i < _tables.length; i++) {
+              final cur = _tables[i];
+              final curNum = cur.tableNumber.replaceAll(RegExp(r'[^0-9]'), '');
+              if (cur.id == tId || (tNum.isNotEmpty && curNum == tNum)) {
+                final custName = tm['currentCustomerName'] ?? tm['customerName'];
+                final billAmt = tm['currentBillAmount'] != null ? (double.tryParse(tm['currentBillAmount'].toString()) ?? cur.currentBillAmount) : cur.currentBillAmount;
+                final sessId = tm['activeSessionId']?.toString();
+                if (cur.status != resolvedStatus || (custName != null && cur.currentCustomerName != custName.toString())) {
+                  _tables[i] = cur.copyWith(
+                    status: resolvedStatus,
+                    currentCustomerName: custName != null ? custName.toString() : cur.currentCustomerName,
+                    currentBillAmount: billAmt,
+                    activeSessionId: sessId ?? cur.activeSessionId,
+                  );
+                  changed = true;
+                }
+                break;
               }
-              break;
             }
           }
         }
@@ -2252,13 +2326,11 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen>
                         }
                       });
                       await _saveTablesToHive(effOrgId);
-                      try {
-                        await AppsScriptBackendService.setTableStatus(
-                          outletId: effOrgId,
-                          tableId: table.tableNumber,
-                          status: 'VACANT',
-                        );
-                      } catch (_) {}
+                      await _updateTableStatusRemotely(
+                        orgId: effOrgId,
+                        table: table,
+                        status: 'VACANT',
+                      );
                       return;
                     }
                     String sessionId = table.activeSessionId ?? '';
@@ -2556,14 +2628,12 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen>
                     }
                   });
                   await _saveTablesToHive(orgId);
-                  try {
-                    await AppsScriptBackendService.setTableStatus(
-                      outletId: orgId,
-                      tableId: table.tableNumber,
-                      status: 'SEATED',
-                      activeSessionId: newSessionId,
-                    );
-                  } catch (_) {}
+                  await _updateTableStatusRemotely(
+                    orgId: orgId,
+                    table: table,
+                    status: 'SEATED',
+                    activeSessionId: newSessionId,
+                  );
                   if (ctx.mounted) Navigator.pop(ctx);
                 },
               ),
@@ -2579,13 +2649,11 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen>
                     }
                   });
                   await _saveTablesToHive(orgId);
-                  try {
-                    await AppsScriptBackendService.setTableStatus(
-                      outletId: orgId,
-                      tableId: table.tableNumber,
-                      status: 'CLEANING',
-                    );
-                  } catch (_) {}
+                  await _updateTableStatusRemotely(
+                    orgId: orgId,
+                    table: table,
+                    status: 'CLEANING',
+                  );
                   if (ctx.mounted) Navigator.pop(ctx);
                 },
               ),
@@ -2601,13 +2669,11 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen>
                     }
                   });
                   await _saveTablesToHive(orgId);
-                  try {
-                    await AppsScriptBackendService.setTableStatus(
-                      outletId: orgId,
-                      tableId: table.tableNumber,
-                      status: 'BLOCKED',
-                    );
-                  } catch (_) {}
+                  await _updateTableStatusRemotely(
+                    orgId: orgId,
+                    table: table,
+                    status: 'BLOCKED',
+                  );
                   if (ctx.mounted) Navigator.pop(ctx);
                 },
               ),
@@ -2625,13 +2691,11 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen>
                     }
                   });
                   await _saveTablesToHive(orgId);
-                  try {
-                    await AppsScriptBackendService.setTableStatus(
-                      outletId: orgId,
-                      tableId: table.tableNumber,
-                      status: 'VACANT',
-                    );
-                  } catch (_) {}
+                  await _updateTableStatusRemotely(
+                    orgId: orgId,
+                    table: table,
+                    status: 'VACANT',
+                  );
                   if (ctx.mounted) Navigator.pop(ctx);
                 },
               ),
@@ -2792,13 +2856,11 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen>
                     }
                   });
                   await _saveTablesToHive(effOrgId);
-                  try {
-                    await AppsScriptBackendService.setTableStatus(
-                      outletId: effOrgId,
-                      tableId: table.tableNumber,
-                      status: 'CLEANING',
-                    );
-                  } catch (_) {}
+                  await _updateTableStatusRemotely(
+                    orgId: effOrgId,
+                    table: table,
+                    status: 'CLEANING',
+                  );
                   if (ctx.mounted) Navigator.pop(ctx);
                 },
               ),
@@ -2848,18 +2910,20 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen>
                   await _saveTablesToHive(effOrgId);
                   final clientReqId = 'CLR-${DateTime.now().millisecondsSinceEpoch}-${table.tableNumber}';
                   try {
-                    await AppsScriptBackendService.clearTable(
-                      orgId: effOrgId,
-                      table: table.tableNumber,
-                      clientRequestId: clientReqId,
-                    );
-                    await AppsScriptBackendService.setTableStatus(
-                      outletId: effOrgId,
-                      tableId: table.tableNumber,
-                      status: 'VACANT',
-                      clientRequestId: clientReqId,
-                    );
+                    if (featureOn(FeatureKeys.cloudSync) && !CloudGate.offline) {
+                      await AppsScriptBackendService.clearTable(
+                        orgId: effOrgId,
+                        table: table.tableNumber,
+                        clientRequestId: clientReqId,
+                      );
+                    }
                   } catch (_) {}
+                  await _updateTableStatusRemotely(
+                    orgId: effOrgId,
+                    table: table,
+                    status: 'VACANT',
+                    clientRequestId: clientReqId,
+                  );
                   if (ctx.mounted) Navigator.pop(ctx);
                 },
               ),
@@ -4341,15 +4405,13 @@ class _TableManagementScreenState extends ConsumerState<TableManagementScreen>
                   await Hive.box('configBox').put('kot_orders_$orgId', _kotOrders.map((o) => o.toMap()).toList());
                 }
 
-                try {
-                  await AppsScriptBackendService.setTableStatus(
-                    outletId: orgId,
-                    tableId: table.tableNumber,
-                    status: 'VACANT',
-                    force: true,
-                    reason: reason,
-                  );
-                } catch (_) {}
+                await _updateTableStatusRemotely(
+                  orgId: orgId,
+                  table: table,
+                  status: 'VACANT',
+                  force: true,
+                  reason: reason,
+                );
 
                 if (mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
