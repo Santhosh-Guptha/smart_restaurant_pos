@@ -231,6 +231,12 @@ class ClientSetupPackageGenerator {
       buffer.writeln(':: Stop any previous listener on port 8085 so it does not duplicate');
       buffer.writeln('for /f "tokens=5" %%p in (\'netstat -aon ^| findstr :8085 ^| findstr LISTENING\') do taskkill /F /PID %%p >nul 2>&1');
       buffer.writeln('start "" /B powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "%APP_DATA_DIR%\\lan_hub_listener.ps1"');
+      buffer.writeln(':: Ensure permanent background operation and auto-start on boot');
+      buffer.writeln('powershell -NoProfile -ExecutionPolicy Bypass -Command "if (-not (Get-NetTCPConnection -LocalPort 8085 -State Listen -ErrorAction SilentlyContinue)) { Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = \'powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File \"\"%APP_DATA_DIR%\\lan_hub_listener.ps1\"\"\' } }" >nul 2>&1');
+      buffer.writeln('set "STARTUP_DIR=%APPDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Startup"');
+      buffer.writeln('if exist "%STARTUP_DIR%" (');
+      buffer.writeln('    powershell -NoProfile -ExecutionPolicy Bypass -Command "\$ws = New-Object -ComObject WScript.Shell; \$s = \$ws.CreateShortcut(\'%STARTUP_DIR%\\SmartBizz_LAN_Hub.lnk\'); \$s.TargetPath = \'powershell.exe\'; \$s.Arguments = \'-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File \"\"%APP_DATA_DIR%\\lan_hub_listener.ps1\"\"\'; \$s.WindowStyle = 7; \$s.Save()" >nul 2>&1');
+      buffer.writeln(')');
       buffer.writeln('echo [OK] Local LAN Hub listener active on port 8085.');
       buffer.writeln();
     } else {
