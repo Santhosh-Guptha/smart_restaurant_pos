@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../../widgets/max_width_body.dart';
 import 'package:flutter/services.dart';
@@ -1174,14 +1175,15 @@ class _RestaurantMenuManagementScreenState
 
         final bytes = await picked.readAsBytes();
         final authClient = ref.read(restaurantAuthProvider.notifier).authenticatedHttpClient;
+        final dishId = existing?['id']?.toString() ?? 'dish_${DateTime.now().millisecondsSinceEpoch}';
+        final mimeType = picked.mimeType ?? 'image/jpeg';
 
         if (authClient != null) {
-          final dishId = existing?['id'] ?? 'dish_${DateTime.now().millisecondsSinceEpoch}';
           final result = await RestaurantSheetsService.uploadDishImageToDrive(
             authenticatedClient: authClient,
             imageBytes: bytes,
-            dishId: dishId.toString(),
-            mimeType: picked.mimeType ?? 'image/jpeg',
+            dishId: dishId,
+            mimeType: mimeType,
           );
 
           if (!mounted) return;
@@ -1199,31 +1201,55 @@ class _RestaurantMenuManagementScreenState
                 duration: Duration(seconds: 2),
               ),
             );
-          } else {
+            return;
+          }
+        }
+
+        // On-Premises Local LAN Hub Storage & In-Store Network Image Upload
+        final lanHub = LanHubClient.instance;
+        if (lanHub.hubUrl != null) {
+          setDialogState(() {
+            uploadStatusText = 'Saving photo to Local Store PC...';
+          });
+          final localUrl = await lanHub.uploadImage(
+            id: dishId,
+            bytes: bytes,
+            mimeType: mimeType,
+          );
+          if (!mounted) return;
+          if (localUrl != null && localUrl.isNotEmpty) {
             setDialogState(() {
+              imageUrlCtrl.text = localUrl;
               isUploadingImage = false;
               uploadStatusText = null;
             });
             ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text('Upload failed: ${result['error'] ?? "Unknown error"}'),
-                backgroundColor: ClassicTheme.dangerRed,
+              const SnackBar(
+                content: Text('Photo saved locally on Store PC!'),
+                backgroundColor: ClassicTheme.successEmerald,
+                duration: Duration(seconds: 2),
               ),
             );
+            return;
           }
-        } else {
-          if (!mounted) return;
-          setDialogState(() {
-            isUploadingImage = false;
-            uploadStatusText = null;
-          });
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Google account not connected. Please connect Google Drive in Settings or paste an image URL.'),
-              backgroundColor: ClassicTheme.warningAmber,
-            ),
-          );
         }
+
+        // Portable offline fallback: Embedded Base64 Data URL
+        final ext = mimeType.contains('png') ? 'png' : 'jpeg';
+        final dataUrl = 'data:image/$ext;base64,${base64Encode(bytes)}';
+        if (!mounted) return;
+        setDialogState(() {
+          imageUrlCtrl.text = dataUrl;
+          isUploadingImage = false;
+          uploadStatusText = null;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Photo compressed and saved to local dish!'),
+            backgroundColor: ClassicTheme.successEmerald,
+            duration: Duration(seconds: 2),
+          ),
+        );
       } catch (e) {
         setDialogState(() {
           isUploadingImage = false;

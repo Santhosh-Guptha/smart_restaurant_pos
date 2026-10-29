@@ -3315,8 +3315,59 @@
         });
         const cartItemsList = Object.values(mergedCartMap);
 
-        // Dispatch order to Store Cloud Database via Apps Script Webhook
-        if (state.googleSheetId || state.organizationId) {
+        // Local LAN Hub Direct Order Dispatch (Offline / Local On-Premises Network)
+        const isLocalLan = window.location.port === '8085' ||
+          window.location.hostname === 'localhost' ||
+          window.location.hostname === '127.0.0.1' ||
+          /^10\./.test(window.location.hostname) ||
+          /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(window.location.hostname) ||
+          /^192\.168\./.test(window.location.hostname);
+
+        if (isLocalLan) {
+          try {
+            const lanHubOrigin = window.location.port === '8085' ? window.location.origin : http://:8085;
+            const lanOrderPayload = {
+              table: String(state.tableNumber || '1'),
+              tableNumber: String(state.tableNumber || '1'),
+              tableName: 'Table ' + (state.tableNumber || '1'),
+              customerName: guestName || ('Guest (Table ' + state.tableNumber + ')'),
+              customerPhone: guestPhone || '',
+              specialInstructions: specialInstr || '',
+              items: cartItemsList.map(ci => ({
+                id: ci.productId || ci.name,
+                name: ci.name,
+                price: Number(ci.price) || 0,
+                qty: Number(ci.qty) || 1,
+                unit: ci.unit || 'plate',
+                category: ci.category || 'Main Course',
+                isVeg: ci.isVeg !== false
+              })),
+              subtotal: subtotal,
+              totalAmount: grandTotal,
+              orderType: 'Dine-In',
+              orderSource: 'QR_MENU',
+              kitchenStatus: 'PENDING',
+              status: 'PENDING',
+              createdAt: new Date().toISOString()
+            };
+            const lanResp = await fetch(\/api/v1/orders, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(lanOrderPayload)
+            });
+            if (lanResp.ok) {
+              const lanResData = await lanResp.json();
+              orderId = lanResData.id || ('ORD_' + Date.now());
+              kotNumber = lanResData.kotNumber || ('KOT-' + Date.now().toString().slice(-4));
+              state.lastKotNumber = kotNumber;
+            }
+          } catch (lanErr) {
+            console.warn('[Order] Local LAN Hub direct dispatch notice:', lanErr);
+          }
+        }
+
+        // Dispatch order to Store Cloud Database via Apps Script Webhook (if not already handled on Local LAN)
+        if (!orderId && (state.googleSheetId || state.organizationId)) {
           try {
             // W-02: Do not send client ID/bill_id/kotNumber so server generates canonical, sequential IDs
             const webhookResult = await sendToGoogleSheetWebhook('SAVE_BILL', {
@@ -3752,6 +3803,40 @@
       const orgId = state.organizationId;
       const sheetId = state.googleSheetId;
 
+      // 0. Local LAN Hub Check (Offline / Local On-Premises Network)
+      const isLocalLan = window.location.port === '8085' ||
+        window.location.hostname === 'localhost' ||
+        window.location.hostname === '127.0.0.1' ||
+        /^10\./.test(window.location.hostname) ||
+        /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(window.location.hostname) ||
+        /^192\.168\./.test(window.location.hostname);
+
+      if (isLocalLan) {
+        try {
+          const lanHubOrigin = window.location.port === '8085' ? window.location.origin : http://:8085;
+          const menuResp = await fetch(\/api/v1/menu);
+          if (menuResp.ok) {
+            const menuData = await menuResp.json();
+            if (menuData && Array.isArray(menuData.dishes) && menuData.dishes.length > 0) {
+              return menuData.dishes.map(d => ({
+                id: d.id || ('dish_' + Math.random().toString(36).substr(2, 9)),
+                name: d.name || '',
+                price: Number(d.price) || 0,
+                category: d.category || 'Main Course',
+                subcategory: d.subcategory || 'General',
+                description: d.description || '',
+                isVeg: d.isVeg !== undefined ? d.isVeg : true,
+                available: d.isAvailable !== false,
+                isAvailable: d.isAvailable !== false,
+                imageUrl: d.imageUrl || d.image || ''
+              })).filter(it => it.name && it.name.trim().length > 0);
+            }
+          }
+        } catch (lanErr) {
+          console.warn('[Menu] Local LAN Hub menu load notice:', lanErr);
+        }
+      }
+
       // 1. FAST PRIMARY: Direct Firestore Sanitized Public Store check (Instant CDN Cache)
       if (orgId) {
         try {
@@ -3999,6 +4084,33 @@
         } catch (slugErr) {
           console.warn('[Init] Slug resolution notice:', slugErr);
         }
+      }
+
+      // Local LAN Hub Auto-Resolution (On-Premises Restaurant)
+      const isLocalLan = window.location.port === '8085' ||
+        window.location.hostname === 'localhost' ||
+        window.location.hostname === '127.0.0.1' ||
+        /^10\./.test(window.location.hostname) ||
+        /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(window.location.hostname) ||
+        /^192\.168\./.test(window.location.hostname);
+
+      if (isLocalLan && !state.organizationId) {
+        try {
+          const lanHubOrigin = window.location.port === '8085' ? window.location.origin : http://:8085;
+          const sResp = await fetch(\/api/v1/store);
+          if (sResp.ok) {
+            const sData = await sResp.json();
+            if (sData) {
+              state.organizationId = sData.orgId || 'local_lan_org';
+              if (sData.storeName) state.restaurant.name = sData.storeName;
+              if (sData.vertical) state.vertical = sData.vertical.toLowerCase();
+              if (sData.upiId) {
+                state.upiId = sData.upiId;
+                state.settlementUpiId = sData.upiId;
+              }
+            }
+          }
+        } catch (_) {}
       }
 
       // Multi-Tenant Isolation:

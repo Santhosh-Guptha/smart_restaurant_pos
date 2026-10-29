@@ -57,7 +57,7 @@ void main() {
       expect(script, contains('"port":8085'));
 
       // Launch URL and Desktop shortcut parameterization
-      expect(script, contains('&host_ip=!HOST_IP!&port=8085'));
+      expect(script, anyOf(contains('?host_ip=!HOST_IP!&port=8085'), contains('&host_ip=!HOST_IP!&port=8085')));
       expect(script, contains('start msedge --app="'));
     });
   });

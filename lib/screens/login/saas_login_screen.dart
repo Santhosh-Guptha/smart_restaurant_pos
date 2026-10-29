@@ -115,6 +115,16 @@ class _SaaSLoginScreenState extends ConsumerState<SaaSLoginScreen> {
 
   bool get _isLanHubMode {
     if (kIsWeb && Uri.base.queryParameters.containsKey('host_ip')) return true;
+    if (kIsWeb) {
+      final host = Uri.base.host;
+      if (host == 'localhost' ||
+          host == '127.0.0.1' ||
+          RegExp(r'^\d+\.\d+\.\d+\.\d+$').hasMatch(host) ||
+          Uri.base.port == 8085 ||
+          Uri.base.port == 8080) {
+        return true;
+      }
+    }
     final box = Hive.isBoxOpen('configBox') ? Hive.box('configBox') : null;
     if (box != null && (box.get('saas_master_hub_url') != null || box.get('_sbz_custom_lan_host_ip') != null)) {
       return true;
@@ -126,6 +136,12 @@ class _SaaSLoginScreenState extends ConsumerState<SaaSLoginScreen> {
     if (kIsWeb && Uri.base.queryParameters.containsKey('host_ip')) {
       return Uri.base.queryParameters['host_ip'];
     }
+    if (kIsWeb) {
+      final host = Uri.base.host;
+      if (host.isNotEmpty && !host.contains('web.app') && !host.contains('devmonks.space')) {
+        return host;
+      }
+    }
     final box = Hive.isBoxOpen('configBox') ? Hive.box('configBox') : null;
     return box?.get('_sbz_custom_lan_host_ip')?.toString();
   }
@@ -133,6 +149,9 @@ class _SaaSLoginScreenState extends ConsumerState<SaaSLoginScreen> {
   int get _lanPort {
     if (kIsWeb && Uri.base.queryParameters.containsKey('port')) {
       return int.tryParse(Uri.base.queryParameters['port'] ?? '') ?? 8085;
+    }
+    if (kIsWeb && Uri.base.port > 0) {
+      return Uri.base.port;
     }
     final box = Hive.isBoxOpen('configBox') ? Hive.box('configBox') : null;
     return box?.get('_sbz_lan_port') is int ? box!.get('_sbz_lan_port') as int : 8085;

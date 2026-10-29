@@ -127,6 +127,17 @@ class LanHubClient {
       final port = (customPort is int && customPort > 0) ? customPort : 8085;
       return 'http://$customIp:$port';
     }
+    if (kIsWeb) {
+      try {
+        final origin = Uri.base.origin;
+        if (origin.startsWith('http://') &&
+            !origin.contains('web.app') &&
+            !origin.contains('devmonks.space') &&
+            !origin.contains('firebaseapp.com')) {
+          return normaliseHub(origin);
+        }
+      } catch (_) {}
+    }
     return null;
   }
   String? get token => _box?.get(tokenKey)?.toString();
@@ -342,6 +353,35 @@ class LanHubClient {
   Future<Map<String, dynamic>?> saveMenuItem(Map<String, dynamic> dish) async {
     final d = await post('/api/v1/menu/items', {'dish': dish});
     return d is Map ? Map<String, dynamic>.from(d) : null;
+  }
+
+  /// Uploads a dish or entity photo to the local LAN Hub's database storage (`POST /api/v1/images`).
+  /// Returns the accessible HTTP URL on the local host (e.g. `http://172.22.2.192:8085/api/v1/images/dish_123.jpg`).
+  Future<String?> uploadImage({
+    required String id,
+    required Uint8List bytes,
+    String mimeType = 'image/jpeg',
+  }) async {
+    try {
+      final h = hubUrl;
+      if (h == null || h.isEmpty) return null;
+      final ext = mimeType.contains('png') ? 'png' : (mimeType.contains('webp') ? 'webp' : 'jpg');
+      final fileName = '${id.replaceAll(RegExp(r'[^a-zA-Z0-9_\-]'), '_')}.$ext';
+      final b64 = base64Encode(bytes);
+      final res = await post('/api/v1/images', {
+        'fileName': fileName,
+        'dishId': id,
+        'mimeType': mimeType,
+        'data': b64,
+      });
+      if (res is Map && res['imageUrl'] != null) {
+        return res['imageUrl'].toString();
+      }
+      return '$h/api/v1/images/$fileName';
+    } catch (e) {
+      debugPrint('LanHubClient uploadImage note: $e');
+      return null;
+    }
   }
 
   /// Replaces or syncs dishes and categories to the LAN Hub (`POST /api/v1/menu`).

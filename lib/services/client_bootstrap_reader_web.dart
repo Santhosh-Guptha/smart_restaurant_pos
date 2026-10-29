@@ -12,9 +12,24 @@ class ClientBootstrapReader {
   static void syncNetworkBootstrap() {
     try {
       final uri = Uri.base;
-      final hostIp = uri.queryParameters['host_ip']?.trim();
+      var hostIp = uri.queryParameters['host_ip']?.trim();
       final portStr = uri.queryParameters['port']?.trim();
-      final port = int.tryParse(portStr ?? '');
+      var port = int.tryParse(portStr ?? '');
+
+      // Auto-detect when running directly on an on-premises IP or localhost
+      if ((hostIp == null || hostIp.isEmpty) && uri.host.isNotEmpty) {
+        final host = uri.host;
+        final isLocalHost = host == 'localhost' ||
+            host == '127.0.0.1' ||
+            RegExp(r'^\d+\.\d+\.\d+\.\d+$').hasMatch(host);
+        final isNotProdCloud = !host.contains('web.app') &&
+            !host.contains('firebaseapp.com') &&
+            !host.contains('devmonks.space');
+        if (isLocalHost || isNotProdCloud) {
+          hostIp = host;
+          port ??= (uri.port > 0 ? uri.port : 8085);
+        }
+      }
 
       if (Hive.isBoxOpen('configBox')) {
         final box = Hive.box('configBox');
