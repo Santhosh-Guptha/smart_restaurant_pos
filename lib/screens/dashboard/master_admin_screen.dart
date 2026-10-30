@@ -2184,10 +2184,13 @@ class OrganizationsTab extends ConsumerStatefulWidget {
         : (startPackage.allowedStorageModes.contains(wantMode) ? wantMode : null);
 
     final initialAddOnKeys = <String>{};
+    final initialRemovedKeys = <String>{};
     if (initialFeatures != null) {
       for (final entry in initialFeatures.entries) {
         if (entry.value && !startPackage.includes(entry.key)) {
           initialAddOnKeys.add(entry.key);
+        } else if (!entry.value && startPackage.includes(entry.key)) {
+          initialRemovedKeys.add(entry.key);
         }
       }
     }
@@ -2198,6 +2201,7 @@ class OrganizationsTab extends ConsumerStatefulWidget {
       vertical: initialTrade,
       currentStorageMode: currentStorageMode,
       addOnKeys: initialAddOnKeys,
+      removed: initialRemovedKeys,
     );
 
     // Feature Toggles: populated dynamically from the selected plan

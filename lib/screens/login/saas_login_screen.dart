@@ -562,45 +562,6 @@ class _SaaSLoginScreenState extends ConsumerState<SaaSLoginScreen> {
                                   child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
-                                      if (_isLanHubMode) ...[
-                                        Container(
-                                          margin: const EdgeInsets.only(bottom: 16),
-                                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-                                          decoration: BoxDecoration(
-                                            color: ClassicTheme.successEmerald.withValues(alpha: 0.12),
-                                            border: Border.all(color: ClassicTheme.successEmerald.withValues(alpha: 0.35)),
-                                            borderRadius: BorderRadius.circular(10),
-                                          ),
-                                          child: Row(
-                                            children: [
-                                              const Icon(Icons.wifi_tethering_rounded, color: ClassicTheme.successEmerald, size: 20),
-                                              const SizedBox(width: 10),
-                                              Expanded(
-                                                child: Column(
-                                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                                  children: [
-                                                    const Text(
-                                                      "Local LAN Hub Connected",
-                                                      style: TextStyle(
-                                                        color: ClassicTheme.successEmerald,
-                                                        fontSize: 13,
-                                                        fontWeight: FontWeight.bold,
-                                                      ),
-                                                    ),
-                                                    Text(
-                                                      "IP: ${_lanHostIp ?? '127.0.0.1'} • Port: $_lanPort",
-                                                      style: TextStyle(
-                                                        color: context.textSecondary,
-                                                        fontSize: 11.5,
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      ],
                                       Text(
                                         "Username or Email",
                                         style: TextStyle(
