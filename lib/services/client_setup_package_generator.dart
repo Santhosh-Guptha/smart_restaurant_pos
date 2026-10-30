@@ -77,14 +77,14 @@ class ClientSetupPackageGenerator {
 
     final featuresList = <String>[];
     if (payload.features[FeatureKeys.localLanServer] == true) featuresList.add('LAN Server');
-    if (payload.features[FeatureKeys.kdsEnabled] == true) featuresList.add('KDS & KOT');
+    if (payload.features[FeatureKeys.kdsEnabled] == true) featuresList.add('KDS and KOT');
     if (payload.features[FeatureKeys.splitBilling] == true) featuresList.add('Split Billing');
     if (payload.features[FeatureKeys.customerDisplay] == true) featuresList.add('CFD Display');
     if (payload.features[FeatureKeys.inventoryEnabled] == true) featuresList.add('Inventory');
     if (payload.features[FeatureKeys.analytics] == true) featuresList.add('Analytics');
-    if (payload.features[FeatureKeys.staffManagement] == true) featuresList.add('Staff & Roles');
+    if (payload.features[FeatureKeys.staffManagement] == true) featuresList.add('Staff and Roles');
     if (payload.features[FeatureKeys.tableManagement] == true) featuresList.add('Visual Tables');
-    if (featuresList.isEmpty) featuresList.add('Core POS & Billing');
+    if (featuresList.isEmpty) featuresList.add('Core POS and Billing');
     final featuresSummary = featuresList.join(', ');
 
     final allowedRolesSummary = (payload.allowedRoles.isNotEmpty
@@ -95,7 +95,7 @@ class ClientSetupPackageGenerator {
     final buffer = StringBuffer();
     buffer.writeln('@echo off');
     buffer.writeln('setlocal EnableDelayedExpansion');
-    buffer.writeln('title SmartBizz POS - Automated Setup & License Activation');
+    buffer.writeln('title SmartBizz POS - Automated Setup and License Activation');
     buffer.writeln();
     buffer.writeln(':: =======================================================================');
     buffer.writeln(':: SmartBizz POS - 1-Click Client Host Setup Package');
@@ -111,7 +111,7 @@ class ClientSetupPackageGenerator {
     buffer.writeln(':: Licensed Feat: $featuresSummary');
     buffer.writeln(':: =======================================================================');
     buffer.writeln();
-    buffer.writeln(':: Security & Anti-Tamper License Verification');
+    buffer.writeln(':: Security and Anti-Tamper License Verification');
     buffer.writeln('set "B64_CHECK=$b64Json"');
     buffer.writeln('powershell -NoProfile -ExecutionPolicy Bypass -Command "\$b = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String(\'%B64_CHECK%\')); \$j = \$b | ConvertFrom-Json; if (-not \$j.token -or (\$j.token -notmatch \'(?i)sbz[-_]lic\') -or \$j.payload.orgId -ne \'$orgId\') { exit 1 }; \$validDate = [DateTime]::Parse(\$j.payload.validUntil); if ([DateTime]::UtcNow -gt \$validDate) { exit 2 }" >nul 2>&1');
     buffer.writeln('if %errorLevel% neq 0 (');
@@ -144,28 +144,28 @@ class ClientSetupPackageGenerator {
     buffer.writeln('echo.');
 
     // Step 1: Administrator check for firewall/service configuration
+    buffer.writeln(':: Check for Administrator privileges');
+    buffer.writeln('set "IS_ADMIN=0"');
+    buffer.writeln('net session >nul 2>&1');
+    buffer.writeln('if %errorLevel% equ 0 set "IS_ADMIN=1"');
     if (isLocalNetwork) {
-      buffer.writeln(':: Check for Administrator privileges');
-      buffer.writeln('net session >nul 2>&1');
-      buffer.writeln('if %errorLevel% neq 0 (');
-      buffer.writeln('    echo [*] Requesting Administrator privileges for network & firewall configuration...');
-      buffer.writeln('    powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process cmd -ArgumentList \'/c \\"\\"%~f0\\"\\"\' -Verb RunAs"');
-      buffer.writeln('    exit /b');
+      buffer.writeln('if "%IS_ADMIN%"=="0" (');
+      buffer.writeln('    if not defined SMARTBIZZ_RELAUNCHED (');
+      buffer.writeln('        set "SMARTBIZZ_RELAUNCHED=1"');
+      buffer.writeln('        powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process cmd -ArgumentList \'/k \\"\\"%~f0\\"\\"\' -Verb RunAs" >nul 2>&1');
+      buffer.writeln('        if !errorLevel! equ 0 exit /b 0');
+      buffer.writeln('    )');
+      buffer.writeln('    echo [INFO] Running in standard user mode (Port 8085 listener will run directly).');
+      buffer.writeln('    echo  Note: To enable clean port 80 and custom domain name, right-click and Run as administrator.');
       buffer.writeln(')');
       buffer.writeln();
     }
 
     // Step 2: Directories & Isolated Database Hub Setup
     buffer.writeln('echo [*] Initializing local database storage directories...');
-    buffer.writeln('set "DEFAULT_APP_DATA=%APPDATA%\\SmartBizz"');
-    buffer.writeln('echo  Default storage directory: !DEFAULT_APP_DATA!');
-    buffer.writeln('set "USER_DIR="');
-    buffer.writeln('set /p "USER_DIR=Press ENTER to accept default, or enter custom path: "');
-    buffer.writeln('if defined USER_DIR (');
-    buffer.writeln('    set "APP_DATA_DIR=!USER_DIR!"');
-    buffer.writeln(') else (');
-    buffer.writeln('    set "APP_DATA_DIR=!DEFAULT_APP_DATA!"');
-    buffer.writeln(')');
+    buffer.writeln('set "APP_DATA_DIR=%APPDATA%\\SmartBizz"');
+    buffer.writeln('set "LOCAL_DATA_DIR=%LOCALAPPDATA%\\SmartBizz"');
+    buffer.writeln('echo  Storage directory: !APP_DATA_DIR!');
     buffer.writeln('set "LOCAL_DATA_DIR=%LOCALAPPDATA%\\SmartBizz"');
     buffer.writeln('if not exist "%APP_DATA_DIR%" mkdir "%APP_DATA_DIR%"');
     buffer.writeln('if not exist "%APP_DATA_DIR%\\database" mkdir "%APP_DATA_DIR%\\database"');
@@ -287,13 +287,6 @@ class ClientSetupPackageGenerator {
 
     // Step 4: Network & Firewall Setup (if Local Network Hub)
     if (isLocalNetwork) {
-      buffer.writeln('echo [*] Configuring Local LAN Hub & Windows Defender Firewall...');
-      buffer.writeln('netsh advfirewall firewall delete rule name="SmartBizz POS Hub (Port 8080)" >nul 2>&1');
-      buffer.writeln('netsh advfirewall firewall add rule name="SmartBizz POS Hub (Port 8080)" dir=in action=allow protocol=TCP localport=8080 profile=private,domain >nul 2>&1');
-      buffer.writeln('netsh advfirewall firewall delete rule name="SmartBizz POS Hub (Port 8085)" >nul 2>&1');
-      buffer.writeln('netsh advfirewall firewall add rule name="SmartBizz POS Hub (Port 8085)" dir=in action=allow protocol=TCP localport=8085 profile=private,domain >nul 2>&1');
-      buffer.writeln('echo [OK] Firewall ports 8080 and 8085 opened for paired satellite devices (SmartBizz app on the store Wi-Fi).');
-      buffer.writeln();
       buffer.writeln(':: Detect Local IPv4');
       buffer.writeln('set "HOST_IP="');
       buffer.writeln('for /f "tokens=4" %%a in (\'route print 0.0.0.0 ^| findstr 0.0.0.0\') do (');
@@ -302,21 +295,31 @@ class ClientSetupPackageGenerator {
       buffer.writeln('if not defined HOST_IP set "HOST_IP=127.0.0.1"');
       buffer.writeln('echo [OK] Host Machine Local IP detected: !HOST_IP!');
       buffer.writeln();
-      buffer.writeln(':: Map Local Domains in Windows hosts file');
       buffer.writeln('set "LOCAL_DOMAIN=$localDomain"');
       buffer.writeln('set "LOCAL_DOMAIN_LAN=$localDomainLan"');
       buffer.writeln('set "LOCAL_DOMAIN_SLUG=$cleanSlug"');
-      buffer.writeln('echo [*] Mapping clean local domain !LOCAL_DOMAIN! to !HOST_IP!...');
-      buffer.writeln('powershell -NoProfile -ExecutionPolicy Bypass -Command "\$h = \\"\$env:SystemRoot\\System32\\drivers\\etc\\hosts\\"; if (Test-Path \$h) { \$lines = @(Get-Content \$h -ErrorAction SilentlyContinue) | Where-Object { \$_ -notmatch \'$localDomain\' -and \$_ -notmatch \'$localDomainLan\' -and \$_ -notmatch \'$cleanSlug.local\' }; \$lines += \\"!HOST_IP!`t$localDomain\\"; \$lines += \\"!HOST_IP!`t$localDomainLan\\"; \$lines += \\"!HOST_IP!`t$cleanSlug.local\\"; [System.IO.File]::WriteAllLines(\$h, \$lines) }" >nul 2>&1');
-      buffer.writeln('echo [OK] Local domain configured: http://!LOCAL_DOMAIN!/ (Clean URL - No port needed)');
       buffer.writeln();
-      buffer.writeln(':: Configure Clean HTTP Port 80 Forwarding (Hides port in browser URLs)');
-      buffer.writeln('netsh interface portproxy delete v4tov4 listenport=80 listenaddress=0.0.0.0 >nul 2>&1');
-      buffer.writeln('netsh interface portproxy delete v4tov4 listenport=80 listenaddress=!HOST_IP! >nul 2>&1');
-      buffer.writeln('netsh interface portproxy add v4tov4 listenport=80 listenaddress=0.0.0.0 connectport=8085 connectaddress=127.0.0.1 >nul 2>&1');
-      buffer.writeln('netsh interface portproxy add v4tov4 listenport=80 listenaddress=!HOST_IP! connectport=8085 connectaddress=127.0.0.1 >nul 2>&1');
-      buffer.writeln('netsh advfirewall firewall add rule name="SmartBizz Clean HTTP Port 80" dir=in action=allow protocol=TCP localport=80 >nul 2>&1');
-      buffer.writeln('echo {"hostIp":"!HOST_IP!","port":8085,"cleanPort":80,"orgId":"$orgId","mode":"LOCAL_NETWORK","localDomain":"!LOCAL_DOMAIN!"} > "%APP_DATA_DIR%\\lan_hub_config.json"');
+      buffer.writeln('if "!IS_ADMIN!"=="1" (');
+      buffer.writeln('    echo [*] Configuring Local LAN Hub and Windows Defender Firewall...');
+      buffer.writeln('    netsh advfirewall firewall delete rule name="SmartBizz POS Hub (Port 8080)" >nul 2>&1');
+      buffer.writeln('    netsh advfirewall firewall add rule name="SmartBizz POS Hub (Port 8080)" dir=in action=allow protocol=TCP localport=8080 profile=private,domain >nul 2>&1');
+      buffer.writeln('    netsh advfirewall firewall delete rule name="SmartBizz POS Hub (Port 8085)" >nul 2>&1');
+      buffer.writeln('    netsh advfirewall firewall add rule name="SmartBizz POS Hub (Port 8085)" dir=in action=allow protocol=TCP localport=8085 profile=private,domain >nul 2>&1');
+      buffer.writeln('    echo [OK] Firewall ports 8080 and 8085 configured for satellite devices.');
+      buffer.writeln('    echo [*] Mapping clean local domain !LOCAL_DOMAIN! to !HOST_IP!...');
+      buffer.writeln('    powershell -NoProfile -ExecutionPolicy Bypass -Command "\$h = \\"\$env:SystemRoot\\System32\\drivers\\etc\\hosts\\"; if (Test-Path \$h) { \$lines = @(Get-Content \$h -ErrorAction SilentlyContinue) | Where-Object { \$_ -notmatch \'$localDomain\' -and \$_ -notmatch \'$localDomainLan\' -and \$_ -notmatch \'$cleanSlug.local\' }; \$lines += \\"!HOST_IP!`t$localDomain\\"; \$lines += \\"!HOST_IP!`t$localDomainLan\\"; \$lines += \\"!HOST_IP!`t$cleanSlug.local\\"; [System.IO.File]::WriteAllLines(\$h, \$lines) }" >nul 2>&1');
+      buffer.writeln('    netsh interface portproxy delete v4tov4 listenport=80 listenaddress=0.0.0.0 >nul 2>&1');
+      buffer.writeln('    netsh interface portproxy delete v4tov4 listenport=80 listenaddress=!HOST_IP! >nul 2>&1');
+      buffer.writeln('    netsh interface portproxy add v4tov4 listenport=80 listenaddress=0.0.0.0 connectport=8085 connectaddress=127.0.0.1 >nul 2>&1');
+      buffer.writeln('    netsh interface portproxy add v4tov4 listenport=80 listenaddress=!HOST_IP! connectport=8085 connectaddress=127.0.0.1 >nul 2>&1');
+      buffer.writeln('    netsh advfirewall firewall add rule name="SmartBizz Clean HTTP Port 80" dir=in action=allow protocol=TCP localport=80 >nul 2>&1');
+      buffer.writeln('    echo [OK] Local domain configured: http://!LOCAL_DOMAIN!/ (Clean URL - No port needed)');
+      buffer.writeln('    echo {"hostIp":"!HOST_IP!","port":8085,"cleanPort":80,"cleanPortActive":true,"orgId":"$orgId","mode":"LOCAL_NETWORK","localDomain":"!LOCAL_DOMAIN!"} > "%APP_DATA_DIR%\\lan_hub_config.json"');
+      buffer.writeln(') else (');
+      buffer.writeln('    echo [INFO] Running in standard user mode.');
+      buffer.writeln('    echo  Local LAN Hub will run on port 8085: http://!HOST_IP!:8085');
+      buffer.writeln('    echo {"hostIp":"!HOST_IP!","port":8085,"cleanPort":80,"cleanPortActive":false,"orgId":"$orgId","mode":"LOCAL_NETWORK","localDomain":"!LOCAL_DOMAIN!"} > "%APP_DATA_DIR%\\lan_hub_config.json"');
+      buffer.writeln(')');
       buffer.writeln();
 
       final listenerPs1 = generateLanHubListenerScript(token: token, webPosUrl: kWebPosUrl, port: 8085);
@@ -329,20 +332,24 @@ class ClientSetupPackageGenerator {
       buffer.writeln('for /f "tokens=5" %%p in (\'netstat -aon ^| findstr :8085 ^| findstr LISTENING\') do taskkill /F /PID %%p >nul 2>&1');
       buffer.writeln('timeout /t 1 /nobreak >nul 2>&1');
       buffer.writeln();
-      buffer.writeln(':: Deploy dedicated VBScript background launcher (ensures process survives CMD window close)');
-      buffer.writeln('(');
-      buffer.writeln('    echo Set WshShell = CreateObject("WScript.Shell"^)');
-      buffer.writeln('    echo appData = WshShell.ExpandEnvironmentStrings("%%APPDATA%%"^)');
-      buffer.writeln('    echo ps1Path = appData ^& "\\SmartBizz\\lan_hub_listener.ps1"');
-      buffer.writeln('    echo cmd = "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File """ ^& ps1Path ^& """"');
-      buffer.writeln('    echo WshShell.Run cmd, 0, False');
-      buffer.writeln(') > "%APP_DATA_DIR%\\run_lan_hub.vbs"');
+
+      final runLanHubVbs = '''Set WshShell = CreateObject("WScript.Shell")
+appData = WshShell.ExpandEnvironmentStrings("%APPDATA%")
+ps1Path = appData & "\\SmartBizz\\lan_hub_listener.ps1"
+cmd = "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File """ & ps1Path & """"
+WshShell.Run cmd, 0, False
+''';
+      final b64RunVbs = base64.encode(utf8.encode(runLanHubVbs));
+
+      buffer.writeln(':: Deploy dedicated VBScript background launcher via safe Base64 decode');
+      buffer.writeln('set "B64_RUN_VBS=$b64RunVbs"');
+      buffer.writeln('powershell -NoProfile -ExecutionPolicy Bypass -Command "[System.IO.File]::WriteAllText(\'%APP_DATA_DIR%\\run_lan_hub.vbs\', [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String(\'%B64_RUN_VBS%\')))" >nul 2>&1');
       buffer.writeln();
-      buffer.writeln(':: Launch detached background daemon via WScript & fallback trigger');
+      buffer.writeln(':: Launch detached background daemon via WScript');
       buffer.writeln('wscript.exe "%APP_DATA_DIR%\\run_lan_hub.vbs"');
       buffer.writeln('start "" /B powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "%APP_DATA_DIR%\\lan_hub_listener.ps1"');
       buffer.writeln();
-      buffer.writeln(':: Ensure permanent background operation and auto-start on boot (HKCU Run & Startup)');
+      buffer.writeln(':: Ensure permanent background operation and auto-start on boot');
       buffer.writeln('reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run" /v "SmartBizz_LAN_Hub" /t REG_SZ /d "wscript.exe \\"%APP_DATA_DIR%\\run_lan_hub.vbs\\"" /f >nul 2>&1');
       buffer.writeln('set "STARTUP_DIR=%APPDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Startup"');
       buffer.writeln('if exist "%STARTUP_DIR%" (');
@@ -357,59 +364,70 @@ class ClientSetupPackageGenerator {
     }
 
     // Step 5: Desktop Shortcut & Self-Healing Launcher
-    final appUrl = isLocalNetwork ? 'http://!LOCAL_DOMAIN!/?host_ip=!HOST_IP!&domain=!LOCAL_DOMAIN!' : '$kWebPosUrl?host_ip=!HOST_IP!&port=8085';
     buffer.writeln('echo [*] Creating Desktop Shortcut...');
+    buffer.writeln('set "APP_LAUNCH_URL=$kWebPosUrl?host_ip=!HOST_IP!&port=8085"');
     if (isLocalNetwork) {
-      buffer.writeln(':: Deploy self-healing desktop launcher');
-      buffer.writeln('(');
-      buffer.writeln('    echo Set WshShell = CreateObject("WScript.Shell"^)');
-      buffer.writeln('    echo Set fso = CreateObject("Scripting.FileSystemObject"^)');
-      buffer.writeln('    echo appData = WshShell.ExpandEnvironmentStrings("%%APPDATA%%"^)');
-      buffer.writeln('    echo runVbs = appData ^& "\\SmartBizz\\run_lan_hub.vbs"');
-      buffer.writeln('    echo ret = WshShell.Run("powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ""if (-not (Get-NetTCPConnection -LocalPort 8085 -State Listen -ErrorAction SilentlyContinue)) { exit 1 }""", 0, True^)');
-      buffer.writeln('    echo If ret ^<^> 0 Then');
-      buffer.writeln('    echo     WshShell.Run "wscript.exe """ ^& runVbs ^& """", 0, False');
-      buffer.writeln('    echo     WScript.Sleep 1000');
-      buffer.writeln('    echo End If');
-      buffer.writeln('    echo hostIp = "!HOST_IP!"');
-      buffer.writeln('    echo localDomain = "$localDomain"');
-      buffer.writeln('    echo cfgPath = appData ^& "\\SmartBizz\\lan_hub_config.json"');
-      buffer.writeln('    echo If fso.FileExists(cfgPath) Then');
-      buffer.writeln('    echo     Set f = fso.OpenTextFile(cfgPath, 1^)');
-      buffer.writeln('    echo     content = f.ReadAll(^)');
-      buffer.writeln('    echo     f.Close(^)');
-      buffer.writeln('    echo     pos = InStr(content, """hostIp"":"""^)');
-      buffer.writeln('    echo     If pos ^> 0 Then');
-      buffer.writeln('    echo         pos2 = InStr(pos + 10, content, """"^)');
-      buffer.writeln('    echo         If pos2 ^> 0 Then hostIp = Mid(content, pos + 10, pos2 - (pos + 10)^)');
-      buffer.writeln('    echo     End If');
-      buffer.writeln('    echo     posD = InStr(content, """localDomain"":"""^)');
-      buffer.writeln('    echo     If posD ^> 0 Then');
-      buffer.writeln('    echo         posD2 = InStr(posD + 15, content, """"^)');
-      buffer.writeln('    echo         If posD2 ^> 0 Then localDomain = Mid(content, posD + 15, posD2 - (posD + 15)^)');
-      buffer.writeln('    echo     End If');
-      buffer.writeln('    echo End If');
-      buffer.writeln('    echo If Len(localDomain) ^> 0 Then');
-      buffer.writeln('    echo     posUrl = "http://" ^& localDomain ^& "/?host_ip=" ^& hostIp ^& "^&domain=" ^& localDomain');
-      buffer.writeln('    echo Else');
-      buffer.writeln('    echo     posUrl = "http://" ^& hostIp ^& ":8085/?host_ip=" ^& hostIp ^& "^&port=8085"');
-      buffer.writeln('    echo End If');
-      buffer.writeln('    echo On Error Resume Next');
-      buffer.writeln('    echo errCode = WshShell.Run("msedge.exe --app=""" ^& posUrl ^& """", 1, False^)');
-      buffer.writeln('    echo If errCode ^<^> 0 Then');
-      buffer.writeln('    echo     errCode = WshShell.Run("chrome.exe --app=""" ^& posUrl ^& """", 1, False^)');
-      buffer.writeln('    echo     If errCode ^<^> 0 Then');
-      buffer.writeln('    echo         WshShell.Run posUrl, 1, False');
-      buffer.writeln('    echo     End If');
-      buffer.writeln('    echo End If');
-      buffer.writeln(') > "%APP_DATA_DIR%\\launch_smartbizz.vbs"');
+      buffer.writeln('if "!IS_ADMIN!"=="1" (');
+      buffer.writeln('    set "APP_LAUNCH_URL=http://!LOCAL_DOMAIN!/?host_ip=!HOST_IP!&domain=!LOCAL_DOMAIN!"');
+      buffer.writeln(') else (');
+      buffer.writeln('    set "APP_LAUNCH_URL=http://!HOST_IP!:8085/?host_ip=!HOST_IP!&port=8085"');
+      buffer.writeln(')');
+      final launchVbs = '''Set WshShell = CreateObject("WScript.Shell")
+Set fso = CreateObject("Scripting.FileSystemObject")
+appData = WshShell.ExpandEnvironmentStrings("%APPDATA%")
+runVbs = appData & "\\SmartBizz\\run_lan_hub.vbs"
+ret = WshShell.Run("powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ""if (-not (Get-NetTCPConnection -LocalPort 8085 -State Listen -ErrorAction SilentlyContinue)) { exit 1 }""", 0, True)
+If ret <> 0 Then
+    WshShell.Run "wscript.exe """ & runVbs & """", 0, False
+    WScript.Sleep 1000
+End If
+hostIp = "127.0.0.1"
+localDomain = "$localDomain"
+cleanPortActive = False
+cfgPath = appData & "\\SmartBizz\\lan_hub_config.json"
+If fso.FileExists(cfgPath) Then
+    Set f = fso.OpenTextFile(cfgPath, 1)
+    content = f.ReadAll()
+    f.Close()
+    pos = InStr(content, """hostIp"":""")
+    If pos > 0 Then
+        pos2 = InStr(pos + 10, content, """")
+        If pos2 > 0 Then hostIp = Mid(content, pos + 10, pos2 - (pos + 10))
+    End If
+    posD = InStr(content, """localDomain"":""")
+    If posD > 0 Then
+        posD2 = InStr(posD + 15, content, """")
+        If posD2 > 0 Then localDomain = Mid(content, posD + 15, posD2 - (posD + 15))
+    End If
+    posC = InStr(content, """cleanPortActive"":true")
+    If posC > 0 Then cleanPortActive = True
+End If
+If cleanPortActive And Len(localDomain) > 0 Then
+    posUrl = "http://" & localDomain & "/?host_ip=" & hostIp & "&domain=" & localDomain
+Else
+    posUrl = "http://" & hostIp & ":8085/?host_ip=" & hostIp & "&port=8085"
+End If
+On Error Resume Next
+errCode = WshShell.Run("msedge.exe --app=""" & posUrl & """", 1, False)
+If errCode <> 0 Then
+    errCode = WshShell.Run("chrome.exe --app=""" & posUrl & """", 1, False)
+    If errCode <> 0 Then
+        WshShell.Run posUrl, 1, False
+    End If
+End If
+''';
+      final b64LaunchVbs = base64.encode(utf8.encode(launchVbs));
+
+      buffer.writeln(':: Deploy self-healing desktop launcher via safe Base64 decode');
+      buffer.writeln('set "B64_LAUNCH_VBS=$b64LaunchVbs"');
+      buffer.writeln('powershell -NoProfile -ExecutionPolicy Bypass -Command "[System.IO.File]::WriteAllText(\'%APP_DATA_DIR%\\launch_smartbizz.vbs\', [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String(\'%B64_LAUNCH_VBS%\')))" >nul 2>&1');
     }
     buffer.writeln('set "DESKTOP_DIR=%USERPROFILE%\\Desktop"');
     buffer.writeln('set "SHORTCUT_PATH=%DESKTOP_DIR%\\SmartBizz POS.lnk"');
     if (isLocalNetwork) {
       buffer.writeln('powershell -NoProfile -ExecutionPolicy Bypass -Command "\$ws = New-Object -ComObject WScript.Shell; \$s = \$ws.CreateShortcut(\'%SHORTCUT_PATH%\'); \$s.TargetPath = \'%~dp0smart_kirana_shop.exe\'; if (-not (Test-Path \'%~dp0smart_kirana_shop.exe\')) { \$s.TargetPath = \'wscript.exe\'; \$s.Arguments = \'\\"%APP_DATA_DIR%\\launch_smartbizz.vbs\\"\'; \$s.IconLocation = \'msedge.exe,0\'; }; \$s.Description = \'SmartBizz POS - $storeName\'; \$s.Save()" >nul 2>&1');
     } else {
-      buffer.writeln('powershell -NoProfile -ExecutionPolicy Bypass -Command "\$ws = New-Object -ComObject WScript.Shell; \$s = \$ws.CreateShortcut(\'%SHORTCUT_PATH%\'); \$s.TargetPath = \'%~dp0smart_kirana_shop.exe\'; if (-not (Test-Path \'%~dp0smart_kirana_shop.exe\')) { \$s.TargetPath = \'msedge.exe\'; \$s.Arguments = \'--app=$appUrl\'; }; \$s.Description = \'SmartBizz POS - $storeName\'; \$s.Save()" >nul 2>&1');
+      buffer.writeln('powershell -NoProfile -ExecutionPolicy Bypass -Command "\$ws = New-Object -ComObject WScript.Shell; \$s = \$ws.CreateShortcut(\'%SHORTCUT_PATH%\'); \$s.TargetPath = \'%~dp0smart_kirana_shop.exe\'; if (-not (Test-Path \'%~dp0smart_kirana_shop.exe\')) { \$s.TargetPath = \'msedge.exe\'; \$s.Arguments = \'--app=!APP_LAUNCH_URL!\'; }; \$s.Description = \'SmartBizz POS - $storeName\'; \$s.Save()" >nul 2>&1');
     }
     buffer.writeln('echo [OK] Desktop shortcut created.');
     buffer.writeln();
@@ -441,7 +459,7 @@ class ClientSetupPackageGenerator {
     buffer.writeln(')');
     buffer.writeln();
     buffer.writeln(':: Priority 2: Dedicated Edge/Chrome Application Window');
-    buffer.writeln('start msedge --app="$appUrl" 2>nul || start chrome --app="$appUrl" 2>nul || start "" "$appUrl"');
+    buffer.writeln('start msedge --app="!APP_LAUNCH_URL!" 2>nul || start chrome --app="!APP_LAUNCH_URL!" 2>nul || start "" "!APP_LAUNCH_URL!"');
     buffer.writeln();
     buffer.writeln('exit /b 0');
 

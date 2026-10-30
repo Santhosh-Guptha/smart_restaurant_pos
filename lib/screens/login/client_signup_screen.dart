@@ -39,7 +39,6 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
   final _emailController = TextEditingController();
   final _otpController = TextEditingController();
   final _passwordController = TextEditingController();
-  final _confirmPasswordController = TextEditingController();
   final _requirementsController = TextEditingController();
 
   /// Features explicitly requested / selected by the prospective client or admin
@@ -58,7 +57,6 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
   bool get _isPaidPackage => !_isFreeTrial && !_isEnterprise;
 
   bool _obscurePassword = true;
-  bool _obscureConfirmPassword = true;
 
   // State
   bool _isSendingOtp = false;
@@ -112,7 +110,6 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
     _emailController.dispose();
     _otpController.dispose();
     _passwordController.dispose();
-    _confirmPasswordController.dispose();
     _requirementsController.dispose();
     _cooldownTimer?.cancel();
     super.dispose();
@@ -821,17 +818,13 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
       return;
     }
 
-    final password = _passwordController.text.trim();
-    final confirmPassword = _confirmPasswordController.text.trim();
-
-    if (password.length < 6) {
-      AppToast.showError(context, "Password must be at least 6 characters.");
-      return;
-    }
-
-    if (password != confirmPassword) {
-      AppToast.showError(context, "Passwords do not match.");
-      return;
+    String password = '';
+    if (_isFreeTrial && _selectedCustomFeatures.isEmpty) {
+      password = _passwordController.text.trim();
+      if (password.length < 6) {
+        AppToast.showError(context, "Password must be at least 6 characters.");
+        return;
+      }
     }
 
     setState(() => _isSubmitting = true);
@@ -1942,47 +1935,47 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
                     ],
                     const SizedBox(height: 16),
 
-                    // SECTION 4: LOGIN PASSWORD (FOR INSTANT LOGIN)
-                    Text("Create Password *", style: TextStyle(color: context.textSecondary, fontSize: 13, fontWeight: FontWeight.w600)),
-                    const SizedBox(height: 6),
-                    TextFormField(
-                      controller: _passwordController,
-                      obscureText: _obscurePassword,
-                      style: TextStyle(color: context.textPrimary, fontSize: 14),
-                      decoration: ClassicTheme.inputDecorationFor(
-                        context,
-                        hintText: "Minimum 6 characters",
-                        prefixIcon: Icon(Icons.lock_outline, color: context.textSecondary, size: 20),
-                        suffixIcon: IconButton(
-                          icon: Icon(_obscurePassword ? Icons.visibility_off : Icons.visibility, color: context.textSecondary, size: 20),
-                          onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+                    // SECTION 4: LOGIN CREDENTIALS
+                    if (_isFreeTrial && _selectedCustomFeatures.isEmpty) ...[
+                      Text("Create Admin Password *", style: TextStyle(color: context.textSecondary, fontSize: 13, fontWeight: FontWeight.w600)),
+                      const SizedBox(height: 6),
+                      TextFormField(
+                        controller: _passwordController,
+                        obscureText: _obscurePassword,
+                        style: TextStyle(color: context.textPrimary, fontSize: 14),
+                        decoration: ClassicTheme.inputDecorationFor(
+                          context,
+                          hintText: "Minimum 6 characters",
+                          prefixIcon: Icon(Icons.lock_outline, color: context.textSecondary, size: 20),
+                          suffixIcon: IconButton(
+                            icon: Icon(_obscurePassword ? Icons.visibility_off : Icons.visibility, color: context.textSecondary, size: 20),
+                            onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+                          ),
+                        ),
+                        validator: (v) => v == null || v.trim().length < 6 ? "Password must be at least 6 characters" : null,
+                      ),
+                    ] else ...[
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                        decoration: BoxDecoration(
+                          color: primaryAccent.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: primaryAccent.withValues(alpha: 0.2)),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(Icons.shield_outlined, color: primaryAccent, size: 22),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                "No upfront password needed. Your store owner credentials and license key will be configured securely upon onboarding activation.",
+                                style: TextStyle(color: context.textSecondary, fontSize: 12.5, height: 1.35),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                      validator: (v) => v == null || v.trim().length < 6 ? "Password must be at least 6 characters" : null,
-                    ),
-                    const SizedBox(height: 14),
-
-                    Text("Confirm Password *", style: TextStyle(color: context.textSecondary, fontSize: 13, fontWeight: FontWeight.w600)),
-                    const SizedBox(height: 6),
-                    TextFormField(
-                      controller: _confirmPasswordController,
-                      obscureText: _obscureConfirmPassword,
-                      style: TextStyle(color: context.textPrimary, fontSize: 14),
-                      decoration: ClassicTheme.inputDecorationFor(
-                        context,
-                        hintText: "Re-enter password",
-                        prefixIcon: Icon(Icons.lock_reset, color: context.textSecondary, size: 20),
-                        suffixIcon: IconButton(
-                          icon: Icon(_obscureConfirmPassword ? Icons.visibility_off : Icons.visibility, color: context.textSecondary, size: 20),
-                          onPressed: () => setState(() => _obscureConfirmPassword = !_obscureConfirmPassword),
-                        ),
-                      ),
-                      validator: (v) {
-                        if (v == null || v.trim().isEmpty) return "Please confirm password";
-                        if (v.trim() != _passwordController.text.trim()) return "Passwords do not match";
-                        return null;
-                      },
-                    ),
+                    ],
                     const SizedBox(height: 28),
 
                     // SUBMIT BUTTON
