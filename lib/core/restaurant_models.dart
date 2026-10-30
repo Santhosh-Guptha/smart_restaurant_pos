@@ -700,6 +700,31 @@ class KotItem {
   final int? seatNo;
   final List<ItemModifierOption> selectedModifiers;
   final bool isTaxExempt;
+  final String? preparedByChefId;
+  final String? preparedByChefName;
+  final DateTime? prepStartedAt;
+  final DateTime? preparedAt;
+  final String? category;
+  final int? waitingDurationSeconds;
+  final int? prepDurationSeconds;
+
+  String? get cookId => preparedByChefId;
+  String? get cookName => preparedByChefName;
+
+  /// Effective waiting duration in seconds before chef picked up
+  int get effectiveWaitingSeconds {
+    if (waitingDurationSeconds != null) return waitingDurationSeconds!;
+    return 0;
+  }
+
+  /// Effective preparation duration in seconds spent by chef cooking
+  int get effectivePrepSeconds {
+    if (prepDurationSeconds != null) return prepDurationSeconds!;
+    if (preparedAt != null && prepStartedAt != null) {
+      return preparedAt!.difference(prepStartedAt!).inSeconds.clamp(0, 86400);
+    }
+    return 0;
+  }
 
   String get id => productId;
 
@@ -752,6 +777,13 @@ class KotItem {
     this.seatNo,
     this.selectedModifiers = const [],
     this.isTaxExempt = false,
+    this.preparedByChefId,
+    this.preparedByChefName,
+    this.prepStartedAt,
+    this.preparedAt,
+    this.category,
+    this.waitingDurationSeconds,
+    this.prepDurationSeconds,
   });
 
   Map<String, dynamic> toMap() {
@@ -781,6 +813,15 @@ class KotItem {
       'subtotal': unitPriceWithModifiers * effectiveQty,
       'isTaxExempt': isTaxExempt,
       'is_tax_exempt': isTaxExempt,
+      'preparedByChefId': preparedByChefId,
+      'cookId': preparedByChefId,
+      'preparedByChefName': preparedByChefName,
+      'cookName': preparedByChefName,
+      'prepStartedAt': prepStartedAt?.toIso8601String(),
+      'preparedAt': preparedAt?.toIso8601String(),
+      'category': category,
+      'waitingDurationSeconds': waitingDurationSeconds,
+      'prepDurationSeconds': prepDurationSeconds,
     };
   }
 
@@ -825,6 +866,13 @@ class KotItem {
           .map((m) => ItemModifierOption.fromMap(Map<String, dynamic>.from(m as Map)))
           .toList(),
       isTaxExempt: map['isTaxExempt'] == true || map['is_tax_exempt'] == true,
+      preparedByChefId: (map['preparedByChefId'] ?? map['cookId'] ?? map['chefId'])?.toString(),
+      preparedByChefName: (map['preparedByChefName'] ?? map['cookName'] ?? map['chefName'])?.toString(),
+      prepStartedAt: map['prepStartedAt'] != null ? _parseDateTime(map['prepStartedAt']) : null,
+      preparedAt: map['preparedAt'] != null ? _parseDateTime(map['preparedAt']) : null,
+      category: (map['category'] ?? map['subcategory'])?.toString(),
+      waitingDurationSeconds: (map['waitingDurationSeconds'] as num?)?.toInt(),
+      prepDurationSeconds: (map['prepDurationSeconds'] as num?)?.toInt(),
     );
   }
 
@@ -849,6 +897,13 @@ class KotItem {
     int? seatNo,
     List<ItemModifierOption>? selectedModifiers,
     bool? isTaxExempt,
+    String? preparedByChefId,
+    String? preparedByChefName,
+    DateTime? prepStartedAt,
+    DateTime? preparedAt,
+    String? category,
+    int? waitingDurationSeconds,
+    int? prepDurationSeconds,
   }) {
     return KotItem(
       lineId: lineId ?? this.lineId,
@@ -871,6 +926,13 @@ class KotItem {
       seatNo: seatNo ?? this.seatNo,
       selectedModifiers: selectedModifiers ?? this.selectedModifiers,
       isTaxExempt: isTaxExempt ?? this.isTaxExempt,
+      preparedByChefId: preparedByChefId ?? this.preparedByChefId,
+      preparedByChefName: preparedByChefName ?? this.preparedByChefName,
+      prepStartedAt: prepStartedAt ?? this.prepStartedAt,
+      preparedAt: preparedAt ?? this.preparedAt,
+      category: category ?? this.category,
+      waitingDurationSeconds: waitingDurationSeconds ?? this.waitingDurationSeconds,
+      prepDurationSeconds: prepDurationSeconds ?? this.prepDurationSeconds,
     );
   }
 }
@@ -972,6 +1034,50 @@ class KotOrder {
   final String? tableNumber;
   final bool? isPaid;
   final String? tokenNo;
+  final String? cookId;
+  final String? cookName;
+  final DateTime? prepStartedAt;
+  final DateTime? servedAt;
+  final String? kitchenStation;
+  final int? waitingDurationSeconds;
+  final int? prepDurationSeconds;
+  final int? totalDurationSeconds;
+
+  String? get chefId => cookId;
+  String? get chefName => cookName;
+
+  /// Waiting duration in seconds before cooking started
+  int get effectiveWaitingSeconds {
+    if (waitingDurationSeconds != null) return waitingDurationSeconds!;
+    if (prepStartedAt != null) {
+      return prepStartedAt!.difference(createdAt).inSeconds.clamp(0, 86400);
+    }
+    if (acceptedAt != null) {
+      return acceptedAt!.difference(createdAt).inSeconds.clamp(0, 86400);
+    }
+    return 0;
+  }
+
+  /// Cooking duration in seconds spent preparing the dishes
+  int get effectivePrepSeconds {
+    if (prepDurationSeconds != null) return prepDurationSeconds!;
+    final start = prepStartedAt ?? acceptedAt;
+    final end = readyAt ?? completedAt;
+    if (start != null && end != null) {
+      return end.difference(start).inSeconds.clamp(0, 86400);
+    }
+    return 0;
+  }
+
+  /// Total turnaround duration in seconds from order placement to completion/serving
+  int get effectiveTurnaroundSeconds {
+    if (totalDurationSeconds != null) return totalDurationSeconds!;
+    final end = completedAt ?? readyAt ?? servedAt;
+    if (end != null) {
+      return end.difference(createdAt).inSeconds.clamp(0, 86400);
+    }
+    return 0;
+  }
 
   /// Universal dedup key using canonical ID
   String get canonicalKey => canonicalId(this);
@@ -1087,6 +1193,14 @@ class KotOrder {
     this.tableNumber,
     this.isPaid,
     this.tokenNo,
+    this.cookId,
+    this.cookName,
+    this.prepStartedAt,
+    this.servedAt,
+    this.kitchenStation,
+    this.waitingDurationSeconds,
+    this.prepDurationSeconds,
+    this.totalDurationSeconds,
   });
 
   KotOrder copyWith({
@@ -1129,6 +1243,14 @@ class KotOrder {
     String? tableNumber,
     bool? isPaid,
     String? tokenNo,
+    String? cookId,
+    String? cookName,
+    DateTime? prepStartedAt,
+    DateTime? servedAt,
+    String? kitchenStation,
+    int? waitingDurationSeconds,
+    int? prepDurationSeconds,
+    int? totalDurationSeconds,
   }) {
     return KotOrder(
       id: id ?? this.id,
@@ -1170,6 +1292,14 @@ class KotOrder {
       tableNumber: tableNumber ?? this.tableNumber,
       isPaid: isPaid ?? this.isPaid,
       tokenNo: tokenNo ?? this.tokenNo,
+      cookId: cookId ?? this.cookId,
+      cookName: cookName ?? this.cookName,
+      prepStartedAt: prepStartedAt ?? this.prepStartedAt,
+      servedAt: servedAt ?? this.servedAt,
+      kitchenStation: kitchenStation ?? this.kitchenStation,
+      waitingDurationSeconds: waitingDurationSeconds ?? this.waitingDurationSeconds,
+      prepDurationSeconds: prepDurationSeconds ?? this.prepDurationSeconds,
+      totalDurationSeconds: totalDurationSeconds ?? this.totalDurationSeconds,
     );
   }
 
@@ -1219,6 +1349,16 @@ class KotOrder {
       'isPaid': isPaid,
       'tokenNo': tokenNo,
       'token_no': tokenNo,
+      'cookId': cookId,
+      'chefId': cookId,
+      'cookName': cookName,
+      'chefName': cookName,
+      'prepStartedAt': prepStartedAt?.toIso8601String(),
+      'servedAt': servedAt?.toIso8601String(),
+      'kitchenStation': kitchenStation,
+      'waitingDurationSeconds': waitingDurationSeconds,
+      'prepDurationSeconds': prepDurationSeconds,
+      'totalDurationSeconds': totalDurationSeconds,
       'updatedAt': DateTime.now().toIso8601String(),
     };
   }
@@ -1355,6 +1495,14 @@ class KotOrder {
       tableNumber: (map['tableNumber'] ?? map['table_number'] ?? rawTableId).toString(),
       isPaid: isExplicitlyPaid,
       tokenNo: (map['tokenNo'] ?? map['token_no'] ?? map['token'])?.toString(),
+      cookId: (map['cookId'] ?? map['chefId'] ?? map['preparedByChefId'])?.toString(),
+      cookName: (map['cookName'] ?? map['chefName'] ?? map['preparedByChefName'])?.toString(),
+      prepStartedAt: map['prepStartedAt'] != null ? _parseDateTime(map['prepStartedAt']) : null,
+      servedAt: map['servedAt'] != null ? _parseDateTime(map['servedAt']) : null,
+      kitchenStation: (map['kitchenStation'] ?? map['station'])?.toString(),
+      waitingDurationSeconds: (map['waitingDurationSeconds'] as num?)?.toInt(),
+      prepDurationSeconds: (map['prepDurationSeconds'] as num?)?.toInt(),
+      totalDurationSeconds: (map['totalDurationSeconds'] as num?)?.toInt(),
     );
   }
 }

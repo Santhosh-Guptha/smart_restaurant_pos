@@ -975,6 +975,12 @@ class ClientSetupPackageGenerator {
     buffer.writeln('                        if (\$kdsReq.status) { \$o | Add-Member -MemberType NoteProperty -Name "status" -Value ([string]\$kdsReq.status) -Force }');
     buffer.writeln('                        if (\$kdsReq.cookId) { \$o | Add-Member -MemberType NoteProperty -Name "cookId" -Value ([string]\$kdsReq.cookId) -Force }');
     buffer.writeln('                        if (\$kdsReq.cookName) { \$o | Add-Member -MemberType NoteProperty -Name "cookName" -Value ([string]\$kdsReq.cookName) -Force }');
+    buffer.writeln('                        if (\$kdsReq.prepStartedAt) { \$o | Add-Member -MemberType NoteProperty -Name "prepStartedAt" -Value ([string]\$kdsReq.prepStartedAt) -Force }');
+    buffer.writeln('                        if (\$kdsReq.readyAt) { \$o | Add-Member -MemberType NoteProperty -Name "readyAt" -Value ([string]\$kdsReq.readyAt) -Force }');
+    buffer.writeln('                        if (\$kdsReq.completedAt) { \$o | Add-Member -MemberType NoteProperty -Name "completedAt" -Value ([string]\$kdsReq.completedAt) -Force }');
+    buffer.writeln('                        if (\$kdsReq.servedAt) { \$o | Add-Member -MemberType NoteProperty -Name "servedAt" -Value ([string]\$kdsReq.servedAt) -Force }');
+    buffer.writeln('                        if (\$kdsReq.kitchenStation) { \$o | Add-Member -MemberType NoteProperty -Name "kitchenStation" -Value ([string]\$kdsReq.kitchenStation) -Force }');
+    buffer.writeln('                        if (\$kdsReq.items) { \$o | Add-Member -MemberType NoteProperty -Name "items" -Value \$kdsReq.items -Force }');
     buffer.writeln('                        break');
     buffer.writeln('                    }');
     buffer.writeln('                }');

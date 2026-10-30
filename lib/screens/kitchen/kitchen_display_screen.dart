@@ -9,6 +9,7 @@ import 'package:hive_flutter/hive_flutter.dart';
 import '../../core/constants.dart';
 import '../../core/license_guard.dart';
 import '../../core/restaurant_models.dart';
+import '../../core/rbac_permissions.dart';
 import '../../providers/restaurant_auth_provider.dart';
 import '../../providers/saas_session_provider.dart';
 import '../../providers/auth_provider.dart';
@@ -79,6 +80,14 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen>
     _pageController = PageController(initialPage: 0);
     _loadLiveOrders();
     _loadTerminalKeys();
+
+    final activeStaff = ref.read(restaurantAuthProvider).activeStaff;
+    if (activeStaff != null &&
+        activeStaff.role == StaffRole.kitchen &&
+        activeStaff.assignedStation.trim().isNotEmpty &&
+        activeStaff.assignedStation.trim().toLowerCase() != 'all') {
+      _selectedStation = activeStaff.assignedStation.trim();
+    }
 
     final orgId = _getEffectiveOrgId();
     if (Hive.isBoxOpen('configBox')) {
@@ -650,11 +659,20 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen>
     }
 
     if (_selectedStation != 'ALL') {
+      final sel = _selectedStation.trim().toUpperCase();
       orders = orders.where((o) {
         return o.items.any((it) {
           final itStation = (it.station ?? '').trim().toUpperCase();
-          if (itStation.isEmpty) return _selectedStation.toUpperCase() == 'MAIN KITCHEN';
-          return itStation == _selectedStation.toUpperCase();
+          final itCat = (it.category ?? '').trim().toUpperCase();
+          if (itStation.isEmpty && itCat.isEmpty) return sel == 'MAIN KITCHEN' || sel == 'KITCHEN';
+          if (itStation == sel || itCat == sel) return true;
+          // Category-aware Station Routing (Starters kitchen receives starter dishes)
+          if (sel.contains('STARTER') && (itStation.contains('STARTER') || itCat.contains('STARTER') || itStation.contains('TANDOOR') || itCat.contains('APPETIZER') || it.name.toUpperCase().contains('TIKKA') || it.name.toUpperCase().contains('KEBAB'))) return true;
+          if (sel.contains('TANDOOR') && (itStation.contains('TANDOOR') || itCat.contains('TANDOOR') || itCat.contains('STARTER') || it.name.toUpperCase().contains('ROTI') || it.name.toUpperCase().contains('NAAN'))) return true;
+          if (sel.contains('MAIN') && (itStation.contains('MAIN') || itCat.contains('MAIN') || itCat.contains('CURRY') || itCat.contains('BIRYANI') || itCat.contains('RICE') || itCat.contains('GRAVY'))) return true;
+          if (sel.contains('BAR') && (itStation.contains('BAR') || itCat.contains('BEVERAGE') || itCat.contains('DRINK') || itCat.contains('JUICE') || itCat.contains('SHAKE'))) return true;
+          if (sel.contains('DESSERT') && (itStation.contains('DESSERT') || itCat.contains('SWEET') || itCat.contains('BAKERY') || itCat.contains('ICE CREAM'))) return true;
+          return false;
         });
       }).toList();
     }
@@ -744,6 +762,46 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen>
         await LocalStore.addTerminalKey(orgId, order.canonicalKey);
       }
 
+      final now = DateTime.now();
+      final currentSession = ref.read(saasSessionProvider);
+      final activeStaff = ref.read(restaurantAuthProvider).activeStaff;
+      final cookId = activeStaff?.id ?? currentSession.currentUser?.id ?? 'kitchen';
+      final cookName = activeStaff?.name ?? currentSession.currentUser?.fullName ?? 'Chef';
+
+      // Lifecycle Timestamps & Calculated Durations
+      DateTime? prepStarted = order.prepStartedAt;
+      DateTime? readyTime = order.readyAt;
+      DateTime? completedTime = order.completedAt;
+      DateTime? servedTime = order.servedAt;
+      int? waitingSec = order.waitingDurationSeconds;
+      int? prepSec = order.prepDurationSeconds;
+      int? totalSec = order.totalDurationSeconds;
+
+      if (newStatus == KotStatus.preparing) {
+        prepStarted ??= now;
+        waitingSec = prepStarted.difference(order.createdAt).inSeconds.clamp(0, 86400);
+      } else if (newStatus == KotStatus.ready) {
+        readyTime ??= now;
+        final start = prepStarted ?? order.acceptedAt ?? order.createdAt;
+        prepSec = readyTime.difference(start).inSeconds.clamp(0, 86400);
+      } else if (isServedAction) {
+        completedTime ??= now;
+        servedTime ??= now;
+        totalSec = completedTime.difference(order.createdAt).inSeconds.clamp(0, 86400);
+      }
+
+      final updatedItems = order.items.map((it) {
+        return it.copyWith(
+          preparedByChefId: cookId,
+          preparedByChefName: cookName,
+          prepStartedAt: prepStarted,
+          preparedAt: readyTime,
+          kitchenStatus: isServedAction ? 'SERVED' : newStatus.name.toUpperCase(),
+          waitingDurationSeconds: waitingSec,
+          prepDurationSeconds: prepSec,
+        );
+      }).toList();
+
       // Update local state immediately
       setState(() {
         if (isServedAction) {
@@ -751,7 +809,12 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen>
           final servedOrder = order.copyWith(
             status: KotStatus.served,
             kitchenStatus: 'SERVED',
-            completedAt: DateTime.now(),
+            completedAt: completedTime,
+            servedAt: servedTime,
+            cookId: cookId,
+            cookName: cookName,
+            totalDurationSeconds: totalSec,
+            items: updatedItems,
           );
           if (!_servedOrdersHistory.any((x) => canonicalId(x) == canonicalId(servedOrder))) {
             _servedOrdersHistory.insert(0, servedOrder);
@@ -764,16 +827,17 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen>
             _allOrders[idx] = existing.copyWith(
               status: shouldPreservePaid ? KotStatus.paid : newStatus,
               kitchenStatus: newStatus.name.toUpperCase(),
-              readyAt: newStatus == KotStatus.ready ? (existing.readyAt ?? DateTime.now()) : existing.readyAt,
+              cookId: cookId,
+              cookName: cookName,
+              prepStartedAt: prepStarted,
+              readyAt: readyTime,
+              waitingDurationSeconds: waitingSec,
+              prepDurationSeconds: prepSec,
+              items: updatedItems,
             );
           }
         }
       });
-
-      final currentSession = ref.read(saasSessionProvider);
-      final activeStaff = ref.read(restaurantAuthProvider).activeStaff;
-      final cookId = activeStaff?.id ?? currentSession.currentUser?.id ?? 'kitchen';
-      final cookName = activeStaff?.name ?? currentSession.currentUser?.fullName ?? 'Chef';
 
       if (Hive.isBoxOpen('configBox')) {
         final box = Hive.box('configBox');
@@ -786,20 +850,23 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen>
               m['kitchenStatus'] = kStatus;
               m['cookId'] = cookId;
               m['cookName'] = cookName;
+              if (prepStarted != null) m['prepStartedAt'] = prepStarted.toIso8601String();
+              if (waitingSec != null) m['waitingDurationSeconds'] = waitingSec;
+              if (prepSec != null) m['prepDurationSeconds'] = prepSec;
+              if (readyTime != null) m['readyAt'] = readyTime.toIso8601String();
               if (isServedAction) {
                 if (m['paymentStatus'] != 'PAID') {
                   m['status'] = 'SERVED';
                 }
-                m['servedAt'] = DateTime.now().toIso8601String();
-                m['completedAt'] = DateTime.now().toIso8601String();
+                m['servedAt'] = (servedTime ?? now).toIso8601String();
+                m['completedAt'] = (completedTime ?? now).toIso8601String();
+                if (totalSec != null) m['totalDurationSeconds'] = totalSec;
               } else {
                 if (m['paymentStatus'] != 'PAID') {
                   m['status'] = newStatus.name.toUpperCase();
                 }
-                if (newStatus == KotStatus.ready) {
-                  m['readyAt'] = DateTime.now().toIso8601String();
-                }
               }
+              m['items'] = updatedItems.map((e) => e.toMap()).toList();
               return m;
             }
             return item;
@@ -829,6 +896,12 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen>
               kotNumber: order.kotNumber,
               cookId: cookId,
               cookName: cookName,
+              prepStartedAt: prepStarted,
+              readyAt: readyTime,
+              completedAt: completedTime,
+              servedAt: servedTime,
+              station: _selectedStation,
+              items: updatedItems.map((e) => e.toMap()).toList(),
             );
             syncOk = true;
           } catch (lanErr) {
@@ -1662,11 +1735,20 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen>
   }
 
   Widget _buildStationFilterBar() {
-    final stationsSet = <String>{'ALL', 'Main Kitchen'};
+    final activeStaff = ref.watch(restaurantAuthProvider).activeStaff;
+    final assigned = activeStaff?.assignedStation.trim();
+
+    final stationsSet = <String>{'ALL', 'Main Kitchen', 'Tandoor & Starters', 'Bar & Beverages', 'Desserts'};
+    if (assigned != null && assigned.isNotEmpty && assigned.toLowerCase() != 'all') {
+      stationsSet.add(assigned);
+    }
     for (final o in [..._allOrders, ..._servedOrdersHistory]) {
       for (final item in o.items) {
         if (item.station != null && item.station!.trim().isNotEmpty) {
           stationsSet.add(item.station!.trim());
+        }
+        if (item.category != null && item.category!.trim().isNotEmpty) {
+          stationsSet.add(item.category!.trim());
         }
       }
     }
@@ -1690,6 +1772,26 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen>
               style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: context.textSecondary),
             ),
             const SizedBox(width: 8),
+            if (activeStaff?.role == StaffRole.kitchen && assigned != null && assigned.isNotEmpty && assigned.toLowerCase() != 'all')
+              Container(
+                margin: const EdgeInsets.only(right: 8),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: ClassicTheme.warningAmber.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: ClassicTheme.warningAmber.withValues(alpha: 0.5)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text('👨‍🍳 ', style: TextStyle(fontSize: 12)),
+                    Text(
+                      'Assigned: $assigned (${activeStaff!.name})',
+                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFFB45309)),
+                    ),
+                  ],
+                ),
+              ),
             ...stations.map((station) {
               final isSelected = _selectedStation.toUpperCase() == station.toUpperCase();
               return Padding(
@@ -1923,6 +2025,42 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen>
                         ),
                         overflow: TextOverflow.ellipsis,
                       ),
+                      const SizedBox(height: 3),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 3,
+                        children: [
+                          if (order.waiterName != null && order.waiterName!.isNotEmpty)
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: ClassicTheme.infoBlue.withValues(alpha: 0.1),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                '🧑‍💼 ${order.waiterName}',
+                                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: ClassicTheme.infoBlue),
+                              ),
+                            ),
+                          if (order.cookName != null && order.cookName!.isNotEmpty)
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: ClassicTheme.warningAmber.withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                '👨‍🍳 Chef: ${order.cookName}',
+                                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFFB45309)),
+                              ),
+                            ),
+                          if (order.effectiveWaitingSeconds > 0)
+                            Text(
+                              '⏳ Waited: ${(order.effectiveWaitingSeconds / 60).toStringAsFixed(1)}m',
+                              style: TextStyle(fontSize: 11, color: context.textSecondary),
+                            ),
+                        ],
+                      ),
                     ],
                   ),
                 ),
@@ -2125,8 +2263,13 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen>
                       ? Row(
                           children: [
                             Expanded(
-                              child: OutlinedButton(
+                              child: OutlinedButton.icon(
                                 onPressed: () => _updateOrderStatus(order, KotStatus.preparing),
+                                icon: const Icon(Icons.soup_kitchen_rounded, size: 14),
+                                label: const Text(
+                                  'PICK UP (COOK)',
+                                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11),
+                                ),
                                 style: OutlinedButton.styleFrom(
                                   foregroundColor: ClassicTheme.infoBlue,
                                   side: const BorderSide(color: ClassicTheme.infoBlue),
@@ -2135,16 +2278,17 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen>
                                     borderRadius: BorderRadius.circular(10),
                                   ),
                                 ),
-                                child: const Text(
-                                  'PREPARING',
-                                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
-                                ),
                               ),
                             ),
                             const SizedBox(width: 8),
                             Expanded(
-                              child: ElevatedButton(
+                              child: ElevatedButton.icon(
                                 onPressed: () => _updateOrderStatus(order, KotStatus.ready),
+                                icon: const Icon(Icons.check_circle_outline, size: 14),
+                                label: const Text(
+                                  'READY',
+                                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11),
+                                ),
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: ClassicTheme.successEmerald,
                                   foregroundColor: Colors.white,
@@ -2153,10 +2297,6 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen>
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(10),
                                   ),
-                                ),
-                                child: const Text(
-                                  'READY',
-                                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
                                 ),
                               ),
                             ),

@@ -65,6 +65,9 @@ class _RestaurantAnalyticsScreenState
   String _selectedStaffMemberId = 'ALL'; // 'ALL' or staff key
   List<Map<String, dynamic>> _staffPerformanceList = [];
   Map<String, Map<String, dynamic>> _categoryOverallMap = {};
+  List<Map<String, dynamic>> _dishPreparationTimes = [];
+  double _avgRestaurantWaitSec = 0.0;
+  double _avgRestaurantPrepSec = 0.0;
 
   @override
   void initState() {
@@ -669,24 +672,82 @@ class _RestaurantAnalyticsScreenState
       // 9. Staff Details Mapping & Category Breakdown Calculation
       final Map<String, Map<String, dynamic>> staffMap = {};
       final Map<String, Map<String, dynamic>> overallCatMap = {};
+      final Map<String, Map<String, dynamic>> dishTimingMap = {};
+      double totalWaitSecSum = 0.0;
+      int totalWaitOrdersCount = 0;
+      double totalPrepSecSum = 0.0;
+      int totalPrepDishesCount = 0;
 
       for (final t in filtered) {
         final amt = ((t['grandTotal'] ?? t['totalAmount'] ?? t['subtotal'] ?? 0.0) as num).toDouble();
         final items = t['items'];
         final List<Map<String, dynamic>> orderItems = [];
+
+        final orderWaitSec = ((t['waitingDurationSeconds'] ?? t['waiting_duration_seconds']) as num?)?.toDouble() ?? 0.0;
+        final orderPrepSec = ((t['prepDurationSeconds'] ?? t['prep_duration_seconds']) as num?)?.toDouble() ?? 0.0;
+        if (orderWaitSec > 0) {
+          totalWaitSecSum += orderWaitSec;
+          totalWaitOrdersCount++;
+        }
+        if (orderPrepSec > 0) {
+          totalPrepSecSum += orderPrepSec;
+          totalPrepDishesCount++;
+        }
+
         if (items is List) {
           for (final it in items) {
             if (it is Map) {
               final cat = (it['category'] ?? (it['subcategory'] ?? 'General')).toString();
               final q = ((it['quantity'] ?? it['qty'] ?? 1) as num).toInt();
               final p = ((it['price'] ?? 0.0) as num).toDouble();
-              orderItems.add({'category': cat, 'name': (it['name'] ?? '').toString(), 'qty': q, 'price': p, 'total': q * p});
+              final dName = (it['name'] ?? '').toString().trim();
+              final itemPrepSec = ((it['prepDurationSeconds'] ?? it['prep_duration_seconds']) as num?)?.toDouble() ??
+                  (it['preparedAt'] != null && it['prepStartedAt'] != null
+                      ? DateTime.tryParse(it['preparedAt'].toString())?.difference(DateTime.tryParse(it['prepStartedAt'].toString())!).inSeconds.toDouble() ?? orderPrepSec
+                      : orderPrepSec);
+
+              orderItems.add({
+                'category': cat,
+                'name': dName,
+                'qty': q,
+                'price': p,
+                'total': q * p,
+                'station': (it['station'] ?? '').toString(),
+                'prepDurationSeconds': itemPrepSec,
+                'preparedByChefName': (it['preparedByChefName'] ?? '').toString(),
+                'preparedByChefId': (it['preparedByChefId'] ?? '').toString(),
+              });
 
               if (!overallCatMap.containsKey(cat)) {
                 overallCatMap[cat] = {'name': cat, 'qty': 0, 'sales': 0.0};
               }
               overallCatMap[cat]!['qty'] = (overallCatMap[cat]!['qty'] as int) + q;
               overallCatMap[cat]!['sales'] = (overallCatMap[cat]!['sales'] as double) + (q * p);
+
+              if (dName.isNotEmpty) {
+                if (!dishTimingMap.containsKey(dName)) {
+                  dishTimingMap[dName] = {
+                    'name': dName,
+                    'category': cat,
+                    'count': 0,
+                    'totalPrepSec': 0.0,
+                    'avgPrepSec': 0.0,
+                    'fastestSec': 999999.0,
+                    'slowestSec': 0.0,
+                  };
+                }
+                final dtEntry = dishTimingMap[dName]!;
+                dtEntry['count'] = (dtEntry['count'] as int) + q;
+                if (itemPrepSec > 0) {
+                  dtEntry['totalPrepSec'] = (dtEntry['totalPrepSec'] as double) + (itemPrepSec * q);
+                  if (itemPrepSec < (dtEntry['fastestSec'] as double)) {
+                    dtEntry['fastestSec'] = itemPrepSec;
+                  }
+                  if (itemPrepSec > (dtEntry['slowestSec'] as double)) {
+                    dtEntry['slowestSec'] = itemPrepSec;
+                  }
+                }
+              }
             }
           }
         }
@@ -695,6 +756,10 @@ class _RestaurantAnalyticsScreenState
           required String role,
           required String id,
           required String name,
+          String? station,
+          double waitSec = 0.0,
+          double prepSec = 0.0,
+          List<Map<String, dynamic>>? preparedDishes,
         }) {
           if (id.isEmpty && name.isEmpty) return;
           final key = '${role}_${id.isNotEmpty ? id : name.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '')}';
@@ -707,14 +772,50 @@ class _RestaurantAnalyticsScreenState
               'name': sName,
               'role': role,
               'orders': 0,
+              'dishesCooked': 0,
               'sales': 0.0,
               'categories': <String, double>{},
               'categoryQty': <String, int>{},
+              'stations': <String>{},
+              'totalWaitingSec': 0.0,
+              'totalPrepSec': 0.0,
+              'completedCooksCount': 0,
+              'dishStats': <String, Map<String, dynamic>>{},
+              'ordersList': <Map<String, dynamic>>[],
             };
           }
           final entry = staffMap[key]!;
           entry['orders'] = (entry['orders'] as int) + 1;
           entry['sales'] = (entry['sales'] as double) + amt;
+          (entry['ordersList'] as List<Map<String, dynamic>>).add(t);
+
+          if (station != null && station.isNotEmpty) {
+            (entry['stations'] as Set<String>).add(station);
+          }
+
+          if (role == 'KITCHEN') {
+            if (waitSec > 0) {
+              entry['totalWaitingSec'] = (entry['totalWaitingSec'] as double) + waitSec;
+            }
+            if (prepSec > 0) {
+              entry['totalPrepSec'] = (entry['totalPrepSec'] as double) + prepSec;
+              entry['completedCooksCount'] = (entry['completedCooksCount'] as int) + 1;
+            }
+            if (preparedDishes != null && preparedDishes.isNotEmpty) {
+              final dStats = entry['dishStats'] as Map<String, Map<String, dynamic>>;
+              for (final pd in preparedDishes) {
+                final dn = (pd['name'] ?? '').toString();
+                final pq = (pd['qty'] as num?)?.toInt() ?? 1;
+                final ps = (pd['prepDurationSeconds'] as num?)?.toDouble() ?? prepSec;
+                entry['dishesCooked'] = (entry['dishesCooked'] as int) + pq;
+                if (!dStats.containsKey(dn)) {
+                  dStats[dn] = {'name': dn, 'category': pd['category'] ?? '', 'count': 0, 'totalPrepSec': 0.0};
+                }
+                dStats[dn]!['count'] = (dStats[dn]!['count'] as int) + pq;
+                dStats[dn]!['totalPrepSec'] = (dStats[dn]!['totalPrepSec'] as double) + (ps * pq);
+              }
+            }
+          }
 
           final cats = entry['categories'] as Map<String, double>;
           final qtys = entry['categoryQty'] as Map<String, int>;
@@ -734,11 +835,38 @@ class _RestaurantAnalyticsScreenState
           attributeStaff(role: 'WAITER', id: wId, name: wName);
         }
 
-        // Cook attribution
+        // Cook attribution (order level)
         final cName = (t['cookName'] ?? t['chefName'] ?? '').toString().trim();
         final cId = (t['cookId'] ?? '').toString().trim();
+        final cStation = (t['kitchenStation'] ?? t['station'] ?? '').toString().trim();
         if (cName.isNotEmpty || cId.isNotEmpty) {
-          attributeStaff(role: 'KITCHEN', id: cId, name: cName);
+          attributeStaff(
+            role: 'KITCHEN',
+            id: cId,
+            name: cName,
+            station: cStation,
+            waitSec: orderWaitSec,
+            prepSec: orderPrepSec,
+            preparedDishes: orderItems,
+          );
+        }
+
+        // Item-level chef attribution
+        for (final oi in orderItems) {
+          final itemChefName = (oi['preparedByChefName'] ?? '').toString().trim();
+          final itemChefId = (oi['preparedByChefId'] ?? '').toString().trim();
+          final itemStation = (oi['station'] ?? '').toString().trim();
+          if (itemChefName.isNotEmpty && itemChefName != cName) {
+            attributeStaff(
+              role: 'KITCHEN',
+              id: itemChefId,
+              name: itemChefName,
+              station: itemStation,
+              waitSec: orderWaitSec,
+              prepSec: (oi['prepDurationSeconds'] as num?)?.toDouble() ?? 0.0,
+              preparedDishes: [oi],
+            );
+          }
         }
 
         // Cashier / Billing attribution
@@ -749,8 +877,33 @@ class _RestaurantAnalyticsScreenState
         }
       }
 
+      // Compute averages for dishes
+      final List<Map<String, dynamic>> dishTimingList = [];
+      for (final dt in dishTimingMap.values) {
+        final count = dt['count'] as int;
+        final totPrep = dt['totalPrepSec'] as double;
+        dt['avgPrepSec'] = count > 0 && totPrep > 0 ? (totPrep / count) : 0.0;
+        if ((dt['fastestSec'] as double) >= 999999.0) dt['fastestSec'] = 0.0;
+        dishTimingList.add(dt);
+      }
+      dishTimingList.sort((a, b) => (b['count'] as int).compareTo(a['count'] as int));
+
+      // Compute chef averages
+      for (final st in staffMap.values) {
+        if (st['role'] == 'KITCHEN') {
+          final cooks = st['completedCooksCount'] as int;
+          final totWait = st['totalWaitingSec'] as double;
+          final totPrep = st['totalPrepSec'] as double;
+          st['avgWaitingSec'] = cooks > 0 ? (totWait / cooks) : 0.0;
+          st['avgPrepSec'] = cooks > 0 ? (totPrep / cooks) : 0.0;
+        }
+      }
+
       final staffList = staffMap.values.toList()
         ..sort((a, b) => (b['sales'] as double).compareTo(a['sales'] as double));
+
+      final avgRWait = totalWaitOrdersCount > 0 ? (totalWaitSecSum / totalWaitOrdersCount) : 0.0;
+      final avgRPrep = totalPrepDishesCount > 0 ? (totalPrepSecSum / totalPrepDishesCount) : 0.0;
 
       if (mounted) {
         setState(() {
@@ -764,6 +917,9 @@ class _RestaurantAnalyticsScreenState
           _previousPeriodRevenue = (prevCount > 0 && prevRevenue > 0) ? prevRevenue : null;
           _staffPerformanceList = staffList;
           _categoryOverallMap = overallCatMap;
+          _dishPreparationTimes = dishTimingList;
+          _avgRestaurantWaitSec = avgRWait;
+          _avgRestaurantPrepSec = avgRPrep;
         });
       }
     } catch (e) {
@@ -1696,103 +1852,740 @@ class _RestaurantAnalyticsScreenState
               final roleColor = role == 'WAITER' ? amberAccent : (role == 'KITCHEN' ? coralAccent : emeraldAccent);
               final roleLabel = role == 'WAITER' ? 'Waiter / Steward' : (role == 'KITCHEN' ? 'Kitchen Chef' : 'Cashier / Billing');
               final cats = (staff['categories'] as Map<String, double>? ?? {});
+              final isKitchen = role == 'KITCHEN';
+              final isWaiter = role == 'WAITER';
+              final avgPrep = (staff['avgPrepSec'] as double? ?? 0.0);
+              final avgWait = (staff['avgWaitingSec'] as double? ?? 0.0);
+              final stations = (staff['stations'] as Set? ?? {});
 
               return Container(
                 margin: const EdgeInsets.only(bottom: 8),
-                padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
                   color: context.canvasColor,
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(color: context.borderColor),
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
+                child: Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(12),
+                    onTap: () => _showStaffDetailsModal(staff),
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              CircleAvatar(
+                                radius: 18,
+                                backgroundColor: roleColor.withValues(alpha: 0.15),
+                                child: Text(
+                                  (staff['name'] ?? 'S')[0].toUpperCase(),
+                                  style: TextStyle(color: roleColor, fontWeight: FontWeight.bold, fontSize: 14),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Flexible(
+                                          child: Text(
+                                            staff['name'] ?? 'Staff',
+                                            style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: context.textPrimary),
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                          decoration: BoxDecoration(
+                                            color: roleColor.withValues(alpha: 0.15),
+                                            borderRadius: BorderRadius.circular(4),
+                                          ),
+                                          child: Text(
+                                            roleLabel,
+                                            style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: roleColor),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      'Staff ID: ${staff['id']}',
+                                      style: TextStyle(fontSize: 11, color: context.textSecondary),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.end,
+                                children: [
+                                  if (isWaiter || !isKitchen) ...[
+                                    Text(
+                                      '₹${(staff['sales'] as double).toStringAsFixed(0)}',
+                                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: context.textPrimary),
+                                    ),
+                                    Text(
+                                      '${staff['orders']} orders taken',
+                                      style: TextStyle(fontSize: 11, color: context.textSecondary),
+                                    ),
+                                  ] else ...[
+                                    Text(
+                                      '${staff['dishesCooked'] ?? staff['orders']} Dishes',
+                                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: coralAccent),
+                                    ),
+                                    Text(
+                                      avgPrep > 0 ? 'Avg: ${_formatDurationSec(avgPrep)}' : '${staff['orders']} orders',
+                                      style: TextStyle(fontSize: 11, color: context.textSecondary),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                              const SizedBox(width: 6),
+                              Icon(Icons.chevron_right_rounded, color: context.textSecondary, size: 18),
+                            ],
+                          ),
+                          if (isKitchen) ...[
+                            const SizedBox(height: 8),
+                            Wrap(
+                              spacing: 6,
+                              runSpacing: 4,
+                              children: [
+                                if (avgPrep > 0)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: amberAccent.withValues(alpha: 0.15),
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        const Icon(Icons.timer_outlined, size: 11, color: Colors.orange),
+                                        const SizedBox(width: 4),
+                                        Text('Cooking: ${_formatDurationSec(avgPrep)}', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.orange)),
+                                      ],
+                                    ),
+                                  ),
+                                if (avgWait > 0)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: ClassicTheme.infoBlue.withValues(alpha: 0.15),
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        const Icon(Icons.hourglass_top_rounded, size: 11, color: ClassicTheme.infoBlue),
+                                        const SizedBox(width: 4),
+                                        Text('Wait: ${_formatDurationSec(avgWait)}', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: ClassicTheme.infoBlue)),
+                                      ],
+                                    ),
+                                  ),
+                                if (stations.isNotEmpty)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: context.surfaceColor,
+                                      borderRadius: BorderRadius.circular(4),
+                                      border: Border.all(color: context.borderColor),
+                                    ),
+                                    child: Text(
+                                      'Station: ${stations.join(", ")}',
+                                      style: TextStyle(fontSize: 10, color: context.textSecondary),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ],
+                          if (cats.isNotEmpty) ...[
+                            const SizedBox(height: 8),
+                            const Divider(height: 1),
+                            const SizedBox(height: 8),
+                            Wrap(
+                              spacing: 6,
+                              runSpacing: 4,
+                              children: cats.entries.take(4).map((ce) {
+                                return Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: context.surfaceColor,
+                                    borderRadius: BorderRadius.circular(4),
+                                    border: Border.all(color: context.borderColor),
+                                  ),
+                                  child: Text(
+                                    '${ce.key}: ₹${ce.value.toStringAsFixed(0)}',
+                                    style: TextStyle(fontSize: 11, color: context.textSecondary),
+                                  ),
+                                );
+                              }).toList(),
+                            ),
+                          ],
+                          const SizedBox(height: 6),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: [
+                              Text(
+                                isKitchen ? 'View dishes cooked & timing breakdown' : 'View orders list & details',
+                                style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: ClassicTheme.infoBlue),
+                              ),
+                              const SizedBox(width: 2),
+                              const Icon(Icons.arrow_forward_rounded, size: 10, color: ClassicTheme.infoBlue),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            }),
+
+          // ── KITCHEN SPEED & DISH PREPARATION TIMES SECTION ─────────
+          if (_dishPreparationTimes.isNotEmpty) ...[
+            const SizedBox(height: 24),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: context.surfaceColor,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: context.borderColor),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(6),
+                            decoration: BoxDecoration(
+                              color: coralAccent.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Icon(Icons.soup_kitchen_rounded, size: 18, color: coralAccent),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Kitchen Preparation Times & Dish Durations',
+                            style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: context.textPrimary),
+                          ),
+                        ],
+                      ),
+                      Text(
+                        '${_dishPreparationTimes.length} Dishes Tracked',
+                        style: TextStyle(fontSize: 11, color: context.textSecondary),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  // Overall kitchen benchmarks
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: context.canvasColor,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: context.borderColor),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('AVG WAIT BEFORE PREP', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: context.textSecondary)),
+                              const SizedBox(height: 4),
+                              Text(_formatDurationSec(_avgRestaurantWaitSec), style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: ClassicTheme.infoBlue)),
+                              Text('Placement to chef pickup', style: TextStyle(fontSize: 9, color: context.textSecondary)),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: context.canvasColor,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: context.borderColor),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('AVG COOKING TIME', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: context.textSecondary)),
+                              const SizedBox(height: 4),
+                              Text(_formatDurationSec(_avgRestaurantPrepSec), style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: coralAccent)),
+                              Text('Pickup to food ready', style: TextStyle(fontSize: 9, color: context.textSecondary)),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  Text('Dish-by-Dish Preparation Register', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: context.textPrimary)),
+                  const SizedBox(height: 8),
+                  Container(
+                    decoration: BoxDecoration(
+                      color: context.canvasColor,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: context.borderColor),
+                    ),
+                    child: Column(
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          child: Row(
+                            children: [
+                              Expanded(flex: 3, child: Text('Dish', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: context.textSecondary))),
+                              Expanded(flex: 2, child: Text('Category', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: context.textSecondary))),
+                              Expanded(flex: 1, child: Text('Cooked', textAlign: TextAlign.center, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: context.textSecondary))),
+                              Expanded(flex: 2, child: Text('Avg Prep', textAlign: TextAlign.right, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: context.textSecondary))),
+                            ],
+                          ),
+                        ),
+                        const Divider(height: 1),
+                        ..._dishPreparationTimes.take(12).map((dish) {
+                          final avgSec = (dish['avgPrepSec'] as double? ?? 0.0);
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  flex: 3,
+                                  child: Text(dish['name'] ?? '', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12, color: context.textPrimary)),
+                                ),
+                                Expanded(
+                                  flex: 2,
+                                  child: Text(dish['category'] ?? '', style: TextStyle(fontSize: 11, color: context.textSecondary), overflow: TextOverflow.ellipsis),
+                                ),
+                                Expanded(
+                                  flex: 1,
+                                  child: Text('${dish['count']}', textAlign: TextAlign.center, style: TextStyle(fontSize: 12, color: context.textPrimary)),
+                                ),
+                                Expanded(
+                                  flex: 2,
+                                  child: Text(
+                                    avgSec > 0 ? _formatDurationSec(avgSec) : '—',
+                                    textAlign: TextAlign.right,
+                                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: avgSec > 600 ? Colors.red : coralAccent),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        }),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  String _formatDurationSec(double sec) {
+    if (sec <= 0) return '—';
+    final m = (sec / 60).floor();
+    final s = (sec % 60).round();
+    if (m == 0) return '${s}s';
+    return '${m}m ${s}s';
+  }
+
+  void _showStaffDetailsModal(Map<String, dynamic> staff) {
+    final role = (staff['role'] ?? 'STAFF').toString();
+    final roleColor = role == 'WAITER' ? amberAccent : (role == 'KITCHEN' ? coralAccent : emeraldAccent);
+    final roleLabel = role == 'WAITER' ? 'Waiter / Steward' : (role == 'KITCHEN' ? 'Kitchen Chef' : 'Cashier / Billing');
+    final ordersList = (staff['ordersList'] as List<Map<String, dynamic>>? ?? []);
+    final dishStats = (staff['dishStats'] as Map<String, Map<String, dynamic>>? ?? {});
+    final sortedDishes = dishStats.values.toList()
+      ..sort((a, b) => (b['count'] as int).compareTo(a['count'] as int));
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return DraggableScrollableSheet(
+          initialChildSize: 0.85,
+          maxChildSize: 0.95,
+          minChildSize: 0.5,
+          builder: (_, scrollController) {
+            return Container(
+              decoration: BoxDecoration(
+                color: context.surfaceColor,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+              ),
+              child: Column(
+                children: [
+                  Container(
+                    margin: const EdgeInsets.only(top: 10, bottom: 6),
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: context.borderColor,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 8, 16, 12),
+                    child: Row(
                       children: [
                         CircleAvatar(
-                          radius: 18,
+                          radius: 22,
                           backgroundColor: roleColor.withValues(alpha: 0.15),
                           child: Text(
                             (staff['name'] ?? 'S')[0].toUpperCase(),
-                            style: TextStyle(color: roleColor, fontWeight: FontWeight.bold, fontSize: 14),
+                            style: TextStyle(color: roleColor, fontWeight: FontWeight.bold, fontSize: 18),
                           ),
                         ),
-                        const SizedBox(width: 10),
+                        const SizedBox(width: 14),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Row(
                                 children: [
-                                  Text(
-                                    staff['name'] ?? 'Staff',
-                                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: context.textPrimary),
+                                  Flexible(
+                                    child: Text(
+                                      staff['name'] ?? 'Staff',
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.bold,
+                                        color: context.textPrimary,
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
                                   ),
                                   const SizedBox(width: 8),
                                   Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                                     decoration: BoxDecoration(
                                       color: roleColor.withValues(alpha: 0.15),
-                                      borderRadius: BorderRadius.circular(4),
+                                      borderRadius: BorderRadius.circular(6),
                                     ),
                                     child: Text(
                                       roleLabel,
-                                      style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: roleColor),
+                                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: roleColor),
                                     ),
                                   ),
                                 ],
                               ),
                               const SizedBox(height: 2),
                               Text(
-                                'Staff ID: ${staff['id']}',
-                                style: TextStyle(fontSize: 11, color: context.textSecondary),
+                                'Staff ID: ${staff['id']} • ${ordersList.length} total orders recorded',
+                                style: TextStyle(fontSize: 12, color: context.textSecondary),
                               ),
                             ],
                           ),
                         ),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            Text(
-                              '₹${(staff['sales'] as double).toStringAsFixed(0)}',
-                              style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: context.textPrimary),
-                            ),
-                            Text(
-                              '${staff['orders']} orders handled',
-                              style: TextStyle(fontSize: 11, color: context.textSecondary),
-                            ),
-                          ],
+                        IconButton(
+                          icon: const Icon(Icons.close_rounded),
+                          onPressed: () => Navigator.pop(ctx),
                         ),
                       ],
                     ),
-                    if (cats.isNotEmpty) ...[
-                      const SizedBox(height: 8),
-                      const Divider(height: 1),
-                      const SizedBox(height: 8),
-                      Wrap(
-                        spacing: 6,
-                        runSpacing: 4,
-                        children: cats.entries.take(4).map((ce) {
-                          return Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: context.surfaceColor,
-                              borderRadius: BorderRadius.circular(4),
-                              border: Border.all(color: context.borderColor),
+                  ),
+                  const Divider(height: 1),
+                  Expanded(
+                    child: ListView(
+                      controller: scrollController,
+                      padding: const EdgeInsets.all(20),
+                      children: [
+                        if (role == 'KITCHEN') ...[
+                          Row(
+                            children: [
+                              Expanded(
+                                child: _buildKpiMiniCard(
+                                  label: 'DISHES COOKED',
+                                  value: '${staff['dishesCooked'] ?? staff['orders']}',
+                                  icon: Icons.soup_kitchen_rounded,
+                                  color: coralAccent,
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: _buildKpiMiniCard(
+                                  label: 'AVG COOK TIME',
+                                  value: _formatDurationSec((staff['avgPrepSec'] as double? ?? 0.0)),
+                                  icon: Icons.timer_outlined,
+                                  color: amberAccent,
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: _buildKpiMiniCard(
+                                  label: 'AVG WAIT TIME',
+                                  value: _formatDurationSec((staff['avgWaitingSec'] as double? ?? 0.0)),
+                                  icon: Icons.hourglass_top_rounded,
+                                  color: ClassicTheme.infoBlue,
+                                ),
+                              ),
+                            ],
+                          ),
+                          if ((staff['stations'] as Set? ?? {}).isNotEmpty) ...[
+                            const SizedBox(height: 12),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: context.canvasColor,
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(color: context.borderColor),
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(Icons.countertops_rounded, size: 16, color: coralAccent),
+                                  const SizedBox(width: 8),
+                                  Text('Kitchen Stations: ', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: context.textPrimary)),
+                                  Expanded(
+                                    child: Text(
+                                      (staff['stations'] as Set).join(', '),
+                                      style: TextStyle(fontSize: 12, color: context.textSecondary),
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
-                            child: Text(
-                              '${ce.key}: ₹${ce.value.toStringAsFixed(0)}',
-                              style: TextStyle(fontSize: 11, color: context.textSecondary),
+                          ],
+                          if (sortedDishes.isNotEmpty) ...[
+                            const SizedBox(height: 20),
+                            Text(
+                              'Dishes Prepared & Average Cooking Times',
+                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: context.textPrimary),
                             ),
-                          );
-                        }).toList(),
-                      ),
-                    ],
-                  ],
+                            const SizedBox(height: 10),
+                            Container(
+                              decoration: BoxDecoration(
+                                color: context.canvasColor,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: context.borderColor),
+                              ),
+                              child: Column(
+                                children: [
+                                  Padding(
+                                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                                    child: Row(
+                                      children: [
+                                        Expanded(flex: 3, child: Text('Dish Name', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: context.textSecondary))),
+                                        Expanded(flex: 1, child: Text('Quantity', textAlign: TextAlign.center, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: context.textSecondary))),
+                                        Expanded(flex: 2, child: Text('Avg Cooking Time', textAlign: TextAlign.right, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: context.textSecondary))),
+                                      ],
+                                    ),
+                                  ),
+                                  const Divider(height: 1),
+                                  ...sortedDishes.map((d) {
+                                    final dCount = d['count'] as int;
+                                    final dTotalSec = (d['totalPrepSec'] as num?)?.toDouble() ?? 0.0;
+                                    final dAvgSec = dCount > 0 ? (dTotalSec / dCount) : 0.0;
+                                    return Padding(
+                                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                                      child: Row(
+                                        children: [
+                                          Expanded(
+                                            flex: 3,
+                                            child: Text(d['name'] ?? '', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12, color: context.textPrimary)),
+                                          ),
+                                          Expanded(
+                                            flex: 1,
+                                            child: Text('$dCount', textAlign: TextAlign.center, style: TextStyle(fontSize: 12, color: context.textPrimary)),
+                                          ),
+                                          Expanded(
+                                            flex: 2,
+                                            child: Text(_formatDurationSec(dAvgSec), textAlign: TextAlign.right, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: coralAccent)),
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                  }),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ] else if (role == 'WAITER') ...[
+                          Row(
+                            children: [
+                              Expanded(
+                                child: _buildKpiMiniCard(
+                                  label: 'TOTAL SALES',
+                                  value: '₹${(staff['sales'] as double).toStringAsFixed(0)}',
+                                  icon: Icons.currency_rupee_rounded,
+                                  color: ClassicTheme.successEmerald,
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: _buildKpiMiniCard(
+                                  label: 'ORDERS TAKEN',
+                                  value: '${staff['orders']}',
+                                  icon: Icons.receipt_long_rounded,
+                                  color: amberAccent,
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: _buildKpiMiniCard(
+                                  label: 'AVERAGE TICKET',
+                                  value: (staff['orders'] as int) > 0 ? '₹${((staff['sales'] as double) / (staff['orders'] as int)).toStringAsFixed(0)}' : '₹0',
+                                  icon: Icons.trending_up_rounded,
+                                  color: ClassicTheme.infoBlue,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                        const SizedBox(height: 24),
+                        Row(
+                          children: [
+                            Text(
+                              role == 'WAITER' ? 'Orders Taken by ${staff['name']}' : (role == 'KITCHEN' ? 'Orders Prepared by ${staff['name']}' : 'Transactions Handled'),
+                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: context.textPrimary),
+                            ),
+                            const Spacer(),
+                            Text('${ordersList.length} Orders', style: TextStyle(fontSize: 12, color: context.textSecondary)),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        if (ordersList.isEmpty)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 30),
+                            child: Center(
+                              child: Text('No order records available for this period.', style: TextStyle(color: context.textSecondary)),
+                            ),
+                          )
+                        else
+                          ...ordersList.map((ord) {
+                            final oToken = ord['kotNumber'] ?? ord['token'] ?? ord['id'] ?? '';
+                            final oTable = ord['tableName'] ?? ord['tableNumber'] ?? ord['table'] ?? 'Table';
+                            final oAmt = ((ord['grandTotal'] ?? ord['totalAmount'] ?? ord['total_amount'] ?? ord['subtotal'] ?? 0.0) as num).toDouble();
+                            final oCust = (ord['customerName'] ?? ord['customer_name'] ?? '').toString();
+                            final oPhone = (ord['customerPhone'] ?? ord['customer_phone'] ?? '').toString();
+                            final oTime = (ord['createdAt'] ?? ord['timestamp'] ?? ord['firedAt'] ?? '').toString();
+                            final oItems = ord['items'] as List? ?? [];
+
+                            return Container(
+                              margin: const EdgeInsets.only(bottom: 10),
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: context.canvasColor,
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(color: context.borderColor),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                        decoration: BoxDecoration(
+                                          color: roleColor.withValues(alpha: 0.15),
+                                          borderRadius: BorderRadius.circular(6),
+                                        ),
+                                        child: Text(
+                                          'KOT #$oToken',
+                                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: roleColor),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Text(
+                                        oTable.toString(),
+                                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: context.textPrimary),
+                                      ),
+                                      const Spacer(),
+                                      Text(
+                                        '₹${oAmt.toStringAsFixed(0)}',
+                                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: ClassicTheme.successEmerald),
+                                      ),
+                                    ],
+                                  ),
+                                  if (oCust.isNotEmpty && oCust.toLowerCase() != 'guest') ...[
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      'Customer: $oCust${oPhone.isNotEmpty ? " ($oPhone)" : ""}',
+                                      style: TextStyle(fontSize: 11, color: context.textSecondary),
+                                    ),
+                                  ],
+                                  if (oTime.isNotEmpty) ...[
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      'Time: ${oTime.contains("T") ? oTime.split("T").last.split(".").first : oTime}',
+                                      style: TextStyle(fontSize: 11, color: context.textSecondary),
+                                    ),
+                                  ],
+                                  const SizedBox(height: 8),
+                                  const Divider(height: 1),
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    oItems.map((i) {
+                                      if (i is Map) {
+                                        return '${i['name'] ?? 'Item'} x${i['qty'] ?? i['quantity'] ?? 1}';
+                                      }
+                                      return i.toString();
+                                    }).join(' • '),
+                                    style: TextStyle(fontSize: 12, color: context.textPrimary),
+                                  ),
+                                ],
+                              ),
+                            );
+                          }),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildKpiMiniCard({
+    required String label,
+    required String value,
+    required IconData icon,
+    required Color color,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+      decoration: BoxDecoration(
+        color: context.canvasColor,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: context.borderColor),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 14, color: color),
+              const SizedBox(width: 4),
+              Expanded(
+                child: Text(
+                  label,
+                  style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: context.textSecondary),
+                  overflow: TextOverflow.ellipsis,
                 ),
-              );
-            }),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            value,
+            style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: color),
+            overflow: TextOverflow.ellipsis,
+          ),
         ],
       ),
     );
@@ -2413,7 +3206,7 @@ class _RestaurantAnalyticsScreenState
 
     final maxRevenue = _perStoreData.fold<double>(
       1.0,
-      (prev, s) => max(prev, (s['revenue'] as double)),
+      (prev, s) => max<double>(prev, (s['revenue'] as double)),
     );
 
     final totalFranchiseGmv = _perStoreData.fold<double>(

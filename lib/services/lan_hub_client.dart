@@ -284,7 +284,7 @@ class LanHubClient {
   }
 
   /// Sets the kitchen stage of one order on the host (PENDING, PREPARING,
-  /// READY, SERVED).
+  /// READY, SERVED) with full chef, station, and timestamp tracking.
   Future<Map<String, dynamic>?> setKdsStatus({
     required String orderId,
     required String kitchenStatus,
@@ -292,6 +292,12 @@ class LanHubClient {
     String? kotNumber,
     String? cookId,
     String? cookName,
+    DateTime? prepStartedAt,
+    DateTime? readyAt,
+    DateTime? completedAt,
+    DateTime? servedAt,
+    String? station,
+    List<Map<String, dynamic>>? items,
   }) async {
     final d = await post('/api/v1/kds/status', {
       'orderId': orderId,
@@ -300,6 +306,12 @@ class LanHubClient {
       if (kotNumber != null) 'kotNumber': kotNumber,
       if (cookId != null) 'cookId': cookId,
       if (cookName != null) 'cookName': cookName,
+      if (prepStartedAt != null) 'prepStartedAt': prepStartedAt.toIso8601String(),
+      if (readyAt != null) 'readyAt': readyAt.toIso8601String(),
+      if (completedAt != null) 'completedAt': completedAt.toIso8601String(),
+      if (servedAt != null) 'servedAt': servedAt.toIso8601String(),
+      if (station != null) 'kitchenStation': station,
+      if (items != null) 'items': items,
     });
     return d is Map ? Map<String, dynamic>.from(d) : null;
   }

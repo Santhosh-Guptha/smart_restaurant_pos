@@ -713,7 +713,13 @@ class _RestaurantOwnerExecutiveDashboardScreenState
     // Calculate Waiter & Cook metrics
     final Map<String, int> waiterOrders = {};
     final Map<String, double> waiterSales = {};
+    final Map<String, List<KotOrder>> waiterOrdersList = {};
+
     final Map<String, int> cookDishes = {};
+    final Map<String, List<KotOrder>> cookOrdersList = {};
+    final Map<String, double> cookTotalPrepSec = {};
+    final Map<String, int> cookPrepCounts = {};
+    final Map<String, Map<String, dynamic>> dishTimingMap = {};
 
     for (final order in _orders) {
       if (order.status != KotStatus.cancelled) {
@@ -721,14 +727,44 @@ class _RestaurantOwnerExecutiveDashboardScreenState
         waiterOrders[wName] = (waiterOrders[wName] ?? 0) + 1;
         final amt = order.totalAmount > 0 ? order.totalAmount : (order.subtotal ?? 0.0);
         waiterSales[wName] = (waiterSales[wName] ?? 0.0) + amt;
+        waiterOrdersList.putIfAbsent(wName, () => []).add(order);
 
-        final cName = order.paidBy?.trim().isNotEmpty == true ? order.paidBy! : 'Kitchen Chef';
-        cookDishes[cName] = (cookDishes[cName] ?? 0) + order.items.fold(0, (s, i) => s + i.qty.toInt());
+        final orderChef = (order.cookName?.trim().isNotEmpty == true
+            ? order.cookName!
+            : (order.chefName?.trim().isNotEmpty == true ? order.chefName! : '')).trim();
+
+        final orderPrepSec = (order.prepDurationSeconds ?? 0).toDouble();
+
+        for (final item in order.items) {
+          final itemChef = (item.preparedByChefName?.trim().isNotEmpty == true
+              ? item.preparedByChefName!
+              : (orderChef.isNotEmpty ? orderChef : 'Kitchen Staff')).trim();
+          final q = item.qty.toInt();
+          cookDishes[itemChef] = (cookDishes[itemChef] ?? 0) + q;
+          cookOrdersList.putIfAbsent(itemChef, () => []).add(order);
+
+          final itemPrepSec = (item.prepDurationSeconds ?? orderPrepSec).toDouble();
+          if (itemPrepSec > 0) {
+            cookTotalPrepSec[itemChef] = (cookTotalPrepSec[itemChef] ?? 0.0) + (itemPrepSec * q);
+            cookPrepCounts[itemChef] = (cookPrepCounts[itemChef] ?? 0) + q;
+          }
+
+          if (item.name.isNotEmpty) {
+            dishTimingMap.putIfAbsent(item.name, () => {'name': item.name, 'count': 0, 'totalPrepSec': 0.0});
+            dishTimingMap[item.name]!['count'] = (dishTimingMap[item.name]!['count'] as int) + q;
+            if (itemPrepSec > 0) {
+              dishTimingMap[item.name]!['totalPrepSec'] = (dishTimingMap[item.name]!['totalPrepSec'] as double) + (itemPrepSec * q);
+            }
+          }
+        }
       }
     }
 
     final activeStaffCount = _staffMembers.where((s) => s.isActive).length;
     final inactiveStaffCount = _staffMembers.where((s) => !s.isActive).length;
+
+    final dishTimingsList = dishTimingMap.values.toList()
+      ..sort((a, b) => (b['count'] as int).compareTo(a['count'] as int));
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(20),
@@ -774,7 +810,13 @@ class _RestaurantOwnerExecutiveDashboardScreenState
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text('Waiter Order Taking & Sales Throughput', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: context.textPrimary)),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Waiter Order Taking & Sales Throughput', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: context.textPrimary)),
+                        Text('Click any waiter row to view order details & dishes', style: TextStyle(fontSize: 11, color: context.textSecondary)),
+                      ],
+                    ),
                     const Icon(Icons.person_pin_rounded, color: ClassicTheme.infoBlue, size: 20),
                   ],
                 ),
@@ -790,6 +832,7 @@ class _RestaurantOwnerExecutiveDashboardScreenState
                       0: FlexColumnWidth(3),
                       1: FlexColumnWidth(1.5),
                       2: FlexColumnWidth(2),
+                      3: FlexColumnWidth(0.8),
                     },
                     children: [
                       TableRow(
@@ -798,15 +841,30 @@ class _RestaurantOwnerExecutiveDashboardScreenState
                           Padding(padding: const EdgeInsets.only(bottom: 8), child: Text('Staff Member', style: TextStyle(fontWeight: FontWeight.bold, color: context.textSecondary, fontSize: 12))),
                           Padding(padding: const EdgeInsets.only(bottom: 8), child: Text('Orders Taken', style: TextStyle(fontWeight: FontWeight.bold, color: context.textSecondary, fontSize: 12), textAlign: TextAlign.right)),
                           Padding(padding: const EdgeInsets.only(bottom: 8), child: Text('Sales Generated', style: TextStyle(fontWeight: FontWeight.bold, color: context.textSecondary, fontSize: 12), textAlign: TextAlign.right)),
+                          Padding(padding: const EdgeInsets.only(bottom: 8), child: Text('View', style: TextStyle(fontWeight: FontWeight.bold, color: context.textSecondary, fontSize: 12), textAlign: TextAlign.right)),
                         ],
                       ),
                       ...waiterOrders.entries.map((e) {
                         final sales = waiterSales[e.key] ?? 0.0;
+                        final ordersForW = waiterOrdersList[e.key] ?? [];
                         return TableRow(
                           children: [
-                            Padding(padding: const EdgeInsets.symmetric(vertical: 10), child: Text(e.key, style: TextStyle(fontWeight: FontWeight.w600, color: context.textPrimary))),
-                            Padding(padding: const EdgeInsets.symmetric(vertical: 10), child: Text('${e.value} Orders', style: TextStyle(fontWeight: FontWeight.bold, color: context.textPrimary), textAlign: TextAlign.right)),
-                            Padding(padding: const EdgeInsets.symmetric(vertical: 10), child: Text('₹${sales.toStringAsFixed(0)}', style: TextStyle(fontWeight: FontWeight.bold, color: ClassicTheme.successEmerald), textAlign: TextAlign.right)),
+                            InkWell(
+                              onTap: () => _showWaiterOrdersModal(e.key, e.value, sales, ordersForW),
+                              child: Padding(padding: const EdgeInsets.symmetric(vertical: 10), child: Text(e.key, style: TextStyle(fontWeight: FontWeight.w600, color: context.textPrimary))),
+                            ),
+                            InkWell(
+                              onTap: () => _showWaiterOrdersModal(e.key, e.value, sales, ordersForW),
+                              child: Padding(padding: const EdgeInsets.symmetric(vertical: 10), child: Text('${e.value} Orders', style: TextStyle(fontWeight: FontWeight.bold, color: context.textPrimary), textAlign: TextAlign.right)),
+                            ),
+                            InkWell(
+                              onTap: () => _showWaiterOrdersModal(e.key, e.value, sales, ordersForW),
+                              child: Padding(padding: const EdgeInsets.symmetric(vertical: 10), child: Text('₹${sales.toStringAsFixed(0)}', style: const TextStyle(fontWeight: FontWeight.bold, color: ClassicTheme.successEmerald), textAlign: TextAlign.right)),
+                            ),
+                            InkWell(
+                              onTap: () => _showWaiterOrdersModal(e.key, e.value, sales, ordersForW),
+                              child: const Padding(padding: EdgeInsets.symmetric(vertical: 10), child: Icon(Icons.chevron_right_rounded, size: 18, color: ClassicTheme.infoBlue)),
+                            ),
                           ],
                         );
                       }),
@@ -830,7 +888,13 @@ class _RestaurantOwnerExecutiveDashboardScreenState
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text('Kitchen Chef Preparation Volume', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: context.textPrimary)),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Kitchen Chef Preparation Volume & Speed', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: context.textPrimary)),
+                        Text('Click any chef to inspect dish timing & order assignments', style: TextStyle(fontSize: 11, color: context.textSecondary)),
+                      ],
+                    ),
                     const Icon(Icons.soup_kitchen_rounded, color: ClassicTheme.warningAmber, size: 20),
                   ],
                 ),
@@ -843,8 +907,10 @@ class _RestaurantOwnerExecutiveDashboardScreenState
                 else
                   Table(
                     columnWidths: const {
-                      0: FlexColumnWidth(3),
-                      1: FlexColumnWidth(2),
+                      0: FlexColumnWidth(2.5),
+                      1: FlexColumnWidth(1.5),
+                      2: FlexColumnWidth(2),
+                      3: FlexColumnWidth(0.8),
                     },
                     children: [
                       TableRow(
@@ -852,13 +918,34 @@ class _RestaurantOwnerExecutiveDashboardScreenState
                         children: [
                           Padding(padding: const EdgeInsets.only(bottom: 8), child: Text('Cook / Chef', style: TextStyle(fontWeight: FontWeight.bold, color: context.textSecondary, fontSize: 12))),
                           Padding(padding: const EdgeInsets.only(bottom: 8), child: Text('Dishes Cooked', style: TextStyle(fontWeight: FontWeight.bold, color: context.textSecondary, fontSize: 12), textAlign: TextAlign.right)),
+                          Padding(padding: const EdgeInsets.only(bottom: 8), child: Text('Avg Cooking Time', style: TextStyle(fontWeight: FontWeight.bold, color: context.textSecondary, fontSize: 12), textAlign: TextAlign.right)),
+                          Padding(padding: const EdgeInsets.only(bottom: 8), child: Text('View', style: TextStyle(fontWeight: FontWeight.bold, color: context.textSecondary, fontSize: 12), textAlign: TextAlign.right)),
                         ],
                       ),
                       ...cookDishes.entries.map((e) {
+                        final pCount = cookPrepCounts[e.key] ?? 0;
+                        final pSec = cookTotalPrepSec[e.key] ?? 0.0;
+                        final avgSec = pCount > 0 ? (pSec / pCount) : 0.0;
+                        final ordersForC = cookOrdersList[e.key] ?? [];
+                        final avgStr = avgSec > 0 ? '${(avgSec / 60).toStringAsFixed(1)}m' : '—';
                         return TableRow(
                           children: [
-                            Padding(padding: const EdgeInsets.symmetric(vertical: 10), child: Text(e.key, style: TextStyle(fontWeight: FontWeight.w600, color: context.textPrimary))),
-                            Padding(padding: const EdgeInsets.symmetric(vertical: 10), child: Text('${e.value} Items', style: TextStyle(fontWeight: FontWeight.bold, color: context.textPrimary), textAlign: TextAlign.right)),
+                            InkWell(
+                              onTap: () => _showChefPerformanceModal(e.key, e.value, ordersForC, avgSec),
+                              child: Padding(padding: const EdgeInsets.symmetric(vertical: 10), child: Text(e.key, style: TextStyle(fontWeight: FontWeight.w600, color: context.textPrimary))),
+                            ),
+                            InkWell(
+                              onTap: () => _showChefPerformanceModal(e.key, e.value, ordersForC, avgSec),
+                              child: Padding(padding: const EdgeInsets.symmetric(vertical: 10), child: Text('${e.value} Items', style: TextStyle(fontWeight: FontWeight.bold, color: context.textPrimary), textAlign: TextAlign.right)),
+                            ),
+                            InkWell(
+                              onTap: () => _showChefPerformanceModal(e.key, e.value, ordersForC, avgSec),
+                              child: Padding(padding: const EdgeInsets.symmetric(vertical: 10), child: Text(avgStr, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.orange), textAlign: TextAlign.right)),
+                            ),
+                            InkWell(
+                              onTap: () => _showChefPerformanceModal(e.key, e.value, ordersForC, avgSec),
+                              child: const Padding(padding: EdgeInsets.symmetric(vertical: 10), child: Icon(Icons.chevron_right_rounded, size: 18, color: ClassicTheme.infoBlue)),
+                            ),
                           ],
                         );
                       }),
@@ -867,8 +954,277 @@ class _RestaurantOwnerExecutiveDashboardScreenState
               ],
             ),
           ),
+          if (dishTimingsList.isNotEmpty) ...[
+            const SizedBox(height: 24),
+            // Dish Timing Benchmark Table
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: context.surfaceColor,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: context.borderColor),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('Top Dishes & Cooking Time Benchmarks', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: context.textPrimary)),
+                      Text('${dishTimingsList.length} Dishes', style: TextStyle(fontSize: 12, color: context.textSecondary)),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  Table(
+                    columnWidths: const {
+                      0: FlexColumnWidth(3),
+                      1: FlexColumnWidth(1.5),
+                      2: FlexColumnWidth(2),
+                    },
+                    children: [
+                      TableRow(
+                        decoration: BoxDecoration(border: Border(bottom: BorderSide(color: context.borderColor))),
+                        children: [
+                          Padding(padding: const EdgeInsets.only(bottom: 8), child: Text('Dish', style: TextStyle(fontWeight: FontWeight.bold, color: context.textSecondary, fontSize: 12))),
+                          Padding(padding: const EdgeInsets.only(bottom: 8), child: Text('Portions Cooked', style: TextStyle(fontWeight: FontWeight.bold, color: context.textSecondary, fontSize: 12), textAlign: TextAlign.right)),
+                          Padding(padding: const EdgeInsets.only(bottom: 8), child: Text('Avg Prep Time', style: TextStyle(fontWeight: FontWeight.bold, color: context.textSecondary, fontSize: 12), textAlign: TextAlign.right)),
+                        ],
+                      ),
+                      ...dishTimingsList.take(8).map((d) {
+                        final cnt = d['count'] as int;
+                        final tSec = d['totalPrepSec'] as double;
+                        final avgM = cnt > 0 && tSec > 0 ? (tSec / cnt / 60).toStringAsFixed(1) : '—';
+                        return TableRow(
+                          children: [
+                            Padding(padding: const EdgeInsets.symmetric(vertical: 8), child: Text(d['name'] ?? '', style: TextStyle(fontWeight: FontWeight.w600, color: context.textPrimary, fontSize: 13))),
+                            Padding(padding: const EdgeInsets.symmetric(vertical: 8), child: Text('$cnt', style: TextStyle(fontWeight: FontWeight.bold, color: context.textPrimary, fontSize: 13), textAlign: TextAlign.right)),
+                            Padding(padding: const EdgeInsets.symmetric(vertical: 8), child: Text(avgM != '—' ? '$avgM mins' : '—', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.orange, fontSize: 13), textAlign: TextAlign.right)),
+                          ],
+                        );
+                      }),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
+    );
+  }
+
+  void _showWaiterOrdersModal(String waiterName, int ordersCount, double totalSales, List<KotOrder> orders) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return DraggableScrollableSheet(
+          initialChildSize: 0.85,
+          maxChildSize: 0.95,
+          minChildSize: 0.5,
+          builder: (_, scrollCtrl) {
+            return Container(
+              decoration: BoxDecoration(
+                color: context.surfaceColor,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+              ),
+              child: Column(
+                children: [
+                  Container(
+                    margin: const EdgeInsets.only(top: 10, bottom: 6),
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(color: context.borderColor, borderRadius: BorderRadius.circular(2)),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 10, 16, 12),
+                    child: Row(
+                      children: [
+                        CircleAvatar(
+                          radius: 20,
+                          backgroundColor: ClassicTheme.infoBlue.withValues(alpha: 0.15),
+                          child: const Icon(Icons.person_pin_rounded, color: ClassicTheme.infoBlue, size: 22),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(waiterName, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: context.textPrimary)),
+                              Text('Waiter • $ordersCount Orders • ₹${totalSales.toStringAsFixed(0)} Total Sales', style: TextStyle(fontSize: 12, color: context.textSecondary)),
+                            ],
+                          ),
+                        ),
+                        IconButton(icon: const Icon(Icons.close_rounded), onPressed: () => Navigator.pop(ctx)),
+                      ],
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  Expanded(
+                    child: orders.isEmpty
+                        ? Center(child: Text('No orders found for this waiter.', style: TextStyle(color: context.textSecondary)))
+                        : ListView.builder(
+                            controller: scrollCtrl,
+                            padding: const EdgeInsets.all(16),
+                            itemCount: orders.length,
+                            itemBuilder: (_, idx) {
+                              final o = orders[idx];
+                              return Container(
+                                margin: const EdgeInsets.only(bottom: 10),
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: context.canvasColor,
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(color: context.borderColor),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                          decoration: BoxDecoration(color: ClassicTheme.tintInfo, borderRadius: BorderRadius.circular(6)),
+                                          child: Text('KOT #${o.kotNumber.isNotEmpty ? o.kotNumber : o.id}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: ClassicTheme.infoBlue)),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Text('Table ${o.tableNumber}', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: context.textPrimary)),
+                                        const Spacer(),
+                                        Text('₹${o.totalAmount.toStringAsFixed(0)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: ClassicTheme.successEmerald)),
+                                      ],
+                                    ),
+                                    if (o.customerName != null && o.customerName!.isNotEmpty && o.customerName!.toLowerCase() != 'guest') ...[
+                                      const SizedBox(height: 4),
+                                      Text('Customer: ${o.customerName} ${o.customerPhone != null ? "(${o.customerPhone})" : ""}', style: TextStyle(fontSize: 11, color: context.textSecondary)),
+                                    ],
+                                    const SizedBox(height: 6),
+                                    const Divider(height: 1),
+                                    const SizedBox(height: 6),
+                                    Text(
+                                      o.items.map((i) => '${i.name} x${i.qty.toInt()}').join(' • '),
+                                      style: TextStyle(fontSize: 12, color: context.textPrimary),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _showChefPerformanceModal(String chefName, int dishesCooked, List<KotOrder> orders, double avgPrepSec) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return DraggableScrollableSheet(
+          initialChildSize: 0.85,
+          maxChildSize: 0.95,
+          minChildSize: 0.5,
+          builder: (_, scrollCtrl) {
+            return Container(
+              decoration: BoxDecoration(
+                color: context.surfaceColor,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+              ),
+              child: Column(
+                children: [
+                  Container(
+                    margin: const EdgeInsets.only(top: 10, bottom: 6),
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(color: context.borderColor, borderRadius: BorderRadius.circular(2)),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 10, 16, 12),
+                    child: Row(
+                      children: [
+                        CircleAvatar(
+                          radius: 20,
+                          backgroundColor: Colors.orange.withValues(alpha: 0.15),
+                          child: const Icon(Icons.soup_kitchen_rounded, color: Colors.orange, size: 22),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(chefName, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: context.textPrimary)),
+                              Text('Kitchen Chef • $dishesCooked Dishes • Avg: ${avgPrepSec > 0 ? "${(avgPrepSec / 60).toStringAsFixed(1)}m" : "—"}', style: TextStyle(fontSize: 12, color: context.textSecondary)),
+                            ],
+                          ),
+                        ),
+                        IconButton(icon: const Icon(Icons.close_rounded), onPressed: () => Navigator.pop(ctx)),
+                      ],
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  Expanded(
+                    child: orders.isEmpty
+                        ? Center(child: Text('No order records found for this chef.', style: TextStyle(color: context.textSecondary)))
+                        : ListView.builder(
+                            controller: scrollCtrl,
+                            padding: const EdgeInsets.all(16),
+                            itemCount: orders.length,
+                            itemBuilder: (_, idx) {
+                              final o = orders[idx];
+                              return Container(
+                                margin: const EdgeInsets.only(bottom: 10),
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: context.canvasColor,
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(color: context.borderColor),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                          decoration: BoxDecoration(color: Colors.orange.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(6)),
+                                          child: Text('KOT #${o.kotNumber.isNotEmpty ? o.kotNumber : o.id}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.orange)),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Text('Table ${o.tableNumber}', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: context.textPrimary)),
+                                        const Spacer(),
+                                        Text(
+                                          o.prepDurationSeconds != null && o.prepDurationSeconds! > 0
+                                              ? 'Prep: ${(o.prepDurationSeconds! / 60).toStringAsFixed(1)}m'
+                                              : o.status.name.toUpperCase(),
+                                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: context.textSecondary),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 6),
+                                    const Divider(height: 1),
+                                    const SizedBox(height: 6),
+                                    Text(
+                                      o.items.map((i) => '${i.name} x${i.qty.toInt()}').join(' • '),
+                                      style: TextStyle(fontSize: 12, color: context.textPrimary),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
     );
   }
 

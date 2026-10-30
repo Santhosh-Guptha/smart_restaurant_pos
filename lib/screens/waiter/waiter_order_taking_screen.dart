@@ -66,6 +66,8 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
   final TextEditingController _customerNameCtrl = TextEditingController();
   final TextEditingController _customerPhoneCtrl = TextEditingController();
   final TextEditingController _customerEmailCtrl = TextEditingController();
+  List<Map<String, dynamic>> _customerFavorites = [];
+  Map<String, dynamic>? _customerHistoryData;
 
   // Tip selected for bill settlement
   double _selectedTip = 0.0;
@@ -213,6 +215,337 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
         if (mounted) _loadTableActiveOrders();
       });
     }
+
+    // Prompt for customer details or recognize returning customer
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final phone = _customerPhoneCtrl.text.trim();
+      final name = _customerNameCtrl.text.trim();
+      if (phone.isNotEmpty) {
+        _searchCustomerHistory(phone);
+      } else if (name.isEmpty || _isGenericCustomerName(name)) {
+        _showCustomerDetailsOnboardingDialog(canDismiss: true);
+      }
+    });
+  }
+
+  void _searchCustomerHistory(String queryPhone) {
+    final cleanPhone = queryPhone.replaceAll(RegExp(r'\D'), '').trim();
+    if (cleanPhone.length < 4) {
+      if (mounted) {
+        setState(() {
+          _customerFavorites = [];
+          _customerHistoryData = null;
+        });
+      }
+      return;
+    }
+
+    try {
+      final orgId = _getEffectiveOrgId();
+      if (!Hive.isBoxOpen('configBox')) return;
+      final box = Hive.box('configBox');
+
+      final List allRecords = [];
+      final rawOrders = box.get('kot_orders_$orgId') as List? ?? [];
+      allRecords.addAll(rawOrders);
+      final rawBills = box.get('bills_$orgId') as List? ?? [];
+      allRecords.addAll(rawBills);
+
+      final Map<String, int> dishCounts = {};
+      final Map<String, Map<String, dynamic>> dishLookup = {};
+      String? foundName;
+      int matchCount = 0;
+      DateTime? lastVisit;
+
+      for (final r in allRecords) {
+        if (r is! Map) continue;
+        final phone = (r['customerPhone'] ?? r['phone'] ?? '').toString().replaceAll(RegExp(r'\D'), '').trim();
+        if (phone.isNotEmpty && (phone == cleanPhone || phone.endsWith(cleanPhone) || cleanPhone.endsWith(phone))) {
+          matchCount++;
+          final cName = (r['customerName'] ?? r['name'] ?? '').toString().trim();
+          if (cName.isNotEmpty && !_isGenericCustomerName(cName) && foundName == null) {
+            foundName = cName;
+          }
+
+          final rawDt = r['createdAt'] ?? r['timestamp'] ?? r['firedAt'];
+          if (rawDt != null) {
+            final dt = DateTime.tryParse(rawDt.toString());
+            if (dt != null && (lastVisit == null || dt.isAfter(lastVisit))) {
+              lastVisit = dt;
+            }
+          }
+
+          final items = r['items'] as List? ?? [];
+          for (final it in items) {
+            if (it is! Map) continue;
+            final itemName = (it['name'] ?? '').toString().trim();
+            if (itemName.isEmpty) continue;
+            final qty = (it['qty'] ?? it['quantity'] ?? 1) as num;
+            dishCounts[itemName] = (dishCounts[itemName] ?? 0) + qty.toInt();
+
+            if (!dishLookup.containsKey(itemName)) {
+              final match = _menuItems.firstWhere(
+                (m) => (m['name']?.toString().toLowerCase().trim() == itemName.toLowerCase()),
+                orElse: () => Map<String, dynamic>.from(it),
+              );
+              dishLookup[itemName] = match;
+            }
+          }
+        }
+      }
+
+      if (matchCount > 0) {
+        final sortedDishes = dishCounts.entries.toList()
+          ..sort((a, b) => b.value.compareTo(a.value));
+        final topDishes = sortedDishes.take(8).map((e) {
+          final item = dishLookup[e.key] ?? {'name': e.key, 'price': 0.0};
+          return {
+            'name': e.key,
+            'count': e.value,
+            'item': item,
+          };
+        }).toList();
+
+        if (mounted) {
+          setState(() {
+            _customerFavorites = topDishes;
+            _customerHistoryData = {
+              'phone': cleanPhone,
+              'name': foundName,
+              'visits': matchCount,
+              'lastVisit': lastVisit,
+            };
+            if (foundName != null && _customerNameCtrl.text.trim().isEmpty) {
+              _customerNameCtrl.text = foundName;
+              _persistCustomerNameToTable(foundName);
+            }
+          });
+        }
+      } else {
+        if (mounted) {
+          setState(() {
+            _customerFavorites = [];
+            _customerHistoryData = null;
+          });
+        }
+      }
+    } catch (_) {}
+  }
+
+  void _addFavoriteToTray(Map<String, dynamic> favItem) {
+    final item = favItem['item'] is Map ? Map<String, dynamic>.from(favItem['item'] as Map) : favItem;
+    _addToTray(item);
+    HapticFeedback.lightImpact();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Added "${item['name']}" to tray'),
+        duration: const Duration(seconds: 1),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  void _showCustomerDetailsOnboardingDialog({bool canDismiss = true}) {
+    showDialog(
+      context: context,
+      barrierDismissible: canDismiss,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (dialogCtx, setDialogState) {
+            final hasHistory = _customerHistoryData != null;
+            return Dialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              child: Container(
+                constraints: const BoxConstraints(maxWidth: 480),
+                padding: const EdgeInsets.all(20),
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: ClassicTheme.tintInfo,
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: const Icon(Icons.person_pin_rounded, color: ClassicTheme.infoBlue, size: 24),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Customer Details',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                    color: context.textPrimary,
+                                  ),
+                                ),
+                                Text(
+                                  'Optional • Suggests favorite dishes & previous history',
+                                  style: TextStyle(fontSize: 11, color: context.textSecondary),
+                                ),
+                              ],
+                            ),
+                          ),
+                          if (canDismiss)
+                            IconButton(
+                              icon: const Icon(Icons.close_rounded, size: 20),
+                              onPressed: () => Navigator.of(ctx).pop(),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      TextField(
+                        controller: _customerPhoneCtrl,
+                        keyboardType: TextInputType.phone,
+                        decoration: InputDecoration(
+                          labelText: 'Mobile Number (Optional)',
+                          hintText: 'e.g. 9876543210',
+                          prefixIcon: const Icon(Icons.phone_rounded, size: 20),
+                          suffixIcon: _customerPhoneCtrl.text.isNotEmpty
+                              ? IconButton(
+                                  icon: const Icon(Icons.clear_rounded, size: 18),
+                                  onPressed: () {
+                                    _customerPhoneCtrl.clear();
+                                    setDialogState(() {
+                                      _customerFavorites = [];
+                                      _customerHistoryData = null;
+                                    });
+                                    setState(() {});
+                                  },
+                                )
+                              : null,
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                        ),
+                        onChanged: (val) {
+                          _searchCustomerHistory(val);
+                          setDialogState(() {});
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: _customerNameCtrl,
+                        textCapitalization: TextCapitalization.words,
+                        decoration: InputDecoration(
+                          labelText: 'Customer / Guest Name (Optional)',
+                          hintText: 'e.g. Shanmuk, Priya, John',
+                          prefixIcon: const Icon(Icons.badge_rounded, size: 20),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                        ),
+                        onChanged: (val) {
+                          _persistCustomerNameToTable(val);
+                        },
+                      ),
+                      if (hasHistory) ...[
+                        const SizedBox(height: 14),
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: ClassicTheme.tintSuccess,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: ClassicTheme.successEmerald.withValues(alpha: 0.3)),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  const Icon(Icons.verified_rounded, color: ClassicTheme.successEmerald, size: 18),
+                                  const SizedBox(width: 6),
+                                  Expanded(
+                                    child: Text(
+                                      'Returning Customer • ${_customerHistoryData!['visits']} Past Orders',
+                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: ClassicTheme.successEmerald),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              if (_customerFavorites.isNotEmpty) ...[
+                                const SizedBox(height: 8),
+                                const Text('Customer Favorites (1-tap add to tray):', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
+                                const SizedBox(height: 6),
+                                Wrap(
+                                  spacing: 6,
+                                  runSpacing: 6,
+                                  children: _customerFavorites.take(4).map((fav) {
+                                    return ActionChip(
+                                      avatar: const Icon(Icons.add_rounded, size: 14, color: ClassicTheme.infoBlue),
+                                      label: Text(
+                                        '${fav['name']} (${fav['count']}x)',
+                                        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+                                      ),
+                                      backgroundColor: Colors.white,
+                                      onPressed: () {
+                                        _addFavoriteToTray(fav);
+                                        setDialogState(() {});
+                                        setState(() {});
+                                      },
+                                    );
+                                  }).toList(),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 20),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton(
+                              style: OutlinedButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                              ),
+                              onPressed: () {
+                                if (_customerNameCtrl.text.trim().isEmpty) {
+                                  _customerNameCtrl.text = 'Guest';
+                                }
+                                _persistCustomerNameToTable(_customerNameCtrl.text.trim());
+                                Navigator.of(ctx).pop();
+                                setState(() {});
+                              },
+                              child: const Text('Continue as Guest'),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: ElevatedButton(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: ClassicTheme.infoBlue,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                              ),
+                              onPressed: () {
+                                final name = _customerNameCtrl.text.trim();
+                                if (name.isNotEmpty) {
+                                  _persistCustomerNameToTable(name);
+                                }
+                                Navigator.of(ctx).pop();
+                                setState(() {});
+                              },
+                              child: const Text('Continue to Menu'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
   }
 
   @override
@@ -860,6 +1193,20 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
       final qty = (entry['qty'] as num).toInt();
       final price = (it['price'] as num?)?.toDouble() ?? 0.0;
       final sendsToKitchen = it['sendsToKitchen'] != false;
+      final category = (it['category'] ?? it['subcategory'] ?? '').toString();
+      String station = (it['station'] ?? '').toString();
+      if (station.isEmpty || station == 'null') {
+        final catLower = category.toLowerCase();
+        if (catLower.contains('starter') || catLower.contains('appetizer') || catLower.contains('tandoor') || catLower.contains('kebab') || catLower.contains('fry')) {
+          station = 'Tandoor & Starters';
+        } else if (catLower.contains('bar') || catLower.contains('beverage') || catLower.contains('drink') || catLower.contains('mocktail') || catLower.contains('shake') || catLower.contains('juice') || catLower.contains('cocktail')) {
+          station = 'Bar';
+        } else if (catLower.contains('dessert') || catLower.contains('sweet') || catLower.contains('ice cream')) {
+          station = 'Dessert Counter';
+        } else {
+          station = 'Main Kitchen';
+        }
+      }
       newRoundItemsList.add({
         'lineId': const Uuid().v4(),
         'id': it['id']?.toString() ?? it['name'].toString(),
@@ -869,13 +1216,14 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
         'quantity': qty,
         'price': price,
         'rate': price,
+        'category': category,
+        'station': station,
         'isVeg': it['isVeg'] != false,
         'isTaxExempt': it['isTaxExempt'] == true || it['is_tax_exempt'] == true,
         'is_tax_exempt': it['isTaxExempt'] == true || it['is_tax_exempt'] == true,
         'sendsToKitchen': sendsToKitchen,
         'courseNo': currentCourse,
         'course_no': currentCourse,
-        'station': (it['station'] ?? 'Main Kitchen').toString(),
         'kitchenStatus': sendsToKitchen ? 'PENDING' : 'SERVED',
         'notes': it['notes']?.toString(),
       });
@@ -914,6 +1262,7 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
       'items': newRoundItemsList,
       'status': 'PENDING',
       'kitchenStatus': 'PENDING',
+      'kitchenStation': newRoundItemsList.isNotEmpty ? (newRoundItemsList.first['station'] ?? 'Main Kitchen') : 'Main Kitchen',
       'paymentStatus': 'UNPAID',
       'isPaid': false,
       'orderSource': 'WAITER_APP',
@@ -1088,6 +1437,8 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
         'payment_status': 'PENDING',
         'status': 'PENDING',
         'kitchenStatus': 'PENDING',
+        'kitchenStation': newRoundItemsList.isNotEmpty ? (newRoundItemsList.first['station'] ?? 'Main Kitchen') : 'Main Kitchen',
+        'station': newRoundItemsList.isNotEmpty ? (newRoundItemsList.first['station'] ?? 'Main Kitchen') : 'Main Kitchen',
         'courseNo': currentCourse,
         'course_no': currentCourse,
         'firedAt': DateTime.now().toIso8601String(),
@@ -2616,23 +2967,64 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
       body: Column(
         children: [
           const LanHubStatusBanner(),
-          // ── Guest Name Input & Active Orders Indicator Bar ─────
+          // ── Guest Recognition & Active Orders Indicator Bar ─────
           Container(
             color: context.surfaceColor,
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
             child: Row(
               children: [
                 Expanded(
-                  child: TextField(
-                    controller: _customerNameCtrl,
-                    onChanged: (val) => _persistCustomerNameToTable(val),
-                    decoration: InputDecoration(
-                      hintText: 'Customer / Guest Name (e.g. Shanmuk)',
-                      hintStyle: TextStyle(fontSize: 12, color: Colors.grey.shade400),
-                      prefixIcon: Icon(Icons.person_outline_rounded, size: 18, color: context.textSecondary),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: context.borderColor)),
-                      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: context.borderColor)),
+                  child: InkWell(
+                    onTap: () => _showCustomerDetailsOnboardingDialog(canDismiss: true),
+                    borderRadius: BorderRadius.circular(10),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: _customerHistoryData != null ? ClassicTheme.tintSuccess : context.inputFill,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: _customerHistoryData != null ? ClassicTheme.successEmerald : context.borderColor,
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            _customerHistoryData != null ? Icons.verified_rounded : Icons.person_outline_rounded,
+                            size: 18,
+                            color: _customerHistoryData != null ? ClassicTheme.successEmerald : context.textSecondary,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  _customerNameCtrl.text.trim().isNotEmpty
+                                      ? _customerNameCtrl.text.trim()
+                                      : 'Guest / Walk-In',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                    color: context.textPrimary,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                Text(
+                                  _customerPhoneCtrl.text.trim().isNotEmpty
+                                      ? '${_customerPhoneCtrl.text.trim()}${_customerHistoryData != null ? " • ${_customerHistoryData!['visits']} visits" : ""}'
+                                      : 'Tap to add customer info & view favorites',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    color: _customerHistoryData != null ? ClassicTheme.successEmerald : context.textSecondary,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ],
+                            ),
+                          ),
+                          Icon(Icons.edit_outlined, size: 14, color: context.textSecondary),
+                        ],
+                      ),
                     ),
                   ),
                 ),
@@ -2692,6 +3084,60 @@ class _WaiterOrderTakingScreenState extends ConsumerState<WaiterOrderTakingScree
                   ),
                   onChanged: (val) => setState(() => _searchQuery = val.trim()),
                 ),
+                if (_customerFavorites.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: ClassicTheme.tintInfo,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: const Color(0xFFBFDBFE)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(Icons.star_rounded, size: 14, color: ClassicTheme.infoBlue),
+                            const SizedBox(width: 4),
+                            Text(
+                              '${_customerNameCtrl.text.trim().isNotEmpty ? _customerNameCtrl.text.trim() : "Guest"}\'s Favorite Dishes',
+                              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: ClassicTheme.infoBlue),
+                            ),
+                            const Spacer(),
+                            Text(
+                              'Tap to add',
+                              style: TextStyle(fontSize: 10, color: context.textSecondary),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        SizedBox(
+                          height: 32,
+                          child: ListView.separated(
+                            scrollDirection: Axis.horizontal,
+                            itemCount: _customerFavorites.length,
+                            separatorBuilder: (_, __) => const SizedBox(width: 6),
+                            itemBuilder: (ctx, idx) {
+                              final fav = _customerFavorites[idx];
+                              return ActionChip(
+                                avatar: const Icon(Icons.add_rounded, size: 14, color: ClassicTheme.infoBlue),
+                                label: Text(
+                                  '${fav['name']} (${fav['count']}x)',
+                                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+                                ),
+                                backgroundColor: context.surfaceColor,
+                                side: BorderSide(color: context.borderColor),
+                                padding: EdgeInsets.zero,
+                                onPressed: () => _addFavoriteToTray(fav),
+                              );
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 8),
                 SizedBox(
                   height: 32,
