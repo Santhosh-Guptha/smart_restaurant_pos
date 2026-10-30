@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -58,7 +59,7 @@ void main() {
 
       // Check background LAN Hub listener creation and start
       expect(script, contains('lan_hub_listener.ps1'));
-      expect(script, contains('start "" /B powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "%APP_DATA_DIR%\\lan_hub_listener.ps1"'));
+      expect(script, contains('run_lan_hub.vbs'));
       expect(script, contains('findstr :8085'));
 
       // Check desktop shortcut & auto launcher
@@ -129,6 +130,23 @@ void main() {
       expect(script, contains('Offline Kirana Store'));
       expect(script, contains('Offline (this device only)'));
       expect(script, isNot(contains('localport=8080')));
+    });
+
+    test('generateBatchScript has zero lines exceeding CMD 8191 limit', () {
+      final script = ClientSetupPackageGenerator.generateBatchScript(testPayload, TestLicenceSigner.sign(testPayload));
+      final lines = const LineSplitter().convert(script);
+      for (final line in lines) {
+        expect(line.length, lessThan(8191));
+      }
+
+      final magFile = File('${Platform.environment['TEMP']}\\magellanic_lic.json');
+      if (magFile.existsSync()) {
+        final j = jsonDecode(magFile.readAsStringSync()) as Map<String, dynamic>;
+        final p = ClientLicensePayload.fromJson(j['payload'] as Map<String, dynamic>);
+        final magScript = ClientSetupPackageGenerator.generateBatchScript(p, j['token'] as String);
+        final dest = File(r'C:\Users\santhosh\Downloads\SmartBizz_Setup_magellanic.bat');
+        dest.writeAsStringSync(magScript);
+      }
     });
   });
 }
