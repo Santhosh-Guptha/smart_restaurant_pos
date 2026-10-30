@@ -426,13 +426,13 @@ class ClientSetupPackageGenerator {
         '    netsh advfirewall firewall delete rule name="SmartBizz POS Hub (Port 8080)" >nul 2>&1',
       );
       buffer.writeln(
-        '    netsh advfirewall firewall add rule name="SmartBizz POS Hub (Port 8080)" dir=in action=allow protocol=TCP localport=8080 profile=private,domain >nul 2>&1',
+        '    netsh advfirewall firewall add rule name="SmartBizz POS Hub (Port 8080)" dir=in action=allow protocol=TCP localport=8080 profile=any >nul 2>&1',
       );
       buffer.writeln(
         '    netsh advfirewall firewall delete rule name="SmartBizz POS Hub (Port 8085)" >nul 2>&1',
       );
       buffer.writeln(
-        '    netsh advfirewall firewall add rule name="SmartBizz POS Hub (Port 8085)" dir=in action=allow protocol=TCP localport=8085 profile=private,domain >nul 2>&1',
+        '    netsh advfirewall firewall add rule name="SmartBizz POS Hub (Port 8085)" dir=in action=allow protocol=TCP localport=8085 profile=any >nul 2>&1',
       );
       buffer.writeln(
         '    echo [OK] Firewall ports 8080 and 8085 configured for satellite devices.',
@@ -909,13 +909,17 @@ End If
     buffer.writeln('        if (\$p80Listener -ne \$null) {');
     buffer.writeln('            try {');
     buffer.writeln('                if (\$p80Listener.Pending()) {');
-    buffer.writeln('                    \$client = \$p80Listener.AcceptTcpClient()');
+    buffer.writeln(
+      '                    \$client = \$p80Listener.AcceptTcpClient()',
+    );
     buffer.writeln('                }');
     buffer.writeln('            } catch {');
     buffer.writeln('                \$p80Listener = \$null');
     buffer.writeln('            }');
     buffer.writeln('        }');
-    buffer.writeln('        if (\$client -eq \$null -and \$listener.Pending()) {');
+    buffer.writeln(
+      '        if (\$client -eq \$null -and \$listener.Pending()) {',
+    );
     buffer.writeln('            \$client = \$listener.AcceptTcpClient()');
     buffer.writeln('        } elseif (\$client -eq \$null) {');
     buffer.writeln('            Start-Sleep -Milliseconds 15');
