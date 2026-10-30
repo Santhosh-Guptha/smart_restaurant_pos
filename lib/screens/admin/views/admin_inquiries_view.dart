@@ -25,12 +25,51 @@ class AdminInquiriesView extends ConsumerStatefulWidget {
   /// offline, Basic otherwise ([LicenceEdits.requestedTier]) — onboarded on
   /// a paid plan, with no trial. The plan (validity) is chosen when
   /// onboarding, and the licence is composed from the two.
+  /// The tier a lead is approved on. If the lead explicitly requested a tier,
+  /// package, or storage mode (like LOCAL_NETWORK), honor it! Only return
+  /// offline if it was an explicit offline trial with no other package, tier,
+  /// or storage mode specified.
   static PackageTier leadTier(UnifiedClientLead lead) {
-    if (lead.isTrial) return PackageTier.offline;
-    return LicenceEdits.requestedTier({
+    final payload = <String, dynamic>{
       ...lead.rawData,
       if ((lead.requestedPackageId ?? '').isNotEmpty) 'requestedPackageId': lead.requestedPackageId,
-    });
+      if ((lead.requestedPlanId ?? '').isNotEmpty) 'requestedPlanId': lead.requestedPlanId,
+    };
+
+    // 1. Explicit requested tier takes precedence
+    final explicitTier = PackageTier.tryParse(
+      (lead.rawData['requestedTier'] ?? lead.rawData['tier'] ?? lead.rawData['packageTier'] ?? lead.rawData['package_tier'])?.toString(),
+    );
+    if (explicitTier != null) return explicitTier;
+
+    // 2. Explicit starter package ID
+    final fromPkgId = PackageTier.fromStarterId(
+      lead.requestedPackageId ?? (lead.rawData['packageId'] ?? lead.rawData['requestedPackageId'])?.toString(),
+    );
+    if (fromPkgId != null) return fromPkgId;
+
+    // 3. Storage mode check: LOCAL_NETWORK requires at least Basic tier
+    final storageMode = (lead.rawData['requestedStorageMode'] ?? lead.rawData['storageMode'] ?? lead.rawData['storage_mode'])
+        ?.toString()
+        .trim()
+        .toUpperCase();
+    if (storageMode == StorageModes.localNetwork) {
+      return PackageTier.basic;
+    }
+
+    // 4. Check requestedTier via LicenceEdits
+    final calculatedTier = LicenceEdits.requestedTier(payload);
+    if (calculatedTier != PackageTier.offline) {
+      return calculatedTier;
+    }
+
+    // 5. If non-offline storage mode was requested
+    if (storageMode != null && storageMode.isNotEmpty && !StorageModes.isOffline(storageMode)) {
+      return PackageTier.basic;
+    }
+
+    // 6. Only return offline if it was an explicit offline trial with no other package, tier, or storage mode specified
+    return PackageTier.offline;
   }
 
   @override

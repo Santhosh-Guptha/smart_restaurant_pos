@@ -195,12 +195,12 @@ class UnifiedClientLead {
         (isEnterprise ? PackageTier.enterprise : null);
     final storedPkg = d['requestedPackageId']?.toString().trim() ?? '';
     final String pkgId;
-    if (isTrial) {
-      pkgId = Verticals.defaultPackageFor(category);
-    } else if (storedPkg.isNotEmpty) {
+    if (storedPkg.isNotEmpty) {
       pkgId = storedPkg;
     } else if (requestedTier != null) {
       pkgId = PackageCatalog.starterId(trade, requestedTier);
+    } else if (isTrial) {
+      pkgId = Verticals.defaultPackageFor(category);
     } else {
       pkgId = Verticals.defaultPackageFor(category,
           offline: !const {StorageModes.clientsOwnSheets, StorageModes.localNetwork}

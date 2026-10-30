@@ -758,6 +758,15 @@ class TenantPackageEditor extends StatefulWidget {
 
 class _TenantPackageEditorState extends State<TenantPackageEditor> {
   late Future<(List<TenantPackage>, List<SubscriptionPlan>)> _lists;
+  final Set<String> _collapsedCategories = {};
+  final TextEditingController _featureSearchCtrl = TextEditingController();
+  String _featureSearchQuery = '';
+
+  @override
+  void dispose() {
+    _featureSearchCtrl.dispose();
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -856,19 +865,539 @@ class _TenantPackageEditorState extends State<TenantPackageEditor> {
             _step(context, 2, 'Storage & Network Architecture', 'Where data lives and how devices connect'),
             _storageSelector(context),
             const SizedBox(height: DS.space5),
-            _step(context, 3, 'Plan', 'How long'),
+            _step(context, 3, 'Feature Customization & Add-ons', 'Toggle individual features on or off for this client'),
+            _featureCustomization(context),
+            const SizedBox(height: DS.space5),
+            _step(context, 4, 'Plan', 'How long'),
             ...plans.map((p) => _planCard(context, p)),
             if (!widget.limitsReadOnly) ...[
               const SizedBox(height: DS.space5),
-              _step(context, 4, 'Limits', 'Devices, outlets and users'),
+              _step(context, 5, 'Limits', 'Devices, outlets and users'),
               _limits(context),
             ],
             const SizedBox(height: DS.space5),
-            _step(context, widget.limitsReadOnly ? 4 : 5, 'What they get', null),
+            _step(context, widget.limitsReadOnly ? 5 : 6, 'What they get', null),
             _summary(context),
           ],
         );
       },
+    );
+  }
+
+  // ── feature customization ───────────────────────────────────────────────
+
+  void _selectAllFeatures() {
+    final offered = {for (final d in _selection.availableAddOns) d.key};
+    final next = _selection.copyWith(
+      removed: const {},
+      addOnKeys: offered,
+    );
+    _emit(next);
+  }
+
+  void _applyRecommendedDefaults() {
+    final v = _vertical;
+    final tier = _selection.tier;
+    final starterFeatures = PackageCatalog.featuresFor(v, tier);
+    final starterKeys = {
+      for (final e in starterFeatures.entries)
+        if (e.value) e.key,
+    };
+
+    final tradeEssentials = v == Verticals.restaurant
+        ? {
+            FeatureKeys.dineInBilling,
+            FeatureKeys.tableManagement,
+            FeatureKeys.splitBilling,
+            FeatureKeys.dualPrinting,
+            FeatureKeys.localLanServer,
+          }
+        : {
+            FeatureKeys.barcodeBilling,
+            FeatureKeys.customerKhata,
+            FeatureKeys.stockManagement,
+          };
+
+    final targetKeys = {...starterKeys, ...tradeEssentials};
+
+    final removed = <String>{
+      for (final k in _selection.package.enabledKeys)
+        if (!targetKeys.contains(k) && !LicenceEdits.isCoreKey(k)) k,
+    };
+
+    final availableKeys = {for (final d in _selection.availableAddOns) d.key};
+    final addOns = {
+      for (final k in targetKeys)
+        if (!_selection.package.includes(k) && availableKeys.contains(k)) k,
+    };
+
+    final next = _selection.copyWith(
+      removed: removed,
+      addOnKeys: addOns,
+    );
+    _emit(next);
+  }
+
+  void _resetToPackageDefaults() {
+    final next = _selection.copyWith(
+      removed: const {},
+      addOnKeys: const {},
+    );
+    _emit(next);
+  }
+
+  void _toggleFeature(FeatureDef f, bool on) {
+    if (LicenceEdits.isCoreKey(f.key)) return;
+    final inPackage = _selection.package.includes(f.key);
+    if (inPackage) {
+      var next = _selection.withIncluded(f.key, on);
+      if (on) {
+        for (final dep in FeatureCatalog.transitiveDependencies(f.key)) {
+          if (next.package.includes(dep)) {
+            next = next.withIncluded(dep, true);
+          } else if (next.availableAddOns.any((a) => a.key == dep)) {
+            next = next.withAddOn(dep, true);
+          }
+        }
+      }
+      _emit(next);
+    } else {
+      var next = _selection.withAddOn(f.key, on);
+      if (on) {
+        for (final dep in FeatureCatalog.transitiveDependencies(f.key)) {
+          if (next.package.includes(dep)) {
+            next = next.withIncluded(dep, true);
+          } else if (next.availableAddOns.any((a) => a.key == dep)) {
+            next = next.withAddOn(dep, true);
+          }
+        }
+      }
+      _emit(next);
+    }
+  }
+
+  Widget _featureCustomization(BuildContext context) {
+    final v = _vertical;
+    final sel = _selection;
+    final featuresForTrade = FeatureCatalog.all
+        .where((d) => d.appliesTo(v) && !FeatureCatalog.isComingSoon(d.key))
+        .toList();
+
+    final query = _featureSearchQuery.trim().toLowerCase();
+    final filteredFeatures = query.isEmpty
+        ? featuresForTrade
+        : featuresForTrade.where((d) {
+            final name = d.labelFor(v).toLowerCase();
+            final desc = d.descriptionFor(v).toLowerCase();
+            final key = d.key.toLowerCase();
+            return name.contains(query) || desc.contains(query) || key.contains(query);
+          }).toList();
+
+    final grouped = FeatureCatalog.groupByCategory(filteredFeatures);
+    final allCategoryNames = grouped.keys.toList();
+    final allCollapsed = allCategoryNames.isNotEmpty && allCategoryNames.every(_collapsedCategories.contains);
+
+    return Container(
+      padding: const EdgeInsets.all(DS.space3),
+      decoration: BoxDecoration(
+        color: context.sunkenSurface,
+        borderRadius: BorderRadius.circular(DS.radiusMd),
+        border: Border.all(color: context.borderColor),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(
+                child: Wrap(
+                  spacing: DS.space3,
+                  runSpacing: DS.space2,
+                  children: [
+                    _stat(context, '${sel.onCount} / ${featuresForTrade.length}', 'features active'),
+                    _stat(context, '${sel.activeAddOns.length}', 'custom add-on${sel.activeAddOns.length == 1 ? '' : 's'}'),
+                    if (sel.activeRemoved.isNotEmpty)
+                      _stat(context, '${sel.activeRemoved.length}', 'package feature${sel.activeRemoved.length == 1 ? '' : 's'} off'),
+                  ],
+                ),
+              ),
+              if (allCategoryNames.length > 1)
+                TextButton.icon(
+                  onPressed: () {
+                    setState(() {
+                      if (allCollapsed) {
+                        _collapsedCategories.clear();
+                      } else {
+                        _collapsedCategories.addAll(allCategoryNames);
+                      }
+                    });
+                  },
+                  icon: Icon(allCollapsed ? Icons.unfold_more_rounded : Icons.unfold_less_rounded, size: 16),
+                  label: Text(allCollapsed ? 'Expand All' : 'Collapse All', style: const TextStyle(fontSize: 12)),
+                  style: TextButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    foregroundColor: context.textSecondary,
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: DS.space3),
+          Wrap(
+            spacing: DS.space2,
+            runSpacing: DS.space2,
+            children: [
+              OutlinedButton.icon(
+                icon: const Icon(Icons.done_all_rounded, size: 15),
+                label: Text(
+                  v == Verticals.restaurant ? 'Enable All Restaurant Features' : 'Select All',
+                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                ),
+                onPressed: _selectAllFeatures,
+                style: OutlinedButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  foregroundColor: ClassicTheme.primaryAccent,
+                  side: BorderSide(color: ClassicTheme.primaryAccent.withValues(alpha: 0.5)),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                ),
+              ),
+              OutlinedButton.icon(
+                icon: const Icon(Icons.auto_awesome_rounded, size: 15),
+                label: const Text(
+                  'Recommended Defaults',
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                ),
+                onPressed: _applyRecommendedDefaults,
+                style: OutlinedButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  foregroundColor: context.textPrimary,
+                  side: BorderSide(color: context.borderColor),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                ),
+              ),
+              OutlinedButton.icon(
+                icon: const Icon(Icons.restart_alt_rounded, size: 15),
+                label: const Text(
+                  'Reset to Package Defaults',
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                ),
+                onPressed: _resetToPackageDefaults,
+                style: OutlinedButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  foregroundColor: context.textSecondary,
+                  side: BorderSide(color: context.borderColor),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: DS.space3),
+          TextField(
+            controller: _featureSearchCtrl,
+            style: TextStyle(fontSize: DS.fontCaption, color: context.textPrimary),
+            decoration: InputDecoration(
+              isDense: true,
+              hintText: 'Search features (e.g. waiter, kds, split, printing, inventory)...',
+              hintStyle: TextStyle(fontSize: DS.fontMicro, color: context.textMuted),
+              prefixIcon: Icon(Icons.search_rounded, size: 18, color: context.textSecondary),
+              suffixIcon: _featureSearchQuery.isNotEmpty
+                  ? IconButton(
+                      icon: const Icon(Icons.close_rounded, size: 16),
+                      onPressed: () {
+                        setState(() {
+                          _featureSearchCtrl.clear();
+                          _featureSearchQuery = '';
+                        });
+                      },
+                    )
+                  : null,
+              filled: true,
+              fillColor: Theme.of(context).brightness == Brightness.dark ? DS.darkInputFill : DS.lightInputFill,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(DS.radiusSm),
+                borderSide: BorderSide(color: context.borderColor),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(DS.radiusSm),
+                borderSide: BorderSide(color: context.borderColor),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(DS.radiusSm),
+                borderSide: BorderSide(color: ClassicTheme.primaryAccent, width: 1.5),
+              ),
+            ),
+            onChanged: (val) {
+              setState(() {
+                _featureSearchQuery = val;
+                if (val.trim().isNotEmpty) {
+                  _collapsedCategories.clear();
+                }
+              });
+            },
+          ),
+          const SizedBox(height: DS.space3),
+          if (grouped.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: DS.space4),
+              child: Center(
+                child: Text(
+                  'No features match "$query"',
+                  style: TextStyle(fontSize: DS.fontCaption, color: context.textMuted),
+                ),
+              ),
+            )
+          else
+            ...grouped.entries.map((entry) {
+              final catName = entry.key;
+              final catFeatures = entry.value;
+              final catIcon = PackageFeaturesBreakdownWidget.iconForCategory(catName);
+              final isCollapsed = _collapsedCategories.contains(catName);
+              final activeCount = catFeatures.where((f) => sel.composed.features[f.key] == true).length;
+
+              return Container(
+                margin: const EdgeInsets.only(bottom: DS.space2),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).brightness == Brightness.dark
+                      ? DS.darkSurfaceRaised
+                      : DS.lightSurfaceRaised,
+                  borderRadius: BorderRadius.circular(DS.radiusMd),
+                  border: Border.all(color: context.borderColor),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    InkWell(
+                      borderRadius: isCollapsed
+                          ? BorderRadius.circular(DS.radiusMd)
+                          : const BorderRadius.vertical(top: Radius.circular(DS.radiusMd)),
+                      onTap: () {
+                        setState(() {
+                          if (isCollapsed) {
+                            _collapsedCategories.remove(catName);
+                          } else {
+                            _collapsedCategories.add(catName);
+                          }
+                        });
+                      },
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: DS.space3, vertical: 10),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(5),
+                              decoration: BoxDecoration(
+                                color: ClassicTheme.primaryAccent.withValues(alpha: 0.1),
+                                borderRadius: BorderRadius.circular(DS.radiusSm),
+                              ),
+                              child: Icon(catIcon, size: 16, color: ClassicTheme.primaryAccent),
+                            ),
+                            const SizedBox(width: DS.space2),
+                            Expanded(
+                              child: Text(
+                                catName,
+                                style: TextStyle(
+                                  fontSize: DS.fontCaption,
+                                  fontWeight: FontWeight.w700,
+                                  color: context.textPrimary,
+                                ),
+                              ),
+                            ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: (activeCount > 0 ? ClassicTheme.primaryAccent : context.textMuted)
+                                    .withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                              child: Text(
+                                '$activeCount/${catFeatures.length} on',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700,
+                                  color: activeCount > 0 ? ClassicTheme.primaryAccent : context.textSecondary,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: DS.space2),
+                            Icon(
+                              isCollapsed ? Icons.keyboard_arrow_down_rounded : Icons.keyboard_arrow_up_rounded,
+                              size: 18,
+                              color: context.textSecondary,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    if (!isCollapsed) ...[
+                      Divider(height: 1, color: context.borderColor.withValues(alpha: 0.6)),
+                      ...catFeatures.map((f) => _featureItem(context, f, v)),
+                    ],
+                  ],
+                ),
+              );
+            }),
+        ],
+      ),
+    );
+  }
+
+  Widget _featureItem(BuildContext context, FeatureDef f, String trade) {
+    final sel = _selection;
+    final isCore = LicenceEdits.isCoreKey(f.key);
+    final inPackage = sel.package.includes(f.key);
+    final isEnabled = sel.composed.features[f.key] == true;
+    final isAvailableAddOn = sel.availableAddOns.any((d) => d.key == f.key);
+
+    final bool canToggle;
+    String? unavailableReason;
+    if (isCore) {
+      canToggle = false;
+    } else if (inPackage) {
+      canToggle = true;
+    } else if (isEnabled) {
+      canToggle = true;
+    } else if (isAvailableAddOn) {
+      canToggle = true;
+    } else {
+      canToggle = false;
+      final mode = sel.composed.storageMode;
+      final offline = StorageModes.isOffline(mode);
+      final devices = sel.composed.maxDevices;
+      if (offline && (f.need != FeatureNeed.none || f.tier.isOnline)) {
+        unavailableReason = 'Requires Cloud or Local Network storage (switch in Step 2)';
+      } else if (devices <= 1 && f.need == FeatureNeed.secondDevice) {
+        unavailableReason = 'Requires 2+ devices (increase in Step 5 Limits)';
+      } else {
+        unavailableReason = 'Unavailable for current package architecture';
+      }
+    }
+
+    final String badgeText;
+    final Color badgeColor;
+    if (isCore) {
+      badgeText = 'Always Included';
+      badgeColor = ClassicTheme.successEmerald;
+    } else if (inPackage) {
+      if (isEnabled) {
+        badgeText = 'Package Default';
+        badgeColor = ClassicTheme.infoBlue;
+      } else {
+        badgeText = 'Switched Off';
+        badgeColor = ClassicTheme.warningAmber;
+      }
+    } else {
+      if (isEnabled) {
+        badgeText = 'Active Add-on';
+        badgeColor = ClassicTheme.primaryAccent;
+      } else if (canToggle) {
+        badgeText = 'Add-on';
+        badgeColor = context.textSecondary;
+      } else {
+        badgeText = 'Locked';
+        badgeColor = context.textMuted;
+      }
+    }
+
+    final icon = PackageFeaturesBreakdownWidget.iconForFeature(f.iconCode);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: DS.space3, vertical: 8),
+      decoration: BoxDecoration(
+        border: Border(bottom: BorderSide(color: context.borderColor.withValues(alpha: 0.35), width: 0.5)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Container(
+            width: 32,
+            height: 32,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: (isEnabled ? ClassicTheme.primaryAccent : context.textMuted).withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(DS.radiusSm),
+            ),
+            child: Icon(
+              icon,
+              size: 16,
+              color: isEnabled ? ClassicTheme.primaryAccent : context.textMuted,
+            ),
+          ),
+          const SizedBox(width: DS.space3),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        f.labelFor(trade),
+                        style: TextStyle(
+                          fontSize: DS.fontCaption,
+                          fontWeight: FontWeight.w700,
+                          color: isEnabled ? context.textPrimary : context.textSecondary,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: DS.space2),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                      decoration: BoxDecoration(
+                        color: badgeColor.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(
+                        badgeText,
+                        style: TextStyle(
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.w700,
+                          color: badgeColor,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  f.descriptionFor(trade),
+                  style: TextStyle(
+                    fontSize: DS.fontMicro,
+                    color: isEnabled ? context.textSecondary : context.textMuted,
+                    height: 1.3,
+                  ),
+                ),
+                if (unavailableReason != null) ...[
+                  const SizedBox(height: 2),
+                  Row(
+                    children: [
+                      const Icon(Icons.info_outline_rounded, size: 11, color: ClassicTheme.warningAmber),
+                      const SizedBox(width: 3),
+                      Expanded(
+                        child: Text(
+                          unavailableReason,
+                          style: const TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w600,
+                            color: ClassicTheme.warningAmber,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(width: DS.space2),
+          Switch.adaptive(
+            value: isEnabled,
+            activeThumbColor: ClassicTheme.primaryAccent,
+            onChanged: canToggle ? (on) => _toggleFeature(f, on) : null,
+          ),
+        ],
+      ),
     );
   }
 
@@ -1275,7 +1804,13 @@ class _TenantPackageEditorState extends State<TenantPackageEditor> {
                 style: TextStyle(fontSize: DS.fontBody, fontWeight: FontWeight.w800, color: context.textPrimary)),
             if (hint != null) ...[
               const SizedBox(width: DS.space2),
-              Text(hint, style: TextStyle(fontSize: DS.fontMicro, color: context.textMuted)),
+              Flexible(
+                child: Text(
+                  hint,
+                  style: TextStyle(fontSize: DS.fontMicro, color: context.textMuted),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
             ],
           ],
         ),

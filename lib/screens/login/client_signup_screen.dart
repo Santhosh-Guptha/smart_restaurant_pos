@@ -40,6 +40,10 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
   final _otpController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
+  final _requirementsController = TextEditingController();
+
+  /// Features explicitly requested / selected by the prospective client or admin
+  final Set<String> _selectedCustomFeatures = {};
 
   String _businessCategory = 'Restaurant & Cafe';
 
@@ -109,6 +113,7 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
     _otpController.dispose();
     _passwordController.dispose();
     _confirmPasswordController.dispose();
+    _requirementsController.dispose();
     _cooldownTimer?.cancel();
     super.dispose();
   }
@@ -241,6 +246,9 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
   }
 
   String get _submitButtonLabel {
+    if (_isFreeTrial && _selectedCustomFeatures.isNotEmpty) {
+      return "Submit Custom Trial Request";
+    }
     if (_isLocalLan) return "Submit Local Network Hub Request";
     if (_isEnterprise) return "Submit Enterprise Request";
     if (_isPaidPackage) return "Submit Package Request";
@@ -278,17 +286,28 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
 
   /// The storage mode the request asks for: a local network hub, else the
   /// tier's default (own Sheets; Offline on the device).
-  String get _requestedStorageMode =>
-      _isLocalLan ? StorageModes.localNetwork : _selectedTier.defaultStorageMode;
+  String get _requestedStorageMode {
+    if (_isLocalLan) return StorageModes.localNetwork;
+    if (_isFreeTrial || _selectedOption == 'offline') return StorageModes.pureOffline;
+    return _selectedTier.defaultStorageMode;
+  }
 
-  /// The features of this trade's package at [tier] (only keys that apply
-  /// to the trade are ever on).
-  List<FeatureDef> _tierFeatures(PackageTier tier) {
-    final map = PackageCatalog.featuresFor(_vertical, tier);
-    return [
-      for (final def in FeatureCatalog.all)
-        if (map[def.key] == true) def,
-    ];
+  String get _requestedPackageId {
+    if (_isFreeTrial) return Verticals.defaultPackageFor(_businessCategory);
+    return PackageCatalog.starterId(_vertical, _selectedTier);
+  }
+
+  String get _requestedPlanLabel {
+    if (_isFreeTrial) {
+      return "14-Day Free Trial (${PackageCatalog.nameFor(_vertical, PackageTier.offline)})";
+    }
+    if (_isLocalLan) {
+      return "${PackageCatalog.nameFor(_vertical, PackageTier.basic)} (Local Network Hub)";
+    }
+    if (_isEnterprise) {
+      return "${PackageCatalog.nameFor(_vertical, PackageTier.enterprise)} (Enterprise Custom)";
+    }
+    return PackageCatalog.nameFor(_vertical, _selectedTier);
   }
 
   /// "Up to 2 devices · 1 store · 3 users" for [tier] in this trade.
@@ -315,6 +334,254 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
       ? '${PackageCatalog.offlineNotice} You can export an encrypted backup of your data '
           'from Settings → Backup & restore.'
       : PackageCatalog.driveNotice;
+
+  /// Transparent interactive feature selection widget allowing clients and
+  /// admins to clearly see included capabilities and pick extra add-ons.
+  Widget _buildFeatureSelectionSection(Color primaryAccent) {
+    final baseMap = PackageCatalog.featuresFor(_vertical, _selectedTier);
+    final applicableDefs = FeatureCatalog.all.where((d) =>
+        (d.verticals.isEmpty || d.verticals.contains(_vertical)) &&
+        !FeatureCatalog.isComingSoon(d.key)
+    ).toList();
+    final includedDefs = applicableDefs.where((d) => baseMap[d.key] == true).toList();
+    final addOnDefs = applicableDefs.where((d) => baseMap[d.key] != true).toList();
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: context.surfaceColor,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: context.borderColor),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: primaryAccent.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(Icons.tune_rounded, color: primaryAccent, size: 20),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      "Feature Clarity & Custom Selection",
+                      style: TextStyle(
+                        color: context.textPrimary,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      "Features with green checks are included in your plan. Tap any additional capability below to request it for your store.",
+                      style: TextStyle(color: context.textSecondary, fontSize: DS.fontMicro, height: 1.3),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+
+          // Summary Badges
+          Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: ClassicTheme.successEmerald.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: ClassicTheme.successEmerald.withValues(alpha: 0.3)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.check_circle_rounded, size: 13, color: ClassicTheme.successEmerald),
+                    const SizedBox(width: 5),
+                    Text(
+                      "${includedDefs.length} Included in Plan",
+                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: ClassicTheme.successEmerald),
+                    ),
+                  ],
+                ),
+              ),
+              if (addOnDefs.isNotEmpty)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: _selectedCustomFeatures.isNotEmpty
+                        ? primaryAccent.withValues(alpha: 0.15)
+                        : context.textSecondary.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(
+                      color: _selectedCustomFeatures.isNotEmpty
+                          ? primaryAccent.withValues(alpha: 0.4)
+                          : context.borderColor,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        _selectedCustomFeatures.isNotEmpty ? Icons.playlist_add_check_rounded : Icons.add_circle_outline_rounded,
+                        size: 13,
+                        color: _selectedCustomFeatures.isNotEmpty ? primaryAccent : context.textSecondary,
+                      ),
+                      const SizedBox(width: 5),
+                      Text(
+                        _selectedCustomFeatures.isNotEmpty
+                            ? "${_selectedCustomFeatures.length} Custom Feature(s) Requested"
+                            : "${addOnDefs.length} Optional Add-ons Available",
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: _selectedCustomFeatures.isNotEmpty ? primaryAccent : context.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 14),
+
+          // Included Features Chips
+          Text(
+            "INCLUDED IN SELECTED PLAN (${_selectedTier.label.toUpperCase()})",
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 0.5,
+              color: context.textSecondary,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: includedDefs.map((def) {
+              return Tooltip(
+                message: def.description,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: ClassicTheme.successEmerald.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: ClassicTheme.successEmerald.withValues(alpha: 0.25)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.check_rounded, size: 12, color: ClassicTheme.successEmerald),
+                      const SizedBox(width: 4),
+                      Text(
+                        def.label,
+                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: context.textPrimary),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+
+          // Available Add-ons / Custom Selectable Features
+          if (addOnDefs.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            Text(
+              "SELECT EXTRA FEATURES YOU NEED (OPTIONAL ADD-ONS)",
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 0.5,
+                color: context.textSecondary,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: addOnDefs.map((def) {
+                final isSelected = _selectedCustomFeatures.contains(def.key);
+                return InkWell(
+                  onTap: () {
+                    setState(() {
+                      if (isSelected) {
+                        _selectedCustomFeatures.remove(def.key);
+                      } else {
+                        _selectedCustomFeatures.add(def.key);
+                      }
+                    });
+                  },
+                  borderRadius: BorderRadius.circular(8),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 150),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: isSelected ? primaryAccent.withValues(alpha: 0.15) : context.surfaceColor,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: isSelected ? primaryAccent : context.borderColor,
+                        width: isSelected ? 1.5 : 1,
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          isSelected ? Icons.check_box_rounded : Icons.add_box_outlined,
+                          size: 14,
+                          color: isSelected ? primaryAccent : context.textSecondary,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          def.label,
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                            color: isSelected ? context.textPrimary : context.textSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ],
+
+          // Requirements / Custom Notes
+          const SizedBox(height: 16),
+          Text(
+            "Special Store Requirements or Custom Notes (Optional)",
+            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: context.textSecondary),
+          ),
+          const SizedBox(height: 6),
+          TextFormField(
+            controller: _requirementsController,
+            maxLines: 2,
+            style: TextStyle(color: context.textPrimary, fontSize: 13),
+            decoration: ClassicTheme.inputDecorationFor(
+              context,
+              hintText: "e.g. Need 2 thermal printers, kitchen display screen, barcode scanners...",
+              prefixIcon: Icon(Icons.notes_rounded, color: context.textSecondary, size: 18),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   /// Builds a tappable option card for the plan picker.
   Widget _buildOptionCard({
@@ -573,21 +840,35 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
     final clientName = _nameController.text.trim();
     final shopName = _shopNameController.text.trim();
     final mobile = _mobileController.text.trim();
+    final vertical = Verticals.forCategory(_businessCategory);
+    final fallbackSuffix = vertical == Verticals.restaurant
+        ? "Restaurant"
+        : vertical == Verticals.supermarket
+            ? "Supermarket"
+            : vertical == Verticals.pharmacy
+                ? "Pharmacy"
+                : "Store";
+    final effectiveShopName = shopName.isNotEmpty ? shopName : "$clientName $fallbackSuffix";
+
+    // Build effective requirements including user's notes and requested custom features
+    String effectiveRequirements = _requirementsController.text.trim();
+    if (_selectedCustomFeatures.isNotEmpty) {
+      final labels = _selectedCustomFeatures
+          .map((k) => FeatureCatalog.find(k)?.label ?? k)
+          .toList();
+      final featureSummary = "Requested Add-On Features: ${labels.join(', ')}";
+      if (effectiveRequirements.isNotEmpty) {
+        effectiveRequirements = "$effectiveRequirements\n$featureSummary";
+      } else {
+        effectiveRequirements = featureSummary;
+      }
+    }
 
     try {
-      if (_isFreeTrial) {
+      if (_isFreeTrial && _selectedCustomFeatures.isEmpty) {
         // =====================================================================
-        //  INSTANT FREE TRIAL ACTIVATION (NO MANUAL ADMIN APPROVAL REQUIRED!)
+        //  INSTANT FREE TRIAL ACTIVATION (NO CUSTOM ADD-ONS REQUESTED)
         // =====================================================================
-        // The trial is a package and a plan like every other licence: the
-        // package is always the trade's Offline package (`<trade>_offline`,
-        // contract §6a), the default trial plan gives the dates only, and
-        // both are composed for this trade the same way the console composes
-        // them (server: START_TRIAL; here: TenantProvisioningService).
-        // Server first: with an e-mail the server verified, Code.gs creates
-        // the tenant itself (START_TRIAL) with the password chosen here. The
-        // app only writes the tenant documents when the server can't be
-        // reached — those writes stop working once the locked rules go live.
         final proof = OtpVerificationService.proofFor(email);
         if (proof != null) {
           final server = await _startTrialOnServer(
@@ -620,8 +901,6 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
 
         final trialTier = _trialTier;
         final trialPackageId = Verticals.defaultPackageFor(_businessCategory);
-        // Validity only: a plan's legacy feature or limit fields never reach
-        // the licence.
         final trialPlan = (await SubscriptionPlanService.getDefaultTrialPlan()).copyWith(features: const {});
         final trialPackage =
             (await PackageService.getById(trialPackageId)) ?? PackageCatalog.starter(_vertical, trialTier);
@@ -654,12 +933,67 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
             AppToast.showError(context, res['message'] ?? "Account creation failed.");
           }
         }
+      } else if (_isFreeTrial) {
+        // =====================================================================
+        //  FREE TRIAL WITH CUSTOM REQUESTED ADD-ONS (SUBMITS FOR ADMIN REVIEW)
+        // =====================================================================
+        final baseFeatures = PackageCatalog.featuresFor(vertical, PackageTier.offline);
+        final allRequestedFeatures = <String, bool>{
+          ...baseFeatures,
+          for (final key in _selectedCustomFeatures) key: true,
+        };
+        final packageId = _requestedPackageId;
+        final packageLabel = "14-Day Free Trial (${PackageCatalog.nameFor(vertical, PackageTier.offline)}) + Custom Add-ons";
+
+        final reqRef = _firestore.collection('registration_requests').doc();
+        await reqRef.set({
+          'id': reqRef.id,
+          'clientName': clientName,
+          'shopName': effectiveShopName,
+          'businessCategory': _businessCategory,
+          'mobile': mobile,
+          'email': email,
+          'status': 'PENDING',
+          'emailVerified': true,
+          if (OtpVerificationService.proofFor(email) != null) 'emailProof': OtpVerificationService.proofFor(email),
+          'requestedPlan': 'free_trial',
+          'requestedPlanLabel': packageLabel,
+          'requestedPackageId': packageId,
+          'requestedTier': PackageTier.offline.id,
+          'requestedStorageMode': StorageModes.pureOffline,
+          'requestedFeatures': allRequestedFeatures,
+          'selectedCustomFeatures': _selectedCustomFeatures.toList(),
+          'requirements': effectiveRequirements,
+          'notes': effectiveRequirements,
+          'vertical': vertical,
+          'isEnterprise': false,
+          'isTrial': true,
+          'createdAt': FieldValue.serverTimestamp(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+
+        await SmtpEmailService.sendRegistrationSubmittedEmail(
+          recipientEmail: email,
+          clientName: clientName,
+          shopName: effectiveShopName,
+          businessCategory: _businessCategory,
+          mobile: mobile,
+          selectedPlan: packageLabel,
+          packageName: packageId,
+          features: allRequestedFeatures,
+        ).catchError((e) {
+          debugPrint("Trial registration email dispatch error: $e");
+          return <String, dynamic>{};
+        });
+
+        if (mounted) {
+          setState(() => _isSubmitting = false);
+          _showPackageRequestSubmittedDialog(clientName, email, packageLabel);
+        }
       } else if (_isPaidPackage) {
         // =====================================================================
         //  PAID PACKAGE REQUEST (SUBMITS FOR ADMIN APPROVAL)
         // =====================================================================
-        // Signed-out devices can't read requests under the locked rules; a
-        // duplicate then simply reaches the admin, who sees both.
         bool pending = false;
         try {
           final pendingReq = await _firestore
@@ -680,19 +1014,14 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
         }
 
         final tier = _selectedTier;
-        final vertical = Verticals.forCategory(_businessCategory);
-        final packageId = PackageCatalog.starterId(vertical, tier);
-        final packageLabel = _isLocalLan
-            ? '${PackageCatalog.nameFor(vertical, tier)} (local network hub)'
-            : PackageCatalog.nameFor(vertical, tier);
-        final fallbackSuffix = vertical == Verticals.restaurant
-            ? "Restaurant"
-            : vertical == Verticals.supermarket
-                ? "Supermarket"
-                : vertical == Verticals.pharmacy
-                    ? "Pharmacy"
-                    : "Store";
-        final effectiveShopName = shopName.isNotEmpty ? shopName : "$clientName $fallbackSuffix";
+        final packageId = _requestedPackageId;
+        final packageLabel = _requestedPlanLabel;
+
+        final baseFeatures = PackageCatalog.featuresFor(vertical, tier);
+        final allRequestedFeatures = <String, bool>{
+          ...baseFeatures,
+          for (final key in _selectedCustomFeatures) key: true,
+        };
 
         final reqRef = _firestore.collection('registration_requests').doc();
         await reqRef.set({
@@ -705,13 +1034,15 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
           'status': 'PENDING',
           'emailVerified': true,
           if (OtpVerificationService.proofFor(email) != null) 'emailProof': OtpVerificationService.proofFor(email),
-          // A package request: this trade's package at the chosen tier. The
-          // administrator picks the plan (validity) when approving.
           'requestedPlan': tier.id,
           'requestedPlanLabel': packageLabel,
           'requestedPackageId': packageId,
           'requestedTier': tier.id,
           'requestedStorageMode': _requestedStorageMode,
+          'requestedFeatures': allRequestedFeatures,
+          'selectedCustomFeatures': _selectedCustomFeatures.toList(),
+          'requirements': effectiveRequirements,
+          'notes': effectiveRequirements,
           if (_isLocalLan)
             'note': 'Self-hosted local network hub requested: the ledger on the host PC, '
                 'devices on the store Wi-Fi pair with it and count against the package\'s device limit.',
@@ -729,7 +1060,7 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
           mobile: mobile,
           selectedPlan: packageLabel,
           packageName: packageId,
-          features: PackageCatalog.featuresFor(vertical, tier),
+          features: allRequestedFeatures,
         ).catchError((e) {
           debugPrint("Registration email dispatch error: $e");
           return <String, dynamic>{};
@@ -743,8 +1074,6 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
         // =====================================================================
         //  CUSTOM / ENTERPRISE REQUEST (SUBMITS FOR ADMIN CONSULTATION)
         // =====================================================================
-        // Signed-out devices can't read requests under the locked rules; a
-        // duplicate then simply reaches the admin, who sees both.
         bool pending = false;
         try {
           final pendingReq = await _firestore
@@ -764,15 +1093,14 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
           return;
         }
 
-        final vertical = Verticals.forCategory(_businessCategory);
-        final fallbackSuffix = vertical == Verticals.restaurant
-            ? "Restaurant"
-            : vertical == Verticals.supermarket
-                ? "Supermarket"
-                : vertical == Verticals.pharmacy
-                    ? "Pharmacy"
-                    : "Store";
-        final effectiveShopName = shopName.isNotEmpty ? shopName : "$clientName $fallbackSuffix";
+        final packageLabel = PackageCatalog.nameFor(vertical, PackageTier.enterprise);
+        final packageId = _requestedPackageId;
+
+        final baseFeatures = PackageCatalog.featuresFor(vertical, PackageTier.enterprise);
+        final allRequestedFeatures = <String, bool>{
+          ...baseFeatures,
+          for (final key in _selectedCustomFeatures) key: true,
+        };
 
         final reqRef = _firestore.collection('registration_requests').doc();
         await reqRef.set({
@@ -786,10 +1114,14 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
           'emailVerified': true,
           if (OtpVerificationService.proofFor(email) != null) 'emailProof': OtpVerificationService.proofFor(email),
           'requestedPlan': 'ENTERPRISE_CUSTOM',
-          'requestedPlanLabel': PackageCatalog.nameFor(vertical, PackageTier.enterprise),
-          'requestedPackageId': PackageCatalog.starterId(vertical, PackageTier.enterprise),
+          'requestedPlanLabel': packageLabel,
+          'requestedPackageId': packageId,
           'requestedTier': PackageTier.enterprise.id,
           'requestedStorageMode': PackageTier.enterprise.defaultStorageMode,
+          'requestedFeatures': allRequestedFeatures,
+          'selectedCustomFeatures': _selectedCustomFeatures.toList(),
+          'requirements': effectiveRequirements,
+          'notes': effectiveRequirements,
           'vertical': vertical,
           'isEnterprise': true,
           'createdAt': FieldValue.serverTimestamp(),
@@ -802,9 +1134,9 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
           shopName: effectiveShopName,
           businessCategory: _businessCategory,
           mobile: mobile,
-          selectedPlan: PackageCatalog.nameFor(vertical, PackageTier.enterprise),
-          packageName: PackageCatalog.starterId(vertical, PackageTier.enterprise),
-          features: PackageCatalog.featuresFor(vertical, PackageTier.enterprise),
+          selectedPlan: packageLabel,
+          packageName: packageId,
+          features: allRequestedFeatures,
         ).catchError((e) {
           debugPrint("Enterprise registration email dispatch error: $e");
           return <String, dynamic>{};
@@ -1206,7 +1538,16 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
                                 if (v != null) {
                                   // Tiers are the same for every trade; only the
                                   // package (its features) follows the category.
-                                  setState(() => _businessCategory = v);
+                                  setState(() {
+                                    _businessCategory = v;
+                                    if (_vertical == Verticals.kirana && _selectedOption == 'local_lan') {
+                                      _selectedOption = 'free_trial';
+                                    }
+                                    _selectedCustomFeatures.removeWhere((key) {
+                                      final def = FeatureCatalog.find(key);
+                                      return def == null || (def.verticals.isNotEmpty && !def.verticals.contains(_vertical));
+                                    });
+                                  });
                                 }
                               },
                             ),
@@ -1340,90 +1681,100 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
                     ),
 
                     // SECTION 2: PLAN SELECTION
-                    Text("Select Onboarding Option", style: TextStyle(color: context.textSecondary, fontSize: 13, fontWeight: FontWeight.w600)),
-                    const SizedBox(height: 8),
-                    Builder(builder: (context) {
-                      final trialTier = _trialTier;
-                      return _buildOptionCard(
-                        optionValue: 'free_trial',
-                        primaryAccent: primaryAccent,
-                        isFirst: true,
-                        icon: Icons.rocket_launch_rounded,
-                        title: "Start 14-Day Free Trial (Offline)",
-                        badge: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: ClassicTheme.successEmerald.withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Text(
-                            "INSTANT ACCESS",
-                            style: TextStyle(fontSize: DS.fontMicro, fontWeight: FontWeight.bold, color: ClassicTheme.successEmerald),
-                          ),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text("Select Onboarding Plan", style: TextStyle(color: context.textSecondary, fontSize: 13, fontWeight: FontWeight.w600)),
+                        Text(
+                          "Transparent Feature Clarity",
+                          style: TextStyle(color: primaryAccent, fontSize: 11, fontWeight: FontWeight.bold),
                         ),
-                        subtitle: _freeTrialSubtitle,
-                        heading: PackageCatalog.headingFor(_vertical, trialTier),
-                        limits: _limitsLine(trialTier),
-                        featureChips: _tierFeatures(trialTier),
-                        notice: _tierNotice(trialTier),
-                      );
-                    }),
+                      ],
+                    ),
                     const SizedBox(height: 8),
-                    // --- Local LAN Hub Option ---
+
+                    // 1. Free Trial Option
                     _buildOptionCard(
-                      optionValue: 'local_lan',
+                      optionValue: 'free_trial',
                       primaryAccent: primaryAccent,
-                      icon: Icons.hub_rounded,
-                      title: "Self-Hosted Local LAN Hub (PC + Satellites)",
+                      isFirst: true,
+                      icon: Icons.rocket_launch_rounded,
+                      title: "Start 14-Day Free Trial (Offline)",
                       badge: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                         decoration: BoxDecoration(
-                          color: ClassicTheme.infoBlue.withValues(alpha: 0.15),
+                          color: ClassicTheme.successEmerald.withValues(alpha: 0.15),
                           borderRadius: BorderRadius.circular(4),
                         ),
-                        child: Text(
-                            "LOCAL NETWORK",
-                            style: TextStyle(fontSize: DS.fontMicro, fontWeight: FontWeight.bold, color: ClassicTheme.infoBlue),
+                        child: const Text(
+                          "INSTANT ACCESS",
+                          style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: ClassicTheme.successEmerald),
                         ),
                       ),
-                      subtitle: "The ledger lives on a host PC in the store; tablets and billing terminals on the store Wi-Fi pair with it without depending on the cloud.",
-                      heading: "Local network hub",
-                      limits: "Basic package or higher · the host PC is device 1 · paired devices count against the package's device limit",
-                      notice: "A request like the paid packages: the admin onboards you and issues a signed licence key for the host PC. Not available for Kirana (single device).",
+                      subtitle: _freeTrialSubtitle,
+                      heading: PackageCatalog.headingFor(_vertical, _trialTier),
+                      limits: _limitsLine(_trialTier),
+                      notice: _tierNotice(_trialTier),
                     ),
                     const SizedBox(height: 8),
-                    if (_isLocalLan) ...[
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: ClassicTheme.infoBlue.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: ClassicTheme.infoBlue.withValues(alpha: 0.3)),
+
+                    // 2. Local LAN Hub Option (available for multi-device setups)
+                    if (_vertical != Verticals.kirana) ...[
+                      _buildOptionCard(
+                        optionValue: 'local_lan',
+                        primaryAccent: primaryAccent,
+                        icon: Icons.hub_rounded,
+                        title: "Self-Hosted Local LAN Hub (PC + Satellites)",
+                        badge: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: ClassicTheme.infoBlue.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: const Text(
+                            "LOCAL NETWORK",
+                            style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: ClassicTheme.infoBlue),
+                          ),
                         ),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Icon(Icons.info_outline_rounded, color: ClassicTheme.infoBlue, size: 18),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                "A local network hub is a request, like the paid packages: verify your e-mail, submit, and the admin onboards you on a Basic or higher package with a signed licence key for the host PC. Tablets then pair with the host over the store Wi-Fi.",
-                                style: TextStyle(fontSize: DS.fontMicro, color: context.textSecondary, height: 1.35),
-                              ),
-                            ),
-                          ],
-                        ),
+                        subtitle: "The ledger lives on a host PC in the store; tablets and billing terminals on the store Wi-Fi pair with it without depending on the cloud.",
+                        heading: "Local network hub (${PackageCatalog.nameFor(_vertical, PackageTier.basic)})",
+                        limits: "Basic package or higher · the host PC is device 1 · paired devices count against the package's device limit",
+                        notice: "A request like the paid packages: the admin onboards you and issues a signed licence key for the host PC.",
                       ),
                       const SizedBox(height: 8),
+                      if (_isLocalLan) ...[
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: ClassicTheme.infoBlue.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: ClassicTheme.infoBlue.withValues(alpha: 0.3)),
+                          ),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Icon(Icons.info_outline_rounded, color: ClassicTheme.infoBlue, size: 18),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  "A local network hub is a request, like the paid packages: verify your e-mail, submit, and the admin onboards you on a Basic or higher package with a signed licence key for the host PC. Tablets then pair with the host over the store Wi-Fi.",
+                                  style: TextStyle(fontSize: DS.fontMicro, color: context.textSecondary, height: 1.35),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                      ],
                     ],
-                    // --- This trade's packages, tier by tier: requests only, no
-                    // free trial on any of them (contract §6a) ---
-                    ...const [
-                      PackageTier.offline,
-                      PackageTier.basic,
-                      PackageTier.standard,
-                      PackageTier.premium,
-                    ].map((tier) {
+
+                    // 3. Cloud Connected Packages (Basic, Standard, Premium)
+                    ...[PackageTier.basic, PackageTier.standard, PackageTier.premium].map((tier) {
+                      final isBasic = tier == PackageTier.basic;
+                      final isStandard = tier == PackageTier.standard;
+                      final badgeColor = isBasic
+                          ? ClassicTheme.infoBlue
+                          : (isStandard ? ClassicTheme.secondaryAccent : ClassicTheme.warningAmber);
                       return Padding(
                         padding: const EdgeInsets.only(bottom: 8),
                         child: _buildOptionCard(
@@ -1434,27 +1785,27 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
                           badge: Container(
                             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                             decoration: BoxDecoration(
-                              color: ClassicTheme.warningAmber.withValues(alpha: 0.15),
+                              color: badgeColor.withValues(alpha: 0.15),
                               borderRadius: BorderRadius.circular(4),
                             ),
                             child: Text(
-                            "REQUEST ONLY",
-                            style: TextStyle(fontSize: DS.fontMicro, fontWeight: FontWeight.bold, color: ClassicTheme.warningAmber),
+                              isBasic ? "CLOUD BASIC" : (isStandard ? "MULTI-STATION" : "MULTI-OUTLET"),
+                              style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: badgeColor),
                             ),
                           ),
-                          subtitle: tier.isOffline
-                              ? 'The same package as the free trial, licensed for a full term. Runs on this device '
-                                  'for one store, with the owner as the only user. Request only — the admin activates it.'
-                              : 'Runs on your own Google Drive, shared across your devices and staff. '
-                                  'No free trial — request only; the admin activates it.',
+                          subtitle: isBasic
+                              ? 'Single outlet, cloud ledger with Google Drive auto-sync, up to 2 devices and 3 users.'
+                              : (isStandard
+                                  ? 'Multi-station setup with KDS kitchen display, waiter mobile ordering, and digital receipts.'
+                                  : 'Multi-outlet operations, table QR ordering, live web menu, and advanced analytics.'),
                           heading: PackageCatalog.headingFor(_vertical, tier),
                           limits: _limitsLine(tier),
-                          featureChips: _tierFeatures(tier),
                           notice: _tierNotice(tier),
                         ),
                       );
                     }),
-                    // --- Enterprise card ---
+
+                    // 4. Enterprise / Custom Card
                     _buildOptionCard(
                       optionValue: 'enterprise',
                       primaryAccent: primaryAccent,
@@ -1467,17 +1818,20 @@ class _ClientSignUpScreenState extends ConsumerState<ClientSignUpScreen> {
                           color: ClassicTheme.warningAmber.withValues(alpha: 0.15),
                           borderRadius: BorderRadius.circular(4),
                         ),
-                        child: Text(
-                            "ADMIN APPROVAL",
-                            style: TextStyle(fontSize: DS.fontMicro, fontWeight: FontWeight.bold, color: ClassicTheme.warningAmber),
+                        child: const Text(
+                          "ADMIN CONSULTATION",
+                          style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: ClassicTheme.warningAmber),
                         ),
                       ),
                       subtitle: _enterpriseSubtitle,
                       heading: PackageCatalog.headingFor(_vertical, PackageTier.enterprise),
                       limits: _limitsLine(PackageTier.enterprise),
-                      featureChips: _tierFeatures(PackageTier.enterprise),
                       notice: _tierNotice(PackageTier.enterprise),
                     ),
+                    const SizedBox(height: 16),
+
+                    // SECTION 2B: FEATURE CLARITY & CUSTOM SELECTION
+                    _buildFeatureSelectionSection(primaryAccent),
                     const SizedBox(height: 20),
 
                     // SECTION 3: EMAIL VERIFICATION (MANDATORY)

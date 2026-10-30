@@ -1143,6 +1143,10 @@ class _MasterAdminScreenState extends ConsumerState<MasterAdminScreen> with Sing
                                 initialPlanId: lead.requestedPlanId,
                                 initialTier: AdminInquiriesView.leadTier(lead),
                                 initialStorageMode: LicenceEdits.requestedStorageMode(lead.rawData),
+                                initialFeatures: (lead.rawData['requestedFeatures'] is Map)
+                                    ? Map<String, bool>.from((lead.rawData['requestedFeatures'] as Map)
+                                        .map((k, v) => MapEntry(k.toString(), v == true)))
+                                    : null,
                               );
                             },
                           ),
@@ -2088,6 +2092,8 @@ class OrganizationsTab extends ConsumerStatefulWidget {
     /// used when the starting package allows it (contract §6b), so a
     /// LOCAL_NETWORK lead is onboarded on LOCAL_NETWORK.
     String? initialStorageMode,
+    /// Explicit requested features / add-ons from lead registration
+    Map<String, bool>? initialFeatures,
   }) async {
     final availablePlans = await SubscriptionPlanService.getAllPlans();
     if (!context.mounted) return;
@@ -2152,18 +2158,46 @@ class OrganizationsTab extends ConsumerStatefulWidget {
     final askedId = (initialPackageId ?? '').trim();
     final asked =
         allPackages.where((p) => p.id == askedId && LicenceEdits.belongsToTrade(p, initialTrade)).firstOrNull;
-    final startTier = initialTier ??
-        (askedId.isEmpty
-            ? PackageTier.offline
-            : LicenceEdits.requestedTier({'requestedPackageId': askedId, 'planProfile': askedId}));
-    final startPackage = asked ?? LicenceEdits.tierPackage(allPackages, initialTrade, startTier);
-    if (!context.mounted) return;
     final wantMode = (initialStorageMode ?? '').trim().toUpperCase();
+
+    // Determine initial tier appropriately. If LOCAL_NETWORK is requested and tier would be offline,
+    // promote to Basic so that LOCAL_NETWORK is a valid, allowed storage mode (fixing pure_offline lock).
+    PackageTier startTier = initialTier ??
+        (askedId.isEmpty
+            ? (wantMode == StorageModes.localNetwork ? PackageTier.basic : PackageTier.offline)
+            : LicenceEdits.requestedTier({
+                'requestedPackageId': askedId,
+                'planProfile': askedId,
+                if (wantMode.isNotEmpty) 'requestedStorageMode': wantMode,
+              }));
+    if (wantMode == StorageModes.localNetwork && startTier == PackageTier.offline) {
+      startTier = PackageTier.basic;
+    }
+
+    final startPackage = (asked != null && (wantMode != StorageModes.localNetwork || asked.allowedStorageModes.contains(wantMode)))
+        ? asked
+        : LicenceEdits.tierPackage(allPackages, initialTrade, startTier);
+    if (!context.mounted) return;
+
+    final String? currentStorageMode = wantMode == StorageModes.localNetwork
+        ? StorageModes.localNetwork
+        : (startPackage.allowedStorageModes.contains(wantMode) ? wantMode : null);
+
+    final initialAddOnKeys = <String>{};
+    if (initialFeatures != null) {
+      for (final entry in initialFeatures.entries) {
+        if (entry.value && !startPackage.includes(entry.key)) {
+          initialAddOnKeys.add(entry.key);
+        }
+      }
+    }
+
     TenantPackageSelection selection = TenantPackageSelection(
       package: startPackage,
       plan: selectedPlan,
       vertical: initialTrade,
-      currentStorageMode: startPackage.allowedStorageModes.contains(wantMode) ? wantMode : null,
+      currentStorageMode: currentStorageMode,
+      addOnKeys: initialAddOnKeys,
     );
 
     // Feature Toggles: populated dynamically from the selected plan
@@ -5299,6 +5333,7 @@ class _RegistrationRequestsTabState extends ConsumerState<RegistrationRequestsTa
       initialPlanId: initialPlanId,
       initialTier: initialTier,
       initialStorageMode: initialStorageMode,
+      initialFeatures: initialFeatures,
     );
   }
 
