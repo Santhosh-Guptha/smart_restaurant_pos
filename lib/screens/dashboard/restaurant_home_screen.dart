@@ -92,6 +92,10 @@ class _RestaurantHomeScreenState extends ConsumerState<RestaurantHomeScreen> {
         });
       }
 
+      if (isPureOffline || saasSession.currentOrganization?.storageMode == StorageModes.localNetwork) {
+        ref.read(saasSessionProvider.notifier).refreshLocalOrLanLicense();
+      }
+
       if (!isPureOffline && !isMaster) {
         await GoogleSheetsSetupGateDialog.showIfRequired(context, ref);
       }

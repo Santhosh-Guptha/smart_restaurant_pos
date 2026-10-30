@@ -19,6 +19,8 @@ import '../services/client_ledger_cloud_router_service.dart';
 import '../services/otp_verification_service.dart';
 import '../services/platform_security_service.dart';
 import '../services/client_license_bootstrap_service.dart';
+import '../services/client_bootstrap_reader_io.dart'
+    if (dart.library.js_interop) '../services/client_bootstrap_reader_web.dart';
 import '../services/firebase_auth_bridge.dart';
 import '../core/license_lease.dart';
 import '../core/cloud_gate.dart';
@@ -259,7 +261,8 @@ class SaasSessionNotifier extends StateNotifier<SaasSessionState> {
         // ONLY refresh from Firestore if online cloud mode!
         if (!isOffline) {
           await refreshSessionFromFirestore();
-
+        } else {
+          await refreshLocalOrLanLicense();
         }
 
       } catch (e) {
@@ -289,6 +292,115 @@ class SaasSessionNotifier extends StateNotifier<SaasSessionState> {
 
     }
 
+  }
+
+  /// Checks for an updated client license from local disk or LAN hub,
+  /// and updates session license and entitlements without terminating active session.
+  Future<void> refreshLocalOrLanLicense() async {
+    try {
+      String? token;
+      if (kIsWeb || LanHubClient.instance.hubUrl != null) {
+        try {
+          token = await LanHubClient.instance.fetchLicense();
+        } catch (_) {}
+      }
+      if (token == null || token.trim().isEmpty) {
+        final raw = ClientBootstrapReader.readBootstrapSource();
+        if (raw != null && raw.trim().isNotEmpty) {
+          final trimmed = raw.trim();
+          if (trimmed.startsWith('{')) {
+            try {
+              final j = jsonDecode(trimmed) as Map<String, dynamic>;
+              token = j['token']?.toString();
+            } catch (_) {}
+          } else {
+            token = trimmed;
+          }
+        }
+      }
+
+      if (token != null && token.isNotEmpty) {
+        final payload = ClientLicenseService.verifyAndDecode(token);
+        if (payload != null &&
+            (state.currentOrganization == null ||
+                payload.orgId.trim() == state.currentOrganization!.id.trim())) {
+          final box = Hive.box('configBox');
+          final resolvedVertical = Verticals.resolve(
+            businessCategory: payload.vertical == Verticals.restaurant ? 'Restaurant' : payload.vertical,
+            vertical: payload.vertical,
+          );
+          final effectiveFeatures = Map<String, bool>.from(payload.features);
+          if (payload.storageMode == StorageModes.localNetwork && resolvedVertical != Verticals.kirana) {
+            effectiveFeatures[FeatureKeys.localLanServer] = true;
+            effectiveFeatures[FeatureKeys.customerDisplay] = true;
+          }
+
+          final updatedLicense = SaasLicense(
+            planTier: payload.tier,
+            planProfile: payload.packageId,
+            status: 'ACTIVE',
+            tier: payload.tier,
+            features: effectiveFeatures,
+            featuresResolvedFor: resolvedVertical,
+            vertical: resolvedVertical,
+            maxDevices: resolvedVertical == Verticals.kirana ? 1 : payload.maxDevices,
+            maxFranchises: resolvedVertical == Verticals.kirana ? 1 : payload.maxOutlets,
+            maxUsers: resolvedVertical == Verticals.kirana ? 1 : payload.maxUsers,
+            allowedRoles: resolvedVertical == Verticals.kirana ? const ['OWNER'] : payload.allowedRoles,
+            startDate: payload.issuedAt,
+            endDate: payload.validUntil,
+          );
+
+          await box.put('saas_license', jsonEncode(updatedLicense.toJson()));
+          if (state.currentUser != null) {
+            final emailKey = state.currentUser!.email.trim().toLowerCase();
+            await box.put('saas_license_$emailKey', jsonEncode(updatedLicense.toJson()));
+          }
+          ClientBootstrapReader.saveBootstrapSource(token);
+
+          if (mounted) {
+            state = state.copyWith(currentLicense: updatedLicense);
+          }
+          debugPrint('SaasSessionProvider: Refreshed local/LAN license for ${payload.orgId}. Features: $effectiveFeatures');
+          return;
+        }
+      }
+
+      // Fallback: check /api/v1/store directly from LanHubClient
+      final storeData = await LanHubClient.instance.fetchStore();
+      if (storeData != null && storeData['features'] is Map) {
+        final rawFeats = storeData['features'] as Map;
+        final featMap = <String, bool>{};
+        rawFeats.forEach((k, v) => featMap[k.toString()] = v == true);
+
+        final rolesList = (storeData['allowedRoles'] is List)
+            ? List<String>.from((storeData['allowedRoles'] as List).map((e) => e.toString()))
+            : (state.currentLicense?.allowedRoles ?? const ['OWNER']);
+
+        final current = state.currentLicense;
+        if (current != null) {
+          final mergedFeats = Map<String, bool>.from(current.features)..addAll(featMap);
+          final updatedLicense = current.copyWith(
+            features: mergedFeats,
+            allowedRoles: rolesList,
+            tier: storeData['tier']?.toString() ?? current.tier,
+            maxDevices: (storeData['maxDevices'] is int) ? storeData['maxDevices'] as int : current.maxDevices,
+          );
+          final box = Hive.box('configBox');
+          await box.put('saas_license', jsonEncode(updatedLicense.toJson()));
+          if (state.currentUser != null) {
+            final emailKey = state.currentUser!.email.trim().toLowerCase();
+            await box.put('saas_license_$emailKey', jsonEncode(updatedLicense.toJson()));
+          }
+          if (mounted) {
+            state = state.copyWith(currentLicense: updatedLicense);
+          }
+          debugPrint('SaasSessionProvider: Refreshed license from LAN hub /api/v1/store');
+        }
+      }
+    } catch (e) {
+      debugPrint('SaasSessionProvider: refreshLocalOrLanLicense note: $e');
+    }
   }
 
   /// Refreshes current user, organization, and license details from master Firestore
@@ -1223,6 +1335,9 @@ class SaasSessionNotifier extends StateNotifier<SaasSessionState> {
           isMockMode: false,
           isInitializing: false,
         );
+        if (StorageModes.isOffline(org.storageMode) || StorageModes.isLocalNetwork(org.storageMode)) {
+          unawaited(refreshLocalOrLanLicense());
+        }
         return true;
       } catch (e) {
         debugPrint("Error restoring local offline session: $e");

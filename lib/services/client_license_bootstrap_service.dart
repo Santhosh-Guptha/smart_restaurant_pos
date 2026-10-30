@@ -18,11 +18,16 @@ class ClientLicenseBootstrapService {
   /// into the session with zero human prompts required.
   static Future<bool> checkAndAutoActivateBootstrapLicense(Ref ref) async {
     try {
-      var raw = ClientBootstrapReader.readBootstrapSource();
-      if (raw == null || raw.trim().isEmpty) {
+      String? raw;
+      // On web or LAN satellite, query the live LAN hub server first so newly
+      // generated .bat / token changes on the host disk take effect immediately.
+      if (kIsWeb || LanHubClient.instance.hubUrl != null) {
         try {
           raw = await LanHubClient.instance.fetchLicense();
         } catch (_) {}
+      }
+      if (raw == null || raw.trim().isEmpty) {
+        raw = ClientBootstrapReader.readBootstrapSource();
       }
       if (raw == null || raw.trim().isEmpty) return false;
 
