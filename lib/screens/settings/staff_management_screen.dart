@@ -178,30 +178,48 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
     final phoneCtrl = TextEditingController(text: existing?.phone ?? '');
     bool obscurePassword = true;
     
-    // Filter available roles according to license allowedRoles
+    // Filter available roles according to license allowedRoles and active entitlements
     final creatorIsStoreScoped = (saasSession.currentUser?.franchiseId ?? '').isNotEmpty;
+    final ent = ref.read(entitlementsProvider);
+    final hasKds = ent.isEnabled(FeatureKeys.kdsEnabled);
+    final hasWaiter = ent.isEnabled(FeatureKeys.waiterOrdering) || ent.isEnabled(FeatureKeys.tableManagement);
+    final hasBilling = ent.isEnabled(FeatureKeys.billing) ||
+        ent.isEnabled(FeatureKeys.dineInBilling) ||
+        ent.isEnabled(FeatureKeys.qsrBilling) ||
+        ent.isEnabled(FeatureKeys.barcodeBilling);
+    final hasStaffMgmt = ent.isEnabled(FeatureKeys.staffManagement) && effectiveMaxUsers > 1;
+
     bool fitsTrade(StaffRole r) =>
         r != StaffRole.unassigned &&
         !(creatorIsStoreScoped && r == StaffRole.owner) &&
         (vl.isRestaurant || (r != StaffRole.kitchen && r != StaffRole.waiter));
+
     final filteredRoles = StaffRole.values.where((r) {
       if (!fitsTrade(r)) return false;
-      // In a restaurant with multi-user capacity, all restaurant roles (Owner, Manager, Billing, Waiter, Kitchen)
-      // are always available to assign staff.
-      if (vl.isRestaurant && effectiveMaxUsers > 1) return true;
-      final roleKey = r.name.toUpperCase();
-      return allowedRoles.isEmpty ||
-          allowedRoles.any((a) {
-            final ak = a.toUpperCase();
-            return ak == roleKey ||
-                (roleKey == 'BILLING' && ak == 'CASHIER') ||
-                (roleKey == 'KITCHEN' && ak == 'CHEF') ||
-                (roleKey == 'WAITER' && ak == 'CAPTAIN');
-          });
+      // Feature entitlement gating
+      if (r == StaffRole.kitchen && !hasKds) return false;
+      if (r == StaffRole.waiter && !hasWaiter) return false;
+      if (r == StaffRole.manager && !hasStaffMgmt) return false;
+      if (r == StaffRole.billing && !hasBilling) return false;
+
+      // License allowedRoles check
+      if (allowedRoles.isNotEmpty) {
+        final roleKey = r.name.toUpperCase();
+        final isAllowed = allowedRoles.any((a) {
+          final ak = a.toUpperCase();
+          return ak == roleKey ||
+              (roleKey == 'BILLING' && ak == 'CASHIER') ||
+              (roleKey == 'KITCHEN' && ak == 'CHEF') ||
+              (roleKey == 'WAITER' && ak == 'CAPTAIN');
+        });
+        if (!isAllowed) return false;
+      }
+      return true;
     }).toList();
+
     final availableRoles = filteredRoles.isNotEmpty
         ? filteredRoles
-        : StaffRole.values.where(fitsTrade).toList();
+        : [StaffRole.owner];
 
     StaffRole role = existing?.role ?? availableRoles.first;
     if (!availableRoles.contains(role)) {
@@ -215,9 +233,7 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
     if (selectedRoles.isEmpty) selectedRoles = {role};
 
     String station = existing?.assignedStation ?? 'All';
-    final ent = ref.read(entitlementsProvider);
     final hasCloud = ent.isEnabled(FeatureKeys.cloudSync);
-    final hasKds = ent.isEnabled(FeatureKeys.kdsEnabled);
     // Sheet sharing needs the cloud; without it the flag is simply false.
     bool grantSheetAccess = hasCloud && (existing?.isSheetAccessGranted ?? true);
 

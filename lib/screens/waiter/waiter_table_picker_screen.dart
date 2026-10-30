@@ -12,9 +12,11 @@ import '../../core/responsive.dart';
 import '../../core/restaurant_models.dart';
 import '../../providers/saas_session_provider.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/entitlements_provider.dart';
 import '../../providers/restaurant_auth_provider.dart';
 import '../../services/lan_hub_client.dart';
 import 'waiter_order_taking_screen.dart';
+import '../login/feature_locked_screen.dart';
 
 /// The waiter's front door: pick a table, start the order.
 ///
@@ -272,6 +274,17 @@ class _WaiterTablePickerScreenState extends ConsumerState<WaiterTablePickerScree
 
   @override
   Widget build(BuildContext context) {
+    final ent = ref.watch(entitlementsProvider);
+    if (guardTripped ||
+        (!ent.isEnabled(FeatureKeys.waiterOrdering) &&
+            !ent.isEnabled(FeatureKeys.tableManagement))) {
+      return const FeatureLockedScreen(
+        featureKey: FeatureKeys.waiterOrdering,
+        featureLabel: 'Waiter Ordering Pad',
+        role: 'WAITER',
+      );
+    }
+
     final sections = <String>{'All', ..._tables.map((t) => t.section).where((s) => s.isNotEmpty)}.toList();
     final visible = _section == 'All' ? _tables : _tables.where((t) => t.section == _section).toList();
     final gutter = Responsive.gutter(context);

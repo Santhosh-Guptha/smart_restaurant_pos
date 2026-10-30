@@ -316,6 +316,33 @@ void main() {
       expect(LicenseComposer.rolesFor(Verticals.restaurant, PackageTier.standard, 2), containsAll(['WAITER', 'KITCHEN']));
       expect(LicenseComposer.rolesFor(Verticals.restaurant, PackageTier.standard, 1), ['OWNER', 'MANAGER', 'BILLING'],
           reason: 'a one-device restaurant has nobody to hand a pad to');
+
+      // Locked feature -> role gating verification
+      final rolesNoKds = LicenseComposer.rolesFor(
+        Verticals.restaurant,
+        PackageTier.standard,
+        5,
+        features: {FeatureKeys.kdsEnabled: false, FeatureKeys.waiterOrdering: true},
+      );
+      expect(rolesNoKds.contains('KITCHEN'), isFalse, reason: 'KITCHEN must be omitted when kdsEnabled is false');
+      expect(rolesNoKds.contains('WAITER'), isTrue);
+
+      final rolesNoWaiter = LicenseComposer.rolesFor(
+        Verticals.restaurant,
+        PackageTier.standard,
+        5,
+        features: {FeatureKeys.kdsEnabled: true, FeatureKeys.waiterOrdering: false},
+      );
+      expect(rolesNoWaiter.contains('WAITER'), isFalse, reason: 'WAITER must be omitted when waiterOrdering is false');
+      expect(rolesNoWaiter.contains('KITCHEN'), isTrue);
+
+      final rolesNoStaff = LicenseComposer.rolesFor(
+        Verticals.restaurant,
+        PackageTier.standard,
+        5,
+        features: {FeatureKeys.staffManagement: false},
+      );
+      expect(rolesNoStaff.contains('MANAGER'), isFalse, reason: 'MANAGER must be omitted when staffManagement is false');
     });
   });
 }

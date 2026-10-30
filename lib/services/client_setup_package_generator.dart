@@ -294,6 +294,10 @@ class ClientSetupPackageGenerator {
         ? payload.ownerEmail
         : 'owner@smartbizz.local';
 
+    final effectiveRoles = payload.allowedRoles.isNotEmpty
+        ? payload.allowedRoles
+        : (tier == 'offline' || vertical == 'kirana' ? ['OWNER'] : ['OWNER', 'MANAGER', 'BILLING']);
+
     final defaultUsersJson = jsonEncode([
       {
         'id': 'usr_owner_default',
@@ -303,14 +307,7 @@ class ClientSetupPackageGenerator {
         'password': 'admin',
         'pin': '1234',
         'role': 'OWNER',
-        'roles': [
-          'OWNER',
-          'MANAGER',
-          'BILLING',
-          'CASHIER',
-          'WAITER',
-          'KITCHEN',
-        ],
+        'roles': effectiveRoles,
         'isActive': true,
         'createdAt': DateTime.now().toIso8601String(),
       },
@@ -326,9 +323,8 @@ class ClientSetupPackageGenerator {
       'storageMode': storageMode,
       'token': token,
       'maxDevices': payload.maxDevices > 0 ? payload.maxDevices : 20,
-      'allowedRoles': payload.allowedRoles.isNotEmpty
-          ? payload.allowedRoles
-          : ['OWNER', 'MANAGER', 'BILLING', 'CASHIER', 'WAITER', 'KITCHEN'],
+      'features': payload.features,
+      'allowedRoles': effectiveRoles,
     });
     final b64Store = base64.encode(utf8.encode(defaultStoreJson));
 
@@ -1508,7 +1504,13 @@ End If
     buffer.writeln(
       '        } elseif (\$cleanPath -eq "/api/v1/orders" -or \$cleanPath -eq "/api/v1/kot" -or \$cleanPath -eq "/api/v1/kds/orders") {',
     );
-    buffer.writeln('            if (\$method -eq "GET") {');
+    buffer.writeln('            \$chkStore = Read-JsonFile \$storeFile @{}');
+    buffer.writeln('            \$kdsOn = if (\$chkStore.features -and \$null -ne \$chkStore.features.kdsEnabled) { [bool]\$chkStore.features.kdsEnabled } else { \$true }');
+    buffer.writeln('            if (\$cleanPath -eq "/api/v1/kds/orders" -and -not \$kdsOn) {');
+    buffer.writeln('                \$statusCode = 403');
+    buffer.writeln('                \$statusText = "Forbidden"');
+    buffer.writeln('                \$responseBody = \'{"error":"KDS is not enabled for this store"}\'');
+    buffer.writeln('            } elseif (\$method -eq "GET") {');
     buffer.writeln(
       '                \$ordersObj = Read-JsonFile \$ordersFile @{ rev = 1; orders = @() }',
     );
@@ -1565,7 +1567,13 @@ End If
     );
     buffer.writeln('            }');
     buffer.writeln('        } elseif (\$cleanPath -eq "/api/v1/kds/status") {');
-    buffer.writeln('            if (\$method -eq "GET") {');
+    buffer.writeln('            \$chkStore = Read-JsonFile \$storeFile @{}');
+    buffer.writeln('            \$kdsOn = if (\$chkStore.features -and \$null -ne \$chkStore.features.kdsEnabled) { [bool]\$chkStore.features.kdsEnabled } else { \$true }');
+    buffer.writeln('            if (-not \$kdsOn) {');
+    buffer.writeln('                \$statusCode = 403');
+    buffer.writeln('                \$statusText = "Forbidden"');
+    buffer.writeln('                \$responseBody = \'{"error":"KDS is not enabled for this store"}\'');
+    buffer.writeln('            } elseif (\$method -eq "GET") {');
     buffer.writeln(
       '                \$ordersObj = Read-JsonFile \$ordersFile @{ rev = 1; orders = @() }',
     );

@@ -430,6 +430,13 @@ class LicenceEdits {
         if (!isCoreKey(d)) features[d] = false;
       }
     }
+    final roles = LicenseComposer.rolesFor(
+      base.featuresResolvedFor,
+      base.tier,
+      base.maxDevices,
+      features: features,
+      maxUsers: base.maxUsers,
+    );
     return ComposedLicense(
       package: base.package,
       plan: base.plan,
@@ -438,7 +445,7 @@ class LicenceEdits {
       maxDevices: base.maxDevices,
       maxOutlets: base.maxOutlets,
       maxUsers: base.maxUsers,
-      allowedRoles: base.allowedRoles,
+      allowedRoles: roles,
       storageMode: base.storageMode,
       features: features,
       tier: base.tier,

@@ -10,6 +10,7 @@ import '../../core/saas_models.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/saas_session_provider.dart';
 import '../../services/lan_hub_client.dart';
+import '../../services/client_license_service.dart';
 import '../../utils/ui_feedback.dart';
 import '../../providers/theme_provider.dart';
 import 'client_signup_screen.dart';
@@ -210,16 +211,41 @@ class _SaaSLoginScreenState extends ConsumerState<SaaSLoginScreen> {
           status: 'ACTIVE',
         );
 
+        // Decode real signed cryptographic license token if present
+        final tokenStr = (storeMap['token'] ?? '').toString().trim();
+        final decoded = tokenStr.isNotEmpty ? ClientLicenseService.verifyAndDecode(tokenStr) : null;
+
+        Map<String, bool> resolvedFeats = {};
+        List<String> resolvedRoles = [];
+        if (decoded != null) {
+          resolvedFeats = decoded.features;
+          resolvedRoles = decoded.allowedRoles;
+        } else {
+          if (storeMap['features'] is Map) {
+            (storeMap['features'] as Map).forEach((k, v) => resolvedFeats[k.toString()] = v == true);
+          }
+          if (storeMap['allowedRoles'] is List) {
+            resolvedRoles = (storeMap['allowedRoles'] as List).map((e) => e.toString()).toList();
+          }
+        }
+        if (resolvedRoles.isEmpty) {
+          resolvedRoles = ['OWNER', 'MANAGER', 'BILLING'];
+        }
+
         final saasLicense = SaasLicense(
-          planTier: (storeMap['tier'] ?? 'ENTERPRISE').toString(),
+          planTier: (decoded?.tier ?? storeMap['tier'] ?? 'BASIC').toString(),
           status: 'ACTIVE',
           maxFranchises: 1,
-          maxUsers: 20,
-          maxDevices: (storeMap['maxDevices'] is num) ? (storeMap['maxDevices'] as num).toInt() : 20,
-          allowedRoles: const ['OWNER', 'MANAGER', 'BILLING', 'CASHIER', 'WAITER', 'KITCHEN'],
-          features: const {'local_lan_server': true, 'customer_display': true, 'split_billing': true, 'visual_floor_plan': true},
-          startDate: DateTime.now(),
-          endDate: DateTime.now().add(const Duration(days: 3650)),
+          maxUsers: decoded?.maxUsers ?? ((storeMap['maxUsers'] is num) ? (storeMap['maxUsers'] as num).toInt() : 5),
+          maxDevices: decoded?.maxDevices ?? ((storeMap['maxDevices'] is num) ? (storeMap['maxDevices'] as num).toInt() : 20),
+          allowedRoles: resolvedRoles,
+          features: resolvedFeats.isNotEmpty ? resolvedFeats : {
+            FeatureKeys.localLanServer: true,
+            FeatureKeys.customerDisplay: true,
+            FeatureKeys.billing: true,
+          },
+          startDate: decoded?.issuedAt ?? DateTime.now(),
+          endDate: decoded?.validUntil ?? DateTime.now().add(const Duration(days: 365)),
           vertical: vertical,
         );
 

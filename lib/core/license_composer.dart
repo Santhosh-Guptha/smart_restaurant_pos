@@ -141,15 +141,60 @@ class LicenseComposer {
   /// only (single user); a shop -> OWNER, MANAGER, BILLING; a restaurant
   /// (or an unknown trade) on Standard or above with more than one device
   /// also WAITER and KITCHEN.
-  static List<String> rolesFor(String vertical, PackageTier tier, int maxDevices) {
+  /// Roles for a licence (contract §5): offline -> OWNER only; Kirana -> OWNER
+  /// only (single user); a shop -> OWNER, MANAGER, BILLING; a restaurant
+  /// (or an unknown trade) with more than one device adds WAITER and KITCHEN
+  /// only if the corresponding features (waiter ordering / table management,
+  /// kdsEnabled) are enabled.
+  static List<String> rolesFor(
+    String vertical,
+    PackageTier tier,
+    int maxDevices, {
+    Map<String, dynamic>? features,
+    Entitlements? resolved,
+    int? maxUsers,
+  }) {
     final v = vertical.trim().toLowerCase();
-    if (tier.isOffline || v == Verticals.kirana) return ['OWNER'];
+    if (tier.isOffline || v == Verticals.kirana || (maxUsers != null && maxUsers <= 1)) {
+      return ['OWNER'];
+    }
     final shop = Verticals.isShop(v);
+
+    // KDS: standard+ tier, unless explicitly false in features
+    final bool hasKds = (features != null && features.containsKey(FeatureKeys.kdsEnabled))
+        ? features[FeatureKeys.kdsEnabled] == true
+        : tier.includesTier(PackageTier.standard);
+
+    // Waiter: standard+ tier, unless explicitly false in features
+    final bool hasWaiter = (features != null && features.containsKey(FeatureKeys.waiterOrdering))
+        ? features[FeatureKeys.waiterOrdering] == true
+        : tier.includesTier(PackageTier.standard);
+
+    // Billing: enabled unless all billing features are explicitly false
+    final bool hasBilling = features != null
+        ? (features[FeatureKeys.billing] == true ||
+            features[FeatureKeys.dineInBilling] == true ||
+            features[FeatureKeys.qsrBilling] == true ||
+            features[FeatureKeys.barcodeBilling] == true ||
+            (features[FeatureKeys.billing] != false &&
+                features[FeatureKeys.dineInBilling] != false &&
+                features[FeatureKeys.qsrBilling] != false &&
+                features[FeatureKeys.barcodeBilling] != false))
+        : true;
+
+    // Manager: requires staffManagement and multi-user
+    final bool hasStaff = features != null && features.containsKey(FeatureKeys.staffManagement)
+        ? features[FeatureKeys.staffManagement] == true && (maxUsers == null || maxUsers > 1)
+        : (maxUsers == null || maxUsers > 1);
+
     return [
       'OWNER',
-      'MANAGER',
-      'BILLING',
-      if (!shop && tier.includesTier(PackageTier.standard) && maxDevices > 1) ...['WAITER', 'KITCHEN'],
+      if (hasStaff) 'MANAGER',
+      if (hasBilling) 'BILLING',
+      if (!shop && maxDevices > 1) ...[
+        if (hasWaiter) 'WAITER',
+        if (hasKds) 'KITCHEN',
+      ],
     ];
   }
 
@@ -265,9 +310,15 @@ class LicenseComposer {
       FeatureKeys.pureOfflineMode: resolved.isPureOffline,
     };
 
-    // Roles from the trade and tier, never from the plan. A role that needs
-    // a second device is meaningless on a one-device licence.
-    final roles = rolesFor(roleTrade, tier, resolved.maxDevices);
+    // Roles from the trade, tier, limits, and resolved features. A role that needs
+    // a second device or specific feature (KDS, waiter ordering, billing) is only
+    // included when the feature is enabled.
+    final roles = rolesFor(
+      roleTrade,
+      tier,
+      resolved.maxDevices,
+      maxUsers: resolved.maxUsers,
+    );
 
     return ComposedLicense(
       package: package,

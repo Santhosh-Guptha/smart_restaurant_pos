@@ -1265,9 +1265,11 @@ class _LocalOfflineStoreDialogState extends ConsumerState<LocalOfflineStoreDialo
                       contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                     ),
                     items: [
-                      if (_satelliteTradeIsRestaurant) ...const [
-                        DropdownMenuItem(value: 'WAITER', child: Text("Waiter Pad (Ordering)", style: TextStyle(fontSize: 12))),
-                        DropdownMenuItem(value: 'KITCHEN', child: Text("Kitchen Screen (KDS)", style: TextStyle(fontSize: 12))),
+                      if (_satelliteTradeIsRestaurant) ...[
+                        if (_parsedLicense?.features[FeatureKeys.waiterOrdering] != false)
+                          const DropdownMenuItem(value: 'WAITER', child: Text("Waiter Pad (Ordering)", style: TextStyle(fontSize: 12))),
+                        if (_parsedLicense?.features[FeatureKeys.kdsEnabled] == true)
+                          const DropdownMenuItem(value: 'KITCHEN', child: Text("Kitchen Screen (KDS)", style: TextStyle(fontSize: 12))),
                       ],
                       const DropdownMenuItem(value: 'BILLING', child: Text("Secondary Checkout Till", style: TextStyle(fontSize: 12))),
                       const DropdownMenuItem(value: 'CUSTOMER_DISPLAY', child: Text("Customer Display (CFD)", style: TextStyle(fontSize: 12))),

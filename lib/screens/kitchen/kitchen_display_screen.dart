@@ -28,6 +28,7 @@ import '../../providers/entitlements_provider.dart';
 import '../../services/thermal_printer_service.dart';
 import '../../services/kds_voice_announcer.dart';
 import '../../services/lan_hub_client.dart';
+import '../login/feature_locked_screen.dart';
 
 class KitchenDisplayScreen extends ConsumerStatefulWidget {
   const KitchenDisplayScreen({super.key});
@@ -77,6 +78,7 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen>
     // A kitchen screen with the kitchen display switched off pops straight
     // back. Nothing below starts on a screen that is leaving.
     guardFeature(FeatureKeys.kdsEnabled);
+    if (guardTripped) return;
     _pageController = PageController(initialPage: 0);
     _loadLiveOrders();
     _loadTerminalKeys();
@@ -1220,6 +1222,15 @@ class _KitchenDisplayScreenState extends ConsumerState<KitchenDisplayScreen>
 
   @override
   Widget build(BuildContext context) {
+    final ent = ref.watch(entitlementsProvider);
+    if (guardTripped || !ent.isEnabled(FeatureKeys.kdsEnabled)) {
+      return const FeatureLockedScreen(
+        featureKey: FeatureKeys.kdsEnabled,
+        featureLabel: 'Kitchen Display System (KDS)',
+        role: 'KITCHEN',
+      );
+    }
+
     final activeStaff = ref.watch(restaurantAuthProvider).activeStaff;
 
     return Scaffold(

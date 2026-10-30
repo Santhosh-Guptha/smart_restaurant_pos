@@ -18,6 +18,7 @@ import '../../core/vertical_labels.dart';
 import '../../core/package_model.dart';
 
 import '../../services/lan_hub_client.dart';
+import '../login/feature_locked_screen.dart';
 
 enum StoreScopeMode { all, individual, selected }
 
@@ -38,6 +39,8 @@ class _RestaurantAnalyticsScreenState
   static const amberAccent = ClassicTheme.warningAmber;
   static Color get coralAccent => ClassicTheme.primaryAccent;
   static const emeraldAccent = ClassicTheme.successEmerald;
+
+  Entitlements get ent => ref.watch(entitlementsProvider);
 
   // Multi-Store Scope Configuration
   StoreScopeMode _scopeMode = StoreScopeMode.all;
@@ -75,6 +78,7 @@ class _RestaurantAnalyticsScreenState
     // Analytics reads the cloud; an offline or unlicensed store never gets
     // here, and never starts the refresh timer below.
     guardFeature(FeatureKeys.analytics);
+    if (guardTripped) return;
     _initTenantOutlets();
 
     // Live periodic refresh every 10 seconds
@@ -935,6 +939,14 @@ class _RestaurantAnalyticsScreenState
 
   @override
   Widget build(BuildContext context) {
+    final ent = ref.watch(entitlementsProvider);
+    if (guardTripped || !ent.isEnabled(FeatureKeys.analytics)) {
+      return const FeatureLockedScreen(
+        featureKey: FeatureKeys.analytics,
+        featureLabel: 'Business Analytics & Reports',
+      );
+    }
+
     final vertical = ref.watch(currentVerticalProvider);
     final vl = VerticalLabels.of(vertical);
     double totalRevenue = 0;
@@ -1642,8 +1654,10 @@ class _RestaurantAnalyticsScreenState
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               _buildRoleFilterChip('ALL', 'All Staff (${_staffPerformanceList.length})'),
-              _buildRoleFilterChip('WAITER', 'Waiters (${waiters.length})'),
-              _buildRoleFilterChip('KITCHEN', 'Chefs / Kitchen (${cooks.length})'),
+              if (ent.isEnabled(FeatureKeys.waiterOrdering) || ent.isEnabled(FeatureKeys.tableManagement))
+                _buildRoleFilterChip('WAITER', 'Waiters (${waiters.length})'),
+              if (ent.isEnabled(FeatureKeys.kdsEnabled))
+                _buildRoleFilterChip('KITCHEN', 'Chefs / Kitchen (${cooks.length})'),
               _buildRoleFilterChip('CASHIER', 'Billing / Cashiers (${_staffPerformanceList.where((s) => s['role'] == 'CASHIER').length})'),
             ],
           ),
@@ -2047,7 +2061,7 @@ class _RestaurantAnalyticsScreenState
             }),
 
           // ── KITCHEN SPEED & DISH PREPARATION TIMES SECTION ─────────
-          if (_dishPreparationTimes.isNotEmpty) ...[
+          if (ent.isEnabled(FeatureKeys.kdsEnabled) && _dishPreparationTimes.isNotEmpty) ...[
             const SizedBox(height: 24),
             Container(
               padding: const EdgeInsets.all(16),

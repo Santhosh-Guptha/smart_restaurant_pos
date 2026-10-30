@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:http/http.dart' as http;
 import '../core/constants.dart';
+import '../core/entitlements.dart';
 import '../core/package_model.dart';
 import '../core/restaurant_models.dart';
 import 'customer_display_service.dart';
@@ -585,6 +586,14 @@ class LocalRestaurantLanServer {
     };
   }
 
+  bool get _isKdsEnabled {
+    final box = Hive.isBoxOpen('configBox') ? Hive.box('configBox') : null;
+    final rawLic = box?.get('saas_license');
+    final licMap = rawLic is String ? jsonDecode(rawLic) : {};
+    final feats = licMap['features'] is Map ? licMap['features'] : {};
+    return feats[FeatureKeys.kdsEnabled] == true;
+  }
+
   /// Stops the local LAN server.
   Future<void> stopServer() async {
     _pairFailures.clear();
@@ -801,6 +810,11 @@ class LocalRestaurantLanServer {
           await _respondJson(request, {'error': 'Method not allowed'});
         }
       } else if (path == '/api/v1/kds/orders') {
+        if (!_isKdsEnabled) {
+          request.response.statusCode = HttpStatus.forbidden;
+          await _respondJson(request, {'error': 'KDS (Kitchen Display System) is not enabled for this store'});
+          return;
+        }
         if (request.method != 'GET') {
           request.response.statusCode = HttpStatus.methodNotAllowed;
           await _respondJson(request, {'error': 'Method not allowed'});
@@ -808,6 +822,11 @@ class LocalRestaurantLanServer {
         }
         await _handleGetKdsOrders(request);
       } else if (path == '/api/v1/kds/status') {
+        if (!_isKdsEnabled) {
+          request.response.statusCode = HttpStatus.forbidden;
+          await _respondJson(request, {'error': 'KDS (Kitchen Display System) is not enabled for this store'});
+          return;
+        }
         if (request.method != 'POST') {
           request.response.statusCode = HttpStatus.methodNotAllowed;
           await _respondJson(request, {'error': 'Method not allowed'});
@@ -1412,8 +1431,8 @@ class LocalRestaurantLanServer {
     final rev = LanRevision.instance.bump();
 
     // The chime belongs to the host's kitchen screen; satellites announce
-    // from their own feed.
-    if (isNew && order.effectiveKitchenStatus == 'PENDING') {
+    // from their own feed. Only announce if KDS is enabled.
+    if (_isKdsEnabled && isNew && order.effectiveKitchenStatus == 'PENDING') {
       try {
         await KdsVoiceAnnouncer.instance.announceNewOrders([order]);
       } catch (_) {}

@@ -4414,13 +4414,18 @@ function normaliseFeatures_(raw, vertical, offline, maxDevices) {
  * MANAGER, BILLING; a restaurant on Standard or above with more than one device
  * also WAITER and KITCHEN.
  */
-function rolesFor_(vertical, tier, maxDevices) {
+function rolesFor_(vertical, tier, maxDevices, features) {
   var t = tierParse_(tier) || "basic";
   var v = trade_(vertical);
   if (t === "offline" || v === "kirana") return ["OWNER"];
   var shop = !!SHOP_TRADES_[v];
   var roles = ["OWNER", "MANAGER", "BILLING"];
-  if (!shop && tierAtLeast_(t, "standard") && Number(maxDevices) > 1) roles.push("WAITER", "KITCHEN");
+  var hasKds = features ? features.kdsEnabled === true : tierAtLeast_(t, "standard");
+  var hasWaiter = features ? features.waiterOrdering === true : tierAtLeast_(t, "standard");
+  if (!shop && Number(maxDevices) > 1) {
+    if (hasWaiter) roles.push("WAITER");
+    if (hasKds) roles.push("KITCHEN");
+  }
   return roles;
 }
 
@@ -4540,7 +4545,7 @@ function composeLicence_(vertical, tier, planDoc, opts) {
     maxFranchises: lim.maxOutlets,
     maxUsers: (offline || v === "kirana") ? 1 : lim.maxUsers,
     maxDevices: lim.maxDevices,
-    allowedRoles: rolesFor_(v, t, lim.maxDevices),
+    allowedRoles: rolesFor_(v, t, lim.maxDevices, features),
     features: features,
     featuresResolvedFor: v,
     tier: t,

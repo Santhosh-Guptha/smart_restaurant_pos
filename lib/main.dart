@@ -1,3 +1,5 @@
+import 'providers/entitlements_provider.dart';
+import 'screens/login/feature_locked_screen.dart';
 import 'screens/restaurant/customer_display_screen.dart';
 import 'core/receipt/receipt_context_builder.dart';
 import 'core/package_model.dart';
@@ -268,6 +270,46 @@ class SmartBizzApp extends ConsumerWidget {
       // "Enter a new licence key"), not through the online expiry screen.
       final keyTenantExpired = isLicenseExpired && ClientKeyRenewalService.isKeyTenant();
 
+      final entitlements = ref.watch(entitlementsProvider);
+
+      Widget routeForRole(String role) {
+        final r = role.toUpperCase();
+        if (r == 'KITCHEN') {
+          if (entitlements.isEnabled(FeatureKeys.kdsEnabled)) {
+            return const KitchenDisplayScreen();
+          }
+          return const FeatureLockedScreen(
+            featureKey: FeatureKeys.kdsEnabled,
+            featureLabel: 'Kitchen Display System (KDS)',
+            role: 'KITCHEN',
+          );
+        } else if (r == 'WAITER') {
+          if (entitlements.isEnabled(FeatureKeys.waiterOrdering) ||
+              entitlements.isEnabled(FeatureKeys.tableManagement)) {
+            return const WaiterTablePickerScreen();
+          }
+          return const FeatureLockedScreen(
+            featureKey: FeatureKeys.waiterOrdering,
+            featureLabel: 'Waiter Ordering Pad',
+            role: 'WAITER',
+          );
+        } else if (r == 'BILLING' || r == 'CASHIER') {
+          if (entitlements.isEnabled(FeatureKeys.billing) ||
+              entitlements.isEnabled(FeatureKeys.dineInBilling) ||
+              entitlements.isEnabled(FeatureKeys.qsrBilling) ||
+              entitlements.isEnabled(FeatureKeys.barcodeBilling)) {
+            return const FastQsrBillingScreen();
+          }
+          return const FeatureLockedScreen(
+            featureKey: FeatureKeys.billing,
+            featureLabel: 'POS Billing Till',
+            role: 'BILLING',
+          );
+        } else {
+          return const RestaurantHomeScreen();
+        }
+      }
+
       if (isLicenseExpired && !keyTenantExpired) {
         homeScreen = const SaaSExpiredScreen();
       } else if (keyTenantExpired || (lease != null && lease.blocked)) {
@@ -282,15 +324,7 @@ class SmartBizzApp extends ConsumerWidget {
         final isLanOrWeb = kIsWeb || saasSession.currentOrganization?.storageMode == StorageModes.localNetwork;
         if (isLanOrWeb) {
           final role = (saasSession.currentUser?.role ?? '').toUpperCase();
-          if (role == 'WAITER') {
-            homeScreen = const WaiterTablePickerScreen();
-          } else if (role == 'KITCHEN') {
-            homeScreen = const KitchenDisplayScreen();
-          } else if (role == 'BILLING' || role == 'CASHIER') {
-            homeScreen = const FastQsrBillingScreen();
-          } else {
-            homeScreen = const RestaurantHomeScreen();
-          }
+          homeScreen = routeForRole(role);
         } else {
           homeScreen = const FirstLoginPasswordScreen();
         }
@@ -306,15 +340,7 @@ class SmartBizzApp extends ConsumerWidget {
         homeScreen = const StorageMigrationGateScreen();
       } else {
         final role = (saasSession.currentUser?.role ?? '').toUpperCase();
-        if (role == 'WAITER') {
-          homeScreen = const WaiterTablePickerScreen();
-        } else if (role == 'KITCHEN') {
-          homeScreen = const KitchenDisplayScreen();
-        } else if (role == 'BILLING' || role == 'CASHIER') {
-          homeScreen = const FastQsrBillingScreen();
-        } else {
-          homeScreen = const RestaurantHomeScreen();
-        }
+        homeScreen = routeForRole(role);
       }
     } else {
       homeScreen = const SaaSLoginScreen();
