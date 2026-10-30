@@ -327,6 +327,8 @@ class ClientSetupPackageGenerator {
       'allowedRoles': effectiveRoles,
     });
     final b64Store = base64.encode(utf8.encode(defaultStoreJson));
+    final b64StoreFeatures = base64.encode(utf8.encode(jsonEncode(payload.features)));
+    final b64AllowedRoles = base64.encode(utf8.encode(jsonEncode(effectiveRoles)));
 
     final defaultMenuJson = jsonEncode({
       'rev': 1,
@@ -351,10 +353,14 @@ class ClientSetupPackageGenerator {
     });
     final b64Tables = base64.encode(utf8.encode(defaultTablesJson));
 
-    buffer.writeln(':: Initialize local store database templates');
+    buffer.writeln(':: Initialize or update local store database templates');
     buffer.writeln('if not exist "%APP_DATA_DIR%\\database\\store.json" (');
     buffer.writeln(
       '    powershell -NoProfile -ExecutionPolicy Bypass -Command "[System.IO.File]::WriteAllText(\'%APP_DATA_DIR%\\database\\store.json\', [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String(\'$b64Store\')))" >nul 2>&1',
+    );
+    buffer.writeln(') else (');
+    buffer.writeln(
+      '    powershell -NoProfile -ExecutionPolicy Bypass -Command "\$f=\'%APP_DATA_DIR%\\database\\store.json\'; if (Test-Path \$f) { \$s=Get-Content \$f -Raw | ConvertFrom-Json; \$s.token=\'$token\'; \$s.tier=\'${payload.tier}\'; \$s.maxDevices=${payload.maxDevices > 0 ? payload.maxDevices : 20}; \$s | Add-Member -MemberType NoteProperty -Name features -Value (ConvertFrom-Json ([System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String(\'$b64StoreFeatures\')))) -Force; \$s | Add-Member -MemberType NoteProperty -Name allowedRoles -Value (ConvertFrom-Json ([System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String(\'$b64AllowedRoles\')))) -Force; \$s | ConvertTo-Json -Depth 10 | Set-Content \$f -Encoding UTF8 }" >nul 2>&1',
     );
     buffer.writeln(')');
     buffer.writeln('if not exist "%APP_DATA_DIR%\\database\\users.json" (');
