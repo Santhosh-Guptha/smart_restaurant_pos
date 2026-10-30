@@ -258,6 +258,10 @@ class LicenseComposer {
     }
 
     final input = Map<String, bool>.from(package.features);
+    if (package.isLegacy && tier.includesTier(PackageTier.standard) && !Verticals.isShop(roleTrade)) {
+      input[FeatureKeys.kdsEnabled] ??= true;
+      input[FeatureKeys.waiterOrdering] ??= true;
+    }
     final honoured = <String>[];
     if (addOns.isNotEmpty) {
       final offered = {
@@ -317,6 +321,7 @@ class LicenseComposer {
       roleTrade,
       tier,
       resolved.maxDevices,
+      features: (Verticals.isAny(roleTrade) || packageTrade == null) ? null : features,
       maxUsers: resolved.maxUsers,
     );
 

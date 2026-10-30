@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:flutter/services.dart';
 import '../../../core/classic_theme.dart';
+import '../../../core/license_composer.dart';
 import '../../../services/client_license_service.dart';
 import '../../../services/client_setup_package_generator.dart';
 import '../../../core/design_tokens.dart';
@@ -1163,13 +1164,13 @@ class _TenantAccessDialogState extends ConsumerState<TenantAccessDialog> {
       featMap[FeatureKeys.customerDisplay] = true;
     }
 
-    final rawRoles = _licenceRaw['allowedRoles'];
-    final List<String> rolesList = [];
-    if (rawRoles is List) {
-      for (final r in rawRoles) {
-        rolesList.add(r.toString());
-      }
-    }
+    final rolesList = LicenseComposer.rolesFor(
+      _vertical,
+      _tier,
+      _maxDevices,
+      features: featMap,
+      maxUsers: (_licenceRaw['maxUsers'] is num) ? (_licenceRaw['maxUsers'] as num).toInt() : 5,
+    );
 
     final payload = ClientLicensePayload(
       version: 1,
@@ -1219,13 +1220,13 @@ class _TenantAccessDialogState extends ConsumerState<TenantAccessDialog> {
       featMap[FeatureKeys.customerDisplay] = true;
     }
 
-    final rawRoles = _licenceRaw['allowedRoles'];
-    final List<String> rolesList = [];
-    if (rawRoles is List) {
-      for (final r in rawRoles) {
-        rolesList.add(r.toString());
-      }
-    }
+    final rolesList = LicenseComposer.rolesFor(
+      _vertical,
+      _tier,
+      _maxDevices,
+      features: featMap,
+      maxUsers: (_licenceRaw['maxUsers'] is num) ? (_licenceRaw['maxUsers'] as num).toInt() : 5,
+    );
 
     final machineIdCtrl = TextEditingController(text: 'ANY');
 

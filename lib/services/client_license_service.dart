@@ -117,6 +117,17 @@ class ClientLicensePayload {
       }
     }
 
+    final maxDevs = (j['maxDevices'] is num) ? (j['maxDevices'] as num).toInt() : 1;
+    final vert = (j['vertical'] ?? Verticals.restaurant).toString();
+    final isShop = Verticals.isShop(vert);
+    final Set<String> effectiveRoles = rolesList.isNotEmpty
+        ? rolesList.map((e) => e.toUpperCase()).toSet()
+        : {'OWNER'};
+    if (!isShop && maxDevs > 1) {
+      if (featMap[FeatureKeys.kdsEnabled] == true) effectiveRoles.add('KITCHEN');
+      if (featMap[FeatureKeys.waiterOrdering] == true) effectiveRoles.add('WAITER');
+    }
+
     return ClientLicensePayload(
       version: (j['v'] is num) ? (j['v'] as num).toInt() : 1,
       orgId: (j['orgId'] ?? '').toString(),
@@ -130,7 +141,7 @@ class ClientLicensePayload {
       maxDevices: (j['maxDevices'] is num) ? (j['maxDevices'] as num).toInt() : 1,
       maxOutlets: (j['maxOutlets'] is num) ? (j['maxOutlets'] as num).toInt() : 1,
       maxUsers: (j['maxUsers'] is num) ? (j['maxUsers'] as num).toInt() : 1,
-      allowedRoles: rolesList.isNotEmpty ? rolesList : ['OWNER'],
+      allowedRoles: effectiveRoles.toList(),
       machineId: (j['machineId'] ?? j['hardwareId'] ?? 'ANY').toString(),
       issuedAt: DateTime.tryParse((j['issuedAt'] ?? '').toString())?.toUtc() ?? DateTime.now().toUtc(),
       validUntil: DateTime.tryParse((j['validUntil'] ?? '').toString())?.toUtc() ??

@@ -6686,7 +6686,13 @@ function clientLicencePayload_(orgId, p, org, owner, issuerUid, now) {
   var validUntil = p.validUntil ? new Date(p.validUntil) : new Date(now.getTime() + 365 * 86400000);
   if (isNaN(validUntil.getTime()) || validUntil <= now) return { error_code: "BAD_REQUEST", error: "validUntil must be in the future." };
   var features = (p.features && typeof p.features === "object") ? p.features : {};
-  var roles = Array.isArray(p.allowedRoles) && p.allowedRoles.length ? p.allowedRoles.map(String) : ["OWNER"];
+  var computedRoles = rolesFor_(vertical, tier, offline ? 1 : n(p.maxDevices, 1), features);
+  var roleSet = {};
+  computedRoles.forEach(function(r) { roleSet[r] = true; });
+  if (Array.isArray(p.allowedRoles)) {
+    p.allowedRoles.forEach(function(r) { if (r) roleSet[String(r)] = true; });
+  }
+  var roles = Object.keys(roleSet);
   var storeName = String(p.storeName || org.name || org.appName || org.businessName || "").trim();
   // Offline is always one device, one outlet, one user (contract §3).
   return {

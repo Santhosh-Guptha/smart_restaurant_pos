@@ -154,9 +154,18 @@ class SaasLicense {
 
   factory SaasLicense.fromJson(Map<String, dynamic> json) {
     final featuresMap = Map<String, dynamic>.from(json['features'] ?? {});
-    final rolesList = json['allowedRoles'] is List
+    final maxDevs = (json['maxDevices'] is num) ? (json['maxDevices'] as num).toInt() : 2;
+    final vert = json['vertical']?.toString() ?? Verticals.restaurant;
+    final isShop = Verticals.isShop(vert);
+    final rawRoles = json['allowedRoles'] is List
         ? List<String>.from((json['allowedRoles'] as List).map((e) => e.toString().toUpperCase()))
         : const ['OWNER', 'MANAGER', 'BILLING', 'KITCHEN', 'WAITER'];
+    final rolesSet = rawRoles.toSet();
+    if (!isShop && maxDevs > 1) {
+      if (featuresMap['kdsEnabled'] == true) rolesSet.add('KITCHEN');
+      if (featuresMap['waiterOrdering'] == true) rolesSet.add('WAITER');
+    }
+    final rolesList = rolesSet.toList();
     return SaasLicense(
       planTier: json['planTier'] ?? 'TRIAL',
       planProfile: json['planProfile']?.toString(),
@@ -198,9 +207,18 @@ class SaasLicense {
 
   factory SaasLicense.fromFirestore(Map<String, dynamic> data) {
     final featuresMap = Map<String, dynamic>.from(data['features'] ?? {});
-    final rolesList = data['allowedRoles'] is List
+    final maxDevs = (data['maxDevices'] is num) ? (data['maxDevices'] as num).toInt() : 2;
+    final vert = data['vertical']?.toString() ?? Verticals.restaurant;
+    final isShop = Verticals.isShop(vert);
+    final rawRoles = data['allowedRoles'] is List
         ? List<String>.from((data['allowedRoles'] as List).map((e) => e.toString().toUpperCase()))
         : const ['OWNER', 'MANAGER', 'BILLING', 'KITCHEN', 'WAITER'];
+    final rolesSet = rawRoles.toSet();
+    if (!isShop && maxDevs > 1) {
+      if (featuresMap['kdsEnabled'] == true) rolesSet.add('KITCHEN');
+      if (featuresMap['waiterOrdering'] == true) rolesSet.add('WAITER');
+    }
+    final rolesList = rolesSet.toList();
     return SaasLicense(
       planTier: data['planTier'] ?? 'TRIAL',
       planProfile: data['planProfile']?.toString(),
